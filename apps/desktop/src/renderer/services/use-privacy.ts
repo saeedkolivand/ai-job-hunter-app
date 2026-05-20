@@ -1,11 +1,14 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
+import { useAppClient } from '@/providers/AppClientProvider';
+
 import { keys } from './query-client';
 
 export const useSignOutAll = () => {
+  const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => window.api.privacy.signOutAll(),
+    mutationFn: () => api.privacy.signOutAll(),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.credentials.all });
       void qc.invalidateQueries({ queryKey: ['boards'] });
@@ -14,9 +17,10 @@ export const useSignOutAll = () => {
 };
 
 export const useClearInteractions = () => {
+  const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => window.api.privacy.clearInteractions(),
+    mutationFn: () => api.privacy.clearInteractions(),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.postings.interactions() }),
   });
 };

@@ -2,39 +2,47 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 
 import type { Locale } from '@ajh/shared';
 
+import { useAppClient } from '@/providers/AppClientProvider';
+
 import { keys, queryClient } from './query-client';
 
-export const useSystemHealth = () =>
-  useQuery({
+export const useSystemHealth = () => {
+  const api = useAppClient();
+  return useQuery({
     queryKey: keys.system.health,
-    queryFn: () => window.api.system.health(),
-    refetchInterval: 15_000, // poll every 15s — matches old Sidebar / StatusBar intervals
+    queryFn: () => api.system.health(),
+    refetchInterval: 15_000,
     staleTime: 10_000,
   });
+};
 
-export const useAppVersion = () =>
-  useQuery({
+export const useAppVersion = () => {
+  const api = useAppClient();
+  return useQuery({
     queryKey: keys.system.version,
-    queryFn: () => window.api.system.getVersion(),
-    staleTime: Infinity, // version never changes at runtime
+    queryFn: () => api.system.getVersion(),
+    staleTime: Infinity,
   });
+};
 
-export const useGetPlatform = () =>
-  useQuery({
+export const useGetPlatform = () => {
+  const api = useAppClient();
+  return useQuery({
     queryKey: keys.system.platform,
-    queryFn: () => window.api.system.getPlatform(),
-    staleTime: Infinity, // platform never changes at runtime
+    queryFn: () => api.system.getPlatform(),
+    staleTime: Infinity,
   });
+};
 
-export const useSetLocale = () =>
-  useMutation({
-    mutationFn: (locale: Locale) => window.api.system.setLocale(locale),
-  });
+export const useSetLocale = () => {
+  const api = useAppClient();
+  return useMutation({ mutationFn: (locale: Locale) => api.system.setLocale(locale) });
+};
 
-export const useOpenExternal = () =>
-  useMutation({
-    mutationFn: (url: string) => window.api.system.openExternal(url),
-  });
+export const useOpenExternal = () => {
+  const api = useAppClient();
+  return useMutation({ mutationFn: (url: string) => api.system.openExternal(url) });
+};
 
 /** Convenience: invalidate health cache to force an immediate recheck. */
 export const invalidateHealth = () =>
