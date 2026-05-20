@@ -22,6 +22,7 @@ import type { AiGenerateRequest } from '@ajh/shared';
 import { type BoardSessionMap, createBoardSessions } from './board-sessions/index.js';
 import { CredentialStore } from './credentials.js';
 import { ElectronBrowserController } from './electron-browser-controller.js';
+import { InProcessScraperRuntime } from './scraper-runtime.js';
 
 export interface AppCore {
   bus: EventBus;
@@ -35,6 +36,8 @@ export interface AppCore {
   autopilotStore: AutopilotStore;
   /** Persistent Chromium session managers — one per board, survive restarts. */
   boardSessions: BoardSessionMap;
+  /** In-process scraper runtime — owns scrapeBoard / applyJob / scrapeUrl logic. */
+  scraperRuntime: InProcessScraperRuntime;
   onShuttingDown?: () => Promise<void>;
 }
 
@@ -70,28 +73,11 @@ export async function bootstrap(): Promise<AppCore> {
   const boardSessions = await createBoardSessions(userDataDir);
 
   const electronBrowser = new ElectronBrowserController();
+  const scraperRuntime = new InProcessScraperRuntime(data, credentials, electronBrowser);
   runtimes.register(ai);
   runtimes.register(data);
 
   await runtimes.start();
-
-  async function upsertPosting(runtime: typeof data, posting: Record<string, unknown>) {
-    const db = runtime.db();
-    const query = posting.externalId
-      ? { source: posting.source, externalId: posting.externalId }
-      : { url: posting.url };
-    await new Promise<void>((resolve, reject) => {
-      db.jobPostings.update(
-        query,
-        { $set: { ...posting, capturedAt: Date.now() } },
-        { upsert: true },
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        }
-      );
-    });
-  }
 
   // ── Register job handlers ─────────────────────────────────────────────
 
@@ -136,129 +122,33 @@ export async function bootstrap(): Promise<AppCore> {
   });
 
   jobs.register('scrape.board', async (ctx) => {
-    const { board, query, location, pages } = ctx.job.payload as {
-      board: string;
-      query: string;
-      location?: string;
-      pages: number;
-    };
-    const scraper = data.scrapers.get(board);
-    if (!scraper) throw new Error(`Unknown board: ${board}`);
-    ctx.logger.info({ board, query, mode: scraper.mode }, 'scrape.board start');
-
-    const credentialsAccessor = {
-      get: async (id: string) => {
-        const c = await credentials.getDecrypted(id);
-        return c ? { username: c.username, password: c.password } : null;
-      },
-      storageStatePath: (id: string) => credentials.storageStatePath(id),
-    };
-
-    const { dateFilter, locale } = ctx.job.payload as { dateFilter?: string; locale?: string };
-
-    data.liveJobs.clearAll();
-
-    const results = await scraper.search(
-      {
-        query,
-        ...(location ? { location } : {}),
-        pages,
-        ...(dateFilter ? { dateFilter } : {}),
-        ...(locale ? { locale } : {}),
-      },
-      {
-        signal: ctx.signal,
-        onProgress: (p) => ctx.setProgress(p),
-        onItem: (item) => {
-          data.liveJobs.add(ctx.job.id, item);
-          ctx.stream(item);
-        },
-        browser: electronBrowser as never,
-        credentials: credentialsAccessor,
-      }
-    );
-
-    return { board, count: results.length };
+    const payload = ctx.job.payload as import('./scraper-runtime.js').ScrapeBoardPayload;
+    return scraperRuntime.scrapeBoard(payload, {
+      signal: ctx.signal,
+      jobId: ctx.job.id,
+      onProgress: (p) => ctx.setProgress(p),
+      onItem: (item) => ctx.stream(item),
+    });
   });
 
   jobs.register('apply.job', async (ctx) => {
-    const payload = ctx.job.payload as {
-      board: string;
-      url: string;
-      coverLetter?: string;
-      resumePath?: string;
-      autoSubmit?: boolean;
-    };
-    const applier = data.appliers.get(payload.board);
-    if (!applier) throw new Error(`No applier registered for ${payload.board}`);
-    const cred = await credentials.getDecrypted(payload.board);
-    ctx.logger.info(
-      { board: payload.board, url: payload.url, autoSubmit: !!payload.autoSubmit },
-      'apply.job start'
-    );
-
-    const result = await applier.apply(payload.url, {
+    const payload = ctx.job.payload as import('./scraper-runtime.js').ApplyJobPayload;
+    return scraperRuntime.applyJob(payload, {
       signal: ctx.signal,
-      browser: electronBrowser as never,
-      storageStatePath: credentials.storageStatePath(payload.board),
-      credentials: cred ? { username: cred.username, password: cred.password } : null,
-      ...(payload.coverLetter ? { coverLetter: payload.coverLetter } : {}),
-      ...(payload.resumePath ? { resumePath: payload.resumePath } : {}),
-      autoSubmit: !!payload.autoSubmit,
       onProgress: (p, stage) => {
         ctx.setProgress(p);
         ctx.stream({ kind: 'progress', stage, p });
       },
       onStep: (step) => ctx.stream({ kind: 'step', ...step }),
     });
-
-    // Persist job when applied
-    const credentialsAccessor = {
-      get: async (id: string) => {
-        const c = await credentials.getDecrypted(id);
-        return c ? { username: c.username, password: c.password } : null;
-      },
-      storageStatePath: (id: string) => credentials.storageStatePath(id),
-    };
-
-    for (const s of data.scrapers.list()) {
-      if (typeof s.fromUrl !== 'function') continue;
-      const item = await s.fromUrl(payload.url, {
-        signal: ctx.signal,
-        browser: electronBrowser as never,
-        credentials: credentialsAccessor,
-      });
-      if (item) {
-        await upsertPosting(data, item);
-        break;
-      }
-    }
-
-    return result;
   });
 
   jobs.register('scrape.url', async (ctx) => {
-    const { url } = ctx.job.payload as { url: string };
-    const credentialsAccessor = {
-      get: async (id: string) => {
-        const c = await credentials.getDecrypted(id);
-        return c ? { username: c.username, password: c.password } : null;
-      },
-      storageStatePath: (id: string) => credentials.storageStatePath(id),
-    };
-    for (const s of data.scrapers.list()) {
-      if (typeof s.fromUrl !== 'function') continue;
-      const item = await s.fromUrl(url, {
-        signal: ctx.signal,
-        browser: electronBrowser as never,
-        credentials: credentialsAccessor,
-      });
-      if (item) {
-        ctx.stream(item);
-        return item;
-      } // Stream without auto-persisting
-    }
-    throw new Error('No scraper accepted this URL');
+    const payload = ctx.job.payload as { url: string };
+    return scraperRuntime.scrapeUrl(payload, {
+      signal: ctx.signal,
+      onItem: (item) => ctx.stream(item),
+    });
   });
 
   // Track user interaction with a job (viewed, applied, bookmarked)
@@ -376,5 +266,6 @@ export async function bootstrap(): Promise<AppCore> {
     credentials,
     autopilotStore,
     boardSessions,
+    scraperRuntime,
   };
 }
