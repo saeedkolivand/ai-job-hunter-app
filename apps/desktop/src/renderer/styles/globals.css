@@ -50,7 +50,9 @@ html[data-performance-mode='low-memory'] body {
   background: #07060f;
 }
 
-/* ── Electron drag regions ───────────────────────────────────────────────── */
+/* ── Window drag regions (Electron + Tauri) ──────────────────────────────── */
+/* Electron: -webkit-app-region on the element is sufficient.               */
+/* Tauri:    also requires data-tauri-drag-region on the element (Windows).  */
 .app-drag {
   -webkit-app-region: drag;
 }
