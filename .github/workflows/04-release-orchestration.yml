@@ -49,13 +49,16 @@ jobs:
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
         env:
-          # GITHUB_TOKEN has contents:write (declared above) which is sufficient for
-          # semantic-release to create tags and GitHub Releases.
-          # To allow it to push the version bump commit to the protected main branch,
-          # add github-actions[bot] as a bypass actor in the branch ruleset:
-          #   GitHub → Settings → Rules → Rulesets → main → Bypass list
-          #   → Add bypass → search "github actions" → select GitHub Actions (App • github)
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # RELEASE_TOKEN must be a PAT (classic, repo scope) from the repo owner.
+          # The GITHUB_TOKEN cannot bypass the main branch ruleset on personal repos
+          # because Integration bypass actors are org-only. A PAT from the owner
+          # inherits the bypass (current_user_can_bypass: always).
+          #
+          # To create: GitHub → Settings → Developer settings → Personal access tokens
+          #   → Tokens (classic) → Generate new token → scope: repo → copy
+          # To add: Repository → Settings → Secrets → Actions → New secret
+          #   → Name: RELEASE_TOKEN → Value: <your PAT>
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Notify Discord Release Failure
         if: failure()
