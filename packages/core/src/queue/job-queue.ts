@@ -64,6 +64,10 @@ export class JobQueue {
     this.tick();
   }
 
+  metrics(): { running: number; pending: number; concurrency: number } {
+    return { running: this.running, pending: this.pending.length, concurrency: this.concurrency };
+  }
+
   register<P, R>(kind: JobKind, handler: JobHandler<P, R>): void {
     this.handlers.set(kind, handler as JobHandler);
   }

@@ -22,6 +22,7 @@ import type {
 } from '../schemas/index.js';
 import type {
   AiStreamChunk,
+  AppMetrics,
   Autopilot,
   CredentialMetadata,
   DocumentRecord,
@@ -49,6 +50,8 @@ export interface IpcContract {
     openExternal(url: string): Promise<void>;
 
     setPerformanceMode(mode: 'low-memory' | 'balanced' | 'performance'): Promise<void>;
+
+    getMetrics(): Promise<AppMetrics>;
   };
 
   jobs: {
@@ -344,6 +347,8 @@ export const IPC_CHANNELS = {
     openExternal: 'system:openExternal',
 
     setPerformanceMode: 'system:setPerformanceMode',
+
+    getMetrics: 'system:getMetrics',
   },
 
   jobs: {

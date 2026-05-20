@@ -55,3 +55,14 @@ export const useSetPerformanceMode = () => {
 /** Convenience: invalidate health cache to force an immediate recheck. */
 export const invalidateHealth = () =>
   queryClient.invalidateQueries({ queryKey: keys.system.health });
+
+/** Full process/boot/queue metrics — refreshed every 30 s. */
+export const useSystemMetrics = () => {
+  const api = useAppClient();
+  return useQuery({
+    queryKey: keys.system.metrics,
+    queryFn: () => api.system.getMetrics(),
+    refetchInterval: 30_000,
+    staleTime: 20_000,
+  });
+};

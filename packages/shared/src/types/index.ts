@@ -129,6 +129,45 @@ export interface RuntimeHealth {
   workers: { active: number; idle: number; max: number };
 }
 
+/** Timing for each major phase of bootstrap(). All durations in milliseconds. */
+export interface BootMetrics {
+  /** Absolute timestamp (Date.now()) when bootstrap() was called. */
+  startedAt: number;
+  phases: {
+    /** Time to create EventBus, JobQueue, RuntimeManager, StateCoordinator. */
+    coreInit: number;
+    /** Time for createBoardSessions(). */
+    boardSessions: number;
+    /** Time for runtimes.start('data') — SQLite open. */
+    dataRuntime: number;
+    /** Time to register all job handlers. */
+    jobHandlers: number;
+    /** Time to evaluate refreshScheduler(). */
+    scheduler: number;
+  };
+  /** Total bootstrap() duration. */
+  totalMs: number;
+}
+
+/** Snapshot of process-level resource usage from app.getAppMetrics(). */
+export interface ProcessMetric {
+  pid: number;
+  type: string;
+  cpuUsage: { percentCPUUsage: number; idleWakeupsPerSecond: number };
+  memory: { workingSetSize: number; peakWorkingSetSize: number };
+}
+
+/** Full metrics snapshot exposed via system.getMetrics IPC. */
+export interface AppMetrics {
+  boot: BootMetrics | null;
+  /** Time from app.whenReady() to first BrowserWindow visible (ms). */
+  startupMs: number | null;
+  jobQueue: { running: number; pending: number; concurrency: number };
+  processes: ProcessMetric[];
+  /** Timestamp of this snapshot (Date.now()). */
+  snapshotAt: number;
+}
+
 /** Renderer-safe credential metadata. Never includes the password. */
 export interface CredentialMetadata {
   boardId: string;
