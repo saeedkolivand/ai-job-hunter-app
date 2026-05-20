@@ -3,6 +3,27 @@
 All notable changes to AI Job Hunter are documented here.
 This project follows [Semantic Versioning](https://semver.org) and [Conventional Commits](https://www.conventionalcommits.org).
 
+## [1.1.0](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/compare/v1.0.5...v1.1.0) (2026-05-20)
+
+### ✨ Features
+
+* introduce appclient transport abstraction (phase 5) ([2ea0a08](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/2ea0a085596fe5587f3b116a4b299fd0b69529e8))
+
+### 🐛 Bug Fixes
+
+* merge duplicate app-client imports in appclientprovider ([12dc8be](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/12dc8be8c705ab5046f6b096c93a83c866b019dd))
+* resolve lint errors blocking push ([a25ec5c](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/a25ec5ccabc6113b9d21c65e18b7704679213944))
+* sort imports in bootstrap.ts to satisfy eslint pre-push hook ([3c10a89](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/3c10a8987dcd5ebd67a86ff535652a21f315a8d6))
+
+### ⚡ Performance
+
+* lazy-start ai runtime and lancedb vector store (phase 4) ([7121a42](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/7121a4212b64102c3ea5dea5efb361608b582084))
+* reduce idle resource usage and quarantine playwright session managers ([90281f8](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/90281f8e85fd361301ea95d6a21bf120347f3133))
+
+### ♻️ Refactors
+
+* extract scraping logic into in-process scraper runtime (phase 3) ([7814b6d](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/7814b6da75868fab22660cf1d18383c240dbac81))
+
 ## [1.0.5](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/compare/v1.0.4...v1.0.5) (2026-05-20)
 
 ### 🐛 Bug Fixes
