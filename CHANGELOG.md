@@ -3,6 +3,12 @@
 All notable changes to AI Job Hunter are documented here.
 This project follows [Semantic Versioning](https://semver.org) and [Conventional Commits](https://www.conventionalcommits.org).
 
+## [1.0.5](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/compare/v1.0.4...v1.0.5) (2026-05-20)
+
+### 🐛 Bug Fixes
+
+* set releasetype to release in electron-builder publish config ([6b425e7](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/6b425e73d5320017244a12083d1b08162e13f625))
+
 ## [1.0.4](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/compare/v1.0.3...v1.0.4) (2026-05-20)
 
 ### 🐛 Bug Fixes
