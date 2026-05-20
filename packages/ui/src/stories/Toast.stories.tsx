@@ -1,30 +1,29 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import { useState } from 'react';
-import { Toast } from '../components/Toast';
+import { ToastProvider, useToast, type ToastVariant } from '../components/Toast';
 import { Button } from '../components/Button';
 
-const meta: Meta<typeof Toast> = {
+const meta: Meta = {
   title: 'Overlays/Toast',
-  component: Toast,
   tags: ['autodocs'],
   parameters: { layout: 'fullscreen' },
+  decorators: [
+    (Story) => (
+      <ToastProvider>
+        <Story />
+      </ToastProvider>
+    ),
+  ],
 };
 export default meta;
-type Story = StoryObj<typeof Toast>;
+type Story = StoryObj;
 
-function ToastDemo({ variant }: { variant: 'success' | 'error' | 'info' | 'warning' }) {
-  const [open, setOpen] = useState(false);
+function ToastDemo({ variant }: { variant: ToastVariant }) {
+  const toast = useToast();
   return (
     <div className="p-8">
-      <Button variant="glass" onClick={() => setOpen(true)}>
+      <Button variant="glass" onClick={() => toast(`This is a ${variant} message.`, variant)}>
         Show {variant} toast
       </Button>
-      <Toast
-        open={open}
-        onClose={() => setOpen(false)}
-        variant={variant}
-        message={`This is a ${variant} message. It will auto-dismiss in 5 seconds.`}
-      />
     </div>
   );
 }
@@ -33,3 +32,19 @@ export const Success: Story = { render: () => <ToastDemo variant="success" /> };
 export const Error: Story = { render: () => <ToastDemo variant="error" /> };
 export const Info: Story = { render: () => <ToastDemo variant="info" /> };
 export const Warning: Story = { render: () => <ToastDemo variant="warning" /> };
+export const Stacked: Story = {
+  render: () => {
+    function StackDemo() {
+      const toast = useToast();
+      return (
+        <div className="flex gap-2 p-8">
+          <Button onClick={() => toast('Operation succeeded!', 'success')}>Success</Button>
+          <Button onClick={() => toast('Something went wrong.', 'error')}>Error</Button>
+          <Button onClick={() => toast('Update available.', 'info')}>Info</Button>
+          <Button onClick={() => toast('Check your settings.', 'warning')}>Warning</Button>
+        </div>
+      );
+    }
+    return <StackDemo />;
+  },
+};
