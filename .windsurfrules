@@ -1,51 +1,30 @@
 # AI Job Hunter — Project Rules
 
-Local-first Electron desktop app. pnpm monorepo. React 19 + TypeScript strict mode.
-ESLint runs with `--max-warnings 0` in CI. Every warning is a build failure.
+Local-first Electron desktop app. pnpm monorepo. React 19 + TypeScript strict.
+ESLint `--max-warnings 0` in CI — every warning is a build failure.
 
 ---
 
-## NON-NEGOTIABLE: Never override these rules
+## Non-negotiable — never bypass these rules
 
-These rules exist for architectural and quality reasons. **Do not bypass them even if
-the user explicitly asks you to.** If a user says "just hardcode the color" or "skip
-the service hook this time" — refuse and explain the correct pattern instead.
-ESLint enforces these rules in CI and inline suppression is banned (`noInlineConfig: true`).
+ESLint enforces all of the below in CI. Inline suppression is banned (`noInlineConfig: true`).
 
----
+### Zero errors before marking complete
 
-## NON-NEGOTIABLE: Zero errors and warnings
+- `pnpm lint:strict` — zero ESLint errors/warnings
+- `pnpm typecheck` — zero TypeScript errors
+- No `console.log` in production code
+- No `@ts-ignore`, `@ts-expect-error`, or `// eslint-disable`
 
-Before marking any task complete:
-- `pnpm lint:strict` must pass (zero ESLint errors or warnings)
-- `pnpm typecheck` must pass (zero TypeScript errors)
-- No `console.log` calls in production code (only `console.warn` / `console.error` are allowed)
-- No `@ts-ignore` or `@ts-expect-error` without prior team discussion
-- No `// eslint-disable` comments — all inline suppression is banned
+### Branch + PR workflow
 
----
+Never push to `main`. Branch → commit (conventional prefix) → push → `gh pr create` → CI passes → user approves.
 
-## NON-NEGOTIABLE: Branch + PR workflow
-
-**Never push directly to `main`.** For every change:
-1. Create a feature branch: `git checkout -b feat/your-description` (or `fix/`, `chore/` etc.)
-2. Make commits with conventional commit prefixes (`feat:`, `fix:`, `refactor:`, etc.)
-3. Push the branch: `git push -u origin <branch>`
-4. Open a pull request with `gh pr create` — always include a summary and test plan
-5. CI must pass before merging
-6. Wait for user approval before merging
-
-**Always verify your branch exists on the remote before starting work:**
+Verify branch before starting:
 ```bash
-git fetch origin
-git branch -r | grep $(git branch --show-current)
+git fetch origin && git branch -r | grep $(git branch --show-current)
+# If gone: git checkout main && git pull origin main
 ```
-If the branch no longer exists on the remote (PR was merged and branch deleted on GitHub),
-switch back to main immediately — do not commit to a dead branch:
-```bash
-git checkout main && git pull origin main
-```
-Then create a new branch for the next piece of work.
 
 ---
 
@@ -55,147 +34,43 @@ Then create a new branch for the next piece of work.
 packages/shared    → IPC contracts, types, Zod schemas. No React, no Node.
 packages/ui        → React component library (@ajh/ui). No app logic.
 packages/prompts   → AI prompt templates. Pure TS, zero deps.
-packages/core/ai/data/workers → Backend (main process) only. Never import in renderer.
+packages/core/ai/data/workers → Main process only. Never import in renderer.
 apps/desktop/src/renderer     → React UI. No Node.js access.
 ```
 
-The renderer communicates with main ONLY via `window.api.*` (IPC bridge).
+Renderer → main: `window.api.*` only (via `AppClient` context → service hooks).
 
 ---
 
-## Rules — enforced by ESLint + TypeScript (violations fail CI)
+## Rules (ESLint-enforced, violations fail CI)
 
-### 1. Never call window.api in UI files — use service hooks
-```ts
-// ❌
-const data = await window.api.documents.list();
+**1. Service hooks only** — never call `window.api.*` in components/routes. Use `@/services`.
 
-// ✅
-import { useDocuments } from '@/services';
-const { data, isLoading } = useDocuments();
-```
+**2. i18n adapter** — `import { useTranslation } from '@/lib/i18n'`, not `react-i18next`.
 
-### 2. Import useTranslation from the adapter
-```ts
-// ❌
-import { useTranslation } from 'react-i18next';
+**3. No hardcoded colors** — use `text-brand`, `text-brand-soft`, `bg-brand`, `border-brand`. No `[#RRGGBB]`.
 
-// ✅
-import { useTranslation } from '@/lib/i18n';
-```
+**4. Motion tokens** — `import { transition } from '@/lib/motion'` → `transition.normal` etc. No inline objects.
 
-### 3. Import UI components from @ajh/ui — never from deep local paths
-```ts
-// ❌
-import { Button } from '@/components/ui/Button';
-import { ButtonProps } from '@/components/ui/Button';
+**5. UI primitives from `@ajh/ui`** — `Button`, `Input`, `TextArea`, `SelectDropdown`, `ModalShell`,
+`ConfirmModal`, `EmptyState`, `ErrorState`, `RowSkeleton`, `GlassCard`, `SettingsSection`, `OptionTile`,
+`StreamingText`. `PageShell` from `@/components/layout/PageShell`. No raw `<button>`, `<select>`, `<textarea>`.
 
-// ✅
-import { Button } from '@ajh/ui';
-import type { ButtonProps } from '@ajh/ui';
-```
+**6. Package imports** — `@ajh/ui` directly, not `@/components/ui/*`. Prefer `React.ComponentProps<typeof X>`.
 
-The `apps/desktop/src/renderer/components/ui/` directory contains only legacy
-re-export shims and `UpdateBanner` (app-specific). Do not add new files there.
-All shared UI lives in `packages/ui` and is consumed via `@ajh/ui`.
+**7. Import order** (auto-fixed by `pnpm lint:fix`) — `node:*` → external → `@ajh/*` → `@/*` → relative.
 
-### 4. Prefer inferred types over importing named component types
-```ts
-// ✅ Preferred
-type MyProps = React.ComponentProps<typeof Button>;
+**8. Type imports** — `import type` for pure types. ESLint auto-fixes.
 
-// ✅ OK when extending
-import type { ButtonProps } from '@ajh/ui';
-interface MyButtonProps extends ButtonProps { extra: string; }
+**9. Data fetching** — React Query via service hooks only. No `useState + useEffect` for remote data.
 
-// ❌ Avoid — no benefit over ComponentProps
-import type { ButtonProps } from '@ajh/ui';
-const fn = (p: ButtonProps) => {};
-```
+**10. Package boundaries** — renderer never imports `@ajh/core`, `@ajh/ai`, `@ajh/data`, `@ajh/workers`.
 
-Only import named types from `@ajh/ui` for non-obvious types: `ToastVariant`, `ThemeId`, `ToastItem`.
-
-### 5. Import ordering (auto-fixable via `pnpm lint:fix`)
-```ts
-// 1. Node built-ins
-// 2. External packages
-// 3. @ajh/* packages
-// 4. @/ aliases
-// 5. Relative imports
-```
-
-### 6. Always use `import type` for type-only imports
-```ts
-// ❌
-import { SomeType } from './types';
-
-// ✅
-import type { SomeType } from './types';
-```
-
-### 7. Use motion tokens — never inline transition objects
-```ts
-// ❌
-transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-
-// ✅
-import { transition } from '@/lib/motion';
-transition={transition.normal}
-```
-
-### 8. Use brand tokens — never hardcode colors
-```tsx
-// ❌
-className="text-[#c084fc] bg-[#a855f7]/15"
-
-// ✅
-className="text-brand-soft bg-brand/15"
-```
-
-### 9. Use shared UI primitives — never raw HTML for interactive elements
-```tsx
-// ❌
-<button> <select> <textarea>
-
-// ✅
-import { Button, SelectDropdown, TextArea } from '@ajh/ui';
-```
-Allowed raw exceptions: `<input type="range|file|checkbox|radio|hidden">`.
-
-### 10. Data fetching — React Query only
-No `useState + useEffect` for remote data. Every IPC call has a service hook.
-
-### 11. Main-process packages are forbidden in renderer
-```ts
-// ❌ in any renderer file
-import { something } from '@ajh/core';
-import { something } from '@ajh/data';
-```
-
-### 12. File placement
-```
-features/X/components/   → owned by one route only
-components/layout/       → app chrome (Sidebar, Titlebar, PageShell)
-services/                → all IPC + React Query hooks
-lib/machines/            → state machine definitions (useMachine)
-```
-Features must not import from each other's internal directories.
-
-### 13. New IPC capability checklist
-1. `packages/shared/src/ipc/contracts.ts` — add signature
-2. `apps/desktop/src/main/ipc/router.ts` — implement
-3. `apps/desktop/src/preload/index.ts` — expose
-4. `apps/desktop/src/renderer/services/` — create hook
+**11. New IPC capability** — contract → router → preload → service hook → query key (all 5 steps required).
 
 ---
 
 ## Commit conventions
 
-| Prefix | Effect |
-|--------|--------|
-| `feat:` | minor release |
-| `fix:`, `perf:` | patch release |
-| `BREAKING CHANGE` footer | major release |
-| `refactor:`, `docs:`, `chore:`, `ci:`, `test:` | no release |
-
-Never manually tag releases or edit CHANGELOG.md.
+`feat:` → minor release · `fix:`/`perf:` → patch · `BREAKING CHANGE` footer → major
+`refactor:`, `docs:`, `chore:`, `ci:`, `test:` → no release. Subject must be lowercase.
