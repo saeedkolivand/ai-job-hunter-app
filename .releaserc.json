@@ -51,6 +51,7 @@
       }
     ],
     ["@semantic-release/npm", { "npmPublish": false }],
+    ["@semantic-release/npm", { "npmPublish": false, "pkgRoot": "apps/desktop" }],
     [
       "@semantic-release/github",
       {
