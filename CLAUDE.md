@@ -285,7 +285,27 @@ ESLint errors on main-process package imports in any renderer file.
 
 ---
 
-### 13. New IPC capabilities
+### 13. Stale branch check — always verify before starting work
+
+Before writing any code, confirm the current branch still exists on the remote:
+
+```bash
+git fetch origin
+git branch -r | grep $(git branch --show-current)
+```
+
+If the branch is gone (PR was merged and GitHub auto-deleted it), switch to main immediately:
+
+```bash
+git checkout main && git pull origin main
+```
+
+Never commit to a branch that no longer exists on the remote — work will be orphaned and
+cannot be pushed.
+
+---
+
+### 14. New IPC capabilities
 
 1. Add method signature to `packages/shared/src/ipc/contracts.ts`
 2. Implement in `apps/desktop/src/main/ipc/router.ts`
