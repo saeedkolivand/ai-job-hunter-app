@@ -3,15 +3,19 @@ import { QueryClient } from '@tanstack/react-query';
 /**
  * Shared QueryClient for the renderer.
  *
- * Electron-specific tuning vs. web defaults:
- *   - refetchOnWindowFocus: false  — Electron windows don't "blur" like browser tabs;
- *                                    focus events fire constantly (tray, modals, dialogs).
- *   - refetchOnReconnect: false    — local-first app; IPC works without a network.
- *   - staleTime: 30s               — IPC calls are cheap but not free; no need to refetch
- *                                    on every component mount.
- *   - gcTime: 5min                 — Keep data in memory longer; avoids loading flashes
+ * Tuned for a local-first desktop app (applies equally to Electron, Tauri, or a
+ * future web deployment backed by a local runtime):
+ *   - refetchOnWindowFocus: false  — desktop windows receive spurious focus events
+ *                                    (tray clicks, modals, dialogs) that would cause
+ *                                    unnecessary refetches on every interaction.
+ *   - refetchOnReconnect: false    — data comes from the local runtime, not a remote
+ *                                    server; a "reconnect" event is not meaningful.
+ *   - staleTime: 30s               — backend calls are cheap but not free; avoids
+ *                                    redundant fetches on every component mount.
+ *   - gcTime: 5min                 — keep cached data longer to prevent loading flashes
  *                                    when navigating between pages.
- *   - retry: 1                     — IPC errors are usually deterministic; one retry is enough.
+ *   - retry: 1                     — backend errors are usually deterministic;
+ *                                    one retry is sufficient.
  */
 export const queryClient = new QueryClient({
   defaultOptions: {
