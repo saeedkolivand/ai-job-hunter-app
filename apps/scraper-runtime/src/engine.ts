@@ -14,6 +14,7 @@ import { BrowserController, ScraperRegistry } from '@ajh/data';
 import type { JobPosting } from '@ajh/shared';
 
 import type { FileCredentialStore } from './credentials.js';
+import { LoginManager } from './login.js';
 import type {
   ScrapeBoardPayload,
   ScraperCatalogEntry,
@@ -31,10 +32,13 @@ export interface ScrapeResult {
 export class ScraperEngine {
   private readonly registry = new ScraperRegistry();
   private browser?: BrowserController;
+  private readonly loginManager: LoginManager;
   /** jobId → AbortController (lets the caller cancel a running job). */
   private readonly jobs = new Map<string, AbortController>();
 
-  constructor(private readonly credentials: FileCredentialStore) {}
+  constructor(private readonly credentials: FileCredentialStore) {
+    this.loginManager = new LoginManager(credentials);
+  }
 
   // ── Catalog / health ───────────────────────────────────────────────────────
 
@@ -157,6 +161,32 @@ export class ScraperEngine {
     this.credentials.set(boardId, username, password);
     this.credentials.flush();
     logger.info({ boardId }, 'credentials updated');
+  }
+
+  // ── Login window ───────────────────────────────────────────────────────────
+
+  /**
+   * Open a headed Playwright browser for the board's login flow.
+   * Streams login.status events while waiting; ends with done once resolved.
+   */
+  async openLogin(
+    boardId: string,
+    emit: (event: ScraperEvent) => void
+  ): Promise<{ connected: boolean }> {
+    const result = await this.loginManager.openLogin(boardId, (note) => {
+      emit({ kind: 'login.status', boardId, connected: false, note });
+    });
+    emit({ kind: 'login.status', boardId, connected: result.connected });
+    return result;
+  }
+
+  getBoardStatus(boardId: string): { connected: boolean } {
+    return this.loginManager.getStatus(boardId);
+  }
+
+  disconnectBoard(boardId: string): void {
+    this.loginManager.disconnect(boardId);
+    logger.info({ boardId }, 'board disconnected');
   }
 
   // ── Shutdown ───────────────────────────────────────────────────────────────

@@ -88,6 +88,35 @@ async function handleCommand(
       break;
     }
 
+    case 'open.login': {
+      const { boardId } = cmd;
+      try {
+        const result = await engine.openLogin(boardId, (event) => sendEvent(res, event));
+        sendEvent(res, { kind: 'done', jobId: `login.${boardId}`, result });
+      } catch (err) {
+        sendEvent(res, {
+          kind: 'error',
+          jobId: `login.${boardId}`,
+          message: String(err),
+        });
+      }
+      break;
+    }
+
+    case 'board.status': {
+      const { boardId } = cmd;
+      const status = engine.getBoardStatus(boardId);
+      sendEvent(res, { kind: 'done', jobId: `status.${boardId}`, result: status });
+      break;
+    }
+
+    case 'board.disconnect': {
+      const { boardId } = cmd;
+      engine.disconnectBoard(boardId);
+      sendEvent(res, { kind: 'done', jobId: `disconnect.${boardId}`, result: { success: true } });
+      break;
+    }
+
     case 'health': {
       const health: ScraperRuntimeHealth = { ...engine.health(), port: _port };
       sendEvent(res, { kind: 'health.reply', health });
