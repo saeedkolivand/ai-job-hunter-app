@@ -9,8 +9,13 @@
  *    server.ts calls directly.
  *  - Clean shutdown: close the browser and cancel running jobs on exit.
  */
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import { createLogger } from '@ajh/core';
 import {
+  ApplierRegistry,
   BrowserController,
   extractDocxFromBytes,
   extractPdfFromBytes,
@@ -21,6 +26,8 @@ import type { JobPosting } from '@ajh/shared';
 import type { FileCredentialStore } from './credentials.js';
 import { LoginManager } from './login.js';
 import type {
+  ApplyJobPayload,
+  ApplyResult,
   ScrapeBoardPayload,
   ScraperCatalogEntry,
   ScraperEvent,
@@ -36,6 +43,7 @@ export interface ScrapeResult {
 
 export class ScraperEngine {
   private readonly registry = new ScraperRegistry();
+  private readonly appliers = new ApplierRegistry();
   private browser?: BrowserController;
   private readonly loginManager: LoginManager;
   /** jobId → AbortController (lets the caller cancel a running job). */
@@ -192,6 +200,63 @@ export class ScraperEngine {
   disconnectBoard(boardId: string): void {
     this.loginManager.disconnect(boardId);
     logger.info({ boardId }, 'board disconnected');
+  }
+
+  // ── Apply flow ────────────────────────────────────────────────────────────
+
+  applierCatalog(): Array<{ id: string; displayName: string }> {
+    return this.appliers.catalog();
+  }
+
+  async applyJob(
+    payload: ApplyJobPayload,
+    jobId: string,
+    emit: (event: ScraperEvent) => void
+  ): Promise<ApplyResult> {
+    const applier = this.appliers.get(payload.board);
+    if (!applier) throw new Error(`No applier registered for board: ${payload.board}`);
+
+    const browser = await this.ensureBrowser();
+    const creds = await this.credentials.get(payload.board);
+    const statePath = this.credentials.storageStatePath(payload.board);
+
+    // Write resume bytes to a temp file if provided — appliers expect a path.
+    let resumePath: string | undefined;
+    let tempFile: string | undefined;
+    if (payload.resumeBytesBase64 && payload.resumeName) {
+      const ext = path.extname(payload.resumeName) || '.pdf';
+      tempFile = path.join(os.tmpdir(), `ajh-resume-${jobId}${ext}`);
+      fs.writeFileSync(tempFile, Buffer.from(payload.resumeBytesBase64, 'base64'));
+      resumePath = tempFile;
+    }
+
+    try {
+      const result = await applier.apply(payload.url, {
+        signal: new AbortController().signal,
+        browser: browser as never,
+        storageStatePath: statePath,
+        credentials: creds ?? null,
+        coverLetter: payload.coverLetter,
+        resumePath,
+        autoSubmit: payload.autoSubmit ?? false,
+        onProgress: (p, _stage) => emit({ kind: 'progress', jobId, p }),
+        onStep: (step) =>
+          emit({
+            kind: 'done',
+            jobId,
+            result: { type: 'step', ...step },
+          }),
+      });
+      return result;
+    } finally {
+      if (tempFile) {
+        try {
+          fs.unlinkSync(tempFile);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
   }
 
   // ── Text extraction ───────────────────────────────────────────────────────
