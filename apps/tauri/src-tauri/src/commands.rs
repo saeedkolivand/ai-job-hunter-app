@@ -217,9 +217,144 @@ pub fn jobs_retry(_app: AppHandle, _job_id: String) -> Value {
 
 // ── AI ───────────────────────────────────────────────────────────────────────
 
+/// Stream an AI generation from Ollama.
+///
+/// Calls POST <OLLAMA_HOST>/api/chat with streaming enabled.
+/// Each Ollama chunk (`{"message":{"content":"..."},"done":false}`) is
+/// immediately forwarded to the renderer as a Tauri `ai:stream` event with
+/// shape `{ jobId, delta, done }` — the same shape Electron sends over IPC.
+///
+/// Returns `{ jobId }` immediately so the renderer can subscribe to events
+/// before the first chunk arrives.
 #[tauri::command]
-pub fn ai_generate(_req: Value) -> Value {
-    json!({ "error": "AI runtime not yet available in Tauri spike" })
+pub async fn ai_generate(app: AppHandle, req: Value) -> Value {
+    let base = std::env::var("OLLAMA_HOST")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+
+    let job_id = uuid_v4();
+    app.state::<Mutex<JobTracker>>()
+        .lock()
+        .unwrap()
+        .start(&job_id, "ai.generate");
+
+    let job_id_clone = job_id.clone();
+    let app_clone = app.clone();
+
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = stream_ollama_chat(&app_clone, &base, &job_id_clone, req).await {
+            // Emit an error chunk so the renderer's onStream handler can surface it.
+            let _ = app_clone.emit(
+                "ai:stream",
+                json!({ "jobId": job_id_clone, "delta": format!("\n\nError: {e}"), "done": true }),
+            );
+            app_clone
+                .state::<Mutex<JobTracker>>()
+                .lock()
+                .unwrap()
+                .fail(&job_id_clone, e);
+        }
+    });
+
+    json!({ "jobId": job_id })
+}
+
+/// Inner streaming logic — runs in a spawned task.
+async fn stream_ollama_chat(
+    app: &AppHandle,
+    base: &str,
+    job_id: &str,
+    req: Value,
+) -> Result<(), String> {
+    let model = req
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let messages = req.get("messages").cloned().unwrap_or(json!([]));
+    let temperature = req.get("temperature").and_then(|v| v.as_f64());
+
+    let mut body = json!({
+        "model": model,
+        "messages": messages,
+        "stream": true,
+    });
+    if let Some(t) = temperature {
+        body["options"] = json!({ "temperature": t });
+    }
+
+    let mut response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300)) // 5 min — long generations
+        .build()
+        .map_err(|e| e.to_string())?
+        .post(format!("{base}/api/chat"))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Ollama unreachable: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        return Err(format!("Ollama {status}: {body_text}"));
+    }
+
+    let mut line_buf = String::new();
+
+    // response.chunk() reads the stream incrementally without needing futures-util.
+    while let Some(bytes) = response
+        .chunk()
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        line_buf.push_str(&String::from_utf8_lossy(&bytes));
+
+        // Process all complete newline-terminated lines in the buffer.
+        while let Some(nl) = line_buf.find('\n') {
+            let line = line_buf[..nl].trim().to_string();
+            line_buf = line_buf[nl + 1..].to_string();
+
+            if line.is_empty() {
+                continue;
+            }
+
+            let event: Value = match serde_json::from_str(&line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            let delta = event
+                .get("message")
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
+                .unwrap_or("");
+            let done = event
+                .get("done")
+                .and_then(|d| d.as_bool())
+                .unwrap_or(false);
+
+            let _ = app.emit(
+                "ai:stream",
+                json!({ "jobId": job_id, "delta": delta, "done": done }),
+            );
+
+            if done {
+                app.state::<Mutex<JobTracker>>()
+                    .lock()
+                    .unwrap()
+                    .complete(job_id, json!({ "done": true }));
+                return Ok(());
+            }
+        }
+    }
+
+    // Stream ended without an explicit done=true — emit final done event.
+    let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+    app.state::<Mutex<JobTracker>>()
+        .lock()
+        .unwrap()
+        .complete(job_id, json!({ "done": true }));
+
+    Ok(())
 }
 
 /// List models available in the local Ollama instance.
