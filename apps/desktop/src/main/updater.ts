@@ -67,7 +67,24 @@ export async function setupUpdater() {
     await autoUpdater.downloadUpdate();
   });
 
-  ipcMain.handle(IPC_CHANNELS.updater.install, () => {
+  ipcMain.handle(IPC_CHANNELS.updater.install, async () => {
+    // Detach our Pino logger BEFORE calling quitAndInstall.
+    // electron-updater fires internal log calls during the install handoff;
+    // if Pino's worker thread is already tearing down those writes throw
+    // "the worker is ending" which surfaces as an unhandled main-process error.
+    autoUpdater.logger = null;
+
+    // Run the graceful shutdown now so runtimes flush cleanly before the
+    // installer takes over the process. Clear the hook so before-quit (which
+    // fires again from quitAndInstall → app.quit) doesn't double-run it.
+    const shutdown = (global as { __ajh_shutdown?: () => Promise<void> }).__ajh_shutdown;
+    (global as { __ajh_shutdown?: () => Promise<void> }).__ajh_shutdown = undefined;
+    try {
+      await shutdown?.();
+    } catch {
+      /* ignore — process is exiting anyway */
+    }
+
     autoUpdater.quitAndInstall(false, true);
   });
 

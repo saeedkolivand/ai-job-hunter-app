@@ -2,6 +2,8 @@ import i18n from 'i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import { initReactI18next } from 'react-i18next';
 
+import { getClient } from '@/lib/app-client';
+
 import de from './locales/de.json';
 import en from './locales/en.json';
 
@@ -47,10 +49,13 @@ void i18n
     interpolation: { escapeValue: false },
   });
 
-// Sync renderer locale -> main process on change (one-way to keep AI locale-aware)
+// Sync renderer locale -> main process on change (one-way to keep AI locale-aware).
+// getClient() may not be ready yet if this fires during i18n init, so we swallow errors.
 i18n.on('languageChanged', (lng) => {
-  if (typeof window !== 'undefined' && window.api?.system?.setLocale) {
-    void window.api.system.setLocale(lng);
+  try {
+    void getClient().system.setLocale(lng);
+  } catch {
+    // AppClient not initialized — fired during i18n init before AppClientProvider mounts.
   }
 });
 
