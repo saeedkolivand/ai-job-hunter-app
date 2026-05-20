@@ -37,6 +37,7 @@ export function UpdateBanner() {
               backdropFilter: 'blur(16px)',
             }}
           >
+            {/* Icon */}
             {status.state === 'downloading' ? (
               <Loader2 size={14} className="shrink-0 animate-spin text-brand-soft" />
             ) : status.state === 'downloaded' ? (
@@ -45,6 +46,7 @@ export function UpdateBanner() {
               <Sparkles size={14} className="shrink-0 text-brand-soft" />
             )}
 
+            {/* Message */}
             <span className="text-xs text-foreground/85">
               {status.state === 'available' && t('updater.available', { version: status.version })}
               {status.state === 'downloading' &&
@@ -53,6 +55,7 @@ export function UpdateBanner() {
                 t('updater.downloaded', { version: status.version })}
             </span>
 
+            {/* Action button */}
             {status.state === 'available' && (
               <Button
                 onClick={() => void download()}
@@ -72,6 +75,7 @@ export function UpdateBanner() {
               </Button>
             )}
 
+            {/* Dismiss */}
             {status.state !== 'downloading' && (
               <Button
                 onClick={() => setDismissed(true)}

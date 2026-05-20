@@ -56,7 +56,8 @@ const DEEP_UI_IMPORTS = [
   '@/components/ui/TextArea',
   '@/components/ui/Toast',
   // barrel re-export is also banned — import from '@ajh/ui' directly
-  '@/components/ui',
+  // Note: '@/components/ui/UpdateBanner' is intentionally excluded (app-specific component)
+  '@/components/ui/index',
 ];
 
 // ── Renderer package boundary — main-process packages ────────────────────────
@@ -343,6 +344,7 @@ export default tseslint.config(
   // approved exception point.
   {
     files: [
+      'apps/desktop/src/main/updater.ts',
       'apps/desktop/src/renderer/lib/generate-ai.ts',
       'packages/data/src/files/pdf-adapter.ts',
     ],
