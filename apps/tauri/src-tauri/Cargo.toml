@@ -29,7 +29,7 @@ tauri-plugin-clipboard-manager = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # HTTP client for proxying scraper commands to the sidecar process.
-reqwest = { version = "0.12", features = ["json"], default-features = false }
+reqwest = { version = "0.13", features = ["json"], default-features = false }
 tokio = { version = "1", features = ["time"] }
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
