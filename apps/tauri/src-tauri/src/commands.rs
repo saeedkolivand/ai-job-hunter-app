@@ -1,22 +1,89 @@
-/// Tauri command implementations for the AJH spike.
+/// Tauri command implementations for the AJH shell.
 ///
-/// Real commands: system_health, system_get_version, system_get_platform,
-///                system_get_locale, system_open_external.
+/// Real commands: system_health/version/platform/locale/openExternal,
+///                scrape_board, scrape_url (proxy to scraper sidecar),
+///                dialog_open_files.
 ///
 /// Stub commands: everything else — they return null / empty list so the UI
-/// renders (with empty states) rather than crashing. Parity is built
-/// incrementally by replacing stubs with sidecar proxies.
+/// renders with empty states. Parity is built incrementally by replacing
+/// stubs with sidecar HTTP proxies.
+use std::sync::Mutex;
 use serde_json::{json, Value};
 use tauri::AppHandle;
+
+use crate::sidecar::ScraperSidecarState;
+
+// ── Sidecar HTTP helpers ──────────────────────────────────────────────────────
+
+/// Returns the scraper sidecar port if ready, or None.
+fn sidecar_port(app: &AppHandle) -> Option<u16> {
+    app.state::<Mutex<ScraperSidecarState>>()
+        .lock()
+        .ok()
+        .and_then(|g| g.port)
+}
+
+/// POST a ScraperCommand to the sidecar and collect SSE ScraperEvents.
+/// Forwards each event to the Tauri event bus so the renderer's onEvent /
+/// onStream handlers fire just like they do in Electron.
+async fn post_sidecar_command(
+    app: &AppHandle,
+    port: u16,
+    cmd: &Value,
+) -> Result<Value, String> {
+    let url = format!("http://127.0.0.1:{port}/command");
+
+    let response = reqwest::Client::new()
+        .post(&url)
+        .json(cmd)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let body = response.text().await.map_err(|e| e.to_string())?;
+
+    let mut last_done: Value = json!(null);
+
+    for line in body.lines() {
+        if let Some(data) = line.strip_prefix("data: ") {
+            if let Ok(event) = serde_json::from_str::<Value>(data) {
+                let kind = event.get("kind").and_then(|k| k.as_str()).unwrap_or("");
+                match kind {
+                    "done" => {
+                        last_done = event.get("result").cloned().unwrap_or(json!(null));
+                        let job_id = event.get("jobId").cloned().unwrap_or(json!(""));
+                        let _ = app.emit("jobs:event", json!({"type":"completed","jobId":job_id}));
+                    }
+                    "progress" => {
+                        let _ = app.emit("jobs:event", event.clone());
+                    }
+                    "item" => {
+                        let _ = app.emit("jobs:event", event.clone());
+                    }
+                    "error" => {
+                        let msg = event.get("message").and_then(|m| m.as_str()).unwrap_or("sidecar error");
+                        return Err(msg.to_string());
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    Ok(last_done)
+}
+
+use tauri::Manager;
 
 // ── System ──────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn system_health() -> Value {
+pub fn system_health(app: AppHandle) -> Value {
+    let scraper_ready = sidecar_port(&app).is_some();
     json!({
         "status": "ok",
         "shell": "tauri",
-        "scraper": { "mode": "sidecar", "ready": false },
+        "scraper": { "mode": "http-sidecar", "ready": scraper_ready },
         "ai": { "available": false },
         "data": { "available": false }
     })
@@ -145,13 +212,40 @@ pub fn search_hybrid(_req: Value) -> Value {
 // ── Scrape ───────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn scrape_board(_req: Value) -> Value {
-    json!({ "error": "Scraper sidecar not yet connected" })
+pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
+    let Some(port) = sidecar_port(&app) else {
+        return json!({ "error": "scraper sidecar not ready — start the scraper-runtime binary" });
+    };
+    let job_id = uuid_v4();
+    let cmd = json!({ "kind": "scrape.board", "jobId": job_id, "payload": req });
+    match post_sidecar_command(&app, port, &cmd).await {
+        Ok(result) => result,
+        Err(e) => json!({ "error": e }),
+    }
 }
 
 #[tauri::command]
-pub fn scrape_url(_req: Value) -> Value {
-    json!({ "error": "Scraper sidecar not yet connected" })
+pub async fn scrape_url(app: AppHandle, req: Value) -> Value {
+    let Some(port) = sidecar_port(&app) else {
+        return json!({ "error": "scraper sidecar not ready — start the scraper-runtime binary" });
+    };
+    let job_id = uuid_v4();
+    let url = req.get("url").and_then(|u| u.as_str()).unwrap_or("");
+    let cmd = json!({ "kind": "scrape.url", "jobId": job_id, "payload": { "url": url } });
+    match post_sidecar_command(&app, port, &cmd).await {
+        Ok(result) => result,
+        Err(e) => json!({ "error": e }),
+    }
+}
+
+fn uuid_v4() -> String {
+    // Simple random ID without pulling in uuid crate — sufficient for job IDs.
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("job-{t:x}")
 }
 
 #[tauri::command]
@@ -363,4 +457,46 @@ pub fn conversations_load_messages(_conversation_id: String) -> Value {
 #[tauri::command]
 pub fn conversations_save_message(_req: Value) -> Value {
     json!(null)
+}
+
+// ── Native dialogs ────────────────────────────────────────────────────────────
+
+/// Open a native file picker and return the selected file paths.
+/// Used by the document import flow instead of passing raw filesystem paths
+/// over IPC — the renderer receives paths it can then read via the backend.
+///
+/// Replaces the Electron `dialog.showOpenDialog` equivalent.
+#[tauri::command]
+pub async fn dialog_open_files(
+    app: AppHandle,
+    title: Option<String>,
+    filters: Option<Vec<DialogFilter>>,
+) -> Vec<String> {
+    use tauri_plugin_dialog::{DialogExt, FilePath};
+
+    let mut builder = app.dialog().file();
+    if let Some(t) = title {
+        builder = builder.set_title(&t);
+    }
+    if let Some(fs) = filters {
+        for f in fs {
+            builder = builder.add_filter(&f.name, &f.extensions.iter().map(String::as_str).collect::<Vec<_>>());
+        }
+    }
+
+    builder
+        .blocking_pick_files()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| match p {
+            FilePath::Path(pb) => pb.to_string_lossy().into_owned(),
+            FilePath::Url(u) => u.to_string(),
+        })
+        .collect()
+}
+
+#[derive(serde::Deserialize)]
+pub struct DialogFilter {
+    pub name: String,
+    pub extensions: Vec<String>,
 }

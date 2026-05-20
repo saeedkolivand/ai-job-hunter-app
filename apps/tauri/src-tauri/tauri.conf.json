@@ -39,6 +39,7 @@
     "shell": {
       "sidecar": true,
       "open": "https?://"
-    }
+    },
+    "dialog": {}
   }
 }

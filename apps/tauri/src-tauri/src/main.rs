@@ -5,20 +5,114 @@ mod commands;
 mod sidecar;
 
 use std::sync::Mutex;
+
+use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager};
+
 use sidecar::ScraperSidecarState;
+
+// ── App menu ──────────────────────────────────────────────────────────────────
+
+fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    let quit = MenuItemBuilder::with_id("quit", "Quit")
+        .accelerator("CmdOrControl+Q")
+        .build(app)?;
+    let hide = MenuItemBuilder::with_id("hide", "Hide Window")
+        .accelerator("CmdOrControl+H")
+        .build(app)?;
+    let about = MenuItemBuilder::with_id("about", "About AI Job Hunter").build(app)?;
+
+    let app_submenu = SubmenuBuilder::new(app, "AI Job Hunter")
+        .item(&about)
+        .separator()
+        .item(&hide)
+        .separator()
+        .item(&quit)
+        .build()?;
+
+    MenuBuilder::new(app).item(&app_submenu).build()
+}
+
+fn on_menu_event(app: &AppHandle, id: &str) {
+    match id {
+        "quit" => app.exit(0),
+        "hide" => {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.hide();
+            }
+        }
+        _ => {}
+    }
+}
+
+// ── System tray ───────────────────────────────────────────────────────────────
+
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    let show = MenuItemBuilder::with_id("tray_show", "Show AI Job Hunter").build(app)?;
+    let quit = MenuItemBuilder::with_id("tray_quit", "Quit").build(app)?;
+    let tray_menu = MenuBuilder::new(app).item(&show).separator().item(&quit).build()?;
+
+    TrayIconBuilder::new()
+        .menu(&tray_menu)
+        .tooltip("AI Job Hunter")
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "tray_show" => {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
+            }
+            "tray_quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            // Left-click on the tray icon shows/focuses the main window.
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let app = tray.app_handle();
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
+            }
+        })
+        .build(app)?;
+
+    Ok(())
+}
+
+// ── Entry point ───────────────────────────────────────────────────────────────
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(Mutex::new(ScraperSidecarState::default()))
         .setup(|app| {
-            // Attempt to start the scraper sidecar. Failure is non-fatal so
-            // the app opens even when the binary is absent during development.
             let handle = app.handle();
+
+            // Build and set the application menu.
+            let menu = build_app_menu(handle)?;
+            app.set_menu(menu)?;
+            app.on_menu_event(|app, event| on_menu_event(app, event.id().as_ref()));
+
+            // Build system tray.
+            if let Err(e) = build_tray(handle) {
+                eprintln!("[setup] tray build error (non-fatal): {e}");
+            }
+
+            // Attempt to start the scraper sidecar. Failure is non-fatal —
+            // scrape commands return stubs when sidecar is unavailable.
             if let Err(e) = sidecar::try_start(handle) {
                 eprintln!("[setup] sidecar start error (non-fatal): {e}");
             }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -98,6 +192,8 @@ fn main() {
             commands::conversations_get_or_create,
             commands::conversations_load_messages,
             commands::conversations_save_message,
+            // native dialogs
+            commands::dialog_open_files,
         ])
         .run(tauri::generate_context!())
         .expect("error running tauri application");

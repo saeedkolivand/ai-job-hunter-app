@@ -159,6 +159,10 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       pause: noop,
       resume: noop,
     },
+
+    dialog: {
+      openFiles: async () => [] as string[],
+    },
   };
 
   // Shallow-merge overrides at the namespace level.
