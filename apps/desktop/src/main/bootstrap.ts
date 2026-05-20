@@ -42,6 +42,8 @@ export interface AppCore {
   boardSessions: BoardSessionMap;
   /** In-process scraper runtime — owns scrapeBoard / applyJob / scrapeUrl logic. */
   scraperRuntime: InProcessScraperRuntime;
+  /** Electron-native browser controller — single source of truth for all browser automation. */
+  electronBrowser: ElectronBrowserController;
   /** Re-evaluate whether the autopilot scheduler should run. Call after create/update/remove. */
   refreshScheduler: () => Promise<void>;
   onShuttingDown?: () => Promise<void>;
@@ -242,7 +244,7 @@ export async function bootstrap(): Promise<AppCore> {
       ap,
       data.scrapers,
       data.appliers,
-      data.browser,
+      electronBrowser as never,
       autopilotStore,
       credentialsForAutopilot,
       ctx.job.id,
@@ -342,6 +344,7 @@ export async function bootstrap(): Promise<AppCore> {
     autopilotStore,
     boardSessions,
     scraperRuntime,
+    electronBrowser,
     refreshScheduler,
     bootMetrics,
   };

@@ -435,12 +435,9 @@ export function registerIpc(core: AppCore): void {
     const linkedinSessionDir = path.join(userDataDir, 'linkedin-session');
     const boardSessionsDir = path.join(userDataDir, 'board-sessions');
 
-    // Release any Playwright persistent contexts before deletion (critical on Windows).
-    try {
-      await core.data.browser.closePersistent();
-    } catch {
-      /* ignore */
-    }
+    // Electron partition directories are already cleared by sess.disconnect() above.
+    // No Playwright contexts to release — ElectronBrowserController manages sessions
+    // via Electron's built-in session API, not on-disk context directories.
 
     try {
       const boards = await fs.readdir(browserStateDir);
