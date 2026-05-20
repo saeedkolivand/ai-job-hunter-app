@@ -6,6 +6,10 @@ alwaysApply: true
 
 # Architecture Rules
 
+## Shell — always prefix commands with `rtk`
+`rtk pnpm build` · `rtk git status` · `rtk rg foo` — 60-90% token savings.
+Meta: `rtk gain` · `rtk discover`. Always Bash, never PowerShell.
+
 ## Monorepo packages
 - `packages/shared` — IPC contracts + types. No React, no Node APIs.
 - `packages/ui` — React component library. No app logic (no Zustand, no IPC).

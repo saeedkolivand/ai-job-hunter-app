@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 import { useMouseParallax } from '@/hooks/use-mouse-parallax';
+import { usePerformanceMode } from '@/store/preferences-store';
 
 /**
  * Cinematic ambient backdrop.
@@ -20,11 +21,8 @@ import { useMouseParallax } from '@/hooks/use-mouse-parallax';
  * Transform is applied directly to the DOM node — zero React re-renders.
  */
 export function CinematicBackground() {
+  const mode = usePerformanceMode();
   const { x, y } = useMouseParallax();
-
-  const orbA = { transform: `translate3d(${x * 30}px, ${y * 20}px, 0)` };
-  const orbB = { transform: `translate3d(${x * -25}px, ${y * 15}px, 0)` };
-  const orbC = { transform: `translate3d(${x * 15}px, ${y * -10}px, 0)` };
 
   // ── Lerp cursor blob ──────────────────────────────────────────────────────
   const blobRef = useRef<HTMLDivElement>(null);
@@ -35,6 +33,8 @@ export function CinematicBackground() {
   const LERP = 0.08; // 8% per frame → silky trail at 60 fps
 
   useEffect(() => {
+    // Skip RAF loop in low-memory mode — component returns null below.
+    if (mode === 'low-memory') return;
     // Seed starting position to viewport center so blob doesn't slide in from (0,0)
     if (typeof window !== 'undefined') {
       const cx = window.innerWidth / 2;
@@ -65,7 +65,15 @@ export function CinematicBackground() {
       window.removeEventListener('pointermove', onMove);
       cancelAnimationFrame(rafRef.current);
     };
-  }, []); // runs once — no stale closure risk (refs always current)
+  }, [mode]); // re-run if mode changes so RAF is cleaned up correctly
+
+  // All hooks have been called — safe to bail out now.
+  // Body is already #07060f in low-memory mode; skip all GPU layers.
+  if (mode === 'low-memory') return null;
+
+  const orbA = { transform: `translate3d(${x * 30}px, ${y * 20}px, 0)` };
+  const orbB = { transform: `translate3d(${x * -25}px, ${y * 15}px, 0)` };
+  const orbC = { transform: `translate3d(${x * 15}px, ${y * -10}px, 0)` };
 
   return (
     <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
