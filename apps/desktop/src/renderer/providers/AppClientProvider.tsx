@@ -1,7 +1,11 @@
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useMemo } from 'react';
 
-import type { AppClient } from '@/lib/app-client';
-import { _registerClient, createDesktopIpcClient, getClient } from '@/lib/app-client';
+import {
+  _registerClient,
+  type AppClient,
+  createDesktopIpcClient,
+  getClient,
+} from '@/lib/app-client';
 
 export { getClient };
 
