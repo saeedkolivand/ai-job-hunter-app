@@ -121,6 +121,9 @@ jobs:
       - name: Build Packages
         run: pnpm build:packages
 
+      - name: Sync Desktop App Version
+        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('apps/desktop/package.json'));p.version='${{ needs.determine-release.outputs.version }}';fs.writeFileSync('apps/desktop/package.json',JSON.stringify(p,null,2)+'\n');"
+
       - name: Build Desktop App
         run: pnpm --filter @ajh/desktop build
 
@@ -177,6 +180,9 @@ jobs:
       - name: Build Packages
         run: pnpm build:packages
 
+      - name: Sync Desktop App Version
+        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('apps/desktop/package.json'));p.version='${{ needs.determine-release.outputs.version }}';fs.writeFileSync('apps/desktop/package.json',JSON.stringify(p,null,2)+'\n');"
+
       - name: Build Desktop App
         run: pnpm --filter @ajh/desktop build
 
@@ -184,12 +190,6 @@ jobs:
         run: pnpm --filter @ajh/desktop package -- --mac --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload macOS Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-build
-          path: apps/desktop/release/**
 
   notify-release-success:
     name: Notify Release Success
