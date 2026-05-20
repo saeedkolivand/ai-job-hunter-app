@@ -19,7 +19,7 @@
     "@ajh/core": "workspace:*",
     "@ajh/ai": "workspace:*",
     "@lancedb/lancedb": "^0.27.2",
-    "apache-arrow": "^18.1.0",
+    "apache-arrow": "^21.1.0",
     "@seald-io/nedb": "^4.1.2",
     "axios": "^1.7.9",
     "cheerio": "^1.2.0",
