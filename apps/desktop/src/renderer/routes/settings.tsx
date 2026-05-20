@@ -3,6 +3,7 @@ import {
   ChevronRight,
   Cpu,
   FileText,
+  Gauge,
   Languages,
   Lock,
   Shield,
@@ -21,6 +22,7 @@ import { AISettingsTab } from '@/features/settings/components/AISettingsTab';
 import { JobLocationPreferences } from '@/features/settings/components/JobLocationPreferences';
 import { LanguageSelector } from '@/features/settings/components/LanguageSelector';
 import { OutputTonePreferences } from '@/features/settings/components/OutputTonePreferences';
+import { PerformancePreferences } from '@/features/settings/components/PerformancePreferences';
 import { PrivacySettingsTab } from '@/features/settings/components/PrivacySettingsTab';
 import { RemotePreferences } from '@/features/settings/components/RemotePreferences';
 import { ResumePreferences } from '@/features/settings/components/ResumePreferences';
@@ -37,7 +39,7 @@ import {
 
 export const Route = createFileRoute('/settings')({ component: SettingsPage });
 
-type SectionId = 'general' | 'ai' | 'job' | 'resume' | 'accounts' | 'privacy';
+type SectionId = 'general' | 'ai' | 'job' | 'resume' | 'accounts' | 'privacy' | 'performance';
 
 interface NavItem {
   id: SectionId;
@@ -102,6 +104,12 @@ function SettingsPage() {
           label: t('settings.sections.privacy.label'),
           icon: Shield,
           description: t('settings.sections.privacy.description'),
+        },
+        {
+          id: 'performance',
+          label: t('settings.sections.performance.label'),
+          icon: Gauge,
+          description: t('settings.sections.performance.description'),
         },
       ],
     },
@@ -200,6 +208,7 @@ function SettingsPage() {
               {activeSection === 'resume' && <ResumePreferences />}
               {activeSection === 'accounts' && <AccountsSettingsTab />}
               {activeSection === 'privacy' && <PrivacySettingsTab />}
+              {activeSection === 'performance' && <PerformancePreferences />}
             </motion.div>
           </AnimatePresence>
         </div>

@@ -217,6 +217,10 @@
       "privacy": {
         "label": "Privacy",
         "description": "Data, export, cache"
+      },
+      "performance": {
+        "label": "Performance",
+        "description": "Memory, animations, concurrency"
       }
     },
     "profile": {

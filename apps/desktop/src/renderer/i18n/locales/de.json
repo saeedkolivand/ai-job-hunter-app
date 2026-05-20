@@ -217,6 +217,10 @@
       "privacy": {
         "label": "Datenschutz",
         "description": "Daten, Export, Cache"
+      },
+      "performance": {
+        "label": "Leistung",
+        "description": "Arbeitsspeicher, Animationen, Parallelität"
       }
     },
     "profile": {
