@@ -19,19 +19,19 @@ ESLint enforces all of the below in CI. Inline suppression is banned (`noInlineC
 
 ### Zero errors before marking complete
 
-- `pnpm lint:strict` — zero ESLint errors/warnings
-- `pnpm typecheck` — zero TypeScript errors
+- `rtk pnpm lint:strict` — zero ESLint errors/warnings
+- `rtk pnpm typecheck` — zero TypeScript errors
 - No `console.log` in production code
 - No `@ts-ignore`, `@ts-expect-error`, or `// eslint-disable`
 
 ### Branch + PR workflow
 
-Never push to `main`. Branch → commit (conventional prefix) → push → `gh pr create` → CI passes → user approves.
+Never push to `main`. `rtk git checkout -b feat/name` → commit → `rtk git push -u origin <branch>` → `rtk gh pr create` → CI passes → user approves.
 
 Verify branch before starting:
 ```bash
-git fetch origin && git branch -r | grep $(git branch --show-current)
-# If gone: git checkout main && git pull origin main
+rtk git fetch origin && rtk git branch -r | grep $(git branch --show-current)
+# If gone: rtk git checkout main && rtk git pull origin main
 ```
 
 ---
@@ -66,7 +66,7 @@ Renderer → main: `window.api.*` only (via `AppClient` context → service hook
 
 **6. Package imports** — `@ajh/ui` directly, not `@/components/ui/*`. Prefer `React.ComponentProps<typeof X>`.
 
-**7. Import order** (auto-fixed by `pnpm lint:fix`) — `node:*` → external → `@ajh/*` → `@/*` → relative.
+**7. Import order** (auto-fixed by `rtk pnpm lint:fix`) — `node:*` → external → `@ajh/*` → `@/*` → relative.
 
 **8. Type imports** — `import type` for pure types. ESLint auto-fixes.
 

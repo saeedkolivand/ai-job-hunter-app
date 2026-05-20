@@ -37,7 +37,7 @@ IPC contract: `packages/shared/src/ipc/contracts.ts`.
 
 ### 0. PRs only — never push to main
 
-`git checkout -b feat/name` → commit → `git push -u origin <branch>` → `gh pr create` → wait for approval.
+`rtk git checkout -b feat/name` → commit → `rtk git push -u origin <branch>` → `rtk gh pr create` → wait for approval.
 
 ### 1. Ports & Adapters — no `window.api` in UI
 
@@ -83,7 +83,7 @@ Exception: `<input type="range|file|checkbox|radio|hidden">`.
 - Prefer `React.ComponentProps<typeof Button>` over importing named prop types
 - Only import named types from `@ajh/ui` when extending them or for non-obvious types (`ToastVariant`, `ThemeId`)
 
-### 7. Import ordering — auto-fixable, run `pnpm lint:fix`
+### 7. Import ordering — auto-fixable, run `rtk pnpm lint:fix`
 
 Groups (blank line between each): `node:*` → external → `@ajh/*` → `@/*` → relative.
 
@@ -127,8 +127,8 @@ No `useState + useEffect` for remote data. Every IPC call goes through a service
 ### 13. Stale branch check — before any work
 
 ```bash
-git fetch origin && git branch -r | grep $(git branch --show-current)
-# If gone: git checkout main && git pull origin main
+rtk git fetch origin && rtk git branch -r | grep $(git branch --show-current)
+# If gone: rtk git checkout main && rtk git pull origin main
 ```
 
 ### 14. New IPC capability checklist
@@ -142,7 +142,7 @@ git fetch origin && git branch -r | grep $(git branch --show-current)
 ### 15. Never bypass ESLint
 
 No `// eslint-disable`, no `@ts-ignore`. Add scoped overrides to `eslint.config.mjs` with a reason comment.
-`pnpm lint:strict` runs in CI with `--max-warnings 0`.
+`rtk pnpm lint:strict` runs in CI with `--max-warnings 0`.
 
 ---
 
