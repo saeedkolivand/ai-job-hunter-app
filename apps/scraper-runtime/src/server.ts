@@ -10,6 +10,8 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
+import type { CollectionName } from '@ajh/data';
+
 import type { ScraperEngine } from './engine.js';
 import type { ScraperCommand, ScraperEvent, ScraperRuntimeHealth } from './protocol.js';
 
@@ -139,6 +141,74 @@ async function handleCommand(
       try {
         const result = await engine.extractText(payload.name, payload.bytesBase64);
         sendEvent(res, { kind: 'done', jobId, result });
+      } catch (err) {
+        sendEvent(res, { kind: 'error', jobId, message: String(err) });
+      }
+      break;
+    }
+
+    case 'document.import': {
+      const { jobId, payload } = cmd;
+      try {
+        sendEvent(res, { kind: 'progress', jobId, p: 0.2 });
+        // Extract text from bytes (reuse engine's extractText).
+        const extracted = await engine.extractText(payload.name, payload.bytesBase64);
+        sendEvent(res, { kind: 'progress', jobId, p: 0.6 });
+        const doc = await engine.dataStore.importDocument(
+          payload.name,
+          extracted.text,
+          payload.locale
+        );
+        sendEvent(res, { kind: 'progress', jobId, p: 1 });
+        sendEvent(res, { kind: 'done', jobId, result: doc });
+      } catch (err) {
+        sendEvent(res, { kind: 'error', jobId, message: String(err) });
+      }
+      break;
+    }
+
+    case 'document.list': {
+      const { jobId } = cmd;
+      try {
+        const docs = await engine.dataStore.listDocuments();
+        sendEvent(res, { kind: 'done', jobId, result: docs });
+      } catch (err) {
+        sendEvent(res, { kind: 'error', jobId, message: String(err) });
+      }
+      break;
+    }
+
+    case 'document.remove': {
+      const { jobId, payload } = cmd;
+      try {
+        await engine.dataStore.removeDocument(payload.id);
+        sendEvent(res, { kind: 'done', jobId, result: { success: true } });
+      } catch (err) {
+        sendEvent(res, { kind: 'error', jobId, message: String(err) });
+      }
+      break;
+    }
+
+    case 'search.hybrid': {
+      const { jobId, payload } = cmd;
+      try {
+        const results = await engine.dataStore.hybridSearch(
+          payload.query,
+          payload.collection as CollectionName,
+          payload.topK
+        );
+        sendEvent(res, { kind: 'done', jobId, result: { items: results, total: results.length } });
+      } catch (err) {
+        sendEvent(res, { kind: 'error', jobId, message: String(err) });
+      }
+      break;
+    }
+
+    case 'match.resume': {
+      const { jobId, payload } = cmd;
+      try {
+        const scores = await engine.dataStore.matchResume(payload.resumeId, payload.jobText);
+        sendEvent(res, { kind: 'done', jobId, result: scores });
       } catch (err) {
         sendEvent(res, { kind: 'error', jobId, message: String(err) });
       }
