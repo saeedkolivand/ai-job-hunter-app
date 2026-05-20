@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { createContext, useContext, useCallback, useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { type LucideIcon, CheckCircle2, XCircle, Info, AlertTriangle, X } from 'lucide-react';
@@ -6,15 +6,20 @@ import { transition } from '../lib/motion';
 
 export type ToastVariant = 'success' | 'error' | 'info' | 'warning';
 
-interface ToastProps {
-  open: boolean;
-  onClose: () => void;
+export interface ToastItem {
+  id: string;
   message: string;
-  variant?: ToastVariant;
-  duration?: number;
+  variant: ToastVariant;
+  duration: number;
 }
 
-const VARIANTS: Record<
+interface ToastContextValue {
+  toast: (message: string, variant?: ToastVariant, duration?: number) => void;
+}
+
+const ToastContext = createContext<ToastContextValue | null>(null);
+
+const VARIANT_CFG: Record<
   ToastVariant,
   { icon: LucideIcon; iconBg: string; glow: string; ambientColor: string }
 > = {
@@ -44,64 +49,90 @@ const VARIANTS: Record<
   },
 };
 
-export function Toast({ open, onClose, message, variant = 'info', duration = 5000 }: ToastProps) {
-  const cfg = VARIANTS[variant];
+function ToastCard({ item, onClose }: { item: ToastItem; onClose: () => void }) {
+  const cfg = VARIANT_CFG[item.variant];
   const Icon = cfg.icon;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
-    if (!open || duration <= 0) return;
-    const t = setTimeout(onClose, duration);
+    if (item.duration <= 0) return;
+    const t = setTimeout(() => onCloseRef.current(), item.duration);
     return () => clearTimeout(t);
-  }, [open, duration, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id]);
 
-  return createPortal(
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          key="toast"
-          className="fixed bottom-6 right-6 z-[10000]"
-          initial={{ opacity: 0, y: 16, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 12, scale: 0.97 }}
-          transition={transition.relaxed}
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 20, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 12, scale: 0.97 }}
+      transition={transition.relaxed}
+    >
+      <div
+        className="pointer-events-none absolute -left-6 -top-6 h-24 w-24 rounded-full blur-2xl"
+        style={{ background: cfg.ambientColor }}
+      />
+      <div
+        className="toast-panel relative flex w-[420px] items-center gap-4 rounded-2xl px-4 py-4"
+        style={{
+          boxShadow: `0 16px 48px rgba(0,0,0,0.45), ${cfg.glow}, inset 0 1px 0 rgba(255,255,255,0.06)`,
+        }}
+      >
+        <div className="absolute inset-x-0 top-0 h-px rounded-t-2xl bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+        <div
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-lg ${cfg.iconBg} text-white`}
         >
-          {/* Ambient glow */}
-          <div
-            className="pointer-events-none absolute -left-6 -top-6 h-24 w-24 rounded-full blur-2xl"
-            style={{ background: cfg.ambientColor }}
-          />
+          <Icon size={24} strokeWidth={2} />
+        </div>
+        <p className="flex-1 text-[15px] font-medium leading-snug text-white/90">{item.message}</p>
+        <button
+          onClick={onClose}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/50 transition-all hover:bg-white/15 hover:text-white/80"
+        >
+          <X size={15} strokeWidth={2.5} />
+        </button>
+      </div>
+    </motion.div>
+  );
+}
 
-          {/* Panel */}
-          <div
-            className="toast-panel relative flex w-[420px] items-center gap-4 rounded-2xl px-4 py-4"
-            style={{
-              boxShadow: `0 16px 48px rgba(0,0,0,0.45), ${cfg.glow}, inset 0 1px 0 rgba(255,255,255,0.06)`,
-            }}
-          >
-            {/* Top hairline */}
-            <div className="absolute inset-x-0 top-0 h-px rounded-t-2xl bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-
-            {/* Icon */}
-            <div
-              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-lg ${cfg.iconBg} text-white`}
-            >
-              <Icon size={24} strokeWidth={2} />
-            </div>
-
-            {/* Message */}
-            <p className="flex-1 text-[15px] font-medium leading-snug text-white/90">{message}</p>
-
-            {/* Close */}
-            <button
-              onClick={onClose}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/50 transition-all hover:bg-white/15 hover:text-white/80"
-            >
-              <X size={15} strokeWidth={2.5} />
-            </button>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>,
+function Toaster({ toasts, dismiss }: { toasts: ToastItem[]; dismiss: (id: string) => void }) {
+  return createPortal(
+    <div className="fixed bottom-6 right-6 z-[var(--z-toast)] flex flex-col-reverse gap-3">
+      <AnimatePresence initial={false}>
+        {toasts.map((item) => (
+          <ToastCard key={item.id} item={item} onClose={() => dismiss(item.id)} />
+        ))}
+      </AnimatePresence>
+    </div>,
     document.body
   );
+}
+
+export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  const dismiss = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const toast = useCallback((message: string, variant: ToastVariant = 'info', duration = 5000) => {
+    const id = `${Date.now()}-${Math.random()}`;
+    setToasts((prev) => [...prev, { id, message, variant, duration }]);
+  }, []);
+
+  return (
+    <ToastContext.Provider value={{ toast }}>
+      {children}
+      <Toaster toasts={toasts} dismiss={dismiss} />
+    </ToastContext.Provider>
+  );
+}
+
+export function useToast() {
+  const ctx = useContext(ToastContext);
+  if (!ctx) throw new Error('useToast must be used within ToastProvider');
+  return ctx.toast;
 }
