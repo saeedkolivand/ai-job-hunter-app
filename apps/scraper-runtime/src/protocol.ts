@@ -36,6 +36,8 @@ export type ScraperCommand =
   | { kind: 'board.status'; boardId: string }
   | { kind: 'board.disconnect'; boardId: string }
   | { kind: 'extract.text'; jobId: string; payload: { name: string; bytesBase64: string } }
+  | { kind: 'apply.job'; jobId: string; payload: ApplyJobPayload }
+  | { kind: 'apply.catalog' }
   | { kind: 'health' }
   | { kind: 'catalog' };
 
@@ -47,6 +49,24 @@ export type ScraperEvent =
   | { kind: 'health.reply'; health: ScraperRuntimeHealth }
   | { kind: 'catalog.reply'; scrapers: ScraperCatalogEntry[] }
   | { kind: 'login.status'; boardId: string; connected: boolean; note?: string };
+
+export interface ApplyJobPayload {
+  board: string;
+  url: string;
+  coverLetter?: string;
+  /** Base64-encoded resume bytes. The sidecar writes them to a temp file. */
+  resumeBytesBase64?: string;
+  resumeName?: string;
+  autoSubmit?: boolean;
+}
+
+export interface ApplyResult {
+  ok: boolean;
+  stage: string;
+  submitted: boolean;
+  url: string;
+  note?: string;
+}
 
 export interface ScrapeBoardPayload {
   board: string;
