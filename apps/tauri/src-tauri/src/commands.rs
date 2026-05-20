@@ -672,9 +672,43 @@ pub async fn apply_catalog(app: AppHandle) -> Value {
 
 // ── Resume ───────────────────────────────────────────────────────────────────
 
+/// Extract plain text from a resume file (PDF, DOCX, TXT, MD).
+///
+/// The renderer passes `{ name: string, bytes: Uint8Array }`.
+/// Bytes are re-encoded as base64 before sending to the sidecar because the
+/// sidecar protocol is JSON-over-HTTP and binary data needs encoding.
 #[tauri::command]
-pub fn resume_extract_text(_req: Value) -> Value {
-    json!({ "error": "Resume extraction not yet available in Tauri spike" })
+pub async fn resume_extract_text(app: AppHandle, req: Value) -> Value {
+    let Some(port) = sidecar_port(&app) else {
+        return json!({ "error": "scraper sidecar not ready" });
+    };
+
+    let name = req.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+    // Bytes arrive as a JSON array of integers (Tauri serialises Uint8Array).
+    let bytes_b64 = match req.get("bytes") {
+        Some(serde_json::Value::Array(arr)) => {
+            let bytes: Vec<u8> = arr
+                .iter()
+                .filter_map(|v| v.as_u64().map(|n| n as u8))
+                .collect();
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD.encode(&bytes)
+        }
+        _ => return json!({ "error": "bytes field missing or invalid" }),
+    };
+
+    let job_id = uuid_v4();
+    let cmd = json!({
+        "kind": "extract.text",
+        "jobId": job_id,
+        "payload": { "name": name, "bytesBase64": bytes_b64 },
+    });
+
+    match post_sidecar_command(&app, port, &cmd, &job_id).await {
+        Ok(result) => result,
+        Err(e) => json!({ "error": e }),
+    }
 }
 
 // ── Support ──────────────────────────────────────────────────────────────────

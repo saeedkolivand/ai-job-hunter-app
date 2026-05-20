@@ -35,6 +35,7 @@ export type ScraperCommand =
   | { kind: 'open.login'; boardId: string }
   | { kind: 'board.status'; boardId: string }
   | { kind: 'board.disconnect'; boardId: string }
+  | { kind: 'extract.text'; jobId: string; payload: { name: string; bytesBase64: string } }
   | { kind: 'health' }
   | { kind: 'catalog' };
 
