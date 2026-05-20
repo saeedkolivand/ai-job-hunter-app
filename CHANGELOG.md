@@ -3,6 +3,12 @@
 All notable changes to AI Job Hunter are documented here.
 This project follows [Semantic Versioning](https://semver.org) and [Conventional Commits](https://www.conventionalcommits.org).
 
+## [1.0.1](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/compare/v1.0.0...v1.0.1) (2026-05-20)
+
+### 🐛 Bug Fixes
+
+* delete @ajh/ui re-export shim files from components/ui ([6d4bd51](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/6d4bd5102c8af003958a1b0207562996b24ea877))
+
 ## 1.0.0 (2026-05-20)
 
 ### ✨ Features
