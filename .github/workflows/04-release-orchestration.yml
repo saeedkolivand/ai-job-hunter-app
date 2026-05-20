@@ -30,6 +30,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Use RELEASE_TOKEN so git credentials are wired with the PAT.
+          # actions/checkout sets up the git credential helper; without this,
+          # @semantic-release/git pushes using the workflow GITHUB_TOKEN which
+          # cannot bypass the main branch ruleset on personal repos.
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
