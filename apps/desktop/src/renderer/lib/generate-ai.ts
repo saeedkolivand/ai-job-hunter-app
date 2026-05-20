@@ -26,6 +26,8 @@ import {
   validateMetadata,
 } from '@ajh/prompts/generate';
 
+import { getClient } from './app-client';
+
 export type { GenerationMeta, GenerationMode };
 export { MODES } from '@ajh/prompts/generate';
 
@@ -46,7 +48,8 @@ async function streamGenerate(
   temperature = 0.3,
   locale = 'en'
 ): Promise<string> {
-  const res = (await window.api.ai.generate({
+  const api = getClient();
+  const res = (await api.ai.generate({
     model,
     messages: [
       { role: 'system', content: system },
@@ -61,7 +64,7 @@ async function streamGenerate(
   let buffer = '';
 
   return new Promise((resolve, reject) => {
-    const off = window.api.ai.onStream((chunk: unknown) => {
+    const off = api.ai.onStream((chunk: unknown) => {
       const c = chunk as { jobId: string; delta: string; done: boolean };
       if (c.jobId !== jobId) return;
       if (c.delta) {
@@ -84,7 +87,7 @@ async function streamGenerate(
 
     const poll = setInterval(() => {
       void (async () => {
-        const job = (await window.api.jobs.get(jobId).catch(() => null)) as {
+        const job = (await api.jobs.get(jobId).catch(() => null)) as {
           status: string;
         } | null;
         if (job?.status === 'failed' || job?.status === 'cancelled') {

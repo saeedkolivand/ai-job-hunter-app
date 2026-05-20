@@ -18,6 +18,8 @@ import {
   validateAndRepair,
 } from '@ajh/prompts/analyze';
 
+import { getClient } from './app-client';
+
 export type { AnalysisResult };
 
 interface RunAnalysisOptions {
@@ -49,7 +51,8 @@ export async function runAnalysis({
   const validLocales = ['en', 'de', 'fr', 'es', 'it', 'tr', 'pt', 'ru', 'zh', 'ja', 'ko'] as const;
   const safeLocale = validLocales.includes(locale as (typeof validLocales)[number]) ? locale : 'en';
 
-  const res = (await window.api.ai.generate({
+  const api = getClient();
+  const res = (await api.ai.generate({
     model,
     messages: [
       { role: 'system', content: systemPrompt },
@@ -65,7 +68,7 @@ export async function runAnalysis({
   // Collect streamed tokens into the full response
   const full = await new Promise<string>((resolve, reject) => {
     let buffer = '';
-    const off = window.api.ai.onStream((chunk: unknown) => {
+    const off = api.ai.onStream((chunk: unknown) => {
       const c = chunk as { jobId: string; delta: string; done: boolean };
       if (c.jobId !== jobId) return;
       if (c.delta) {
@@ -92,7 +95,7 @@ export async function runAnalysis({
     const failCheck = setInterval(() => {
       void (async () => {
         try {
-          const job = (await window.api.jobs.get(jobId)) as {
+          const job = (await api.jobs.get(jobId)) as {
             status: string;
             result?: { text: string };
           } | null;
