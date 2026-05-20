@@ -30,6 +30,8 @@
 export type ScraperCommand =
   | { kind: 'scrape.board'; jobId: string; payload: ScrapeBoardPayload }
   | { kind: 'scrape.url'; jobId: string; payload: { url: string } }
+  | { kind: 'cancel'; jobId: string }
+  | { kind: 'set.credentials'; boardId: string; username: string; password: string }
   | { kind: 'health' }
   | { kind: 'catalog' };
 

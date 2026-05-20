@@ -12,6 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ajh/core": "workspace:*",
+    "@ajh/data": "workspace:*",
     "@ajh/shared": "workspace:*"
   },
   "devDependencies": {
