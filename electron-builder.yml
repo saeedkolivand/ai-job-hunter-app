@@ -33,7 +33,6 @@ win:
   icon: build/icon.ico
   target:
     - nsis
-    - portable
     - zip
 
 # linux:
@@ -50,9 +49,6 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-
-portable:
-  artifactName: '${productName}-${version}-${os}-${arch}-portable.${ext}'
 
 # Disable blockmap generation — delta updates are not needed and the
 # extra upload was causing timeout failures on the GitHub Releases API.
