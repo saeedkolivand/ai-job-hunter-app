@@ -331,7 +331,9 @@ export default tseslint.config(
     files: ['*.config.*', 'scripts/**', '**/*.config.ts'],
     rules: {
       'no-console': 'off',
+      'no-undef': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-require-imports': 'off',
       'no-restricted-imports': 'off',
       'no-restricted-syntax': 'off',
       'simple-import-sort/imports': 'off',
