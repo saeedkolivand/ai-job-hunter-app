@@ -3,6 +3,21 @@
 All notable changes to AI Job Hunter are documented here.
 This project follows [Semantic Versioning](https://semver.org) and [Conventional Commits](https://www.conventionalcommits.org).
 
+## [1.3.1](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/compare/v1.3.0...v1.3.1) (2026-05-20)
+
+### 🐛 Bug Fixes
+
+* pass release_token to actions/checkout so git credentials use the pat ([a07f48b](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/a07f48b3b8ba087ec43527def9236363f39821df))
+* stop background flashing in low-memory mode ([760faa3](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/760faa3d34b0cd699fd0b6de1e1fc55ab8fb5143)), closes [#07060](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/issues/07060)
+* use release_token pat for semantic-release to bypass main ruleset ([3057be5](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/3057be52122cfc046dcc1471878a8d649a026a20))
+
+### 📚 Documentation
+
+* add rtk prefix rule to copilot and cursor rule files, fix stale ui imports in renderer-ui.mdc ([9611a50](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/9611a50d5258cc6684405b90b63da55d99daaadf))
+* compress and de-stale all ai tool rule files ([0775d56](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/0775d5623cc18e1a74f205bc7272910afa3a9718))
+* compress copilot-instructions and cursor project.mdc ([6250cae](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/6250cae2f6e24123485de2ca7a180912c4553098))
+* explicitly require rtk prefix on every shell command in all ai rule files ([65b3679](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/65b36798a3fe9148fb72395e3ed0e5114ea51385))
+
 ## [1.3.0](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/compare/v1.2.1...v1.3.0) (2026-05-20)
 
 ### ✨ Features
