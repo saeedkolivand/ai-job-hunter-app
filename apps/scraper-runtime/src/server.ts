@@ -215,6 +215,12 @@ async function handleCommand(
       break;
     }
 
+    case 'set.performance_mode': {
+      engine.setPerformanceMode(cmd.mode);
+      sendEvent(res, { kind: 'done', jobId: 'perf', result: { mode: cmd.mode } });
+      break;
+    }
+
     case 'health': {
       const health: ScraperRuntimeHealth = { ...engine.health(), port: _port };
       sendEvent(res, { kind: 'health.reply', health });
