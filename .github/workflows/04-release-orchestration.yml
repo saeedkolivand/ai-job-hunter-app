@@ -101,14 +101,17 @@ jobs:
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build Electron Application
-        run: pnpm electron:build
+      - name: Build Packages
+        run: pnpm -r --filter=!@ajh/desktop build
+
+      - name: Build & Package Windows
+        run: pnpm --filter @ajh/desktop package -- --win
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: dist/**
+          path: apps/desktop/release/**
 
   build-macos:
     name: Build macOS Application
@@ -139,14 +142,17 @@ jobs:
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build Electron Application
-        run: pnpm electron:build
+      - name: Build Packages
+        run: pnpm -r --filter=!@ajh/desktop build
+
+      - name: Build & Package macOS
+        run: pnpm --filter @ajh/desktop package -- --mac
 
       - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos-build
-          path: dist/**
+          path: apps/desktop/release/**
 
   notify-release-success:
     name: Notify Release Success
