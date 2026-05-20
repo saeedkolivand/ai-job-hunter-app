@@ -48,6 +48,8 @@ export class ScraperEngine {
   private browser?: BrowserController;
   private readonly loginManager: LoginManager;
   readonly dataStore: DataStore;
+  /** Maximum number of concurrent scraping jobs (adjusted by performance mode). */
+  private maxConcurrentJobs = 2;
   /** jobId → AbortController (lets the caller cancel a running job). */
   private readonly jobs = new Map<string, AbortController>();
 
@@ -98,6 +100,12 @@ export class ScraperEngine {
     const scraper = this.registry.get(payload.board);
     if (!scraper) {
       throw new Error(`Unknown board: ${payload.board}`);
+    }
+
+    if (this.jobs.size >= this.maxConcurrentJobs) {
+      throw new Error(
+        `Concurrency limit reached (max ${this.maxConcurrentJobs}). Cancel a running job first.`
+      );
     }
 
     const ac = new AbortController();
@@ -178,6 +186,11 @@ export class ScraperEngine {
   cancel(jobId: string): void {
     this.jobs.get(jobId)?.abort();
     this.jobs.delete(jobId);
+  }
+
+  setPerformanceMode(mode: 'low-memory' | 'balanced' | 'performance'): void {
+    this.maxConcurrentJobs = mode === 'low-memory' ? 1 : mode === 'performance' ? 4 : 2;
+    logger.info({ mode, maxConcurrentJobs: this.maxConcurrentJobs }, 'performance mode applied');
   }
 
   setCredentials(boardId: string, username: string, password: string): void {
