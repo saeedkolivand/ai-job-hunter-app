@@ -3,6 +3,24 @@
 All notable changes to AI Job Hunter are documented here.
 This project follows [Semantic Versioning](https://semver.org) and [Conventional Commits](https://www.conventionalcommits.org).
 
+## [1.3.0](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/compare/v1.2.1...v1.3.0) (2026-05-20)
+
+### ✨ Features
+
+* add performance section to settings page ([3f9db63](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/3f9db63126a0cbc16fc11df2518665ffdb9d6f8e))
+* complete phase 3 scraper runtime abstraction boundary ([e511864](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/e511864f45b083227b525372a2d111582b3f1d89))
+* implement phase 0 baseline metrics instrumentation ([b6184d0](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/b6184d0ab9a8b4dfb57b66e946017fb56997bb4c))
+* wire low-memory visual mode — blur reduction and motion kill ([197804a](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/197804ae16b0cab71a397ea0a79e44c80eae96f0))
+
+### 🐛 Bug Fixes
+
+* prevent pino worker-ending crash on update install ([1f0acc2](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/1f0acc274281f470637e757bb4005de836fff44a))
+
+### ♻️ Refactors
+
+* complete phase 2 session cleanup — remove playwright from active runtime paths ([9f47900](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/9f479002dc4c9797e8ed8ed71019c23a2937f6f9))
+* complete phase 5 frontend portability — remove all window.api from renderer lib ([5713864](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/57138645ac2daed3cfc337b51147d55a1a95ce16))
+
 ## [1.2.1](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/compare/v1.2.0...v1.2.1) (2026-05-20)
 
 ### 🐛 Bug Fixes
