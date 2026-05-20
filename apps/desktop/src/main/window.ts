@@ -2,7 +2,17 @@ import path from 'node:path';
 
 import { BrowserWindow, clipboard, Menu, shell } from 'electron';
 
-export async function createMainWindow(): Promise<BrowserWindow> {
+export interface MainWindowOptions {
+  /** AJH_LOW_END_MODE=1 — disables vibrancy and transparency to reduce GPU load. */
+  lowEndMode?: boolean;
+}
+
+export async function createMainWindow(opts: MainWindowOptions = {}): Promise<BrowserWindow> {
+  const { lowEndMode = false } = opts;
+  // Vibrancy and transparency are expensive on integrated GPUs.
+  // Skip them in low-end mode so the compositor can take the fast path.
+  const useMacVibrancy = process.platform === 'darwin' && !lowEndMode;
+
   const win = new BrowserWindow({
     width: 1440,
     height: 920,
@@ -15,9 +25,9 @@ export async function createMainWindow(): Promise<BrowserWindow> {
         ? { color: '#00000000', symbolColor: '#cfcfdc', height: 36 }
         : undefined,
     backgroundColor: '#0a0a14', // matches design system base
-    vibrancy: process.platform === 'darwin' ? 'under-window' : undefined,
-    visualEffectState: 'active',
-    transparent: process.platform === 'darwin',
+    vibrancy: useMacVibrancy ? 'under-window' : undefined,
+    visualEffectState: useMacVibrancy ? 'active' : undefined,
+    transparent: useMacVibrancy,
     trafficLightPosition: { x: 16, y: 14 },
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),

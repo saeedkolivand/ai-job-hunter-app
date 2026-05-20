@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AI Job Hunter (Tauri Spike)",
+  "identifier": "com.ajh.tauri-spike",
+  "version": "0.1.0",
+
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5174",
+    "beforeDevCommand": "pnpm dev:frontend",
+    "beforeBuildCommand": "pnpm build:frontend"
+  },
+
+  "app": {
+    "windows": [
+      {
+        "title": "AI Job Hunter (Tauri Spike)",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true,
+        "decorations": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' tauri: asset: https://asset.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: https://asset.localhost; font-src 'self' data: asset: https://asset.localhost; connect-src 'self' http://127.0.0.1:11434 http://127.0.0.1:* ws://127.0.0.1:* tauri: ipc: http://ipc.localhost"
+    }
+  },
+
+  "bundle": {
+    "active": false,
+    "targets": "none",
+    "externalBin": ["binaries/scraper-runtime"]
+  },
+
+  "plugins": {
+    "shell": {
+      "sidecar": true,
+      "open": "https?://"
+    }
+  }
+}

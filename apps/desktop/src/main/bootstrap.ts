@@ -22,6 +22,7 @@ import type { AiGenerateRequest, BootMetrics } from '@ajh/shared';
 import { type BoardSessionMap, createBoardSessions } from './board-sessions/index.js';
 import { CredentialStore } from './credentials.js';
 import { ElectronBrowserController } from './electron-browser-controller.js';
+import { rollbackFlags } from './rollback-flags.js';
 import {
   type ApplyJobPayload,
   InProcessScraperRuntime,
@@ -70,7 +71,9 @@ export async function bootstrap(): Promise<AppCore> {
 
   const t0 = performance.now();
   const bus = new EventBus();
-  const jobs = new JobQueue(bus, { concurrency: 2 });
+  // AJH_LOW_END_MODE caps concurrency to 1 from the first job regardless of
+  // what the UI preference later sets via setPerformanceMode.
+  const jobs = new JobQueue(bus, { concurrency: rollbackFlags.lowEndMode ? 1 : 2 });
   const scheduler = new TaskScheduler();
   const runtimes = new RuntimeManager(bus);
   const state = new StateCoordinator(bus, { locale: 'en' });
@@ -92,22 +95,46 @@ export async function bootstrap(): Promise<AppCore> {
 
   const electronBrowser = new ElectronBrowserController();
 
-  // AJH_SCRAPER_MODE=in-process forces the in-process fallback (rollback switch).
-  // Default is in-process today; swap for UtilityProcessScraperRuntime in Phase 6.
-  const scraperMode = process.env.AJH_SCRAPER_MODE ?? 'in-process';
-  const scraperRuntime: ScraperRuntimeClient = new InProcessScraperRuntime(
-    data,
-    credentials,
-    electronBrowser
-  );
-  logger.info({ scraperMode }, 'scraper runtime selected');
+  // ── Scraper runtime selection ─────────────────────────────────────────────
+  // AJH_SCRAPER_MODE controls which runtime is active (rollbackFlags.scraperMode).
+  // 'in-process' is the safe default. Future phases add 'utility-process' and
+  // 'http-sidecar'; setting AJH_SCRAPER_MODE=in-process always forces the fallback.
+  const scraperRuntime: ScraperRuntimeClient = (() => {
+    switch (rollbackFlags.scraperMode) {
+      case 'utility-process':
+        logger.warn(
+          { scraperMode: rollbackFlags.scraperMode },
+          'utility-process scraper runtime not yet implemented — falling back to in-process'
+        );
+        return new InProcessScraperRuntime(data, credentials, electronBrowser);
+      case 'http-sidecar':
+        logger.warn(
+          { scraperMode: rollbackFlags.scraperMode },
+          'http-sidecar scraper runtime not yet implemented — falling back to in-process'
+        );
+        return new InProcessScraperRuntime(data, credentials, electronBrowser);
+      case 'in-process':
+      default:
+        return new InProcessScraperRuntime(data, credentials, electronBrowser);
+    }
+  })();
+  logger.info({ scraperMode: rollbackFlags.scraperMode }, 'scraper runtime selected');
+
   runtimes.register(ai);
   runtimes.register(data);
 
-  // Start data runtime eagerly — SQLite is needed immediately by autopilotStore
-  // and the scheduler. AI runtime starts lazily on first ai.generate/ai.embed job.
+  // ── Runtime startup ───────────────────────────────────────────────────────
+  // Data runtime starts eagerly — SQLite is needed immediately by autopilotStore
+  // and the scheduler.
+  //
+  // AI runtime starts lazily on first ai.generate/ai.embed job UNLESS
+  // AJH_EAGER_BOOT=1, which starts both immediately (Phase 4 rollback).
   const t2 = performance.now();
   await runtimes.start('data');
+  if (rollbackFlags.eagerBoot) {
+    logger.info('AJH_EAGER_BOOT=1 — starting AI runtime eagerly');
+    await runtimes.start('ai');
+  }
   const phDataRuntime = performance.now() - t2;
 
   // ── Register job handlers ─────────────────────────────────────────────
