@@ -5,7 +5,8 @@
   "description": "AI Job Hunter — Tauri spike shell",
   "scripts": {
     "dev": "tauri dev",
-    "build": "tauri build",
+    "build": "vite build",
+    "package": "tauri build",
     "dev:frontend": "vite --port 5174",
     "build:frontend": "vite build",
     "typecheck": "tsc --noEmit"
