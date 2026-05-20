@@ -486,6 +486,13 @@ export const IPC_CHANNELS = {
 
     resume: 'autopilot:resume',
   },
+
+  updater: {
+    check: 'updater:check',
+    download: 'updater:download',
+    install: 'updater:install',
+    onStatus: 'updater:status',
+  },
 } as const;
 
 export type IpcChannel =
