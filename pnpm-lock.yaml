@@ -201,6 +201,12 @@ importers:
 
   apps/scraper-runtime:
     dependencies:
+      '@ajh/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@ajh/data':
+        specifier: workspace:*
+        version: link:../../packages/data
       '@ajh/shared':
         specifier: workspace:*
         version: link:../../packages/shared
