@@ -210,6 +210,9 @@ importers:
       '@ajh/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      playwright:
+        specifier: ^1.60.0
+        version: 1.60.0
     devDependencies:
       '@types/node':
         specifier: ^22.0.0

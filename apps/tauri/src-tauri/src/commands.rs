@@ -554,36 +554,72 @@ pub fn credentials_remove(app: AppHandle, board_id: String) -> Value {
     }
 }
 
-// ── LinkedIn / Boards ────────────────────────────────────────────────────────
+// ── LinkedIn / Boards ─────────────────────────────────────────────────────────
+// Both sets delegate to the sidecar's open.login / board.status / board.disconnect
+// commands so the login flow runs in a headed Playwright browser.
 
-#[tauri::command]
-pub fn linkedin_connect() -> Value {
-    json!({ "status": "not_connected" })
+async fn sidecar_open_login(app: &AppHandle, board_id: &str) -> Value {
+    let Some(port) = sidecar_port(app) else {
+        return json!({ "connected": false, "error": "scraper sidecar not ready" });
+    };
+    let job_id = uuid_v4();
+    let cmd = json!({ "kind": "open.login", "boardId": board_id });
+    match post_sidecar_command(app, port, &cmd, &job_id).await {
+        Ok(result) => result,
+        Err(e) => json!({ "connected": false, "error": e }),
+    }
 }
 
-#[tauri::command]
-pub fn linkedin_disconnect() -> Value {
+async fn sidecar_board_status(app: &AppHandle, board_id: &str) -> Value {
+    let Some(port) = sidecar_port(app) else {
+        return json!({ "connected": false });
+    };
+    let job_id = uuid_v4();
+    let cmd = json!({ "kind": "board.status", "boardId": board_id });
+    match post_sidecar_command(app, port, &cmd, &job_id).await {
+        Ok(result) => result,
+        Err(_) => json!({ "connected": false }),
+    }
+}
+
+async fn sidecar_board_disconnect(app: &AppHandle, board_id: &str) -> Value {
+    let Some(port) = sidecar_port(app) else {
+        return json!(null);
+    };
+    let job_id = uuid_v4();
+    let cmd = json!({ "kind": "board.disconnect", "boardId": board_id });
+    post_sidecar_command(app, port, &cmd, &job_id).await.ok();
     json!(null)
 }
 
 #[tauri::command]
-pub fn linkedin_get_status() -> Value {
-    json!({ "status": "not_connected" })
+pub async fn linkedin_connect(app: AppHandle) -> Value {
+    sidecar_open_login(&app, "linkedin").await
 }
 
 #[tauri::command]
-pub fn boards_connect(_board_id: String) -> Value {
-    json!({ "status": "not_connected" })
+pub async fn linkedin_disconnect(app: AppHandle) -> Value {
+    sidecar_board_disconnect(&app, "linkedin").await
 }
 
 #[tauri::command]
-pub fn boards_disconnect(_board_id: String) -> Value {
-    json!(null)
+pub async fn linkedin_get_status(app: AppHandle) -> Value {
+    sidecar_board_status(&app, "linkedin").await
 }
 
 #[tauri::command]
-pub fn boards_get_status(_board_id: String) -> Value {
-    json!({ "status": "not_connected" })
+pub async fn boards_connect(app: AppHandle, board_id: String) -> Value {
+    sidecar_open_login(&app, &board_id).await
+}
+
+#[tauri::command]
+pub async fn boards_disconnect(app: AppHandle, board_id: String) -> Value {
+    sidecar_board_disconnect(&app, &board_id).await
+}
+
+#[tauri::command]
+pub async fn boards_get_status(app: AppHandle, board_id: String) -> Value {
+    sidecar_board_status(&app, &board_id).await
 }
 
 // ── Privacy ──────────────────────────────────────────────────────────────────
