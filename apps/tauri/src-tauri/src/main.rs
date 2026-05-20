@@ -1,0 +1,200 @@
+// Prevents a terminal window from appearing on Windows in release builds.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod commands;
+mod sidecar;
+
+use std::sync::Mutex;
+
+use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager};
+
+use sidecar::ScraperSidecarState;
+
+// ── App menu ──────────────────────────────────────────────────────────────────
+
+fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    let quit = MenuItemBuilder::with_id("quit", "Quit")
+        .accelerator("CmdOrControl+Q")
+        .build(app)?;
+    let hide = MenuItemBuilder::with_id("hide", "Hide Window")
+        .accelerator("CmdOrControl+H")
+        .build(app)?;
+    let about = MenuItemBuilder::with_id("about", "About AI Job Hunter").build(app)?;
+
+    let app_submenu = SubmenuBuilder::new(app, "AI Job Hunter")
+        .item(&about)
+        .separator()
+        .item(&hide)
+        .separator()
+        .item(&quit)
+        .build()?;
+
+    MenuBuilder::new(app).item(&app_submenu).build()
+}
+
+fn on_menu_event(app: &AppHandle, id: &str) {
+    match id {
+        "quit" => app.exit(0),
+        "hide" => {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.hide();
+            }
+        }
+        _ => {}
+    }
+}
+
+// ── System tray ───────────────────────────────────────────────────────────────
+
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    let show = MenuItemBuilder::with_id("tray_show", "Show AI Job Hunter").build(app)?;
+    let quit = MenuItemBuilder::with_id("tray_quit", "Quit").build(app)?;
+    let tray_menu = MenuBuilder::new(app).item(&show).separator().item(&quit).build()?;
+
+    TrayIconBuilder::new()
+        .menu(&tray_menu)
+        .tooltip("AI Job Hunter")
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "tray_show" => {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
+            }
+            "tray_quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            // Left-click on the tray icon shows/focuses the main window.
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let app = tray.app_handle();
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
+            }
+        })
+        .build(app)?;
+
+    Ok(())
+}
+
+// ── Entry point ───────────────────────────────────────────────────────────────
+
+fn main() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .manage(Mutex::new(ScraperSidecarState::default()))
+        .setup(|app| {
+            let handle = app.handle();
+
+            // Build and set the application menu.
+            let menu = build_app_menu(handle)?;
+            app.set_menu(menu)?;
+            app.on_menu_event(|app, event| on_menu_event(app, event.id().as_ref()));
+
+            // Build system tray.
+            if let Err(e) = build_tray(handle) {
+                eprintln!("[setup] tray build error (non-fatal): {e}");
+            }
+
+            // Attempt to start the scraper sidecar. Failure is non-fatal —
+            // scrape commands return stubs when sidecar is unavailable.
+            if let Err(e) = sidecar::try_start(handle) {
+                eprintln!("[setup] sidecar start error (non-fatal): {e}");
+            }
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            // system
+            commands::system_health,
+            commands::system_get_version,
+            commands::system_get_locale,
+            commands::system_set_locale,
+            commands::system_get_platform,
+            commands::system_open_external,
+            commands::system_set_performance_mode,
+            commands::system_get_metrics,
+            // jobs
+            commands::jobs_list,
+            commands::jobs_get,
+            commands::jobs_cancel,
+            commands::jobs_retry,
+            // ai
+            commands::ai_generate,
+            commands::ai_list_models,
+            commands::ai_pull_model,
+            commands::ai_unload_model,
+            commands::ai_embed,
+            // documents
+            commands::documents_list,
+            commands::documents_import,
+            commands::documents_remove,
+            // search
+            commands::search_hybrid,
+            // scrape
+            commands::scrape_board,
+            commands::scrape_url,
+            commands::scrape_persist_job,
+            commands::scrape_list_postings,
+            commands::scrape_clear_postings,
+            commands::scrape_list_interactions,
+            commands::scrape_export_data,
+            commands::scrape_import_data,
+            // match
+            commands::match_resume,
+            // credentials
+            commands::credentials_available,
+            commands::credentials_list,
+            commands::credentials_set,
+            commands::credentials_remove,
+            // linkedin / boards
+            commands::linkedin_connect,
+            commands::linkedin_disconnect,
+            commands::linkedin_get_status,
+            commands::boards_connect,
+            commands::boards_disconnect,
+            commands::boards_get_status,
+            // privacy
+            commands::privacy_sign_out_all,
+            commands::privacy_clear_interactions,
+            // apply
+            commands::apply_start,
+            commands::apply_catalog,
+            // resume
+            commands::resume_extract_text,
+            // support
+            commands::support_export_diagnostics,
+            commands::support_reload_ai_runtime,
+            commands::support_unload_all_models,
+            commands::support_reset_model_configuration,
+            commands::support_rebuild_vector_indexes,
+            commands::support_clear_embeddings_cache,
+            commands::support_reset_vector_database,
+            commands::support_clear_ocr_cache,
+            commands::support_reindex_all_documents,
+            commands::support_reset_all_sessions,
+            commands::support_clear_scraping_queue,
+            commands::support_copy_environment_details,
+            commands::support_copy_app_version,
+            commands::support_copy_system_info,
+            // conversations
+            commands::conversations_get_or_create,
+            commands::conversations_load_messages,
+            commands::conversations_save_message,
+            // native dialogs
+            commands::dialog_open_files,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error running tauri application");
+}

@@ -27,10 +27,12 @@ const api = {
     get: (jobId: string) => invoke(IPC_CHANNELS.jobs.get, { jobId }),
     cancel: (jobId: string) => invoke(IPC_CHANNELS.jobs.cancel, { jobId }),
     retry: (jobId: string) => invoke(IPC_CHANNELS.jobs.retry, { jobId }),
-    onEvent: (handler: (event: unknown) => void) => {
+    onEvent: (handler: (event: unknown) => void): (() => void) => {
       const listener = (_: unknown, event: unknown) => handler(event);
       ipcRenderer.on(IPC_CHANNELS.jobs.event, listener);
-      return () => ipcRenderer.off(IPC_CHANNELS.jobs.event, listener);
+      return () => {
+        ipcRenderer.off(IPC_CHANNELS.jobs.event, listener);
+      };
     },
   },
   ai: {
@@ -39,10 +41,12 @@ const api = {
     pullModel: (model: string) => invoke(IPC_CHANNELS.ai.pullModel, model),
     unloadModel: (model: string) => invoke(IPC_CHANNELS.ai.unloadModel, model),
     embed: (req: { text: string; model?: string }) => invoke(IPC_CHANNELS.ai.embed, req),
-    onStream: (handler: (chunk: unknown) => void) => {
+    onStream: (handler: (chunk: unknown) => void): (() => void) => {
       const listener = (_: unknown, chunk: unknown) => handler(chunk);
       ipcRenderer.on(IPC_CHANNELS.ai.stream, listener);
-      return () => ipcRenderer.off(IPC_CHANNELS.ai.stream, listener);
+      return () => {
+        ipcRenderer.off(IPC_CHANNELS.ai.stream, listener);
+      };
     },
   },
   documents: {
@@ -102,17 +106,21 @@ const api = {
     check: () => invoke(IPC_CHANNELS.updater.check),
     download: () => invoke(IPC_CHANNELS.updater.download),
     install: () => invoke(IPC_CHANNELS.updater.install),
-    onStatus: (handler: (status: unknown) => void) => {
+    onStatus: (handler: (status: unknown) => void): (() => void) => {
       const listener = (_: unknown, status: unknown) => handler(status);
       ipcRenderer.on(IPC_CHANNELS.updater.onStatus, listener);
-      return () => ipcRenderer.off(IPC_CHANNELS.updater.onStatus, listener);
+      return () => {
+        ipcRenderer.off(IPC_CHANNELS.updater.onStatus, listener);
+      };
     },
   },
   shortcuts: {
-    onCommandPalette: (handler: () => void) => {
+    onCommandPalette: (handler: () => void): (() => void) => {
       const listener = () => handler();
       ipcRenderer.on('shortcut:command-palette', listener);
-      return () => ipcRenderer.off('shortcut:command-palette', listener);
+      return () => {
+        ipcRenderer.off('shortcut:command-palette', listener);
+      };
     },
   },
   resume: {
@@ -152,6 +160,15 @@ const api = {
     run: (autopilotId: string) => invoke(IPC_CHANNELS.autopilot.run, { autopilotId }),
     pause: (autopilotId: string) => invoke(IPC_CHANNELS.autopilot.pause, { autopilotId }),
     resume: (autopilotId: string) => invoke(IPC_CHANNELS.autopilot.resume, { autopilotId }),
+  },
+  dialog: {
+    /**
+     * Open a native file picker and return the selected file paths.
+     * Use File/Blob APIs to read the content client-side rather than passing
+     * paths across IPC — this keeps the contract transport-neutral.
+     */
+    openFiles: (opts?: { title?: string; filters?: { name: string; extensions: string[] }[] }) =>
+      invoke(IPC_CHANNELS.dialog.openFiles, opts) as Promise<string[]>,
   },
 } as const;
 
