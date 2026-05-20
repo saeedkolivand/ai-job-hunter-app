@@ -402,18 +402,11 @@ export function registerIpc(core: AppCore): void {
     const linkedinSessionDir = path.join(userDataDir, 'linkedin-session');
     const boardSessionsDir = path.join(userDataDir, 'board-sessions');
 
-    // Release Chromium file locks before deletion (critical on Windows).
+    // Release any Playwright persistent contexts before deletion (critical on Windows).
     try {
       await core.data.browser.closePersistent();
     } catch {
       /* ignore */
-    }
-    for (const m of core.data.boardSessions.values()) {
-      try {
-        await m.disconnect();
-      } catch {
-        /* ignore */
-      }
     }
 
     try {

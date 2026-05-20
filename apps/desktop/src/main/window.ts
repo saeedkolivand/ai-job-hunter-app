@@ -26,9 +26,6 @@ export async function createMainWindow(): Promise<BrowserWindow> {
       nodeIntegration: false,
       webSecurity: true,
       spellcheck: true,
-      // Keep animations and GPU rendering at full quality even when window is
-      // in the background or the OS power-saver kicks in.
-      backgroundThrottling: false,
     },
   });
 

@@ -25,20 +25,20 @@ import { createMainWindow } from './window.js';
 const logger = createLogger('main');
 
 // ── GPU / rendering flags ──────────────────────────────────────────────────
-// Must be set before app.whenReady() — these ensure the cinematic background
-// (blur, backdrop-filter, CSS animations, blend modes) renders at full quality
-// in the packaged production build, matching the development experience.
+// Must be set before app.whenReady().
 //
-// electron-builder distributed apps can land on machines where Chromium's GPU
-// blocklist disables hardware acceleration. Force-enable it so filter: blur(),
-// backdrop-filter, and will-change compositing are always GPU-accelerated.
+// enable-gpu-rasterization: accelerates blur/backdrop-filter compositing.
+// enable-zero-copy:         reduces texture upload memory copies.
+// force-color-profile:      consistent sRGB across displays.
+//
+// Intentionally omitted:
+//   ignore-gpu-blocklist    — respects driver blocklist; avoids crashes on
+//                             machines with known-bad GPU drivers.
+//   disable-frame-rate-limit — restores OS/browser power-saving throttling;
+//                              reduces idle CPU and battery drain.
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
-app.commandLine.appendSwitch('ignore-gpu-blocklist');
-// Ensure consistent sRGB colour reproduction across displays.
 app.commandLine.appendSwitch('force-color-profile', 'srgb');
-// Disable frame rate throttling — keeps CSS animations smooth at all times.
-app.commandLine.appendSwitch('disable-frame-rate-limit');
 
 applySecurityDefaults();
 
