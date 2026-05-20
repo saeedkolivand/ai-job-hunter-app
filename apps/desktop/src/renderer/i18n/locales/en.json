@@ -1146,5 +1146,12 @@
         "desc": "Chat with your personal job hunting assistant. Ask questions, get advice, refine your strategy."
       }
     }
+  },
+  "updater": {
+    "available": "v{{version}} is available",
+    "downloading": "Downloading update… {{percent}}%",
+    "downloaded": "v{{version}} ready to install",
+    "downloadButton": "Download",
+    "installButton": "Restart & Install"
   }
 }

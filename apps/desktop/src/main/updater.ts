@@ -1,0 +1,77 @@
+import { BrowserWindow, ipcMain } from 'electron';
+import { IPC_CHANNELS } from '@ajh/shared';
+import { createLogger } from '@ajh/core';
+
+const logger = createLogger('updater');
+
+export type UpdateStatus =
+  | { state: 'idle' }
+  | { state: 'checking' }
+  | { state: 'available'; version: string; releaseNotes?: string }
+  | { state: 'not-available' }
+  | { state: 'downloading'; percent: number }
+  | { state: 'downloaded'; version: string }
+  | { state: 'error'; message: string };
+
+function broadcast(status: UpdateStatus) {
+  BrowserWindow.getAllWindows().forEach((win) => {
+    win.webContents.send(IPC_CHANNELS.updater.onStatus, status);
+  });
+}
+
+export async function setupUpdater() {
+  // Lazy import — electron-updater is heavy and should not load at startup
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { default: pkg } = (await import('electron-updater')) as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { autoUpdater } = pkg as { autoUpdater: any };
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.logger = logger;
+
+  autoUpdater.on('checking-for-update', () => {
+    broadcast({ state: 'checking' });
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    broadcast({
+      state: 'available',
+      version: info.version,
+      releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined,
+    });
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    broadcast({ state: 'not-available' });
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    broadcast({ state: 'downloading', percent: Math.round(progress.percent) });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    broadcast({ state: 'downloaded', version: info.version });
+  });
+
+  autoUpdater.on('error', (err: Error) => {
+    logger.error({ err }, 'auto-updater error');
+    broadcast({ state: 'error', message: err.message });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.updater.check, async () => {
+    await autoUpdater.checkForUpdates();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.updater.download, async () => {
+    await autoUpdater.downloadUpdate();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.updater.install, () => {
+    autoUpdater.quitAndInstall(false, true);
+  });
+
+  // Silent check 10 s after launch, then every 4 h
+  setTimeout(() => void autoUpdater.checkForUpdates().catch(() => {}), 10_000);
+  setInterval(() => void autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1_000);
+}

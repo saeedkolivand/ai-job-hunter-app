@@ -75,7 +75,7 @@ export function Sidebar() {
                     border: '1px solid rgba(168,85,247,0.25)',
                     boxShadow: '0 0 16px rgba(168,85,247,0.12)',
                   }}
-                  transition={transition.spring}
+                  transition={{ type: 'spring', stiffness: 600, damping: 40, mass: 0.6 }}
                 />
               )}
               <Link

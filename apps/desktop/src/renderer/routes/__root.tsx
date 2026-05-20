@@ -7,6 +7,7 @@ import { CommandPalette } from '@/components/command-palette/CommandPalette';
 import { CapabilityProvider } from '@/providers/CapabilityProvider';
 import { OnboardingWizard } from '@/features/onboarding/OnboardingWizard';
 import { ToastProvider } from '@/components/ui/Toast';
+import { UpdateBanner } from '@/components/ui/UpdateBanner';
 
 export const Route = createRootRoute({
   component: () => (
@@ -24,6 +25,7 @@ export const Route = createRootRoute({
           <StatusBar />
           <CommandPalette />
           <OnboardingWizard />
+          <UpdateBanner />
         </div>
       </CapabilityProvider>
     </ToastProvider>
