@@ -51,7 +51,7 @@
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@tailwindcss/vite": "^4.3.0",
-    "@tanstack/router-vite-plugin": "^1.167.6",
+    "@tanstack/router-vite-plugin": "^1.167.7",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
