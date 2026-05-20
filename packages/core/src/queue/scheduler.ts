@@ -35,6 +35,10 @@ export class TaskScheduler {
     this.tasks.set(id, { id, handle, cancel: () => clearTimeout(handle) });
   }
 
+  has(id: string): boolean {
+    return this.tasks.has(id);
+  }
+
   cancel(id: string): void {
     this.tasks.get(id)?.cancel();
     this.tasks.delete(id);

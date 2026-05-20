@@ -19,6 +19,7 @@ const api = {
     setLocale: (locale: string) => invoke(IPC_CHANNELS.system.setLocale, locale),
     getPlatform: () => invoke(IPC_CHANNELS.system.getPlatform),
     openExternal: (url: string) => invoke(IPC_CHANNELS.system.openExternal, url),
+    setPerformanceMode: (mode: string) => invoke(IPC_CHANNELS.system.setPerformanceMode, mode),
   },
   jobs: {
     list: () => invoke(IPC_CHANNELS.jobs.list),
