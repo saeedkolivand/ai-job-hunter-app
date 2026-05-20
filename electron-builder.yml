@@ -55,4 +55,5 @@ publish:
   provider: github
   owner: saeedkolivand
   repo: ai-job-hunter-assistant-app
+  releaseType: release
 npmRebuild: true
