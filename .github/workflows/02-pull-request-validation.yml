@@ -101,6 +101,9 @@ jobs:
           restore-keys: turbo-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:packages
+      # Primary: Tauri frontend build (Vite — no Rust toolchain needed in PR check)
+      - run: pnpm --filter @ajh/tauri build
+      # Legacy: Electron build — kept to catch regressions during transition
       - run: pnpm --filter @ajh/desktop build
 
   notify:

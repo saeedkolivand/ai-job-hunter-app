@@ -17,21 +17,31 @@ Rules enforced by ESLint, TypeScript, and CI — violations block commits and fa
 
 ## Architecture
 
-Local-first Electron desktop app in a pnpm monorepo.
+Local-first desktop app in a pnpm monorepo. **Tauri is the production shell.**
+Electron remains as a legacy shell during the transition cycle.
 
 ```
-packages/shared    ← IPC contracts, Zod schemas, shared types (no UI, no Node)
-packages/ui        ← React component library + design system (no app logic)
-packages/prompts   ← AI prompt templates (pure TS, zero deps)
-packages/core      ← EventBus, JobQueue, Logger
-packages/ai        ← Ollama client + AI runtime
-packages/data      ← DB, scraping, matching, files
-packages/workers   ← Worker thread pool
-apps/desktop       ← Electron app (main + preload + renderer)
+packages/shared       ← IPC contracts, Zod schemas, shared types (no UI, no Node)
+packages/ui           ← React component library + design system (no app logic)
+packages/prompts      ← AI prompt templates (pure TS, zero deps)
+packages/core         ← EventBus, JobQueue, Logger
+packages/ai           ← Ollama client + AI runtime
+packages/data         ← DB, scraping, matching, files
+packages/workers      ← Worker thread pool
+apps/tauri            ← Tauri app (production shell — Rust + React via sidecar)
+apps/desktop          ← Electron app (legacy — keep for one release cycle)
+apps/scraper-runtime  ← Node.js HTTP sidecar (scraping, login, documents, AI)
 ```
 
-Renderer → main communication: `window.api.*` only (IPC bridge via `AppClient` context).
+Renderer → shell communication: `AppClient` context only.
+
+- **Tauri (default):** `createTauriInvokeClient()` in `apps/tauri/src/tauri-client.ts`
+- **Electron (legacy):** `createDesktopIpcClient()` → `window.api.*`
+
 IPC contract: `packages/shared/src/ipc/contracts.ts`.
+
+**Default dev:** `pnpm dev` → Tauri app.
+**Electron legacy:** `pnpm dev:electron` → Electron app.
 
 ---
 
@@ -150,19 +160,24 @@ No `// eslint-disable`, no `@ts-ignore`. Add scoped overrides to `eslint.config.
 
 ## Quick Reference
 
-| What           | Where                                                       |
-| -------------- | ----------------------------------------------------------- |
-| IPC contract   | `packages/shared/src/ipc/contracts.ts`                      |
-| Service hooks  | `apps/desktop/src/renderer/services/`                       |
-| UI package     | `packages/ui/src/index.ts` → `@ajh/ui`                      |
-| Motion tokens  | `packages/ui/src/lib/motion.ts` (import via `@/lib/motion`) |
-| State machines | `apps/desktop/src/renderer/lib/machines/`                   |
-| Design tokens  | `packages/ui/src/css/tokens.css`                            |
-| i18n wrapper   | `apps/desktop/src/renderer/lib/i18n.ts`                     |
-| Architecture   | `docs/ARCHITECTURE.md`                                      |
-| Patterns       | `docs/PATTERNS.md`                                          |
-| Design system  | `docs/DESIGN_SYSTEM.md`                                     |
-| Dev setup      | `docs/DEVELOPMENT.md`                                       |
+| What                   | Where                                                       |
+| ---------------------- | ----------------------------------------------------------- |
+| IPC contract           | `packages/shared/src/ipc/contracts.ts`                      |
+| Tauri commands         | `apps/tauri/src-tauri/src/commands.rs`                      |
+| Tauri client (TS)      | `apps/tauri/src/tauri-client.ts`                            |
+| Sidecar entry          | `apps/scraper-runtime/src/index.ts`                         |
+| Sidecar protocol       | `apps/scraper-runtime/src/protocol.ts`                      |
+| Service hooks          | `apps/desktop/src/renderer/services/`                       |
+| UI package             | `packages/ui/src/index.ts` → `@ajh/ui`                      |
+| Motion tokens          | `packages/ui/src/lib/motion.ts` (import via `@/lib/motion`) |
+| State machines         | `apps/desktop/src/renderer/lib/machines/`                   |
+| Design tokens          | `packages/ui/src/css/tokens.css`                            |
+| i18n wrapper           | `apps/desktop/src/renderer/lib/i18n.ts`                     |
+| Architecture status    | `docs/ARCHITECTURE_STATUS.md`                               |
+| Architecture (general) | `docs/ARCHITECTURE.md`                                      |
+| Patterns               | `docs/PATTERNS.md`                                          |
+| Design system          | `docs/DESIGN_SYSTEM.md`                                     |
+| Dev setup              | `docs/DEVELOPMENT.md`                                       |
 
 ## Release Pipeline
 

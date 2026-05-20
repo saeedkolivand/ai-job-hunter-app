@@ -11,10 +11,12 @@
     "pnpm": ">=9.0.0"
   },
   "scripts": {
-    "dev": "pnpm build && pnpm --filter @ajh/desktop dev",
+    "dev": "pnpm build:packages && pnpm --filter @ajh/tauri dev",
+    "dev:electron": "pnpm build && pnpm --filter @ajh/desktop dev",
     "build": "turbo build",
-    "build:packages": "turbo build --filter=!@ajh/desktop",
-    "package": "pnpm build && pnpm --filter @ajh/desktop package",
+    "build:packages": "turbo build --filter=!@ajh/desktop --filter=!@ajh/tauri",
+    "package": "pnpm build:packages && pnpm --filter @ajh/tauri package",
+    "package:electron": "pnpm build && pnpm --filter @ajh/desktop package",
     "typecheck": "turbo typecheck",
     "lint": "eslint .",
     "lint:strict": "eslint . --max-warnings 0",
