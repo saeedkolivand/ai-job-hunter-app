@@ -77,13 +77,16 @@ export async function bootstrap(): Promise<AppCore> {
   runtimes.register(ai);
   runtimes.register(data);
 
-  await runtimes.start();
+  // Start data runtime eagerly — SQLite is needed immediately by autopilotStore
+  // and the scheduler. AI runtime starts lazily on first ai.generate/ai.embed job.
+  await runtimes.start('data');
 
   // ── Register job handlers ─────────────────────────────────────────────
 
   // AI generation: streams deltas back over the EventBus → renderer subscribes
   // via window.api.ai.onStream (IPC_CHANNELS.ai.stream).
   jobs.register('ai.generate', async (ctx) => {
+    await runtimes.start('ai');
     const req = ctx.job.payload as AiGenerateRequest;
     const client = ai.getClient();
     let full = '';
@@ -111,6 +114,7 @@ export async function bootstrap(): Promise<AppCore> {
   });
 
   jobs.register('ai.embed', async (ctx) => {
+    await runtimes.start('ai');
     const { text, model } = ctx.job.payload as { text: string; model?: string };
     const client = ai.getClient();
     const m = model ?? 'nomic-embed-text';

@@ -29,6 +29,7 @@ export class DataRuntime implements Runtime {
   private readonly logger = createLogger('runtime.data');
   private dbHandle?: Db;
   private vectors?: VectorStore;
+  private vectorsReady = false;
   readonly scrapers = new ScraperRegistry();
   readonly appliers = new ApplierRegistry();
   readonly matching = new MatchingEngine();
@@ -44,11 +45,11 @@ export class DataRuntime implements Runtime {
     private readonly opts: DataRuntimeOptions
   ) {}
 
+  // LanceDB is intentionally omitted here — it opens lazily on first
+  // ensureVectors() call so startup does not pay the vector store open cost.
   async start(): Promise<void> {
     await mkdir(this.opts.userDataDir, { recursive: true });
     this.dbHandle = createDb(path.join(this.opts.userDataDir, 'app.db')).db;
-    this.vectors = new VectorStore(path.join(this.opts.userDataDir, 'lancedb'));
-    await this.vectors.open();
     this.logger.info(
       {
         userDataDir: this.opts.userDataDir,
@@ -62,14 +63,16 @@ export class DataRuntime implements Runtime {
   async stop(): Promise<void> {
     await this.browser.close();
     await this.vectors?.close();
+    this.vectors = undefined;
+    this.vectorsReady = false;
     this.dbHandle = undefined;
   }
 
   async health(): Promise<Record<string, unknown>> {
     return {
-      ready: !!this.dbHandle && !!this.vectors,
+      ready: !!this.dbHandle,
       sqlite: !!this.dbHandle,
-      vector: !!this.vectors,
+      vector: this.vectorsReady,
       browser: this.browser.isOpen(),
       scrapers: this.scrapers.catalog().length,
     };
@@ -80,8 +83,23 @@ export class DataRuntime implements Runtime {
     return this.dbHandle;
   }
 
+  /** Opens LanceDB on first call; subsequent calls are instant. */
+  async ensureVectors(): Promise<VectorStore> {
+    if (!this.vectors) {
+      this.vectors = new VectorStore(path.join(this.opts.userDataDir, 'lancedb'));
+      await this.vectors.open();
+      this.vectorsReady = true;
+      this.logger.info(
+        { path: path.join(this.opts.userDataDir, 'lancedb') },
+        'vector store opened'
+      );
+    }
+    return this.vectors;
+  }
+
+  /** Returns the vector store if already open, throws otherwise. */
   vectorStore(): VectorStore {
-    if (!this.vectors) throw new Error('DataRuntime not started');
+    if (!this.vectors) throw new Error('VectorStore not open — call ensureVectors() first');
     return this.vectors;
   }
 }
