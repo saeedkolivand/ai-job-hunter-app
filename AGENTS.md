@@ -46,7 +46,7 @@ IPC contract: `packages/shared/src/ipc/contracts.ts`.
 
 **6. Imports** — `@ajh/ui` directly, not `@/components/ui/*`. Prefer `React.ComponentProps<typeof X>`.
 
-**7. Import order** — `node:*` → external → `@ajh/*` → `@/*` → relative. Run `pnpm lint:fix`.
+**7. Import order** — `node:*` → external → `@ajh/*` → `@/*` → relative. Run `rtk pnpm lint:fix`.
 
 **8. Type imports** — always `import type` for pure types. ESLint auto-fixes.
 
@@ -62,9 +62,9 @@ IPC contract: `packages/shared/src/ipc/contracts.ts`.
 
 ## PR workflow
 
-Never push to `main`. Always: branch → commit → push → `gh pr create` → wait for approval.
-Before starting: `git fetch origin && git branch -r | grep $(git branch --show-current)`.
-If branch is gone, switch to main: `git checkout main && git pull origin main`.
+Never push to `main`. Always: `rtk git checkout -b feat/name` → commit → `rtk git push -u origin <branch>` → `rtk gh pr create` → wait for approval.
+Before starting: `rtk git fetch origin && rtk git branch -r | grep $(git branch --show-current)`.
+If branch is gone: `rtk git checkout main && rtk git pull origin main`.
 
 ## New IPC capability
 

@@ -29,7 +29,7 @@ Exception: `<input type="range|file|checkbox|radio|hidden">`.
 
 **6. Imports** — `@ajh/ui` directly, not `@/components/ui/*`. Prefer `React.ComponentProps<typeof X>`.
 
-**7. Import order** (auto-fixed by `pnpm lint:fix`) — `node:*` → external → `@ajh/*` → `@/*` → relative.
+**7. Import order** (auto-fixed by `rtk pnpm lint:fix`) — `node:*` → external → `@ajh/*` → `@/*` → relative.
 
 **8. Type imports** — always `import type` for pure types. ESLint auto-fixes.
 
@@ -43,7 +43,7 @@ Exception: `<input type="range|file|checkbox|radio|hidden">`.
 
 ## Branch + PR workflow
 
-Never push to `main`. Branch → commit (conventional prefix) → push → `gh pr create` → CI passes → user approves.
+Never push to `main`. `rtk git checkout -b feat/name` → commit → `rtk git push -u origin <branch>` → `rtk gh pr create` → CI passes → user approves.
 Before starting: `rtk git fetch origin && rtk git branch -r | grep $(git branch --show-current)`.
 If branch gone: `rtk git checkout main && rtk git pull origin main`.
 
