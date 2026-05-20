@@ -30,6 +30,27 @@ release-artifacts/
 *.snap
 *.pkg
 
+# ── Tauri / Rust ───────────────────────────────────────────────────────────────
+target/
+src-tauri/target/
+
+# Tauri build artifacts (all platforms)
+apps/tauri/src-tauri/target/
+apps/tauri/src-tauri/gen/
+apps/tauri/dist/
+
+# Cargo lockfile for the Tauri spike shell (not a library — lock is dev-only)
+apps/tauri/src-tauri/Cargo.lock
+
+# Tauri bundle outputs
+*.msi
+*.nsis
+*.AppImage.tar.gz
+
+# Minisign key files — NEVER commit private keys
+*.key
+*.key.pub
+
 # ── Logs ───────────────────────────────────────────────────────────────────────
 *.log
 *.log.*
