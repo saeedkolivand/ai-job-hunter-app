@@ -1,10 +1,10 @@
 /**
- * LinkedIn — uses HTTP API for scraping, Playwright ONLY for authentication.
+ * LinkedIn — uses HTTP API for scraping, Electron session for authentication.
  *
  * Architecture:
- *   - Authentication: Playwright via BoardSessionManager (user logs in once)
+ *   - Authentication: PersistentBoardSession (Electron partition) — user logs in once
  *   - Scraping: HTTP requests via LinkedInJobsApiClient (no browser)
- *   - Session: Cookies extracted from Playwright and reused for HTTP requests
+ *   - Session: Cookies exported to state.json by PersistentBoardSession, read here
  *
  * APIs used:
  *   - Guest API (no auth): /jobs-guest/jobs/api/seeMoreJobPostings/search

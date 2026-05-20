@@ -87,6 +87,19 @@ export function registerIpc(core: AppCore): void {
     await shell.openExternal(url);
   });
 
+  handle(
+    IPC_CHANNELS.system.setPerformanceMode,
+    z.enum(['low-memory', 'balanced', 'performance']),
+    async (mode) => {
+      const concurrency = mode === 'low-memory' ? 1 : mode === 'performance' ? 4 : 2;
+      const idleUnloadMs =
+        mode === 'low-memory' ? 3 * 60_000 : mode === 'performance' ? 30 * 60_000 : 10 * 60_000;
+      core.jobs.setConcurrency(concurrency);
+      core.ai.setIdleUnloadMs(idleUnloadMs);
+      logger.info({ mode, concurrency, idleUnloadMs }, 'performance mode applied');
+    }
+  );
+
   // ── jobs ────────────────────────────────────────────────────────────────
   handle(IPC_CHANNELS.jobs.list, undefined, async () => core.jobs.list());
   handle(IPC_CHANNELS.jobs.get, JobIdSchema, async ({ jobId }) => core.jobs.get(jobId) ?? null);
@@ -565,19 +578,24 @@ export function registerIpc(core: AppCore): void {
   });
 
   handle(IPC_CHANNELS.autopilot.create, AutopilotCreateSchema, async (req) => {
-    return core.autopilotStore.create(req);
+    const ap = await core.autopilotStore.create(req);
+    void core.refreshScheduler();
+    return ap;
   });
 
   handle(
     IPC_CHANNELS.autopilot.update,
     AutopilotUpdateSchema.extend({ autopilotId: z.string().min(1) }),
     async ({ autopilotId, ...patch }) => {
-      return core.autopilotStore.update(autopilotId, patch);
+      const ap = await core.autopilotStore.update(autopilotId, patch);
+      void core.refreshScheduler();
+      return ap;
     }
   );
 
   handle(IPC_CHANNELS.autopilot.remove, AutopilotIdSchema, async ({ autopilotId }) => {
     await core.autopilotStore.remove(autopilotId);
+    void core.refreshScheduler();
   });
 
   handle(IPC_CHANNELS.autopilot.run, AutopilotIdSchema, async ({ autopilotId }) => {

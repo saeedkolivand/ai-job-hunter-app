@@ -47,6 +47,8 @@ export interface IpcContract {
     getPlatform(): Promise<string>;
 
     openExternal(url: string): Promise<void>;
+
+    setPerformanceMode(mode: 'low-memory' | 'balanced' | 'performance'): Promise<void>;
   };
 
   jobs: {
@@ -340,6 +342,8 @@ export const IPC_CHANNELS = {
     getPlatform: 'system:getPlatform',
 
     openExternal: 'system:openExternal',
+
+    setPerformanceMode: 'system:setPerformanceMode',
   },
 
   jobs: {

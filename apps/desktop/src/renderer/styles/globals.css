@@ -25,6 +25,16 @@ body {
   overflow: hidden;
 }
 
+/* ── Low-memory mode ─────────────────────────────────────────────────────── */
+/* Reduces GPU-heavy effects when the user selects Low Memory performance mode. */
+html[data-performance-mode='low-memory'] * {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}
+html[data-performance-mode='low-memory'] body {
+  background: #07060f;
+}
+
 /* ── Electron drag regions ───────────────────────────────────────────────── */
 .app-drag {
   -webkit-app-region: drag;

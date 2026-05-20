@@ -27,7 +27,7 @@ export class AiRuntime implements Runtime {
   private readonly logger = createLogger('runtime.ai');
   private readonly client: OllamaClient;
   private readonly loaded = new Map<string, ModelInfo>();
-  private readonly idleUnloadMs: number;
+  private idleUnloadMs: number;
   private idleTimer?: ReturnType<typeof setInterval>;
 
   constructor(
@@ -36,6 +36,10 @@ export class AiRuntime implements Runtime {
   ) {
     this.client = new OllamaClient({ ...(opts.host ? { host: opts.host } : {}) });
     this.idleUnloadMs = opts.idleUnloadMs ?? 10 * 60_000;
+  }
+
+  setIdleUnloadMs(ms: number): void {
+    this.idleUnloadMs = Math.max(60_000, ms);
   }
 
   async start(): Promise<void> {
