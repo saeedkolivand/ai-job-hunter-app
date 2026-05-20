@@ -19,7 +19,7 @@ export { TextArea, type TextAreaProps } from './components/TextArea';
 export { ConfirmModal } from './components/ConfirmModal';
 export { GlassOverlay } from './components/GlassOverlay';
 export { ModalShell, type ModalShellProps } from './components/ModalShell';
-export { Toast, type ToastVariant } from './components/Toast';
+export { ToastProvider, useToast, type ToastVariant, type ToastItem } from './components/Toast';
 
 // ── Feedback States ───────────────────────────────────────────────────────
 export { EmptyState } from './components/EmptyState';
@@ -27,7 +27,12 @@ export { ErrorBoundary } from './components/ErrorBoundary';
 export { ErrorState } from './components/ErrorState';
 export { Skeleton, CardSkeleton, RowSkeleton } from './components/LoadingSkeleton';
 
+// ── Content Rendering ─────────────────────────────────────────────────────
+export { MarkdownMessage } from './components/MarkdownMessage';
+export { StreamingText } from './components/StreamingText';
+
 // ── Composition Helpers ───────────────────────────────────────────────────
+export { OptionTile } from './components/OptionTile';
 export { SettingsSection } from './components/SettingsSection';
 
 // ── Hooks ─────────────────────────────────────────────────────────────────
