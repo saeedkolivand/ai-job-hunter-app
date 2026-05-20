@@ -27,6 +27,20 @@ The IPC contract lives in `packages/shared/src/ipc/contracts.ts`.
 
 ## Rules You Must Follow
 
+### 0. Always open a PR — never push directly to main
+
+**Never push code directly to `main`.** All changes must go through a pull request:
+
+1. Create a feature branch: `git checkout -b feat/your-feature-name`
+2. Commit your changes to that branch
+3. Push the branch: `git push -u origin <branch>`
+4. Open a PR with `gh pr create` — always include a summary and test plan
+5. Wait for user approval before merging
+
+This applies to every change, no matter how small. Direct pushes to `main` are not allowed.
+
+---
+
 ### 1. Ports & Adapters — never call window.api directly in UI
 
 **❌ Wrong — direct IPC in a component or route:**
