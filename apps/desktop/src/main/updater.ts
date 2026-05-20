@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron';
+import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-updater';
 
 import { createLogger } from '@ajh/core';
 import { IPC_CHANNELS } from '@ajh/shared';
@@ -33,7 +34,7 @@ export async function setupUpdater() {
     broadcast({ state: 'checking' });
   });
 
-  autoUpdater.on('update-available', (info) => {
+  autoUpdater.on('update-available', (info: UpdateInfo) => {
     broadcast({
       state: 'available',
       version: info.version,
@@ -45,11 +46,11 @@ export async function setupUpdater() {
     broadcast({ state: 'not-available' });
   });
 
-  autoUpdater.on('download-progress', (progress) => {
+  autoUpdater.on('download-progress', (progress: ProgressInfo) => {
     broadcast({ state: 'downloading', percent: Math.round(progress.percent) });
   });
 
-  autoUpdater.on('update-downloaded', (info) => {
+  autoUpdater.on('update-downloaded', (info: UpdateDownloadedEvent) => {
     broadcast({ state: 'downloaded', version: info.version });
   });
 
