@@ -9,69 +9,113 @@ concurrency:
   group: pr-validation-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+# Shared setup is expressed as a reusable step anchor via env + cache key.
+# Each job installs deps and builds packages independently so they can run
+# in parallel without a separate setup job adding latency.
+
 jobs:
-  validate:
-    name: Validate Pull Request
-
+  lint:
+    name: Lint & Format
     runs-on: ubuntu-latest
-
-    timeout-minutes: 20
-
+    timeout-minutes: 10
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
         with:
           version: 11.1.3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
-
-      - name: Restore Turbo Cache
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ github.sha }}
           restore-keys: turbo-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:packages
+      - run: pnpm lint
+      - run: pnpm format:check
 
-      - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:packages
+      - run: pnpm typecheck
 
-      - name: Build Dependency Packages
-        run: pnpm build:packages
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:packages
+      - run: pnpm test
 
-      - name: Run ESLint
-        run: pnpm lint
+  build:
+    name: Build Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:packages
+      - run: pnpm --filter @ajh/desktop build
 
-      - name: Run TypeScript Check
-        run: pnpm typecheck
-
-      - name: Run Unit Tests
-        run: pnpm test
-
-      - name: Verify Production Build
-        run: pnpm --filter @ajh/desktop build
-
-      - name: Notify Discord Failure
-        if: failure()
-        uses: sarisia/actions-status-discord@v1
+  notify:
+    name: Notify Failure
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, tests, build]
+    if: failure()
+    steps:
+      - uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
           title: 'Pull Request Validation Failed'
           description: |
-            Pull request validation failed.
+            PR #${{ github.event.pull_request.number }} failed validation.
 
-            PR:
-            #${{ github.event.pull_request.number }}
-
-            Repository:
-            ${{ github.repository }}
-
-            Workflow:
-            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Repository: ${{ github.repository }}
+            Workflow: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
           color: 0xED4245
