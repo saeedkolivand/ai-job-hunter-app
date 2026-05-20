@@ -117,6 +117,23 @@ async function handleCommand(
       break;
     }
 
+    case 'apply.job': {
+      const { jobId, payload } = cmd;
+      try {
+        const result = await engine.applyJob(payload, jobId, (event) => sendEvent(res, event));
+        sendEvent(res, { kind: 'done', jobId, result });
+      } catch (err) {
+        sendEvent(res, { kind: 'error', jobId, message: String(err) });
+      }
+      break;
+    }
+
+    case 'apply.catalog': {
+      const catalog = engine.applierCatalog();
+      sendEvent(res, { kind: 'done', jobId: 'apply.catalog', result: catalog });
+      break;
+    }
+
     case 'extract.text': {
       const { jobId, payload } = cmd;
       try {
