@@ -1,20 +1,40 @@
-export { ActionTile } from './ActionTile';
-export { Button, type ButtonProps } from './Button';
-export { ConfirmModal } from './ConfirmModal';
-export { EmptyState } from './EmptyState';
-export { ErrorBoundary } from './ErrorBoundary';
-export { ErrorState } from './ErrorState';
-export { GlassCard, type GlassCardProps } from './GlassCard';
-export { GlassOverlay } from './GlassOverlay';
-export { IconBadge, type IconBadgeProps } from './IconBadge';
-export { IconText } from './IconText';
-export { Input, type InputProps } from './Input';
-export { Skeleton, CardSkeleton, RowSkeleton } from './LoadingSkeleton';
-export { ModalShell, type ModalShellProps } from './ModalShell';
-export { OptionTile } from './OptionTile';
-export { SectionHeader } from './SectionHeader';
-export { SectionLabel } from './SectionLabel';
-export { SelectDropdown } from './SelectDropdown';
-export { SettingsSection } from './SettingsSection';
-export { TextArea, type TextAreaProps } from './TextArea';
-export { Toast, type ToastVariant } from './Toast';
+// All shared UI primitives live in @ajh/ui.
+// This barrel re-exports them so existing @/components/ui/* imports keep working.
+export {
+  ActionTile,
+  Button,
+  type ButtonProps,
+  CardSkeleton,
+  ConfirmModal,
+  EmptyState,
+  ErrorBoundary,
+  ErrorState,
+  GlassCard,
+  type GlassCardProps,
+  GlassOverlay,
+  IconBadge,
+  type IconBadgeProps,
+  IconText,
+  Input,
+  type InputProps,
+  MarkdownMessage,
+  ModalShell,
+  type ModalShellProps,
+  OptionTile,
+  RowSkeleton,
+  SectionHeader,
+  SectionLabel,
+  SelectDropdown,
+  SettingsSection,
+  Skeleton,
+  StreamingText,
+  TextArea,
+  type TextAreaProps,
+  ToastProvider,
+  useToast,
+  type ToastVariant,
+  type ToastItem,
+} from '@ajh/ui';
+
+// App-specific components (IPC/updater — cannot live in packages/ui)
+export { UpdateBanner } from './UpdateBanner';

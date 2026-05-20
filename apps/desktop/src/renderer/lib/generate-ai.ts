@@ -484,7 +484,6 @@ function mdRunsDocx(
   emphasisColor?: string
 ) {
   // Dynamic import wrapper — called inside async functions only
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docx has complex ESM types that are difficult to type statically
   type TR = any;
   const segs = parseInlineMd(text);
   // We return a factory function so TextRun can be imported once at call site
@@ -513,7 +512,6 @@ async function buildResumeDocx(text: string, meta: GenerationMeta | undefined, t
   const PAGE_W = convertInchesToTwip(6.27);
 
   const parsed = parseDocument(text);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const children: any[] = [];
 
   // Section header border config
@@ -741,7 +739,6 @@ async function buildCoverLetterDocx(
   const { Document, Paragraph, TextRun, BorderStyle, convertInchesToTwip } = await import('docx');
   const F = 'Calibri';
   const PT = (pt: number) => Math.round(pt * 2);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const children: any[] = [];
 
   const lines = text.split('\n').map((l) => l.trim());
