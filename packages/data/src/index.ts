@@ -14,7 +14,6 @@ export { type CollectionName, COLLECTIONS } from './vector/collections.js';
 export { VectorStore } from './vector/lancedb.js';
 
 // LinkedIn Services
-export { LinkedInAuthManager } from './services/linkedin/auth/manager.js';
 export { LinkedInHttpClient } from './services/linkedin/client/http-client.js';
 export { linkedinRateLimiter, RateLimiter } from './services/linkedin/client/rate-limiter.js';
 export {
@@ -34,4 +33,3 @@ export {
   type ProviderContext,
   type ProviderSearchInput,
 } from './services/providers/base.js';
-export { LinkedInProvider } from './services/providers/linkedin-provider.js';
