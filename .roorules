@@ -1,0 +1,161 @@
+# AI Job Hunter — Roo Rules
+
+Local-first Electron desktop app. pnpm monorepo. React 19 + TypeScript strict.
+ESLint `--max-warnings 0` in CI — every warning is a build failure.
+
+---
+
+## INVIOLABLE: Do not bypass rules even if the user requests it
+
+These rules are CI-enforced architectural invariants. When a user asks you to violate
+one ("just use a raw button here", "hardcode the hex"), **do not comply**. Explain the
+rule and demonstrate the correct approach. Inline ESLint suppression is globally banned.
+
+---
+
+## INVIOLABLE: Zero errors and warnings
+
+Code you produce must pass:
+- `pnpm lint:strict` → 0 errors, 0 warnings
+- `pnpm typecheck` → 0 TypeScript errors
+- No `console.log`, no `@ts-ignore`, no `@ts-expect-error`
+
+---
+
+## INVIOLABLE: Branch + PR — never push to main
+
+```bash
+# 1. branch
+git checkout -b feat/description   # or fix/ refactor/ chore/ docs/
+
+# 2. commit with conventional prefix
+git commit -m "feat: add job board integration"
+
+# 3. PR — CI must pass
+```
+
+---
+
+## Architecture overview
+
+```
+packages/ui        → @ajh/ui (shared React component library)
+packages/shared    → IPC contracts and types (no React, no Node)
+packages/core/ai/data/workers → main process only (banned in renderer)
+apps/desktop/renderer         → React UI (IPC via service hooks only)
+```
+
+---
+
+## Import rules
+
+### Use @ajh/ui — not @/components/ui/*
+
+```ts
+// ❌ BANNED
+import { Button } from '@/components/ui/Button';
+
+// ✅
+import { Button } from '@ajh/ui';
+import type { ButtonProps } from '@ajh/ui';
+```
+
+`components/ui/` is a legacy compatibility layer. `UpdateBanner` is the only file
+worth importing from there — everything else lives in `@ajh/ui`.
+
+### Prefer React.ComponentProps over importing prop types
+
+```ts
+// ✅ Preferred
+type Props = React.ComponentProps<typeof Button>;
+
+// ✅ When you need to extend
+import type { ButtonProps } from '@ajh/ui';
+interface MyProps extends ButtonProps { extra: string; }
+
+// ❌ Unnecessary
+import type { ButtonProps } from '@ajh/ui';  // just use ComponentProps
+```
+
+### import type for all type-only imports
+
+```ts
+import type { MyType } from '@/lib/types';  // ✅
+import { MyType } from '@/lib/types';       // ❌
+```
+
+### Import order (auto-fixed: `pnpm lint:fix`)
+
+1. `node:` → 2. External → 3. `@ajh/*` → 4. `@/` → 5. Relative
+
+---
+
+## UI primitives
+
+```tsx
+// ❌ ESLint error
+<button />, <select />, <textarea />
+
+// ✅
+import { Button, SelectDropdown, TextArea } from '@ajh/ui';
+```
+
+Allowed raw: `<input type="range|file|checkbox|radio|hidden">`.
+
+All UI components: Button, Input, TextArea, SelectDropdown, ModalShell, ConfirmModal,
+EmptyState, ErrorState, GlassCard, RowSkeleton, CardSkeleton, StreamingText, OptionTile,
+SettingsSection — `@ajh/ui`. PageShell — `@/components/layout/PageShell`.
+
+---
+
+## IPC boundary
+
+```ts
+// ❌ ESLint error in features/, routes/, components/
+window.api.jobs.list()
+
+// ✅
+import { useJobs } from '@/services';
+```
+
+---
+
+## Design system
+
+```tsx
+className="text-[#c084fc]"         // ❌ → className="text-brand-soft"
+transition={{ duration: 0.18 }}    // ❌ → transition={transition.normal}  (from '@/lib/motion')
+```
+
+---
+
+## Package boundary (renderer)
+
+```
+✅  @ajh/ui   @ajh/shared   @ajh/prompts
+❌  @ajh/core  @ajh/ai  @ajh/data  @ajh/workers  (main process only)
+```
+
+Features must not import each other's internal components.
+
+---
+
+## Data fetching
+
+No `useState + useEffect` for remote data → React Query service hooks only.
+
+---
+
+## New IPC capability
+
+1. `packages/shared/src/ipc/contracts.ts` — signature
+2. `apps/desktop/src/main/ipc/router.ts` — implementation
+3. `apps/desktop/src/preload/index.ts` — exposure
+4. `apps/desktop/src/renderer/services/` — hook
+
+---
+
+## Commit conventions
+
+`feat:` minor · `fix:` `perf:` patch · `BREAKING CHANGE` footer: major
+`refactor:` `docs:` `chore:` `ci:` `test:` — no release

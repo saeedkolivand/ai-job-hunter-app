@@ -1,43 +1,41 @@
-import { useMemo, useRef, useState } from 'react';
-import { createFileRoute } from '@tanstack/react-router';
-import { useTranslation } from '@/lib/i18n';
-import { motion, AnimatePresence } from 'motion/react';
-import { transition, staggeredItem } from '@/lib/motion';
 import {
-  Send,
-  X,
-  ExternalLink,
-  Search,
-  MapPin,
+  AlertCircle,
+  Bookmark,
   Building2,
   CheckCircle2,
-  AlertCircle,
-  Loader2,
-  ShieldAlert,
-  Plus,
-  Eye,
-  Bookmark,
   CircleCheck,
+  ExternalLink,
+  Eye,
+  Loader2,
+  MapPin,
+  Plus,
+  Search,
+  Send,
+  ShieldAlert,
   Trash2,
+  X,
 } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { cn } from '@/lib/cn';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { TextArea } from '@/components/ui/TextArea';
+import { AnimatePresence, motion } from 'motion/react';
+import { useMemo, useRef, useState } from 'react';
+import { createFileRoute } from '@tanstack/react-router';
+
+import type { DATE_FILTER_OPTIONS, JobInteraction } from '@ajh/shared';
+import { Button, GlassCard, Input, SelectDropdown, TextArea } from '@ajh/ui';
+
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
-import type { DATE_FILTER_OPTIONS, JobInteraction } from '@ajh/shared';
-import { SelectDropdown } from '@/components/ui/SelectDropdown';
+import { cn } from '@/lib/cn';
+import { useTranslation } from '@/lib/i18n';
+import { staggeredItem, transition } from '@/lib/motion';
 import {
-  usePostings,
-  useScrapeBoard,
+  useApplyJob,
   useCancelJob,
   useClearPostings,
   useJobEvents,
   useOpenExternal,
-  useApplyJob,
   usePersistJob,
+  usePostings,
+  useScrapeBoard,
 } from '@/services';
 
 export const Route = createFileRoute('/jobs')({ component: Jobs });
@@ -262,11 +260,12 @@ function Jobs() {
               )}
               <div className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-1.5 transition-colors focus-within:border-brand/35">
                 <Search size={12} className="shrink-0 text-foreground/40" />
-                <input
+                <Input
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                   placeholder={t('jobs.searchPlaceholder')}
-                  className="w-48 bg-transparent text-xs text-foreground outline-none placeholder:text-foreground/25"
+                  className="w-48 bg-transparent text-xs text-foreground outline-none placeholder:text-foreground/25 border-none p-0 rounded-none"
+                  variant="default"
                 />
               </div>
               <SelectDropdown
@@ -779,13 +778,13 @@ function ApplyDrawer({ posting, onClose }: { posting: Posting; onClose: () => vo
             {posting.company} · {posting.source}
           </div>
         </div>
-        <button
+        <Button
           onClick={onClose}
-          className="rounded-lg bg-white/5 p-1.5 text-foreground/60 hover:text-foreground"
+          className="rounded-lg bg-white/5 p-1.5 text-foreground/60 hover:text-foreground h-auto border-transparent"
           aria-label={t('jobs.close')}
         >
           <X size={14} />
-        </button>
+        </Button>
       </header>
 
       {!canApply ? (

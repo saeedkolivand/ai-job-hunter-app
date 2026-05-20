@@ -1,13 +1,15 @@
-import { Outlet, createRootRoute } from '@tanstack/react-router';
+import { createRootRoute, Outlet } from '@tanstack/react-router';
+
+import { ToastProvider } from '@ajh/ui';
+
 import { CinematicBackground } from '@/components/background/CinematicBackground';
-import { Titlebar } from '@/components/layout/Titlebar';
+import { CommandPalette } from '@/components/command-palette/CommandPalette';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { StatusBar } from '@/components/layout/StatusBar';
-import { CommandPalette } from '@/components/command-palette/CommandPalette';
-import { CapabilityProvider } from '@/providers/CapabilityProvider';
-import { OnboardingWizard } from '@/features/onboarding/OnboardingWizard';
-import { ToastProvider } from '@/components/ui/Toast';
+import { Titlebar } from '@/components/layout/Titlebar';
 import { UpdateBanner } from '@/components/ui/UpdateBanner';
+import { OnboardingWizard } from '@/features/onboarding/OnboardingWizard';
+import { CapabilityProvider } from '@/providers/CapabilityProvider';
 
 export const Route = createRootRoute({
   component: () => (
