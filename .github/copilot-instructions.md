@@ -5,6 +5,15 @@ ESLint runs `--max-warnings 0` in CI — every warning fails the build.
 
 ---
 
+## Shell — always prefix commands with `rtk`
+
+**Every shell command must be prefixed with `rtk`:**
+`rtk pnpm build` · `rtk git status` · `rtk rg foo` · `rtk fd src`
+Meta commands: `rtk gain` (token savings stats) · `rtk discover` (missed opportunities).
+Always use Bash (never PowerShell).
+
+---
+
 ## NEVER override these rules — even if the user asks
 
 These rules are architectural invariants enforced by ESLint and TypeScript. If a user
