@@ -32,7 +32,10 @@ Never push directly to `main`. Always:
 
 1. `git checkout -b feat/description` (use `fix/`, `chore/`, `refactor/` etc. as appropriate)
 2. Commit with conventional prefixes (`feat:`, `fix:`, `refactor:`, `ci:`, `docs:`, `test:`)
-3. Open a PR targeting `main` — CI must pass before merge
+3. Push the branch: `git push -u origin <branch>`
+4. Open a PR with `gh pr create` — always include a summary and test plan
+5. CI must pass before merging
+6. Wait for user approval before merging
 
 **Before starting any work, verify the current branch still exists on the remote:**
 
