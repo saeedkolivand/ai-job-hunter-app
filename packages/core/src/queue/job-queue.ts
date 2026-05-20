@@ -46,7 +46,7 @@ export class JobQueue {
   private readonly aborts = new Map<string, AbortController>();
   private readonly pending: string[] = [];
   private running = 0;
-  private readonly concurrency: number;
+  private concurrency: number;
   private readonly persistor?: JobPersistor;
   private readonly logger: Logger;
 
@@ -57,6 +57,11 @@ export class JobQueue {
     this.concurrency = opts.concurrency ?? 4;
     this.persistor = opts.persistor;
     this.logger = createLogger('job-queue');
+  }
+
+  setConcurrency(n: number): void {
+    this.concurrency = Math.max(1, n);
+    this.tick();
   }
 
   register<P, R>(kind: JobKind, handler: JobHandler<P, R>): void {

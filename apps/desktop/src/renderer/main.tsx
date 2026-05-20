@@ -6,6 +6,7 @@ import { createRouter, RouterProvider } from '@tanstack/react-router';
 import { restoreTheme } from '@ajh/ui';
 
 import { AppClientProvider } from '@/providers/AppClientProvider';
+import { PerformanceModeProvider } from '@/providers/PerformanceModeProvider';
 
 import { routeTree } from './routeTree.gen';
 import { queryClient } from './services/query-client';
@@ -33,9 +34,11 @@ declare module '@tanstack/react-router' {
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <AppClientProvider>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
+      <PerformanceModeProvider>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </PerformanceModeProvider>
     </AppClientProvider>
   </React.StrictMode>
 );

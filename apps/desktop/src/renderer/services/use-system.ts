@@ -44,6 +44,14 @@ export const useOpenExternal = () => {
   return useMutation({ mutationFn: (url: string) => api.system.openExternal(url) });
 };
 
+export const useSetPerformanceMode = () => {
+  const api = useAppClient();
+  return useMutation({
+    mutationFn: (mode: 'low-memory' | 'balanced' | 'performance') =>
+      api.system.setPerformanceMode(mode),
+  });
+};
+
 /** Convenience: invalidate health cache to force an immediate recheck. */
 export const invalidateHealth = () =>
   queryClient.invalidateQueries({ queryKey: keys.system.health });

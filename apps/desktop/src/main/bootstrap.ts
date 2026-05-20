@@ -42,6 +42,8 @@ export interface AppCore {
   boardSessions: BoardSessionMap;
   /** In-process scraper runtime — owns scrapeBoard / applyJob / scrapeUrl logic. */
   scraperRuntime: InProcessScraperRuntime;
+  /** Re-evaluate whether the autopilot scheduler should run. Call after create/update/remove. */
+  refreshScheduler: () => Promise<void>;
   onShuttingDown?: () => Promise<void>;
 }
 
@@ -235,6 +237,8 @@ export async function bootstrap(): Promise<AppCore> {
   });
 
   // ── Autopilot scheduler ───────────────────────────────────────────────────
+  // Only start schedule intervals when at least one active autopilot exists.
+  // Call refreshScheduler() after any create/update/remove to keep in sync.
   const SCHEDULE_INTERVALS: Record<string, number> = {
     hourly: 60 * 60 * 1000,
     twice_daily: 12 * 60 * 60 * 1000,
@@ -253,9 +257,29 @@ export async function bootstrap(): Promise<AppCore> {
     }
   };
 
-  for (const [schedule, intervalMs] of Object.entries(SCHEDULE_INTERVALS)) {
-    scheduler.every(`autopilot.${schedule}`, intervalMs, () => enqueueAutopilots(schedule));
-  }
+  const refreshScheduler = async () => {
+    try {
+      const all = await autopilotStore.list();
+      const hasActive = all.some((ap) => ap.status !== 'paused');
+      const running = scheduler.has('autopilot.hourly');
+      if (hasActive && !running) {
+        for (const [schedule, intervalMs] of Object.entries(SCHEDULE_INTERVALS)) {
+          scheduler.every(`autopilot.${schedule}`, intervalMs, () => enqueueAutopilots(schedule));
+        }
+        logger.info({ count: all.length }, 'autopilot scheduler started');
+      } else if (!hasActive && running) {
+        for (const schedule of Object.keys(SCHEDULE_INTERVALS)) {
+          scheduler.cancel(`autopilot.${schedule}`);
+        }
+        logger.info('autopilot scheduler stopped — no active autopilots');
+      }
+    } catch (err) {
+      logger.warn({ err }, 'refreshScheduler failed');
+    }
+  };
+
+  // Start only if active autopilots already exist.
+  await refreshScheduler();
 
   // Top-level shutdown hook (called from main on before-quit)
   (global as { __ajh_shutdown?: () => Promise<void> }).__ajh_shutdown = async () => {
@@ -275,5 +299,6 @@ export async function bootstrap(): Promise<AppCore> {
     autopilotStore,
     boardSessions,
     scraperRuntime,
+    refreshScheduler,
   };
 }
