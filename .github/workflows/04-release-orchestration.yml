@@ -99,11 +99,27 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      - name: Restore Turbo Cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
+
+      - name: Restore Electron Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('**/package.json') }}
+          restore-keys: electron-${{ runner.os }}-
+
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build Packages
-        run: pnpm -r --filter=!@ajh/desktop build
+        run: pnpm build:packages
 
       - name: Build & Package Windows
         run: pnpm --filter @ajh/desktop package -- --win
@@ -140,11 +156,27 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      - name: Restore Turbo Cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
+
+      - name: Restore Electron Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-${{ runner.os }}-${{ hashFiles('**/package.json') }}
+          restore-keys: electron-${{ runner.os }}-
+
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build Packages
-        run: pnpm -r --filter=!@ajh/desktop build
+        run: pnpm build:packages
 
       - name: Build & Package macOS
         run: pnpm --filter @ajh/desktop package -- --mac
