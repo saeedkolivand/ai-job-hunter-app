@@ -26,6 +26,7 @@ import {
   type ApplyJobPayload,
   InProcessScraperRuntime,
   type ScrapeBoardPayload,
+  type ScraperRuntimeClient,
 } from './scraper-runtime.js';
 
 export interface AppCore {
@@ -40,8 +41,8 @@ export interface AppCore {
   autopilotStore: AutopilotStore;
   /** Persistent Chromium session managers — one per board, survive restarts. */
   boardSessions: BoardSessionMap;
-  /** In-process scraper runtime — owns scrapeBoard / applyJob / scrapeUrl logic. */
-  scraperRuntime: InProcessScraperRuntime;
+  /** Active scraper runtime — in-process today, utility-process or sidecar later. */
+  scraperRuntime: ScraperRuntimeClient;
   /** Electron-native browser controller — single source of truth for all browser automation. */
   electronBrowser: ElectronBrowserController;
   /** Re-evaluate whether the autopilot scheduler should run. Call after create/update/remove. */
@@ -90,7 +91,16 @@ export async function bootstrap(): Promise<AppCore> {
   const phBoardSessions = performance.now() - t1;
 
   const electronBrowser = new ElectronBrowserController();
-  const scraperRuntime = new InProcessScraperRuntime(data, credentials, electronBrowser);
+
+  // AJH_SCRAPER_MODE=in-process forces the in-process fallback (rollback switch).
+  // Default is in-process today; swap for UtilityProcessScraperRuntime in Phase 6.
+  const scraperMode = process.env.AJH_SCRAPER_MODE ?? 'in-process';
+  const scraperRuntime: ScraperRuntimeClient = new InProcessScraperRuntime(
+    data,
+    credentials,
+    electronBrowser
+  );
+  logger.info({ scraperMode }, 'scraper runtime selected');
   runtimes.register(ai);
   runtimes.register(data);
 
