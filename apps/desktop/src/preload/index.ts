@@ -161,6 +161,15 @@ const api = {
     pause: (autopilotId: string) => invoke(IPC_CHANNELS.autopilot.pause, { autopilotId }),
     resume: (autopilotId: string) => invoke(IPC_CHANNELS.autopilot.resume, { autopilotId }),
   },
+  dialog: {
+    /**
+     * Open a native file picker and return the selected file paths.
+     * Use File/Blob APIs to read the content client-side rather than passing
+     * paths across IPC — this keeps the contract transport-neutral.
+     */
+    openFiles: (opts?: { title?: string; filters?: { name: string; extensions: string[] }[] }) =>
+      invoke(IPC_CHANNELS.dialog.openFiles, opts) as Promise<string[]>,
+  },
 } as const;
 
 contextBridge.exposeInMainWorld('api', api);

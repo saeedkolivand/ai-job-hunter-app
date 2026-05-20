@@ -652,4 +652,25 @@ export function registerIpc(core: AppCore): void {
     // No-op - no persistence
     return { success: true };
   });
+
+  // ── dialog ──────────────────────────────────────────────────────────────
+  handle(
+    IPC_CHANNELS.dialog.openFiles,
+    z
+      .object({
+        title: z.string().optional(),
+        filters: z
+          .array(z.object({ name: z.string(), extensions: z.array(z.string()) }))
+          .optional(),
+      })
+      .optional(),
+    async (opts) => {
+      const result = await dialog.showOpenDialog({
+        title: opts?.title,
+        properties: ['openFile', 'multiSelections'],
+        filters: opts?.filters,
+      });
+      return result.canceled ? [] : result.filePaths;
+    }
+  );
 }

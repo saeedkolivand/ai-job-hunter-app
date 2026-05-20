@@ -173,5 +173,9 @@ export function createTauriInvokeClient(): AppClient {
       pause: (_id) => NOT_AVAILABLE,
       resume: (_id) => NOT_AVAILABLE,
     },
+
+    dialog: {
+      openFiles: (opts) => invoke('dialog_open_files', opts ?? {}),
+    },
   } satisfies AppClient;
 }
