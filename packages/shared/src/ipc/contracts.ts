@@ -11,29 +11,28 @@
  */
 
 import type {
-  JobRecord,
-  JobEvent,
-  AiStreamChunk,
-  DocumentRecord,
-  JobPosting,
-  SearchHit,
-  MatchScore,
-  RuntimeHealth,
-  Locale,
-  CredentialMetadata,
-  Autopilot,
-} from '../types/index.js';
-
-import type {
   AiGenerateRequest,
-  DocumentImportRequest,
-  ScrapeBoardRequest,
-  ScrapeUrlRequest,
-  HybridSearchRequest,
-  MatchResumeRequest,
   AutopilotCreate,
   AutopilotUpdate,
+  DocumentImportRequest,
+  HybridSearchRequest,
+  MatchResumeRequest,
+  ScrapeBoardRequest,
+  ScrapeUrlRequest,
 } from '../schemas/index.js';
+import type {
+  AiStreamChunk,
+  Autopilot,
+  CredentialMetadata,
+  DocumentRecord,
+  JobEvent,
+  JobPosting,
+  JobRecord,
+  Locale,
+  MatchScore,
+  RuntimeHealth,
+  SearchHit,
+} from '../types/index.js';
 
 export interface IpcContract {
   system: {
@@ -312,6 +311,20 @@ export interface IpcContract {
 
     resume(req: { autopilotId: string }): Promise<void>;
   };
+
+  updater: {
+    check(): Promise<void>;
+
+    download(): Promise<void>;
+
+    install(): Promise<void>;
+
+    onStatus(handler: (status: unknown) => void): () => void;
+  };
+
+  shortcuts: {
+    onCommandPalette(handler: () => void): () => void;
+  };
 }
 
 export const IPC_CHANNELS = {
@@ -485,6 +498,20 @@ export const IPC_CHANNELS = {
     pause: 'autopilot:pause',
 
     resume: 'autopilot:resume',
+  },
+
+  updater: {
+    check: 'updater:check',
+
+    download: 'updater:download',
+
+    install: 'updater:install',
+
+    onStatus: 'updater:status',
+  },
+
+  shortcuts: {
+    onCommandPalette: 'shortcut:command-palette',
   },
 } as const;
 
