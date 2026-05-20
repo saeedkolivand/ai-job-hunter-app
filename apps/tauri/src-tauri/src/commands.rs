@@ -769,18 +769,45 @@ pub fn support_clear_scraping_queue() -> Value {
 }
 
 #[tauri::command]
-pub fn support_copy_environment_details() -> Value {
-    json!(null)
+pub fn support_copy_environment_details(app: AppHandle) -> Value {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let text = format!(
+        "AI Job Hunter (Tauri)\nVersion: {}\nShell: tauri\nOS: {} {}\nArch: {}",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        // Reading OS release is impractical from Rust without extra crates;
+        // the OS name + arch is the practical diagnostic minimum.
+        std::env::consts::FAMILY,
+        std::env::consts::ARCH,
+    );
+    match app.clipboard().write_text(text) {
+        Ok(()) => json!({ "success": true }),
+        Err(e) => json!({ "error": e.to_string() }),
+    }
 }
 
 #[tauri::command]
-pub fn support_copy_app_version() -> Value {
-    json!(null)
+pub fn support_copy_app_version(app: AppHandle) -> Value {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    match app.clipboard().write_text(env!("CARGO_PKG_VERSION").to_string()) {
+        Ok(()) => json!({ "success": true }),
+        Err(e) => json!({ "error": e.to_string() }),
+    }
 }
 
 #[tauri::command]
-pub fn support_copy_system_info() -> Value {
-    json!(null)
+pub fn support_copy_system_info(app: AppHandle) -> Value {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let text = format!(
+        "OS: {}\nFamily: {}\nArch: {}",
+        std::env::consts::OS,
+        std::env::consts::FAMILY,
+        std::env::consts::ARCH,
+    );
+    match app.clipboard().write_text(text) {
+        Ok(()) => json!({ "success": true }),
+        Err(e) => json!({ "error": e.to_string() }),
+    }
 }
 
 // ── Conversations ────────────────────────────────────────────────────────────
