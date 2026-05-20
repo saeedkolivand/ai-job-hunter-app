@@ -3,6 +3,24 @@
 All notable changes to AI Job Hunter are documented here.
 This project follows [Semantic Versioning](https://semver.org) and [Conventional Commits](https://www.conventionalcommits.org).
 
+## 1.0.0 (2026-05-20)
+
+### ✨ Features
+
+* initial release ([e2d4438](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/e2d4438489e221544307fdf66daf999932b702ad))
+* ui polish, ci/cd consolidation, and auto-updater ([1c4a38f](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/1c4a38f2e219bac6c40f3a15c06a69237ec499e0))
+
+### 🐛 Bug Fixes
+
+* add explicit types to updater event callbacks ([0d666e8](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/0d666e8a6556c78d6bd31ef605247dc86599a2b8))
+* add updater and shortcuts namespaces to ipc contract ([4c6eb08](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/4c6eb08bca9b5d1057a14f88edcb5daa9027168e))
+* resolve eslint errors in updater lazy import ([fefa6b7](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/fefa6b7fc698710869515bfd170771f2239f88fb))
+
+### ♻️ Refactors
+
+* move all ui primitives to @ajh/ui, desktop re-exports them ([95d288d](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/95d288dcf096418310159363fefb37454510c809))
+* move all ui primitives to @ajh/ui, desktop re-exports them ([5eadea7](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/5eadea774441e73aa5a7918aaef16b1b71b68531))
+
 ## [1.2.3](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/compare/v1.2.2...v1.2.3) (2026-05-19)
 
 ### 🐛 Bug Fixes
