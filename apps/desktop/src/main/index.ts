@@ -19,6 +19,7 @@ import { bootstrap } from './bootstrap.js';
 import { registerIpc } from './ipc/router.js';
 import { installMenu } from './menus.js';
 import { applySecurityDefaults } from './security.js';
+import { setupUpdater } from './updater.js';
 import { createMainWindow } from './window.js';
 
 const logger = createLogger('main');
@@ -49,6 +50,7 @@ app.whenReady().then(async () => {
     registerIpc(core);
     mainWindow = await createMainWindow();
     installMenu(mainWindow);
+    if (app.isPackaged) void setupUpdater();
     core.onShuttingDown = async () => {
       /* hook for graceful shutdown */
     };
