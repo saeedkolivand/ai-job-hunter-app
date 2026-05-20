@@ -14,7 +14,9 @@ export function useUpdater() {
 
   useEffect(() => {
     const off = window.api.updater.onStatus((s) => setStatus(s as UpdateStatus));
-    return off;
+    return () => {
+      off();
+    };
   }, []);
 
   const check = useCallback(() => window.api.updater.check(), []);
