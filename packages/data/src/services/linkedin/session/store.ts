@@ -4,9 +4,11 @@
  * Manages persistence of LinkedIn authentication cookies and session data.
  * Extracts cookies from Playwright persistent contexts and saves them for HTTP client use.
  */
-import path from 'node:path';
 import fs from 'node:fs/promises';
+import path from 'node:path';
+
 import type { BrowserContext } from 'playwright';
+
 import { createLogger } from '@ajh/core';
 
 const logger = createLogger('linkedin.session.store');

@@ -11,11 +11,11 @@
  */
 
 import {
-  buildSystemPrompt,
-  buildAnalysisPrompt,
-  validateAndRepair,
   type AnalysisResult,
+  buildAnalysisPrompt,
+  buildSystemPrompt,
   type PromptMeta,
+  validateAndRepair,
 } from '@ajh/prompts/analyze';
 
 export type { AnalysisResult };
@@ -89,27 +89,29 @@ export async function runAnalysis({
 
     // Watch for job completion/failure as a fallback in case the done stream
     // event is missed (e.g. empty final delta).
-    const failCheck = setInterval(async () => {
-      try {
-        const job = (await window.api.jobs.get(jobId)) as {
-          status: string;
-          result?: { text: string };
-        } | null;
-        if (!job) return;
-        if (job.status === 'failed' || job.status === 'cancelled') {
-          clearInterval(failCheck);
-          off();
-          reject(new Error(`Analysis job ${job.status}`));
-        } else if (job.status === 'completed') {
-          clearInterval(failCheck);
-          off();
-          // Use the job result text if the stream already buffered everything,
-          // otherwise fall back to whatever the job stored.
-          resolve(buffer || job.result?.text || '');
+    const failCheck = setInterval(() => {
+      void (async () => {
+        try {
+          const job = (await window.api.jobs.get(jobId)) as {
+            status: string;
+            result?: { text: string };
+          } | null;
+          if (!job) return;
+          if (job.status === 'failed' || job.status === 'cancelled') {
+            clearInterval(failCheck);
+            off();
+            reject(new Error(`Analysis job ${job.status}`));
+          } else if (job.status === 'completed') {
+            clearInterval(failCheck);
+            off();
+            // Use the job result text if the stream already buffered everything,
+            // otherwise fall back to whatever the job stored.
+            resolve(buffer || job.result?.text || '');
+          }
+        } catch {
+          /* noop */
         }
-      } catch {
-        /* noop */
-      }
+      })();
     }, 2_000);
   });
 

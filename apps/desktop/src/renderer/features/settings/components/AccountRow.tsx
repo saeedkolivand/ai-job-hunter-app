@@ -1,13 +1,14 @@
+import { Check, Lock, Trash2 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
-import { useTranslation } from '@/lib/i18n';
-import { motion, AnimatePresence } from 'motion/react';
-import { Lock, Trash2, Check } from 'lucide-react';
+
+import { Button, Input } from '@ajh/ui';
+
 import { cn } from '@/lib/cn';
-import type { CredEntry } from '@/types';
-import { Input } from '@/components/ui/Input';
-import { Button } from '@/components/ui/Button';
+import { useTranslation } from '@/lib/i18n';
 import { transition, variants } from '@/lib/motion';
-import { useSetCredential, useRemoveCredential } from '@/services';
+import { useRemoveCredential, useSetCredential } from '@/services';
+import type { CredEntry } from '@/types';
 
 interface AccountRowProps {
   board: { id: string; name: string; hint: string };

@@ -1,9 +1,12 @@
+import { Download, Loader2, RefreshCw, Sparkles, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Download, RefreshCw, X, Sparkles, Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { useUpdater } from '@/services/use-updater';
-import { transition } from '@/lib/motion';
+
+import { Button } from '@ajh/ui';
+
 import { useTranslation } from '@/lib/i18n';
+import { transition } from '@/lib/motion';
+import { useUpdater } from '@/services/use-updater';
 
 export function UpdateBanner() {
   const { status, download, install } = useUpdater();
@@ -51,31 +54,31 @@ export function UpdateBanner() {
             </span>
 
             {status.state === 'available' && (
-              <button
+              <Button
                 onClick={() => void download()}
                 className="flex items-center gap-1.5 rounded-lg border border-brand/40 bg-brand/20 px-2.5 py-1 text-[11px] font-medium text-brand-soft transition-colors hover:bg-brand/30"
               >
                 <Download size={11} />
                 {t('updater.downloadButton')}
-              </button>
+              </Button>
             )}
             {status.state === 'downloaded' && (
-              <button
+              <Button
                 onClick={() => void install()}
                 className="flex items-center gap-1.5 rounded-lg border border-brand/40 bg-brand/20 px-2.5 py-1 text-[11px] font-medium text-brand-soft transition-colors hover:bg-brand/30"
               >
                 <RefreshCw size={11} />
                 {t('updater.installButton')}
-              </button>
+              </Button>
             )}
 
             {status.state !== 'downloading' && (
-              <button
+              <Button
                 onClick={() => setDismissed(true)}
                 className="ml-1 text-foreground/30 transition-colors hover:text-foreground/60"
               >
                 <X size={13} />
-              </button>
+              </Button>
             )}
           </div>
         </motion.div>

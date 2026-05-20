@@ -1,7 +1,8 @@
-import { createContext, useContext, useCallback, useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { AlertTriangle, CheckCircle2, Info, type LucideIcon, X, XCircle } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { type LucideIcon, CheckCircle2, XCircle, Info, AlertTriangle, X } from 'lucide-react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+
 import { transition } from '../lib/motion';
 
 export type ToastVariant = 'success' | 'error' | 'info' | 'warning';

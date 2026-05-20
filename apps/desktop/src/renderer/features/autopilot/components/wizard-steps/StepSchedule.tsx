@@ -1,8 +1,11 @@
-import { useTranslation } from '@/lib/i18n';
-import { cn } from '@/lib/cn';
-import { Clock, Check } from 'lucide-react';
+import { Check, Clock } from 'lucide-react';
+
 import type { AutopilotSchedule } from '@ajh/shared';
-import type { WizardState, SetFn } from '@/routes/autopilot';
+import { Button } from '@ajh/ui';
+
+import { cn } from '@/lib/cn';
+import { useTranslation } from '@/lib/i18n';
+import type { SetFn, WizardState } from '@/routes/autopilot';
 
 interface StepScheduleProps {
   form: WizardState;
@@ -47,11 +50,11 @@ export function StepSchedule({ form, set }: StepScheduleProps) {
 
       <div className="space-y-2">
         {scheduleOptions.map(({ id, label, desc }) => (
-          <button
+          <Button
             key={id}
             onClick={() => set('schedule', id)}
             className={cn(
-              'w-full flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all',
+              'w-full flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all h-auto',
               form.schedule === id
                 ? 'border-brand/35 bg-brand/08'
                 : 'border-white/[0.05] hover:border-white/[0.08]'
@@ -66,7 +69,7 @@ export function StepSchedule({ form, set }: StepScheduleProps) {
               <div className="text-[10px] text-foreground/40">{desc}</div>
             </div>
             {form.schedule === id && <Check size={12} className="text-brand-soft" />}
-          </button>
+          </Button>
         ))}
       </div>
 

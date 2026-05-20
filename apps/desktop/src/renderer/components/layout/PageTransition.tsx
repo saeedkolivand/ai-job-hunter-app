@@ -1,4 +1,5 @@
 import { motion } from 'motion/react';
+
 import { transition, variants } from '@/lib/motion';
 
 interface PageTransitionProps {

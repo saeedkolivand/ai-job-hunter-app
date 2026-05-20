@@ -1,15 +1,16 @@
-import { useState } from 'react';
-import { useTranslation } from '@/lib/i18n';
 import { Copy } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
-import { TextArea } from '@/components/ui/TextArea';
-import { SelectDropdown } from '@/components/ui/SelectDropdown';
+import { useState } from 'react';
+
+import { Button, SelectDropdown, TextArea } from '@ajh/ui';
+
+import { useTranslation } from '@/lib/i18n';
 import {
-  useExportDiagnostics,
-  useCopyEnvironmentDetails,
   useCopyAppVersion,
+  useCopyEnvironmentDetails,
   useCopySystemInfo,
+  useExportDiagnostics,
 } from '@/services';
+
 import { DiagnosticExportItem } from './DiagnosticExportItem';
 
 const FEEDBACK_TYPES = [

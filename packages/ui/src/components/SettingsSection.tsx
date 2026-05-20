@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
-import type { ReactNode, ElementType } from 'react';
+import type { ElementType, ReactNode } from 'react';
+
 import { GlassCard } from './GlassCard';
 import { IconBadge } from './IconBadge';
 import { SectionLabel } from './SectionLabel';

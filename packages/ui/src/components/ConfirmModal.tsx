@@ -1,7 +1,8 @@
-import { type LucideIcon, AlertTriangle, X, Info, CheckCircle, AlertOctagon } from 'lucide-react';
+import { AlertOctagon, AlertTriangle, CheckCircle, Info, type LucideIcon, X } from 'lucide-react';
+
+import { cn } from '../lib/cn';
 import { Button } from './Button';
 import { ModalShell } from './ModalShell';
-import { cn } from '../lib/cn';
 
 interface ConfirmModalProps {
   open: boolean;

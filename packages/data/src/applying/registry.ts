@@ -1,8 +1,8 @@
 import type { Applier } from './base.js';
-import { LinkedInApplier } from './boards/linkedin.js';
-import { IndeedApplier } from './boards/indeed.js';
-import { WorkdayApplier } from './boards/workday.js';
 import { GreenhouseApplier } from './boards/greenhouse.js';
+import { IndeedApplier } from './boards/indeed.js';
+import { LinkedInApplier } from './boards/linkedin.js';
+import { WorkdayApplier } from './boards/workday.js';
 
 export class ApplierRegistry {
   private readonly appliers = new Map<string, Applier>();

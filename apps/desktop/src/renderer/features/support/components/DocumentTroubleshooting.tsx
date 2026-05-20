@@ -1,4 +1,5 @@
 import { useTranslation } from '@/lib/i18n';
+
 import { DiagnosticItem } from './DiagnosticItem';
 import { DocumentIssueCard } from './DocumentIssueCard';
 import { IssueCard } from './IssueCard';

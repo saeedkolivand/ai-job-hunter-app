@@ -1,4 +1,5 @@
 import { Globe } from 'lucide-react';
+
 import type { AnalysisResult } from '@/lib/resume-ai';
 
 interface AnalysisLanguageMismatchProps {

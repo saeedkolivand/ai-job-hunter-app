@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+
 import { cn } from '../lib/cn';
 
 interface StreamingTextProps {

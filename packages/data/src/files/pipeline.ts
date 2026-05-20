@@ -9,10 +9,13 @@
  */
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+
 import { nanoid } from 'nanoid';
+
 import { createLogger } from '@ajh/core';
-import { extractPdf } from './pdf.js';
+
 import { extractDocx } from './docx.js';
+import { extractPdf } from './pdf.js';
 
 export interface PipelineDeps {
   ocr(filePath: string, lang?: string): Promise<{ text: string; lang: string }>;

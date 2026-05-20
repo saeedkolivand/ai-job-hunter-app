@@ -1,5 +1,6 @@
-import { motion } from 'motion/react';
 import { Sparkles } from 'lucide-react';
+import { motion } from 'motion/react';
+
 import { useTranslation } from '@/lib/i18n';
 
 interface OutputPanelExtractingProps {

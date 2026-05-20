@@ -1,5 +1,6 @@
+import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
+
 import { cn } from '@/lib/cn';
-import { CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
 
 interface HealthCardProps {
   name: string;

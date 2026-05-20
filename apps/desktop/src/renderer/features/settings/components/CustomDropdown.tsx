@@ -1,11 +1,13 @@
-import { useState, useRef, useEffect } from 'react';
+import { ChevronDown, Cpu } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'motion/react';
-import { transition } from '@/lib/motion';
-import { Cpu, ChevronDown } from 'lucide-react';
+
+import { Button } from '@ajh/ui';
+
 import { cn } from '@/lib/cn';
+import { transition } from '@/lib/motion';
 import type { Model } from '@/types';
-import { Button } from '@/components/ui/Button';
 
 interface CustomDropdownProps {
   models: Model[];
@@ -50,7 +52,7 @@ export function CustomDropdown({ models, selectedModel, onSelectModel }: CustomD
 
   return (
     <div ref={triggerRef}>
-      <button
+      <Button
         type="button"
         onClick={() => setOpen((o) => !o)}
         className={cn(
@@ -74,7 +76,7 @@ export function CustomDropdown({ models, selectedModel, onSelectModel }: CustomD
             open && 'rotate-180'
           )}
         />
-      </button>
+      </Button>
 
       {open &&
         createPortal(

@@ -1,42 +1,43 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { transition } from '@/lib/motion';
-import { createFileRoute } from '@tanstack/react-router';
-import { useTranslation } from '@/lib/i18n';
 import {
-  FileText,
-  Briefcase,
-  Sparkles,
   AlertCircle,
-  RotateCcw,
-  Upload,
-  RefreshCw,
-  ChevronDown,
+  Briefcase,
   CheckCircle2,
+  ChevronDown,
+  FileText,
+  RefreshCw,
+  RotateCcw,
   ScanSearch,
+  Sparkles,
+  Upload,
 } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
-import { TextArea } from '@/components/ui/TextArea';
-import { cn } from '@/lib/cn';
+import { AnimatePresence, motion } from 'motion/react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { createFileRoute } from '@tanstack/react-router';
+
+import { Button, TextArea } from '@ajh/ui';
+
 import { PageTransition } from '@/components/layout/PageTransition';
-import { useAIModel, useOutputTone, usePreferencesStore } from '@/store/preferences-store';
-import { CustomDropdown } from '@/features/settings/components/CustomDropdown';
-import { runAnalysis, type AnalysisResult } from '@/lib/resume-ai';
-import { AnalysisLanguageMismatch } from '@/features/analyze/components/AnalysisLanguageMismatch';
-import { AnalysisScores } from '@/features/analyze/components/AnalysisScores';
-import { AnalysisVerdict } from '@/features/analyze/components/AnalysisVerdict';
-import { AnalysisStrengths } from '@/features/analyze/components/AnalysisStrengths';
-import { AnalysisSkills } from '@/features/analyze/components/AnalysisSkills';
-import { AnalysisRecommendations } from '@/features/analyze/components/AnalysisRecommendations';
 import { AnalysisATSRisks } from '@/features/analyze/components/AnalysisATSRisks';
-import { AnalysisSectionAnalysis } from '@/features/analyze/components/AnalysisSectionAnalysis';
-import { AnalysisRewrites } from '@/features/analyze/components/AnalysisRewrites';
+import { AnalysisLanguageMismatch } from '@/features/analyze/components/AnalysisLanguageMismatch';
 import { AnalysisLanguageRecommendations } from '@/features/analyze/components/AnalysisLanguageRecommendations';
 import { AnalysisMissingSkills } from '@/features/analyze/components/AnalysisMissingSkills';
-import type { Model } from '@/types';
+import { AnalysisRecommendations } from '@/features/analyze/components/AnalysisRecommendations';
+import { AnalysisRewrites } from '@/features/analyze/components/AnalysisRewrites';
+import { AnalysisScores } from '@/features/analyze/components/AnalysisScores';
+import { AnalysisSectionAnalysis } from '@/features/analyze/components/AnalysisSectionAnalysis';
+import { AnalysisSkills } from '@/features/analyze/components/AnalysisSkills';
+import { AnalysisStrengths } from '@/features/analyze/components/AnalysisStrengths';
+import { AnalysisVerdict } from '@/features/analyze/components/AnalysisVerdict';
+import { CustomDropdown } from '@/features/settings/components/CustomDropdown';
+import { cn } from '@/lib/cn';
+import { useTranslation } from '@/lib/i18n';
+import { transition } from '@/lib/motion';
+import { type AnalysisResult, runAnalysis } from '@/lib/resume-ai';
 import { useAIModels, useExtractText } from '@/services';
-import { useQueryClient } from '@tanstack/react-query';
 import { keys } from '@/services/query-client';
+import { useAIModel, useOutputTone, usePreferencesStore } from '@/store/preferences-store';
+import type { Model } from '@/types';
 
 export const Route = createFileRoute('/analyze')({ component: Analyze });
 
@@ -151,12 +152,12 @@ function Analyze() {
                 </span>
               </div>
               {stage !== 'idle' && (
-                <button
+                <Button
                   onClick={reset}
-                  className="flex items-center gap-1 text-[11px] text-foreground/40 hover:text-foreground/70 transition-colors"
+                  className="flex items-center gap-1 text-[11px] text-foreground/40 hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
                 >
                   <RotateCcw size={11} /> {t('analyze.reset')}
-                </button>
+                </Button>
               )}
             </div>
             <p className="text-xs text-foreground/40">{t('analyze.subtitle')}</p>
@@ -164,13 +165,13 @@ function Analyze() {
 
           {/* Model selector */}
           <div className="px-6 pb-4 flex items-center gap-2">
-            <button
+            <Button
               onClick={() => void qc.invalidateQueries({ queryKey: keys.ai.models })}
               disabled={loadingModels}
-              className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.04] text-foreground/40 hover:text-foreground/70 transition-colors disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.04] text-foreground/40 hover:text-foreground/70 transition-colors disabled:opacity-40 border-transparent p-0"
             >
               <RefreshCw size={11} className={loadingModels ? 'animate-spin' : ''} />
-            </button>
+            </Button>
             <div className="flex-1">
               <CustomDropdown
                 models={models}

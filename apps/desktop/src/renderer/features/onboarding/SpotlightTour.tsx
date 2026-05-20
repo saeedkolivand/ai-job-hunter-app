@@ -1,20 +1,22 @@
-import { useState, useLayoutEffect, useCallback, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { transition } from '@/lib/motion';
 import {
-  LayoutDashboard,
-  Gauge,
-  Wand2,
   Briefcase,
-  Zap,
   FileText,
+  Gauge,
+  LayoutDashboard,
+  type LucideIcon,
   Search,
   Sparkles,
-  type LucideIcon,
+  Wand2,
+  Zap,
 } from 'lucide-react';
-import { useTranslation } from '@/lib/i18n';
-import { Button } from '@/components/ui/Button';
+import { AnimatePresence, motion } from 'motion/react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+
+import { Button } from '@ajh/ui';
+
 import { cn } from '@/lib/cn';
+import { useTranslation } from '@/lib/i18n';
+import { transition } from '@/lib/motion';
 
 interface TourItem {
   tourId: string;
@@ -229,11 +231,11 @@ export function SpotlightTour({ onFinish }: Props) {
           {/* Step dots */}
           <div className="mb-4 flex items-center gap-1">
             {TOUR_ITEMS.map((_, i) => (
-              <button
+              <Button
                 key={i}
                 onClick={() => setStepIdx(i)}
                 className={cn(
-                  'h-1 rounded-full transition-all duration-300',
+                  'h-1 rounded-full transition-all duration-300 p-0 border-transparent',
                   i === stepIdx ? 'w-5 bg-brand' : 'w-1.5 bg-white/15 hover:bg-white/25'
                 )}
               />
@@ -248,12 +250,12 @@ export function SpotlightTour({ onFinish }: Props) {
 
           {/* Actions */}
           <div className="flex items-center gap-2">
-            <button
+            <Button
               onClick={onFinish}
-              className="text-xs text-foreground/30 transition-colors hover:text-foreground/55"
+              className="text-xs text-foreground/30 transition-colors hover:text-foreground/55 h-auto bg-transparent border-transparent"
             >
               {t('onboarding.tour.skip')}
-            </button>
+            </Button>
             <Button variant="default" size="sm" className="ml-auto" onClick={next}>
               {isLast ? t('onboarding.tour.finish') : t('onboarding.tour.next')}
             </Button>

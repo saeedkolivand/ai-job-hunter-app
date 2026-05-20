@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect } from 'react';
+import { ArrowRight, Wand2 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Wand2, ArrowRight } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+
+import { Button, Input } from '@ajh/ui';
+
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
-import { Input } from '@/components/ui/Input';
-import { Button } from '@/components/ui/Button';
 import { usePreferencesStore } from '@/store/preferences-store';
 
 interface Props {

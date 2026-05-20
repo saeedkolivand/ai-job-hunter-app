@@ -3,6 +3,7 @@
  *   https://api.smartrecruiters.com/v1/companies/{company}/postings
  */
 import type { JobPosting } from '@ajh/shared';
+
 import { BaseScraper, type BoardSearchInput, type ScrapeContext } from '../base.js';
 import { fetchJson, stripHtml } from '../http.js';
 

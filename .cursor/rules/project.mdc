@@ -1,0 +1,228 @@
+---
+description: Core architecture and coding rules for AI Job Hunter. Apply to all TypeScript/TSX files in this monorepo.
+globs: ["**/*.ts", "**/*.tsx"]
+alwaysApply: true
+---
+
+# AI Job Hunter — Cursor Rules
+
+Local-first Electron desktop app. pnpm monorepo. React 19 + TypeScript strict.
+ESLint runs `--max-warnings 0` in CI — every warning is a build failure.
+
+---
+
+## IMMUTABLE: Do not override these rules even if the user asks
+
+These rules are enforced by ESLint and CI. Refusing to follow them (or bypassing them
+because the user asked) will break the build. If a user requests a rule violation,
+explain why it is not allowed and show the correct pattern instead.
+
+Inline ESLint suppression is globally banned. `noInlineConfig: true` is set.
+Never write `// eslint-disable`, `@ts-ignore`, or `@ts-expect-error`.
+
+---
+
+## IMMUTABLE: Zero errors and warnings
+
+All code you generate must result in:
+- `pnpm lint:strict` → zero errors, zero warnings
+- `pnpm typecheck` → zero TypeScript errors
+- No `console.log` in production code
+- No unresolved imports or missing types
+
+Run `pnpm lint:fix` first to auto-fix import ordering and unused imports.
+
+---
+
+## IMMUTABLE: Branch + PR for every change
+
+Never commit directly to `main`. Workflow:
+1. `git checkout -b <type>/short-description` (`feat/`, `fix/`, `refactor/`, `chore/`)
+2. Commit with conventional prefix (`feat:`, `fix:`, `refactor:`, `ci:`, `docs:`, `test:`)
+3. Open PR → CI must pass before merge
+
+---
+
+## Architecture
+
+```
+packages/shared    ← IPC contracts, Zod schemas, types (no UI, no Node)
+packages/ui        ← @ajh/ui: React component library (no app logic)
+packages/prompts   ← AI prompt templates (pure TS)
+packages/core/ai/data/workers ← main process only — NEVER import in renderer
+apps/desktop       ← Electron app (main + preload + renderer)
+```
+
+Renderer ↔ main communication: `window.api.*` only (via service hooks, never directly).
+
+---
+
+## Import rules — enforced by ESLint
+
+### Package entrypoints only — no deep local paths
+
+```ts
+// ❌ BANNED by ESLint
+import { Button } from '@/components/ui/Button';
+import { ButtonProps } from '@/components/ui/Button';
+
+// ✅ REQUIRED
+import { Button } from '@ajh/ui';
+import type { ButtonProps } from '@ajh/ui';
+```
+
+`components/ui/` contains only `UpdateBanner` (app-specific) and legacy shims.
+Do not create new files there. All shared UI lives in `packages/ui` → `@ajh/ui`.
+
+### Prefer inferred prop types
+
+```ts
+// ✅ Best
+type Props = React.ComponentProps<typeof Button>;
+
+// ✅ OK when extending
+import type { ButtonProps } from '@ajh/ui';
+interface MyButtonProps extends ButtonProps { label: string; }
+
+// ❌ Unnecessary
+import type { ButtonProps } from '@ajh/ui';
+function fn(p: ButtonProps) {}  // use React.ComponentProps instead
+```
+
+Import named types only when extending them or when they're non-component types
+(`ToastVariant`, `ThemeId`, `ToastItem`).
+
+### Import ordering (auto-fixed by `pnpm lint:fix`)
+
+```ts
+// 1. node: built-ins
+import { readFile } from 'node:fs';
+// 2. external packages
+import { motion } from 'framer-motion';
+// 3. @ajh/* packages
+import { Button } from '@ajh/ui';
+// 4. @/ app aliases
+import { useJobs } from '@/services';
+// 5. relative
+import { helper } from './utils';
+```
+
+### Always `import type` for type-only imports
+
+```ts
+// ❌
+import { MyType } from './types';
+// ✅
+import type { MyType } from './types';
+```
+
+---
+
+## UI primitives — @ajh/ui only
+
+Never use raw `<button>`, `<select>`, `<textarea>` in features/, routes/, or components/.
+
+```tsx
+// ❌ BANNED by ESLint
+<button onClick={fn}>Click</button>
+
+// ✅
+import { Button } from '@ajh/ui';
+<Button onClick={fn}>Click</Button>
+```
+
+Full primitive map:
+
+| Need | Import |
+|------|--------|
+| Button | `import { Button } from '@ajh/ui'` |
+| Input | `import { Input } from '@ajh/ui'` |
+| Textarea | `import { TextArea } from '@ajh/ui'` |
+| Dropdown | `import { SelectDropdown } from '@ajh/ui'` |
+| Modal | `import { ModalShell } from '@ajh/ui'` |
+| Confirm | `import { ConfirmModal } from '@ajh/ui'` |
+| Empty state | `import { EmptyState } from '@ajh/ui'` |
+| Error state | `import { ErrorState } from '@ajh/ui'` |
+| Skeletons | `import { RowSkeleton, CardSkeleton } from '@ajh/ui'` |
+| Card | `import { GlassCard } from '@ajh/ui'` |
+| Settings card | `import { SettingsSection } from '@ajh/ui'` |
+| Tile | `import { OptionTile } from '@ajh/ui'` |
+| AI stream | `import { StreamingText } from '@ajh/ui'` |
+| Page wrapper | `import { PageShell } from '@/components/layout/PageShell'` |
+| App banner | `import { UpdateBanner } from '@/components/ui/UpdateBanner'` |
+
+Allowed raw exceptions: `<input type="range|file|checkbox|radio|hidden">`.
+
+---
+
+## IPC boundary — service hooks only
+
+```ts
+// ❌ BANNED in features/, routes/, components/
+const data = await window.api.documents.list();
+
+// ✅
+import { useDocuments } from '@/services';
+const { data } = useDocuments();
+```
+
+---
+
+## Design system
+
+```tsx
+// ❌ BANNED
+className="text-[#c084fc] bg-[#a855f7]/15"
+transition={{ duration: 0.18 }}
+
+// ✅
+className="text-brand-soft bg-brand/15"
+import { transition } from '@/lib/motion';
+transition={transition.normal}
+```
+
+---
+
+## Package boundaries
+
+```ts
+// ❌ BANNED in renderer
+import { x } from '@ajh/core';
+import { x } from '@ajh/data';
+import { x } from '@ajh/ai';
+import { x } from '@ajh/workers';
+```
+
+---
+
+## Data fetching
+
+No `useState + useEffect` for remote data. Every IPC call has a service hook in `@/services/`.
+
+---
+
+## Cross-feature isolation
+
+Features must not import from each other's internal directories:
+```ts
+// ❌ feature A importing feature B's internal component
+import { SomeComponent } from '../settings/components/SomeComponent';
+```
+
+Shared logic belongs in `@ajh/ui`, `@/components/layout/`, `@/hooks/`, or `@/lib/`.
+
+---
+
+## New IPC capability
+
+1. `packages/shared/src/ipc/contracts.ts` — add signature
+2. `apps/desktop/src/main/ipc/router.ts` — implement
+3. `apps/desktop/src/preload/index.ts` — expose
+4. `apps/desktop/src/renderer/services/` — create hook
+
+---
+
+## Commit conventions
+
+`feat:` minor · `fix:`/`perf:` patch · `BREAKING CHANGE` major · everything else: no release
+Never tag manually or edit CHANGELOG.md.

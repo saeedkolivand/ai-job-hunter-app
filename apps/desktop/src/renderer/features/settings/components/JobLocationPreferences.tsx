@@ -1,13 +1,13 @@
-import { useState, useRef } from 'react';
+import { MapPin, Plus, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'motion/react';
-import { transition } from '@/lib/motion';
+
+import { Button, GlassCard, Input } from '@ajh/ui';
+
 import { useTranslation } from '@/lib/i18n';
-import { MapPin, X, Plus } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { usePreferencesStore, useLocation } from '@/store/preferences-store';
+import { transition } from '@/lib/motion';
+import { useLocation, usePreferencesStore } from '@/store/preferences-store';
 
 const COMMON_LOCATIONS = [
   'San Francisco, CA',
@@ -151,14 +151,14 @@ export function JobLocationPreferences() {
               >
                 <div className="max-h-48 overflow-y-auto px-1 py-1">
                   {filteredSuggestions.map((suggestion) => (
-                    <button
+                    <Button
                       key={suggestion}
                       onClick={() => handleAddLocation(suggestion)}
-                      className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground/70 hover:bg-white/5 hover:text-foreground transition-colors"
+                      className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground/70 hover:bg-white/5 hover:text-foreground transition-colors h-auto bg-transparent border-transparent"
                     >
                       <MapPin size={14} className="text-foreground/40" />
                       {suggestion}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </motion.div>

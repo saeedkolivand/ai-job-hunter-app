@@ -1,14 +1,16 @@
+import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect } from 'react';
-import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
-import { useTranslation } from '@/lib/i18n';
-import { transition } from '@/lib/motion';
-import { Button } from '@/components/ui/Button';
-import { usePreferencesStore } from '@/store/preferences-store';
+
+import { Button } from '@ajh/ui';
+
 import { LOCALES } from '@/constants/locales';
 import i18n from '@/i18n';
 import { cn } from '@/lib/cn';
+import { useTranslation } from '@/lib/i18n';
+import { transition } from '@/lib/motion';
 import type { RemotePreference } from '@/store/preferences-schema';
+import { usePreferencesStore } from '@/store/preferences-store';
 
 interface Props {
   onBack: () => void;
@@ -83,11 +85,11 @@ export function PrefsStep({ onBack, onNext, direction }: Props) {
             {LOCALES.map(({ code, label, flag }) => {
               const active = currentLang === code;
               return (
-                <button
+                <Button
                   key={code}
                   onClick={() => selectLanguage(code)}
                   className={cn(
-                    'flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-all duration-150',
+                    'flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-all duration-150 h-auto',
                     active
                       ? 'border-brand/40 bg-brand/10 text-foreground/90'
                       : 'border-white/[0.06] bg-white/[0.02] text-foreground/55 hover:border-white/10 hover:bg-white/[0.05] hover:text-foreground/80'
@@ -96,7 +98,7 @@ export function PrefsStep({ onBack, onNext, direction }: Props) {
                   <span className="text-sm leading-none">{flag}</span>
                   <span className="flex-1 truncate font-medium">{label}</span>
                   {active && <Check size={9} className="shrink-0 text-brand-soft" />}
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -111,11 +113,11 @@ export function PrefsStep({ onBack, onNext, direction }: Props) {
             {REMOTE_OPTIONS.map(({ id, emoji }) => {
               const active = remote === id;
               return (
-                <button
+                <Button
                   key={id}
                   onClick={() => setRemote(id)}
                   className={cn(
-                    'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-3 text-center transition-all duration-150',
+                    'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-3 text-center transition-all duration-150 h-auto',
                     active
                       ? 'border-brand/40 bg-brand/10'
                       : 'border-white/[0.06] bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.05]'
@@ -130,7 +132,7 @@ export function PrefsStep({ onBack, onNext, direction }: Props) {
                   >
                     {t(`onboarding.prefs.remote.${id}`)}
                   </span>
-                </button>
+                </Button>
               );
             })}
           </div>

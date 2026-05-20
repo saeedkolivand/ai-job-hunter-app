@@ -1,0 +1,69 @@
+name: Branch Quality Gate
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+    paths-ignore:
+      - '**/*.md'
+      - '.gitignore'
+      - 'LICENSE'
+
+concurrency:
+  group: branch-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-checks:
+    name: Quality Checks
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ESLint
+        run: pnpm lint
+
+      - name: Run TypeScript Check
+        run: pnpm typecheck
+
+      - name: Check Formatting
+        run: pnpm format:check
+
+      - name: Notify Discord Failure
+        if: failure()
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          title: 'Branch Quality Gate Failed'
+          description: |
+            Branch quality checks failed.
+
+            Repository:
+            ${{ github.repository }}
+
+            Branch:
+            ${{ github.ref_name }}
+
+            Workflow:
+            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          color: 0xED4245

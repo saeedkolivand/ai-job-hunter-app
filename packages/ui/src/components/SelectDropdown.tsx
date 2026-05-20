@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect, useCallback, useId } from 'react';
-import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'motion/react';
 import { Check, ChevronDown, Search } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+
 import { cn } from '../lib/cn';
 
 const SEARCHABLE_THRESHOLD = 8;

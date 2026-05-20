@@ -1,22 +1,23 @@
-import { useEffect, useRef, useState } from 'react';
+import { Check, Copy, Send, Sparkles, Upload, X } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Send, Sparkles, Upload, X, Copy, Check } from 'lucide-react';
-import { useTranslation } from '@/lib/i18n';
-import i18n from '@/i18n';
+import { useEffect, useRef, useState } from 'react';
+
 import { buildWorkspaceSystemPrompt } from '@ajh/prompts';
-import { transition } from '@/lib/motion';
+import type { AiStreamChunk, JobEvent } from '@ajh/shared';
+import { Button, Input, MarkdownMessage } from '@ajh/ui';
+
+import i18n from '@/i18n';
 import { cn } from '@/lib/cn';
-import { useAIModel } from '@/store/preferences-store';
-import { Input } from '@/components/ui/Input';
-import { MarkdownMessage } from '@/components/ui/MarkdownMessage';
+import { useTranslation } from '@/lib/i18n';
+import { transition } from '@/lib/motion';
 import {
-  useGetOrCreateConversation,
+  useAIStream,
   useExtractText,
   useGenerateAI,
-  useAIStream,
+  useGetOrCreateConversation,
   useJobEvents,
 } from '@/services';
-import type { AiStreamChunk, JobEvent } from '@ajh/shared';
+import { useAIModel } from '@/store/preferences-store';
 
 const ACCEPTED_EXTS = ['pdf', 'docx', 'txt', 'md', 'markdown'] as const;
 const ACCEPT_ATTR = '.pdf,.docx,.txt,.md,.markdown';
@@ -29,11 +30,6 @@ interface Msg {
   displayedContent?: string;
   jobId?: string;
   isStreaming?: boolean;
-}
-interface StreamChunk {
-  jobId: string;
-  delta: string;
-  done: boolean;
 }
 
 export function AIWorkspace() {
@@ -67,7 +63,7 @@ export function AIWorkspace() {
 
   // Subscribe to streaming deltas
   useAIStream((chunk: AiStreamChunk) => {
-    const raw = chunk as unknown as StreamChunk;
+    const raw = chunk;
     if (raw.jobId !== activeJobRef.current) return;
     setMessages((prev) => {
       const last = prev[prev.length - 1];
@@ -189,7 +185,7 @@ export function AIWorkspace() {
 
       activeJobRef.current = res.jobId;
       // Don't add empty message box - wait for first chunk of content
-    } catch (_err) {
+    } catch {
       setMessages((prev) => [
         ...prev,
         {
@@ -219,14 +215,14 @@ export function AIWorkspace() {
                 { q: 'What does the ATS score mean?', icon: '📊' },
                 { q: 'How do I set up Autopilot?', icon: '🤖' },
               ].map(({ q, icon }) => (
-                <button
+                <Button
                   key={q}
                   onClick={() => setInput(q)}
-                  className="flex items-start gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3 py-2.5 text-left text-xs text-foreground/60 hover:border-brand/20 hover:bg-brand/5 hover:text-foreground/80 transition-all"
+                  className="flex items-start gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3 py-2.5 text-left text-xs text-foreground/60 hover:border-brand/20 hover:bg-brand/5 hover:text-foreground/80 transition-all h-auto"
                 >
                   <span className="text-base leading-none shrink-0">{icon}</span>
                   <span>{q}</span>
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -255,9 +251,9 @@ export function AIWorkspace() {
                       m.role === 'assistant' ? 'self-start max-w-[85%]' : ''
                     )}
                   >
-                    <button
+                    <Button
                       onClick={() => void copyMessage(m.id, m.content)}
-                      className="flex items-center gap-1.5 rounded-md bg-white/5 px-2.5 py-1 text-[11px] text-foreground/70 hover:text-foreground transition-colors"
+                      className="flex items-center gap-1.5 rounded-md bg-white/5 px-2.5 py-1 text-[11px] text-foreground/70 hover:text-foreground transition-colors h-auto"
                       aria-label={t('ai.copyMessage')}
                     >
                       {copiedMessageId === m.id ? (
@@ -266,7 +262,7 @@ export function AIWorkspace() {
                         <Copy size={12} />
                       )}
                       {copiedMessageId === m.id ? t('ai.copied') : t('ai.copy')}
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>
@@ -300,13 +296,13 @@ export function AIWorkspace() {
         {resumeFileName && (
           <div className="mx-auto mb-3 flex max-w-3xl items-center gap-2 rounded-lg border border-brand-soft/20 bg-brand-soft/5 px-3 py-2">
             <span className="flex-1 truncate text-xs text-brand-soft/90">{resumeFileName}</span>
-            <button
+            <Button
               onClick={removeResume}
-              className="text-brand-soft/70 hover:text-brand-soft"
+              className="text-brand-soft/70 hover:text-brand-soft h-auto bg-transparent border-transparent p-0"
               aria-label={t('ai.removeResume')}
             >
               <X size={14} />
-            </button>
+            </Button>
           </div>
         )}
         <motion.div
@@ -337,18 +333,18 @@ export function AIWorkspace() {
               e.target.value = '';
             }}
           />
-          <button
+          <Button
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
             className={cn(
-              'rounded-lg p-2 text-foreground/70 transition-colors hover:bg-white/10 disabled:opacity-40',
+              'rounded-lg p-2 text-foreground/70 transition-colors hover:bg-white/10 disabled:opacity-40 h-auto bg-transparent border-transparent',
               uploading && 'cursor-wait'
             )}
             aria-label={t('ai.uploadResume')}
           >
             <Upload size={14} className={uploading ? 'animate-pulse' : ''} />
-          </button>
+          </Button>
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -365,14 +361,14 @@ export function AIWorkspace() {
             variant="default"
             className="flex-1 bg-transparent"
           />
-          <button
+          <Button
             onClick={() => void send()}
             disabled={!input.trim() || streaming}
-            className="rounded-lg bg-white/5 p-2 text-foreground/70 transition-colors hover:bg-white/10 disabled:opacity-40"
+            className="rounded-lg bg-white/5 p-2 text-foreground/70 transition-colors hover:bg-white/10 disabled:opacity-40 h-auto border-transparent"
             aria-label={t('ai.send')}
           >
             <Send size={14} />
-          </button>
+          </Button>
         </motion.div>
       </div>
     </div>

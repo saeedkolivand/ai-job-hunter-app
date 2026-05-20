@@ -1,8 +1,9 @@
-import { motion } from 'motion/react';
 import { Check } from 'lucide-react';
-import { cn } from '@/lib/cn';
-import i18n from '@/i18n';
+import { motion } from 'motion/react';
+
 import { LOCALES } from '@/constants/locales';
+import i18n from '@/i18n';
+import { cn } from '@/lib/cn';
 import { usePreferencesStore } from '@/store/preferences-store';
 
 export function LanguageSelector() {

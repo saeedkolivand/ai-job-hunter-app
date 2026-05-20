@@ -1,5 +1,6 @@
-import '@ajh/ui/css';
 import type { Preview } from '@storybook/react';
+
+import '@ajh/ui/css';
 
 const preview: Preview = {
   parameters: {

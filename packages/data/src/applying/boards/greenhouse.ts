@@ -9,7 +9,7 @@
  * No auth is required. CAPTCHA is sometimes injected (hCaptcha). When detected
  * we pause and let the user solve it.
  */
-import { BaseApplier, type Applier, type ApplyContext, type ApplyResult } from '../base.js';
+import { type Applier, type ApplyContext, type ApplyResult, BaseApplier } from '../base.js';
 
 export class GreenhouseApplier extends BaseApplier implements Applier {
   readonly boardId = 'greenhouse';

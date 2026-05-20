@@ -4,7 +4,9 @@
  * We treat the "query" as the company slug for the MVP, then fan-out per posting.
  */
 import { request } from 'undici';
+
 import type { JobPosting } from '@ajh/shared';
+
 import { BaseScraper, type BoardSearchInput, type ScrapeContext } from '../base.js';
 
 interface GhJobsResponse {

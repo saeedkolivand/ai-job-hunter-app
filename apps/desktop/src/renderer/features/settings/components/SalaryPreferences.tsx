@@ -1,11 +1,12 @@
+import { DollarSign } from 'lucide-react';
 import { useState } from 'react';
 
-import { DollarSign } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { usePreferencesStore, useSalary } from '@/store/preferences-store';
+import { Button, GlassCard } from '@ajh/ui';
+
 import { cn } from '@/lib/cn';
-import type { SalaryExpectation } from '@/store/preferences-schema';
 import { useTranslation } from '@/lib/i18n';
+import type { SalaryExpectation } from '@/store/preferences-schema';
+import { usePreferencesStore, useSalary } from '@/store/preferences-store';
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY'] as const;
 const PERIODS = ['hourly', 'monthly', 'yearly'] as const;
@@ -78,18 +79,18 @@ export function SalaryPreferences() {
           </div>
           <div className="flex flex-wrap gap-2">
             {CURRENCIES.map((curr) => (
-              <button
+              <Button
                 key={curr}
                 onClick={() => handleCurrencyChange(curr)}
                 className={cn(
-                  'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+                  'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors h-auto',
                   currency === curr
                     ? 'bg-brand-soft/20 text-brand-soft'
                     : 'bg-white/5 text-foreground/60 hover:bg-white/10 hover:text-foreground'
                 )}
               >
                 {curr}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -100,18 +101,18 @@ export function SalaryPreferences() {
           </div>
           <div className="flex flex-wrap gap-2">
             {PERIODS.map((per) => (
-              <button
+              <Button
                 key={per}
                 onClick={() => handlePeriodChange(per)}
                 className={cn(
-                  'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors capitalize',
+                  'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors capitalize h-auto',
                   period === per
                     ? 'bg-brand-soft/20 text-brand-soft'
                     : 'bg-white/5 text-foreground/60 hover:bg-white/10 hover:text-foreground'
                 )}
               >
                 {per}
-              </button>
+              </Button>
             ))}
           </div>
         </div>

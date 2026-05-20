@@ -10,6 +10,7 @@
  *   - "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite"
  */
 import type { JobPosting } from '@ajh/shared';
+
 import { BaseScraper, type BoardSearchInput, type ScrapeContext } from '../base.js';
 import { fetchJson, stripHtml } from '../http.js';
 

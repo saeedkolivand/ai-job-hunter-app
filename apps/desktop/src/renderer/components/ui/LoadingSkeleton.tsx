@@ -1,1 +1,1 @@
-export { Skeleton, CardSkeleton, RowSkeleton } from '@ajh/ui';
+export { CardSkeleton, RowSkeleton, Skeleton } from '@ajh/ui';

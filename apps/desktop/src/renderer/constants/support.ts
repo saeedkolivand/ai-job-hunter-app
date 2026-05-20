@@ -1,13 +1,13 @@
 import {
   Activity,
+  AlertTriangle,
   Cpu,
   FileText,
-  Search,
-  Settings,
+  HelpCircle,
   LogOut,
   RefreshCw,
-  HelpCircle,
-  AlertTriangle,
+  Search,
+  Settings,
 } from 'lucide-react';
 
 export type TabId =

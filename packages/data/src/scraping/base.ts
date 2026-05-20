@@ -5,6 +5,7 @@
  * before returning. Source-specific quirks are isolated per implementation.
  */
 import type { JobPosting } from '@ajh/shared';
+
 import type { BrowserController } from './browser.js';
 
 /** Credentials are resolved per-board, on demand, inside the main process. */
