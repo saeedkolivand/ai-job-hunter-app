@@ -7,9 +7,11 @@ Rules enforced by ESLint, TypeScript, and CI — violations block commits and fa
 ## Shell & Tooling
 
 - **Always use the Bash tool** (never PowerShell)
-- **Prefix every command with `rtk`** — e.g. `rtk pnpm build`, `rtk git status`, `rtk rg foo` — for 60-90% token savings
-- Meta commands are `rtk`-only (no hook): `rtk gain` (savings stats) · `rtk discover` (missed opportunities)
-- Prefer `rg`, `fd`, `bat`, `pnpm`; use Git Bash paths (`/c/Users/...`)
+- **Prefix EVERY command with `rtk`** — `rtk pnpm build`, `rtk git status`, `rtk rg foo`, `rtk fd src`, `rtk bat file.ts`
+- Meta commands: `rtk gain` (savings stats) · `rtk discover` (missed opportunities)
+- Use `rtk rg` not `grep` · `rtk fd` not `find` · `rtk bat` not `cat` · `rtk pnpm` not `npm`/`yarn`
+- Never `find -exec`, never PowerShell syntax
+- Git Bash paths: `/c/Users/...` not `C:\Users\...`
 
 ---
 

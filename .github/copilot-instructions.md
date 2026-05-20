@@ -5,10 +5,12 @@ ESLint `--max-warnings 0` in CI — every warning fails the build.
 
 ---
 
-## Shell — prefix every command with `rtk`
+## Shell — prefix EVERY command with `rtk`
 
-`rtk pnpm build` · `rtk git status` · `rtk rg foo` · `rtk fd src` — 60-90% token savings.
+`rtk pnpm build` · `rtk git status` · `rtk rg foo` · `rtk fd src` · `rtk bat file.ts` — 60-90% token savings.
 Meta: `rtk gain` (stats) · `rtk discover` (missed opportunities). Always Bash, never PowerShell.
+Use `rtk rg` not `grep` · `rtk fd` not `find` · `rtk bat` not `cat` · `rtk pnpm` not `npm`/`yarn`.
+Never `find -exec`, never PowerShell syntax. Git Bash paths: `/c/Users/...`
 
 ---
 
