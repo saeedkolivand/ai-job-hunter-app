@@ -28,7 +28,14 @@ export const AiGenerateRequestSchema = z.object({
 });
 
 export const DocumentImportRequestSchema = z.object({
-  path: z.string().min(1),
+  /** Original filename — used to derive title and detect format. */
+  name: z.string().min(1).max(512),
+  /** Raw file bytes — works in browser (FileReader), Electron, and Tauri alike. */
+  bytes: z
+    .instanceof(Uint8Array)
+    .refine((b) => b.byteLength > 0 && b.byteLength <= 50 * 1024 * 1024, {
+      message: 'document must be between 1 byte and 50 MB',
+    }),
   title: z.string().optional(),
   locale: LocaleSchema.optional(),
 });
