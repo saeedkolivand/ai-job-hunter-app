@@ -11,7 +11,7 @@ import { createMachine } from '@/lib/machine';
  *   step_1  → Job target (boards, search queries)
  *   step_2  → Filters (salary, location, remote, tech stack)
  *   step_3  → Schedule (frequency, time window)
- *   saving  → Calling window.api.autopilot.create
+ *   saving  → Calling useAppClient().autopilot.create
  *   done    → Successfully created
  *   error   → Save failed
  *

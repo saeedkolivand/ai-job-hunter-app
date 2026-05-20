@@ -9,14 +9,21 @@ import {
 
 export { getClient };
 
+interface AppClientProviderProps {
+  children: ReactNode;
+  /** Override the transport. Desktop omits this (falls back to Electron IPC).
+   *  The Tauri entry and test harnesses pass their own client here. */
+  client?: AppClient;
+}
+
 const AppClientContext = createContext<AppClient | null>(null);
 
-export function AppClientProvider({ children }: { children: ReactNode }) {
+export function AppClientProvider({ children, client: injected }: AppClientProviderProps) {
   const client = useMemo(() => {
-    const c = createDesktopIpcClient();
+    const c = injected ?? createDesktopIpcClient();
     _registerClient(c);
     return c;
-  }, []);
+  }, [injected]);
 
   return <AppClientContext.Provider value={client}>{children}</AppClientContext.Provider>;
 }

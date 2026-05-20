@@ -522,6 +522,12 @@ export const IPC_CHANNELS = {
   shortcuts: {
     onCommandPalette: 'shortcut:command-palette',
   },
+
+  dialog: {
+    /** Open a native file picker — implemented by Electron dialog on desktop,
+     *  Tauri dialog plugin in the Tauri shell. */
+    openFiles: 'dialog:open-files',
+  },
 } as const;
 
 export type IpcChannel =

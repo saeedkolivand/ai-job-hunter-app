@@ -18,6 +18,7 @@ import { createLogger } from '@ajh/core';
 import { bootstrap } from './bootstrap.js';
 import { registerIpc } from './ipc/router.js';
 import { installMenu } from './menus.js';
+import { rollbackFlags } from './rollback-flags.js';
 import { applySecurityDefaults } from './security.js';
 import { setStartupMs } from './startup-metrics.js';
 import { setupUpdater } from './updater.js';
@@ -30,17 +31,22 @@ let _appReadyAt = 0;
 // ── GPU / rendering flags ──────────────────────────────────────────────────
 // Must be set before app.whenReady().
 //
+// AJH_LOW_END_MODE=1 skips the GPU acceleration switches so the OS/driver
+// blocklist takes effect naturally — this is the Phase 1 rollback switch.
+//
 // enable-gpu-rasterization: accelerates blur/backdrop-filter compositing.
 // enable-zero-copy:         reduces texture upload memory copies.
 // force-color-profile:      consistent sRGB across displays.
 //
-// Intentionally omitted:
+// Intentionally omitted regardless of mode:
 //   ignore-gpu-blocklist    — respects driver blocklist; avoids crashes on
 //                             machines with known-bad GPU drivers.
 //   disable-frame-rate-limit — restores OS/browser power-saving throttling;
 //                              reduces idle CPU and battery drain.
-app.commandLine.appendSwitch('enable-gpu-rasterization');
-app.commandLine.appendSwitch('enable-zero-copy');
+if (!rollbackFlags.lowEndMode) {
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  app.commandLine.appendSwitch('enable-zero-copy');
+}
 app.commandLine.appendSwitch('force-color-profile', 'srgb');
 
 applySecurityDefaults();
@@ -52,7 +58,7 @@ app.whenReady().then(async () => {
   try {
     const core = await bootstrap();
     registerIpc(core);
-    mainWindow = await createMainWindow();
+    mainWindow = await createMainWindow({ lowEndMode: rollbackFlags.lowEndMode });
 
     // Record time from app-ready to window visible.
     const startupMs = performance.now() - _appReadyAt;
@@ -79,7 +85,7 @@ app.whenReady().then(async () => {
 
     app.on('activate', async () => {
       if (BrowserWindow.getAllWindows().length === 0) {
-        mainWindow = await createMainWindow();
+        mainWindow = await createMainWindow({ lowEndMode: rollbackFlags.lowEndMode });
       }
     });
   } catch (err) {
