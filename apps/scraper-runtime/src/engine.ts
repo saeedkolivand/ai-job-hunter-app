@@ -10,7 +10,12 @@
  *  - Clean shutdown: close the browser and cancel running jobs on exit.
  */
 import { createLogger } from '@ajh/core';
-import { BrowserController, ScraperRegistry } from '@ajh/data';
+import {
+  BrowserController,
+  extractDocxFromBytes,
+  extractPdfFromBytes,
+  ScraperRegistry,
+} from '@ajh/data';
 import type { JobPosting } from '@ajh/shared';
 
 import type { FileCredentialStore } from './credentials.js';
@@ -187,6 +192,29 @@ export class ScraperEngine {
   disconnectBoard(boardId: string): void {
     this.loginManager.disconnect(boardId);
     logger.info({ boardId }, 'board disconnected');
+  }
+
+  // ── Text extraction ───────────────────────────────────────────────────────
+
+  /**
+   * Extract plain text from a document file (PDF, DOCX, TXT, MD).
+   * Bytes are passed as base64 to stay within the JSON protocol.
+   */
+  async extractText(name: string, bytesBase64: string): Promise<{ text: string }> {
+    const bytes = new Uint8Array(Buffer.from(bytesBase64, 'base64'));
+    const ext = name.toLowerCase().split('.').pop() ?? '';
+
+    if (ext === 'pdf') {
+      const { text } = await extractPdfFromBytes(bytes);
+      return { text };
+    }
+    if (ext === 'docx') {
+      return extractDocxFromBytes(bytes);
+    }
+    if (ext === 'txt' || ext === 'md' || ext === 'markdown') {
+      return { text: Buffer.from(bytes).toString('utf-8').trim() };
+    }
+    throw new Error(`unsupported file type: .${ext}`);
   }
 
   // ── Shutdown ───────────────────────────────────────────────────────────────

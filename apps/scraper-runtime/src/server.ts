@@ -117,6 +117,17 @@ async function handleCommand(
       break;
     }
 
+    case 'extract.text': {
+      const { jobId, payload } = cmd;
+      try {
+        const result = await engine.extractText(payload.name, payload.bytesBase64);
+        sendEvent(res, { kind: 'done', jobId, result });
+      } catch (err) {
+        sendEvent(res, { kind: 'error', jobId, message: String(err) });
+      }
+      break;
+    }
+
     case 'health': {
       const health: ScraperRuntimeHealth = { ...engine.health(), port: _port };
       sendEvent(res, { kind: 'health.reply', health });
