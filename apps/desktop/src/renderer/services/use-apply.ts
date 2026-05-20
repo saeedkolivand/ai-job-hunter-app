@@ -1,4 +1,5 @@
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+
 import { keys } from './query-client';
 
 export const useApplyCatalog = () =>

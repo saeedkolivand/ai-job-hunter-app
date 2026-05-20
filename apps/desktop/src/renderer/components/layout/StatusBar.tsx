@@ -1,5 +1,6 @@
-import { useTranslation } from '@/lib/i18n';
 import { Cpu, Database, Sparkles } from 'lucide-react';
+
+import { useTranslation } from '@/lib/i18n';
 import { useCapabilities } from '@/providers/CapabilityProvider';
 import { useAIModel } from '@/store/preferences-store';
 

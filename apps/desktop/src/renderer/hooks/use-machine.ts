@@ -1,5 +1,6 @@
-import { useState, useCallback } from 'react';
-import { transition, isBusy, isError, type Machine } from '@/lib/machine';
+import { useCallback, useState } from 'react';
+
+import { isBusy, isError, type Machine, transition } from '@/lib/machine';
 
 /**
  * React hook for driving a state machine.

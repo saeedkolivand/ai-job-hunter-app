@@ -1,7 +1,8 @@
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { Button } from './Button';
+
 import { cn } from '../lib/cn';
+import { Button } from './Button';
 
 interface ErrorStateProps {
   title?: string;

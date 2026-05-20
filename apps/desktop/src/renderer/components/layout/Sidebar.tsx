@@ -1,29 +1,32 @@
-import { useState, useRef } from 'react';
-import { Link, useRouterState } from '@tanstack/react-router';
-import { useTranslation } from '@/lib/i18n';
-import { motion, AnimatePresence } from 'motion/react';
 import {
-  LayoutDashboard,
-  Briefcase,
-  FileText,
-  Search,
-  Sparkles,
-  Settings,
-  Gauge,
   Activity,
-  Wand2,
-  User,
-  HelpCircle,
+  Briefcase,
   Cpu,
+  FileText,
+  Gauge,
+  HelpCircle,
+  LayoutDashboard,
+  Search,
+  Settings,
+  Sparkles,
+  User,
+  Wand2,
   Zap,
 } from 'lucide-react';
-import { cn } from '@/lib/cn';
+import { AnimatePresence, motion } from 'motion/react';
+import { useRef, useState } from 'react';
+import { Link, useRouterState } from '@tanstack/react-router';
+
+import { Button } from '@ajh/ui';
+
 import { ROUTES } from '@/constants/routes';
-import { useUserName } from '@/store/preferences-store';
+import { cn } from '@/lib/cn';
 import { getTimeGreeting } from '@/lib/greeting';
+import { useTranslation } from '@/lib/i18n';
 import { transition, variants } from '@/lib/motion';
 import { useAICapability } from '@/providers/CapabilityProvider';
 import { useAppVersion } from '@/services/use-system';
+import { useUserName } from '@/store/preferences-store';
 
 const NAV_ITEMS = [
   { to: ROUTES.DASHBOARD, label: 'nav.dashboard', icon: LayoutDashboard, tourId: 'dashboard' },
@@ -75,7 +78,7 @@ export function Sidebar() {
                     border: '1px solid rgba(168,85,247,0.25)',
                     boxShadow: '0 0 16px rgba(168,85,247,0.12)',
                   }}
-                  transition={{ type: 'spring', stiffness: 600, damping: 40, mass: 0.6 }}
+                  transition={transition.spring}
                 />
               )}
               <Link
@@ -161,12 +164,12 @@ export function Sidebar() {
           </div>
 
           <div className="relative">
-            <button
+            <Button
               onClick={showVersion}
               className="font-mono text-[9px] tabular-nums text-foreground/20 transition-colors hover:text-foreground/40"
             >
               {appVersion}
-            </button>
+            </Button>
             <AnimatePresence>
               {versionTooltip && (
                 <motion.div

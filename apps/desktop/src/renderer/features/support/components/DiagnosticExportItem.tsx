@@ -1,5 +1,6 @@
-import { cn } from '@/lib/cn';
 import { CheckCircle2, XCircle } from 'lucide-react';
+
+import { cn } from '@/lib/cn';
 
 interface DiagnosticExportItemProps {
   name: string;

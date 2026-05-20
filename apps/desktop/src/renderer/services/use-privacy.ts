@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+
 import { keys } from './query-client';
 
 export const useSignOutAll = () => {
@@ -6,8 +7,8 @@ export const useSignOutAll = () => {
   return useMutation({
     mutationFn: () => window.api.privacy.signOutAll(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.credentials.all });
-      qc.invalidateQueries({ queryKey: ['boards'] });
+      void qc.invalidateQueries({ queryKey: keys.credentials.all });
+      void qc.invalidateQueries({ queryKey: ['boards'] });
     },
   });
 };

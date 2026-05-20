@@ -7,7 +7,9 @@
  * to stay resilient to UI changes.
  */
 import { load } from 'cheerio';
+
 import type { JobPosting } from '@ajh/shared';
+
 import { BaseScraper, type BoardSearchInput, type ScrapeContext } from '../base.js';
 import { fetchText, stripHtml } from '../http.js';
 

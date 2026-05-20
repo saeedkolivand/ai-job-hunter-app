@@ -1,10 +1,11 @@
-import { createPortal } from 'react-dom';
-import { useEffect, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { GlassOverlay } from './GlassOverlay';
+import { type ReactNode, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+
 import { useFocusTrap } from '../hooks/use-focus-trap';
-import { variants, transition } from '../lib/motion';
 import { cn } from '../lib/cn';
+import { transition, variants } from '../lib/motion';
+import { GlassOverlay } from './GlassOverlay';
 
 export interface ModalShellProps {
   open: boolean;

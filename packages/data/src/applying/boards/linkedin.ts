@@ -1,4 +1,5 @@
 import type { Page } from 'playwright';
+
 /**
  * LinkedIn Easy Apply — SCAFFOLD ONLY.
  *
@@ -19,7 +20,7 @@ import type { Page } from 'playwright';
  * Even with that flag, do not enable for users in production without a
  * confirmation UI inside the app.
  */
-import { BaseApplier, type Applier, type ApplyContext, type ApplyResult } from '../base.js';
+import { type Applier, type ApplyContext, type ApplyResult, BaseApplier } from '../base.js';
 
 export class LinkedInApplier extends BaseApplier implements Applier {
   readonly boardId = 'linkedin';

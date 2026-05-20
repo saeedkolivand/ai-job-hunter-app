@@ -1,12 +1,14 @@
+import { Bot, Briefcase, ChevronDown, Link as LinkIcon, Settings, Wifi } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
-import { motion, AnimatePresence } from 'motion/react';
-import { ChevronDown, Wifi, Bot, Briefcase, Settings, Link as LinkIcon } from 'lucide-react';
-import { useTranslation } from '@/lib/i18n';
+
+import { Button } from '@ajh/ui';
+
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
-import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
+import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
 
 export const Route = createFileRoute('/support')({ component: SupportPage });

@@ -1,7 +1,8 @@
 import type { LucideIcon } from 'lucide-react';
 import type { ElementType } from 'react';
-import { IconBadge } from './IconBadge';
+
 import { cn } from '../lib/cn';
+import { IconBadge } from './IconBadge';
 
 interface SectionHeaderProps {
   icon: LucideIcon | ElementType;

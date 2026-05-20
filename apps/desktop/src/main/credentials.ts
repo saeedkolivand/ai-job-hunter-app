@@ -16,9 +16,11 @@
  *  - Logging in to a third-party board may violate that platform's ToS.
  *    The UI surfaces this to the user before storing credentials.
  */
-import { app, safeStorage } from 'electron';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+
+import { app, safeStorage } from 'electron';
+
 import { createLogger } from '@ajh/core';
 
 const logger = createLogger('credentials');

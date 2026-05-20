@@ -1,6 +1,8 @@
-import { createContext, useContext, type ReactNode } from 'react';
-import { useSystemHealth } from '@/services/use-system';
+import { createContext, type ReactNode, useContext } from 'react';
+
 import type { RuntimeHealth } from '@ajh/shared';
+
+import { useSystemHealth } from '@/services/use-system';
 
 // ── Capability shape ─────────────────────────────────────────────────────────
 

@@ -5,10 +5,11 @@
  * Reuses session cookies from Playwright authentication.
  * Uses undici for faster HTTP requests.
  */
-import { request, Pool } from 'undici';
+import { Pool, request } from 'undici';
+import { gunzipSync } from 'zlib';
+
 import type { LinkedInSessionData } from '../session/store.js';
 import { linkedinRateLimiter } from './rate-limiter.js';
-import { gunzipSync } from 'zlib';
 
 // Create connection pool for better performance
 const pool = new Pool('https://www.linkedin.com', {

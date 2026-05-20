@@ -1,6 +1,8 @@
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { queryClient, keys } from './query-client';
+import { useMutation, useQuery } from '@tanstack/react-query';
+
 import type { Locale } from '@ajh/shared';
+
+import { keys, queryClient } from './query-client';
 
 export const useSystemHealth = () =>
   useQuery({

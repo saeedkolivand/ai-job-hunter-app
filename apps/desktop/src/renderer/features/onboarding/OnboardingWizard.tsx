@@ -1,10 +1,12 @@
-import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useOnboardingCompleted, usePreferencesStore } from '@/store/preferences-store';
-import { WelcomeStep } from './steps/WelcomeStep';
-import { PrefsStep } from './steps/PrefsStep';
-import { SpotlightTour } from './SpotlightTour';
+import { useState } from 'react';
+
 import { transition } from '@/lib/motion';
+import { useOnboardingCompleted, usePreferencesStore } from '@/store/preferences-store';
+
+import { SpotlightTour } from './SpotlightTour';
+import { PrefsStep } from './steps/PrefsStep';
+import { WelcomeStep } from './steps/WelcomeStep';
 
 type Step = 'welcome' | 'prefs' | 'tour';
 

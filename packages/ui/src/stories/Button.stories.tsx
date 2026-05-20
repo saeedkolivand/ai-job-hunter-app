@@ -1,5 +1,6 @@
+import { Download, Sparkles, Trash2 } from 'lucide-react';
 import type { Meta, StoryObj } from '@storybook/react';
-import { Sparkles, Trash2, Download } from 'lucide-react';
+
 import { Button } from '../components/Button';
 
 const meta: Meta<typeof Button> = {

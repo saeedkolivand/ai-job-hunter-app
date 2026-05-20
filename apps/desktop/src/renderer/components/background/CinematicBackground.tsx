@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+
 import { useMouseParallax } from '@/hooks/use-mouse-parallax';
 
 /**

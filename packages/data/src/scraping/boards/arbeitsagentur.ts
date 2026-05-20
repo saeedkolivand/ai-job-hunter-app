@@ -10,6 +10,7 @@
  * shipped in their own front-end JS — not a user secret.
  */
 import type { JobPosting } from '@ajh/shared';
+
 import { BaseScraper, type BoardSearchInput, type ScrapeContext } from '../base.js';
 import { fetchJson, stripHtml } from '../http.js';
 

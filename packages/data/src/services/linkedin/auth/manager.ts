@@ -5,9 +5,12 @@
  * After successful login, extracts and saves session cookies for HTTP client use.
  */
 import path from 'node:path';
-import { chromium, type BrowserContext } from 'playwright';
+
+import { type BrowserContext, chromium } from 'playwright';
+
 import { createLogger } from '@ajh/core';
-import { LinkedInSessionStore, type LinkedInSessionData } from '../session/store.js';
+
+import { type LinkedInSessionData, LinkedInSessionStore } from '../session/store.js';
 
 const logger = createLogger('linkedin.auth.manager');
 

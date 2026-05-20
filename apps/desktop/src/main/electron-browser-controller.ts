@@ -16,7 +16,8 @@
  * Pages are opened in a hidden BrowserWindow and torn down after withPage()
  * returns — same lifecycle as Playwright pages.
  */
-import { BrowserWindow, session, type Session } from 'electron';
+import { BrowserWindow, type Session, session } from 'electron';
+
 import { createLogger } from '@ajh/core';
 
 const logger = createLogger('electron-browser');

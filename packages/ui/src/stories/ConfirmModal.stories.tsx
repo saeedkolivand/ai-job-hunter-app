@@ -1,7 +1,8 @@
-import type { Meta, StoryObj } from '@storybook/react';
 import { useState } from 'react';
-import { ConfirmModal } from '../components/ConfirmModal';
+import type { Meta, StoryObj } from '@storybook/react';
+
 import { Button } from '../components/Button';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 const meta: Meta<typeof ConfirmModal> = {
   title: 'Overlays/ConfirmModal',

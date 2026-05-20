@@ -1,9 +1,11 @@
-import { useState } from 'react';
-import { useTranslation } from '@/lib/i18n';
 import { Search } from 'lucide-react';
+import { useState } from 'react';
+
+import { Button, EmptyState, Input } from '@ajh/ui';
+
 import { cn } from '@/lib/cn';
-import { Input } from '@/components/ui/Input';
-import { EmptyState } from '@/components/ui/EmptyState';
+import { useTranslation } from '@/lib/i18n';
+
 import { KBArticleCard } from './KBArticleCard';
 
 const CATEGORIES = [
@@ -89,18 +91,18 @@ export function KnowledgeBase() {
         <h2 className="mb-4 text-lg font-semibold">{t('support.knowledgeBase.categories')}</h2>
         <div className="flex flex-wrap gap-2">
           {CATEGORIES.map(({ id, nameKey }) => (
-            <button
+            <Button
               key={id}
               onClick={() => setSelectedCategory(id)}
               className={cn(
-                'rounded-lg px-3 py-1.5 text-xs font-medium transition-colors duration-150',
+                'rounded-lg px-3 py-1.5 text-xs font-medium transition-colors duration-150 h-auto',
                 selectedCategory === id
                   ? 'bg-brand-soft text-white'
                   : 'bg-white/5 text-foreground/70 hover:bg-white/10'
               )}
             >
               {t(nameKey)}
-            </button>
+            </Button>
           ))}
         </div>
       </div>

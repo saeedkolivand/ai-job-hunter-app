@@ -4,11 +4,13 @@
  * Limited to basic search parameters and a small number of results.
  */
 
+import { load } from 'cheerio';
+
 import { createLogger } from '@ajh/core';
+import type { JobPosting } from '@ajh/shared';
+
 import type { LinkedInHttpClient } from '../client/http-client.js';
 import type { LinkedInSessionData } from '../session/store.js';
-import type { JobPosting } from '@ajh/shared';
-import { load } from 'cheerio';
 
 const logger = createLogger('linkedin.jobs.api');
 

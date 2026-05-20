@@ -25,9 +25,11 @@
  * We override that in the page's main world on every dom-ready to reject
  * only publicKey requests, letting password autofill pass through normally.
  */
-import { BrowserWindow, type Session } from 'electron';
-import path from 'node:path';
 import fs from 'node:fs/promises';
+import path from 'node:path';
+
+import { BrowserWindow, type Session } from 'electron';
+
 import { createLogger } from '@ajh/core';
 
 const DISABLE_PASSKEY_SCRIPT = `

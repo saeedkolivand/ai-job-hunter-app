@@ -1,9 +1,12 @@
-import { useTranslation } from '@/lib/i18n';
-import { cn } from '@/lib/cn';
 import { BOARD_IDS } from '@ajh/shared';
-import { WizardField } from './WizardField';
+import { Button, Input, SelectDropdown } from '@ajh/ui';
+
+import { cn } from '@/lib/cn';
+import { useTranslation } from '@/lib/i18n';
+import type { Prefilled, SetFn, WizardState } from '@/routes/autopilot';
+
 import { PrefilledBadge } from './PrefilledBadge';
-import type { WizardState, SetFn, Prefilled } from '@/routes/autopilot';
+import { WizardField } from './WizardField';
 
 const inputCls =
   'w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-foreground/80 placeholder:text-foreground/25 outline-none focus:border-brand/40 transition-colors';
@@ -26,7 +29,7 @@ export function StepTarget({ form, set, prefilled }: StepTargetProps) {
       </div>
 
       <WizardField label={t('autopilot.wizard.target.name')}>
-        <input
+        <Input
           className={inputCls}
           placeholder={t('autopilot.wizard.target.namePlaceholder')}
           value={form.name}
@@ -37,25 +40,25 @@ export function StepTarget({ form, set, prefilled }: StepTargetProps) {
       <WizardField label={t('autopilot.wizard.target.board')}>
         <div className="grid grid-cols-4 gap-1.5 max-h-28 overflow-y-auto pr-1">
           {BOARD_IDS.map((b) => (
-            <button
+            <Button
               key={b}
               onClick={() => set('board', b)}
               className={cn(
-                'rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-all',
+                'rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-all h-auto',
                 form.board === b
                   ? 'border-brand/40 bg-brand/10 text-brand-soft'
                   : 'border-white/[0.06] text-foreground/40 hover:border-white/10 hover:text-foreground/65'
               )}
             >
               {b}
-            </button>
+            </Button>
           ))}
         </div>
       </WizardField>
 
       <div className="grid grid-cols-2 gap-3">
         <WizardField label={t('autopilot.wizard.target.query')}>
-          <input
+          <Input
             className={inputCls}
             placeholder={t('autopilot.wizard.target.queryPlaceholder')}
             value={form.query}
@@ -67,7 +70,7 @@ export function StepTarget({ form, set, prefilled }: StepTargetProps) {
           hint={t('autopilot.wizard.target.locationOptional')}
         >
           <div className="space-y-1.5">
-            <input
+            <Input
               className={inputCls}
               placeholder={t('autopilot.wizard.target.locationPlaceholder')}
               value={form.location}
@@ -83,25 +86,25 @@ export function StepTarget({ form, set, prefilled }: StepTargetProps) {
       <WizardField label={t('autopilot.wizard.target.workType')}>
         <div className="grid grid-cols-4 gap-1.5">
           {(['any', 'remote', 'hybrid', 'on-site'] as const).map((opt) => (
-            <button
+            <Button
               key={opt}
               onClick={() => set('workType', opt)}
               className={cn(
-                'rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-all',
+                'rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-all h-auto',
                 form.workType === opt
                   ? 'border-brand/40 bg-brand/10 text-brand-soft'
                   : 'border-white/[0.06] text-foreground/40 hover:border-white/10 hover:text-foreground/65'
               )}
             >
               {opt}
-            </button>
+            </Button>
           ))}
         </div>
       </WizardField>
 
       <div className="grid grid-cols-2 gap-3">
         <WizardField label={t('autopilot.wizard.target.pages')}>
-          <input
+          <Input
             type="number"
             min={1}
             max={10}
@@ -111,16 +114,17 @@ export function StepTarget({ form, set, prefilled }: StepTargetProps) {
           />
         </WizardField>
         <WizardField label={t('autopilot.wizard.target.postedWithin')}>
-          <select
-            className={inputCls}
+          <SelectDropdown
+            options={[
+              { value: '', label: t('autopilot.wizard.target.anyTime') },
+              { value: '24h', label: t('autopilot.wizard.target.last24h') },
+              { value: 'week', label: t('autopilot.wizard.target.lastWeek') },
+              { value: 'month', label: t('autopilot.wizard.target.lastMonth') },
+            ]}
             value={form.dateFilter}
-            onChange={(e) => set('dateFilter', e.target.value)}
-          >
-            <option value="">{t('autopilot.wizard.target.anyTime')}</option>
-            <option value="24h">{t('autopilot.wizard.target.last24h')}</option>
-            <option value="week">{t('autopilot.wizard.target.lastWeek')}</option>
-            <option value="month">{t('autopilot.wizard.target.lastMonth')}</option>
-          </select>
+            onChange={(value) => set('dateFilter', value)}
+            placeholder={t('autopilot.wizard.target.anyTime')}
+          />
         </WizardField>
       </div>
     </div>

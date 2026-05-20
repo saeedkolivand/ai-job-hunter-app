@@ -1,4 +1,5 @@
 import type { Page } from 'playwright';
+
 /**
  * Indeed "Apply with Indeed" / Easy Apply — scaffold.
  *
@@ -12,7 +13,7 @@ import type { Page } from 'playwright';
  * `ctx.autoSubmit`. CAPTCHAs / human challenges pause the flow with a 2-min
  * wait window so the user can resolve them in-browser.
  */
-import { BaseApplier, type Applier, type ApplyContext, type ApplyResult } from '../base.js';
+import { type Applier, type ApplyContext, type ApplyResult, BaseApplier } from '../base.js';
 
 export class IndeedApplier extends BaseApplier implements Applier {
   readonly boardId = 'indeed';

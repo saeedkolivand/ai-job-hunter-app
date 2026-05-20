@@ -1,6 +1,8 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { keys } from './query-client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+
 import type { ScrapeBoardRequest, ScrapeUrlRequest } from '@ajh/shared';
+
+import { keys } from './query-client';
 
 export const usePostings = () =>
   useQuery({

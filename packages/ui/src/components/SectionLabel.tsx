@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import type { ElementType } from 'react';
+
 import { cn } from '../lib/cn';
 
 interface SectionLabelProps {

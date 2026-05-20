@@ -1,6 +1,9 @@
-import { useState } from 'react';
-import { useTranslation } from '@/lib/i18n';
 import { AlertTriangle } from 'lucide-react';
+import { useState } from 'react';
+
+import { Button } from '@ajh/ui';
+
+import { useTranslation } from '@/lib/i18n';
 
 interface IssueCardProps {
   title: string;
@@ -13,15 +16,15 @@ export function IssueCard({ title, solutions }: IssueCardProps) {
 
   return (
     <div className="glass-card rounded-xl p-4">
-      <button
+      <Button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-start gap-3 w-full text-left"
+        className="flex items-start gap-3 w-full text-left h-auto bg-transparent border-transparent"
       >
         <AlertTriangle size={16} className="mt-0.5 text-amber-400 shrink-0" />
         <div className="flex-1">
           <div className="text-sm font-medium text-foreground/90">{title}</div>
         </div>
-      </button>
+      </Button>
       {expanded && (
         <div className="mt-3 ml-7 space-y-2">
           <div className="text-xs font-medium text-foreground/40 mb-2">

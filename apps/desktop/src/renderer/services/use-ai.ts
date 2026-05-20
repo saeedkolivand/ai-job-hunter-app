@@ -1,7 +1,9 @@
-import { useQuery, useMutation } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+
+import type { AiGenerateRequest, AiStreamChunk } from '@ajh/shared';
+
 import { keys } from './query-client';
-import type { AiStreamChunk, AiGenerateRequest } from '@ajh/shared';
 
 export const useAIModels = () =>
   useQuery({

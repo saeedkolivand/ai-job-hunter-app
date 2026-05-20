@@ -1,5 +1,5 @@
-import { useMutation } from '@tanstack/react-query';
 import { useEffect } from 'react';
+import { useMutation } from '@tanstack/react-query';
 
 export const useExportDiagnostics = () =>
   useMutation({ mutationFn: () => window.api.support.exportDiagnostics() });

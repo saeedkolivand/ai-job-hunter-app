@@ -1,12 +1,13 @@
-import { useState, useRef } from 'react';
+import { AlertCircle, Check, FileText, Sparkles, Trash2, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
-import { FileText, Upload, Check, AlertCircle, Sparkles, Trash2 } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { Button } from '@/components/ui/Button';
-import { usePreferencesStore, useResume } from '@/store/preferences-store';
+import { useRef, useState } from 'react';
+
+import { Button, GlassCard } from '@ajh/ui';
+
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
+import { usePreferencesStore, useResume } from '@/store/preferences-store';
 
 interface Resume {
   id: string;
@@ -65,7 +66,7 @@ export function ResumePreferences() {
     setDragActive(false);
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileUpload(e.dataTransfer.files[0]);
+      void handleFileUpload(e.dataTransfer.files[0]);
     }
   };
 

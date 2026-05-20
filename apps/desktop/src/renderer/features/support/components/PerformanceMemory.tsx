@@ -1,4 +1,5 @@
 import { useTranslation } from '@/lib/i18n';
+
 import { MemoryBar } from './MemoryBar';
 import { MetricCard } from './MetricCard';
 import { OptimizationCard } from './OptimizationCard';

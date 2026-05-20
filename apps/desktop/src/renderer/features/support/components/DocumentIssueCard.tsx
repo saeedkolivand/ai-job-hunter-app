@@ -1,6 +1,9 @@
+import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 import { useState } from 'react';
+
+import { Button } from '@ajh/ui';
+
 import { cn } from '@/lib/cn';
-import { CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
 
 interface DocumentIssueCardProps {
   filename: string;
@@ -29,22 +32,22 @@ export function DocumentIssueCard({ filename, issue, status, actions }: Document
           <div className="text-sm font-medium text-foreground/90">{filename}</div>
           <div className="text-xs text-foreground/55 mt-0.5">{issue}</div>
         </div>
-        <button
+        <Button
           onClick={() => setExpanded(!expanded)}
-          className="text-xs text-brand-soft hover:text-brand"
+          className="text-xs text-brand-soft hover:text-brand h-auto bg-transparent border-transparent"
         >
           {expanded ? 'Hide' : 'Actions'}
-        </button>
+        </Button>
       </div>
       {expanded && (
         <div className="mt-3 ml-7 space-y-1">
           {actions.map((action, i) => (
-            <button
+            <Button
               key={i}
-              className="block text-xs text-foreground/70 hover:text-foreground transition-colors"
+              className="block text-xs text-foreground/70 hover:text-foreground transition-colors h-auto bg-transparent border-transparent"
             >
               • {action}
-            </button>
+            </Button>
           ))}
         </div>
       )}

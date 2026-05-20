@@ -32,10 +32,13 @@
  *  - Login window has no preload — completely isolated from app IPC
  */
 
-import { BrowserWindow, session, type Session } from 'electron';
-import path from 'node:path';
 import fs from 'node:fs/promises';
+import path from 'node:path';
+
+import { BrowserWindow, type Session, session } from 'electron';
+
 import { createLogger } from '@ajh/core';
+
 import { BOARD_CONFIGS, DISABLE_PASSKEY_SCRIPT } from './configs.js';
 import type { BoardConfig, BoardSessionStatus } from './types.js';
 

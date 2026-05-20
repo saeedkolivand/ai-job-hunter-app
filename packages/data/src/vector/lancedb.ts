@@ -6,8 +6,10 @@
  * This keeps the store model-agnostic across bge-m3 / e5 / nomic / etc.
  */
 import { connect, type Connection, type Table } from '@lancedb/lancedb';
-import type { CollectionName, VectorRecord } from './collections.js';
+
 import { createLogger } from '@ajh/core';
+
+import type { CollectionName, VectorRecord } from './collections.js';
 
 export interface SearchOptions {
   topK?: number;

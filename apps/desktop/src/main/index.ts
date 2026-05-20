@@ -12,13 +12,15 @@
  *  - run AI inference, OCR, scraping, embeddings, or indexing here.
  */
 import { app, BrowserWindow } from 'electron';
-import { applySecurityDefaults } from './security.js';
-import { createMainWindow } from './window.js';
-import { installMenu } from './menus.js';
+
+import { createLogger } from '@ajh/core';
+
 import { bootstrap } from './bootstrap.js';
 import { registerIpc } from './ipc/router.js';
+import { installMenu } from './menus.js';
+import { applySecurityDefaults } from './security.js';
 import { setupUpdater } from './updater.js';
-import { createLogger } from '@ajh/core';
+import { createMainWindow } from './window.js';
 
 const logger = createLogger('main');
 

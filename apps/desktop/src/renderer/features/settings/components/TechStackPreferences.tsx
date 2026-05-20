@@ -1,14 +1,14 @@
-import { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { transition } from '@/lib/motion';
-import { Code2, X, Plus, Search } from 'lucide-react';
+import { Code2, Plus, Search, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { usePreferencesStore, useTechStack } from '@/store/preferences-store';
+
+import { Button, GlassCard, Input } from '@ajh/ui';
+
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
+import { transition } from '@/lib/motion';
+import { usePreferencesStore, useTechStack } from '@/store/preferences-store';
 
 const COMMON_TECH = [
   { name: 'JavaScript', category: 'language' },
@@ -121,12 +121,12 @@ export function TechStackPreferences() {
             >
               <Code2 size={14} className="text-foreground/40" />
               <span className="text-foreground">{item.name}</span>
-              <button
+              <Button
                 onClick={() => handleRemoveTech(item.name)}
-                className="ml-1 rounded-full p-0.5 hover:bg-white/10 transition-colors"
+                className="ml-1 rounded-full p-0.5 hover:bg-white/10 transition-colors h-auto bg-transparent border-transparent"
               >
                 <X size={12} className="text-foreground/40 hover:text-foreground" />
-              </button>
+              </Button>
             </motion.div>
           ))}
         </div>
@@ -194,10 +194,10 @@ export function TechStackPreferences() {
             >
               <div className="max-h-48 overflow-y-auto px-1 py-1">
                 {filteredSuggestions.map((suggestion) => (
-                  <button
+                  <Button
                     key={suggestion.name}
                     onClick={() => handleAddTech(suggestion.name, suggestion.category)}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground/70 hover:bg-white/5 hover:text-foreground transition-colors"
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground/70 hover:bg-white/5 hover:text-foreground transition-colors h-auto bg-transparent border-transparent"
                   >
                     <Code2 size={14} className="text-foreground/40" />
                     <span className="flex-1 text-left">{suggestion.name}</span>
@@ -209,7 +209,7 @@ export function TechStackPreferences() {
                     >
                       {suggestion.category}
                     </span>
-                  </button>
+                  </Button>
                 ))}
               </div>
             </motion.div>

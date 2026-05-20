@@ -1,7 +1,8 @@
+import { Briefcase, FileText, Search, Sparkles } from 'lucide-react';
 import type { Meta, StoryObj } from '@storybook/react';
-import { Search, Briefcase, FileText, Sparkles } from 'lucide-react';
-import { EmptyState } from '../components/EmptyState';
+
 import { Button } from '../components/Button';
+import { EmptyState } from '../components/EmptyState';
 
 const meta: Meta<typeof EmptyState> = {
   title: 'Feedback/EmptyState',

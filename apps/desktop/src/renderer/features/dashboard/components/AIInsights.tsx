@@ -1,6 +1,7 @@
-import { type LucideIcon, Lightbulb, TrendingUp, AlertTriangle, CheckCircle } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { SectionLabel } from '@/components/ui/SectionLabel';
+import { AlertTriangle, CheckCircle, Lightbulb, type LucideIcon, TrendingUp } from 'lucide-react';
+
+import { GlassCard, SectionLabel } from '@ajh/ui';
+
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 

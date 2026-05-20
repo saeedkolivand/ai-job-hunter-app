@@ -1,41 +1,39 @@
-import { useState } from 'react';
-import { createFileRoute } from '@tanstack/react-router';
-import { motion, AnimatePresence } from 'motion/react';
-import { useTranslation } from '@/lib/i18n';
-import { PageTransition } from '@/components/layout/PageTransition';
 import {
-  Languages,
-  Cpu,
-  Lock,
   Briefcase,
+  ChevronRight,
+  Cpu,
   FileText,
+  Languages,
+  Lock,
   Shield,
   User,
-  ChevronRight,
   Wand2,
 } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { IconBadge } from '@/components/ui/IconBadge';
-import { SectionLabel } from '@/components/ui/SectionLabel';
-import { LanguageSelector } from '@/features/settings/components/LanguageSelector';
-import { AISettingsTab } from '@/features/settings/components/AISettingsTab';
+import { AnimatePresence, motion } from 'motion/react';
+import { useState } from 'react';
+import { createFileRoute } from '@tanstack/react-router';
+
+import { Button, GlassCard, IconBadge, Input, SectionLabel } from '@ajh/ui';
+
+import { PageTransition } from '@/components/layout/PageTransition';
 import { AccountsSettingsTab } from '@/features/settings/components/AccountsSettingsTab';
-import { PrivacySettingsTab } from '@/features/settings/components/PrivacySettingsTab';
+import { AISettingsTab } from '@/features/settings/components/AISettingsTab';
 import { JobLocationPreferences } from '@/features/settings/components/JobLocationPreferences';
-import { RemotePreferences } from '@/features/settings/components/RemotePreferences';
-import { TechStackPreferences } from '@/features/settings/components/TechStackPreferences';
-import { SalaryPreferences } from '@/features/settings/components/SalaryPreferences';
+import { LanguageSelector } from '@/features/settings/components/LanguageSelector';
 import { OutputTonePreferences } from '@/features/settings/components/OutputTonePreferences';
+import { PrivacySettingsTab } from '@/features/settings/components/PrivacySettingsTab';
+import { RemotePreferences } from '@/features/settings/components/RemotePreferences';
 import { ResumePreferences } from '@/features/settings/components/ResumePreferences';
-import {
-  useUserName,
-  usePreferencesStore,
-  useOnboardingCompleted,
-} from '@/store/preferences-store';
-import { transition, variants } from '@/lib/motion';
+import { SalaryPreferences } from '@/features/settings/components/SalaryPreferences';
+import { TechStackPreferences } from '@/features/settings/components/TechStackPreferences';
 import { cn } from '@/lib/cn';
+import { useTranslation } from '@/lib/i18n';
+import { transition, variants } from '@/lib/motion';
+import {
+  useOnboardingCompleted,
+  usePreferencesStore,
+  useUserName,
+} from '@/store/preferences-store';
 
 export const Route = createFileRoute('/settings')({ component: SettingsPage });
 

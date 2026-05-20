@@ -1,5 +1,7 @@
-import { type LucideIcon, Briefcase, CheckCircle, Clock, TrendingUp } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
+import { Briefcase, CheckCircle, Clock, type LucideIcon, TrendingUp } from 'lucide-react';
+
+import { GlassCard } from '@ajh/ui';
+
 import { useTranslation } from '@/lib/i18n';
 
 interface PipelineStat {

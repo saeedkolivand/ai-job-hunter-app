@@ -1,1 +1,1 @@
-export { WorkerPool, type PoolOptions, type WorkerTask } from './pool.js';
+export { type PoolOptions, WorkerPool, type WorkerTask } from './pool.js';
