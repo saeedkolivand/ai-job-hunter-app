@@ -222,9 +222,47 @@ pub fn ai_generate(_req: Value) -> Value {
     json!({ "error": "AI runtime not yet available in Tauri spike" })
 }
 
+/// List models available in the local Ollama instance.
+///
+/// Calls GET <OLLAMA_HOST>/api/tags (default http://127.0.0.1:11434).
+/// Returns [] gracefully if Ollama is not running — the renderer shows an
+/// empty model picker rather than an error.
+/// Shape matches the Electron router: Array<{ name: string }>.
 #[tauri::command]
-pub fn ai_list_models() -> Value {
-    json!([])
+pub async fn ai_list_models() -> Value {
+    let base = std::env::var("OLLAMA_HOST")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return json!([]),
+    };
+
+    let resp = match client.get(format!("{base}/api/tags")).send().await {
+        Ok(r) if r.status().is_success() => r,
+        _ => return json!([]),
+    };
+
+    let body: serde_json::Value = match resp.json().await {
+        Ok(v) => v,
+        Err(_) => return json!([]),
+    };
+
+    let models: Vec<serde_json::Value> = body
+        .get("models")
+        .and_then(|m| m.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| m.get("name").and_then(|n| n.as_str()))
+                .map(|name| json!({ "name": name }))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    json!(models)
 }
 
 #[tauri::command]
