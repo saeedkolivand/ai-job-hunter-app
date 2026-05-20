@@ -41,7 +41,7 @@ export interface AppCore {
 export async function bootstrap(): Promise<AppCore> {
   const logger = createLogger('bootstrap');
   const bus = new EventBus();
-  const jobs = new JobQueue(bus, { concurrency: 4 });
+  const jobs = new JobQueue(bus, { concurrency: 2 });
   const scheduler = new TaskScheduler();
   const runtimes = new RuntimeManager(bus);
   const state = new StateCoordinator(bus, { locale: 'en' });

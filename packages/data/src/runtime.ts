@@ -16,11 +16,6 @@ import { ApplierRegistry } from './applying/registry.js';
 import { createDb, type Db } from './db/client.js';
 import { InMemoryJobStore } from './jobs/in-memory-store.js';
 import { MatchingEngine } from './matching/engine.js';
-import {
-  BOARD_SESSION_CONFIGS,
-  BoardSessionManager,
-  type BoardSessionStatus,
-} from './scraping/board-session-manager.js';
 import { BrowserController } from './scraping/browser.js';
 import { ScraperRegistry } from './scraping/registry.js';
 import { VectorStore } from './vector/lancedb.js';
@@ -39,11 +34,6 @@ export class DataRuntime implements Runtime {
   readonly matching = new MatchingEngine();
   readonly browser = new BrowserController({ headless: true });
   /**
-   * Per-board session managers. The user "Connects" each board once via
-   * Settings → Accounts; the persistent context is reused by scrapers.
-   */
-  readonly boardSessions = new Map<string, BoardSessionManager>();
-  /**
    * In-memory store for live scraping results.
    * Jobs are stored temporarily during scraping and cleared when scraping completes.
    */
@@ -52,23 +42,7 @@ export class DataRuntime implements Runtime {
   constructor(
     private readonly _bus: EventBus,
     private readonly opts: DataRuntimeOptions
-  ) {
-    for (const cfg of Object.values(BOARD_SESSION_CONFIGS)) {
-      this.boardSessions.set(cfg.id, new BoardSessionManager(this.opts.userDataDir, cfg));
-    }
-  }
-
-  /** Resolve the on-disk persistent-context dir for a board, or null. */
-  boardSessionDir(boardId: string): string | null {
-    const m = this.boardSessions.get(boardId);
-    return m ? m.resolveSessionDir() : null;
-  }
-
-  async boardSessionStatus(boardId: string): Promise<BoardSessionStatus> {
-    const m = this.boardSessions.get(boardId);
-    if (!m) return { connected: false };
-    return m.getStatus();
-  }
+  ) {}
 
   async start(): Promise<void> {
     await mkdir(this.opts.userDataDir, { recursive: true });
@@ -87,9 +61,7 @@ export class DataRuntime implements Runtime {
 
   async stop(): Promise<void> {
     await this.browser.close();
-    for (const m of this.boardSessions.values()) await m.close().catch(() => {});
     await this.vectors?.close();
-    // NeDB doesn't need explicit close, but we can clear the reference
     this.dbHandle = undefined;
   }
 
