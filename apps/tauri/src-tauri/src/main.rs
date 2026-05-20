@@ -6,6 +6,7 @@ mod credentials;
 mod jobs;
 mod postings;
 mod sidecar;
+mod updater;
 
 use std::sync::Mutex;
 
@@ -17,6 +18,7 @@ use credentials::CredentialStore;
 use jobs::JobTracker;
 use postings::{InteractionStore, PostingsCache};
 use sidecar::ScraperSidecarState;
+use updater::UpdaterState;
 
 // ── App menu ──────────────────────────────────────────────────────────────────
 
@@ -99,6 +101,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Mutex::new(ScraperSidecarState::default()))
         .setup(|app| {
             let handle = app.handle();
@@ -112,6 +115,7 @@ fn main() {
             app.manage(Mutex::new(JobTracker::default()));
             app.manage(Mutex::new(PostingsCache::default()));
             app.manage(Mutex::new(InteractionStore::new(&data_dir)));
+            app.manage(Mutex::new(UpdaterState::default()));
 
             // Build and set the application menu.
             let menu = build_app_menu(handle)?;
@@ -128,6 +132,9 @@ fn main() {
             if let Err(e) = sidecar::try_start(handle) {
                 eprintln!("[setup] sidecar start error (non-fatal): {e}");
             }
+
+            // Schedule background update checks (10 s after launch, then every 4 h).
+            updater::setup_auto_check(handle);
 
             Ok(())
         })
@@ -210,6 +217,10 @@ fn main() {
             commands::conversations_save_message,
             // native dialogs
             commands::dialog_open_files,
+            // updater
+            updater::updater_check,
+            updater::updater_download,
+            updater::updater_install,
         ])
         .run(tauri::generate_context!())
         .expect("error running tauri application");
