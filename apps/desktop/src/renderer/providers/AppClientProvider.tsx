@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, useContext, useEffect, useMemo } from 'react';
+import { createContext, type ReactNode, useContext, useMemo } from 'react';
 
 import {
   _registerClient,
@@ -12,12 +12,11 @@ export { getClient };
 const AppClientContext = createContext<AppClient | null>(null);
 
 export function AppClientProvider({ children }: { children: ReactNode }) {
-  const client = useMemo(() => createDesktopIpcClient(), []);
-
-  // Register module-level reference so getClient() works outside React.
-  useEffect(() => {
-    _registerClient(client);
-  }, [client]);
+  const client = useMemo(() => {
+    const c = createDesktopIpcClient();
+    _registerClient(c);
+    return c;
+  }, []);
 
   return <AppClientContext.Provider value={client}>{children}</AppClientContext.Provider>;
 }
