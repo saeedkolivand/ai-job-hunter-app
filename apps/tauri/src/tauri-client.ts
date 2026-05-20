@@ -123,12 +123,11 @@ export function createTauriInvokeClient(): AppClient {
     },
 
     updater: {
-      check: () => NOT_AVAILABLE,
-      download: () => NOT_AVAILABLE,
-      install: () => NOT_AVAILABLE,
-      onStatus: (_handler) => () => {
-        /* Tauri updater plugin wired separately */
-      },
+      check: () => invoke('updater_check'),
+      download: () => invoke('updater_download'),
+      install: () => invoke('updater_install'),
+      onStatus: (handler) =>
+        asyncUnsub(() => listen<unknown>('updater:status', (e) => handler(e.payload))),
     },
 
     shortcuts: {
