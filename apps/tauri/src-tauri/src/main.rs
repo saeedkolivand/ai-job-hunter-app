@@ -1,6 +1,7 @@
 // Prevents a terminal window from appearing on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod autopilot;
 mod commands;
 mod credentials;
 mod jobs;
@@ -14,6 +15,7 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
 
+use autopilot::AutopilotStore;
 use credentials::CredentialStore;
 use jobs::JobTracker;
 use postings::{InteractionStore, PostingsCache};
@@ -111,6 +113,7 @@ fn main() {
                 std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".ajh")
             });
 
+            app.manage(Mutex::new(AutopilotStore::new(&data_dir)));
             app.manage(Mutex::new(CredentialStore::new(&data_dir)));
             app.manage(Mutex::new(JobTracker::default()));
             app.manage(Mutex::new(PostingsCache::default()));
@@ -217,6 +220,15 @@ fn main() {
             commands::conversations_save_message,
             // native dialogs
             commands::dialog_open_files,
+            // autopilot
+            commands::autopilot_list,
+            commands::autopilot_get,
+            commands::autopilot_create,
+            commands::autopilot_update,
+            commands::autopilot_remove,
+            commands::autopilot_run,
+            commands::autopilot_pause,
+            commands::autopilot_resume,
             // updater
             updater::updater_check,
             updater::updater_download,

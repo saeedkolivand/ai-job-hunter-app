@@ -10,6 +10,7 @@
 use std::sync::Mutex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
+use crate::autopilot::{AutopilotStatus, AutopilotStore};
 use crate::credentials::CredentialStore;
 use crate::jobs::JobTracker;
 use crate::postings::{InteractionRecord, InteractionStore, PostingsCache};
@@ -749,6 +750,100 @@ pub fn support_copy_system_info() -> Value {
 }
 
 // ── Conversations ────────────────────────────────────────────────────────────
+
+// ── Autopilot ─────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn autopilot_list(app: AppHandle) -> Value {
+    let binding = app.state::<Mutex<AutopilotStore>>();
+    let list = binding.lock().unwrap().list();
+    json!(list)
+}
+
+#[tauri::command]
+pub fn autopilot_get(app: AppHandle, autopilot_id: String) -> Value {
+    let binding = app.state::<Mutex<AutopilotStore>>();
+    let ap = binding.lock().unwrap().get(&autopilot_id);
+    json!(ap)
+}
+
+#[tauri::command]
+pub fn autopilot_create(app: AppHandle, req: Value) -> Value {
+    let store = app.state::<Mutex<AutopilotStore>>();
+    let ap = store.lock().unwrap().create(req);
+    json!(ap)
+}
+
+#[tauri::command]
+pub fn autopilot_update(app: AppHandle, autopilot_id: String, req: Value) -> Value {
+    let binding = app.state::<Mutex<AutopilotStore>>();
+    let ap = binding.lock().unwrap().update(&autopilot_id, req);
+    json!(ap)
+}
+
+#[tauri::command]
+pub fn autopilot_remove(app: AppHandle, autopilot_id: String) -> Value {
+    let store = app.state::<Mutex<AutopilotStore>>();
+    store.lock().unwrap().remove(&autopilot_id);
+    json!(null)
+}
+
+#[tauri::command]
+pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
+    let target = {
+        let store = app.state::<Mutex<AutopilotStore>>();
+        let guard = store.lock().unwrap();
+        guard.get(&autopilot_id).map(|ap| ap.target.clone())
+    };
+
+    let Some(target) = target else {
+        return json!({ "error": format!("autopilot not found: {autopilot_id}") });
+    };
+
+    // Proxy to the sidecar as a scrape.board job — the result is tracked
+    // via JobTracker so the renderer's job list updates in real time.
+    let Some(port) = sidecar_port(&app) else {
+        return json!({ "error": "scraper sidecar not ready" });
+    };
+
+    let job_id = uuid_v4();
+    app.state::<Mutex<JobTracker>>()
+        .lock()
+        .unwrap()
+        .start(&job_id, "autopilot.run");
+
+    let payload = serde_json::json!({
+        "board": target.board,
+        "query": target.query,
+        "location": target.location,
+        "pages": target.pages,
+        "dateFilter": target.date_filter,
+    });
+    let cmd = serde_json::json!({ "kind": "scrape.board", "jobId": job_id, "payload": payload });
+
+    let job_id_ret = job_id.clone();
+    tauri::async_runtime::spawn(async move {
+        post_sidecar_command(&app, port, &cmd, &job_id).await.ok();
+    });
+
+    json!({ "jobId": job_id_ret })
+}
+
+#[tauri::command]
+pub fn autopilot_pause(app: AppHandle, autopilot_id: String) -> Value {
+    let store = app.state::<Mutex<AutopilotStore>>();
+    store.lock().unwrap().set_status(&autopilot_id, AutopilotStatus::Paused);
+    json!(null)
+}
+
+#[tauri::command]
+pub fn autopilot_resume(app: AppHandle, autopilot_id: String) -> Value {
+    let store = app.state::<Mutex<AutopilotStore>>();
+    store.lock().unwrap().set_status(&autopilot_id, AutopilotStatus::Active);
+    json!(null)
+}
+
+// ── Conversations ─────────────────────────────────────────────────────────────
 
 #[tauri::command]
 pub fn conversations_get_or_create() -> Value {
