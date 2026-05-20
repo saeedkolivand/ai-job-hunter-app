@@ -283,25 +283,68 @@ pub fn ai_embed(_req: Value) -> Value {
 // ── Documents ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn documents_list() -> Value {
-    json!([])
+pub async fn documents_list(app: AppHandle) -> Value {
+    let Some(port) = sidecar_port(&app) else { return json!([]); };
+    let job_id = uuid_v4();
+    let cmd = json!({ "kind": "document.list", "jobId": job_id });
+    match post_sidecar_command(&app, port, &cmd, &job_id).await {
+        Ok(result) => result,
+        Err(_) => json!([]),
+    }
 }
 
 #[tauri::command]
-pub fn documents_import(_req: Value) -> Value {
-    json!(null)
+pub async fn documents_import(app: AppHandle, req: Value) -> Value {
+    let Some(port) = sidecar_port(&app) else {
+        return json!({ "error": "scraper sidecar not ready" });
+    };
+    let name = req.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let locale = req.get("locale").and_then(|v| v.as_str()).map(String::from);
+
+    let bytes_b64 = match req.get("bytes") {
+        Some(serde_json::Value::Array(arr)) => {
+            let bytes: Vec<u8> = arr.iter().filter_map(|v| v.as_u64().map(|n| n as u8)).collect();
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD.encode(&bytes)
+        }
+        _ => return json!({ "error": "bytes field missing or invalid" }),
+    };
+
+    let job_id = uuid_v4();
+    app.state::<Mutex<JobTracker>>().lock().unwrap().start(&job_id, "document.import");
+    let cmd = json!({
+        "kind": "document.import",
+        "jobId": job_id,
+        "payload": { "name": name, "bytesBase64": bytes_b64, "locale": locale },
+    });
+    match post_sidecar_command(&app, port, &cmd, &job_id).await {
+        Ok(result) => json!({ "jobId": job_id, "document": result }),
+        Err(e) => json!({ "error": e }),
+    }
 }
 
 #[tauri::command]
-pub fn documents_remove(_id: String) -> Value {
+pub async fn documents_remove(app: AppHandle, id: String) -> Value {
+    let Some(port) = sidecar_port(&app) else { return json!(null); };
+    let job_id = uuid_v4();
+    let cmd = json!({ "kind": "document.remove", "jobId": job_id, "payload": { "id": id } });
+    post_sidecar_command(&app, port, &cmd, &job_id).await.ok();
     json!(null)
 }
 
 // ── Search ───────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn search_hybrid(_req: Value) -> Value {
-    json!({ "items": [], "total": 0 })
+pub async fn search_hybrid(app: AppHandle, req: Value) -> Value {
+    let Some(port) = sidecar_port(&app) else {
+        return json!({ "items": [], "total": 0 });
+    };
+    let job_id = uuid_v4();
+    let cmd = json!({ "kind": "search.hybrid", "jobId": job_id, "payload": req });
+    match post_sidecar_command(&app, port, &cmd, &job_id).await {
+        Ok(result) => result,
+        Err(_) => json!({ "items": [], "total": 0 }),
+    }
 }
 
 // ── Scrape ───────────────────────────────────────────────────────────────────
@@ -521,8 +564,16 @@ fn chrono_date() -> String {
 // ── Match ────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn match_resume(_req: Value) -> Value {
-    json!(null)
+pub async fn match_resume(app: AppHandle, req: Value) -> Value {
+    let Some(port) = sidecar_port(&app) else {
+        return json!({ "resumeId": "", "jobId": "", "ats": 0, "semantic": 0, "combined": 0, "gaps": [], "recommendations": [], "explanation": "" });
+    };
+    let job_id = uuid_v4();
+    let cmd = json!({ "kind": "match.resume", "jobId": job_id, "payload": req });
+    match post_sidecar_command(&app, port, &cmd, &job_id).await {
+        Ok(result) => result,
+        Err(_) => json!({ "resumeId": "", "jobId": "", "ats": 0, "semantic": 0, "combined": 0, "gaps": [], "recommendations": [], "explanation": "" }),
+    }
 }
 
 // ── Credentials ──────────────────────────────────────────────────────────────

@@ -24,6 +24,7 @@ import {
 import type { JobPosting } from '@ajh/shared';
 
 import type { FileCredentialStore } from './credentials.js';
+import { DataStore } from './data-store.js';
 import { LoginManager } from './login.js';
 import type {
   ApplyJobPayload,
@@ -46,11 +47,20 @@ export class ScraperEngine {
   private readonly appliers = new ApplierRegistry();
   private browser?: BrowserController;
   private readonly loginManager: LoginManager;
+  readonly dataStore: DataStore;
   /** jobId → AbortController (lets the caller cancel a running job). */
   private readonly jobs = new Map<string, AbortController>();
 
-  constructor(private readonly credentials: FileCredentialStore) {
+  constructor(
+    private readonly credentials: FileCredentialStore,
+    dataDir: string
+  ) {
     this.loginManager = new LoginManager(credentials);
+    this.dataStore = new DataStore(dataDir);
+  }
+
+  async openDataStore(): Promise<void> {
+    await this.dataStore.open();
   }
 
   // ── Catalog / health ───────────────────────────────────────────────────────
