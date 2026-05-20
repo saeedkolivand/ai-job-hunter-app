@@ -59,8 +59,7 @@ function ToastCard({ item, onClose }: { item: ToastItem; onClose: () => void }) 
     if (item.duration <= 0) return;
     const t = setTimeout(() => onCloseRef.current(), item.duration);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.id]);
+  }, [item.id, item.duration]);
 
   return (
     <motion.div
