@@ -16,6 +16,16 @@ const HARDCODED_HEX_IN_STYLE =
   'JSXAttribute[name.name="style"] Property > Literal[value=/#[0-9a-fA-F]{3,6}/]';
 
 export default tseslint.config(
+  // ── Global linter options ───────────────────────────────────────────────────
+  // noInlineConfig bans all eslint-disable/enable/ignore comments in source.
+  // Exceptions must be config-level overrides here — visible, reviewable, scoped.
+  {
+    linterOptions: {
+      noInlineConfig: true,
+      reportUnusedDisableDirectives: 'error',
+    },
+  },
+
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
 
@@ -186,6 +196,20 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'off',
       'no-restricted-imports': 'off',
       'no-restricted-syntax': 'off',
+    },
+  },
+
+  // ── Third-party interop — complex dynamic ESM module types ─────────────────
+  // These files use `any` because the external libraries (docx, pdf-parse) export
+  // deeply nested types that are only resolvable at runtime via dynamic import().
+  // Inline suppression is banned; this override is the approved exception point.
+  {
+    files: [
+      'apps/desktop/src/renderer/lib/generate-ai.ts',
+      'packages/data/src/files/pdf-adapter.ts',
+    ],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
     },
   }
 );
