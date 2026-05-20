@@ -15,6 +15,7 @@ export function Titlebar() {
     <div
       className="app-drag relative flex h-10 items-center justify-between px-4 select-none"
       style={{ paddingLeft: platform === 'darwin' ? 80 : 16 }}
+      data-tauri-drag-region
     >
       <div className="flex items-center gap-2 text-xs font-medium text-foreground/70">
         <Sparkles size={14} className="opacity-80" />
