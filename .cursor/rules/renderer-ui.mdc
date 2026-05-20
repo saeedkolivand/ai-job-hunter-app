@@ -39,19 +39,21 @@ className="text-[#c084fc] bg-[#a855f7]/15"
 ```
 
 ## UI primitives to use
+
+All from `@ajh/ui` directly — never from `@/components/ui/*`:
+
 | Need | Import |
 |------|--------|
-| Button | `@/components/ui/Button` |
-| Input | `@/components/ui/Input` |
-| TextArea | `@/components/ui/TextArea` |
-| Dropdown | `@/components/ui/SelectDropdown` |
-| Modal | `@/components/ui/ModalShell` |
-| Empty state | `@/components/ui/EmptyState` |
-| Skeleton | `@/components/ui/LoadingSkeleton` |
-| Card | `@/components/ui/GlassCard` |
-| Page wrapper | `@/components/layout/PageShell` |
-| AI stream text | `@/components/ui/StreamingText` |
-| Selectable tile | `@/components/ui/OptionTile` |
+| Button | `Button` from `@ajh/ui` |
+| Input / Textarea | `Input` / `TextArea` from `@ajh/ui` |
+| Dropdown | `SelectDropdown` from `@ajh/ui` |
+| Modal / Confirm | `ModalShell` / `ConfirmModal` from `@ajh/ui` |
+| Empty / Error | `EmptyState` / `ErrorState` from `@ajh/ui` |
+| Skeletons | `RowSkeleton` / `CardSkeleton` from `@ajh/ui` |
+| Card / Settings | `GlassCard` / `SettingsSection` from `@ajh/ui` |
+| Tile / Stream | `OptionTile` / `StreamingText` from `@ajh/ui` |
+| Page wrapper | `PageShell` from `@/components/layout/PageShell` |
+| App-specific | `UpdateBanner` from `@/components/ui/UpdateBanner` |
 
 ## File placement
 - `features/X/components/` — components owned by only route X
