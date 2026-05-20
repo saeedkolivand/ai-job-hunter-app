@@ -1,0 +1,65 @@
+{
+  "name": "@ajh/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Job Hunter desktop application",
+  "homepage": "https://github.com/saeedkolivand/ai-job-hunter-assistant-app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/saeedkolivand/ai-job-hunter-assistant-app.git"
+  },
+  "author": {
+    "name": "Saeed Kolivand",
+    "email": "saeedkolivand@gmail.com"
+  },
+  "license": "UNLICENSED",
+  "main": "./out/main/index.mjs",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "package": "electron-builder --config ../../electron-builder.yml",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@ajh/ai": "workspace:*",
+    "@ajh/core": "workspace:*",
+    "@ajh/data": "workspace:*",
+    "@ajh/prompts": "workspace:*",
+    "@ajh/shared": "workspace:*",
+    "@ajh/ui": "workspace:*",
+    "@ajh/workers": "workspace:*",
+    "@tanstack/react-query": "^5.100.11",
+    "@tanstack/react-router": "^1.170.4",
+    "clsx": "^2.1.1",
+    "docx": "^9.6.1",
+    "i18next": "^26.2.0",
+    "i18next-browser-languagedetector": "^8.2.1",
+    "jspdf": "^4.2.1",
+    "lucide-react": "^1.16.0",
+    "motion": "^12.39.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-i18next": "^17.0.8",
+    "tailwind-merge": "^3.6.0",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.13"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@tailwindcss/vite": "^4.3.0",
+    "@tanstack/router-vite-plugin": "^1.167.6",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "electron": "^42.1.0",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^6.0.0-beta.1",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.13",
+    "vitest": "^4.1.6"
+  }
+}

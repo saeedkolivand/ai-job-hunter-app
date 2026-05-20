@@ -1,0 +1,34 @@
+@import 'tailwindcss';
+@import '@ajh/ui/css';
+
+/*
+ * Desktop-app-specific overrides.
+ * Common tokens and utilities come from @ajh/ui.
+ */
+
+/* ── App body ────────────────────────────────────────────────────────────── */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  position: relative;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  background: radial-gradient(ellipse at 50% 0%, #0d0a1f 0%, #07060f 55%, #050409 100%);
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+/* ── Electron drag regions ───────────────────────────────────────────────── */
+.app-drag {
+  -webkit-app-region: drag;
+}
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}

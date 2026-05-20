@@ -1,0 +1,7 @@
+dist/
+out/
+node_modules/
+*.gen.ts
+*.tsbuildinfo
+pnpm-lock.yaml
+CHANGELOG.md

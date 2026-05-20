@@ -1,0 +1,27 @@
+{
+  "name": "@ajh/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./ipc": "./dist/ipc/contracts.js",
+    "./schemas": "./dist/schemas/index.js",
+    "./types": "./dist/types/index.js"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
+  }
+}

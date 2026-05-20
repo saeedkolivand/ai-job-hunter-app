@@ -1,0 +1,189 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# AI Job Hunter — .gitignore
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Dependencies ───────────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+
+# ── Build outputs ──────────────────────────────────────────────────────────────
+dist/
+out/
+build/
+.vite/
+.turbo/
+storybook-static/
+
+# ── TypeScript ─────────────────────────────────────────────────────────────────
+*.tsbuildinfo
+*.d.ts.map
+
+# ── Electron packaged artifacts ────────────────────────────────────────────────
+apps/desktop/release/
+release-artifacts/
+*.dmg
+*.exe
+*.deb
+*.rpm
+*.AppImage
+*.snap
+*.pkg
+
+# ── Logs ───────────────────────────────────────────────────────────────────────
+*.log
+*.log.*
+logs/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ── Environment variables ──────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+!.env.example
+!.env.*.example
+
+# ── Testing ────────────────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+playwright-report/
+playwright/.cache/
+test-results/
+vitest.config.*.timestamp-*
+
+# ── OS files ───────────────────────────────────────────────────────────────────
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+Icon
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+# ── Editors & IDEs ─────────────────────────────────────────────────────────────
+# JetBrains
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# VS Code — personal/machine-specific files only
+.vscode/launch.json
+.vscode/settings.json
+.vscode/*.code-workspace
+# Keep shared project files
+!.vscode/extensions.json
+!.vscode/tasks.json
+
+# Vim / Neovim
+*.swp
+*.swo
+Session.vim
+.netrwhist
+tags
+
+# Emacs
+\#*\#
+.\#*
+auto-save-list
+
+# Sublime Text
+*.sublime-workspace
+
+# Zed
+.zed/settings.json
+
+# ── Package managers ───────────────────────────────────────────────────────────
+.npm/
+.pnpm-store/
+.yarn/
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# ── Cache directories ──────────────────────────────────────────────────────────
+.cache/
+.eslintcache
+.stylelintcache
+.prettiercache
+
+# ── Secrets & credentials ──────────────────────────────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+*.cert
+*.crt
+secrets/
+credentials/
+*.mobileprovision
+
+# ── Database / local app data ─────────────────────────────────────────────────
+# Written at runtime by Electron — never commit
+userData/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+# LanceDB vector store
+*.lance/
+
+# ── Temporary files ────────────────────────────────────────────────────────────
+tmp/
+temp/
+.tmp/
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+
+# ── AI tool — personal/machine-specific state ─────────────────────────────────
+# Aider conversation history (personal — not shared)
+.aider.chat.history.md
+.aider.input.history
+# Cursor personal workspace config
+.cursor/mcp.json
+# Continue.dev session cache
+.continue/.sessions/
+
+# NOTE: Project-level AI instruction files ARE committed (not ignored):
+#   CLAUDE.md                              → Claude Code
+#   .cursor/rules/                         → Cursor
+#   .windsurfrules                         → Windsurf
+#   .github/copilot-instructions.md        → GitHub Copilot
+#   .aider.conf.yml + .aider/system-prompt.md → Aider
+#   .continue/config.json                  → Continue.dev
+#   .jba/guidelines.md                     → JetBrains AI
+
+# ── Misc ───────────────────────────────────────────────────────────────────────
+*.pid
+*.pid.lock
+*.seed
+CHANGELOG.md
