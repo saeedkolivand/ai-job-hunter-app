@@ -11,7 +11,15 @@
  */
 import fs from 'node:fs/promises';
 
-import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  type IpcMainInvokeEvent,
+  shell,
+} from 'electron';
 import { z, type ZodTypeAny } from 'zod';
 
 import { createLogger } from '@ajh/core';
@@ -576,6 +584,30 @@ export function registerIpc(core: AppCore): void {
     } catch {
       return { success: false };
     }
+  });
+
+  handle(IPC_CHANNELS.support.copyEnvironmentDetails, undefined, async () => {
+    const text = [
+      `AI Job Hunter`,
+      `Version: ${app.getVersion()}`,
+      `Shell: electron`,
+      `Electron: ${process.versions.electron}`,
+      `Node: ${process.version}`,
+      `OS: ${process.platform} ${process.arch}`,
+    ].join('\n');
+    clipboard.writeText(text);
+    return { success: true };
+  });
+
+  handle(IPC_CHANNELS.support.copyAppVersion, undefined, async () => {
+    clipboard.writeText(app.getVersion());
+    return { success: true };
+  });
+
+  handle(IPC_CHANNELS.support.copySystemInfo, undefined, async () => {
+    const text = [`OS: ${process.platform}`, `Arch: ${process.arch}`].join('\n');
+    clipboard.writeText(text);
+    return { success: true };
   });
 
   // ── conversations ───────────────────────────────────────────────────────
