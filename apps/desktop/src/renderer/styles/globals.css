@@ -38,9 +38,12 @@ html[data-performance-mode='low-memory'] {
   --blur-3xl: 24px;
 }
 html[data-performance-mode='low-memory'] * {
-  /* Kill all CSS-driven transitions and keyframe animations. */
-  animation-duration: 0.01ms !important;
-  transition-duration: 0.01ms !important;
+  /* Stop all CSS keyframe animations and transitions.
+     animation: none is used instead of animation-duration: 0.01ms because
+     near-zero durations cause infinite rapid looping on continuous animations
+     (e.g. CinematicBackground blobs), which produces a visible flash. */
+  animation: none !important;
+  transition: none !important;
 }
 html[data-performance-mode='low-memory'] body {
   /* Remove expensive radial gradient — flat colour is composited cheaply. */
