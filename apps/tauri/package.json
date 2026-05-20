@@ -7,6 +7,7 @@
     "dev": "tauri dev",
     "build": "vite build",
     "package": "tauri build",
+    "tauri": "tauri",
     "dev:frontend": "vite --port 5174",
     "build:frontend": "vite build",
     "typecheck": "tsc --noEmit"
