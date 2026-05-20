@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
+
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ErrorState } from '../components/ErrorState';
 

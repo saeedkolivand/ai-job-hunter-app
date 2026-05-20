@@ -9,13 +9,14 @@
  * requiring the user to log in again.
  */
 import { createLogger } from '@ajh/core';
-import { PersistentBoardSession } from './PersistentBoardSession.js';
+
 import { BOARD_CONFIGS } from './configs.js';
+import { PersistentBoardSession } from './PersistentBoardSession.js';
 
 const logger = createLogger('board-sessions');
 
-export { PersistentBoardSession } from './PersistentBoardSession.js';
 export { BOARD_CONFIGS } from './configs.js';
+export { PersistentBoardSession } from './PersistentBoardSession.js';
 export type { BoardConfig, BoardSessionStatus } from './types.js';
 
 export type BoardSessionMap = Map<string, PersistentBoardSession>;

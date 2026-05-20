@@ -1,10 +1,13 @@
-import { useTranslation } from '@/lib/i18n';
-import { cn } from '@/lib/cn';
-import { BookOpen, Send, Zap, Check, ShieldAlert } from 'lucide-react';
+import { BookOpen, Check, Send, ShieldAlert, Zap } from 'lucide-react';
+
 import type { AutopilotAction } from '@ajh/shared';
+import { Button, TextArea } from '@ajh/ui';
+
+import { cn } from '@/lib/cn';
+import { useTranslation } from '@/lib/i18n';
+import type { SetFn, WizardState } from '@/routes/autopilot';
+
 import { WizardField } from './WizardField';
-import { TextArea } from '@/components/ui/TextArea';
-import type { WizardState, SetFn } from '@/routes/autopilot';
 
 interface StepActionProps {
   form: WizardState;
@@ -48,11 +51,11 @@ export function StepAction({ form, set }: StepActionProps) {
 
       <div className="space-y-2">
         {actionOptions.map(({ id, label, desc, icon: Icon, color }) => (
-          <button
+          <Button
             key={id}
             onClick={() => set('action', id)}
             className={cn(
-              'w-full flex items-start gap-3 rounded-xl border px-4 py-3 text-left transition-all',
+              'w-full flex items-start gap-3 rounded-xl border px-4 py-3 text-left transition-all h-auto',
               form.action === id
                 ? 'border-brand/35 bg-brand/08'
                 : 'border-white/[0.05] hover:border-white/[0.08]'
@@ -64,7 +67,7 @@ export function StepAction({ form, set }: StepActionProps) {
               <div className="text-[10px] text-foreground/40 mt-0.5">{desc}</div>
             </div>
             {form.action === id && <Check size={13} className="text-brand-soft shrink-0 mt-0.5" />}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -93,10 +96,10 @@ export function StepAction({ form, set }: StepActionProps) {
             </span>{' '}
             {t('autopilot.wizard.action.autoSubmitDesc')}
           </div>
-          <button
+          <Button
             onClick={() => set('autoSubmit', !form.autoSubmit)}
             className={cn(
-              'shrink-0 rounded-full h-5 w-9 transition-colors relative',
+              'shrink-0 rounded-full h-5 w-9 transition-colors relative p-0 border-transparent',
               form.autoSubmit ? 'bg-brand' : 'bg-white/10'
             )}
           >
@@ -106,7 +109,7 @@ export function StepAction({ form, set }: StepActionProps) {
                 form.autoSubmit ? 'translate-x-4' : 'translate-x-0.5'
               )}
             />
-          </button>
+          </Button>
         </div>
       )}
     </div>

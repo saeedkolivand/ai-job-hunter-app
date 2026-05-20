@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
-import { PageTransition } from './PageTransition';
-import { PageHeader } from './PageHeader';
+
 import { cn } from '@/lib/cn';
+
+import { PageHeader } from './PageHeader';
+import { PageTransition } from './PageTransition';
 
 interface PageShellProps {
   /** Page title — passed to PageHeader */

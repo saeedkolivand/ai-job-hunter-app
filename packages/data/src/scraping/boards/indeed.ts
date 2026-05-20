@@ -8,9 +8,11 @@
  * The scraper degrades gracefully when Indeed shows a CAPTCHA — it simply
  * returns what it has so far. Locale defaults to the user's country in URL.
  */
-import path from 'node:path';
 import { existsSync } from 'node:fs';
+import path from 'node:path';
+
 import type { JobPosting } from '@ajh/shared';
+
 import { BaseScraper, type BoardSearchInput, type ScrapeContext } from '../base.js';
 
 /**

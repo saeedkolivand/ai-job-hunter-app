@@ -4,6 +4,7 @@
  * of the source document language.
  */
 import type { AiGenerateRequest } from '@ajh/shared';
+
 import type { OllamaClient } from '../client/ollama.js';
 
 const LOCALE_NAMES: Record<string, string> = {

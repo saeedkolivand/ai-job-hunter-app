@@ -7,21 +7,23 @@
  * It does NOT spawn worker threads itself — workers are owned at the
  * main-process bootstrap and injected into the file pipeline as deps.
  */
-import path from 'node:path';
 import { mkdir } from 'node:fs/promises';
-import { createLogger, type Runtime, type EventBus } from '@ajh/core';
-import { createDb, type Db } from './db/client.js';
-import { VectorStore } from './vector/lancedb.js';
-import { ScraperRegistry } from './scraping/registry.js';
+import path from 'node:path';
+
+import { createLogger, type EventBus, type Runtime } from '@ajh/core';
+
 import { ApplierRegistry } from './applying/registry.js';
-import { BrowserController } from './scraping/browser.js';
+import { createDb, type Db } from './db/client.js';
+import { InMemoryJobStore } from './jobs/in-memory-store.js';
 import { MatchingEngine } from './matching/engine.js';
 import {
-  BoardSessionManager,
   BOARD_SESSION_CONFIGS,
+  BoardSessionManager,
   type BoardSessionStatus,
 } from './scraping/board-session-manager.js';
-import { InMemoryJobStore } from './jobs/in-memory-store.js';
+import { BrowserController } from './scraping/browser.js';
+import { ScraperRegistry } from './scraping/registry.js';
+import { VectorStore } from './vector/lancedb.js';
 
 export interface DataRuntimeOptions {
   userDataDir: string; // Electron app.getPath('userData')

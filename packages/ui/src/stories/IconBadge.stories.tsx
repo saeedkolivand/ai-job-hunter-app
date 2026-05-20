@@ -1,5 +1,6 @@
+import { Lock, Settings, Shield, Sparkles, User } from 'lucide-react';
 import type { Meta, StoryObj } from '@storybook/react';
-import { Sparkles, Settings, User, Lock, Shield } from 'lucide-react';
+
 import { IconBadge } from '../components/IconBadge';
 
 const meta: Meta<typeof IconBadge> = {

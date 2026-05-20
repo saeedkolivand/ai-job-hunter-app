@@ -1,10 +1,10 @@
-import { type LucideIcon, MessageSquare, Briefcase, FileText, Sparkles } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { SectionLabel } from '@/components/ui/SectionLabel';
-import { OptionTile } from '@/components/ui/OptionTile';
-import { usePreferencesStore, useOutputTone } from '@/store/preferences-store';
-import type { OutputTone } from '@/store/preferences-schema';
+import { Briefcase, FileText, type LucideIcon, MessageSquare, Sparkles } from 'lucide-react';
+
+import { GlassCard, OptionTile, SectionLabel } from '@ajh/ui';
+
 import { useTranslation } from '@/lib/i18n';
+import type { OutputTone } from '@/store/preferences-schema';
+import { useOutputTone, usePreferencesStore } from '@/store/preferences-store';
 
 const TONE_OPTIONS: {
   value: OutputTone;

@@ -1,5 +1,7 @@
-import { CheckCircle2, AlertCircle } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
+import { AlertCircle, CheckCircle2 } from 'lucide-react';
+
+import { GlassCard } from '@ajh/ui';
+
 import type { AnalysisResult } from '@/lib/resume-ai';
 
 interface AnalysisSkillsProps {

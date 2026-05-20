@@ -1,5 +1,6 @@
-import { BrowserWindow, shell, Menu, clipboard } from 'electron';
 import path from 'node:path';
+
+import { BrowserWindow, clipboard, Menu, shell } from 'electron';
 
 export async function createMainWindow(): Promise<BrowserWindow> {
   const win = new BrowserWindow({

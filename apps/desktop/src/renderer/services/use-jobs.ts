@@ -1,7 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { keys, queryClient } from './query-client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+
 import type { JobEvent } from '@ajh/shared';
+
+import { keys, queryClient } from './query-client';
 
 export const useJobQueue = () =>
   useQuery({
@@ -50,7 +52,7 @@ export const useJobEvents = (onEvent?: (event: JobEvent) => void) => {
   const qc = useQueryClient();
   useEffect(() => {
     const offRaw = window.api?.jobs.onEvent((event: unknown) => {
-      qc.invalidateQueries({ queryKey: keys.jobs.all });
+      void qc.invalidateQueries({ queryKey: keys.jobs.all });
       onEvent?.(event as JobEvent);
     });
     const off = offRaw as unknown as (() => void) | undefined;

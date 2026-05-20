@@ -1,6 +1,7 @@
-import { FileText, Play, Clock, ArrowRight } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { Button } from '@/components/ui/Button';
+import { ArrowRight, Clock, FileText, Play } from 'lucide-react';
+
+import { Button, GlassCard } from '@ajh/ui';
+
 import { useTranslation } from '@/lib/i18n';
 
 interface RecentProject {

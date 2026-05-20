@@ -1,7 +1,9 @@
 import { FileText } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
+
+import { GlassCard } from '@ajh/ui';
+
 import { cn } from '@/lib/cn';
-import { scoreLabel, type AnalysisResult } from '@/lib/resume-ai';
+import { type AnalysisResult, scoreLabel } from '@/lib/resume-ai';
 
 interface AnalysisSectionAnalysisProps {
   result: AnalysisResult;

@@ -4,6 +4,7 @@
  * The "query" is the board slug (e.g. "linear", "anthropic").
  */
 import type { JobPosting } from '@ajh/shared';
+
 import { BaseScraper, type BoardSearchInput, type ScrapeContext } from '../base.js';
 import { fetchJson } from '../http.js';
 

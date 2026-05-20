@@ -1,25 +1,27 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useCommandPaletteShortcut } from '@/services';
-import { motion } from 'motion/react';
-import { useNavigate } from '@tanstack/react-router';
-import { useTranslation } from '@/lib/i18n';
 import {
-  Search,
-  Sparkles,
+  Activity,
   Briefcase,
   FileText,
-  LayoutDashboard,
-  Settings,
   Gauge,
-  Activity,
-  Wand2,
+  LayoutDashboard,
   type LucideIcon,
+  Search,
+  Settings,
+  Sparkles,
+  Wand2,
 } from 'lucide-react';
-import { useAppStore } from '@/store/app-store';
-import { ModalShell } from '@/components/ui/ModalShell';
-import { cn } from '@/lib/cn';
+import { motion } from 'motion/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
+
+import { ModalShell } from '@ajh/ui';
+
 import { ROUTES } from '@/constants/routes';
+import { cn } from '@/lib/cn';
+import { useTranslation } from '@/lib/i18n';
 import { stagger, transition } from '@/lib/motion';
+import { useCommandPaletteShortcut } from '@/services';
+import { useAppStore } from '@/store/app-store';
 
 interface Action {
   id: string;

@@ -17,15 +17,17 @@
  *   - API-based pagination (no scrolling)
  *   - Rate limiting with exponential backoff
  */
-import path from 'node:path';
 import { existsSync } from 'node:fs';
+import path from 'node:path';
+
 import type { JobPosting } from '@ajh/shared';
-import { BaseScraper, type BoardSearchInput, type ScrapeContext } from '../base.js';
+
 import {
-  LinkedInJobsApiClient,
   LinkedInHttpClient,
+  LinkedInJobsApiClient,
   type LinkedInSessionData,
 } from '../../services/linkedin/index.js';
+import { BaseScraper, type BoardSearchInput, type ScrapeContext } from '../base.js';
 
 const _PAGE_SIZE = 25;
 

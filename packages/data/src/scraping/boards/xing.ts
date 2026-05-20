@@ -16,9 +16,11 @@
  * fallbacks to class-based selectors. Xing's DOM evolves; if breakage
  * happens, the scraper degrades gracefully (returns what it has).
  */
-import path from 'node:path';
 import { existsSync } from 'node:fs';
+import path from 'node:path';
+
 import type { JobPosting } from '@ajh/shared';
+
 import { BaseScraper, type BoardSearchInput, type ScrapeContext } from '../base.js';
 
 /**

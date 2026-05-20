@@ -6,19 +6,21 @@
  * Returns a `core` handle used by the IPC router and shutdown logic.
  */
 import { app } from 'electron';
+
+import { AiRuntime, generateStream } from '@ajh/ai';
 import {
+  createLogger,
   EventBus,
   JobQueue,
-  TaskScheduler,
   RuntimeManager,
   StateCoordinator,
-  createLogger,
+  TaskScheduler,
 } from '@ajh/core';
-import { AiRuntime, generateStream } from '@ajh/ai';
-import { DataRuntime, AutopilotStore, runAutopilot } from '@ajh/data';
+import { AutopilotStore, DataRuntime, runAutopilot } from '@ajh/data';
 import type { AiGenerateRequest } from '@ajh/shared';
+
+import { type BoardSessionMap, createBoardSessions } from './board-sessions/index.js';
 import { CredentialStore } from './credentials.js';
-import { createBoardSessions, type BoardSessionMap } from './board-sessions/index.js';
 import { ElectronBrowserController } from './electron-browser-controller.js';
 
 export interface AppCore {

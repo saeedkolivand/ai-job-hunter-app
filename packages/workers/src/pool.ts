@@ -5,8 +5,9 @@
  * with `{ id, ok, result | error }`. Workers stay warm and process tasks until
  * the pool is destroyed.
  */
-import { Worker } from 'node:worker_threads';
 import { cpus, freemem, totalmem } from 'node:os';
+import { Worker } from 'node:worker_threads';
+
 import { createLogger } from '@ajh/core';
 
 export interface PoolOptions {

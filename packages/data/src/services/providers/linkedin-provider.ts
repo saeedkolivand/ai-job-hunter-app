@@ -4,18 +4,19 @@
  * Implements the JobProvider interface for LinkedIn using the new HTTP-based architecture.
  */
 import type { JobPosting } from '@ajh/shared';
+
 import {
-  BaseProvider,
-  type ProviderContext,
-  type ProviderSearchInput,
-  type ProviderConfig,
-} from './base.js';
-import {
-  LinkedInJobsApiClient,
-  LinkedInHttpClient,
   LinkedInAuthManager,
+  LinkedInHttpClient,
+  LinkedInJobsApiClient,
   type LinkedInSessionData,
 } from '../linkedin/index.js';
+import {
+  BaseProvider,
+  type ProviderConfig,
+  type ProviderContext,
+  type ProviderSearchInput,
+} from './base.js';
 
 const LINKEDIN_CONFIG: ProviderConfig = {
   id: 'linkedin',

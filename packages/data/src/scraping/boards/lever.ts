@@ -3,7 +3,9 @@
  *   https://api.lever.co/v0/postings/{company}?mode=json
  */
 import { request } from 'undici';
+
 import type { JobPosting } from '@ajh/shared';
+
 import { BaseScraper, type BoardSearchInput, type ScrapeContext } from '../base.js';
 
 interface LeverPosting {

@@ -30,10 +30,10 @@ export {
   StreamingText,
   TextArea,
   type TextAreaProps,
-  ToastProvider,
-  useToast,
-  type ToastVariant,
   type ToastItem,
+  ToastProvider,
+  type ToastVariant,
+  useToast,
 } from '@ajh/ui';
 
 // App-specific components (IPC/updater — cannot live in packages/ui)

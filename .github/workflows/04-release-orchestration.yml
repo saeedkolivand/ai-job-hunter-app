@@ -1,0 +1,171 @@
+name: Release Orchestration
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+jobs:
+  determine-release:
+    name: Determine Release Version
+
+    runs-on: ubuntu-latest
+
+    outputs:
+      released: ${{ steps.semantic.outputs.new_release_published }}
+      version: ${{ steps.semantic.outputs.new_release_version }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Semantic Release
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify Discord Release Failure
+        if: failure()
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          title: 'Release Failed'
+          description: |
+            Release orchestration failed.
+
+            Repository:
+            ${{ github.repository }}
+
+            Workflow:
+            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          color: 0xED4245
+
+  build-windows:
+    name: Build Windows Application
+
+    needs: determine-release
+
+    if: needs.determine-release.outputs.released == 'true'
+
+    runs-on: windows-latest
+
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Electron Application
+        run: pnpm electron:build
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: dist/**
+
+  build-macos:
+    name: Build macOS Application
+
+    needs: determine-release
+
+    if: needs.determine-release.outputs.released == 'true'
+
+    runs-on: macos-latest
+
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Electron Application
+        run: pnpm electron:build
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: dist/**
+
+  notify-release-success:
+    name: Notify Release Success
+
+    needs:
+      - determine-release
+      - build-windows
+      - build-macos
+
+    if: needs.determine-release.outputs.released == 'true'
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Notify Discord Success
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          title: 'Production Release Published'
+          description: |
+            Version v${{ needs.determine-release.outputs.version }} was released successfully.
+
+            Repository:
+            ${{ github.repository }}
+
+            Workflow:
+            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          color: 0x57F287

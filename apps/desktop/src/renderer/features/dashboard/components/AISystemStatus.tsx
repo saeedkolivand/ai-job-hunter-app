@@ -1,13 +1,15 @@
 import {
-  type LucideIcon,
-  Cpu,
-  Database,
   Activity,
   CheckCircle,
-  XCircle,
+  Cpu,
+  Database,
   Loader2,
+  type LucideIcon,
+  XCircle,
 } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
+
+import { GlassCard } from '@ajh/ui';
+
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 

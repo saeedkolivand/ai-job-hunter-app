@@ -10,7 +10,7 @@
  *
  * This implementation is intentionally conservative: it never submits.
  */
-import { BaseApplier, type Applier, type ApplyContext, type ApplyResult } from '../base.js';
+import { type Applier, type ApplyContext, type ApplyResult, BaseApplier } from '../base.js';
 
 export class WorkdayApplier extends BaseApplier implements Applier {
   readonly boardId = 'workday';

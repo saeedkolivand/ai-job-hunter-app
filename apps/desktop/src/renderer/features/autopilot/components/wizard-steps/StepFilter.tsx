@@ -1,8 +1,10 @@
+import { Input, TextArea } from '@ajh/ui';
+
 import { useTranslation } from '@/lib/i18n';
-import { WizardField } from './WizardField';
+import type { Prefilled, SetFn, WizardState } from '@/routes/autopilot';
+
 import { PrefilledBadge } from './PrefilledBadge';
-import { TextArea } from '@/components/ui/TextArea';
-import type { WizardState, SetFn, Prefilled } from '@/routes/autopilot';
+import { WizardField } from './WizardField';
 
 const inputCls =
   'w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-foreground/80 placeholder:text-foreground/25 outline-none focus:border-brand/40 transition-colors';
@@ -67,7 +69,7 @@ export function StepFilter({ form, set, prefilled }: StepFilterProps) {
           hint={t('autopilot.wizard.filter.commaSeparated')}
         >
           <div className="space-y-1.5">
-            <input
+            <Input
               className={inputCls}
               placeholder={t('autopilot.wizard.filter.keywordsPlaceholder')}
               value={form.keywords}
@@ -82,7 +84,7 @@ export function StepFilter({ form, set, prefilled }: StepFilterProps) {
           label={t('autopilot.wizard.filter.excludeKeywords')}
           hint={t('autopilot.wizard.filter.commaSeparated')}
         >
-          <input
+          <Input
             className={inputCls}
             placeholder={t('autopilot.wizard.filter.excludePlaceholder')}
             value={form.excludeKeywords}

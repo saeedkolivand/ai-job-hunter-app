@@ -1,10 +1,11 @@
 /**
  * Autopilot runner — scrape → filter → apply loop.
  */
-import type { JobPosting, Autopilot, AutopilotRun } from '@ajh/shared';
-import type { ScraperRegistry } from '../scraping/registry.js';
+import type { Autopilot, AutopilotRun, JobPosting } from '@ajh/shared';
+
 import type { ApplierRegistry } from '../applying/registry.js';
 import type { BrowserController } from '../scraping/browser.js';
+import type { ScraperRegistry } from '../scraping/registry.js';
 import type { AutopilotStore } from './store.js';
 
 export interface RunnerCredentials {

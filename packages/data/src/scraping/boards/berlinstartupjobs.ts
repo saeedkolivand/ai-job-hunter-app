@@ -5,7 +5,9 @@
  * Title format on this site is typically "Senior Engineer at Acme GmbH".
  */
 import { load } from 'cheerio';
+
 import type { JobPosting } from '@ajh/shared';
+
 import { BaseScraper, type BoardSearchInput, type ScrapeContext } from '../base.js';
 import { fetchText, stripHtml } from '../http.js';
 

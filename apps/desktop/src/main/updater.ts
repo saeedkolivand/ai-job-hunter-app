@@ -1,6 +1,8 @@
 import { BrowserWindow, ipcMain } from 'electron';
-import { IPC_CHANNELS } from '@ajh/shared';
+import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-updater';
+
 import { createLogger } from '@ajh/core';
+import { IPC_CHANNELS } from '@ajh/shared';
 
 const logger = createLogger('updater');
 
@@ -21,9 +23,7 @@ function broadcast(status: UpdateStatus) {
 
 export async function setupUpdater() {
   // Lazy import — electron-updater is heavy and should not load at startup
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { default: pkg } = (await import('electron-updater')) as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { autoUpdater } = pkg as { autoUpdater: any };
 
   autoUpdater.autoDownload = false;
@@ -34,7 +34,7 @@ export async function setupUpdater() {
     broadcast({ state: 'checking' });
   });
 
-  autoUpdater.on('update-available', (info) => {
+  autoUpdater.on('update-available', (info: UpdateInfo) => {
     broadcast({
       state: 'available',
       version: info.version,
@@ -46,11 +46,11 @@ export async function setupUpdater() {
     broadcast({ state: 'not-available' });
   });
 
-  autoUpdater.on('download-progress', (progress) => {
+  autoUpdater.on('download-progress', (progress: ProgressInfo) => {
     broadcast({ state: 'downloading', percent: Math.round(progress.percent) });
   });
 
-  autoUpdater.on('update-downloaded', (info) => {
+  autoUpdater.on('update-downloaded', (info: UpdateDownloadedEvent) => {
     broadcast({ state: 'downloaded', version: info.version });
   });
 

@@ -38,7 +38,7 @@ export function useMouseParallax(): {
   const mouseVars = {
     '--mx': `${((pos.x + 1) / 2) * 100}%`,
     '--my': `${((pos.y + 1) / 2) * 100}%`,
-  } as { '--mx': string; '--my': string };
+  };
 
   return { x: pos.x, y: pos.y, mouseVars };
 }

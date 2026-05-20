@@ -1,5 +1,6 @@
 import { motion } from 'motion/react';
-import { variants, transition } from '../lib/motion';
+
+import { transition, variants } from '../lib/motion';
 
 interface GlassOverlayProps {
   onClick?: () => void;

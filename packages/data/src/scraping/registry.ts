@@ -1,23 +1,23 @@
 import type { Scraper } from './base.js';
-import { LinkedInScraper } from './boards/linkedin.js';
-import { IndeedScraper } from './boards/indeed.js';
-import { StepStoneScraper } from './boards/stepstone.js';
-import { GreenhouseScraper } from './boards/greenhouse.js';
-import { LeverScraper } from './boards/lever.js';
-import { WorkdayScraper } from './boards/workday.js';
-import { AshbyScraper } from './boards/ashby.js';
-import { SmartRecruitersScraper } from './boards/smartrecruiters.js';
-import { RecruiteeScraper } from './boards/recruitee.js';
-import { PersonioScraper } from './boards/personio.js';
-import { RemoteOkScraper } from './boards/remoteok.js';
-import { RemotiveScraper } from './boards/remotive.js';
 import { ArbeitnowScraper } from './boards/arbeitnow.js';
-import { WeWorkRemotelyScraper } from './boards/wwr.js';
-import { YCombinatorScraper } from './boards/ycombinator.js';
 import { ArbeitsagenturScraper } from './boards/arbeitsagentur.js';
+import { AshbyScraper } from './boards/ashby.js';
 import { BerlinStartupJobsScraper } from './boards/berlinstartupjobs.js';
 import { GermanTechJobsScraper } from './boards/germantechjobs.js';
+import { GreenhouseScraper } from './boards/greenhouse.js';
+import { IndeedScraper } from './boards/indeed.js';
+import { LeverScraper } from './boards/lever.js';
+import { LinkedInScraper } from './boards/linkedin.js';
+import { PersonioScraper } from './boards/personio.js';
+import { RecruiteeScraper } from './boards/recruitee.js';
+import { RemoteOkScraper } from './boards/remoteok.js';
+import { RemotiveScraper } from './boards/remotive.js';
+import { SmartRecruitersScraper } from './boards/smartrecruiters.js';
+import { StepStoneScraper } from './boards/stepstone.js';
+import { WorkdayScraper } from './boards/workday.js';
+import { WeWorkRemotelyScraper } from './boards/wwr.js';
 import { XingScraper } from './boards/xing.js';
+import { YCombinatorScraper } from './boards/ycombinator.js';
 
 export class ScraperRegistry {
   private readonly scrapers = new Map<string, Scraper>();

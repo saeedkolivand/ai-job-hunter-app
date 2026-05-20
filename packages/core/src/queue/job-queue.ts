@@ -6,7 +6,9 @@
  * support cancellation, retries, progress, and streaming events.
  */
 import { nanoid } from 'nanoid';
-import type { JobKind, JobRecord, JobStatus, JobEvent } from '@ajh/shared';
+
+import type { JobEvent, JobKind, JobRecord, JobStatus } from '@ajh/shared';
+
 import type { EventBus } from '../bus/event-bus.js';
 import { createLogger, type Logger } from '../logger.js';
 

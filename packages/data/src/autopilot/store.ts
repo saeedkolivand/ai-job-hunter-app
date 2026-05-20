@@ -2,8 +2,10 @@
  * AutopilotStore — NeDB-backed CRUD for Autopilots.
  */
 import { randomUUID } from 'node:crypto';
+
 import type Datastore from '@seald-io/nedb';
-import type { Autopilot, AutopilotStatus, AutopilotCreate, AutopilotUpdate } from '@ajh/shared';
+
+import type { Autopilot, AutopilotCreate, AutopilotStatus, AutopilotUpdate } from '@ajh/shared';
 
 export class AutopilotStore {
   constructor(private readonly col: Datastore) {

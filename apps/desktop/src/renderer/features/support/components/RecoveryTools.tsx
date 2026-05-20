@@ -1,16 +1,17 @@
 import { useTranslation } from '@/lib/i18n';
 import {
-  useRebuildVectorIndexes,
   useClearEmbeddingsCache,
-  useResetVectorDatabase,
-  useReloadAiRuntime,
-  useUnloadAllModels,
-  useResetModelConfiguration,
   useClearOcrCache,
-  useReindexAllDocuments,
-  useResetAllSessions,
   useClearScrapingQueue,
+  useRebuildVectorIndexes,
+  useReindexAllDocuments,
+  useReloadAiRuntime,
+  useResetAllSessions,
+  useResetModelConfiguration,
+  useResetVectorDatabase,
+  useUnloadAllModels,
 } from '@/services';
+
 import { RecoveryAction } from './RecoveryAction';
 
 export function RecoveryTools() {

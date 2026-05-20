@@ -1,9 +1,11 @@
+import { FileCheck, FileText, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
+
+import { Button } from '@ajh/ui';
+
 import { cn } from '@/lib/cn';
-import { FileText, FileCheck, Sparkles } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
+import { type GenerationMode, MODES, type TemplateId, TEMPLATES } from '@/lib/generate-ai';
 import { useTranslation } from '@/lib/i18n';
-import { MODES, TEMPLATES, type GenerationMode, type TemplateId } from '@/lib/generate-ai';
 
 interface GenerationConfigProps {
   stage: string;
@@ -47,11 +49,11 @@ export function GenerationConfig({
               { id: 'both' as const, icon: Sparkles, label: t('aiGenerate.both') },
             ] as const
           ).map(({ id, icon: Icon, label }) => (
-            <button
+            <Button
               key={id}
               onClick={() => onTargetChange(id)}
               className={cn(
-                'flex flex-col items-center gap-1 rounded-lg border py-2.5 text-[11px] font-medium transition-all',
+                'flex flex-col items-center gap-1 rounded-lg border py-2.5 text-[11px] font-medium transition-all h-auto',
                 target === id
                   ? 'border-brand/40 bg-brand/10 text-brand-soft'
                   : 'border-white/[0.06] bg-white/[0.02] text-foreground/45 hover:border-white/10 hover:text-foreground/70'
@@ -59,7 +61,7 @@ export function GenerationConfig({
             >
               <Icon size={14} />
               {label}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -72,11 +74,11 @@ export function GenerationConfig({
         <div className="space-y-1">
           {(Object.entries(MODES) as [GenerationMode, (typeof MODES)[GenerationMode]][]).map(
             ([id, m]) => (
-              <button
+              <Button
                 key={id}
                 onClick={() => onModeChange(id)}
                 className={cn(
-                  'w-full flex items-center gap-3 rounded-lg border px-3 py-2 text-left transition-all',
+                  'w-full flex items-center gap-3 rounded-lg border px-3 py-2 text-left transition-all h-auto',
                   mode === id
                     ? 'border-brand/35 bg-brand/8 text-foreground/90'
                     : 'border-white/[0.05] bg-transparent text-foreground/50 hover:border-white/[0.08] hover:text-foreground/75'
@@ -87,7 +89,7 @@ export function GenerationConfig({
                   <div className="text-[10px] text-foreground/35 truncate">{m.description}</div>
                 </div>
                 {mode === id && <div className="h-1.5 w-1.5 rounded-full bg-brand shrink-0" />}
-              </button>
+              </Button>
             )
           )}
         </div>
@@ -99,19 +101,19 @@ export function GenerationConfig({
           Template
         </div>
         <div className="grid grid-cols-3 gap-1.5">
-          {(Object.values(TEMPLATES) as (typeof TEMPLATES)[TemplateId][]).map((tpl) => (
-            <button
+          {Object.values(TEMPLATES).map((tpl) => (
+            <Button
               key={tpl.id}
-              onClick={() => onTemplateChange(tpl.id as TemplateId)}
+              onClick={() => onTemplateChange(tpl.id)}
               className={cn(
-                'flex flex-col items-center gap-1 rounded-lg border px-2 py-2 text-center transition-all',
+                'flex flex-col items-center gap-1 rounded-lg border px-2 py-2 text-center transition-all h-auto',
                 templateId === tpl.id
                   ? 'border-brand/35 bg-brand/8 text-foreground/90'
                   : 'border-white/[0.05] bg-transparent text-foreground/50 hover:border-white/[0.08] hover:text-foreground/75'
               )}
             >
               <span className="text-[10px] font-medium leading-tight">{tpl.name}</span>
-            </button>
+            </Button>
           ))}
         </div>
       </div>

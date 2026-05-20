@@ -1,10 +1,11 @@
+import { Download, LogOut, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
-import { ConfirmModal } from '@/components/ui/ConfirmModal';
-import { useToast } from '@/components/ui/Toast';
-import { Download, Upload, Trash2, LogOut } from 'lucide-react';
+
+import { Button, ConfirmModal, useToast } from '@ajh/ui';
+
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
-import { useSignOutAll, useClearInteractions, useExportData, useImportData } from '@/services';
+import { useClearInteractions, useExportData, useImportData, useSignOutAll } from '@/services';
 
 type ConfirmAction = 'signOut' | 'clearInteractions';
 
@@ -68,11 +69,11 @@ function ActionCard({
       </div>
 
       {/* Outlined action button */}
-      <button
+      <Button
         onClick={onClick}
         disabled={loading}
         className={cn(
-          'relative shrink-0 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-150',
+          'relative shrink-0 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-150 h-auto',
           'disabled:pointer-events-none disabled:opacity-40',
           buttonBorder,
           buttonText
@@ -80,14 +81,14 @@ function ActionCard({
         style={{ boxShadow: loading ? 'none' : buttonGlow }}
       >
         {loading ? (
-          <span className="flex items-center gap-1.5">
+          <>
             <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
             {buttonLabel}
-          </span>
+          </>
         ) : (
           buttonLabel
         )}
-      </button>
+      </Button>
     </div>
   );
 }

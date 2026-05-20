@@ -13,9 +13,11 @@
  * which we keep working transparently for users that connected before this
  * generalization landed.
  */
-import path from 'node:path';
 import fs from 'node:fs';
-import { chromium, type BrowserContext } from 'playwright';
+import path from 'node:path';
+
+import { type BrowserContext, chromium } from 'playwright';
+
 import { createLogger } from '@ajh/core';
 
 export interface BoardSessionConfig {

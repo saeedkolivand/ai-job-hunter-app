@@ -1,4 +1,4 @@
-import { Languages, Cpu, Lock, Briefcase, FileText, Zap, Shield } from 'lucide-react';
+import { Briefcase, Cpu, FileText, Languages, Lock, Shield, Zap } from 'lucide-react';
 
 export type TabId = 'general' | 'ai' | 'accounts' | 'job' | 'resume' | 'performance' | 'privacy';
 

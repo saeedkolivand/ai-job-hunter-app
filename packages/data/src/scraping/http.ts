@@ -6,7 +6,7 @@
  * - light retry on transient failures
  * - opt-in JSON / HTML helpers with size caps
  */
-import { request, type Dispatcher } from 'undici';
+import { type Dispatcher, request } from 'undici';
 
 const DEFAULT_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +

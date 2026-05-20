@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+
 import { InMemoryJobStore } from './in-memory-store';
 
 const makeJob = (id: string) => ({

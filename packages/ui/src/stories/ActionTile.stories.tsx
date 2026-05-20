@@ -1,5 +1,6 @@
+import { Briefcase, FileText, Search, Settings, Sparkles, Zap } from 'lucide-react';
 import type { Meta, StoryObj } from '@storybook/react';
-import { Sparkles, Briefcase, FileText, Search, Zap, Settings } from 'lucide-react';
+
 import { ActionTile } from '../components/ActionTile';
 
 const meta: Meta<typeof ActionTile> = {

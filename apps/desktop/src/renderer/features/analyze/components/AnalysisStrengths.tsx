@@ -1,5 +1,7 @@
 import { CheckCircle2, XCircle } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
+
+import { GlassCard } from '@ajh/ui';
+
 import type { AnalysisResult } from '@/lib/resume-ai';
 
 interface AnalysisStrengthsProps {

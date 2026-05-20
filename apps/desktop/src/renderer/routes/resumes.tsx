@@ -1,27 +1,27 @@
-import { useState, useMemo } from 'react';
-import { createFileRoute } from '@tanstack/react-router';
-import { motion, AnimatePresence } from 'motion/react';
-import { useTranslation } from '@/lib/i18n';
 import {
-  Send,
-  Eye,
   Bookmark,
-  ExternalLink,
   Building2,
-  MapPin,
   Clock,
-  Search,
+  ExternalLink,
+  Eye,
+  MapPin,
   RefreshCw,
+  Search,
+  Send,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useMemo, useState } from 'react';
+import { createFileRoute } from '@tanstack/react-router';
+
+import { Button, CardSkeleton, EmptyState, Input } from '@ajh/ui';
+
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
-import { Button } from '@/components/ui/Button';
-import { CardSkeleton } from '@/components/ui/LoadingSkeleton';
-import { EmptyState } from '@/components/ui/EmptyState';
+import { cn } from '@/lib/cn';
+import { useTranslation } from '@/lib/i18n';
+import { stagger, transition } from '@/lib/motion';
 import { useInteractions } from '@/services/use-postings';
 import { useOpenExternal } from '@/services/use-system';
-import { stagger, transition } from '@/lib/motion';
-import { cn } from '@/lib/cn';
 
 export const Route = createFileRoute('/resumes')({ component: Resumes });
 
@@ -103,11 +103,12 @@ function Resumes() {
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-1.5 transition-colors focus-within:border-brand/35">
                 <Search size={12} className="shrink-0 text-foreground/40" />
-                <input
+                <Input
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                   placeholder={t('resumes.filterPlaceholder')}
-                  className="w-40 bg-transparent text-xs text-foreground outline-none placeholder:text-foreground/25"
+                  className="w-40 bg-transparent text-xs text-foreground outline-none placeholder:text-foreground/25 border-none p-0 rounded-none"
+                  variant="default"
                 />
               </div>
               <Button size="sm" variant="ghost" onClick={() => void refetch()} title="Refresh">
@@ -120,14 +121,14 @@ function Resumes() {
         {/* Tabs */}
         <div className="mb-5 flex items-center gap-1">
           {TAB_CONFIG.map(({ id, labelKey, icon: Icon, color }) => (
-            <button
+            <Button
               key={id}
               onClick={() => {
                 setTab(id);
                 setFilter('');
               }}
               className={cn(
-                'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150',
+                'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150 h-auto',
                 tab === id
                   ? 'bg-white/[0.07] text-foreground/90 ring-1 ring-white/10'
                   : 'text-foreground/45 hover:bg-white/[0.04] hover:text-foreground/70'
@@ -140,7 +141,7 @@ function Resumes() {
                   {rows.length}
                 </span>
               )}
-            </button>
+            </Button>
           ))}
         </div>
 
@@ -232,12 +233,12 @@ function InteractionRow({
       </div>
 
       {row.url && (
-        <button
+        <Button
           onClick={() => void openExternal.mutate(row.url)}
-          className="flex shrink-0 items-center gap-1 rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] text-foreground/60 transition-colors hover:text-foreground"
+          className="flex shrink-0 items-center gap-1 rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] text-foreground/60 transition-colors hover:text-foreground h-auto border-transparent"
         >
           <ExternalLink size={11} /> {t('resumes.open')}
-        </button>
+        </Button>
       )}
     </div>
   );

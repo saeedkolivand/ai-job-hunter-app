@@ -5,7 +5,8 @@
  * applies sensible anti-bot defaults, and supports clean shutdown.
  * Pages are acquired/released via `withPage()` so scrapers never leak.
  */
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import { type Browser, type BrowserContext, chromium, type Page } from 'playwright';
+
 import { createLogger } from '@ajh/core';
 
 export interface BrowserControllerOptions {

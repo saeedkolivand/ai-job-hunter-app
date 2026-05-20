@@ -1,12 +1,15 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { RouterProvider, createRouter } from '@tanstack/react-router';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { createRouter, RouterProvider } from '@tanstack/react-router';
+
+import { restoreTheme } from '@ajh/ui';
+
 import { routeTree } from './routeTree.gen';
 import { queryClient } from './services/query-client';
+
 import './i18n';
 import './styles/globals.css';
-import { restoreTheme } from '@ajh/ui';
 
 restoreTheme();
 
@@ -17,7 +20,7 @@ const router = createRouter({
 });
 
 // Ensure the app starts at the dashboard
-router.navigate({ to: '/', replace: true });
+void router.navigate({ to: '/', replace: true });
 
 declare module '@tanstack/react-router' {
   interface Register {

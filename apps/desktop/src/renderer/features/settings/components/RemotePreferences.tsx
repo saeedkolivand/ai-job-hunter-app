@@ -1,10 +1,10 @@
-import { type LucideIcon, Home, Building2, Globe } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { SectionLabel } from '@/components/ui/SectionLabel';
-import { OptionTile } from '@/components/ui/OptionTile';
-import { usePreferencesStore, useRemote } from '@/store/preferences-store';
-import type { RemotePreference } from '@/store/preferences-schema';
+import { Building2, Globe, Home, type LucideIcon } from 'lucide-react';
+
+import { GlassCard, OptionTile, SectionLabel } from '@ajh/ui';
+
 import { useTranslation } from '@/lib/i18n';
+import type { RemotePreference } from '@/store/preferences-schema';
+import { usePreferencesStore, useRemote } from '@/store/preferences-store';
 
 const REMOTE_OPTIONS: {
   value: RemotePreference;

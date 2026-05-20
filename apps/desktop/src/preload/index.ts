@@ -6,6 +6,7 @@
  * return an unsubscribe function.
  */
 import { contextBridge, ipcRenderer } from 'electron';
+
 import { IPC_CHANNELS } from '@ajh/shared';
 
 const invoke = (ch: string, payload?: unknown) => ipcRenderer.invoke(ch, payload);

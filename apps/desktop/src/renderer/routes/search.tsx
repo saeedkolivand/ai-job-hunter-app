@@ -1,7 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useTranslation } from '@/lib/i18n';
+
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
+import { useTranslation } from '@/lib/i18n';
 
 export const Route = createFileRoute('/search')({ component: SearchPage });
 

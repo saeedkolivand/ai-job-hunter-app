@@ -1,7 +1,9 @@
+import { Check, Link as LinkIcon, Loader2, LogOut } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Link as LinkIcon, LogOut, Check, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
-import { useLinkedInStatus, useLinkedInConnect, useLinkedInDisconnect } from '@/services';
+
+import { Button } from '@ajh/ui';
+
+import { useLinkedInConnect, useLinkedInDisconnect, useLinkedInStatus } from '@/services';
 
 interface LinkedInSessionRowProps {
   board: { id: string; name: string; hint: string; useSessionAuth: boolean };

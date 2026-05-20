@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { keys } from './query-client';
+
 import type { HybridSearchRequest } from '@ajh/shared';
+
+import { keys } from './query-client';
 
 export const useSearch = (req: HybridSearchRequest | null) =>
   useQuery({

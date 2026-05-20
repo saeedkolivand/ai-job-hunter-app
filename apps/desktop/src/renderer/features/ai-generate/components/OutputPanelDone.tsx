@@ -1,11 +1,13 @@
+import { Check, Copy, Download, FileText, Loader2, RotateCcw } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+
+import { Button, TextArea } from '@ajh/ui';
+
 import { cn } from '@/lib/cn';
-import { FileText, Copy, Check, RotateCcw, Loader2, Download } from 'lucide-react';
+import { buildFilename, type GenerationMeta, MODES, type TemplateId } from '@/lib/generate-ai';
 import { useTranslation } from '@/lib/i18n';
-import { MODES, type GenerationMeta, type TemplateId, buildFilename } from '@/lib/generate-ai';
 import { transition } from '@/lib/motion';
-import { TextArea } from '@/components/ui/TextArea';
 
 interface OutputPanelDoneProps {
   resumeOut: string;
@@ -57,28 +59,28 @@ export function OutputPanelDone({
               ...(coverOut ? [{ id: 'cover' as const, label: t('aiGenerate.coverLetter') }] : []),
             ] as { id: 'resume' | 'cover'; label: string }[]
           ).map(({ id, label }) => (
-            <button
+            <Button
               key={id}
               onClick={() => onActiveOutChange(id)}
               className={cn(
-                'rounded-lg px-3 py-1.5 text-xs font-medium transition-all',
+                'rounded-lg px-3 py-1.5 text-xs font-medium transition-all h-auto',
                 activeOut === id
                   ? 'bg-brand/15 text-brand-soft'
                   : 'text-foreground/45 hover:text-foreground/70'
               )}
             >
               {label}
-            </button>
+            </Button>
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <button
+          <Button
             onClick={onCopy}
-            className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-[11px] text-foreground/55 hover:text-foreground transition-colors"
+            className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-[11px] text-foreground/55 hover:text-foreground transition-colors h-auto"
           >
             {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
             {copied ? t('aiGenerate.copied') : t('aiGenerate.copy')}
-          </button>
+          </Button>
           <ExportMenu onExport={onExport} t={t} />
         </div>
       </div>
@@ -110,12 +112,12 @@ export function OutputPanelDone({
           {MODES[mode as keyof typeof MODES].label} · {meta?.targetLanguage?.toUpperCase() ?? 'EN'}
           {meta?.mismatch && ` · ${t('aiGenerate.localized')}`}
         </span>
-        <button
+        <Button
           onClick={onRegenerate}
-          className="flex items-center gap-1.5 text-[11px] text-foreground/40 hover:text-foreground/70 transition-colors"
+          className="flex items-center gap-1.5 text-[11px] text-foreground/40 hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
         >
           <RotateCcw size={11} /> {t('aiGenerate.regenerate')}
-        </button>
+        </Button>
       </div>
     </motion.div>
   );
@@ -145,13 +147,13 @@ function ExportMenu({
 
   return (
     <div className="relative">
-      <button
+      <Button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 rounded-lg bg-brand/15 px-2.5 py-1.5 text-[11px] font-medium text-brand-soft hover:bg-brand/20 transition-colors"
+        className="flex items-center gap-1.5 rounded-lg bg-brand/15 px-2.5 py-1.5 text-[11px] font-medium text-brand-soft hover:bg-brand/20 transition-colors h-auto"
       >
         {loading ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
         {t('aiGenerate.export')}
-      </button>
+      </Button>
       <AnimatePresence>
         {open && (
           <>
@@ -164,14 +166,14 @@ function ExportMenu({
               className="absolute right-0 top-full z-[var(--z-modal)] mt-1.5 w-36 overflow-hidden rounded-xl border border-white/10 bg-secondary shadow-2xl"
             >
               {(['pdf', 'docx', 'txt'] as const).map((fmt) => (
-                <button
+                <Button
                   key={fmt}
                   onClick={() => void handle(fmt)}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-foreground/65 hover:bg-white/[0.05] hover:text-foreground transition-colors"
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-foreground/65 hover:bg-white/[0.05] hover:text-foreground transition-colors h-auto rounded-none border-none bg-transparent"
                 >
                   <Download size={11} />
                   {t('aiGenerate.download', { fmt: fmt.toUpperCase() })}
-                </button>
+                </Button>
               ))}
             </motion.div>
           </>

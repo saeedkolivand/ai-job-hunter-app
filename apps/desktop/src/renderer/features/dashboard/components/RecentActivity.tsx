@@ -1,5 +1,7 @@
-import { type LucideIcon, Clock, FileText, Search, Sparkles, Briefcase } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
+import { Briefcase, Clock, FileText, type LucideIcon, Search, Sparkles } from 'lucide-react';
+
+import { GlassCard } from '@ajh/ui';
+
 import { useTranslation } from '@/lib/i18n';
 
 interface ActivityItem {

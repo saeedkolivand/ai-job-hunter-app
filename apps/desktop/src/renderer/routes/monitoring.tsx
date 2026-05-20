@@ -1,15 +1,16 @@
+import { Activity, BarChart3, CheckCircle2, Clock, Cpu, Loader2, XCircle, Zap } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
-import { motion, AnimatePresence } from 'motion/react';
-import { transition } from '@/lib/motion';
-import { useTranslation } from '@/lib/i18n';
-import { Activity, BarChart3, CheckCircle2, Clock, Cpu, XCircle, Loader2, Zap } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { Button } from '@/components/ui/Button';
-import { cn } from '@/lib/cn';
+
+import { Button, GlassCard } from '@ajh/ui';
+
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
-import { useSystemHealth, useAppVersion, useJobQueue, useJobEvents, fetchJob } from '@/services';
+import { cn } from '@/lib/cn';
+import { useTranslation } from '@/lib/i18n';
+import { transition } from '@/lib/motion';
+import { fetchJob, useAppVersion, useJobEvents, useJobQueue, useSystemHealth } from '@/services';
 
 export const Route = createFileRoute('/monitoring')({ component: MonitoringPage });
 

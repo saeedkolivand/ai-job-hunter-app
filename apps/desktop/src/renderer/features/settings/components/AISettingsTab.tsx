@@ -1,14 +1,17 @@
-import { motion } from 'motion/react';
-import { transition } from '@/lib/motion';
 import { RefreshCw } from 'lucide-react';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { CustomDropdown } from './CustomDropdown';
-import { useAIModel, usePreferencesStore } from '@/store/preferences-store';
-import { useTranslation } from '@/lib/i18n';
-import { useAIModels } from '@/services';
+import { motion } from 'motion/react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { Model } from '@/types';
+
+import { Button, GlassCard } from '@ajh/ui';
+
+import { useTranslation } from '@/lib/i18n';
+import { transition } from '@/lib/motion';
+import { useAIModels } from '@/services';
 import { keys } from '@/services/query-client';
+import { useAIModel, usePreferencesStore } from '@/store/preferences-store';
+import type { Model } from '@/types';
+
+import { CustomDropdown } from './CustomDropdown';
 
 export function AISettingsTab() {
   const { t } = useTranslation();
@@ -39,14 +42,14 @@ export function AISettingsTab() {
           <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
             {t('settings.aiModel.title')}
           </div>
-          <button
+          <Button
             onClick={() => void qc.invalidateQueries({ queryKey: keys.ai.models })}
             disabled={loadingModels}
-            className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs text-foreground/70 hover:text-foreground transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs text-foreground/70 hover:text-foreground transition-colors disabled:opacity-50 h-auto border-transparent"
           >
             <RefreshCw size={12} className={loadingModels ? 'animate-spin' : ''} />
             {t('settings.aiModel.refresh')}
-          </button>
+          </Button>
         </div>
         <p className="mb-4 text-sm text-foreground/55">{t('settings.aiModel.description')}</p>
 

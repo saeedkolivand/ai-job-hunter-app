@@ -1,48 +1,49 @@
-import { useRef, useState } from 'react';
-import { createFileRoute } from '@tanstack/react-router';
-import { motion, AnimatePresence } from 'motion/react';
-import { transition } from '@/lib/motion';
-import { useTranslation } from '@/lib/i18n';
 import {
-  FileText,
+  AlertCircle,
+  ArrowRight,
   Briefcase,
   Check,
+  ChevronDown,
+  FileText,
+  RefreshCw,
   RotateCcw,
   Upload,
-  AlertCircle,
-  RefreshCw,
-  ChevronDown,
   Wand2,
-  ArrowRight,
 } from 'lucide-react';
-import { cn } from '@/lib/cn';
-import { Button } from '@/components/ui/Button';
-import { TextArea } from '@/components/ui/TextArea';
-import { PageTransition } from '@/components/layout/PageTransition';
-import { useAIModel, usePreferencesStore } from '@/store/preferences-store';
-import { CustomDropdown } from '@/features/settings/components/CustomDropdown';
-import type { Model } from '@/types';
-import { useAIModels, useExtractText } from '@/services';
+import { AnimatePresence, motion } from 'motion/react';
+import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { keys } from '@/services/query-client';
-import {
-  extractMetadata,
-  generateResume,
-  generateCoverLetter,
-  buildFilename,
-  exportPDF,
-  exportDOCX,
-  exportTXT,
-  type GenerationMode,
-  type GenerationMeta,
-  type TemplateId,
-} from '@/lib/generate-ai';
-import { GenerationMetadata } from '@/features/ai-generate/components/GenerationMetadata';
+import { createFileRoute } from '@tanstack/react-router';
+
+import { Button, TextArea } from '@ajh/ui';
+
+import { PageTransition } from '@/components/layout/PageTransition';
 import { GenerationConfig } from '@/features/ai-generate/components/GenerationConfig';
-import { OutputPanelIdle } from '@/features/ai-generate/components/OutputPanelIdle';
+import { GenerationMetadata } from '@/features/ai-generate/components/GenerationMetadata';
+import { OutputPanelDone } from '@/features/ai-generate/components/OutputPanelDone';
 import { OutputPanelExtracting } from '@/features/ai-generate/components/OutputPanelExtracting';
 import { OutputPanelGenerating } from '@/features/ai-generate/components/OutputPanelGenerating';
-import { OutputPanelDone } from '@/features/ai-generate/components/OutputPanelDone';
+import { OutputPanelIdle } from '@/features/ai-generate/components/OutputPanelIdle';
+import { CustomDropdown } from '@/features/settings/components/CustomDropdown';
+import { cn } from '@/lib/cn';
+import {
+  buildFilename,
+  exportDOCX,
+  exportPDF,
+  exportTXT,
+  extractMetadata,
+  generateCoverLetter,
+  generateResume,
+  type GenerationMeta,
+  type GenerationMode,
+  type TemplateId,
+} from '@/lib/generate-ai';
+import { useTranslation } from '@/lib/i18n';
+import { transition } from '@/lib/motion';
+import { useAIModels, useExtractText } from '@/services';
+import { keys } from '@/services/query-client';
+import { useAIModel, usePreferencesStore } from '@/store/preferences-store';
+import type { Model } from '@/types';
 
 export const Route = createFileRoute('/ai-generate')({ component: AIGeneratePage });
 
@@ -282,12 +283,12 @@ function AIGeneratePage() {
                 </span>
               </div>
               {(stage === 'configuring' || stage === 'done') && (
-                <button
+                <Button
                   onClick={reset}
-                  className="flex items-center gap-1 text-[11px] text-foreground/40 hover:text-foreground/70 transition-colors"
+                  className="flex items-center gap-1 text-[11px] text-foreground/40 hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
                 >
                   <RotateCcw size={11} /> {t('aiGenerate.regenerate')}
-                </button>
+                </Button>
               )}
             </div>
             <p className="text-xs text-foreground/40">{t('aiGenerate.subtitle')}</p>
@@ -295,13 +296,13 @@ function AIGeneratePage() {
 
           {/* Model selector */}
           <div className="px-6 pb-4 flex items-center gap-2">
-            <button
+            <Button
               onClick={() => void qc.invalidateQueries({ queryKey: keys.ai.models })}
               disabled={loadingModels}
-              className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.04] text-foreground/40 hover:text-foreground/70 transition-colors disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.04] text-foreground/40 hover:text-foreground/70 transition-colors disabled:opacity-40 border-transparent p-0"
             >
               <RefreshCw size={11} className={loadingModels ? 'animate-spin' : ''} />
-            </button>
+            </Button>
             <div className="flex-1">
               <CustomDropdown
                 models={models}

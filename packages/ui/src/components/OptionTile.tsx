@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
-import type { ElementType, ReactNode } from 'react';
 import { motion } from 'motion/react';
+import type { ElementType, ReactNode } from 'react';
+
 import { cn } from '../lib/cn';
 import { transition } from '../lib/motion';
 

@@ -2,9 +2,11 @@
  * Thin wrapper over the official `ollama` JS client.
  * Centralizes host configuration and adds typed convenience methods.
  */
-import { Ollama } from 'ollama';
-import type { AiMessage } from '@ajh/shared';
 import { execSync } from 'node:child_process';
+
+import { Ollama } from 'ollama';
+
+import type { AiMessage } from '@ajh/shared';
 
 function getWindowsHostIp(): string | null {
   try {

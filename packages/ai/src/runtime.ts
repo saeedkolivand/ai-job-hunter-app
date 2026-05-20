@@ -12,9 +12,10 @@
  * does NOT register its own IPC handlers — the main process wires those.
  */
 
-import { createLogger, type Runtime, type EventBus } from '@ajh/core';
-import { OllamaClient } from './client/ollama.js';
+import { createLogger, type EventBus, type Runtime } from '@ajh/core';
+
 import type { ModelInfo } from './client/models.js';
+import { OllamaClient } from './client/ollama.js';
 
 export interface AiRuntimeOptions {
   host?: string;

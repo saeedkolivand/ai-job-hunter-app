@@ -1,5 +1,6 @@
+import { Button } from '@ajh/ui';
+
 import { cn } from '@/lib/cn';
-import { Button } from '@/components/ui/Button';
 
 interface OptimizationCardProps {
   title: string;

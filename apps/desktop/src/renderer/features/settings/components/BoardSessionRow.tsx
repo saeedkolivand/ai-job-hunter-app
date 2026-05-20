@@ -1,14 +1,16 @@
-import { useState } from 'react';
 import { Check, Link as LinkIcon, LogOut } from 'lucide-react';
-import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { useState } from 'react';
+
+import { Button, ConfirmModal } from '@ajh/ui';
+
 import { cn } from '@/lib/cn';
 import {
-  useLinkedInStatus,
-  useLinkedInConnect,
-  useLinkedInDisconnect,
-  useBoardStatus,
   useBoardConnect,
   useBoardDisconnect,
+  useBoardStatus,
+  useLinkedInConnect,
+  useLinkedInDisconnect,
+  useLinkedInStatus,
 } from '@/services';
 
 interface Board {
@@ -115,49 +117,45 @@ export function BoardSessionRow({ board }: { board: Board }) {
 
         {/* Action button */}
         {connected ? (
-          <button
+          <Button
+            variant="danger"
+            size="sm"
             onClick={() => setConfirmOpen(true)}
             disabled={loading}
-            className={cn(
-              'relative shrink-0 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-150',
-              'border-red-500/40 text-red-400 hover:border-red-500/60 hover:bg-red-500/5',
-              'disabled:pointer-events-none disabled:opacity-40'
-            )}
+            className="relative shrink-0"
           >
             {loading ? (
-              <span className="flex items-center gap-1.5">
+              <>
                 <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
                 Disconnecting…
-              </span>
+              </>
             ) : (
-              <span className="flex items-center gap-1.5">
+              <>
                 <LogOut size={11} />
                 Disconnect
-              </span>
+              </>
             )}
-          </button>
+          </Button>
         ) : (
-          <button
+          <Button
+            variant="info"
+            size="sm"
             onClick={() => void handleConnect()}
             disabled={loading}
-            className={cn(
-              'relative shrink-0 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-150',
-              'border-brand/40 text-brand-soft hover:border-brand/60 hover:bg-brand/5',
-              'disabled:pointer-events-none disabled:opacity-40'
-            )}
+            className="relative shrink-0"
           >
             {loading ? (
-              <span className="flex items-center gap-1.5">
+              <>
                 <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
                 Connecting…
-              </span>
+              </>
             ) : (
-              <span className="flex items-center gap-1.5">
+              <>
                 <LinkIcon size={11} />
                 Connect
-              </span>
+              </>
             )}
-          </button>
+          </Button>
         )}
       </div>
 

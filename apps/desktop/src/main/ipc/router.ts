@@ -9,31 +9,34 @@
  * The renderer NEVER touches `ipcRenderer` directly; the preload bridge
  * exposes a narrow `window.api.*` object that mirrors `IpcContract`.
  */
-import { ipcMain, type IpcMainInvokeEvent, BrowserWindow, shell, app, dialog } from 'electron';
 import fs from 'node:fs/promises';
+
+import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent, shell } from 'electron';
+import { z, type ZodTypeAny } from 'zod';
+
+import { createLogger } from '@ajh/core';
+import { extractDocxFromBytes, extractPdfFromBytes } from '@ajh/data';
 import {
-  IPC_CHANNELS,
   AiGenerateRequestSchema,
+  ApplyStartSchema,
+  AutopilotCreateSchema,
+  AutopilotIdSchema,
+  AutopilotUpdateSchema,
+  CredentialBoardSchema,
+  CredentialSetSchema,
   DocumentImportRequestSchema,
+  EmbedRequestSchema,
+  HybridSearchRequestSchema,
+  IPC_CHANNELS,
+  JobIdSchema,
+  LocaleSchema,
+  MatchResumeRequestSchema,
+  ResumeExtractTextSchema,
   ScrapeBoardRequestSchema,
   ScrapeUrlRequestSchema,
-  HybridSearchRequestSchema,
-  MatchResumeRequestSchema,
-  LocaleSchema,
-  JobIdSchema,
-  CredentialSetSchema,
-  CredentialBoardSchema,
-  EmbedRequestSchema,
-  ApplyStartSchema,
-  ResumeExtractTextSchema,
-  AutopilotCreateSchema,
-  AutopilotUpdateSchema,
-  AutopilotIdSchema,
 } from '@ajh/shared';
-import { z, type ZodTypeAny } from 'zod';
+
 import type { AppCore } from '../bootstrap.js';
-import { createLogger } from '@ajh/core';
-import { extractPdfFromBytes, extractDocxFromBytes } from '@ajh/data';
 
 const logger = createLogger('ipc');
 

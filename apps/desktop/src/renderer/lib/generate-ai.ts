@@ -15,18 +15,18 @@
  */
 
 import {
-  buildMetadataPrompt,
-  buildResumeSystemPrompt,
-  buildResumePrompt,
-  buildCoverLetterSystemPrompt,
   buildCoverLetterPrompt,
-  validateMetadata,
+  buildCoverLetterSystemPrompt,
+  buildMetadataPrompt,
+  buildResumePrompt,
+  buildResumeSystemPrompt,
   extractPlainText,
-  type GenerationMode,
   type GenerationMeta,
+  type GenerationMode,
+  validateMetadata,
 } from '@ajh/prompts/generate';
 
-export type { GenerationMode, GenerationMeta };
+export type { GenerationMeta, GenerationMode };
 export { MODES } from '@ajh/prompts/generate';
 
 // ─── LLM helpers ─────────────────────────────────────────────────────────────
@@ -82,14 +82,18 @@ async function streamGenerate(
       5 * 60 * 1000
     );
 
-    const poll = setInterval(async () => {
-      const job = (await window.api.jobs.get(jobId).catch(() => null)) as { status: string } | null;
-      if (job?.status === 'failed' || job?.status === 'cancelled') {
-        clearInterval(poll);
-        off();
-        reject(new Error(`Generation ${job.status}. Please try again.`));
-      }
-      if (job?.status === 'completed') clearInterval(poll);
+    const poll = setInterval(() => {
+      void (async () => {
+        const job = (await window.api.jobs.get(jobId).catch(() => null)) as {
+          status: string;
+        } | null;
+        if (job?.status === 'failed' || job?.status === 'cancelled') {
+          clearInterval(poll);
+          off();
+          reject(new Error(`Generation ${job.status}. Please try again.`));
+        }
+        if (job?.status === 'completed') clearInterval(poll);
+      })();
     }, 3_000);
   });
 }
@@ -1058,7 +1062,7 @@ export async function exportResumePDF(
         // Company name (may contain bold keywords)
         const compSegs = line.segments;
         y = drawMixedText(
-          doc as unknown as JsPDFLike,
+          doc,
           compSegs.map((s) => ({ ...s, bold: true })),
           ML,
           y,
@@ -1098,7 +1102,7 @@ export async function exportResumePDF(
         doc.circle(ML + 1.3, y - 1.3, 0.65, 'F');
         const bulletX = ML + 4;
         const nextY = drawMixedText(
-          doc as unknown as JsPDFLike,
+          doc,
           line.segments,
           bulletX,
           y,
@@ -1116,7 +1120,7 @@ export async function exportResumePDF(
       default: {
         checkY(5);
         const nextY = drawMixedText(
-          doc as unknown as JsPDFLike,
+          doc,
           line.segments,
           ML,
           y,
@@ -1267,7 +1271,7 @@ export async function exportCoverLetterPDF(
     // Body with mixed bold
     checkY(6);
     const nextY = drawMixedText(
-      doc as unknown as JsPDFLike,
+      doc,
       segs,
       ML,
       y,

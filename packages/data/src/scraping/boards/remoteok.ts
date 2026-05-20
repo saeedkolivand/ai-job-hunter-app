@@ -3,6 +3,7 @@
  *   https://remoteok.com/api
  */
 import type { JobPosting } from '@ajh/shared';
+
 import { BaseScraper, type BoardSearchInput, type ScrapeContext } from '../base.js';
 import { fetchJson, stripHtml } from '../http.js';
 
