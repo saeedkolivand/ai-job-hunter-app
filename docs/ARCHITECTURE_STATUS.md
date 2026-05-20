@@ -136,26 +136,27 @@ or indexing in main. GPU/rendering flags are guarded by `rollbackFlags.lowEndMod
 
 ---
 
-### Thin Desktop Shell (Tauri — spike)
+### Thin Desktop Shell (Tauri — production)
 
-**Status:** ⚠️ spike
+**Status:** ✅ production
 
 **Where:** `apps/tauri/src-tauri/src/`
 
-**Notes:** Native menu, system tray, file dialog plugin all wired. Sidecar
-launched and port-discovered via stdout. Uses same React frontend as Electron
-shell. Not production-ready — keeps Electron as the production shell until
-parity is proven.
+**Notes:** Native menu, system tray, file dialog, clipboard, updater all
+wired. Sidecar launched and port-discovered via stdout. Uses the same React
+renderer as the Electron shell via Vite alias. **Tauri is now the default
+shell** (`pnpm dev` / `pnpm package`). Electron is kept for one release cycle
+as `pnpm dev:electron` / `pnpm package:electron`.
 
 ---
 
 ### Native Shell Duties
 
-| Duty               | Electron                           | Tauri spike                    |
+| Duty               | Tauri (production)                 | Electron (legacy)              |
 | ------------------ | ---------------------------------- | ------------------------------ |
-| Window management  | ✅ `window.ts`                     | ✅ `main.rs`                   |
-| App menu           | ✅ `menus.ts`                      | ✅ `main.rs` `build_app_menu`  |
-| System tray        | —                                  | ✅ `main.rs` `build_tray`      |
+| Window management  | ✅ `main.rs`                       | ✅ `window.ts`                 |
+| App menu           | ✅ `main.rs` `build_app_menu`      | ✅ `menus.ts`                  |
+| System tray        | ✅ `main.rs` `build_tray`          | —                              |
 | Native dialogs     | ✅ `IPC_CHANNELS.dialog.openFiles` | ✅ `dialog_open_files` command |
 | Auto-update        | ✅ `updater.ts`                    | 🔲 Tauri updater plugin        |
 | Credential storage | ✅ `credentials.ts` (keytar)       | 🔲 Tauri stronghold plugin     |
@@ -276,32 +277,33 @@ Idle unload is triggered by the `AiRuntime` idle timer.
 
 ---
 
-## Verdict: where we are vs. the target
+## Verdict: Phase F — Tauri is the default shell
 
 ```
-✅  UI is transport-neutral and reusable across all three shells
-✅  AppClient abstraction complete — three adapters (IPC, Tauri, HTTP skeleton)
-✅  Electron shell is thin — no AI/scraping/indexing in main process
-✅  RuntimeBroker (RuntimeManager) controls start/stop/lazy health
-✅  Scraper runtime behind a stable interface with rollback env var
-✅  AI runtime lazy-starts and unloads on idle
-✅  Data runtime opens DB/vector only when needed
+✅  UI transport-neutral, reusable across all three shells
+✅  AppClient abstraction — three adapters (IPC, Tauri invoke, web HTTP skeleton)
+✅  Electron shell thin — no AI/scraping/indexing in main process
 ✅  Rollback flags for every phase (rollback-flags.ts)
-✅  Tauri spike: same frontend, sidecar protocol proven, native shell complete
-⚠️  Web HTTP adapter: skeleton in place, runtime server not yet deployed
-⚠️  Tauri: spike only — Electron stays production until parity proven
-🔲  Tauri auto-updater (Tauri updater plugin)
-🔲  Tauri credential storage (Tauri stronghold plugin)
-🔲  HTTP scraper adapters ported from @ajh/data to the sidecar
-🔲  apps/web/ entry point using createWebHttpClient()
+✅  Scraper runtime sidecar — 19 boards, login, apply, documents, vector search
+✅  AI streaming via direct Ollama HTTP (chat, embed, pull, list models)
+✅  Credential storage — OS keychain via keyring crate
+✅  Auto-updater — tauri-plugin-updater with GitHub release endpoint
+✅  Native shell — menu, tray, file dialogs, clipboard, window drag
+✅  Release pipeline — Windows NSIS/MSI + macOS universal DMG, signed
+✅  Tauri is production shell — pnpm dev / pnpm package target Tauri
+✅  Electron legacy — pnpm dev:electron / pnpm package:electron for one cycle
+⚠️  Web HTTP adapter: skeleton ready, web backend server not yet deployed
+⚠️  11 support panel actions: stubs in both Tauri and Electron (TODO)
+⚠️  Conversations persistence: no-op in both shells (TODO)
+🔲  apps/web/ entry using createWebHttpClient()
+🔲  Electron fully removed (after one legacy release cycle)
 ```
 
-The architectural verdict from the document holds:
+The architectural goal from the document is achieved:
 
-> Keep Electron for now, but make it boring.
-> The highest-value move is making Electron a replaceable host around runtimes
-> that start late, stop when idle, and can eventually run as Tauri sidecars or
-> web backends.
+> Keep Electron for now, but make it boring. The highest-value move is making
+> Electron a replaceable host around runtimes that start late, stop when idle,
+> and can eventually run as Tauri sidecars or web backends.
 
-That path is now in place. Each remaining item above is an independent,
-reversible step — none require touching the React feature code.
+Electron is now boring — replaceable by `pnpm dev:electron`. Tauri is the
+production shell. Each remaining item above is independent and reversible.
