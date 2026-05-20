@@ -2,7 +2,6 @@
  * Adapter for pdf-parse to handle ESM import issues with TypeScript
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let pdfModule: any = null;
 
 async function getPdfModule() {
