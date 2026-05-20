@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod credentials;
 mod sidecar;
 
 use std::sync::Mutex;
@@ -10,6 +11,7 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
 
+use credentials::CredentialStore;
 use sidecar::ScraperSidecarState;
 
 // ── App menu ──────────────────────────────────────────────────────────────────
@@ -96,6 +98,13 @@ fn main() {
         .manage(Mutex::new(ScraperSidecarState::default()))
         .setup(|app| {
             let handle = app.handle();
+
+            // Initialise the credential store backed by the OS keychain.
+            // Data dir: <AppData>/com.ajh.tauri-spike/ (Tauri's default userData).
+            let data_dir = app.path().app_data_dir().unwrap_or_else(|_| {
+                std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".ajh")
+            });
+            app.manage(Mutex::new(CredentialStore::new(&data_dir)));
 
             // Build and set the application menu.
             let menu = build_app_menu(handle)?;

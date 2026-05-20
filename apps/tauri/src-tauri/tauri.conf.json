@@ -30,14 +30,11 @@
   },
 
   "bundle": {
-    "active": false,
-    "targets": "none",
-    "externalBin": ["binaries/scraper-runtime"]
+    "active": false
   },
 
   "plugins": {
     "shell": {
-      "sidecar": true,
       "open": "https?://"
     },
     "dialog": {}

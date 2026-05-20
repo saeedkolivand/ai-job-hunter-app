@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Default capability — allows all AJH Tauri commands from the main window.",
+  "windows": ["main"],
+  "permissions": ["core:default", "opener:default", "dialog:default", "shell:default"]
+}
