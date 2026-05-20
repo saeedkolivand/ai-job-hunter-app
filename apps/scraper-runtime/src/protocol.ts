@@ -51,6 +51,7 @@ export type ScraperCommand =
       payload: { query: string; collection: string; topK?: number };
     }
   | { kind: 'match.resume'; jobId: string; payload: { resumeId: string; jobText: string } }
+  | { kind: 'set.performance_mode'; mode: 'low-memory' | 'balanced' | 'performance' }
   | { kind: 'health' }
   | { kind: 'catalog' };
 
