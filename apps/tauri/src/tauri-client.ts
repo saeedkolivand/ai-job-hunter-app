@@ -33,9 +33,6 @@ function asyncUnsub(setup: () => Promise<() => void>): () => void {
   };
 }
 
-const NOT_AVAILABLE = Promise.resolve(null) as Promise<unknown>;
-const EMPTY_LIST = Promise.resolve([]) as Promise<unknown>;
-
 export function createTauriInvokeClient(): AppClient {
   return {
     system: {
@@ -163,14 +160,14 @@ export function createTauriInvokeClient(): AppClient {
     },
 
     autopilot: {
-      list: () => EMPTY_LIST,
-      get: (_id) => NOT_AVAILABLE,
-      create: (_req) => NOT_AVAILABLE,
-      update: (_id, _req) => NOT_AVAILABLE,
-      remove: (_id) => NOT_AVAILABLE,
-      run: (_id) => NOT_AVAILABLE,
-      pause: (_id) => NOT_AVAILABLE,
-      resume: (_id) => NOT_AVAILABLE,
+      list: () => invoke('autopilot_list'),
+      get: (autopilotId) => invoke('autopilot_get', { autopilotId }),
+      create: (req) => invoke('autopilot_create', { req }),
+      update: (autopilotId, req) => invoke('autopilot_update', { autopilotId, req }),
+      remove: (autopilotId) => invoke('autopilot_remove', { autopilotId }),
+      run: (autopilotId) => invoke('autopilot_run', { autopilotId }),
+      pause: (autopilotId) => invoke('autopilot_pause', { autopilotId }),
+      resume: (autopilotId) => invoke('autopilot_resume', { autopilotId }),
     },
 
     dialog: {
