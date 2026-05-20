@@ -1,0 +1,38 @@
+---
+description: Core architecture rules — applies to all files in this project
+globs: ["**/*.ts", "**/*.tsx"]
+alwaysApply: true
+---
+
+# Architecture Rules
+
+## Monorepo packages
+- `packages/shared` — IPC contracts + types. No React, no Node APIs.
+- `packages/ui` — React component library. No app logic (no Zustand, no IPC).
+- `packages/prompts` — AI prompt templates. Pure TypeScript, zero deps.
+- `packages/core/ai/data/workers` — Backend only. Never import in renderer.
+- `apps/desktop/src/renderer` — React UI. No direct Node.js access.
+
+## IPC boundary
+- Renderer talks to main ONLY through `window.api.*`
+- Components NEVER call `window.api.*` directly — use service hooks
+- Service hooks live in `apps/desktop/src/renderer/services/`
+- IPC contract is the single source of truth: `packages/shared/src/ipc/contracts.ts`
+
+## New capabilities checklist
+1. Add to `packages/shared/src/ipc/contracts.ts`
+2. Implement in `apps/desktop/src/main/ipc/router.ts`
+3. Expose in `apps/desktop/src/preload/index.ts`
+4. Create service hook in `apps/desktop/src/renderer/services/`
+
+## Full documentation
+- `docs/ARCHITECTURE.md` — process model, package roles, all data flows
+- `docs/PATTERNS.md` — all 13 enforced coding patterns with examples
+- `docs/DESIGN_SYSTEM.md` — color tokens, glass surfaces, motion system
+- `docs/DEVELOPMENT.md` — setup, commands, debugging, CI
+- `docs/RELEASE.md` — automated release pipeline and commit conventions
+
+## Release
+Releases auto-trigger on push to `main` via semantic-release.
+`feat:` → minor, `fix:`/`perf:` → patch, `BREAKING CHANGE` → major.
+Never manually tag or edit CHANGELOG.md/package.json version.

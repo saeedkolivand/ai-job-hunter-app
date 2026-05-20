@@ -1,0 +1,68 @@
+---
+description: Renderer UI rules — applies to all React components and route files
+globs: ["apps/desktop/src/renderer/**/*.tsx", "apps/desktop/src/renderer/**/*.ts"]
+alwaysApply: true
+---
+
+# Renderer UI Rules
+
+## Data fetching — React Query only
+Never use `useState + useEffect` for IPC data. Always use service hooks:
+```ts
+import { useDocuments, usePostings, useJobQueue } from '@/services';
+const { data, isLoading } = useDocuments();
+```
+
+## i18n
+```ts
+// ✅ correct
+import { useTranslation } from '@/lib/i18n';
+// ❌ never
+import { useTranslation } from 'react-i18next';
+```
+
+## Motion tokens
+```ts
+// ✅ correct
+import { transition, variants, stagger } from '@/lib/motion';
+<motion.div transition={transition.normal}>
+// ❌ never
+<motion.div transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}>
+```
+
+## Brand colors
+```tsx
+// ✅ correct
+className="text-brand-soft bg-brand/15 border-brand/30"
+// ❌ never
+className="text-[#c084fc] bg-[#a855f7]/15"
+```
+
+## UI primitives to use
+| Need | Import |
+|------|--------|
+| Button | `@/components/ui/Button` |
+| Input | `@/components/ui/Input` |
+| TextArea | `@/components/ui/TextArea` |
+| Dropdown | `@/components/ui/SelectDropdown` |
+| Modal | `@/components/ui/ModalShell` |
+| Empty state | `@/components/ui/EmptyState` |
+| Skeleton | `@/components/ui/LoadingSkeleton` |
+| Card | `@/components/ui/GlassCard` |
+| Page wrapper | `@/components/layout/PageShell` |
+| AI stream text | `@/components/ui/StreamingText` |
+| Selectable tile | `@/components/ui/OptionTile` |
+
+## File placement
+- `features/X/components/` — components owned by only route X
+- `components/ui/` — shared across multiple features
+- `services/` — all IPC/React Query hooks
+- `lib/machines/` — state machines for complex flows (3+ states)
+
+## State machines
+Use `useMachine` for any wizard or multi-step flow:
+```ts
+import { useMachine } from '@/hooks/use-machine';
+import { autopilotWizardMachine } from '@/lib/machines/autopilot-wizard.machine';
+const [state, send, { busy }] = useMachine(autopilotWizardMachine, 'step_0');
+```

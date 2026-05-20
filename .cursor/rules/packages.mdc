@@ -1,0 +1,33 @@
+---
+description: Package-specific rules for packages/ directory
+globs: ["packages/**/*.ts", "packages/**/*.tsx"]
+alwaysApply: true
+---
+
+# Package Rules
+
+## @ajh/ui (packages/ui)
+- No app logic — no Zustand, no IPC, no routing imports
+- Components import design utilities from local `./lib/cn`, `./lib/motion`
+- Stories go in `src/stories/ComponentName.stories.tsx`
+- CSS utilities use tokens from `src/css/tokens.css` — no raw values
+
+## @ajh/shared (packages/shared)
+- Zero runtime dependencies except `zod`
+- No React, no Node-specific APIs
+- IPC contract is the source of truth — add here first when adding capabilities
+
+## @ajh/prompts (packages/prompts)
+- Pure TypeScript — no imports from other packages
+- No `window`, `document`, or React references
+
+## @ajh/data (packages/data)
+- Main-process only — never imported by renderer
+- Internal subdomains: `db/`, `scraping/`, `matching/`, `files/`, `applying/`, `autopilot/`
+
+## Dependency direction
+```
+renderer → @ajh/ui, @ajh/shared, @ajh/prompts
+main → @ajh/core, @ajh/ai, @ajh/data, @ajh/workers, @ajh/shared
+```
+Lower packages never import from upper packages.

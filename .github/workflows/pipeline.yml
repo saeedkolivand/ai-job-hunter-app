@@ -1,0 +1,402 @@
+name: Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Never cancel a release in flight; cancel redundant PR runs freely.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: '24'
+  PNPM_VERSION: '11.1.3'
+  RELEASE_DIR: apps/desktop/release
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Job graph
+#
+#   lint ──┐
+#           ├── typecheck ──┐
+#           └── test ───────┴── build-verify ──┬── storybook (main push only)
+#                                               │
+#                                               └── determine-version (main, no [skip ci])
+#                                                       │ (if release needed)
+#                                                   approve-release  ← manual gate
+#                                                       │
+#                                                   publish
+#                                                  /        \
+#                                         build-windows   build-macos
+#                                                  \        /
+#                                               attach-to-release
+# ─────────────────────────────────────────────────────────────────────────────
+
+jobs:
+  # ── Lint & Format ──────────────────────────────────────────────────────────
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: ESLint
+        run: pnpm lint:strict
+
+      - name: Prettier
+        run: pnpm format:check
+
+  # ── Type Check ─────────────────────────────────────────────────────────────
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages (non-desktop)
+        run: pnpm -r --filter=!@ajh/desktop build
+
+      - name: Typecheck all packages
+        run: pnpm typecheck
+
+  # ── Tests ──────────────────────────────────────────────────────────────────
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages (non-desktop)
+        run: pnpm -r --filter=!@ajh/desktop build
+
+      - name: Run unit tests with coverage
+        run: pnpm test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+      - name: Validate per-package test scripts
+        run: pnpm -r test
+
+  # ── Build Verification ─────────────────────────────────────────────────────
+  build-verify:
+    name: Build Verification
+    needs: [typecheck, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Verify build outputs
+        run: |
+          declare -a outputs=(
+            "packages/shared/dist/index.js"
+            "packages/core/dist/index.js"
+            "packages/ai/dist/index.js"
+            "packages/data/dist/index.js"
+            "packages/workers/dist/index.js"
+            "packages/workers/dist/workers/chunk.worker.js"
+            "packages/workers/dist/workers/embeddings.worker.js"
+            "packages/workers/dist/workers/ocr.worker.js"
+            "packages/prompts/dist/index.js"
+            "packages/ui/dist/index.js"
+            "apps/desktop/out/main/index.mjs"
+            "apps/desktop/out/preload/index.js"
+            "apps/desktop/out/renderer/index.html"
+          )
+          fail=0
+          for f in "${outputs[@]}"; do
+            if [ -f "$f" ]; then echo "✓ $f"; else echo "✗ MISSING: $f"; fail=1; fi
+          done
+          exit $fail
+
+  # ── Storybook (push to main only, informational) ───────────────────────────
+  storybook:
+    name: Storybook Build
+    needs: [build-verify]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages (non-desktop)
+        run: pnpm -r --filter=!@ajh/desktop build
+
+      - name: Build Storybook
+        run: pnpm --filter @ajh/ui build-storybook
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: storybook-static
+          path: packages/ui/storybook-static/
+          retention-days: 14
+
+  # ── Determine Next Version (dry-run, push to main only) ───────────────────
+  determine-version:
+    name: Determine Next Version
+    needs: [build-verify]
+    if: >
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      !contains(github.event.head_commit.message, '[skip ci]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      will-release: ${{ steps.dry-run.outputs.will-release }}
+      version: ${{ steps.dry-run.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Dry-run semantic-release
+        id: dry-run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OUTPUT=$(pnpm exec semantic-release --dry-run 2>&1)
+          echo "$OUTPUT"
+          VERSION=$(echo "$OUTPUT" | grep -oP '(?<=The next release version is )\S+' || echo "")
+          if [ -n "$VERSION" ]; then
+            echo "will-release=true"  >> "$GITHUB_OUTPUT"
+            echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
+            echo "### 🚀 Release ready: v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "will-release=false" >> "$GITHUB_OUTPUT"
+            echo "version="           >> "$GITHUB_OUTPUT"
+            echo "### ℹ️ No release triggered by this push" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # ── Manual Approval Gate ───────────────────────────────────────────────────
+  # Requires a GitHub Environment named "release" with required reviewers.
+  # Settings → Environments → release → Required reviewers.
+  approve-release:
+    name: Approve Release v${{ needs.determine-version.outputs.version }}
+    needs: [determine-version]
+    if: needs.determine-version.outputs.will-release == 'true'
+    environment: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Approved
+        run: echo "Release v${{ needs.determine-version.outputs.version }} approved."
+
+  # ── Publish Release ────────────────────────────────────────────────────────
+  publish:
+    name: Publish Release
+    needs: [approve-release, determine-version]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      version: ${{ needs.determine-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm exec semantic-release
+
+  # ── Build: Windows ─────────────────────────────────────────────────────────
+  build-windows:
+    name: Build — Windows (NSIS)
+    needs: [publish]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Package for Windows
+        run: pnpm --filter @ajh/desktop package -- --win
+
+      - name: Collect Windows artifacts
+        run: |
+          New-Item -ItemType Directory -Force -Path release-artifacts
+          Get-ChildItem -Path "${{ env.RELEASE_DIR }}" -Recurse -Include "*.exe","*.zip","*.7z" |
+            Copy-Item -Destination "release-artifacts/"
+        shell: pwsh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: release-artifacts/*
+          retention-days: 30
+          if-no-files-found: error
+
+  # ── Build: macOS ───────────────────────────────────────────────────────────
+  build-macos:
+    name: Build — macOS (dmg + zip)
+    needs: [publish]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Package for macOS
+        run: pnpm --filter @ajh/desktop package -- --mac
+
+      - name: Collect macOS artifacts
+        run: |
+          mkdir -p release-artifacts
+          find "${{ env.RELEASE_DIR }}" \( -name "*.dmg" -o -name "*.zip" \) \
+            -exec cp {} release-artifacts/ \;
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-packages
+          path: |
+            release-artifacts/*.dmg
+            release-artifacts/*.zip
+          retention-days: 30
+          if-no-files-found: error
+
+  # ── Attach Artifacts to GitHub Release ────────────────────────────────────
+  attach-to-release:
+    name: Attach Artifacts to Release
+    needs: [build-windows, build-macos, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.publish.outputs.version }}
+          files: release-artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,14 @@
+/*
+ * @ajh/design-system — Full CSS bundle
+ *
+ * Import this in the consuming app AFTER `@import "tailwindcss"`:
+ *
+ *   @import "tailwindcss";
+ *   @import "@ajh/design-system/css";
+ *
+ * Or import layers individually:
+ *   @import "@ajh/design-system/tokens.css";
+ *   @import "@ajh/design-system/utilities.css";
+ */
+@import './tokens.css';
+@import './utilities.css';

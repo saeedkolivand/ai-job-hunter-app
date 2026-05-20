@@ -1,0 +1,54 @@
+import type { Meta, StoryObj } from '@storybook/react';
+import { Search, Briefcase, FileText, Sparkles } from 'lucide-react';
+import { EmptyState } from '../components/EmptyState';
+import { Button } from '../components/Button';
+
+const meta: Meta<typeof EmptyState> = {
+  title: 'Feedback/EmptyState',
+  component: EmptyState,
+  tags: ['autodocs'],
+};
+export default meta;
+type Story = StoryObj<typeof EmptyState>;
+
+export const NoJobs: Story = {
+  args: {
+    icon: Briefcase,
+    title: 'No jobs found',
+    description: 'Try adjusting your search filters or check back later.',
+  },
+};
+
+export const NoDocuments: Story = {
+  args: {
+    icon: FileText,
+    title: 'No documents yet',
+    description: 'Upload your resume to get started.',
+    action: (
+      <Button variant="glass" size="sm">
+        Upload resume
+      </Button>
+    ),
+  },
+};
+
+export const SearchEmpty: Story = {
+  args: {
+    icon: Search,
+    title: 'No results',
+    description: 'Nothing matched your query. Try a different search.',
+  },
+};
+
+export const AINotReady: Story = {
+  args: {
+    icon: Sparkles,
+    title: 'AI model not ready',
+    description: 'Start Ollama and pull a model in Settings → AI.',
+    action: (
+      <Button variant="glass" size="sm">
+        Open settings
+      </Button>
+    ),
+  },
+};

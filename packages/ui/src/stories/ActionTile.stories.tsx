@@ -1,0 +1,44 @@
+import type { Meta, StoryObj } from '@storybook/react';
+import { Sparkles, Briefcase, FileText, Search, Zap, Settings } from 'lucide-react';
+import { ActionTile } from '../components/ActionTile';
+
+const meta: Meta<typeof ActionTile> = {
+  title: 'Primitives/ActionTile',
+  component: ActionTile,
+  tags: ['autodocs'],
+  argTypes: {
+    active: { control: 'boolean' },
+  },
+};
+export default meta;
+type Story = StoryObj<typeof ActionTile>;
+
+export const Default: Story = {
+  args: { icon: Sparkles, label: 'AI Generate', description: 'Create tailored resumes' },
+};
+
+export const Active: Story = {
+  args: {
+    icon: Sparkles,
+    label: 'AI Generate',
+    description: 'Create tailored resumes',
+    active: true,
+  },
+};
+
+export const Grid: Story = {
+  render: () => (
+    <div className="grid grid-cols-3 gap-4 w-[500px]">
+      {[
+        { icon: Sparkles, label: 'AI', description: 'Generate content' },
+        { icon: Briefcase, label: 'Jobs', description: 'Browse listings' },
+        { icon: FileText, label: 'Documents', description: 'Manage resumes' },
+        { icon: Search, label: 'Search', description: 'Find jobs' },
+        { icon: Zap, label: 'Autopilot', description: 'Auto apply' },
+        { icon: Settings, label: 'Settings', description: 'Configure app' },
+      ].map((t) => (
+        <ActionTile key={t.label} icon={t.icon} label={t.label} description={t.description} />
+      ))}
+    </div>
+  ),
+};

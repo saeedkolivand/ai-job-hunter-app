@@ -1,0 +1,123 @@
+/*
+ * @ajh/design-system — Token Layer
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Import this AFTER `@import "tailwindcss"` in each consuming app.
+ * Contains: Tailwind theme tokens, CSS custom property scales.
+ * Does NOT contain utility classes — see utilities.css.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+@theme {
+  /* Semantic color palette (OKLCH — perceptually uniform) */
+  --color-background: oklch(22% 3% 9%);
+  --color-foreground: oklch(98% 1% 210);
+  --color-card: oklch(22% 3% 9%);
+  --color-card-foreground: oklch(98% 1% 210);
+  --color-popover: oklch(22% 3% 9%);
+  --color-popover-foreground: oklch(98% 1% 210);
+  --color-primary: oklch(65% 50% 270);
+  --color-primary-foreground: oklch(98% 1% 210);
+  --color-secondary: oklch(17% 10% 217);
+  --color-secondary-foreground: oklch(98% 1% 210);
+  --color-muted: oklch(17% 10% 217);
+  --color-muted-foreground: oklch(65% 5% 215);
+  --color-accent: oklch(65% 50% 270);
+  --color-accent-foreground: oklch(98% 1% 210);
+  --color-destructive: oklch(30% 20% 0);
+  --color-destructive-foreground: oklch(98% 1% 210);
+  --color-border: oklch(17% 10% 217);
+  --color-input: oklch(17% 10% 217);
+  --color-ring: oklch(65% 50% 270);
+
+  /* Brand aliases — use text-brand, bg-brand in Tailwind classes */
+  --color-brand: #a855f7;
+  --color-brand-soft: #c084fc;
+  --color-brand-dim: oklch(65% 50% 270 / 0.15);
+
+  --font-sans: 'Inter', 'SF Pro Text', system-ui, -apple-system, sans-serif;
+  --radius: 0.75rem;
+
+  /* ── Z-index utilities — use z-overlay, z-modal, z-toast etc. ─────────── */
+  --z-index-raised: 10;
+  --z-index-dropdown: 100;
+  --z-index-sticky: 200;
+  --z-index-overlay: 500;
+  --z-index-modal: 600;
+  --z-index-toast: 700;
+  --z-index-titlebar: 800;
+  --z-index-tooltip: 900;
+}
+
+:root {
+  /* ── Z-index layer system ─────────────────────────────────────────────── */
+  --z-base: 0;
+  --z-raised: 10;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-overlay: 500;
+  --z-modal: 600;
+  --z-toast: 700;
+  --z-titlebar: 800;
+  --z-tooltip: 900;
+
+  /* ── Blur scale ───────────────────────────────────────────────────────── */
+  --blur-xs: 8px;
+  --blur-sm: 16px;
+  --blur-md: 20px;
+  --blur-lg: 24px;
+  --blur-xl: 30px;
+  --blur-2xl: 40px;
+  --blur-3xl: 60px;
+
+  /* ── Saturation scale (paired with blur) ──────────────────────────────── */
+  --sat-low: 130%;
+  --sat-mid: 150%;
+  --sat-high: 170%;
+  --sat-max: 200%;
+
+  /* ── Shadow scale ─────────────────────────────────────────────────────── */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --shadow-2xl: 0 24px 60px -30px rgba(0, 0, 0, 0.8);
+  --shadow-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+
+  /* ── Glow scale ───────────────────────────────────────────────────────── */
+  --glow-brand-sm: 0 0 20px rgba(168, 85, 247, 0.15);
+  --glow-brand-md: 0 0 40px rgba(168, 85, 247, 0.3);
+  --glow-blue-md: 0 0 40px rgba(99, 102, 241, 0.3);
+
+  /* ── Border opacity scale ─────────────────────────────────────────────── */
+  --border-faint: rgba(255, 255, 255, 0.05);
+  --border-dim: rgba(255, 255, 255, 0.08);
+  --border-soft: rgba(255, 255, 255, 0.1);
+  --border-mid: rgba(255, 255, 255, 0.12);
+  --border-clear: rgba(255, 255, 255, 0.15);
+
+  /* ── Aurora / nebula palette (for CinematicBackground) ───────────────── */
+  --aurora-violet: #a855f7;
+  --aurora-indigo: #6366f1;
+  --aurora-pink: #ec4899;
+  --aurora-cyan: #22d3ee;
+  --nebula-violet: #c084fc;
+  --nebula-indigo: #818cf8;
+
+  /* ── Animation duration scale ─────────────────────────────────────────── */
+  --dur-instant: 80ms;
+  --dur-fast: 120ms;
+  --dur-normal: 180ms;
+  --dur-relaxed: 220ms;
+  --dur-slow: 350ms;
+  --dur-glacial: 500ms;
+
+  /* ── Easing tokens ────────────────────────────────────────────────────── */
+  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: ease-out;
+
+  /* ── Stagger helpers — set --stagger-base on parent ──────────────────── */
+  --stagger-1: calc(var(--stagger-base, 50ms) * 1);
+  --stagger-2: calc(var(--stagger-base, 50ms) * 2);
+  --stagger-3: calc(var(--stagger-base, 50ms) * 3);
+  --stagger-4: calc(var(--stagger-base, 50ms) * 4);
+}

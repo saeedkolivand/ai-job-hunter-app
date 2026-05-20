@@ -1,0 +1,28 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+allowBuilds:
+  better-sqlite3: true
+  core-js: false
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+  lzma-native: true
+minimumReleaseAgeExclude:
+  - framer-motion@12.39.0
+  - motion-dom@12.39.0
+  - motion-utils@12.39.0
+  - motion@12.39.0
+  - '@tanstack/query-core@5.100.11'
+  - '@tanstack/react-query@5.100.11'
+  - '@typescript-eslint/eslint-plugin@8.59.4'
+  - '@typescript-eslint/parser@8.59.4'
+  - '@typescript-eslint/project-service@8.59.4'
+  - '@typescript-eslint/scope-manager@8.59.4'
+  - '@typescript-eslint/tsconfig-utils@8.59.4'
+  - '@typescript-eslint/type-utils@8.59.4'
+  - '@typescript-eslint/types@8.59.4'
+  - '@typescript-eslint/typescript-estree@8.59.4'
+  - '@typescript-eslint/utils@8.59.4'
+  - '@typescript-eslint/visitor-keys@8.59.4'
+  - typescript-eslint@8.59.4

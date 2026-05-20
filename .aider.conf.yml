@@ -1,0 +1,18 @@
+# Aider configuration for AI Job Hunter
+# https://aider.chat/docs/config/aider_conf.html
+
+# Load project rules as system prompt on every session
+system-prompt: .aider/system-prompt.md
+
+# Always read these files for context
+read:
+  - ARCHITECTURE.md
+  - packages/shared/src/ipc/contracts.ts
+
+# TypeScript/React project settings
+auto-commits: false # manual commits only
+suggest-shell-commands: false
+
+# Linting — run after edits to catch violations immediately
+lint-cmd: pnpm lint --max-warnings 0
+test-cmd: pnpm typecheck

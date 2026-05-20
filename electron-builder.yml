@@ -1,0 +1,55 @@
+appId: com.saeedkolivand.aijobhunter
+productName: AIJobHunter
+
+directories:
+  output: release
+  buildResources: build
+
+artifactName: '${productName}-${version}-${os}-${arch}.${ext}'
+
+files:
+  - 'out/main/**/*'
+  - 'out/preload/**/*'
+  - 'out/renderer/**/*'
+  - '!**/*.{ts,tsx,map}'
+  - '!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}'
+  - '!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}'
+
+asarUnpack:
+  - '**/node_modules/better-sqlite3/**/*'
+  - '**/node_modules/@lancedb/**/*'
+  - '**/node_modules/apache-arrow/**/*'
+
+mac:
+  category: public.app-category.productivity
+  icon: build/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  target:
+    - dmg
+    - zip
+
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+    - portable
+    - zip
+
+# linux:
+#   icon: build/icon.png
+#   category: Utility
+#   maintainer: Saeed Kolivand <saeedkolivand@gmail.com>
+#   synopsis: AI-powered job hunting assistant
+#   description: AI Job Hunter - A local-first, AI-native desktop application for intelligent job hunting
+#   target:
+#     - AppImage
+#     - deb
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+publish: null
+npmRebuild: true

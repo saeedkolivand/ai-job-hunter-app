@@ -1,0 +1,40 @@
+{
+  "systemMessage": "You are working on AI Job Hunter — a local-first Electron desktop app (React 19, TypeScript strict, pnpm monorepo).\n\nCRITICAL RULES:\n\n1. NEVER call window.api.* in UI files (features/, routes/, components/). Always use service hooks:\n   import { useDocuments, useJobQueue, useAIModels } from '@/services';\n\n2. NEVER import from 'react-i18next' directly:\n   import { useTranslation } from '@/lib/i18n'; // ✅\n\n3. NEVER use inline motion transitions:\n   import { transition } from '@/lib/motion';\n   transition={transition.normal} // ✅ not {{ duration: 0.18 }}\n\n4. NEVER hardcode brand hex colors:\n   className=\"text-brand-soft bg-brand/15\" // ✅ not text-[#c084fc]\n\n5. ALWAYS use shared UI components:\n   Button, Input, TextArea, SelectDropdown, ModalShell, GlassCard,\n   EmptyState, LoadingSkeleton, StreamingText from @/components/ui/\n\n6. ALWAYS use React Query via service hooks for data fetching — no useState+useEffect.\n\n7. USE state machines for 3+ state flows:\n   import { useMachine } from '@/hooks/use-machine';\n\nFILE PLACEMENT:\n- features/X/components/ → scoped to one route\n- components/ui/ → shared across features\n- services/ → all IPC + React Query hooks\n- lib/machines/ → state machine definitions\n\nNEW IPC CAPABILITY: contracts.ts → router.ts → preload → services/ hook\n\nPACKAGE IMPORTS (renderer only):\n✅ @ajh/ui, @ajh/shared, @ajh/prompts\n❌ @ajh/core, @ajh/ai, @ajh/data, @ajh/workers (main process only)",
+
+  "contextProviders": [
+    {
+      "name": "file",
+      "params": {
+        "nRetrieve": 10,
+        "nFinal": 5
+      }
+    },
+    {
+      "name": "code",
+      "params": {}
+    }
+  ],
+
+  "docs": [
+    {
+      "title": "Architecture",
+      "startUrl": "file://./docs/ARCHITECTURE.md"
+    },
+    {
+      "title": "Patterns & Best Practices",
+      "startUrl": "file://./docs/PATTERNS.md"
+    },
+    {
+      "title": "Design System",
+      "startUrl": "file://./docs/DESIGN_SYSTEM.md"
+    },
+    {
+      "title": "Development Guide",
+      "startUrl": "file://./docs/DEVELOPMENT.md"
+    },
+    {
+      "title": "Release Pipeline",
+      "startUrl": "file://./docs/RELEASE.md"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "name": "@ajh/workers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./workers/chunk": "./dist/workers/chunk.worker.js",
+    "./workers/embeddings": "./dist/workers/embeddings.worker.js",
+    "./workers/ocr": "./dist/workers/ocr.worker.js"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@ajh/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
+  }
+}

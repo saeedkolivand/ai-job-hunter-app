@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+# Runs before `git push`.
+# Quality gate: lint + package tests.
+# TypeScript checks and full build verification run in CI (ci.yml).
+
+echo "▶ Running ESLint..."
+pnpm lint
+
+echo "▶ Running package tests..."
+pnpm -r test
