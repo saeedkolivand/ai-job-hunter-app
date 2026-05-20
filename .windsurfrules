@@ -33,6 +33,18 @@ Before marking any task complete:
 3. Open a pull request targeting `main`
 4. CI must pass before merging
 
+**Always verify your branch exists on the remote before starting work:**
+```bash
+git fetch origin
+git branch -r | grep $(git branch --show-current)
+```
+If the branch no longer exists on the remote (PR was merged and branch deleted on GitHub),
+switch back to main immediately — do not commit to a dead branch:
+```bash
+git checkout main && git pull origin main
+```
+Then create a new branch for the next piece of work.
+
 ---
 
 ## Architecture

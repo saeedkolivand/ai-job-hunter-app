@@ -48,14 +48,13 @@ jobs:
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
         env:
-          # GITHUB_TOKEN cannot push to protected branches even with contents:write.
-          # RELEASE_TOKEN must be a PAT with repo scope created by a Repository Admin.
-          # How to create it:
-          #   1. GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens
-          #   2. Repository access: this repo only
-          #   3. Permissions: Contents = Read & Write, Pull requests = Read & Write
-          #   4. Copy the token → repo Settings → Secrets → Actions → New secret → RELEASE_TOKEN
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          # GITHUB_TOKEN has contents:write (declared above) which is sufficient for
+          # semantic-release to create tags and GitHub Releases.
+          # To allow it to push the version bump commit to the protected main branch,
+          # add github-actions[bot] as a bypass actor in the branch ruleset:
+          #   GitHub → Settings → Rules → Rulesets → main → Bypass list
+          #   → Add bypass → search "github actions" → select GitHub Actions (App • github)
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Notify Discord Release Failure
         if: failure()
