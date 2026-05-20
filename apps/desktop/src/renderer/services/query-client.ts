@@ -34,6 +34,7 @@ export const keys = {
     health: ['system', 'health'] as const,
     version: ['system', 'version'] as const,
     platform: ['system', 'platform'] as const,
+    metrics: ['system', 'metrics'] as const,
   },
   jobs: { all: ['jobs'] as const, detail: (id: string) => ['jobs', id] as const },
   ai: { models: ['ai', 'models'] as const },

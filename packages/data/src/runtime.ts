@@ -16,7 +16,6 @@ import { ApplierRegistry } from './applying/registry.js';
 import { createDb, type Db } from './db/client.js';
 import { InMemoryJobStore } from './jobs/in-memory-store.js';
 import { MatchingEngine } from './matching/engine.js';
-import { BrowserController } from './scraping/browser.js';
 import { ScraperRegistry } from './scraping/registry.js';
 import { VectorStore } from './vector/lancedb.js';
 
@@ -33,11 +32,6 @@ export class DataRuntime implements Runtime {
   readonly scrapers = new ScraperRegistry();
   readonly appliers = new ApplierRegistry();
   readonly matching = new MatchingEngine();
-  readonly browser = new BrowserController({ headless: true });
-  /**
-   * In-memory store for live scraping results.
-   * Jobs are stored temporarily during scraping and cleared when scraping completes.
-   */
   readonly liveJobs = new InMemoryJobStore();
 
   constructor(
@@ -61,7 +55,6 @@ export class DataRuntime implements Runtime {
   }
 
   async stop(): Promise<void> {
-    await this.browser.close();
     await this.vectors?.close();
     this.vectors = undefined;
     this.vectorsReady = false;
@@ -73,7 +66,6 @@ export class DataRuntime implements Runtime {
       ready: !!this.dbHandle,
       sqlite: !!this.dbHandle,
       vector: this.vectorsReady,
-      browser: this.browser.isOpen(),
       scrapers: this.scrapers.catalog().length,
     };
   }

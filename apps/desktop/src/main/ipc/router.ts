@@ -37,6 +37,7 @@ import {
 } from '@ajh/shared';
 
 import type { AppCore } from '../bootstrap.js';
+import { getStartupMs } from '../startup-metrics.js';
 
 const logger = createLogger('ipc');
 
@@ -99,6 +100,25 @@ export function registerIpc(core: AppCore): void {
       logger.info({ mode, concurrency, idleUnloadMs }, 'performance mode applied');
     }
   );
+
+  handle(IPC_CHANNELS.system.getMetrics, undefined, async () => {
+    const raw = app.getAppMetrics();
+    return {
+      boot: core.bootMetrics,
+      startupMs: getStartupMs(),
+      jobQueue: core.jobs.metrics(),
+      processes: raw.map((m) => ({
+        pid: m.pid,
+        type: m.type,
+        cpuUsage: m.cpu,
+        memory: {
+          workingSetSize: m.memory.workingSetSize,
+          peakWorkingSetSize: m.memory.peakWorkingSetSize,
+        },
+      })),
+      snapshotAt: Date.now(),
+    };
+  });
 
   // ── jobs ────────────────────────────────────────────────────────────────
   handle(IPC_CHANNELS.jobs.list, undefined, async () => core.jobs.list());
@@ -415,12 +435,9 @@ export function registerIpc(core: AppCore): void {
     const linkedinSessionDir = path.join(userDataDir, 'linkedin-session');
     const boardSessionsDir = path.join(userDataDir, 'board-sessions');
 
-    // Release any Playwright persistent contexts before deletion (critical on Windows).
-    try {
-      await core.data.browser.closePersistent();
-    } catch {
-      /* ignore */
-    }
+    // Electron partition directories are already cleared by sess.disconnect() above.
+    // No Playwright contexts to release — ElectronBrowserController manages sessions
+    // via Electron's built-in session API, not on-disk context directories.
 
     try {
       const boards = await fs.readdir(browserStateDir);
