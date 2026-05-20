@@ -17,7 +17,7 @@ import {
   TaskScheduler,
 } from '@ajh/core';
 import { AutopilotStore, DataRuntime, runAutopilot } from '@ajh/data';
-import type { AiGenerateRequest } from '@ajh/shared';
+import type { AiGenerateRequest, BootMetrics } from '@ajh/shared';
 
 import { type BoardSessionMap, createBoardSessions } from './board-sessions/index.js';
 import { CredentialStore } from './credentials.js';
@@ -45,15 +45,14 @@ export interface AppCore {
   /** Re-evaluate whether the autopilot scheduler should run. Call after create/update/remove. */
   refreshScheduler: () => Promise<void>;
   onShuttingDown?: () => Promise<void>;
+  /** Timing breakdown of the bootstrap() call — set once, never changes. */
+  bootMetrics: BootMetrics;
 }
 
 export async function bootstrap(): Promise<AppCore> {
   const logger = createLogger('bootstrap');
-  const bus = new EventBus();
-  const jobs = new JobQueue(bus, { concurrency: 2 });
-  const scheduler = new TaskScheduler();
-  const runtimes = new RuntimeManager(bus);
-  const state = new StateCoordinator(bus, { locale: 'en' });
+  const bootStart = performance.now();
+  const bootStartedAt = Date.now();
 
   // Platform detection log
   logger.info(
@@ -66,6 +65,14 @@ export async function bootstrap(): Promise<AppCore> {
     'platform detected'
   );
 
+  const t0 = performance.now();
+  const bus = new EventBus();
+  const jobs = new JobQueue(bus, { concurrency: 2 });
+  const scheduler = new TaskScheduler();
+  const runtimes = new RuntimeManager(bus);
+  const state = new StateCoordinator(bus, { locale: 'en' });
+  const phCoreInit = performance.now() - t0;
+
   const ai = new AiRuntime(bus);
   const userDataDir = app.getPath('userData');
   const data = new DataRuntime(bus, { userDataDir });
@@ -76,7 +83,9 @@ export async function bootstrap(): Promise<AppCore> {
   // once and the session survives app restarts.
   // Also refreshes state.json for any board with an existing valid session
   // so scrapers work immediately on startup without re-login.
+  const t1 = performance.now();
   const boardSessions = await createBoardSessions(userDataDir);
+  const phBoardSessions = performance.now() - t1;
 
   const electronBrowser = new ElectronBrowserController();
   const scraperRuntime = new InProcessScraperRuntime(data, credentials, electronBrowser);
@@ -85,9 +94,12 @@ export async function bootstrap(): Promise<AppCore> {
 
   // Start data runtime eagerly — SQLite is needed immediately by autopilotStore
   // and the scheduler. AI runtime starts lazily on first ai.generate/ai.embed job.
+  const t2 = performance.now();
   await runtimes.start('data');
+  const phDataRuntime = performance.now() - t2;
 
   // ── Register job handlers ─────────────────────────────────────────────
+  const t3 = performance.now();
 
   // AI generation: streams deltas back over the EventBus → renderer subscribes
   // via window.api.ai.onStream (IPC_CHANNELS.ai.stream).
@@ -202,6 +214,8 @@ export async function bootstrap(): Promise<AppCore> {
     return { success: true, jobId: job.id };
   });
 
+  const phJobHandlers = performance.now() - t3;
+
   logger.info({ scrapers: data.scrapers.catalog().length }, 'core bootstrapped');
 
   // ── Autopilot store ───────────────────────────────────────────────────────
@@ -279,7 +293,36 @@ export async function bootstrap(): Promise<AppCore> {
   };
 
   // Start only if active autopilots already exist.
+  const t4 = performance.now();
   await refreshScheduler();
+  const phScheduler = performance.now() - t4;
+
+  const bootTotalMs = performance.now() - bootStart;
+  const bootMetrics: BootMetrics = {
+    startedAt: bootStartedAt,
+    phases: {
+      coreInit: phCoreInit,
+      boardSessions: phBoardSessions,
+      dataRuntime: phDataRuntime,
+      jobHandlers: phJobHandlers,
+      scheduler: phScheduler,
+    },
+    totalMs: bootTotalMs,
+  };
+
+  logger.info(
+    {
+      totalMs: Math.round(bootTotalMs),
+      phases: {
+        coreInit: Math.round(phCoreInit),
+        boardSessions: Math.round(phBoardSessions),
+        dataRuntime: Math.round(phDataRuntime),
+        jobHandlers: Math.round(phJobHandlers),
+        scheduler: Math.round(phScheduler),
+      },
+    },
+    'bootstrap complete'
+  );
 
   // Top-level shutdown hook (called from main on before-quit)
   (global as { __ajh_shutdown?: () => Promise<void> }).__ajh_shutdown = async () => {
@@ -300,5 +343,6 @@ export async function bootstrap(): Promise<AppCore> {
     boardSessions,
     scraperRuntime,
     refreshScheduler,
+    bootMetrics,
   };
 }

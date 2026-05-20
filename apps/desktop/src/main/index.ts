@@ -19,10 +19,13 @@ import { bootstrap } from './bootstrap.js';
 import { registerIpc } from './ipc/router.js';
 import { installMenu } from './menus.js';
 import { applySecurityDefaults } from './security.js';
+import { setStartupMs } from './startup-metrics.js';
 import { setupUpdater } from './updater.js';
 import { createMainWindow } from './window.js';
 
 const logger = createLogger('main');
+
+let _appReadyAt = 0;
 
 // ── GPU / rendering flags ──────────────────────────────────────────────────
 // Must be set before app.whenReady().
@@ -45,15 +48,35 @@ applySecurityDefaults();
 let mainWindow: BrowserWindow | null = null;
 
 app.whenReady().then(async () => {
+  _appReadyAt = performance.now();
   try {
     const core = await bootstrap();
     registerIpc(core);
     mainWindow = await createMainWindow();
+
+    // Record time from app-ready to window visible.
+    const startupMs = performance.now() - _appReadyAt;
+    setStartupMs(startupMs);
+    logger.info({ startupMs: Math.round(startupMs) }, 'first window ready');
+
     installMenu(mainWindow);
     if (app.isPackaged) void setupUpdater();
     core.onShuttingDown = async () => {
       /* hook for graceful shutdown */
     };
+
+    // Log process metrics every 60 s so they appear in crash logs / diagnostics.
+    setInterval(() => {
+      const metrics = app.getAppMetrics();
+      const summary = metrics.map((m) => ({
+        pid: m.pid,
+        type: m.type,
+        cpu: m.cpu.percentCPUUsage.toFixed(1),
+        memMB: Math.round(m.memory.workingSetSize / 1024),
+      }));
+      logger.info({ processes: summary }, 'process metrics');
+    }, 60_000).unref();
+
     app.on('activate', async () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         mainWindow = await createMainWindow();
