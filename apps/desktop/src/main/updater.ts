@@ -21,8 +21,10 @@ function broadcast(status: UpdateStatus) {
 
 export async function setupUpdater() {
   // Lazy import — electron-updater is heavy and should not load at startup
-  const { default: pkg } = await import('electron-updater');
-  const { autoUpdater } = pkg as typeof import('electron-updater');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { default: pkg } = (await import('electron-updater')) as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { autoUpdater } = pkg as { autoUpdater: any };
 
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
