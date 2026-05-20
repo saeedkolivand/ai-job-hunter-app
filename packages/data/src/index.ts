@@ -13,9 +13,8 @@ export { ScraperRegistry } from './scraping/registry.js';
 export { type CollectionName, COLLECTIONS } from './vector/collections.js';
 export { VectorStore } from './vector/lancedb.js';
 
-// LinkedIn Services
+// LinkedIn Services (used internally by scraping/boards/linkedin.ts)
 export { LinkedInHttpClient } from './services/linkedin/client/http-client.js';
-export { linkedinRateLimiter, RateLimiter } from './services/linkedin/client/rate-limiter.js';
 export {
   type JobsSearchParams,
   LinkedInJobsApiClient,
@@ -24,12 +23,3 @@ export {
   type LinkedInSessionData,
   LinkedInSessionStore,
 } from './services/linkedin/session/store.js';
-
-// Provider Abstraction
-export {
-  BaseProvider,
-  type JobProvider,
-  type ProviderConfig,
-  type ProviderContext,
-  type ProviderSearchInput,
-} from './services/providers/base.js';
