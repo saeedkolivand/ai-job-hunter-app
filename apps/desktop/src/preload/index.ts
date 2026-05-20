@@ -95,6 +95,16 @@ const api = {
     }) => invoke(IPC_CHANNELS.apply.start, req),
     catalog: () => invoke(IPC_CHANNELS.apply.catalog),
   },
+  updater: {
+    check: () => invoke(IPC_CHANNELS.updater.check),
+    download: () => invoke(IPC_CHANNELS.updater.download),
+    install: () => invoke(IPC_CHANNELS.updater.install),
+    onStatus: (handler: (status: unknown) => void) => {
+      const listener = (_: unknown, status: unknown) => handler(status);
+      ipcRenderer.on(IPC_CHANNELS.updater.onStatus, listener);
+      return () => ipcRenderer.off(IPC_CHANNELS.updater.onStatus, listener);
+    },
+  },
   shortcuts: {
     onCommandPalette: (handler: () => void) => {
       const listener = () => handler();

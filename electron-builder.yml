@@ -51,5 +51,8 @@ nsis:
   perMachine: false
   allowToChangeInstallationDirectory: true
 
-publish: null
+publish:
+  provider: github
+  owner: saeedkolivand
+  repo: ai-job-hunter-assistant-app
 npmRebuild: true
