@@ -2,57 +2,66 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { ScrapeBoardRequest, ScrapeUrlRequest } from '@ajh/shared';
 
+import { useAppClient } from '@/providers/AppClientProvider';
+
 import { keys } from './query-client';
 
-export const usePostings = () =>
-  useQuery({
-    queryKey: keys.postings.all,
-    queryFn: () => window.api.scrape.listPostings(),
-  });
+export const usePostings = () => {
+  const api = useAppClient();
+  return useQuery({ queryKey: keys.postings.all, queryFn: () => api.scrape.listPostings() });
+};
 
-export const useInteractions = (interactionType?: string) =>
-  useQuery({
+export const useInteractions = (interactionType?: string) => {
+  const api = useAppClient();
+  return useQuery({
     queryKey: keys.postings.interactions(interactionType),
-    queryFn: () => window.api.scrape.listInteractions({ interactionType }),
+    queryFn: () => api.scrape.listInteractions({ interactionType }),
   });
+};
 
 export const useScrapeBoard = () => {
+  const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: ScrapeBoardRequest) => window.api.scrape.board(req),
+    mutationFn: (req: ScrapeBoardRequest) => api.scrape.board(req),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.postings.all }),
   });
 };
 
-export const useScrapeUrl = () =>
-  useMutation({
-    mutationFn: (req: ScrapeUrlRequest) => window.api.scrape.url(req),
-  });
+export const useScrapeUrl = () => {
+  const api = useAppClient();
+  return useMutation({ mutationFn: (req: ScrapeUrlRequest) => api.scrape.url(req) });
+};
 
 export const useClearPostings = () => {
+  const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => window.api.scrape.clearPostings(),
+    mutationFn: () => api.scrape.clearPostings(),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.postings.all }),
   });
 };
 
 export const usePersistJob = () => {
+  const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: { job: Record<string, unknown>; interactionType: string }) =>
-      window.api.scrape.persistJob(req),
+      api.scrape.persistJob(req),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.postings.interactions() }),
   });
 };
 
-export const useExportData = () =>
-  useMutation({ mutationFn: () => window.api.scrape.exportData() });
+export const useExportData = () => {
+  const api = useAppClient();
+  return useMutation({ mutationFn: () => api.scrape.exportData() });
+};
 
 export const useImportData = () => {
+  const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => window.api.scrape.importData(),
+    mutationFn: () => api.scrape.importData(),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.postings.all }),
   });
 };

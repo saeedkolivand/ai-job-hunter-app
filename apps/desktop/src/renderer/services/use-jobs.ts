@@ -3,26 +3,30 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { JobEvent } from '@ajh/shared';
 
+import { getClient, useAppClient } from '@/providers/AppClientProvider';
+
 import { keys, queryClient } from './query-client';
 
-export const useJobQueue = () =>
-  useQuery({
-    queryKey: keys.jobs.all,
-    queryFn: () => window.api.jobs.list(),
-  });
+export const useJobQueue = () => {
+  const api = useAppClient();
+  return useQuery({ queryKey: keys.jobs.all, queryFn: () => api.jobs.list() });
+};
 
-export const useJob = (jobId: string) =>
-  useQuery({
+export const useJob = (jobId: string) => {
+  const api = useAppClient();
+  return useQuery({
     queryKey: keys.jobs.detail(jobId),
-    queryFn: () => window.api.jobs.get(jobId),
+    queryFn: () => api.jobs.get(jobId),
     enabled: !!jobId,
-    refetchInterval: 2_000, // active jobs update frequently
+    refetchInterval: 2_000,
   });
+};
 
 export const useCancelJob = () => {
+  const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (jobId: string) => window.api.jobs.cancel(jobId),
+    mutationFn: (jobId: string) => api.jobs.cancel(jobId),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.jobs.all }),
   });
 };
@@ -31,31 +35,28 @@ export const useCancelJob = () => {
 export const fetchJob = (jobId: string) =>
   queryClient.fetchQuery({
     queryKey: keys.jobs.detail(jobId),
-    queryFn: () => window.api.jobs.get(jobId),
+    queryFn: () => getClient().jobs.get(jobId),
     staleTime: 0,
   });
 
 export const useRetryJob = () => {
+  const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (jobId: string) => window.api.jobs.retry(jobId),
+    mutationFn: (jobId: string) => api.jobs.retry(jobId),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.jobs.all }),
   });
 };
 
-/**
- * Subscribe to real-time job events.
- * Automatically invalidates the job queue cache on every event so the UI
- * stays in sync without manual polling.
- */
 export const useJobEvents = (onEvent?: (event: JobEvent) => void) => {
+  const api = useAppClient();
   const qc = useQueryClient();
   useEffect(() => {
-    const offRaw = window.api?.jobs.onEvent((event: unknown) => {
+    const offRaw = api.jobs.onEvent((event: unknown) => {
       void qc.invalidateQueries({ queryKey: keys.jobs.all });
       onEvent?.(event as JobEvent);
     });
     const off = offRaw as unknown as (() => void) | undefined;
     return () => off?.();
-  }, [qc, onEvent]);
+  }, [api, qc, onEvent]);
 };

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { useAppClient } from '@/providers/AppClientProvider';
+
 export type UpdateStatus =
   | { state: 'idle' }
   | { state: 'checking' }
@@ -10,18 +12,19 @@ export type UpdateStatus =
   | { state: 'error'; message: string };
 
 export function useUpdater() {
+  const api = useAppClient();
   const [status, setStatus] = useState<UpdateStatus>({ state: 'idle' });
 
   useEffect(() => {
-    const off = window.api.updater.onStatus((s) => setStatus(s as UpdateStatus));
+    const off = api.updater.onStatus((s) => setStatus(s as UpdateStatus));
     return () => {
       off();
     };
-  }, []);
+  }, [api]);
 
-  const check = useCallback(() => window.api.updater.check(), []);
-  const download = useCallback(() => window.api.updater.download(), []);
-  const install = useCallback(() => window.api.updater.install(), []);
+  const check = useCallback(() => api.updater.check(), [api]);
+  const download = useCallback(() => api.updater.download(), [api]);
+  const install = useCallback(() => api.updater.install(), [api]);
 
   return { status, check, download, install };
 }
