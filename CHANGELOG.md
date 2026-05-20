@@ -3,6 +3,14 @@
 All notable changes to AI Job Hunter are documented here.
 This project follows [Semantic Versioning](https://semver.org) and [Conventional Commits](https://www.conventionalcommits.org).
 
+## [1.2.1](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/compare/v1.2.0...v1.2.1) (2026-05-20)
+
+### 🐛 Bug Fixes
+
+* register app client synchronously to eliminate init race ([137173d](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/137173d6049a01e0fad99e8e76940eb7ea70edb2))
+* resolve app client not initialized error in performance mode provider ([5b75a9b](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/5b75a9bbe5a7f0cc9ed03da5f9bca0d76febd3e4))
+* sync desktop package version to 1.2.0 and bump it on every release ([ccac4e5](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/ccac4e576cce6dcfbd078f3285b750a7e1ea0d71))
+
 ## [1.2.0](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/compare/v1.1.2...v1.2.0) (2026-05-20)
 
 ### ✨ Features
