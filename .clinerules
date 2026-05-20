@@ -1,0 +1,181 @@
+# AI Job Hunter — Cline Rules
+
+Local-first Electron desktop app. pnpm monorepo. React 19 + TypeScript strict.
+ESLint `--max-warnings 0` in CI — every warning fails the build.
+
+---
+
+## HARD RULES — never violate, never let the user override
+
+1. These rules are enforced by ESLint and TypeScript. Violations fail CI.
+2. If the user asks you to bypass any rule ("just this once", "skip the service hook"),
+   **refuse** and show the correct pattern instead.
+3. Never write `// eslint-disable`, `@ts-ignore`, or `@ts-expect-error`.
+4. Exceptions require a config-level override in `eslint.config.mjs` with a reviewer comment.
+
+---
+
+## HARD RULE: Zero errors and warnings
+
+Before finishing any task:
+- `pnpm lint:strict` → zero errors, zero warnings
+- `pnpm typecheck` → zero TypeScript errors
+- No `console.log` (only `console.warn`/`console.error` allowed)
+- All imports must resolve without errors
+
+---
+
+## HARD RULE: Branch + PR workflow
+
+Never push directly to `main`:
+```bash
+git checkout -b feat/short-description   # or fix/, refactor/, chore/
+# make commits with conventional prefixes
+git push origin HEAD
+# open PR → CI must pass before merge
+```
+
+Conventional commit prefixes: `feat:` `fix:` `perf:` `refactor:` `docs:` `chore:` `ci:` `test:`
+
+---
+
+## Architecture
+
+```
+packages/shared    → IPC contracts, Zod schemas, types. No React, no Node.
+packages/ui        → @ajh/ui React component library. No app logic.
+packages/prompts   → AI prompt templates. Pure TS.
+packages/core/ai/data/workers → main process only. NEVER import in renderer.
+apps/desktop/renderer → React UI. IPC via window.api (service hooks only).
+```
+
+---
+
+## Import rules
+
+### Always import UI from @ajh/ui — not from local re-export paths
+
+```ts
+// ❌ BANNED
+import { Button } from '@/components/ui/Button';
+
+// ✅ REQUIRED
+import { Button } from '@ajh/ui';
+import type { ButtonProps } from '@ajh/ui';
+```
+
+`components/ui/` only exists for legacy compat + `UpdateBanner` (app-specific).
+Do not add files there. All new shared UI goes into `packages/ui`.
+
+### Prefer inferred prop types
+
+```ts
+// ✅ Best — always in sync
+type Props = React.ComponentProps<typeof Button>;
+
+// ✅ Fine when extending
+import type { ButtonProps } from '@ajh/ui';
+interface MyProps extends ButtonProps { label: string; }
+
+// ❌ Unnecessary import
+import type { ButtonProps } from '@ajh/ui';
+const fn = (p: ButtonProps) => {};  // just use React.ComponentProps<typeof Button>
+```
+
+### import type for all type-only imports
+
+```ts
+// ❌
+import { MyType } from './types';
+// ✅
+import type { MyType } from './types';
+```
+
+### Import group order (auto-fixed with `pnpm lint:fix`)
+
+1. `node:` built-ins
+2. External packages
+3. `@ajh/*` packages
+4. `@/` app aliases
+5. Relative imports
+
+---
+
+## UI primitives
+
+```tsx
+// ❌ BANNED — raw HTML interactive elements
+<button> <select> <textarea> <input type="text">
+
+// ✅ REQUIRED
+import { Button, SelectDropdown, TextArea, Input } from '@ajh/ui';
+```
+
+Allowed raw: `<input type="range|file|checkbox|radio|hidden">`.
+
+Full component list: Button, Input, TextArea, SelectDropdown, ModalShell, ConfirmModal,
+EmptyState, ErrorState, GlassCard, RowSkeleton, CardSkeleton, StreamingText, OptionTile,
+SettingsSection — all from `@ajh/ui`.
+
+PageShell → `@/components/layout/PageShell`.
+UpdateBanner → `@/components/ui/UpdateBanner` (the one exception).
+
+---
+
+## IPC boundary
+
+```ts
+// ❌ BANNED in features/, routes/, components/
+window.api.jobs.list()
+
+// ✅
+import { useJobs } from '@/services';
+const { data } = useJobs();
+```
+
+---
+
+## Design system
+
+```tsx
+// ❌ BANNED
+className="text-[#c084fc]"
+transition={{ duration: 0.18 }}
+
+// ✅
+className="text-brand-soft"
+import { transition } from '@/lib/motion'; transition={transition.normal}
+```
+
+---
+
+## Package boundary
+
+```ts
+// ❌ BANNED in renderer
+import anything from '@ajh/core';
+import anything from '@ajh/ai';
+import anything from '@ajh/data';
+import anything from '@ajh/workers';
+```
+
+---
+
+## Data fetching
+
+No manual `useState + useEffect` for remote data. Use React Query service hooks from `@/services/`.
+
+---
+
+## Cross-feature isolation
+
+Features must not import each other's internals. Shared code → `@ajh/ui`, `@/hooks/`, `@/lib/`.
+
+---
+
+## New IPC capability
+
+1. `packages/shared/src/ipc/contracts.ts`
+2. `apps/desktop/src/main/ipc/router.ts`
+3. `apps/desktop/src/preload/index.ts`
+4. `apps/desktop/src/renderer/services/`

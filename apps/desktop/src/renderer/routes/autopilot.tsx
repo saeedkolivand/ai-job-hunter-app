@@ -1,44 +1,45 @@
+import {
+  AlertCircle,
+  BookOpen,
+  Calendar,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  Pause,
+  Play,
+  Plus,
+  RotateCcw,
+  Send,
+  Target,
+  Trash2,
+  X,
+  Zap,
+} from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
-import { motion, AnimatePresence } from 'motion/react';
+
+import type { Autopilot, AutopilotAction, AutopilotSchedule } from '@ajh/shared';
+import { Button, GlassCard } from '@ajh/ui';
+
+import { PageTransition } from '@/components/layout/PageTransition';
+import { StepAction } from '@/features/autopilot/components/wizard-steps/StepAction';
+import { StepFilter } from '@/features/autopilot/components/wizard-steps/StepFilter';
+import { StepSchedule } from '@/features/autopilot/components/wizard-steps/StepSchedule';
+import { StepTarget } from '@/features/autopilot/components/wizard-steps/StepTarget';
+import { cn } from '@/lib/cn';
+import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
 import {
-  Zap,
-  Plus,
-  Play,
-  Pause,
-  Trash2,
-  ChevronRight,
-  ChevronLeft,
-  Check,
-  AlertCircle,
-  Target,
-  Filter,
-  Calendar,
-  BookOpen,
-  Send,
-  RotateCcw,
-  X,
-} from 'lucide-react';
-import { useTranslation } from '@/lib/i18n';
-import { cn } from '@/lib/cn';
-import { Button } from '@/components/ui/Button';
-import { PageTransition } from '@/components/layout/PageTransition';
-import { GlassCard } from '@/components/ui/GlassCard';
-import type { Autopilot, AutopilotAction, AutopilotSchedule } from '@ajh/shared';
-import { useLocation, useRemote, useTechStack } from '@/store/preferences-store';
-import { StepTarget } from '@/features/autopilot/components/wizard-steps/StepTarget';
-import { StepFilter } from '@/features/autopilot/components/wizard-steps/StepFilter';
-import { StepAction } from '@/features/autopilot/components/wizard-steps/StepAction';
-import { StepSchedule } from '@/features/autopilot/components/wizard-steps/StepSchedule';
-import {
   useAutopilots,
-  useRunAutopilot,
-  usePauseAutopilot,
-  useResumeAutopilot,
-  useRemoveAutopilot,
   useCreateAutopilot,
+  usePauseAutopilot,
+  useRemoveAutopilot,
+  useResumeAutopilot,
+  useRunAutopilot,
 } from '@/services';
+import { useLocation, useRemote, useTechStack } from '@/store/preferences-store';
 
 export const Route = createFileRoute('/autopilot')({ component: AutopilotPage });
 
@@ -203,9 +204,12 @@ function AutopilotPage() {
           {error && (
             <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-400/5 px-4 py-3 text-xs text-red-300/80">
               <AlertCircle size={12} /> {error}
-              <button onClick={() => setError(null)} className="ml-auto">
+              <Button
+                onClick={() => setError(null)}
+                className="ml-auto h-auto bg-transparent border-transparent p-0"
+              >
                 <X size={11} />
-              </button>
+              </Button>
             </div>
           )}
 
@@ -304,26 +308,26 @@ function AutopilotCard({
 
       {/* Actions */}
       <div className="flex items-center gap-1.5 shrink-0">
-        <button
+        <Button
           onClick={onRun}
           disabled={running}
-          className="flex items-center gap-1.5 rounded-lg bg-brand/10 px-2.5 py-1.5 text-[11px] font-medium text-brand-soft hover:bg-brand/20 transition-colors disabled:opacity-40"
+          className="flex items-center gap-1.5 rounded-lg bg-brand/10 px-2.5 py-1.5 text-[11px] font-medium text-brand-soft hover:bg-brand/20 transition-colors disabled:opacity-40 h-auto border-transparent"
         >
           {running ? <RotateCcw size={11} className="animate-spin" /> : <Play size={11} />}
           {running ? t('autopilot.wizard.running') : t('autopilot.wizard.run')}
-        </button>
-        <button
+        </Button>
+        <Button
           onClick={onTogglePause}
-          className="rounded-lg p-1.5 text-foreground/40 hover:bg-white/[0.06] hover:text-foreground/70 transition-colors"
+          className="rounded-lg p-1.5 text-foreground/40 hover:bg-white/[0.06] hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
         >
           {paused ? <Play size={13} /> : <Pause size={13} />}
-        </button>
-        <button
+        </Button>
+        <Button
           onClick={onDelete}
-          className="rounded-lg p-1.5 text-foreground/30 hover:bg-red-400/10 hover:text-red-400/70 transition-colors"
+          className="rounded-lg p-1.5 text-foreground/30 hover:bg-red-400/10 hover:text-red-400/70 transition-colors h-auto bg-transparent border-transparent"
         >
           <Trash2 size={13} />
-        </button>
+        </Button>
       </div>
     </GlassCard>
   );
@@ -428,7 +432,7 @@ function CreationWizard({ onDone, onCancel }: { onDone(ap: Autopilot): void; onC
         autoSubmit: form.autoSubmit,
         schedule: form.schedule,
       })) as Autopilot;
-      onDone(ap as Autopilot);
+      onDone(ap);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('autopilot.wizard.createFailed'));
     }
@@ -558,12 +562,12 @@ function CreationWizard({ onDone, onCancel }: { onDone(ap: Autopilot): void; onC
               {t('autopilot.wizard.title')}
             </span>
           </div>
-          <button
+          <Button
             onClick={onCancel}
-            className="text-foreground/30 hover:text-foreground/60 transition-colors"
+            className="text-foreground/30 hover:text-foreground/60 transition-colors h-auto bg-transparent border-transparent p-0"
           >
             <X size={16} />
-          </button>
+          </Button>
         </div>
 
         {/* Step indicators */}
@@ -618,13 +622,13 @@ function CreationWizard({ onDone, onCancel }: { onDone(ap: Autopilot): void; onC
 
         {/* Wizard footer */}
         <div className="flex items-center justify-between border-t border-white/[0.1] px-6 py-4">
-          <button
+          <Button
             onClick={() => (step > 0 ? setStep((s) => s - 1) : onCancel())}
-            className="flex items-center gap-1.5 text-xs text-foreground/40 hover:text-foreground/70 transition-colors"
+            className="flex items-center gap-1.5 text-xs text-foreground/40 hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
           >
             <ChevronLeft size={13} />{' '}
             {step === 0 ? t('autopilot.wizard.cancel') : t('autopilot.wizard.back')}
-          </button>
+          </Button>
           {step < STEPS.length - 1 ? (
             <Button
               variant="glass"

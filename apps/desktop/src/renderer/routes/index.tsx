@@ -1,11 +1,13 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router';
-import { useTranslation } from '@/lib/i18n';
 import { Briefcase, FileText, Search, Sparkles } from 'lucide-react';
-import { JobPipelineOverview } from '@/features/dashboard/components/JobPipelineOverview';
-import { AISystemStatus } from '@/features/dashboard/components/AISystemStatus';
-import { ActionTile } from '@/components/ui/ActionTile';
-import { useUserName } from '@/store/preferences-store';
+import { createFileRoute, useRouter } from '@tanstack/react-router';
+
+import { ActionTile } from '@ajh/ui';
+
 import { PageHeader } from '@/components/layout/PageHeader';
+import { AISystemStatus } from '@/features/dashboard/components/AISystemStatus';
+import { JobPipelineOverview } from '@/features/dashboard/components/JobPipelineOverview';
+import { useTranslation } from '@/lib/i18n';
+import { useUserName } from '@/store/preferences-store';
 
 export const Route = createFileRoute('/')({ component: Dashboard });
 
