@@ -2,15 +2,15 @@
 ///
 /// Real commands: system_health/version/platform/locale/openExternal,
 ///                scrape_board, scrape_url (proxy to scraper sidecar),
+///                credentials_* (OS keychain via keyring crate),
 ///                dialog_open_files.
 ///
 /// Stub commands: everything else — they return null / empty list so the UI
-/// renders with empty states. Parity is built incrementally by replacing
-/// stubs with sidecar HTTP proxies.
+/// renders with empty states. Parity is built incrementally.
 use std::sync::Mutex;
 use serde_json::{json, Value};
-use tauri::AppHandle;
-
+use tauri::{AppHandle, Emitter, Manager};
+use crate::credentials::CredentialStore;
 use crate::sidecar::ScraperSidecarState;
 
 // ── Sidecar HTTP helpers ──────────────────────────────────────────────────────
@@ -72,8 +72,6 @@ async fn post_sidecar_command(
 
     Ok(last_done)
 }
-
-use tauri::Manager;
 
 // ── System ──────────────────────────────────────────────────────────────────
 
@@ -288,23 +286,69 @@ pub fn match_resume(_req: Value) -> Value {
 // ── Credentials ──────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn credentials_available() -> Value {
-    json!(false)
+pub fn credentials_available(app: AppHandle) -> Value {
+    let store = app.state::<Mutex<CredentialStore>>();
+    let guard = store.lock().unwrap();
+    json!(guard.is_available())
 }
 
 #[tauri::command]
-pub fn credentials_list() -> Value {
-    json!([])
+pub fn credentials_list(app: AppHandle) -> Value {
+    let store = app.state::<Mutex<CredentialStore>>();
+    let guard = store.lock().unwrap();
+    json!(guard.list())
 }
 
 #[tauri::command]
-pub fn credentials_set(_req: Value) -> Value {
-    json!(null)
+pub fn credentials_set(app: AppHandle, req: Value) -> Value {
+    let board_id = req.get("boardId").and_then(|v| v.as_str()).unwrap_or("");
+    let username = req.get("username").and_then(|v| v.as_str()).unwrap_or("");
+    let password = req.get("password").and_then(|v| v.as_str()).unwrap_or("");
+
+    if board_id.is_empty() || username.is_empty() || password.is_empty() {
+        return json!({ "error": "boardId, username, and password are required" });
+    }
+
+    let store = app.state::<Mutex<CredentialStore>>();
+    let guard = store.lock().unwrap();
+    match guard.set(board_id, username, password) {
+        Ok(()) => {
+            // Forward to sidecar if it is running.
+            let port = app
+                .state::<Mutex<ScraperSidecarState>>()
+                .lock()
+                .ok()
+                .and_then(|g| g.port);
+            if let Some(port) = port {
+                let cmd = serde_json::json!({
+                    "kind": "set.credentials",
+                    "boardId": board_id,
+                    "username": username,
+                    "password": password,
+                });
+                tauri::async_runtime::spawn(async move {
+                    reqwest::Client::new()
+                        .post(format!("http://127.0.0.1:{port}/command"))
+                        .json(&cmd)
+                        .send()
+                        .await
+                        .ok();
+                });
+            }
+            json!({ "success": true })
+        }
+        Err(e) => json!({ "error": e }),
+    }
 }
 
 #[tauri::command]
-pub fn credentials_remove(_board_id: String) -> Value {
-    json!(null)
+pub fn credentials_remove(app: AppHandle, board_id: String) -> Value {
+    let store = app.state::<Mutex<CredentialStore>>();
+    let guard = store.lock().unwrap();
+    match guard.remove(&board_id) {
+        Ok(()) => json!({ "success": true }),
+        Err(e) => json!({ "error": e }),
+    }
 }
 
 // ── LinkedIn / Boards ────────────────────────────────────────────────────────
