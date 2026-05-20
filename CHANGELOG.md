@@ -3,6 +3,13 @@
 All notable changes to AI Job Hunter are documented here.
 This project follows [Semantic Versioning](https://semver.org) and [Conventional Commits](https://www.conventionalcommits.org).
 
+## [1.1.1](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/compare/v1.1.0...v1.1.1) (2026-05-20)
+
+### 🐛 Bug Fixes
+
+* drop portable target from windows build ([fa4ffcd](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/fa4ffcdc1c916a7b5aa6cb5cdf38ccfa4cd123d3))
+* separate portable artifact name and disable blockmap generation ([7a4f7d9](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/7a4f7d9db6020cb13940a5b23106ba315fa3e29d))
+
 ## [1.1.0](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/compare/v1.0.5...v1.1.0) (2026-05-20)
 
 ### ✨ Features
