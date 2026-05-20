@@ -37,6 +37,17 @@ git push origin HEAD
 
 Conventional commit prefixes: `feat:` `fix:` `perf:` `refactor:` `docs:` `chore:` `ci:` `test:`
 
+**Before starting any work, verify the current branch still exists on the remote:**
+```bash
+git fetch origin
+git branch -r | grep $(git branch --show-current)
+```
+If the branch is gone (PR was merged, branch deleted on GitHub), switch to main first:
+```bash
+git checkout main && git pull origin main
+```
+Never commit to a dead branch — the work cannot be pushed and will be orphaned.
+
 ---
 
 ## Architecture

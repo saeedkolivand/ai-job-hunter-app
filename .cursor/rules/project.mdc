@@ -41,6 +41,17 @@ Never commit directly to `main`. Workflow:
 2. Commit with conventional prefix (`feat:`, `fix:`, `refactor:`, `ci:`, `docs:`, `test:`)
 3. Open PR → CI must pass before merge
 
+**Before starting any work, check that the current branch still exists on the remote:**
+```bash
+git fetch origin
+git branch -r | grep $(git branch --show-current)
+```
+If the branch is gone (PR merged + branch deleted on GitHub), switch to main before doing anything:
+```bash
+git checkout main && git pull origin main
+```
+Never commit to a branch that no longer exists on the remote — it cannot be pushed and the work is orphaned.
+
 ---
 
 ## Architecture
