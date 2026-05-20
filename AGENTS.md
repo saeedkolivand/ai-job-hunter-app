@@ -6,8 +6,10 @@ Rules enforced by ESLint, TypeScript, and CI. Violations fail the build.
 
 ## Shell
 
-Always use Bash (never PowerShell). RTK hook rewrites commands for 60-90% token savings.
-`rtk gain` / `rtk discover` must be called explicitly. Use `rg`, `fd`, `pnpm`.
+Always use Bash (never PowerShell).
+**Prefix every command with `rtk`** — e.g. `rtk pnpm build`, `rtk git status`, `rtk rg foo` — for 60-90% token savings.
+Meta commands: `rtk gain` (savings stats) · `rtk discover` (missed opportunities).
+Prefer `rg`, `fd`, `pnpm`; use Git Bash paths (`/c/Users/...`).
 
 ---
 

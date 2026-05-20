@@ -6,8 +6,9 @@ Rules enforced by ESLint, TypeScript, and CI — violations block commits and fa
 
 ## Shell & Tooling
 
-- **Always use the Bash tool** (never PowerShell) — RTK hook auto-rewrites commands for 60-90% token savings
-- `rtk gain` / `rtk discover` — must be called explicitly
+- **Always use the Bash tool** (never PowerShell)
+- **Prefix every command with `rtk`** — e.g. `rtk pnpm build`, `rtk git status`, `rtk rg foo` — for 60-90% token savings
+- Meta commands are `rtk`-only (no hook): `rtk gain` (savings stats) · `rtk discover` (missed opportunities)
 - Prefer `rg`, `fd`, `bat`, `pnpm`; use Git Bash paths (`/c/Users/...`)
 
 ---
