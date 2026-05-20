@@ -30,6 +30,7 @@ serde_json = "1"
 # HTTP client for proxying scraper commands to the sidecar process.
 reqwest = { version = "0.12", features = ["json"], default-features = false }
 tokio = { version = "1", features = ["time"] }
+uuid = { version = "1", features = ["v4"] }
 # OS-native secret storage: DPAPI (Windows), Keychain (macOS), libsecret (Linux).
 # Same underlying primitives as Electron's safeStorage.
 keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service"] }
