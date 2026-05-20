@@ -30,6 +30,11 @@
 export type ScraperCommand =
   | { kind: 'scrape.board'; jobId: string; payload: ScrapeBoardPayload }
   | { kind: 'scrape.url'; jobId: string; payload: { url: string } }
+  | { kind: 'cancel'; jobId: string }
+  | { kind: 'set.credentials'; boardId: string; username: string; password: string }
+  | { kind: 'open.login'; boardId: string }
+  | { kind: 'board.status'; boardId: string }
+  | { kind: 'board.disconnect'; boardId: string }
   | { kind: 'health' }
   | { kind: 'catalog' };
 
@@ -39,7 +44,8 @@ export type ScraperEvent =
   | { kind: 'done'; jobId: string; result: unknown }
   | { kind: 'error'; jobId: string; message: string }
   | { kind: 'health.reply'; health: ScraperRuntimeHealth }
-  | { kind: 'catalog.reply'; scrapers: ScraperCatalogEntry[] };
+  | { kind: 'catalog.reply'; scrapers: ScraperCatalogEntry[] }
+  | { kind: 'login.status'; boardId: string; connected: boolean; note?: string };
 
 export interface ScrapeBoardPayload {
   board: string;

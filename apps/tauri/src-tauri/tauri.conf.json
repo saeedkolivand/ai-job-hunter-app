@@ -30,16 +30,19 @@
   },
 
   "bundle": {
-    "active": false,
-    "targets": "none",
-    "externalBin": ["binaries/scraper-runtime"]
+    "active": false
   },
 
   "plugins": {
     "shell": {
-      "sidecar": true,
       "open": "https?://"
     },
-    "dialog": {}
+    "dialog": {},
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXkKUlVTVF9QTEFDRUhPTERFUl9QVUJLRVkK",
+      "endpoints": [
+        "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/latest/download/latest.json"
+      ]
+    }
   }
 }
