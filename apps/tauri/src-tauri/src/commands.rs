@@ -689,21 +689,63 @@ pub fn privacy_clear_interactions(app: AppHandle) -> Value {
 
 // ── Apply ────────────────────────────────────────────────────────────────────
 
+/// Start a job application via the scraper sidecar.
+///
+/// The renderer passes `{ board, url, coverLetter?, bytes?: Uint8Array, name?: string, autoSubmit? }`.
+/// Resume bytes (if provided) are base64-encoded before sending to the sidecar,
+/// which writes them to a temp file for the Playwright applier.
 #[tauri::command]
-pub fn apply_start(_req: Value) -> Value {
-    json!({ "error": "Apply not yet available in Tauri spike" })
+pub async fn apply_start(app: AppHandle, req: Value) -> Value {
+    let Some(port) = sidecar_port(&app) else {
+        return json!({ "error": "scraper sidecar not ready" });
+    };
+
+    let board = req.get("board").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let url = req.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let cover_letter = req.get("coverLetter").and_then(|v| v.as_str()).map(String::from);
+    let auto_submit = req.get("autoSubmit").and_then(|v| v.as_bool()).unwrap_or(false);
+
+    // Encode resume bytes as base64 if provided.
+    let (resume_bytes_b64, resume_name) = match req.get("bytes") {
+        Some(serde_json::Value::Array(arr)) => {
+            let bytes: Vec<u8> = arr.iter().filter_map(|v| v.as_u64().map(|n| n as u8)).collect();
+            use base64::Engine;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            let name = req.get("resumeName").and_then(|v| v.as_str()).unwrap_or("resume.pdf").to_string();
+            (Some(b64), Some(name))
+        }
+        _ => (None, None),
+    };
+
+    let job_id = uuid_v4();
+    app.state::<Mutex<JobTracker>>().lock().unwrap().start(&job_id, "apply.job");
+
+    let payload = serde_json::json!({
+        "board": board,
+        "url": url,
+        "coverLetter": cover_letter,
+        "resumeBytesBase64": resume_bytes_b64,
+        "resumeName": resume_name,
+        "autoSubmit": auto_submit,
+    });
+    let cmd = json!({ "kind": "apply.job", "jobId": job_id, "payload": payload });
+
+    match post_sidecar_command(&app, port, &cmd, &job_id).await {
+        Ok(result) => json!({ "jobId": job_id, "result": result }),
+        Err(e) => json!({ "error": e, "jobId": job_id }),
+    }
 }
 
+/// Return the list of boards that support the apply flow.
 #[tauri::command]
 pub async fn apply_catalog(app: AppHandle) -> Value {
-    // Return the sidecar's scraper catalog — these are the boards the applier supports.
     let Some(port) = sidecar_port(&app) else {
         return json!([]);
     };
-    let cmd = json!({ "kind": "catalog" });
     let job_id = uuid_v4();
+    let cmd = json!({ "kind": "apply.catalog" });
     match post_sidecar_command(&app, port, &cmd, &job_id).await {
-        Ok(_) => json!([]), // catalog reply comes via the event bus as catalog.reply
+        Ok(result) => result,
         Err(_) => json!([]),
     }
 }
