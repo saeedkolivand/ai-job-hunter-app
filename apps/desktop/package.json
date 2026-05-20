@@ -32,7 +32,7 @@
     "@ajh/ui": "workspace:*",
     "@ajh/workers": "workspace:*",
     "@tanstack/react-query": "^5.100.11",
-    "@tanstack/react-router": "^1.170.4",
+    "@tanstack/react-router": "^1.170.5",
     "clsx": "^2.1.1",
     "docx": "^9.6.1",
     "electron-updater": "^6.8.3",
