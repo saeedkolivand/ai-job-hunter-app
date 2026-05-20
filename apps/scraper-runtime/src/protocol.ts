@@ -38,6 +38,19 @@ export type ScraperCommand =
   | { kind: 'extract.text'; jobId: string; payload: { name: string; bytesBase64: string } }
   | { kind: 'apply.job'; jobId: string; payload: ApplyJobPayload }
   | { kind: 'apply.catalog' }
+  | {
+      kind: 'document.import';
+      jobId: string;
+      payload: { name: string; bytesBase64: string; locale?: string };
+    }
+  | { kind: 'document.list'; jobId: string }
+  | { kind: 'document.remove'; jobId: string; payload: { id: string } }
+  | {
+      kind: 'search.hybrid';
+      jobId: string;
+      payload: { query: string; collection: string; topK?: number };
+    }
+  | { kind: 'match.resume'; jobId: string; payload: { resumeId: string; jobText: string } }
   | { kind: 'health' }
   | { kind: 'catalog' };
 
