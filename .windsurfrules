@@ -5,6 +5,14 @@ ESLint `--max-warnings 0` in CI — every warning is a build failure.
 
 ---
 
+## Shell
+
+**Always use Bash (never PowerShell). Prefix every command with `rtk`:**
+`rtk pnpm build` · `rtk git status` · `rtk rg foo` · `rtk fd src`
+Meta commands: `rtk gain` (savings stats) · `rtk discover` (missed opportunities).
+
+---
+
 ## Non-negotiable — never bypass these rules
 
 ESLint enforces all of the below in CI. Inline suppression is banned (`noInlineConfig: true`).
