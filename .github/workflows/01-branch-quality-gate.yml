@@ -40,6 +40,9 @@ jobs:
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build Dependency Packages
+        run: pnpm -r --filter=!@ajh/desktop build
+
       - name: Run ESLint
         run: pnpm lint
 
