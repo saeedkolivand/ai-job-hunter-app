@@ -410,9 +410,46 @@ pub fn ai_unload_model(_model: String) -> Value {
     json!(null)
 }
 
+/// Generate an embedding vector for a text string via Ollama.
+///
+/// Calls POST <OLLAMA_HOST>/api/embeddings.
+/// Returns `{ vector: number[], dim: number }` matching the Electron router
+/// shape so downstream callers (match/resume scoring, semantic search) work
+/// unchanged. Returns null gracefully if Ollama is unavailable.
 #[tauri::command]
-pub fn ai_embed(_req: Value) -> Value {
-    json!(null)
+pub async fn ai_embed(req: Value) -> Value {
+    let base = std::env::var("OLLAMA_HOST")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+
+    let text = req.get("text").and_then(|v| v.as_str()).unwrap_or("");
+    let model = req
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("nomic-embed-text");
+
+    let body = json!({ "model": model, "prompt": text });
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return json!(null),
+    };
+
+    let resp = match client.post(format!("{base}/api/embeddings")).json(&body).send().await {
+        Ok(r) if r.status().is_success() => r,
+        _ => return json!(null),
+    };
+
+    let data: Value = match resp.json().await {
+        Ok(v) => v,
+        Err(_) => return json!(null),
+    };
+
+    let vector = data.get("embedding").cloned().unwrap_or(json!([]));
+    let dim = vector.as_array().map(|a| a.len()).unwrap_or(0);
+    json!({ "vector": vector, "dim": dim })
 }
 
 // ── Documents ────────────────────────────────────────────────────────────────
