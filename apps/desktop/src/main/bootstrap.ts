@@ -23,8 +23,8 @@ import { type BoardSessionMap, createBoardSessions } from './board-sessions/inde
 import { CredentialStore } from './credentials.js';
 import { ElectronBrowserController } from './electron-browser-controller.js';
 import {
-  InProcessScraperRuntime,
   type ApplyJobPayload,
+  InProcessScraperRuntime,
   type ScrapeBoardPayload,
 } from './scraper-runtime.js';
 
