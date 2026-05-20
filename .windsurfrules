@@ -30,8 +30,10 @@ Before marking any task complete:
 **Never push directly to `main`.** For every change:
 1. Create a feature branch: `git checkout -b feat/your-description` (or `fix/`, `chore/` etc.)
 2. Make commits with conventional commit prefixes (`feat:`, `fix:`, `refactor:`, etc.)
-3. Open a pull request targeting `main`
-4. CI must pass before merging
+3. Push the branch: `git push -u origin <branch>`
+4. Open a pull request with `gh pr create` — always include a summary and test plan
+5. CI must pass before merging
+6. Wait for user approval before merging
 
 **Always verify your branch exists on the remote before starting work:**
 ```bash
