@@ -133,13 +133,39 @@ pub fn system_get_version() -> Value {
 }
 
 #[tauri::command]
-pub fn system_get_locale() -> Value {
-    json!("en")
+pub fn system_get_locale(app: AppHandle) -> Value {
+    let locale = read_locale_file(&app);
+    json!(locale)
 }
 
 #[tauri::command]
-pub fn system_set_locale(_locale: String) -> Value {
+pub fn system_set_locale(app: AppHandle, locale: String) -> Value {
+    write_locale_file(&app, &locale);
     json!(null)
+}
+
+fn locale_file_path(app: &AppHandle) -> std::path::PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("locale.json")
+}
+
+fn read_locale_file(app: &AppHandle) -> String {
+    std::fs::read_to_string(locale_file_path(app))
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("locale").and_then(|l| l.as_str()).map(String::from))
+        .unwrap_or_else(|| "en".to_string())
+}
+
+fn write_locale_file(app: &AppHandle, locale: &str) {
+    let path = locale_file_path(app);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    let content = serde_json::json!({ "locale": locale });
+    std::fs::write(path, serde_json::to_string(&content).unwrap_or_default()).ok();
 }
 
 #[tauri::command]
@@ -160,7 +186,13 @@ pub async fn system_open_external(app: AppHandle, url: String) -> Result<(), Str
 }
 
 #[tauri::command]
-pub fn system_set_performance_mode(_mode: String) -> Value {
+pub async fn system_set_performance_mode(app: AppHandle, mode: String) -> Value {
+    // Forward to the sidecar so scraping concurrency is adjusted live.
+    if let Some(port) = sidecar_port(&app) {
+        let job_id = uuid_v4();
+        let cmd = json!({ "kind": "set.performance_mode", "mode": mode });
+        post_sidecar_command(&app, port, &cmd, &job_id).await.ok();
+    }
     json!(null)
 }
 
@@ -400,14 +432,107 @@ pub async fn ai_list_models() -> Value {
     json!(models)
 }
 
+/// Pull (download) a model from Ollama with streaming progress events.
+///
+/// Returns { jobId } immediately; progress is broadcast via `jobs:event`
+/// so the monitoring page updates in real time.
+/// Ollama stream: POST /api/pull → newline-delimited JSON
+///   {"status":"downloading","completed":N,"total":M} per chunk
+///   {"status":"success"} on completion
 #[tauri::command]
-pub fn ai_pull_model(_model: String) -> Value {
-    json!(null)
+pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
+    let base = std::env::var("OLLAMA_HOST")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+
+    let job_id = uuid_v4();
+    app.state::<Mutex<JobTracker>>()
+        .lock()
+        .unwrap()
+        .start(&job_id, "ai.pull_model");
+
+    let job_id_clone = job_id.clone();
+    let app_clone = app.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let result = pull_ollama_model(&app_clone, &base, &job_id_clone, &model).await;
+        match result {
+            Ok(()) => {
+                app_clone
+                    .state::<Mutex<JobTracker>>()
+                    .lock()
+                    .unwrap()
+                    .complete(&job_id_clone, json!({ "model": model, "done": true }));
+            }
+            Err(e) => {
+                app_clone
+                    .state::<Mutex<JobTracker>>()
+                    .lock()
+                    .unwrap()
+                    .fail(&job_id_clone, e);
+            }
+        }
+    });
+
+    json!({ "jobId": job_id })
+}
+
+async fn pull_ollama_model(
+    app: &AppHandle,
+    base: &str,
+    job_id: &str,
+    model: &str,
+) -> Result<(), String> {
+    let mut response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3600)) // 1 h — large models
+        .build()
+        .map_err(|e| e.to_string())?
+        .post(format!("{base}/api/pull"))
+        .json(&json!({ "model": model, "stream": true }))
+        .send()
+        .await
+        .map_err(|e| format!("Ollama unreachable: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Ollama {status}: {body}"));
+    }
+
+    let mut line_buf = String::new();
+
+    while let Some(bytes) = response.chunk().await.map_err(|e| e.to_string())? {
+        line_buf.push_str(&String::from_utf8_lossy(&bytes));
+
+        while let Some(nl) = line_buf.find('\n') {
+            let line = line_buf[..nl].trim().to_string();
+            line_buf = line_buf[nl + 1..].to_string();
+            if line.is_empty() {
+                continue;
+            }
+            let event: Value = match serde_json::from_str(&line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            let status = event.get("status").and_then(|s| s.as_str()).unwrap_or("");
+            let completed = event.get("completed").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let total = event.get("total").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let p = if total > 0.0 { completed / total } else { 0.0 };
+
+            let _ = app.emit("jobs:event", json!({ "type": "job.stream", "jobId": job_id, "data": { "status": status, "p": p } }));
+
+            if status == "success" {
+                return Ok(());
+            }
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
 pub fn ai_unload_model(_model: String) -> Value {
-    json!(null)
+    // Ollama unloads models on its own idle timer; no action needed.
+    json!({ "success": true })
 }
 
 /// Generate an embedding vector for a text string via Ollama.
