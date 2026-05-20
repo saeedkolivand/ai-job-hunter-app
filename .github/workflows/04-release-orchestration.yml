@@ -125,13 +125,9 @@ jobs:
         run: pnpm --filter @ajh/desktop build
 
       - name: Package Windows
-        run: pnpm --filter @ajh/desktop package -- --win
-
-      - name: Upload Windows Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-build
-          path: apps/desktop/release/**
+        run: pnpm --filter @ajh/desktop package -- --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-macos:
     name: Build macOS Application
@@ -185,7 +181,9 @@ jobs:
         run: pnpm --filter @ajh/desktop build
 
       - name: Package macOS
-        run: pnpm --filter @ajh/desktop package -- --mac
+        run: pnpm --filter @ajh/desktop package -- --mac --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
