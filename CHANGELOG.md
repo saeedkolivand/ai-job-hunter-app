@@ -3,6 +3,16 @@
 All notable changes to AI Job Hunter are documented here.
 This project follows [Semantic Versioning](https://semver.org) and [Conventional Commits](https://www.conventionalcommits.org).
 
+## [1.2.0](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/compare/v1.1.2...v1.2.0) (2026-05-20)
+
+### ✨ Features
+
+* complete pre-phase-6 cleanup and memory optimisation ([0453bb5](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/0453bb5da84ca71582499e3c8a0ed97ecbd3eda2))
+
+### 📚 Documentation
+
+* add rtk bash-tool rule to claude.md and agents.md ([5cac60a](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/5cac60ac67df5d7ec0cb4af211ef3879bd335926))
+
 ## [1.1.2](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/compare/v1.1.1...v1.1.2) (2026-05-20)
 
 ### 🐛 Bug Fixes
