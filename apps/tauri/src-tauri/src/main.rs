@@ -3,6 +3,8 @@
 
 mod commands;
 mod credentials;
+mod jobs;
+mod postings;
 mod sidecar;
 
 use std::sync::Mutex;
@@ -12,6 +14,8 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager};
 
 use credentials::CredentialStore;
+use jobs::JobTracker;
+use postings::{InteractionStore, PostingsCache};
 use sidecar::ScraperSidecarState;
 
 // ── App menu ──────────────────────────────────────────────────────────────────
@@ -99,12 +103,15 @@ fn main() {
         .setup(|app| {
             let handle = app.handle();
 
-            // Initialise the credential store backed by the OS keychain.
-            // Data dir: <AppData>/com.ajh.tauri-spike/ (Tauri's default userData).
+            // Data dir for all persistent state.
             let data_dir = app.path().app_data_dir().unwrap_or_else(|_| {
                 std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".ajh")
             });
+
             app.manage(Mutex::new(CredentialStore::new(&data_dir)));
+            app.manage(Mutex::new(JobTracker::default()));
+            app.manage(Mutex::new(PostingsCache::default()));
+            app.manage(Mutex::new(InteractionStore::new(&data_dir)));
 
             // Build and set the application menu.
             let menu = build_app_menu(handle)?;

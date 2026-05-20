@@ -11,11 +11,12 @@ use std::sync::Mutex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 use crate::credentials::CredentialStore;
+use crate::jobs::JobTracker;
+use crate::postings::{InteractionRecord, InteractionStore, PostingsCache};
 use crate::sidecar::ScraperSidecarState;
 
 // ── Sidecar HTTP helpers ──────────────────────────────────────────────────────
 
-/// Returns the scraper sidecar port if ready, or None.
 fn sidecar_port(app: &AppHandle) -> Option<u16> {
     app.state::<Mutex<ScraperSidecarState>>()
         .lock()
@@ -23,13 +24,30 @@ fn sidecar_port(app: &AppHandle) -> Option<u16> {
         .and_then(|g| g.port)
 }
 
-/// POST a ScraperCommand to the sidecar and collect SSE ScraperEvents.
-/// Forwards each event to the Tauri event bus so the renderer's onEvent /
-/// onStream handlers fire just like they do in Electron.
+fn now_ms() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn uuid_v4() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("job-{t:x}")
+}
+
+/// POST a ScraperCommand to the sidecar, stream SSE events back, and
+/// update JobTracker + PostingsCache while events arrive.
 async fn post_sidecar_command(
     app: &AppHandle,
     port: u16,
     cmd: &Value,
+    job_id: &str,
 ) -> Result<Value, String> {
     let url = format!("http://127.0.0.1:{port}/command");
 
@@ -41,7 +59,6 @@ async fn post_sidecar_command(
         .map_err(|e| e.to_string())?;
 
     let body = response.text().await.map_err(|e| e.to_string())?;
-
     let mut last_done: Value = json!(null);
 
     for line in body.lines() {
@@ -51,18 +68,40 @@ async fn post_sidecar_command(
                 match kind {
                     "done" => {
                         last_done = event.get("result").cloned().unwrap_or(json!(null));
-                        let job_id = event.get("jobId").cloned().unwrap_or(json!(""));
+                        app.state::<Mutex<JobTracker>>()
+                            .lock()
+                            .unwrap()
+                            .complete(job_id, last_done.clone());
                         let _ = app.emit("jobs:event", json!({"type":"completed","jobId":job_id}));
                     }
                     "progress" => {
+                        let p = event.get("p").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                        app.state::<Mutex<JobTracker>>()
+                            .lock()
+                            .unwrap()
+                            .update_progress(job_id, p);
                         let _ = app.emit("jobs:event", event.clone());
                     }
                     "item" => {
+                        if let Some(item) = event.get("item").cloned() {
+                            app.state::<Mutex<PostingsCache>>()
+                                .lock()
+                                .unwrap()
+                                .add(item);
+                        }
                         let _ = app.emit("jobs:event", event.clone());
                     }
                     "error" => {
-                        let msg = event.get("message").and_then(|m| m.as_str()).unwrap_or("sidecar error");
-                        return Err(msg.to_string());
+                        let msg = event
+                            .get("message")
+                            .and_then(|m| m.as_str())
+                            .unwrap_or("sidecar error")
+                            .to_string();
+                        app.state::<Mutex<JobTracker>>()
+                            .lock()
+                            .unwrap()
+                            .fail(job_id, msg.clone());
+                        return Err(msg);
                     }
                     _ => {}
                 }
@@ -137,23 +176,42 @@ pub fn system_get_metrics() -> Value {
 // ── Jobs ─────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn jobs_list() -> Value {
-    json!([])
+pub fn jobs_list(app: AppHandle) -> Value {
+    let tracker = app.state::<Mutex<JobTracker>>();
+    let guard = tracker.lock().unwrap();
+    json!(guard.list())
 }
 
 #[tauri::command]
-pub fn jobs_get(_job_id: String) -> Value {
-    json!(null)
+pub fn jobs_get(app: AppHandle, job_id: String) -> Value {
+    let tracker = app.state::<Mutex<JobTracker>>();
+    let guard = tracker.lock().unwrap();
+    json!(guard.get(&job_id))
 }
 
 #[tauri::command]
-pub fn jobs_cancel(_job_id: String) -> Value {
-    json!(null)
+pub async fn jobs_cancel(app: AppHandle, job_id: String) -> Value {
+    // Tell the sidecar to abort then update local tracker.
+    if let Some(port) = sidecar_port(&app) {
+        let cmd = json!({ "kind": "cancel", "jobId": job_id });
+        reqwest::Client::new()
+            .post(format!("http://127.0.0.1:{port}/command"))
+            .json(&cmd)
+            .send()
+            .await
+            .ok();
+    }
+    app.state::<Mutex<JobTracker>>()
+        .lock()
+        .unwrap()
+        .cancel(&job_id);
+    json!({ "success": true })
 }
 
 #[tauri::command]
-pub fn jobs_retry(_job_id: String) -> Value {
-    json!(null)
+pub fn jobs_retry(_app: AppHandle, _job_id: String) -> Value {
+    // Retry is a no-op in the sidecar model — the caller re-enqueues.
+    json!({ "success": false, "reason": "retry not supported in sidecar mode" })
 }
 
 // ── AI ───────────────────────────────────────────────────────────────────────
@@ -215,10 +273,14 @@ pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
         return json!({ "error": "scraper sidecar not ready — start the scraper-runtime binary" });
     };
     let job_id = uuid_v4();
+    app.state::<Mutex<JobTracker>>()
+        .lock()
+        .unwrap()
+        .start(&job_id, "scrape.board");
     let cmd = json!({ "kind": "scrape.board", "jobId": job_id, "payload": req });
-    match post_sidecar_command(&app, port, &cmd).await {
-        Ok(result) => result,
-        Err(e) => json!({ "error": e }),
+    match post_sidecar_command(&app, port, &cmd, &job_id).await {
+        Ok(_) => json!({ "jobId": job_id }),
+        Err(e) => json!({ "error": e, "jobId": job_id }),
     }
 }
 
@@ -228,52 +290,193 @@ pub async fn scrape_url(app: AppHandle, req: Value) -> Value {
         return json!({ "error": "scraper sidecar not ready — start the scraper-runtime binary" });
     };
     let job_id = uuid_v4();
-    let url = req.get("url").and_then(|u| u.as_str()).unwrap_or("");
-    let cmd = json!({ "kind": "scrape.url", "jobId": job_id, "payload": { "url": url } });
-    match post_sidecar_command(&app, port, &cmd).await {
+    app.state::<Mutex<JobTracker>>()
+        .lock()
+        .unwrap()
+        .start(&job_id, "scrape.url");
+    let url_str = req.get("url").and_then(|u| u.as_str()).unwrap_or("");
+    let cmd = json!({ "kind": "scrape.url", "jobId": job_id, "payload": { "url": url_str } });
+    match post_sidecar_command(&app, port, &cmd, &job_id).await {
         Ok(result) => result,
         Err(e) => json!({ "error": e }),
     }
 }
 
-fn uuid_v4() -> String {
-    // Simple random ID without pulling in uuid crate — sufficient for job IDs.
+#[tauri::command]
+pub fn scrape_persist_job(app: AppHandle, req: Value) -> Value {
+    // Record a user interaction with a job (viewed, applied, bookmarked, etc.)
+    if let (Some(job_obj), Some(interaction_type)) = (
+        req.get("job"),
+        req.get("interactionType").and_then(|v| v.as_str()),
+    ) {
+        let record = InteractionRecord {
+            job_id: job_obj
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            interaction_type: interaction_type.to_string(),
+            timestamp: now_ms(),
+            title: job_obj
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            company: job_obj
+                .get("company")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            url: job_obj
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            source: job_obj
+                .get("source")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            location: job_obj
+                .get("location")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        };
+        app.state::<Mutex<InteractionStore>>()
+            .lock()
+            .unwrap()
+            .upsert(record);
+    }
+    json!({ "success": true })
+}
+
+#[tauri::command]
+pub fn scrape_list_postings(app: AppHandle) -> Value {
+    let cache = app.state::<Mutex<PostingsCache>>();
+    let guard = cache.lock().unwrap();
+    json!(guard.get_all())
+}
+
+#[tauri::command]
+pub fn scrape_clear_postings(app: AppHandle) -> Value {
+    app.state::<Mutex<PostingsCache>>()
+        .lock()
+        .unwrap()
+        .clear_all();
+    json!(null)
+}
+
+#[tauri::command]
+pub fn scrape_list_interactions(app: AppHandle, filter: Option<Value>) -> Value {
+    let filter_type = filter
+        .as_ref()
+        .and_then(|f| f.get("interactionType"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let binding = app.state::<Mutex<InteractionStore>>();
+    let mut store = binding.lock().unwrap();
+    json!(store.list(filter_type.as_deref()))
+}
+
+#[tauri::command]
+pub async fn scrape_export_data(app: AppHandle) -> Value {
+    use tauri_plugin_dialog::DialogExt;
+    use tauri_plugin_dialog::FilePath;
+
+    let interactions = {
+        let binding = app.state::<Mutex<InteractionStore>>();
+        let mut store = binding.lock().unwrap();
+        store.export_all()
+    };
+
+    let default_name = format!("ajh-export-{}.json", chrono_date());
+    let path = app
+        .dialog()
+        .file()
+        .set_title("Export App Data")
+        .set_file_name(&default_name)
+        .add_filter("JSON", &["json"])
+        .blocking_save_file();
+
+    let Some(file_path) = path else {
+        return json!({ "success": false });
+    };
+
+    let path_str = match file_path {
+        FilePath::Path(p) => p.to_string_lossy().into_owned(),
+        FilePath::Url(u) => u.to_string(),
+    };
+
+    let bundle = json!({
+        "version": 1,
+        "exportedAt": now_ms(),
+        "interactions": interactions,
+    });
+
+    match std::fs::write(&path_str, serde_json::to_string_pretty(&bundle).unwrap_or_default()) {
+        Ok(()) => json!({ "success": true, "filePath": path_str }),
+        Err(e) => json!({ "success": false, "error": e.to_string() }),
+    }
+}
+
+#[tauri::command]
+pub async fn scrape_import_data(app: AppHandle) -> Value {
+    use tauri_plugin_dialog::DialogExt;
+    use tauri_plugin_dialog::FilePath;
+
+    let path = app
+        .dialog()
+        .file()
+        .set_title("Import App Data")
+        .add_filter("JSON", &["json"])
+        .blocking_pick_file();
+
+    let Some(file_path) = path else {
+        return json!({ "success": false, "imported": 0 });
+    };
+
+    let path_str = match file_path {
+        FilePath::Path(p) => p.to_string_lossy().into_owned(),
+        FilePath::Url(u) => u.to_string(),
+    };
+
+    let raw = match std::fs::read_to_string(&path_str) {
+        Ok(s) => s,
+        Err(e) => return json!({ "success": false, "error": e.to_string(), "imported": 0 }),
+    };
+
+    let bundle: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(_) => {
+            return json!({ "success": false, "error": "Invalid JSON", "imported": 0 })
+        }
+    };
+
+    let interactions: Vec<InteractionRecord> = bundle
+        .get("interactions")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+
+    let imported = app
+        .state::<Mutex<InteractionStore>>()
+        .lock()
+        .unwrap()
+        .import_bundle(interactions);
+
+    json!({ "success": true, "imported": imported })
+}
+
+fn chrono_date() -> String {
+    // Simple ISO date without chrono crate.
     use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now()
+    let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_nanos();
-    format!("job-{t:x}")
-}
-
-#[tauri::command]
-pub fn scrape_persist_job(_req: Value) -> Value {
-    json!(null)
-}
-
-#[tauri::command]
-pub fn scrape_list_postings() -> Value {
-    json!([])
-}
-
-#[tauri::command]
-pub fn scrape_clear_postings() -> Value {
-    json!(null)
-}
-
-#[tauri::command]
-pub fn scrape_list_interactions(_filter: Option<Value>) -> Value {
-    json!([])
-}
-
-#[tauri::command]
-pub fn scrape_export_data() -> Value {
-    json!(null)
-}
-
-#[tauri::command]
-pub fn scrape_import_data() -> Value {
-    json!(null)
+        .as_secs();
+    let days = secs / 86400;
+    // Approximate: good enough for a filename.
+    format!("{days}")
 }
 
 // ── Match ────────────────────────────────────────────────────────────────────
@@ -386,13 +589,27 @@ pub fn boards_get_status(_board_id: String) -> Value {
 // ── Privacy ──────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn privacy_sign_out_all() -> Value {
-    json!(null)
+pub fn privacy_sign_out_all(app: AppHandle) -> Value {
+    // Clear cached postings and interactions from the in-process stores.
+    // Browser state directories are managed by the sidecar (Playwright storage).
+    app.state::<Mutex<PostingsCache>>()
+        .lock()
+        .unwrap()
+        .clear_all();
+    app.state::<Mutex<InteractionStore>>()
+        .lock()
+        .unwrap()
+        .clear_all();
+    json!({ "success": true })
 }
 
 #[tauri::command]
-pub fn privacy_clear_interactions() -> Value {
-    json!(null)
+pub fn privacy_clear_interactions(app: AppHandle) -> Value {
+    app.state::<Mutex<InteractionStore>>()
+        .lock()
+        .unwrap()
+        .clear_all();
+    json!({ "success": true })
 }
 
 // ── Apply ────────────────────────────────────────────────────────────────────
@@ -403,8 +620,17 @@ pub fn apply_start(_req: Value) -> Value {
 }
 
 #[tauri::command]
-pub fn apply_catalog() -> Value {
-    json!([])
+pub async fn apply_catalog(app: AppHandle) -> Value {
+    // Return the sidecar's scraper catalog — these are the boards the applier supports.
+    let Some(port) = sidecar_port(&app) else {
+        return json!([]);
+    };
+    let cmd = json!({ "kind": "catalog" });
+    let job_id = uuid_v4();
+    match post_sidecar_command(&app, port, &cmd, &job_id).await {
+        Ok(_) => json!([]), // catalog reply comes via the event bus as catalog.reply
+        Err(_) => json!([]),
+    }
 }
 
 // ── Resume ───────────────────────────────────────────────────────────────────
