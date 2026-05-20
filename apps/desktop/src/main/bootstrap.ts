@@ -22,7 +22,11 @@ import type { AiGenerateRequest } from '@ajh/shared';
 import { type BoardSessionMap, createBoardSessions } from './board-sessions/index.js';
 import { CredentialStore } from './credentials.js';
 import { ElectronBrowserController } from './electron-browser-controller.js';
-import { InProcessScraperRuntime } from './scraper-runtime.js';
+import {
+  InProcessScraperRuntime,
+  type ApplyJobPayload,
+  type ScrapeBoardPayload,
+} from './scraper-runtime.js';
 
 export interface AppCore {
   bus: EventBus;
@@ -126,7 +130,7 @@ export async function bootstrap(): Promise<AppCore> {
   });
 
   jobs.register('scrape.board', async (ctx) => {
-    const payload = ctx.job.payload as import('./scraper-runtime.js').ScrapeBoardPayload;
+    const payload = ctx.job.payload as ScrapeBoardPayload;
     return scraperRuntime.scrapeBoard(payload, {
       signal: ctx.signal,
       jobId: ctx.job.id,
@@ -136,7 +140,7 @@ export async function bootstrap(): Promise<AppCore> {
   });
 
   jobs.register('apply.job', async (ctx) => {
-    const payload = ctx.job.payload as import('./scraper-runtime.js').ApplyJobPayload;
+    const payload = ctx.job.payload as ApplyJobPayload;
     return scraperRuntime.applyJob(payload, {
       signal: ctx.signal,
       onProgress: (p, stage) => {
