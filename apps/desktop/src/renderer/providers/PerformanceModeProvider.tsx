@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef } from 'react';
 
-import { getClient } from '@/providers/AppClientProvider';
+import { useAppClient } from '@/providers/AppClientProvider';
 import { usePerformanceMode } from '@/store/preferences-store';
 
 /**
@@ -9,10 +9,9 @@ import { usePerformanceMode } from '@/store/preferences-store';
  *      and blur reduction without touching framer-motion.
  *   2. system.setPerformanceMode IPC — lets the main process adjust JobQueue
  *      concurrency and AiRuntime idle-unload timeout accordingly.
- *
- * Place this inside <AppClientProvider> so getClient() is always ready.
  */
 export function PerformanceModeProvider({ children }: { children: ReactNode }) {
+  const client = useAppClient();
   const mode = usePerformanceMode();
   const prevMode = useRef<string | null>(null);
 
@@ -22,12 +21,10 @@ export function PerformanceModeProvider({ children }: { children: ReactNode }) {
 
     document.documentElement.setAttribute('data-performance-mode', mode);
 
-    getClient()
-      .system.setPerformanceMode(mode)
-      .catch(() => {
-        // Silently ignore — main process may not be ready on first render.
-      });
-  }, [mode]);
+    client.system.setPerformanceMode(mode).catch(() => {
+      // Silently ignore — main process may not be ready on first render.
+    });
+  }, [client, mode]);
 
   return <>{children}</>;
 }
