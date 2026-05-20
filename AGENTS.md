@@ -5,6 +5,22 @@ and CI — violations will block commits and fail the build.
 
 ---
 
+## RTK — Token-Optimised Command Execution
+
+**Always use the Bash tool** (never PowerShell) so the RTK hook auto-rewrites commands
+for 60-90% token savings. This applies to the main agent and all subagents.
+
+Meta commands must still be called explicitly:
+
+```bash
+rtk gain        # show token savings
+rtk discover    # find missed opportunities
+```
+
+**Rule**: Use Bash for every shell command. Never use PowerShell.
+
+---
+
 ## Architecture
 
 This is a **local-first Electron desktop app** in a pnpm monorepo.
