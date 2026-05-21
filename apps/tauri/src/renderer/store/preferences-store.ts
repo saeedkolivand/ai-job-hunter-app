@@ -44,6 +44,7 @@ interface PreferencesActions {
   setUserName: (userName: string) => void;
   setLanguage: (language: string) => void;
   setAIModel: (aiModel: Preferences['aiModel']) => void;
+  setAiProviderConfig: (config: Preferences['aiProviderConfig']) => void;
   setOutputTone: (outputTone: Preferences['outputTone']) => void;
   setLocation: (location: Preferences['location']) => void;
   setRemote: (remote: Preferences['remote']) => void;
@@ -82,6 +83,13 @@ export const usePreferencesStore = create<PreferencesStore>()(
         set((state) => ({
           ...state,
           aiModel,
+          lastUpdated: new Date().toISOString(),
+        })),
+
+      setAiProviderConfig: (aiProviderConfig: Preferences['aiProviderConfig']) =>
+        set((state) => ({
+          ...state,
+          aiProviderConfig,
           lastUpdated: new Date().toISOString(),
         })),
 
@@ -183,6 +191,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
 export const useUserName = () => usePreferencesStore((state) => state.userName);
 export const useLanguage = () => usePreferencesStore((state) => state.language);
 export const useAIModel = () => usePreferencesStore((state) => state.aiModel);
+export const useAiProviderConfig = () => usePreferencesStore((state) => state.aiProviderConfig);
 export const useOutputTone = () => usePreferencesStore((state) => state.outputTone);
 export const useLocation = () => usePreferencesStore((state) => state.location);
 export const useRemote = () => usePreferencesStore((state) => state.remote);

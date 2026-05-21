@@ -29,6 +29,7 @@ import {
 } from '@ajh/prompts/generate';
 
 import { getClient } from './app-client';
+import { usePreferencesStore } from '@/store/preferences-store';
 
 export type { GenerationMeta, GenerationMode };
 export { MODES } from '@ajh/prompts/generate';
@@ -51,15 +52,20 @@ async function streamGenerate(
   locale = 'en'
 ): Promise<string> {
   const api = getClient();
+  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
+  const activeModel = providerConfig?.model || model;
   const res = (await api.ai.generate({
-    model,
+    model: activeModel,
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user },
     ],
     locale: safeLocale(locale),
     temperature,
-  })) as { jobId: string };
+    ...(providerConfig?.provider && providerConfig.provider !== 'ollama'
+      ? { provider: providerConfig.provider, baseUrl: providerConfig.baseUrl }
+      : {}),
+  } as Parameters<typeof api.ai.generate>[0])) as { jobId: string };
 
   const jobId = res.jobId;
   let buffer = '';
