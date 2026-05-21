@@ -1110,6 +1110,32 @@
       "back": "Zurück",
       "next": "Funktionen ansehen"
     },
+    "ollama": {
+      "title": "KI einrichten",
+      "subtitle": "AI Job Hunter führt Modelle lokal über Ollama aus – keine API-Schlüssel, keine Cloud.",
+      "checking": "Suche nach Ollama…",
+      "notFound": "Ollama nicht gefunden",
+      "notFoundDesc": "Ollama muss installiert und aktiv sein, bevor KI-Funktionen verfügbar sind.",
+      "installSteps": "So installieren Sie es",
+      "step": {
+        "download": "Ollama von ollama.com herunterladen",
+        "install": "Installationsprogramm ausführen",
+        "run": "Ollama startet automatisch"
+      },
+      "downloadButton": "Ollama herunterladen",
+      "recheck": "Installiert – erneut prüfen",
+      "ready": "Ollama läuft",
+      "ram": "Verfügbarer RAM",
+      "chooseModel": "Modell wählen",
+      "recommended": "Empfohlen",
+      "download": "Herunterladen",
+      "downloading": "Wird heruntergeladen",
+      "pullError": "Download fehlgeschlagen. Verbindung prüfen und erneut versuchen.",
+      "back": "Zurück",
+      "next": "Weiter",
+      "skip": "Vorerst überspringen",
+      "skipWarning": "KI-Funktionen sind ohne Modell nicht verfügbar"
+    },
     "tour": {
       "title": "Kurze Tour",
       "subtitle": "Hier ist, was Sie tun können",
