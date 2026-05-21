@@ -140,7 +140,7 @@ export function PrefsStep({ onBack, onNext, direction }: Props) {
 
         {/* Step dots */}
         <div className="mb-6 flex justify-center gap-1.5">
-          {[0, 1, 2].map((i) => (
+          {[0, 1, 2, 3].map((i) => (
             <div
               key={i}
               className={`h-1 rounded-full transition-all duration-300 ${
