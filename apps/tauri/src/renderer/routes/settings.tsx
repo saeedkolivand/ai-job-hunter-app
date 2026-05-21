@@ -135,13 +135,7 @@ function SettingsPage() {
                     {active && (
                       <motion.div
                         layoutId="settings-pill"
-                        className="absolute inset-0 rounded-xl"
-                        style={{
-                          background:
-                            'linear-gradient(135deg, rgba(168,85,247,0.18) 0%, rgba(99,102,241,0.10) 100%)',
-                          border: '1px solid rgba(168,85,247,0.25)',
-                          boxShadow: '0 0 16px rgba(168,85,247,0.12)',
-                        }}
+                        className="absolute inset-0 rounded-xl bg-white/[0.07]"
                         transition={transition.spring}
                       />
                     )}
@@ -160,7 +154,7 @@ function SettingsPage() {
                         className={cn(
                           'shrink-0 transition-colors duration-150',
                           active
-                            ? 'text-brand-soft'
+                            ? 'text-foreground/70'
                             : 'text-foreground/35 group-hover:text-foreground/55'
                         )}
                       />
