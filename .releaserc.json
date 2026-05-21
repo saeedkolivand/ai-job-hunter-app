@@ -45,6 +45,13 @@
     ],
     ["@semantic-release/npm", { "npmPublish": false }],
     ["@semantic-release/npm", { "npmPublish": false, "pkgRoot": "apps/desktop" }],
+    ["@semantic-release/npm", { "npmPublish": false, "pkgRoot": "apps/tauri" }],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "node scripts/sync-tauri-version.mjs ${nextRelease.version}"
+      }
+    ],
     [
       "@semantic-release/github",
       {
