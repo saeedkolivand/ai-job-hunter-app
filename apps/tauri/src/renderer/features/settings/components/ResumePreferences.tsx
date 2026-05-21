@@ -102,7 +102,7 @@ export function ResumePreferences() {
 
   const uploading = importDocument.isPending;
 
-  const formatFileSize = (bytes?: number) => {
+  const _formatFileSize = (bytes?: number) => {
     if (!bytes) return '';
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
