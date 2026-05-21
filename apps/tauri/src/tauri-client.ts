@@ -15,6 +15,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
+import type { AiStreamChunk, JobEvent } from '@ajh/shared/types';
+
 import type { AppClient } from '@/lib/app-client';
 
 // Registers a Tauri event listener and returns a sync unsubscribe handle.
@@ -52,7 +54,7 @@ export function createTauriInvokeClient(): AppClient {
       cancel: (jobId) => invoke('jobs_cancel', { jobId }),
       retry: (jobId) => invoke('jobs_retry', { jobId }),
       onEvent: (handler) =>
-        asyncUnsub(() => listen<unknown>('jobs:event', (e) => handler(e.payload))),
+        asyncUnsub(() => listen<JobEvent>('jobs:event', (e) => handler(e.payload))),
     },
 
     ai: {
@@ -62,7 +64,7 @@ export function createTauriInvokeClient(): AppClient {
       unloadModel: (model) => invoke('ai_unload_model', { model }),
       embed: (req) => invoke('ai_embed', { req }),
       onStream: (handler) =>
-        asyncUnsub(() => listen<unknown>('ai:stream', (e) => handler(e.payload))),
+        asyncUnsub(() => listen<AiStreamChunk>('ai:stream', (e) => handler(e.payload))),
     },
 
     documents: {
@@ -94,7 +96,7 @@ export function createTauriInvokeClient(): AppClient {
       available: () => invoke('credentials_available'),
       list: () => invoke('credentials_list'),
       set: (req) => invoke('credentials_set', { req }),
-      remove: (boardId) => invoke('credentials_remove', { boardId }),
+      remove: ({ boardId }) => invoke('credentials_remove', { boardId }),
     },
 
     linkedin: {
@@ -104,9 +106,9 @@ export function createTauriInvokeClient(): AppClient {
     },
 
     boards: {
-      connect: (boardId) => invoke('boards_connect', { boardId }),
-      disconnect: (boardId) => invoke('boards_disconnect', { boardId }),
-      getStatus: (boardId) => invoke('boards_get_status', { boardId }),
+      connect: ({ boardId }) => invoke('boards_connect', { boardId }),
+      disconnect: ({ boardId }) => invoke('boards_disconnect', { boardId }),
+      getStatus: ({ boardId }) => invoke('boards_get_status', { boardId }),
     },
 
     privacy: {
@@ -155,23 +157,25 @@ export function createTauriInvokeClient(): AppClient {
 
     conversations: {
       getOrCreateConversation: () => invoke('conversations_get_or_create'),
-      loadMessages: (conversationId) => invoke('conversations_load_messages', { conversationId }),
+      loadMessages: ({ conversationId }) =>
+        invoke('conversations_load_messages', { conversationId }),
       saveMessage: (req) => invoke('conversations_save_message', { req }),
+      saveAllMessages: (opts) => invoke('conversations_save_all_messages', opts),
     },
 
     autopilot: {
       list: () => invoke('autopilot_list'),
-      get: (autopilotId) => invoke('autopilot_get', { autopilotId }),
+      get: ({ autopilotId }) => invoke('autopilot_get', { autopilotId }),
       create: (req) => invoke('autopilot_create', { req }),
-      update: (autopilotId, req) => invoke('autopilot_update', { autopilotId, req }),
-      remove: (autopilotId) => invoke('autopilot_remove', { autopilotId }),
-      run: (autopilotId) => invoke('autopilot_run', { autopilotId }),
-      pause: (autopilotId) => invoke('autopilot_pause', { autopilotId }),
-      resume: (autopilotId) => invoke('autopilot_resume', { autopilotId }),
+      update: ({ autopilotId, ...data }) => invoke('autopilot_update', { autopilotId, req: data }),
+      remove: ({ autopilotId }) => invoke('autopilot_remove', { autopilotId }),
+      run: ({ autopilotId }) => invoke('autopilot_run', { autopilotId }),
+      pause: ({ autopilotId }) => invoke('autopilot_pause', { autopilotId }),
+      resume: ({ autopilotId }) => invoke('autopilot_resume', { autopilotId }),
     },
 
     dialog: {
-      openFiles: (opts) => invoke('dialog_open_files', opts ?? {}),
+      openFiles: (opts) => invoke('dialog_open_files', opts ?? undefined),
     },
   } satisfies AppClient;
 }
