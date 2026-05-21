@@ -57,7 +57,6 @@ async function streamGenerate(
     ],
     locale: safeLocale(locale),
     temperature,
-    maxTokens: 3000,
   })) as { jobId: string };
 
   const jobId = res.jobId;
@@ -491,7 +490,7 @@ function mdRunsDocx(
   emphasisColor?: string
 ) {
   const segs = parseInlineMd(text);
-  return (TextRun: new (opts: object) => object) =>
+  return (TextRun: new (opts: object) => import('docx').ParagraphChild) =>
     segs.map(
       (seg) =>
         new TextRun({
@@ -516,7 +515,7 @@ async function buildResumeDocx(text: string, meta: GenerationMeta | undefined, t
   const PAGE_W = convertInchesToTwip(6.27);
 
   const parsed = parseDocument(text);
-  const children: object[] = [];
+  const children: import('docx').FileChild[] = [];
 
   // Section header border config
   const sectionBorder =
@@ -743,7 +742,7 @@ async function buildCoverLetterDocx(
   const { Document, Paragraph, TextRun, BorderStyle, convertInchesToTwip } = await import('docx');
   const F = 'Calibri';
   const PT = (pt: number) => Math.round(pt * 2);
-  const children: object[] = [];
+  const children: import('docx').FileChild[] = [];
 
   const lines = text.split('\n').map((l) => l.trim());
   let headerDone = false;

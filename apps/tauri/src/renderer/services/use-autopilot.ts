@@ -15,7 +15,7 @@ export const useAutopilot = (id: string) => {
   const api = useAppClient();
   return useQuery({
     queryKey: keys.autopilot.detail(id),
-    queryFn: () => api.autopilot.get(id),
+    queryFn: () => api.autopilot.get({ autopilotId: id }),
     enabled: !!id,
   });
 };
@@ -34,7 +34,7 @@ export const useUpdateAutopilot = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...data }: { id: string } & AutopilotUpdate) =>
-      api.autopilot.update(id, data),
+      api.autopilot.update({ autopilotId: id, ...data }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.autopilot.all }),
   });
 };
@@ -43,7 +43,7 @@ export const useRemoveAutopilot = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.autopilot.remove(id),
+    mutationFn: (id: string) => api.autopilot.remove({ autopilotId: id }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.autopilot.all }),
   });
 };
@@ -52,7 +52,7 @@ export const useRunAutopilot = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.autopilot.run(id),
+    mutationFn: (id: string) => api.autopilot.run({ autopilotId: id }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.autopilot.all }),
   });
 };
@@ -61,7 +61,7 @@ export const usePauseAutopilot = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.autopilot.pause(id),
+    mutationFn: (id: string) => api.autopilot.pause({ autopilotId: id }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.autopilot.all }),
   });
 };
@@ -70,7 +70,7 @@ export const useResumeAutopilot = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.autopilot.resume(id),
+    mutationFn: (id: string) => api.autopilot.resume({ autopilotId: id }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.autopilot.all }),
   });
 };

@@ -2,21 +2,15 @@
  * AppClient — the single transport abstraction between the renderer and the
  * app backend.
  *
- * On desktop it is backed by window.api (Electron IPC via contextBridge).
- * A future web adapter would implement the same interface over HTTP/WebSocket
- * without touching a single service hook or feature component.
+ * Backed by the Tauri invoke adapter. A future web adapter would implement
+ * the same interface over HTTP/WebSocket without touching service hooks.
  *
  * Usage in service hooks:    const api = useAppClient();
  * Usage outside components:  const api = getClient();
  */
-import type { Api } from '../../preload/index.js';
+import type { IpcContract } from '@ajh/shared/ipc';
 
-export type AppClient = Api;
-
-/** Create the desktop IPC adapter. Called once by AppClientProvider. */
-export function createDesktopIpcClient(): AppClient {
-  return window.api;
-}
+export type AppClient = IpcContract;
 
 // Module-level reference for use outside React (e.g. standalone query
 // functions like fetchJob). Set once when AppClientProvider mounts.

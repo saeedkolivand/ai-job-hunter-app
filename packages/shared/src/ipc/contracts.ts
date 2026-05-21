@@ -116,6 +116,8 @@ export interface IpcContract {
       }>
     >;
 
+    persistJob(req: { job: Record<string, unknown>; interactionType: string }): Promise<void>;
+
     exportData(): Promise<{ success: boolean; filePath?: string; error?: string }>;
 
     importData(): Promise<{ success: boolean; imported: number; error?: string }>;
@@ -329,6 +331,13 @@ export interface IpcContract {
 
   shortcuts: {
     onCommandPalette(handler: () => void): () => void;
+  };
+
+  dialog: {
+    openFiles(opts?: {
+      multiple?: boolean;
+      filters?: Array<{ name: string; extensions: string[] }>;
+    }): Promise<string[]>;
   };
 }
 

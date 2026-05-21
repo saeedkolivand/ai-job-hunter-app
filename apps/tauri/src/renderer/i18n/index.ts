@@ -53,7 +53,7 @@ void i18n
 // getClient() may not be ready yet if this fires during i18n init, so we swallow errors.
 i18n.on('languageChanged', (lng) => {
   try {
-    void getClient().system.setLocale(lng);
+    void getClient().system.setLocale(lng as import('@ajh/shared/types').Locale);
   } catch {
     // AppClient not initialized — fired during i18n init before AppClientProvider mounts.
   }

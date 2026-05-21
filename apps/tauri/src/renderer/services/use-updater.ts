@@ -16,7 +16,7 @@ export function useUpdater() {
   const [status, setStatus] = useState<UpdateStatus>({ state: 'idle' });
 
   useEffect(() => {
-    const off = api.updater.onStatus((s) => setStatus(s as UpdateStatus));
+    const off = api.updater.onStatus((s: unknown) => setStatus(s as UpdateStatus));
     return () => {
       off();
     };

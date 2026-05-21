@@ -8,7 +8,7 @@ export const useConversation = (conversationId: string) => {
   const api = useAppClient();
   return useQuery({
     queryKey: keys.conversations.detail(conversationId),
-    queryFn: () => api.conversations.loadMessages(conversationId),
+    queryFn: () => api.conversations.loadMessages({ conversationId }),
     enabled: !!conversationId,
   });
 };
