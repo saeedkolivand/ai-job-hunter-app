@@ -1,7 +1,7 @@
 import { Check, Link as LinkIcon, LogOut } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, ConfirmModal } from '@ajh/ui';
+import { Button, ConfirmModal, useToast } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import {
@@ -31,6 +31,7 @@ const FALLBACK = { iconBg: 'bg-brand', glowColor: 'rgba(168,85,247,0.2)', abbr: 
 
 export function BoardSessionRow({ board }: { board: Board }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const toast = useToast();
 
   const isLinkedIn = board.id === 'linkedin';
   const style = BOARD_STYLE[board.id] ?? FALLBACK;
@@ -52,13 +53,17 @@ export function BoardSessionRow({ board }: { board: Board }) {
 
   const handleConnect = async () => {
     try {
-      if (isLinkedIn) {
-        await linkedInConnect.mutateAsync();
-      } else {
-        await boardConnect.mutateAsync(board.id);
+      const result = isLinkedIn
+        ? await linkedInConnect.mutateAsync()
+        : await boardConnect.mutateAsync(board.id);
+      const res = result as { connected?: boolean; error?: string } | undefined;
+      if (res?.error) {
+        toast(res.error, 'error');
+      } else if (!res?.connected) {
+        toast(`${board.name} sign-in was cancelled or timed out.`, 'warning');
       }
     } catch (err) {
-      console.error(`${board.name} connection failed:`, err);
+      toast(err instanceof Error ? err.message : `Failed to connect to ${board.name}.`, 'error');
     }
   };
 
@@ -70,8 +75,12 @@ export function BoardSessionRow({ board }: { board: Board }) {
       } else {
         await boardDisconnect.mutateAsync(board.id);
       }
+      toast(`Disconnected from ${board.name}.`, 'success');
     } catch (err) {
-      console.error(`${board.name} disconnection failed:`, err);
+      toast(
+        err instanceof Error ? err.message : `Failed to disconnect from ${board.name}.`,
+        'error'
+      );
     }
   };
 

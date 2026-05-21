@@ -2,7 +2,7 @@ import { Check, Lock, Trash2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 
-import { Button, Input } from '@ajh/ui';
+import { Button, Input, useToast } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
@@ -23,22 +23,39 @@ export function AccountRow({ board, saved, disabled, onSaved, onRemoved }: Accou
   const [open, setOpen] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const toast = useToast();
   const setCredential = useSetCredential();
   const removeCredential = useRemoveCredential();
   const busy = setCredential.isPending || removeCredential.isPending;
 
   const save = async () => {
     if (!username.trim() || !password) return;
-    await setCredential.mutateAsync({ boardId: board.id, username: username.trim(), password });
-    setPassword('');
-    setUsername('');
-    setOpen(false);
-    onSaved();
+    try {
+      await setCredential.mutateAsync({ boardId: board.id, username: username.trim(), password });
+      setPassword('');
+      setUsername('');
+      setOpen(false);
+      onSaved();
+      toast(`${board.name} credentials saved.`, 'success');
+    } catch (err) {
+      toast(
+        err instanceof Error ? err.message : `Failed to save ${board.name} credentials.`,
+        'error'
+      );
+    }
   };
 
   const remove = async () => {
-    await removeCredential.mutateAsync(board.id);
-    onRemoved();
+    try {
+      await removeCredential.mutateAsync(board.id);
+      onRemoved();
+      toast(`${board.name} credentials removed.`, 'success');
+    } catch (err) {
+      toast(
+        err instanceof Error ? err.message : `Failed to remove ${board.name} credentials.`,
+        'error'
+      );
+    }
   };
 
   return (

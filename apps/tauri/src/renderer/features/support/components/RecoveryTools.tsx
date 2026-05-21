@@ -49,6 +49,7 @@ export function RecoveryTools() {
             description={t('support.recovery.rebuildIndexesDesc')}
             destructive={true}
             action="rebuildIndexes"
+            successMessage="Vector indexes rebuilt."
             onAction={() => void rebuildIndexes.mutateAsync()}
           />
           <RecoveryAction
@@ -56,6 +57,7 @@ export function RecoveryTools() {
             description={t('support.recovery.clearCacheDesc')}
             destructive={true}
             action="clearCache"
+            successMessage="Embeddings cache cleared."
             onAction={() => void clearCache.mutateAsync()}
           />
           <RecoveryAction
@@ -63,6 +65,7 @@ export function RecoveryTools() {
             description={t('support.recovery.resetDatabaseDesc')}
             destructive={true}
             action="resetDatabase"
+            successMessage="Vector database reset."
             onAction={() => void resetDatabase.mutateAsync()}
           />
         </div>
@@ -76,6 +79,7 @@ export function RecoveryTools() {
             description={t('support.recovery.reloadRuntimeDesc')}
             destructive={false}
             action="reloadRuntime"
+            successMessage="AI runtime reloaded."
             onAction={() => void reloadRuntime.mutateAsync()}
           />
           <RecoveryAction
@@ -83,6 +87,7 @@ export function RecoveryTools() {
             description={t('support.recovery.unloadModelsDesc')}
             destructive={false}
             action="unloadModels"
+            successMessage="All models unloaded."
             onAction={() => void unloadModels.mutateAsync()}
           />
           <RecoveryAction
@@ -90,6 +95,7 @@ export function RecoveryTools() {
             description={t('support.recovery.resetConfigDesc')}
             destructive={false}
             action="resetConfig"
+            successMessage="Model configuration reset."
             onAction={() => void resetConfig.mutateAsync()}
           />
         </div>
@@ -103,6 +109,7 @@ export function RecoveryTools() {
             description={t('support.recovery.clearOcrCacheDesc')}
             destructive={true}
             action="clearOcrCache"
+            successMessage="OCR cache cleared."
             onAction={() => void clearOcrCache.mutateAsync()}
           />
           <RecoveryAction
@@ -110,6 +117,7 @@ export function RecoveryTools() {
             description={t('support.recovery.reindexDocsDesc')}
             destructive={false}
             action="reindexDocs"
+            successMessage="Documents reindexed."
             onAction={() => void reindexDocs.mutateAsync()}
           />
         </div>
@@ -123,6 +131,7 @@ export function RecoveryTools() {
             description={t('support.recovery.resetSessionsDesc')}
             destructive={true}
             action="resetSessions"
+            successMessage="All sessions reset."
             onAction={() => void resetSessions.mutateAsync()}
           />
           <RecoveryAction
@@ -130,6 +139,7 @@ export function RecoveryTools() {
             description={t('support.recovery.clearQueueDesc')}
             destructive={false}
             action="clearQueue"
+            successMessage="Scraping queue cleared."
             onAction={() => void clearQueue.mutateAsync()}
           />
         </div>
