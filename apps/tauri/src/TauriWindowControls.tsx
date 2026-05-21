@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+
+import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 export function TauriWindowControls() {
@@ -7,7 +9,8 @@ export function TauriWindowControls() {
 
   useEffect(() => {
     win.isMaximized().then(setIsMaximized);
-    const unlisten = win.onResized(() => {
+    // tauri emits tauri://resize on every window resize — use it to sync state
+    const unlisten = listen('tauri://resize', () => {
       win.isMaximized().then(setIsMaximized);
     });
     return () => {
@@ -16,11 +19,11 @@ export function TauriWindowControls() {
   }, [win]);
 
   return (
-    <div className="app-no-drag flex items-center h-10 shrink-0">
+    <div className="app-no-drag flex h-10 shrink-0 items-center">
       {/* Minimize */}
       <button
         onClick={() => win.minimize()}
-        className="flex h-10 w-11 items-center justify-center text-foreground/50 hover:bg-white/10 hover:text-foreground transition-colors"
+        className="flex h-10 w-11 items-center justify-center text-foreground/50 transition-colors hover:bg-white/10 hover:text-foreground"
         aria-label="Minimize"
       >
         <svg width="11" height="1" viewBox="0 0 11 1" fill="currentColor">
@@ -31,7 +34,7 @@ export function TauriWindowControls() {
       {/* Maximize / Restore */}
       <button
         onClick={() => (isMaximized ? win.unmaximize() : win.maximize())}
-        className="flex h-10 w-11 items-center justify-center text-foreground/50 hover:bg-white/10 hover:text-foreground transition-colors"
+        className="flex h-10 w-11 items-center justify-center text-foreground/50 transition-colors hover:bg-white/10 hover:text-foreground"
         aria-label={isMaximized ? 'Restore' : 'Maximize'}
       >
         {isMaximized ? (
@@ -63,7 +66,7 @@ export function TauriWindowControls() {
       {/* Close */}
       <button
         onClick={() => win.close()}
-        className="flex h-10 w-11 items-center justify-center text-foreground/50 hover:bg-red-500 hover:text-white transition-colors"
+        className="flex h-10 w-11 items-center justify-center text-foreground/50 transition-colors hover:bg-red-500 hover:text-white"
         aria-label="Close"
       >
         <svg
