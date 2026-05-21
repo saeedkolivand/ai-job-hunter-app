@@ -8,15 +8,13 @@ import path from 'node:path';
 const TAURI_DEV_PORT = 5174;
 
 export default defineConfig({
-  // Point alias at the desktop renderer source so the same feature code,
-  // routes, components, and service hooks are reused without copying.
   resolve: {
-    alias: { '@': path.resolve(__dirname, '../desktop/src/renderer') },
+    alias: { '@': path.resolve(__dirname, 'src/renderer') },
   },
   plugins: [
     TanStackRouterVite({
-      routesDirectory: path.resolve(__dirname, '../desktop/src/renderer/routes'),
-      generatedRouteTree: path.resolve(__dirname, '../desktop/src/renderer/routeTree.gen.ts'),
+      routesDirectory: path.resolve(__dirname, 'src/renderer/routes'),
+      generatedRouteTree: path.resolve(__dirname, 'src/renderer/routeTree.gen.ts'),
     }),
     react(),
     tailwindcss(),
@@ -27,7 +25,6 @@ export default defineConfig({
     port: TAURI_DEV_PORT,
     strictPort: true,
     headers: {
-      // Mirrors the Electron CSP but permits Tauri IPC (tauri://) and Ollama.
       'Content-Security-Policy': [
         "default-src 'self' tauri: asset: https://asset.localhost",
         "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
@@ -39,8 +36,6 @@ export default defineConfig({
     },
   },
   build: {
-    // Tauri uses ES modules; suppress the 500 kB warning since the renderer
-    // is already structured this way in the Electron build.
     target: 'esnext',
     minify: false,
     outDir: 'dist',

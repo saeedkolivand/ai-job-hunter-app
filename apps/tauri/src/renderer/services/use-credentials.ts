@@ -32,7 +32,7 @@ export const useRemoveCredential = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (boardId: string) => api.credentials.remove(boardId),
+    mutationFn: (boardId: string) => api.credentials.remove({ boardId }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.credentials.all }),
   });
 };

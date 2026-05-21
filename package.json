@@ -12,11 +12,9 @@
   },
   "scripts": {
     "dev": "pnpm build:packages && pnpm --filter @ajh/tauri dev",
-    "dev:electron": "pnpm build && pnpm --filter @ajh/desktop dev",
     "build": "turbo build",
-    "build:packages": "turbo build --filter=!@ajh/desktop --filter=!@ajh/tauri",
+    "build:packages": "turbo build --filter=!@ajh/tauri",
     "package": "pnpm build:packages && pnpm --filter @ajh/tauri package",
-    "package:electron": "pnpm build && pnpm --filter @ajh/desktop package",
     "typecheck": "turbo typecheck",
     "lint": "eslint .",
     "lint:strict": "eslint . --max-warnings 0",
@@ -32,7 +30,6 @@
   "devDependencies": {
     "@commitlint/cli": "^21.0.1",
     "@commitlint/config-conventional": "^21.0.1",
-    "@electron/rebuild": "^4.0.4",
     "@eslint/js": "^10.0.1",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/exec": "^7.1.0",
@@ -41,7 +38,6 @@
     "@types/node": "^25.9.0",
     "@vitest/coverage-v8": "^4.1.6",
     "conventional-changelog-conventionalcommits": "^9.3.1",
-    "electron": "^42.1.0",
     "eslint": "^10.4.0",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",

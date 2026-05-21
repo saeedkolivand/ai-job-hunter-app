@@ -49,7 +49,9 @@ export async function runAnalysis({
 
   // Enqueue the generation job
   const validLocales = ['en', 'de', 'fr', 'es', 'it', 'tr', 'pt', 'ru', 'zh', 'ja', 'ko'] as const;
-  const safeLocale = validLocales.includes(locale as (typeof validLocales)[number]) ? locale : 'en';
+  const safeLocale = (
+    validLocales.includes(locale as (typeof validLocales)[number]) ? locale : 'en'
+  ) as (typeof validLocales)[number];
 
   const api = getClient();
   const res = (await api.ai.generate({
@@ -60,7 +62,6 @@ export async function runAnalysis({
     ],
     locale: safeLocale,
     temperature: 0.1,
-    maxTokens: 3000,
   })) as { jobId: string };
 
   const jobId = res.jobId;

@@ -14,6 +14,8 @@
  *   The user never sees literal asterisks.
  */
 
+import type { FileChild, ParagraphChild } from 'docx';
+
 import {
   buildCoverLetterPrompt,
   buildCoverLetterSystemPrompt,
@@ -57,7 +59,6 @@ async function streamGenerate(
     ],
     locale: safeLocale(locale),
     temperature,
-    maxTokens: 3000,
   })) as { jobId: string };
 
   const jobId = res.jobId;
@@ -490,11 +491,8 @@ function mdRunsDocx(
   },
   emphasisColor?: string
 ) {
-  // Dynamic import wrapper — called inside async functions only
-  type TR = any;
   const segs = parseInlineMd(text);
-  // We return a factory function so TextRun can be imported once at call site
-  return (TextRun: new (opts: object) => TR) =>
+  return (TextRun: new (opts: object) => ParagraphChild) =>
     segs.map(
       (seg) =>
         new TextRun({
@@ -519,7 +517,7 @@ async function buildResumeDocx(text: string, meta: GenerationMeta | undefined, t
   const PAGE_W = convertInchesToTwip(6.27);
 
   const parsed = parseDocument(text);
-  const children: any[] = [];
+  const children: FileChild[] = [];
 
   // Section header border config
   const sectionBorder =
@@ -746,7 +744,7 @@ async function buildCoverLetterDocx(
   const { Document, Paragraph, TextRun, BorderStyle, convertInchesToTwip } = await import('docx');
   const F = 'Calibri';
   const PT = (pt: number) => Math.round(pt * 2);
-  const children: any[] = [];
+  const children: FileChild[] = [];
 
   const lines = text.split('\n').map((l) => l.trim());
   let headerDone = false;

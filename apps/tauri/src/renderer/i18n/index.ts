@@ -2,6 +2,8 @@ import i18n from 'i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import { initReactI18next } from 'react-i18next';
 
+import type { Locale } from '@ajh/shared/types';
+
 import { getClient } from '@/lib/app-client';
 
 import de from './locales/de.json';
@@ -53,7 +55,7 @@ void i18n
 // getClient() may not be ready yet if this fires during i18n init, so we swallow errors.
 i18n.on('languageChanged', (lng) => {
   try {
-    void getClient().system.setLocale(lng);
+    void getClient().system.setLocale(lng as Locale);
   } catch {
     // AppClient not initialized — fired during i18n init before AppClientProvider mounts.
   }

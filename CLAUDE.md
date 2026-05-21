@@ -17,8 +17,7 @@ Rules enforced by ESLint, TypeScript, and CI — violations block commits and fa
 
 ## Architecture
 
-Local-first desktop app in a pnpm monorepo. **Tauri is the production shell.**
-Electron remains as a legacy shell during the transition cycle.
+Local-first desktop app in a pnpm monorepo. **Tauri is the shell.**
 
 ```
 packages/shared       ← IPC contracts, Zod schemas, shared types (no UI, no Node)
@@ -28,20 +27,17 @@ packages/core         ← EventBus, JobQueue, Logger
 packages/ai           ← Ollama client + AI runtime
 packages/data         ← DB, scraping, matching, files
 packages/workers      ← Worker thread pool
-apps/tauri            ← Tauri app (production shell — Rust + React via sidecar)
-apps/desktop          ← Electron app (legacy — keep for one release cycle)
+apps/tauri            ← Tauri app (Rust + React via sidecar)
 apps/scraper-runtime  ← Node.js HTTP sidecar (scraping, login, documents, AI)
 ```
 
 Renderer → shell communication: `AppClient` context only.
 
-- **Tauri (default):** `createTauriInvokeClient()` in `apps/tauri/src/tauri-client.ts`
-- **Electron (legacy):** `createDesktopIpcClient()` → `window.api.*`
+- `createTauriInvokeClient()` in `apps/tauri/src/tauri-client.ts`
 
 IPC contract: `packages/shared/src/ipc/contracts.ts`.
 
 **Default dev:** `pnpm dev` → Tauri app.
-**Electron legacy:** `pnpm dev:electron` → Electron app.
 
 ---
 
@@ -53,7 +49,7 @@ IPC contract: `packages/shared/src/ipc/contracts.ts`.
 
 ### 1. Ports & Adapters — no `window.api` in UI
 
-Use service hooks from `apps/desktop/src/renderer/services/`. They wrap IPC with React Query.
+Use service hooks from `apps/tauri/src/renderer/services/`. They wrap IPC with React Query.
 ESLint errors on `window.api.*` in features/, routes/, or components/.
 
 ### 2. i18n — import from `@/lib/i18n`, never `react-i18next` directly
@@ -146,9 +142,9 @@ rtk git fetch origin && rtk git branch -r | grep $(git branch --show-current)
 ### 14. New IPC capability checklist
 
 1. `packages/shared/src/ipc/contracts.ts` — add signature
-2. `apps/desktop/src/main/ipc/router.ts` — implement
-3. `apps/desktop/src/preload/index.ts` — expose
-4. `apps/desktop/src/renderer/services/` — create hook
+2. `apps/tauri/src-tauri/src/commands.rs` — implement Tauri command
+3. `apps/tauri/src/tauri-client.ts` — wire invoke call
+4. `apps/tauri/src/renderer/services/` — create hook
 5. `services/query-client.ts` — add query key
 
 ### 15. Never bypass ESLint
@@ -167,12 +163,12 @@ No `// eslint-disable`, no `@ts-ignore`. Add scoped overrides to `eslint.config.
 | Tauri client (TS)      | `apps/tauri/src/tauri-client.ts`                            |
 | Sidecar entry          | `apps/scraper-runtime/src/index.ts`                         |
 | Sidecar protocol       | `apps/scraper-runtime/src/protocol.ts`                      |
-| Service hooks          | `apps/desktop/src/renderer/services/`                       |
+| Service hooks          | `apps/tauri/src/renderer/services/`                         |
 | UI package             | `packages/ui/src/index.ts` → `@ajh/ui`                      |
 | Motion tokens          | `packages/ui/src/lib/motion.ts` (import via `@/lib/motion`) |
-| State machines         | `apps/desktop/src/renderer/lib/machines/`                   |
+| State machines         | `apps/tauri/src/renderer/lib/machines/`                     |
 | Design tokens          | `packages/ui/src/css/tokens.css`                            |
-| i18n wrapper           | `apps/desktop/src/renderer/lib/i18n.ts`                     |
+| i18n wrapper           | `apps/tauri/src/renderer/lib/i18n.ts`                       |
 | Architecture status    | `docs/ARCHITECTURE_STATUS.md`                               |
 | Architecture (general) | `docs/ARCHITECTURE.md`                                      |
 | Patterns               | `docs/PATTERNS.md`                                          |

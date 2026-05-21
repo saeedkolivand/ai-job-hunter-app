@@ -33,7 +33,7 @@ attach-to-release
 | `feat:`                                                            | **minor** (1.**x**.0) | `feat(jobs): add date filter`     |
 | `fix:`, `perf:`                                                    | **patch** (1.0.**x**) | `fix(ui): correct button padding` |
 | `BREAKING CHANGE` in footer                                        | **major** (**x**.0.0) | `feat!: redesign IPC contract`    |
-| `refactor:`, `docs:`, `chore:`, `ci:`, `test:`, `style:`, `build:` | **no release**        | `chore(deps): upgrade electron`   |
+| `refactor:`, `docs:`, `chore:`, `ci:`, `test:`, `style:`, `build:` | **no release**        | `chore(deps): upgrade tauri`      |
 
 ---
 
@@ -88,16 +88,16 @@ After a release, installers appear on the [GitHub Releases](https://github.com/s
 
 ---
 
-## Electron Build Config
+## Tauri Build Config
 
-The `electron-builder.yml` at the project root controls packaging:
+`apps/tauri/src-tauri/tauri.conf.json` controls packaging:
 
-- `directories.output: apps/desktop/release` — where installers are written
-- `files` — includes compiled `apps/desktop/out/{main,preload,renderer}` from electron-vite
-- `asarUnpack` — native modules (better-sqlite3, lancedb, tesseract) excluded from ASAR
+- `bundle.identifier` — app bundle ID
+- `bundle.targets` — `nsis`, `msi` (Windows), `dmg`, `app` (macOS), `deb`, `appimage` (Linux)
+- `plugins.updater` — GitHub release endpoint for auto-updates
 
-The `package` script in `apps/desktop/package.json` runs:
+The `package` script at root runs:
 
 ```bash
-electron-builder --config ../../electron-builder.yml
+pnpm build:packages && pnpm --filter @ajh/tauri package
 ```
