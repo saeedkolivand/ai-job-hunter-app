@@ -49,7 +49,7 @@ function RootLayout() {
   return (
     <ToastProvider>
       <CapabilityProvider>
-        <div className="relative flex h-screen flex-col overflow-hidden pt-3">
+        <div className="app-content relative flex h-screen flex-col overflow-hidden pt-3">
           <CinematicBackground />
           <Titlebar />
           <div className="flex flex-1 overflow-hidden">

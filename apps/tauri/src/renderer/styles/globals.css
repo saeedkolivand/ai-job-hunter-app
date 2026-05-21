@@ -25,6 +25,19 @@ body {
   overflow: hidden;
 }
 
+/* ── Modal background blur ───────────────────────────────────────────────── */
+/* When any ModalShell is open, blur the entire app content layer.
+   ModalShell sets data-modal-open on document.body; we blur .app-content. */
+body[data-modal-open] .app-content {
+  filter: blur(6px) brightness(0.7);
+  transition: filter 200ms ease;
+  pointer-events: none;
+}
+
+.app-content {
+  transition: filter 200ms ease;
+}
+
 /* ── Low-memory mode ─────────────────────────────────────────────────────── */
 /* Reduces GPU-heavy effects when the user selects Low Memory performance mode. */
 html[data-performance-mode='low-memory'] {
