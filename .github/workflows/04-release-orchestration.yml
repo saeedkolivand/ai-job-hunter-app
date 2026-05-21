@@ -136,6 +136,13 @@ jobs:
         env:
           PKG_CACHE_PATH: ${{ runner.temp }}/pkg-cache
 
+      - name: Rename Sidecar Binary to Tauri Target Triple (Windows)
+        run: |
+          Move-Item `
+            apps/tauri/src-tauri/binaries/scraper-runtime.exe `
+            apps/tauri/src-tauri/binaries/scraper-runtime-x86_64-pc-windows-msvc.exe
+        shell: pwsh
+
       - name: Inject Sidecar Binary into tauri.conf.json resources (Windows)
         run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('apps/tauri/src-tauri/tauri.conf.json'));p.bundle.resources=['binaries/scraper-runtime-x86_64-pc-windows-msvc.exe'];fs.writeFileSync('apps/tauri/src-tauri/tauri.conf.json',JSON.stringify(p,null,2)+'\n');"
 
@@ -209,7 +216,19 @@ jobs:
         run: pnpm build:packages
 
       - name: Build Sidecar Binary (macOS)
-        run: pnpm --filter @ajh/scraper-runtime build:binary
+        run: |
+          cd apps/scraper-runtime
+          pnpm build
+          npx --yes @vercel/ncc build dist/index.js -o dist/bundle --no-source-map-register -q
+          # Build both architectures for universal binary; pkg appends -macos-arm64 / -macos-x64 suffixes
+          npx @yao-pkg/pkg dist/bundle/index.js --no-bytecode --public-packages "*" --public \
+            -t node20-macos-arm64,node20-macos-x64 \
+            -o ../../apps/tauri/src-tauri/binaries/scraper-runtime
+          # Rename to Tauri target-triple names
+          mv ../../apps/tauri/src-tauri/binaries/scraper-runtime-macos-arm64 \
+             ../../apps/tauri/src-tauri/binaries/scraper-runtime-aarch64-apple-darwin
+          mv ../../apps/tauri/src-tauri/binaries/scraper-runtime-macos-x64 \
+             ../../apps/tauri/src-tauri/binaries/scraper-runtime-x86_64-apple-darwin
         env:
           PKG_CACHE_PATH: ${{ runner.temp }}/pkg-cache
 
