@@ -32,7 +32,11 @@ export const useLinkedInDisconnect = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.linkedin.disconnect(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: KEYS.linkedinStatus }),
+    onMutate: () => {
+      // Optimistic update — show disconnected immediately before the round-trip.
+      qc.setQueryData(KEYS.linkedinStatus, { connected: false });
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: KEYS.linkedinStatus }),
   });
 };
 
@@ -62,6 +66,10 @@ export const useBoardDisconnect = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (boardId: string) => api.boards.disconnect({ boardId }),
-    onSuccess: (_data, boardId) => qc.invalidateQueries({ queryKey: KEYS.boardStatus(boardId) }),
+    onMutate: (boardId) => {
+      qc.setQueryData(KEYS.boardStatus(boardId), { connected: false });
+    },
+    onSettled: (_data, _err, boardId) =>
+      qc.invalidateQueries({ queryKey: KEYS.boardStatus(boardId) }),
   });
 };
