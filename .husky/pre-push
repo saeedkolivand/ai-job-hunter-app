@@ -1,10 +1,18 @@
 #!/usr/bin/env sh
 # Runs before `git push`.
-# Quality gate: lint + package tests.
-# TypeScript checks and full build verification run in CI (ci.yml).
+# Quality gate: lint + typecheck + build + tests.
 
 echo "▶ Running ESLint..."
 pnpm lint
+
+echo "▶ Running TypeScript type check..."
+pnpm typecheck
+
+echo "▶ Building packages..."
+pnpm build:packages
+
+echo "▶ Building Tauri frontend..."
+pnpm --filter @ajh/tauri build:frontend
 
 echo "▶ Running package tests..."
 pnpm -r test
