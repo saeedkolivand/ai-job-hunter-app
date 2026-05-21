@@ -76,8 +76,9 @@ export function ResumeInputCard({
   const [lastUploadedFile, setLastUploadedFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const { data: rawDocs = [] } = useDocuments();
-  const docs = (rawDocs as RawDoc[]).map(normalise);
+  const { data: rawDocsUnknown = [] } = useDocuments();
+  const rawDocs = rawDocsUnknown as unknown as RawDoc[];
+  const docs = rawDocs.map(normalise);
   const resumePref = useResume();
   const setResume = usePreferencesStore((s) => s.setResume);
   const importDocument = useImportDocument();
@@ -88,9 +89,7 @@ export function ResumeInputCard({
   // Auto-fill from default resume on first load (only if textarea is still empty)
   useEffect(() => {
     if (value) return;
-    const raw =
-      (rawDocs as RawDoc[]).find((d) => d._id === resumePref?.defaultId) ??
-      (rawDocs as RawDoc[])[0];
+    const raw = rawDocs.find((d) => d._id === resumePref?.defaultId) ?? rawDocs[0];
     const text = raw?.text?.trim();
     if (text) onChange(text);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -98,7 +97,7 @@ export function ResumeInputCard({
 
   /** Load text from a saved document record into the textarea */
   const handleSelectSaved = (doc: DocumentRecord) => {
-    const raw = (rawDocs as RawDoc[]).find((d) => d._id === doc.id);
+    const raw = rawDocs.find((d) => d._id === doc.id);
     const text = raw?.text?.trim();
     if (text) {
       onChange(text);
@@ -124,7 +123,7 @@ export function ResumeInputCard({
         bytes,
         title: lastUploadedFile.name,
       });
-      const saved = (rawDocs as RawDoc[])[0];
+      const saved = rawDocs[0];
       const id = saved?._id ?? saved?.id;
       if (asDefault && id) {
         setResume({ defaultId: String(id), autoIndex: true, autoParse: true });
