@@ -1055,20 +1055,14 @@ pub async fn ai_embed(req: Value) -> Value {
 
 #[tauri::command]
 pub async fn documents_list(app: AppHandle) -> Value {
-    let Some(port) = sidecar_port(&app) else { return json!([]); };
-    let job_id = uuid_v4();
-    let cmd = json!({ "kind": "document.list", "jobId": job_id });
-    match post_sidecar_command(&app, port, &cmd, &job_id).await {
-        Ok(result) => result,
-        Err(_) => json!([]),
-    }
+    let Ok(store) = app.try_state::<crate::documents::DocumentStore>().ok_or(()) else {
+        return json!([]);
+    };
+    serde_json::to_value(store.list()).unwrap_or(json!([]))
 }
 
 #[tauri::command]
 pub async fn documents_import(app: AppHandle, req: Value) -> Value {
-    let Some(port) = sidecar_port(&app) else {
-        return json!({ "error": "scraper sidecar not ready" });
-    };
     let name = req.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let locale = req.get("locale").and_then(|v| v.as_str()).map(String::from);
 
@@ -1081,25 +1075,54 @@ pub async fn documents_import(app: AppHandle, req: Value) -> Value {
         _ => return json!({ "error": "bytes field missing or invalid" }),
     };
 
-    let job_id = uuid_v4();
-    app.state::<Mutex<JobTracker>>().lock().unwrap().start(&job_id, "document.import");
-    let cmd = json!({
-        "kind": "document.import",
-        "jobId": job_id,
-        "payload": { "name": name, "bytesBase64": bytes_b64, "locale": locale },
-    });
-    match post_sidecar_command(&app, port, &cmd, &job_id).await {
-        Ok(result) => json!({ "jobId": job_id, "document": result }),
-        Err(e) => json!({ "error": e }),
+    // Decode base64 back to bytes for native extraction.
+    let bytes = {
+        use base64::Engine;
+        match base64::engine::general_purpose::STANDARD.decode(&bytes_b64) {
+            Ok(b) => b,
+            Err(e) => return json!({ "error": format!("base64 decode: {e}") }),
+        }
+    };
+
+    let text = match crate::documents::extract_text(&name, &bytes) {
+        Ok(t) => t,
+        Err(e) => return json!({ "error": e }),
+    };
+
+    let id = crate::documents::make_doc_id();
+    let title = crate::documents::strip_extension(&name);
+    let rec = crate::documents::DocumentRecord {
+        id: id.clone(),
+        title,
+        name,
+        locale,
+        text: text.clone(),
+        pages: None,
+        created_at: crate::documents::now_ms(),
+        indexed: false,
+    };
+
+    let Ok(store) = app.try_state::<crate::documents::DocumentStore>().ok_or(()) else {
+        return json!({ "error": "document store unavailable" });
+    };
+    if let Err(e) = store.insert(&rec) {
+        return json!({ "error": e });
     }
+
+    if let Some(vector) = crate::documents::embed(&text).await {
+        let _ = store.upsert_vector(&id, &vector);
+        let _ = store.set_indexed(&id);
+    }
+
+    let doc = store.list().into_iter().find(|d| d.id == id).unwrap_or(rec);
+    json!({ "jobId": id, "document": serde_json::to_value(doc).unwrap_or(json!({})) })
 }
 
 #[tauri::command]
 pub async fn documents_remove(app: AppHandle, id: String) -> Value {
-    let Some(port) = sidecar_port(&app) else { return json!(null); };
-    let job_id = uuid_v4();
-    let cmd = json!({ "kind": "document.remove", "jobId": job_id, "payload": { "id": id } });
-    post_sidecar_command(&app, port, &cmd, &job_id).await.ok();
+    if let Some(store) = app.try_state::<crate::documents::DocumentStore>() {
+        store.remove(&id).ok();
+    }
     json!(null)
 }
 
@@ -1107,15 +1130,43 @@ pub async fn documents_remove(app: AppHandle, id: String) -> Value {
 
 #[tauri::command]
 pub async fn search_hybrid(app: AppHandle, req: Value) -> Value {
-    let Some(port) = sidecar_port(&app) else {
+    let query = req.get("query").and_then(|v| v.as_str()).unwrap_or("");
+    let top_k = req.get("topK").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+
+    let query_vec = match crate::documents::embed(query).await {
+        Some(v) => v,
+        None => return json!({ "items": [], "total": 0 }),
+    };
+
+    let Ok(store) = app.try_state::<crate::documents::DocumentStore>().ok_or(()) else {
         return json!({ "items": [], "total": 0 });
     };
-    let job_id = uuid_v4();
-    let cmd = json!({ "kind": "search.hybrid", "jobId": job_id, "payload": req });
-    match post_sidecar_command(&app, port, &cmd, &job_id).await {
-        Ok(result) => result,
-        Err(_) => json!({ "items": [], "total": 0 }),
-    }
+
+    let mut scored: Vec<(String, f64)> = store
+        .all_vectors()
+        .into_iter()
+        .map(|(doc_id, vec)| {
+            let score = crate::documents::cosine_similarity(&query_vec, &vec);
+            (doc_id, score)
+        })
+        .collect();
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    scored.truncate(top_k);
+
+    let docs = store.list();
+    let items: Vec<Value> = scored
+        .into_iter()
+        .filter_map(|(doc_id, score)| {
+            docs.iter().find(|d| d.id == doc_id).map(|d| {
+                let mut v = serde_json::to_value(d).unwrap_or(json!({}));
+                v["_score"] = json!(score);
+                v
+            })
+        })
+        .collect();
+
+    let total = items.len();
+    json!({ "items": items, "total": total })
 }
 
 // ── Scrape ───────────────────────────────────────────────────────────────────
@@ -1336,15 +1387,26 @@ fn chrono_date() -> String {
 
 #[tauri::command]
 pub async fn match_resume(app: AppHandle, req: Value) -> Value {
-    let Some(port) = sidecar_port(&app) else {
-        return json!({ "resumeId": "", "jobId": "", "ats": 0, "semantic": 0, "combined": 0, "gaps": [], "recommendations": [], "explanation": "" });
+    let blank = json!({ "ats": 0, "semantic": 0, "combined": 0, "gaps": [], "recommendations": [], "explanation": "" });
+    let resume_id = match req.get("resumeId").and_then(|v| v.as_str()) {
+        Some(id) => id.to_string(),
+        None => return blank,
     };
-    let job_id = uuid_v4();
-    let cmd = json!({ "kind": "match.resume", "jobId": job_id, "payload": req });
-    match post_sidecar_command(&app, port, &cmd, &job_id).await {
-        Ok(result) => result,
-        Err(_) => json!({ "resumeId": "", "jobId": "", "ats": 0, "semantic": 0, "combined": 0, "gaps": [], "recommendations": [], "explanation": "" }),
-    }
+    let job_text = req.get("jobText").and_then(|v| v.as_str()).unwrap_or("");
+
+    let Ok(store) = app.try_state::<crate::documents::DocumentStore>().ok_or(()) else {
+        return blank;
+    };
+    let resume_vec = match store.get_vector(&resume_id) {
+        Some(v) => v,
+        None => return blank,
+    };
+    let job_vec = match crate::documents::embed(job_text).await {
+        Some(v) => v,
+        None => return blank,
+    };
+    let semantic = (crate::documents::cosine_similarity(&resume_vec, &job_vec) * 100.0).round() as i64;
+    json!({ "ats": semantic, "semantic": semantic, "combined": semantic, "gaps": [], "recommendations": [], "explanation": "" })
 }
 
 // ── Credentials ──────────────────────────────────────────────────────────────
@@ -1577,38 +1639,20 @@ pub async fn apply_catalog(app: AppHandle) -> Value {
 /// Extract plain text from a resume file (PDF, DOCX, TXT, MD).
 ///
 /// The renderer passes `{ name: string, bytes: Uint8Array }`.
-/// Bytes are re-encoded as base64 before sending to the sidecar because the
-/// sidecar protocol is JSON-over-HTTP and binary data needs encoding.
 #[tauri::command]
-pub async fn resume_extract_text(app: AppHandle, req: Value) -> Value {
-    let Some(port) = sidecar_port(&app) else {
-        return json!({ "error": "scraper sidecar not ready" });
-    };
-
+pub async fn resume_extract_text(req: Value) -> Value {
     let name = req.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
     // Bytes arrive as a JSON array of integers (Tauri serialises Uint8Array).
-    let bytes_b64 = match req.get("bytes") {
+    let bytes: Vec<u8> = match req.get("bytes") {
         Some(serde_json::Value::Array(arr)) => {
-            let bytes: Vec<u8> = arr
-                .iter()
-                .filter_map(|v| v.as_u64().map(|n| n as u8))
-                .collect();
-            use base64::Engine;
-            base64::engine::general_purpose::STANDARD.encode(&bytes)
+            arr.iter().filter_map(|v| v.as_u64().map(|n| n as u8)).collect()
         }
         _ => return json!({ "error": "bytes field missing or invalid" }),
     };
 
-    let job_id = uuid_v4();
-    let cmd = json!({
-        "kind": "extract.text",
-        "jobId": job_id,
-        "payload": { "name": name, "bytesBase64": bytes_b64 },
-    });
-
-    match post_sidecar_command(&app, port, &cmd, &job_id).await {
-        Ok(result) => result,
+    match crate::documents::extract_text(&name, &bytes) {
+        Ok(text) => json!({ "text": text }),
         Err(e) => json!({ "error": e }),
     }
 }

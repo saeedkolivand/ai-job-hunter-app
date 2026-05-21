@@ -28,12 +28,7 @@ const host = '127.0.0.1';
 const dataDir = process.env.AJH_DATA_DIR ?? path.join(os.homedir(), '.ajh');
 
 const credentials = new FileCredentialStore(dataDir);
-const engine = new ScraperEngine(credentials, dataDir);
-
-// Open the vector/document store asynchronously — non-fatal if it fails.
-void engine.openDataStore().catch((e: unknown) => {
-  process.stderr.write(`[scraper-runtime] data store open warning: ${String(e)}\n`);
-});
+const engine = new ScraperEngine(credentials);
 
 const server = http.createServer(createRequestHandler(engine));
 

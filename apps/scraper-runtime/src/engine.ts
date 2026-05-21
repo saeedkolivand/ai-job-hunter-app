@@ -14,17 +14,10 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { createLogger } from '@ajh/core';
-import {
-  ApplierRegistry,
-  BrowserController,
-  extractDocxFromBytes,
-  extractPdfFromBytes,
-  ScraperRegistry,
-} from '@ajh/data';
+import { ApplierRegistry, BrowserController, ScraperRegistry } from '@ajh/data';
 import type { JobPosting } from '@ajh/shared';
 
 import type { FileCredentialStore } from './credentials.js';
-import { DataStore } from './data-store.js';
 import { LoginManager } from './login.js';
 import type {
   ApplyJobPayload,
@@ -47,22 +40,13 @@ export class ScraperEngine {
   private readonly appliers = new ApplierRegistry();
   private browser?: BrowserController;
   private readonly loginManager: LoginManager;
-  readonly dataStore: DataStore;
   /** Maximum number of concurrent scraping jobs (adjusted by performance mode). */
   private maxConcurrentJobs = 2;
   /** jobId → AbortController (lets the caller cancel a running job). */
   private readonly jobs = new Map<string, AbortController>();
 
-  constructor(
-    private readonly credentials: FileCredentialStore,
-    dataDir: string
-  ) {
+  constructor(private readonly credentials: FileCredentialStore) {
     this.loginManager = new LoginManager(credentials);
-    this.dataStore = new DataStore(dataDir);
-  }
-
-  async openDataStore(): Promise<void> {
-    await this.dataStore.open();
   }
 
   // ── Catalog / health ───────────────────────────────────────────────────────
@@ -280,29 +264,6 @@ export class ScraperEngine {
         }
       }
     }
-  }
-
-  // ── Text extraction ───────────────────────────────────────────────────────
-
-  /**
-   * Extract plain text from a document file (PDF, DOCX, TXT, MD).
-   * Bytes are passed as base64 to stay within the JSON protocol.
-   */
-  async extractText(name: string, bytesBase64: string): Promise<{ text: string }> {
-    const bytes = new Uint8Array(Buffer.from(bytesBase64, 'base64'));
-    const ext = name.toLowerCase().split('.').pop() ?? '';
-
-    if (ext === 'pdf') {
-      const { text } = await extractPdfFromBytes(bytes);
-      return { text };
-    }
-    if (ext === 'docx') {
-      return extractDocxFromBytes(bytes);
-    }
-    if (ext === 'txt' || ext === 'md' || ext === 'markdown') {
-      return { text: Buffer.from(bytes).toString('utf-8').trim() };
-    }
-    throw new Error(`unsupported file type: .${ext}`);
   }
 
   // ── Shutdown ───────────────────────────────────────────────────────────────
