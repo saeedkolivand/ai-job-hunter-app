@@ -1,7 +1,7 @@
 import { Check, Link as LinkIcon, Loader2, LogOut } from 'lucide-react';
 import { motion } from 'motion/react';
 
-import { Button } from '@ajh/ui';
+import { Button, useToast } from '@ajh/ui';
 
 import { useLinkedInConnect, useLinkedInDisconnect, useLinkedInStatus } from '@/services';
 
@@ -10,6 +10,7 @@ interface LinkedInSessionRowProps {
 }
 
 export function LinkedInSessionRow({ board }: LinkedInSessionRowProps) {
+  const toast = useToast();
   const { data: status } = useLinkedInStatus();
   const linkedInConnect = useLinkedInConnect();
   const linkedInDisconnect = useLinkedInDisconnect();
@@ -17,17 +18,24 @@ export function LinkedInSessionRow({ board }: LinkedInSessionRowProps) {
 
   const handleConnect = async () => {
     try {
-      await linkedInConnect.mutateAsync();
+      const result = await linkedInConnect.mutateAsync();
+      const res = result as { connected?: boolean; error?: string } | undefined;
+      if (res?.error) {
+        toast(res.error, 'error');
+      } else if (!res?.connected) {
+        toast('LinkedIn sign-in was cancelled or timed out.', 'warning');
+      }
     } catch (err) {
-      console.error('LinkedIn connection failed:', err);
+      toast(err instanceof Error ? err.message : 'LinkedIn connection failed.', 'error');
     }
   };
 
   const handleDisconnect = async () => {
     try {
       await linkedInDisconnect.mutateAsync();
+      toast('Disconnected from LinkedIn.', 'success');
     } catch (err) {
-      console.error('LinkedIn disconnection failed:', err);
+      toast(err instanceof Error ? err.message : 'Failed to disconnect from LinkedIn.', 'error');
     }
   };
 
