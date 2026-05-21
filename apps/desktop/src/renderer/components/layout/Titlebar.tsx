@@ -1,5 +1,5 @@
-import { type ComponentType, useEffect, useState } from 'react';
 import { Search, Sparkles } from 'lucide-react';
+import { type ComponentType, useEffect, useState } from 'react';
 
 import { Button } from '@ajh/ui';
 
