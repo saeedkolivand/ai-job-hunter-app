@@ -100,7 +100,7 @@ function ToastCard({ item, onClose }: { item: ToastItem; onClose: () => void }) 
 
 function Toaster({ toasts, dismiss }: { toasts: ToastItem[]; dismiss: (id: string) => void }) {
   return createPortal(
-    <div className="fixed bottom-6 right-6 z-[var(--z-toast)] flex flex-col-reverse gap-3">
+    <div className="fixed bottom-6 right-6 flex flex-col-reverse gap-3" style={{ zIndex: 700 }}>
       <AnimatePresence initial={false}>
         {toasts.map((item) => (
           <ToastCard key={item.id} item={item} onClose={() => dismiss(item.id)} />
