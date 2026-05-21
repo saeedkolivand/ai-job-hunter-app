@@ -20,7 +20,7 @@ import { useMemo, useRef, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
 import type { DATE_FILTER_OPTIONS, JobInteraction } from '@ajh/shared';
-import { Button, GlassCard, Input, SelectDropdown, TextArea } from '@ajh/ui';
+import { Button, GlassCard, Input, SelectDropdown, TextArea, useToast } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -98,6 +98,7 @@ function Jobs() {
     return t('jobs.timeMonthsAgo', { m: months });
   };
 
+  const toast = useToast();
   const { data: postingsData = [] } = usePostings();
   const postings = postingsData as Posting[];
   const scrapeBoard = useScrapeBoard();
@@ -175,18 +176,38 @@ function Jobs() {
         pages: scrapeForm.pages,
         ...(scrapeForm.dateFilter ? { dateFilter: scrapeForm.dateFilter } : {}),
         ...(scrapeForm.board === 'indeed' ? { locale: scrapeForm.locale } : {}),
-      } as Parameters<typeof scrapeBoard.mutateAsync>[0])) as { jobId: string };
+      } as Parameters<typeof scrapeBoard.mutateAsync>[0])) as { jobId: string; error?: string };
+
+      // Sidecar not running or returned an error — surface it immediately.
+      if (res.error) {
+        setScraping(false);
+        setScrapeOutcome({ ok: false, note: res.error });
+        toast(res.error, 'error');
+        return;
+      }
+
       scrapeJobRef.current = res.jobId;
       setScrapeJobId(res.jobId);
     } catch (err) {
       setScraping(false);
       setScrapeOutcome({ ok: false, note: err instanceof Error ? err.message : String(err) });
+      toast(err instanceof Error ? err.message : 'Scraping failed.', 'error');
     }
   };
 
   const cancelScrape = async () => {
-    if (scrapeJobId) {
-      await cancelJob.mutateAsync(scrapeJobId);
+    // Reset UI immediately — don't wait for a sidecar event that may never arrive.
+    setScraping(false);
+    setScrapeOutcome(null);
+    scrapeJobRef.current = null;
+    const jobId = scrapeJobId;
+    setScrapeJobId(null);
+    if (jobId) {
+      try {
+        await cancelJob.mutateAsync(jobId);
+      } catch {
+        // Best-effort — UI is already reset.
+      }
     }
   };
 

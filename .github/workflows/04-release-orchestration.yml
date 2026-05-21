@@ -131,6 +131,14 @@ jobs:
       - name: Build Packages
         run: pnpm build:packages
 
+      - name: Build Sidecar Binary (Windows)
+        run: pnpm --filter @ajh/scraper-runtime build:binary
+        env:
+          PKG_CACHE_PATH: ${{ runner.temp }}/pkg-cache
+
+      - name: Inject Sidecar Binary into tauri.conf.json resources (Windows)
+        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('apps/tauri/src-tauri/tauri.conf.json'));p.bundle.resources=['binaries/scraper-runtime-x86_64-pc-windows-msvc.exe'];fs.writeFileSync('apps/tauri/src-tauri/tauri.conf.json',JSON.stringify(p,null,2)+'\n');"
+
       - name: Sync Tauri Version and Inject Signing Key
         run: node scripts/sync-tauri-version.cjs ${{ needs.determine-release.outputs.version }}
         env:
@@ -199,6 +207,14 @@ jobs:
 
       - name: Build Packages
         run: pnpm build:packages
+
+      - name: Build Sidecar Binary (macOS)
+        run: pnpm --filter @ajh/scraper-runtime build:binary
+        env:
+          PKG_CACHE_PATH: ${{ runner.temp }}/pkg-cache
+
+      - name: Inject Sidecar Binary into tauri.conf.json resources (macOS)
+        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('apps/tauri/src-tauri/tauri.conf.json'));p.bundle.resources=['binaries/scraper-runtime-aarch64-apple-darwin','binaries/scraper-runtime-x86_64-apple-darwin'];fs.writeFileSync('apps/tauri/src-tauri/tauri.conf.json',JSON.stringify(p,null,2)+'\n');"
 
       - name: Sync Tauri Version and Inject Signing Key
         run: node scripts/sync-tauri-version.cjs ${{ needs.determine-release.outputs.version }}
