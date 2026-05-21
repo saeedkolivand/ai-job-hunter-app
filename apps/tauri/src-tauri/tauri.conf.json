@@ -41,7 +41,7 @@
     "shell": {
       "open": "https?://"
     },
-    "dialog": {},
+    "dialog": null,
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXkKUlVTVF9QTEFDRUhPTERFUl9QVUJLRVkK",
       "endpoints": [

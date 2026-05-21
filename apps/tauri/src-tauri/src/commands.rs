@@ -128,8 +128,8 @@ pub fn system_health(app: AppHandle) -> Value {
 }
 
 #[tauri::command]
-pub fn system_get_version() -> Value {
-    json!({ "version": env!("CARGO_PKG_VERSION"), "shell": "tauri" })
+pub fn system_get_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
 }
 
 #[tauri::command]

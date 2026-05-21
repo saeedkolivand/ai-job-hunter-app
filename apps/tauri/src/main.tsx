@@ -21,7 +21,7 @@ import { queryClient } from '@/services/query-client';
 import { createTauriInvokeClient } from './tauri-client';
 
 import '@/i18n';
-import '@/styles/globals.css';
+import './styles.css';
 
 restoreTheme();
 
