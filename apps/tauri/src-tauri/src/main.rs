@@ -169,6 +169,10 @@ fn main() {
             commands::ai_pull_model,
             commands::ai_unload_model,
             commands::ai_embed,
+            commands::ai_set_provider_key,
+            commands::ai_remove_provider_key,
+            commands::ai_has_provider_key,
+            commands::ai_list_provider_models,
             // documents
             commands::documents_list,
             commands::documents_import,

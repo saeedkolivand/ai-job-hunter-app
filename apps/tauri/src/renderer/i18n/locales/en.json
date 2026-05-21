@@ -237,6 +237,18 @@
       "description": "Replay the introductory wizard to revisit the feature tour.",
       "replay": "Replay wizard"
     },
+    "aiProvider": {
+      "title": "AI Provider",
+      "description": "Choose where your AI runs — locally via Ollama or through a cloud API.",
+      "apiKey": "API Key",
+      "keyStored": "API key stored securely in OS keychain",
+      "removeKey": "Remove",
+      "getKeyAt": "Get your API key at",
+      "keyPlaceholder": "Paste your API key…",
+      "saveKey": "Save",
+      "baseUrl": "Base URL",
+      "saveUrl": "Save"
+    },
     "aiModel": {
       "title": "AI Model",
       "refresh": "Refresh",

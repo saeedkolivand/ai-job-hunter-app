@@ -118,6 +118,10 @@ export function createWebHttpClient({ baseUrl, token }: WebHttpClientOptions): A
       unloadModel: (model) => cmd('ai', 'unloadModel', { model }),
       embed: (req) => cmd('ai', 'embed', req),
       onStream: (handler) => subscribe('ai.stream', handler),
+      setProviderKey: (req) => cmd('ai', 'setProviderKey', req),
+      removeProviderKey: (req) => cmd('ai', 'removeProviderKey', req),
+      hasProviderKey: (req) => cmd('ai', 'hasProviderKey', req),
+      listProviderModels: (req) => cmd('ai', 'listProviderModels', req),
     },
 
     documents: {

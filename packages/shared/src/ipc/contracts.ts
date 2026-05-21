@@ -78,8 +78,19 @@ export interface IpcContract {
     unloadModel(model: string): Promise<void>;
 
     /** Synchronous embedding — returns the vector. Falls back gracefully if Ollama is offline. */
-
     embed(req: { text: string; model?: string }): Promise<{ vector: number[]; dim: number } | null>;
+
+    /** Store an API key for a cloud AI provider in the OS keychain. */
+    setProviderKey(req: { provider: string; apiKey: string }): Promise<{ success: boolean }>;
+
+    /** Remove a stored provider API key from the OS keychain. */
+    removeProviderKey(req: { provider: string }): Promise<{ success: boolean }>;
+
+    /** Check whether a provider API key is stored (does not return the key). */
+    hasProviderKey(req: { provider: string }): Promise<{ has: boolean }>;
+
+    /** Fetch available models from a cloud provider using its stored API key. */
+    listProviderModels(req: { provider: string }): Promise<Array<{ name: string }>>;
   };
 
   documents: {

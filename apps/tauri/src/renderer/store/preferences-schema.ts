@@ -50,6 +50,24 @@ export const AIModelPreferenceSchema = z.object({
   maxTokens: z.number().min(1).max(8192).default(2048),
 });
 
+// AI provider selection (API key stored in OS keychain, not here)
+export const AiProviderSchema = z.enum([
+  'ollama',
+  'openai',
+  'anthropic',
+  'gemini',
+  'openai-compatible',
+]);
+
+export const AiProviderConfigSchema = z.object({
+  provider: AiProviderSchema.default('ollama'),
+  model: z.string().default(''),
+  baseUrl: z.string().optional(), // for openai-compatible endpoints
+});
+
+export type AiProvider = z.infer<typeof AiProviderSchema>;
+export type AiProviderConfig = z.infer<typeof AiProviderConfigSchema>;
+
 // Resume preference
 export const ResumePreferenceSchema = z.object({
   defaultId: z.string().optional(),
@@ -67,6 +85,7 @@ export const PreferencesSchema = z.object({
   // AI Preferences
   language: z.string().default('en'),
   aiModel: AIModelPreferenceSchema.optional(),
+  aiProviderConfig: AiProviderConfigSchema.optional(),
   outputTone: OutputToneSchema.default('professional'),
 
   // Job Preferences

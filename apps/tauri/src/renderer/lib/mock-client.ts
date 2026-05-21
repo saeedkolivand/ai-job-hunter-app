@@ -57,6 +57,10 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       unloadModel: noop,
       embed: noop,
       onStream: unsub,
+      setProviderKey: noop,
+      removeProviderKey: noop,
+      hasProviderKey: async () => ({ has: false }),
+      listProviderModels: emptyList,
     },
 
     documents: {

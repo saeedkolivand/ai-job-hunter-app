@@ -237,6 +237,18 @@
       "description": "Den Einführungsassistenten erneut abspielen, um die Funktionsübersicht zu wiederholen.",
       "replay": "Assistent erneut abspielen"
     },
+    "aiProvider": {
+      "title": "KI-Anbieter",
+      "description": "Wählen Sie, wo Ihre KI läuft — lokal über Ollama oder über eine Cloud-API.",
+      "apiKey": "API-Schlüssel",
+      "keyStored": "API-Schlüssel sicher im OS-Schlüsselbund gespeichert",
+      "removeKey": "Entfernen",
+      "getKeyAt": "Holen Sie sich Ihren API-Schlüssel unter",
+      "keyPlaceholder": "API-Schlüssel einfügen…",
+      "saveKey": "Speichern",
+      "baseUrl": "Basis-URL",
+      "saveUrl": "Speichern"
+    },
     "aiModel": {
       "title": "KI-Modell",
       "refresh": "Aktualisieren",
