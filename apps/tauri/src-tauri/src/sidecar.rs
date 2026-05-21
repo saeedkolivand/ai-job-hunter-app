@@ -42,11 +42,21 @@ pub fn try_start(app: &AppHandle) -> tauri::Result<()> {
 
     let shell = app.shell();
 
-    // In production: launch the bundled native binary registered as externalBin.
+    // In production: launch the platform-specific binary bundled as a resource.
     // In dev (debug builds): run TypeScript directly with tsx — no build step needed,
     // changes take effect on Tauri restart.
     #[cfg(not(debug_assertions))]
-    let spawn_result = shell.sidecar("scraper-runtime").and_then(|cmd| cmd.spawn());
+    let spawn_result = {
+        use tauri::Manager;
+        let target = env!("TAURI_ENV_TARGET_TRIPLE");
+        let bin_name = format!("scraper-runtime-{}", target);
+        let bin_path = app
+            .path()
+            .resource_dir()
+            .map(|d| d.join(&bin_name))
+            .unwrap_or_else(|_| std::path::PathBuf::from(&bin_name));
+        shell.command(bin_path.to_string_lossy().as_ref()).spawn()
+    };
 
     #[cfg(debug_assertions)]
     let spawn_result = {
