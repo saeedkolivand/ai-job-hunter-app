@@ -17,6 +17,8 @@
  * Every method is a jest/vitest spy-friendly async stub. Provide overrides as a
  * deep-partial — only the methods you care about need to be specified.
  */
+import type { Locale, SearchHit } from '@ajh/shared/types';
+
 import type { AppClient } from './app-client';
 
 type DeepPartial<T> = {
@@ -32,7 +34,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     system: {
       health: noop,
       getVersion: noop,
-      getLocale: async () => 'en' as import('@ajh/shared/types').Locale,
+      getLocale: async () => 'en' as Locale,
       setLocale: noop,
       getPlatform: noop,
       openExternal: noop,
@@ -64,7 +66,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     },
 
     search: {
-      hybrid: async () => [] as import('@ajh/shared/types').SearchHit<unknown>[],
+      hybrid: async () => [] as SearchHit<unknown>[],
     },
 
     scrape: {

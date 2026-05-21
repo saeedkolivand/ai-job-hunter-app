@@ -26,6 +26,8 @@ import {
   validateMetadata,
 } from '@ajh/prompts/generate';
 
+import type { FileChild, ParagraphChild } from 'docx';
+
 import { getClient } from './app-client';
 
 export type { GenerationMeta, GenerationMode };
@@ -490,7 +492,7 @@ function mdRunsDocx(
   emphasisColor?: string
 ) {
   const segs = parseInlineMd(text);
-  return (TextRun: new (opts: object) => import('docx').ParagraphChild) =>
+  return (TextRun: new (opts: object) => ParagraphChild) =>
     segs.map(
       (seg) =>
         new TextRun({
@@ -515,7 +517,7 @@ async function buildResumeDocx(text: string, meta: GenerationMeta | undefined, t
   const PAGE_W = convertInchesToTwip(6.27);
 
   const parsed = parseDocument(text);
-  const children: import('docx').FileChild[] = [];
+  const children: FileChild[] = [];
 
   // Section header border config
   const sectionBorder =
@@ -742,7 +744,7 @@ async function buildCoverLetterDocx(
   const { Document, Paragraph, TextRun, BorderStyle, convertInchesToTwip } = await import('docx');
   const F = 'Calibri';
   const PT = (pt: number) => Math.round(pt * 2);
-  const children: import('docx').FileChild[] = [];
+  const children: FileChild[] = [];
 
   const lines = text.split('\n').map((l) => l.trim());
   let headerDone = false;
