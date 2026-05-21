@@ -267,10 +267,16 @@ export class LoginManager {
   /** Clear the board's session — user will need to log in again. */
   disconnect(boardId: string): void {
     const statePath = this.credentials.storageStatePath(boardId);
-    try {
-      fs.rmSync(statePath, { recursive: true, force: true });
-    } catch {
-      /* ignore */
+    // Write disconnected status explicitly — more reliable than deleting the
+    // whole profile directory which may be locked by Windows on Playwright files.
+    this.writeAuthStatus(boardId, false);
+    // Remove the session cookie export so the scraper can't reuse stale cookies.
+    for (const file of ['state.json']) {
+      try {
+        fs.unlinkSync(path.join(statePath, file));
+      } catch {
+        /* not present — fine */
+      }
     }
   }
 
