@@ -360,7 +360,7 @@ function EmptyState({ onNew }: { onNew(): void }) {
           </div>
         ))}
       </div>
-      <Button variant="glass" size="md" onClick={onNew} className="hover:glow-purple">
+      <Button variant="glass" size="md" onClick={onNew} className="hover:glow-purple px-6 gap-2">
         <Plus size={14} /> {t('autopilot.empty.createFirst')}
       </Button>
     </div>

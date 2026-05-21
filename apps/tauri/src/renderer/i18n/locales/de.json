@@ -247,7 +247,8 @@
       "keyPlaceholder": "API-Schlüssel einfügen…",
       "saveKey": "Speichern",
       "baseUrl": "Basis-URL",
-      "saveUrl": "Speichern"
+      "saveUrl": "Speichern",
+      "activeProvider": "Aktiver Anbieter"
     },
     "aiModel": {
       "title": "KI-Modell",
@@ -338,13 +339,28 @@
       "fileTypes": "PDF, DOC, DOCX",
       "uploading": "Wird hochgeladen und analysiert...",
       "setAsDefault": "Als Standard festlegen",
-      "uploaded": "Hochgeladen",
+      "uploaded": "Lebenslauf erfolgreich hochgeladen",
       "indexed": "Indiziert",
       "default": "Standard",
       "extractedSkills": "Extrahierte Fähigkeiten",
       "more": "mehr",
       "atsScore": "ATS-Score",
-      "noResumes": "Noch keine Lebensläufe hochgeladen"
+      "noResumes": "Noch keine Lebensläufe hochgeladen",
+      "uploadFailed": "Upload fehlgeschlagen",
+      "removed": "Lebenslauf entfernt",
+      "removeFailed": "Entfernen fehlgeschlagen",
+      "setDefault": "Als Standard setzen"
+    },
+    "update": {
+      "title": "Updates",
+      "currentVersion": "Aktuelle Version",
+      "checkNow": "Nach Updates suchen",
+      "checking": "Prüfe…",
+      "upToDate": "Sie sind auf dem neuesten Stand",
+      "download": "{{version}} herunterladen",
+      "install": "Neu starten & installieren",
+      "error": "Prüfung fehlgeschlagen",
+      "whatsNew": "Neu in"
     }
   },
   "aiGenerate": {
@@ -403,7 +419,8 @@
       "extractionFailed": "Extraktion fehlgeschlagen",
       "generationFailed": "Generierung fehlgeschlagen"
     },
-    "localized": "Lokalisiert"
+    "localized": "Lokalisiert",
+    "resumePlaceholder": "Lebenslauftext hier einfügen…"
   },
   "autopilot": {
     "title": "Autopilot",
@@ -527,6 +544,22 @@
       "highMatchDesc": "Basierend auf Ihren Präferenzen und Ihrem Profil",
       "resumeAlertTitle": "Lebenslauf benötigt Aktualisierung",
       "resumeAlertDesc": "Letzter ATS-Score war 65%, erwägen Sie mehr Kennzahlen hinzuzufügen"
+    },
+    "viewed": "Angesehen",
+    "totalTracked": "Gesamt verfolgt",
+    "noJobsTracked": "Öffne einen Job um deine Pipeline zu verfolgen.",
+    "status": {
+      "aiModel": "KI-Modell",
+      "database": "Datenbank",
+      "vectorDb": "Vektor-DB",
+      "workers": "Workers",
+      "ready": "Bereit",
+      "checking": "Prüfe…",
+      "notAvailable": "Nicht verfügbar",
+      "connected": "Verbunden",
+      "indexed": "Indiziert",
+      "memory": "Speichernutzung",
+      "refresh": "Aktualisieren"
     }
   },
   "jobs": {
@@ -631,7 +664,9 @@
       "cancel": "Abbrechen",
       "running": "Läuft…",
       "start": "Bewerbung starten"
-    }
+    },
+    "authHint": "Verbinde dein Konto in den Einstellungen für mehr Ergebnisse und bessere Genauigkeit.",
+    "authHintLink": "Konto verbinden"
   },
   "resumes": {
     "title": "Lebensläufe",
@@ -1187,6 +1222,29 @@
         "title": "KI-Arbeitsbereich",
         "desc": "Chatten Sie mit Ihrem persönlichen Job-Jagd-Assistenten. Stellen Sie Fragen, erhalten Sie Rat, verfeinern Sie Ihre Strategie."
       }
+    },
+    "resume": {
+      "title": "Lebenslauf hochladen",
+      "description": "Füge deinen Lebenslauf hinzu, damit die KI Anschreiben anpassen und dich genau mit Jobs abgleichen kann.",
+      "dragDrop": "Lebenslauf hierher ziehen",
+      "uploading": "Lebenslauf wird verarbeitet…",
+      "uploaded": "Lebenslauf hochgeladen",
+      "uploadFailed": "Upload fehlgeschlagen",
+      "replaceHint": "Klicken zum Ersetzen",
+      "skip": "Vorerst überspringen"
     }
+  },
+  "resumeInput": {
+    "label": "Lebenslauf",
+    "saved": "Gespeichert",
+    "placeholder": "Lebenslauftext hier einfügen…",
+    "saveToLibrary": "Speichern",
+    "setDefault": "Als Standard",
+    "savedAsDefault": "Gespeichert & als Standard gesetzt",
+    "savedToLibrary": "In Bibliothek gespeichert",
+    "saveFailed": "Speichern fehlgeschlagen",
+    "saving": "Speichere…",
+    "tooLarge": "Datei überschreitet 25 MB",
+    "selectedSaved": "{{name}} geladen"
   }
 }

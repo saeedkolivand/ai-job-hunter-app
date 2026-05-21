@@ -6,6 +6,7 @@ import {
   CircleCheck,
   ExternalLink,
   Eye,
+  Info,
   Loader2,
   MapPin,
   Plus,
@@ -17,7 +18,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useMemo, useRef, useState } from 'react';
-import { createFileRoute } from '@tanstack/react-router';
+import { Link, createFileRoute } from '@tanstack/react-router';
 
 import type { DATE_FILTER_OPTIONS, JobInteraction } from '@ajh/shared';
 import { Button, GlassCard, Input, SelectDropdown, TextArea, useToast } from '@ajh/ui';
@@ -75,6 +76,7 @@ interface ProgressEvent {
 }
 
 const APPLIABLE = new Set(['linkedin', 'indeed', 'greenhouse', 'workday']);
+const AUTH_BENEFITS = new Set(['linkedin', 'indeed', 'xing']);
 
 function Jobs() {
   const { t } = useTranslation();
@@ -398,6 +400,31 @@ function Jobs() {
                     })}
                   </div>
                 </div>
+
+                {/* Auth hint — shown for boards that benefit from a connected account */}
+                <AnimatePresence>
+                  {AUTH_BENEFITS.has(scrapeForm.board) && (
+                    <motion.div
+                      key="auth-hint"
+                      initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                      animate={{ opacity: 1, height: 'auto', marginBottom: 16 }}
+                      exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                      transition={transition.fast}
+                      className="overflow-hidden"
+                    >
+                      <div className="flex items-center gap-2 rounded-lg border border-blue-400/15 bg-blue-400/5 px-3 py-2 text-[11px] text-blue-200/75">
+                        <Info size={12} className="shrink-0 text-blue-400/60" />
+                        <span>{t('jobs.authHint')}</span>
+                        <Link
+                          to="/settings"
+                          className="ml-auto shrink-0 text-brand-soft underline-offset-2 hover:underline"
+                        >
+                          {t('jobs.authHintLink')}
+                        </Link>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 {/* Filters row */}
                 <div className="mb-4 grid grid-cols-4 gap-2">

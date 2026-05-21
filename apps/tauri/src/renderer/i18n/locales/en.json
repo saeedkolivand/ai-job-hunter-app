@@ -247,7 +247,8 @@
       "keyPlaceholder": "Paste your API key…",
       "saveKey": "Save",
       "baseUrl": "Base URL",
-      "saveUrl": "Save"
+      "saveUrl": "Save",
+      "activeProvider": "Active Provider"
     },
     "aiModel": {
       "title": "AI Model",
@@ -338,13 +339,28 @@
       "fileTypes": "PDF, DOC, DOCX",
       "uploading": "Uploading and analyzing...",
       "setAsDefault": "Set as default",
-      "uploaded": "Uploaded",
+      "uploaded": "Resume uploaded successfully",
       "indexed": "Indexed",
       "default": "Default",
       "extractedSkills": "Extracted Skills",
       "more": "more",
       "atsScore": "ATS Score",
-      "noResumes": "No resumes uploaded yet"
+      "noResumes": "No resumes uploaded yet",
+      "uploadFailed": "Failed to upload resume",
+      "removed": "Resume removed",
+      "removeFailed": "Failed to remove resume",
+      "setDefault": "Set as default"
+    },
+    "update": {
+      "title": "Updates",
+      "currentVersion": "Current version",
+      "checkNow": "Check for updates",
+      "checking": "Checking…",
+      "upToDate": "You are up to date",
+      "download": "Download {{version}}",
+      "install": "Restart & install",
+      "error": "Check failed",
+      "whatsNew": "What's new in"
     }
   },
   "aiGenerate": {
@@ -403,7 +419,8 @@
       "extractionFailed": "Extraction failed",
       "generationFailed": "Generation failed"
     },
-    "localized": "Localized"
+    "localized": "Localized",
+    "resumePlaceholder": "Paste your resume text here…"
   },
   "autopilot": {
     "title": "Autopilot",
@@ -527,6 +544,22 @@
       "highMatchDesc": "Based on your preferences and profile",
       "resumeAlertTitle": "Resume needs update",
       "resumeAlertDesc": "Last ATS score was 65%, consider adding more metrics"
+    },
+    "viewed": "Viewed",
+    "totalTracked": "Total Tracked",
+    "noJobsTracked": "Open a job to start tracking your pipeline.",
+    "status": {
+      "aiModel": "AI Model",
+      "database": "Database",
+      "vectorDb": "Vector DB",
+      "workers": "Workers",
+      "ready": "Ready",
+      "checking": "Checking…",
+      "notAvailable": "Not available",
+      "connected": "Connected",
+      "indexed": "Indexed",
+      "memory": "Memory usage",
+      "refresh": "Refresh"
     }
   },
   "jobs": {
@@ -631,7 +664,9 @@
       "cancel": "Cancel",
       "running": "Running…",
       "start": "Start application"
-    }
+    },
+    "authHint": "Connect your account in Settings for more results and better accuracy.",
+    "authHintLink": "Connect account"
   },
   "resumes": {
     "title": "Resumes",
@@ -1187,6 +1222,16 @@
         "title": "AI Workspace",
         "desc": "Chat with your personal job hunting assistant. Ask questions, get advice, refine your strategy."
       }
+    },
+    "resume": {
+      "title": "Upload your resume",
+      "description": "Add your resume so the AI can tailor cover letters and match you to jobs accurately.",
+      "dragDrop": "Drag & drop your resume here",
+      "uploading": "Processing resume…",
+      "uploaded": "Resume uploaded",
+      "uploadFailed": "Upload failed",
+      "replaceHint": "Click to replace",
+      "skip": "Skip for now"
     }
   },
   "updater": {
@@ -1195,5 +1240,18 @@
     "downloaded": "v{{version}} ready to install",
     "downloadButton": "Download",
     "installButton": "Restart & Install"
+  },
+  "resumeInput": {
+    "label": "Resume",
+    "saved": "Saved",
+    "placeholder": "Paste your resume text here…",
+    "saveToLibrary": "Save",
+    "setDefault": "Set as default",
+    "savedAsDefault": "Saved & set as default",
+    "savedToLibrary": "Saved to library",
+    "saveFailed": "Save failed",
+    "saving": "Saving…",
+    "tooLarge": "File exceeds 25 MB limit",
+    "selectedSaved": "{{name}} loaded"
   }
 }

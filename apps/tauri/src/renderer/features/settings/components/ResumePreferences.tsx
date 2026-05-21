@@ -1,73 +1,78 @@
-import { AlertCircle, Check, FileText, Sparkles, Trash2, Upload } from 'lucide-react';
+import { AlertCircle, FileText, Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 
-import { Button, GlassCard } from '@ajh/ui';
+import type { DocumentRecord } from '@ajh/shared';
+import { Button, GlassCard, useToast } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
+import { useDocuments, useImportDocument, useRemoveDocument } from '@/services';
 import { usePreferencesStore, useResume } from '@/store/preferences-store';
-
-interface Resume {
-  id: string;
-  name: string;
-  uploadedAt: string;
-  size: number;
-  indexed: boolean;
-  skillsExtracted: string[];
-  atsScore?: number;
-}
 
 export function ResumePreferences() {
   const { t } = useTranslation();
+  const toast = useToast();
   const resume = useResume();
   const setResume = usePreferencesStore((state) => state.setResume);
-  const [resumes, setResumes] = useState<Resume[]>([]);
-  const [uploading, setUploading] = useState(false);
+
+  const { data: documentsRaw = [], isLoading } = useDocuments();
+  // Rust serialises id as _id and created_at as createdAt — normalise here
+  type RawDoc = Omit<DocumentRecord, 'id' | 'importedAt'> & {
+    _id: string;
+    createdAt: number;
+    name?: string;
+  };
+  const documents: (DocumentRecord & { _rawSource?: string })[] = (documentsRaw as RawDoc[]).map(
+    (d) => ({
+      ...d,
+      id: d._id,
+      importedAt: d.createdAt,
+      source: (d.source ??
+        (d.name?.endsWith('.pdf')
+          ? 'pdf'
+          : d.name?.endsWith('.docx')
+            ? 'docx'
+            : 'txt')) as DocumentRecord['source'],
+    })
+  );
+  const importDocument = useImportDocument();
+  const removeDocument = useRemoveDocument();
+
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = async (file: File) => {
-    setUploading(true);
-    // Simulate upload and processing
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    const newResume: Resume = {
-      id: Date.now().toString(),
-      name: file.name,
-      uploadedAt: new Date().toISOString(),
-      size: file.size,
-      indexed: true,
-      skillsExtracted: ['JavaScript', 'TypeScript', 'React', 'Node.js'],
-      atsScore: 85,
-    };
-
-    setResumes([...resumes, newResume]);
-    if (!resume?.defaultId) {
-      setResume({ defaultId: newResume.id, autoIndex: true, autoParse: true });
+    if (!file) return;
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      await importDocument.mutateAsync({ name: file.name, bytes, title: file.name });
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      // Set as default only if none already selected
+      if (!resume?.defaultId) {
+        const first = (documentsRaw as RawDoc[])[0];
+        const firstId = first?._id ?? first?.id;
+        if (firstId) setResume({ defaultId: String(firstId), autoIndex: true, autoParse: true });
+      }
+      toast(t('settings.resume.uploaded'), 'success');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('settings.resume.uploadFailed'), 'error');
     }
-    setUploading(false);
   };
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
+    setDragActive(e.type === 'dragenter' || e.type === 'dragover');
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      void handleFileUpload(e.dataTransfer.files[0]);
-    }
+    const file = e.dataTransfer.files?.[0];
+    if (file) void handleFileUpload(file);
   };
 
   const handleSetDefault = (id: string) => {
@@ -78,18 +83,27 @@ export function ResumePreferences() {
     });
   };
 
-  const handleDelete = (id: string) => {
-    setResumes(resumes.filter((r) => r.id !== id));
-    if (resume?.defaultId === id) {
-      setResume({
-        defaultId: resumes.find((r) => r.id !== id)?.id,
-        autoIndex: resume?.autoIndex ?? true,
-        autoParse: resume?.autoParse ?? true,
-      });
+  const handleDelete = async (id: string) => {
+    try {
+      await removeDocument.mutateAsync(id);
+      if (resume?.defaultId === id) {
+        const next = documents.find((d) => d.id !== id);
+        setResume({
+          defaultId: next?.id,
+          autoIndex: resume?.autoIndex ?? true,
+          autoParse: resume?.autoParse ?? true,
+        });
+      }
+      toast(t('settings.resume.removed'), 'success');
+    } catch {
+      toast(t('settings.resume.removeFailed'), 'error');
     }
   };
 
-  const formatFileSize = (bytes: number) => {
+  const uploading = importDocument.isPending;
+
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes) return '';
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
@@ -97,208 +111,148 @@ export function ResumePreferences() {
 
   return (
     <GlassCard>
-      <div className="mb-4 flex items-center justify-between">
-        <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
-          {t('settings.resume.title')}
-        </div>
+      <div className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+        {t('settings.resume.title')}
       </div>
-
       <p className="mb-4 text-sm text-foreground/55">{t('settings.resume.description')}</p>
 
-      {/* Upload Area */}
+      {/* Upload area */}
       <div
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
         onDragOver={handleDrag}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => !uploading && fileInputRef.current?.click()}
         className={cn(
-          'relative mb-6 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-all',
+          'relative mb-5 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-all',
           dragActive
-            ? 'border-brand-soft/50 bg-brand-soft/5'
-            : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10'
+            ? 'border-brand/50 bg-brand/5'
+            : 'border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]',
+          uploading && 'cursor-default opacity-60'
         )}
       >
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf,.doc,.docx"
+          accept=".pdf,.doc,.docx,.txt"
           className="hidden"
-          onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
+          onChange={(e) => e.target.files?.[0] && void handleFileUpload(e.target.files[0])}
         />
-
         {uploading ? (
           <div className="flex flex-col items-center gap-3">
-            <motion.div animate={{ rotate: 360 }} transition={transition.spin}>
-              <Upload size={32} className="text-brand-soft" />
-            </motion.div>
-            <div className="text-sm text-foreground/60">{t('settings.resume.uploading')}</div>
+            <Loader2 size={28} className="animate-spin text-brand-soft/60" />
+            <div className="text-sm text-foreground/50">{t('settings.resume.uploading')}</div>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-3">
             <div
               className={cn(
                 'rounded-full p-3 transition-colors',
-                dragActive ? 'bg-brand-soft/20' : 'bg-white/5'
+                dragActive ? 'bg-brand/15' : 'bg-white/5'
               )}
             >
               <Upload
-                size={24}
+                size={22}
                 className={cn(
                   'transition-colors',
-                  dragActive ? 'text-brand-soft' : 'text-foreground/40'
+                  dragActive ? 'text-brand-soft' : 'text-foreground/35'
                 )}
               />
             </div>
-            <div className="text-sm text-foreground/70">{t('settings.resume.dragDrop')}</div>
-            <div className="text-xs text-foreground/40">
-              {t('settings.resume.orClick')} ({t('settings.resume.fileTypes')})
+            <div className="text-sm text-foreground/60">{t('settings.resume.dragDrop')}</div>
+            <div className="text-xs text-foreground/35">
+              {t('settings.resume.orClick')} · PDF, DOC, DOCX, TXT
             </div>
           </div>
         )}
       </div>
 
-      {/* Resume List */}
-      <div className="space-y-3">
-        {resumes.map((resumeItem) => {
-          const isDefault = resume?.defaultId === resumeItem.id;
-
-          return (
-            <motion.div
-              key={resumeItem.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className={cn(
-                'flex items-start gap-4 rounded-xl border p-4 transition-all',
-                isDefault
-                  ? 'border-brand-soft/50 bg-brand-soft/10 glow-subtle'
-                  : 'border-white/10 bg-white/5'
-              )}
-            >
-              <div
+      {/* Document list */}
+      {isLoading ? (
+        <div className="flex justify-center py-6">
+          <Loader2 size={20} className="animate-spin text-foreground/20" />
+        </div>
+      ) : documents.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
+          <AlertCircle size={28} className="text-foreground/15" />
+          <div className="text-sm text-foreground/35">{t('settings.resume.noResumes')}</div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {documents.map((doc) => {
+            const isDefault = resume?.defaultId === doc.id;
+            return (
+              <motion.div
+                key={doc.id}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={transition.normal}
                 className={cn(
-                  'rounded-lg p-2 transition-colors',
-                  isDefault ? 'bg-brand-soft/20' : 'bg-white/5'
+                  'flex items-center gap-3 rounded-xl border px-4 py-3 transition-all',
+                  isDefault ? 'border-brand/30 bg-brand/8' : 'border-white/[0.06] bg-white/[0.02]'
                 )}
               >
-                <FileText
-                  size={20}
+                <div
                   className={cn(
-                    'transition-colors',
-                    isDefault ? 'text-brand-soft' : 'text-foreground/40'
+                    'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                    isDefault ? 'bg-brand/15' : 'bg-white/5'
                   )}
-                />
-              </div>
+                >
+                  <FileText
+                    size={16}
+                    className={isDefault ? 'text-brand-soft' : 'text-foreground/35'}
+                  />
+                </div>
 
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <div className="flex-1 min-w-0">
-                    <div
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span
                       className={cn(
-                        'text-sm font-medium truncate transition-colors',
-                        isDefault ? 'text-foreground' : 'text-foreground/70'
+                        'truncate text-sm font-medium',
+                        isDefault ? 'text-foreground/90' : 'text-foreground/65'
                       )}
                     >
-                      {resumeItem.name}
-                    </div>
-                    <div className="text-xs text-foreground/40 mt-0.5">
-                      {formatFileSize(resumeItem.size)} •{' '}
-                      {new Date(resumeItem.uploadedAt).toLocaleDateString()}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    {resumeItem.indexed && (
-                      <div className="flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-xs text-green-400">
-                        <Check size={10} />
-                        {t('settings.resume.indexed')}
-                      </div>
-                    )}
+                      {doc.title}
+                    </span>
                     {isDefault && (
-                      <div className="flex items-center gap-1 rounded-full bg-brand-soft/20 px-2 py-0.5 text-xs text-brand-soft">
-                        <Sparkles size={10} />
-                        {t('settings.resume.default')}
-                      </div>
+                      <span className="flex shrink-0 items-center gap-1 rounded-full bg-brand/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-brand-soft">
+                        <Sparkles size={8} /> {t('settings.resume.default')}
+                      </span>
                     )}
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-2 text-[11px] text-foreground/35">
+                    <span className="uppercase">{doc.source}</span>
+                    {doc.pages && <span>· {doc.pages}p</span>}
+                    <span>· {new Date(doc.importedAt).toLocaleDateString('en-GB')}</span>
                   </div>
                 </div>
 
-                {/* Skills Preview */}
-                {resumeItem.skillsExtracted.length > 0 && (
-                  <div className="mb-2">
-                    <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40 mb-1.5">
-                      {t('settings.resume.extractedSkills')}
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {resumeItem.skillsExtracted.slice(0, 4).map((skill) => (
-                        <span
-                          key={skill}
-                          className="rounded-full bg-white/5 px-2 py-0.5 text-xs text-foreground/60"
-                        >
-                          {skill}
-                        </span>
-                      ))}
-                      {resumeItem.skillsExtracted.length > 4 && (
-                        <span className="rounded-full bg-white/5 px-2 py-0.5 text-xs text-foreground/40">
-                          +{resumeItem.skillsExtracted.length - 4} {t('settings.resume.more')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* ATS Score */}
-                {resumeItem.atsScore && (
-                  <div className="flex items-center gap-2">
-                    <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
-                      {t('settings.resume.atsScore')}
-                    </div>
-                    <div
-                      className={cn(
-                        'text-xs font-medium',
-                        resumeItem.atsScore >= 80
-                          ? 'text-green-400'
-                          : resumeItem.atsScore >= 60
-                            ? 'text-yellow-400'
-                            : 'text-red-400'
-                      )}
-                    >
-                      {resumeItem.atsScore}%
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleSetDefault(resumeItem.id)}
-                  className="!bg-transparent hover:bg-white/5"
-                  disabled={isDefault}
-                >
-                  <Sparkles size={14} />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDelete(resumeItem.id)}
-                  className="!bg-transparent hover:bg-red-500/10 hover:text-red-400"
-                >
-                  <Trash2 size={14} />
-                </Button>
-              </div>
-            </motion.div>
-          );
-        })}
-
-        {resumes.length === 0 && (
-          <div className="flex flex-col items-center gap-3 py-8 text-center">
-            <AlertCircle size={32} className="text-foreground/20" />
-            <div className="text-sm text-foreground/40">{t('settings.resume.noResumes')}</div>
-          </div>
-        )}
-      </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleSetDefault(doc.id)}
+                    disabled={isDefault}
+                    title={t('settings.resume.setDefault')}
+                    className="text-foreground/30 hover:text-brand-soft disabled:opacity-0"
+                  >
+                    <Sparkles size={13} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void handleDelete(doc.id)}
+                    disabled={removeDocument.isPending}
+                    className="text-foreground/30 hover:text-red-400"
+                  >
+                    <Trash2 size={13} />
+                  </Button>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
     </GlassCard>
   );
 }

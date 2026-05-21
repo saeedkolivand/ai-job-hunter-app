@@ -52,9 +52,11 @@ export const useListProviderModels = (provider: string, enabled = true) => {
 /** Returns the provider/model/baseUrl to inject into every ai_generate call. */
 export const useGenerateConfig = () => {
   const config = useAiProviderConfig();
+  const activeProvider = config?.activeProvider ?? 'ollama';
+  const settings = config?.providers?.[activeProvider];
   return {
-    provider: config?.provider ?? 'ollama',
-    model: config?.model ?? '',
-    baseUrl: config?.baseUrl,
+    provider: activeProvider,
+    model: settings?.model ?? '',
+    baseUrl: settings?.baseUrl,
   };
 };

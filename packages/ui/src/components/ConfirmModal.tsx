@@ -23,7 +23,8 @@ const variantConfig: Record<
     iconBg: string;
     iconColor: string;
     border: string;
-    confirmVariant: NonNullable<React.ComponentProps<typeof Button>['variant']>;
+    confirmClass: string;
+    glow: string;
   }
 > = {
   danger: {
@@ -31,28 +32,34 @@ const variantConfig: Record<
     iconBg: 'bg-red-500/20',
     iconColor: 'text-red-400',
     border: 'border-red-500/30',
-    confirmVariant: 'danger',
+    confirmClass: 'border-red-500/50 text-red-400 hover:border-red-500/70 hover:text-red-300',
+    glow: '0 0 16px rgba(239,68,68,0.25)',
   },
   warning: {
     icon: AlertTriangle,
     iconBg: 'bg-orange-500/20',
     iconColor: 'text-orange-400',
     border: 'border-orange-500/30',
-    confirmVariant: 'warning',
+    confirmClass:
+      'border-amber-500/50 text-amber-400 hover:border-amber-500/70 hover:text-amber-300',
+    glow: '0 0 16px rgba(245,158,11,0.25)',
   },
   info: {
     icon: Info,
     iconBg: 'bg-blue-500/20',
     iconColor: 'text-blue-400',
     border: 'border-blue-500/30',
-    confirmVariant: 'info',
+    confirmClass: 'border-blue-500/50 text-blue-400 hover:border-blue-500/70 hover:text-blue-300',
+    glow: '0 0 16px rgba(59,130,246,0.25)',
   },
   success: {
     icon: CheckCircle,
     iconBg: 'bg-green-500/20',
     iconColor: 'text-green-400',
     border: 'border-green-500/30',
-    confirmVariant: 'success',
+    confirmClass:
+      'border-emerald-500/50 text-emerald-400 hover:border-emerald-500/70 hover:text-emerald-300',
+    glow: '0 0 16px rgba(16,185,129,0.25)',
   },
 };
 
@@ -103,18 +110,31 @@ export function ConfirmModal({
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-end gap-3 border-t border-white/5 px-6 py-4">
-        <Button variant="ghost" size="md" onClick={onClose} disabled={isConfirming}>
+      <div className="flex items-center justify-end gap-2 border-t border-white/5 px-6 py-4">
+        <Button
+          variant="ghost"
+          size="md"
+          onClick={onClose}
+          disabled={isConfirming}
+          className="px-5"
+        >
           {cancelText}
         </Button>
-        <Button
-          variant={config.confirmVariant}
-          size="md"
-          loading={isConfirming}
+        <button
+          disabled={isConfirming}
           onClick={onConfirm}
+          style={{ boxShadow: isConfirming ? 'none' : config.glow }}
+          className={cn(
+            'inline-flex h-8 items-center gap-2 rounded-lg border bg-transparent px-5 text-sm font-medium transition-all duration-150',
+            'disabled:pointer-events-none disabled:opacity-45',
+            config.confirmClass
+          )}
         >
+          {isConfirming && (
+            <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+          )}
           {confirmText}
-        </Button>
+        </button>
       </div>
     </ModalShell>
   );

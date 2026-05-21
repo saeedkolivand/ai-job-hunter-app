@@ -1,6 +1,6 @@
-import { ChevronDown, Cpu } from 'lucide-react';
+import { ChevronDown, Cpu, Search } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Button } from '@ajh/ui';
@@ -13,42 +13,62 @@ interface CustomDropdownProps {
   models: Model[];
   selectedModel: string;
   onSelectModel: (model: string) => void;
+  /** Show a search box inside the dropdown. Defaults to true when models > 5. */
+  searchable?: boolean;
+  placeholder?: string;
 }
 
-export function CustomDropdown({ models, selectedModel, onSelectModel }: CustomDropdownProps) {
+export function CustomDropdown({
+  models,
+  selectedModel,
+  onSelectModel,
+  searchable,
+  placeholder = 'Select a model…',
+}: CustomDropdownProps) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
   const triggerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const showSearch = searchable ?? models.length > 5;
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return models;
+    const q = query.toLowerCase();
+    return models.filter((m) => m.name.toLowerCase().includes(q));
+  }, [models, query]);
 
   useEffect(() => {
     if (open && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
-      setPosition({
-        top: rect.bottom + 8,
-        left: rect.left,
-        width: rect.width,
-      });
+      setPosition({ top: rect.bottom + 6, left: rect.left, width: rect.width });
+    }
+    if (open) {
+      setQuery('');
+      setTimeout(() => searchRef.current?.focus(), 50);
     }
   }, [open]);
-
-  const handleClickOutside = (e: MouseEvent) => {
-    if (
-      dropdownRef.current &&
-      !dropdownRef.current.contains(e.target as Node) &&
-      triggerRef.current &&
-      !triggerRef.current.contains(e.target as Node)
-    ) {
-      setOpen(false);
-    }
-  };
 
   useEffect(() => {
-    if (open) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        dropdownRef.current?.contains(e.target as Node) ||
+        triggerRef.current?.contains(e.target as Node)
+      )
+        return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, [open]);
+
+  const handleSelect = (name: string) => {
+    onSelectModel(name);
+    setOpen(false);
+  };
 
   return (
     <div ref={triggerRef}>
@@ -66,7 +86,7 @@ export function CustomDropdown({ models, selectedModel, onSelectModel }: CustomD
           <span
             className={cn('truncate', selectedModel ? 'text-foreground/90' : 'text-foreground/35')}
           >
-            {selectedModel || 'Select a model…'}
+            {selectedModel || placeholder}
           </span>
         </div>
         <ChevronDown
@@ -83,9 +103,9 @@ export function CustomDropdown({ models, selectedModel, onSelectModel }: CustomD
           <AnimatePresence>
             <motion.div
               ref={dropdownRef}
-              initial={{ opacity: 0, y: -8, scale: 0.98 }}
+              initial={{ opacity: 0, y: -6, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8, scale: 0.98 }}
+              exit={{ opacity: 0, y: -6, scale: 0.98 }}
               transition={transition.fast}
               style={{
                 position: 'fixed',
@@ -94,27 +114,50 @@ export function CustomDropdown({ models, selectedModel, onSelectModel }: CustomD
                 width: position.width,
                 zIndex: 9999,
               }}
-              className="overflow-hidden rounded-xl border border-white/10 bg-secondary shadow-xl"
+              className="glass-elevated overflow-hidden rounded-xl shadow-2xl"
             >
-              <div className="max-h-64 overflow-y-auto px-1 py-1">
-                {models.map((model) => (
-                  <Button
-                    key={model.name}
-                    variant={selectedModel === model.name ? 'glass' : 'ghost'}
-                    size="md"
-                    onClick={() => {
-                      onSelectModel(model.name);
-                      setOpen(false);
-                    }}
-                    className={cn(
-                      'w-full justify-between px-4 py-2.5',
-                      selectedModel !== model.name && '!bg-transparent hover:bg-white/5'
-                    )}
-                  >
-                    <span>{model.name}</span>
-                    {model.size && <span className="text-xs text-foreground/40">{model.size}</span>}
-                  </Button>
-                ))}
+              {showSearch && (
+                <div className="border-b border-white/[0.06] px-2 py-2">
+                  <div className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-2.5 py-1.5">
+                    <Search size={11} className="shrink-0 text-foreground/30" />
+                    <input
+                      ref={searchRef}
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder="Search models…"
+                      className="flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-foreground/25"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="max-h-56 overflow-y-auto px-1 py-1 space-y-1">
+                {filtered.length === 0 ? (
+                  <div className="px-3 py-4 text-center text-xs text-foreground/35">
+                    No models match
+                  </div>
+                ) : (
+                  filtered.map((model) => {
+                    const isSelected = selectedModel === model.name;
+                    return (
+                      <button
+                        key={model.name}
+                        onClick={() => handleSelect(model.name)}
+                        className={cn(
+                          'flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs transition-colors',
+                          isSelected
+                            ? 'bg-brand/15 text-brand-soft'
+                            : 'text-foreground/70 hover:bg-white/[0.05] hover:text-foreground/90'
+                        )}
+                      >
+                        <span>{model.name}</span>
+                        {model.size && (
+                          <span className="text-[10px] text-foreground/35">{model.size}</span>
+                        )}
+                      </button>
+                    );
+                  })
+                )}
               </div>
             </motion.div>
           </AnimatePresence>,
