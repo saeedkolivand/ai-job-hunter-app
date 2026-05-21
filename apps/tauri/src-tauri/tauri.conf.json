@@ -32,7 +32,7 @@
     "targets": ["nsis", "msi", "dmg", "app"],
     "icon": ["icons/icon.ico", "icons/icon.png"],
     "resources": [],
-    "externalBin": ["binaries/scraper-runtime"]
+    "resources": []
   },
   "plugins": {
     "shell": {
