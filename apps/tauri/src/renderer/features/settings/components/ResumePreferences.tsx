@@ -24,19 +24,18 @@ export function ResumePreferences() {
     createdAt: number;
     name?: string;
   };
-  const documents: (DocumentRecord & { _rawSource?: string })[] = (documentsRaw as RawDoc[]).map(
-    (d) => ({
-      ...d,
-      id: d._id,
-      importedAt: d.createdAt,
-      source: (d.source ??
-        (d.name?.endsWith('.pdf')
-          ? 'pdf'
-          : d.name?.endsWith('.docx')
-            ? 'docx'
-            : 'txt')) as DocumentRecord['source'],
-    })
-  );
+  const rawDocs = documentsRaw as unknown as RawDoc[];
+  const documents: DocumentRecord[] = rawDocs.map((d) => ({
+    ...d,
+    id: d._id,
+    importedAt: d.createdAt,
+    source: (d.source ??
+      (d.name?.endsWith('.pdf')
+        ? 'pdf'
+        : d.name?.endsWith('.docx')
+          ? 'docx'
+          : 'txt')) as DocumentRecord['source'],
+  }));
   const importDocument = useImportDocument();
   const removeDocument = useRemoveDocument();
 
@@ -51,9 +50,8 @@ export function ResumePreferences() {
       if (fileInputRef.current) fileInputRef.current.value = '';
       // Set as default only if none already selected
       if (!resume?.defaultId) {
-        const first = (documentsRaw as RawDoc[])[0];
-        const firstId = first?._id ?? first?.id;
-        if (firstId) setResume({ defaultId: String(firstId), autoIndex: true, autoParse: true });
+        const firstId = rawDocs[0]?._id;
+        if (firstId) setResume({ defaultId: firstId, autoIndex: true, autoParse: true });
       }
       toast(t('settings.resume.uploaded'), 'success');
     } catch (err) {
