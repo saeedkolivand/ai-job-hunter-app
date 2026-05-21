@@ -14,6 +14,8 @@
  *   The user never sees literal asterisks.
  */
 
+import type { FileChild, ParagraphChild } from 'docx';
+
 import {
   buildCoverLetterPrompt,
   buildCoverLetterSystemPrompt,
@@ -25,8 +27,6 @@ import {
   type GenerationMode,
   validateMetadata,
 } from '@ajh/prompts/generate';
-
-import type { FileChild, ParagraphChild } from 'docx';
 
 import { getClient } from './app-client';
 
