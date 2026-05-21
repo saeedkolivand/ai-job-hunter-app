@@ -224,11 +224,22 @@ pub async fn system_set_performance_mode(app: AppHandle, mode: String) -> Value 
 
 #[tauri::command]
 pub fn system_get_metrics() -> Value {
+    use sysinfo::System;
+    let mut sys = System::new_all();
+    sys.refresh_all();
+
+    let total_mem = sys.total_memory();
+    let used_mem = sys.used_memory();
+    let uptime = System::uptime();
+    let cpu_percent = sys.cpus().iter().map(|c| c.cpu_usage()).sum::<f32>()
+        / sys.cpus().len().max(1) as f32;
+
     json!({
         "shell": "tauri",
-        "uptime": 0,
-        "memoryMb": 0,
-        "cpuPercent": 0
+        "uptime": uptime,
+        "memoryMb": used_mem / 1024 / 1024,
+        "totalMemoryMb": total_mem / 1024 / 1024,
+        "cpuPercent": (cpu_percent * 10.0).round() / 10.0
     })
 }
 
@@ -1361,18 +1372,18 @@ pub fn autopilot_resume(app: AppHandle, autopilot_id: String) -> Value {
 // ── Conversations ─────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn conversations_get_or_create() -> Value {
-    json!({ "id": "default", "createdAt": 0 })
+pub fn conversations_get_or_create(app: AppHandle) -> Value {
+    crate::conversations::get_or_create(&app)
 }
 
 #[tauri::command]
-pub fn conversations_load_messages(_conversation_id: String) -> Value {
-    json!([])
+pub fn conversations_load_messages(app: AppHandle, conversation_id: String) -> Value {
+    crate::conversations::load_messages(&app, &conversation_id)
 }
 
 #[tauri::command]
-pub fn conversations_save_message(_req: Value) -> Value {
-    json!(null)
+pub fn conversations_save_message(app: AppHandle, req: Value) -> Value {
+    crate::conversations::save_message(&app, &req)
 }
 
 // ── Native dialogs ────────────────────────────────────────────────────────────
