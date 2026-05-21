@@ -1,8 +1,8 @@
-import type { DocumentRecord } from '@ajh/shared';
 import { ArrowLeft, ArrowRight, FileText, Loader2, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 
+import type { DocumentRecord } from '@ajh/shared';
 import { Button, useToast } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';

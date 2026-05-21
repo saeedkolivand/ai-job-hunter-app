@@ -3,7 +3,6 @@
  * Lets users: (1) pick a saved resume, (2) upload a new file, (3) paste text.
  * When a new file is uploaded it shows Save / Set-as-default actions.
  */
-import type { DocumentRecord } from '@ajh/shared';
 import {
   BookmarkCheck,
   Check,
@@ -17,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+import type { DocumentRecord } from '@ajh/shared';
 import { Button, TextArea, useToast } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';

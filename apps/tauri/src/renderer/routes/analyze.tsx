@@ -3,7 +3,6 @@ import {
   Briefcase,
   CheckCircle2,
   ChevronDown,
-  FileText,
   RefreshCw,
   RotateCcw,
   ScanSearch,
@@ -18,6 +17,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { Button, TextArea } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
+import { ResumeInputCard } from '@/features/ai-workspace/components/ResumeInputCard';
 import { AnalysisATSRisks } from '@/features/analyze/components/AnalysisATSRisks';
 import { AnalysisLanguageMismatch } from '@/features/analyze/components/AnalysisLanguageMismatch';
 import { AnalysisLanguageRecommendations } from '@/features/analyze/components/AnalysisLanguageRecommendations';
@@ -29,7 +29,6 @@ import { AnalysisSectionAnalysis } from '@/features/analyze/components/AnalysisS
 import { AnalysisSkills } from '@/features/analyze/components/AnalysisSkills';
 import { AnalysisStrengths } from '@/features/analyze/components/AnalysisStrengths';
 import { AnalysisVerdict } from '@/features/analyze/components/AnalysisVerdict';
-import { ResumeInputCard } from '@/features/ai-workspace/components/ResumeInputCard';
 import { CustomDropdown } from '@/features/settings/components/CustomDropdown';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';

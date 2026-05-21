@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useMemo, useRef, useState } from 'react';
-import { Link, createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 
 import type { DATE_FILTER_OPTIONS, JobInteraction } from '@ajh/shared';
 import { Button, GlassCard, Input, SelectDropdown, TextArea, useToast } from '@ajh/ui';
