@@ -220,15 +220,14 @@ jobs:
           cd apps/scraper-runtime
           pnpm build
           npx --yes @vercel/ncc build dist/index.js -o dist/bundle --no-source-map-register -q
-          # Build both architectures for universal binary; pkg appends -macos-arm64 / -macos-x64 suffixes
+          # Build each architecture separately with an explicit output path so no
+          # renaming is needed. pkg downloads the cross-compile Node base binary.
           npx @yao-pkg/pkg dist/bundle/index.js --no-bytecode --public-packages "*" --public \
-            -t node20-macos-arm64,node20-macos-x64 \
-            -o ../../apps/tauri/src-tauri/binaries/scraper-runtime
-          # Rename to Tauri target-triple names
-          mv ../../apps/tauri/src-tauri/binaries/scraper-runtime-macos-arm64 \
-             ../../apps/tauri/src-tauri/binaries/scraper-runtime-aarch64-apple-darwin
-          mv ../../apps/tauri/src-tauri/binaries/scraper-runtime-macos-x64 \
-             ../../apps/tauri/src-tauri/binaries/scraper-runtime-x86_64-apple-darwin
+            -t node20-macos-arm64 \
+            -o ../../apps/tauri/src-tauri/binaries/scraper-runtime-aarch64-apple-darwin
+          npx @yao-pkg/pkg dist/bundle/index.js --no-bytecode --public-packages "*" --public \
+            -t node20-macos-x64 \
+            -o ../../apps/tauri/src-tauri/binaries/scraper-runtime-x86_64-apple-darwin
         env:
           PKG_CACHE_PATH: ${{ runner.temp }}/pkg-cache
 
