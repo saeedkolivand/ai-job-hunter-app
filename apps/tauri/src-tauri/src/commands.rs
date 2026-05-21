@@ -1537,14 +1537,23 @@ fn write_board_connected(board_id: &str, connected: bool) {
     std::fs::write(&path, payload).ok();
 }
 
-/// Disconnect a board: write the auth-status file, then optionally notify the
-/// live sidecar so it clears its in-memory session state.
-async fn disconnect_board(app: &AppHandle, board_id: &str) {
+/// Disconnect a board: write the auth-status file immediately, then fire-and-forget
+/// a sidecar notification so it can clear its in-memory session state.
+///
+/// The sidecar call is intentionally non-blocking — the file write is the
+/// authoritative operation. Awaiting the sidecar HTTP call caused the command
+/// to block indefinitely when the sidecar was slow or not responding, preventing
+/// the frontend mutation from resolving and the toast from appearing.
+fn disconnect_board(app: &AppHandle, board_id: &str) {
     write_board_connected(board_id, false);
     if let Some(port) = sidecar_port(app) {
-        let job_id = uuid_v4();
-        let cmd = json!({ "kind": "board.disconnect", "boardId": board_id });
-        post_sidecar_command(app, port, &cmd, &job_id).await.ok();
+        let app = app.clone();
+        let board_id = board_id.to_string();
+        tauri::async_runtime::spawn(async move {
+            let job_id = uuid_v4();
+            let cmd = json!({ "kind": "board.disconnect", "boardId": board_id });
+            post_sidecar_command(&app, port, &cmd, &job_id).await.ok();
+        });
     }
 }
 
@@ -1556,8 +1565,8 @@ pub async fn linkedin_connect(app: AppHandle) -> Value {
 }
 
 #[tauri::command]
-pub async fn linkedin_disconnect(app: AppHandle) -> Value {
-    disconnect_board(&app, "linkedin").await;
+pub fn linkedin_disconnect(app: AppHandle) -> Value {
+    disconnect_board(&app, "linkedin");
     json!({ "success": true })
 }
 
@@ -1572,8 +1581,8 @@ pub async fn boards_connect(app: AppHandle, board_id: String) -> Value {
 }
 
 #[tauri::command]
-pub async fn boards_disconnect(app: AppHandle, board_id: String) -> Value {
-    disconnect_board(&app, &board_id).await;
+pub fn boards_disconnect(app: AppHandle, board_id: String) -> Value {
+    disconnect_board(&app, &board_id);
     json!({ "success": true })
 }
 
@@ -1585,9 +1594,9 @@ pub fn boards_get_status(board_id: String) -> Value {
 // ── Privacy ──────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn privacy_sign_out_all(app: AppHandle) -> Value {
+pub fn privacy_sign_out_all(app: AppHandle) -> Value {
     for board_id in KNOWN_BOARDS {
-        disconnect_board(&app, board_id).await;
+        disconnect_board(&app, board_id);
     }
     app.state::<Mutex<PostingsCache>>().lock().unwrap().clear_all();
     app.state::<Mutex<InteractionStore>>().lock().unwrap().clear_all();
