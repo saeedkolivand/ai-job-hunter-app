@@ -1,0 +1,61 @@
+@import 'tailwindcss';
+@import '@ajh/ui/css';
+
+/*
+ * Desktop-app-specific overrides.
+ * Common tokens and utilities come from @ajh/ui.
+ */
+
+/* ── App body ────────────────────────────────────────────────────────────── */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  position: relative;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  background: radial-gradient(ellipse at 50% 0%, #0d0a1f 0%, #07060f 55%, #050409 100%);
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+/* ── Low-memory mode ─────────────────────────────────────────────────────── */
+/* Reduces GPU-heavy effects when the user selects Low Memory performance mode. */
+html[data-performance-mode='low-memory'] {
+  /* Collapse blur scale — halved from defaults, matching reduced-glass theme. */
+  --blur-xs: 4px;
+  --blur-sm: 6px;
+  --blur-md: 8px;
+  --blur-lg: 10px;
+  --blur-xl: 12px;
+  --blur-2xl: 16px;
+  --blur-3xl: 24px;
+}
+html[data-performance-mode='low-memory'] * {
+  /* Stop all CSS keyframe animations and transitions.
+     animation: none is used instead of animation-duration: 0.01ms because
+     near-zero durations cause infinite rapid looping on continuous animations
+     (e.g. CinematicBackground blobs), which produces a visible flash. */
+  animation: none !important;
+  transition: none !important;
+}
+html[data-performance-mode='low-memory'] body {
+  /* Remove expensive radial gradient — flat colour is composited cheaply. */
+  background: #07060f;
+}
+
+/* ── Window drag regions (Electron + Tauri) ──────────────────────────────── */
+/* Electron: -webkit-app-region on the element is sufficient.               */
+/* Tauri:    also requires data-tauri-drag-region on the element (Windows).  */
+.app-drag {
+  -webkit-app-region: drag;
+}
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
