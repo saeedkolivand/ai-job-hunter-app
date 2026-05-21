@@ -3,8 +3,11 @@ import { Search, Sparkles } from 'lucide-react';
 import { Button } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
+import { getWindowControls } from '@/lib/window-controls-registry';
 import { useGetPlatform } from '@/services';
 import { useAppStore } from '@/store/app-store';
+
+const WindowControls = getWindowControls();
 
 export function Titlebar() {
   const { t } = useTranslation();
@@ -13,11 +16,11 @@ export function Titlebar() {
 
   return (
     <div
-      className="app-drag relative flex h-10 items-center justify-between px-4 select-none"
+      className="app-drag relative flex h-10 items-center justify-between select-none"
       style={{ paddingLeft: platform === 'darwin' ? 80 : 16 }}
       data-tauri-drag-region
     >
-      <div className="flex items-center gap-2 text-xs font-medium text-foreground/70">
+      <div className="flex items-center gap-2 text-xs font-medium text-foreground/70 px-4">
         <Sparkles size={14} className="opacity-80" />
         <span className="text-gradient font-semibold tracking-wide">{t('app.title')}</span>
         <span className="text-foreground/40">·</span>
@@ -32,7 +35,7 @@ export function Titlebar() {
         <span>{t('command.placeholder')}</span>
         <kbd className="ml-2 rounded bg-white/5 px-2 py-0.5 text-[10px] text-foreground/60">⌘K</kbd>
       </Button>
-      <div className="w-32" /> {/* spacer to balance the layout */}
+      {WindowControls ? <WindowControls /> : <div className="w-32" />}
     </div>
   );
 }
