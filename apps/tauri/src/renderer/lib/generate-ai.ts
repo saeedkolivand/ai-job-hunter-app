@@ -28,8 +28,9 @@ import {
   validateMetadata,
 } from '@ajh/prompts/generate';
 
-import { getClient } from './app-client';
 import { usePreferencesStore } from '@/store/preferences-store';
+
+import { getClient } from './app-client';
 
 export type { GenerationMeta, GenerationMode };
 export { MODES } from '@ajh/prompts/generate';
