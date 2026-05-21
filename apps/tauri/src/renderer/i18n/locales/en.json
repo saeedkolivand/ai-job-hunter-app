@@ -1132,7 +1132,7 @@
       "downloading": "Downloading",
       "pullError": "Download failed. Check your connection and try again.",
       "back": "Back",
-      "next": "Continue",
+      "next": "See the features",
       "skip": "Skip for now",
       "skipWarning": "AI features won't work without a model"
     },
