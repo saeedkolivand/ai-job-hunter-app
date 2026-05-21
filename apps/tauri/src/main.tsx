@@ -13,6 +13,7 @@ import { createRouter, RouterProvider } from '@tanstack/react-router';
 
 import { restoreTheme } from '@ajh/ui';
 
+import { registerWindowControls } from '@/lib/window-controls-registry';
 import { AppClientProvider } from '@/providers/AppClientProvider';
 import { PerformanceModeProvider } from '@/providers/PerformanceModeProvider';
 import { routeTree } from '@/routeTree.gen';
@@ -20,7 +21,6 @@ import { queryClient } from '@/services/query-client';
 
 import { createTauriInvokeClient } from './tauri-client';
 import { TauriWindowControls } from './TauriWindowControls';
-import { registerWindowControls } from '@/lib/window-controls-registry';
 
 import '@/i18n';
 import './styles.css';
