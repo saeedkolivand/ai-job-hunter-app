@@ -179,7 +179,7 @@ function AutopilotPage() {
     <PageTransition className="h-full overflow-hidden">
       <div className="flex h-full flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/[0.05] px-8 py-5 shrink-0">
+        <div className="flex items-center justify-between px-8 py-5 shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand/15">
               <Zap size={15} className="text-brand-soft" />
@@ -555,7 +555,7 @@ function CreationWizard({ onDone, onCancel }: { onDone(ap: Autopilot): void; onC
         className="relative w-full max-w-xl rounded-2xl overflow-hidden"
       >
         {/* Wizard header */}
-        <div className="flex items-center justify-between border-b border-white/[0.1] px-6 py-4">
+        <div className="flex items-center justify-between border-white/[0.1] px-6 py-4">
           <div className="flex items-center gap-2">
             <Zap size={14} className="text-brand-soft" />
             <span className="text-sm font-semibold text-foreground/80">
@@ -571,12 +571,12 @@ function CreationWizard({ onDone, onCancel }: { onDone(ap: Autopilot): void; onC
         </div>
 
         {/* Step indicators */}
-        <div className="flex items-center gap-0 border-b border-white/[0.1]">
+        <div className="flex items-center gap-0">
           {STEPS.map((s, i) => (
             <div
               key={s}
               className={cn(
-                'flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[11px] font-medium transition-colors border-b-2',
+                'flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[11px] font-medium transition-colors',
                 i === step
                   ? 'border-brand text-brand-soft'
                   : i < step
