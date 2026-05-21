@@ -3,14 +3,12 @@
   "productName": "AI Job Hunter (Tauri Spike)",
   "identifier": "com.ajh.tauri-spike",
   "version": "1.3.1",
-
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5174",
     "beforeDevCommand": "pnpm dev:frontend",
     "beforeBuildCommand": "pnpm build:frontend"
   },
-
   "app": {
     "windows": [
       {
@@ -20,7 +18,7 @@
         "minWidth": 900,
         "minHeight": 600,
         "center": true,
-        "decorations": false,
+        "decorations": true,
         "resizable": true,
         "backgroundColor": "#0a0a14"
       }
@@ -29,14 +27,12 @@
       "csp": "default-src 'self' tauri: asset: https://asset.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: https://asset.localhost; font-src 'self' data: asset: https://asset.localhost; connect-src 'self' http://127.0.0.1:11434 http://127.0.0.1:* ws://127.0.0.1:* tauri: ipc: http://ipc.localhost"
     }
   },
-
   "bundle": {
     "active": true,
     "targets": ["nsis", "msi", "dmg", "app"],
     "icon": ["icons/icon.ico", "icons/icon.png"],
     "resources": []
   },
-
   "plugins": {
     "shell": {
       "open": "https?://"
