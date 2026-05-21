@@ -5,6 +5,7 @@ mod autopilot;
 mod commands;
 mod conversations;
 mod credentials;
+mod documents;
 mod jobs;
 mod postings;
 mod sidecar;
@@ -117,6 +118,10 @@ fn main() {
 
             app.manage(Mutex::new(AutopilotStore::new(&data_dir)));
             app.manage(Mutex::new(CredentialStore::new(&data_dir)));
+            match documents::DocumentStore::open(&data_dir) {
+                Ok(store) => { app.manage(store); }
+                Err(e) => eprintln!("[setup] document store failed to open (non-fatal): {e}"),
+            }
             app.manage(Mutex::new(JobTracker::default()));
             app.manage(Mutex::new(PostingsCache::default()));
             app.manage(Mutex::new(InteractionStore::new(&data_dir)));
