@@ -38,3 +38,6 @@ base64 = "0.22"
 keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service"] }
 sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
+pdf-extract = "0.7"
+zip = "2"
+quick-xml = "0.37"
