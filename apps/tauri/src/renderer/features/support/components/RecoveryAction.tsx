@@ -1,6 +1,7 @@
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
+import { useState } from 'react';
 
-import { Button } from '@ajh/ui';
+import { Button, useToast } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 
@@ -9,6 +10,7 @@ interface RecoveryActionProps {
   description: string;
   destructive: boolean;
   action: string;
+  successMessage?: string;
   onAction?: () => void | Promise<void>;
 }
 
@@ -17,11 +19,22 @@ export function RecoveryAction({
   description,
   destructive,
   action,
+  successMessage,
   onAction,
 }: RecoveryActionProps) {
+  const toast = useToast();
+  const [pending, setPending] = useState(false);
+
   const handleClick = async () => {
-    if (onAction) {
+    if (!onAction) return;
+    setPending(true);
+    try {
       await onAction();
+      toast(successMessage ?? `${title} completed.`, 'success');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : `${title} failed.`, 'error');
+    } finally {
+      setPending(false);
     }
   };
 
@@ -43,9 +56,10 @@ export function RecoveryAction({
         size="sm"
         variant={destructive ? 'ghost' : 'glass'}
         className={cn('text-xs', destructive && 'text-red-400 hover:text-red-300')}
-        onClick={handleClick}
+        disabled={pending}
+        onClick={() => void handleClick()}
       >
-        {action}
+        {pending ? <Loader2 size={12} className="animate-spin" /> : action}
       </Button>
     </div>
   );
