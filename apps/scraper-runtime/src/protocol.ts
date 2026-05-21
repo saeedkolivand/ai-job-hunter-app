@@ -35,22 +35,8 @@ export type ScraperCommand =
   | { kind: 'open.login'; boardId: string }
   | { kind: 'board.status'; boardId: string }
   | { kind: 'board.disconnect'; boardId: string }
-  | { kind: 'extract.text'; jobId: string; payload: { name: string; bytesBase64: string } }
   | { kind: 'apply.job'; jobId: string; payload: ApplyJobPayload }
   | { kind: 'apply.catalog' }
-  | {
-      kind: 'document.import';
-      jobId: string;
-      payload: { name: string; bytesBase64: string; locale?: string };
-    }
-  | { kind: 'document.list'; jobId: string }
-  | { kind: 'document.remove'; jobId: string; payload: { id: string } }
-  | {
-      kind: 'search.hybrid';
-      jobId: string;
-      payload: { query: string; collection: string; topK?: number };
-    }
-  | { kind: 'match.resume'; jobId: string; payload: { resumeId: string; jobText: string } }
   | { kind: 'set.performance_mode'; mode: 'low-memory' | 'balanced' | 'performance' }
   | { kind: 'health' }
   | { kind: 'catalog' };
