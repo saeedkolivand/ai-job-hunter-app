@@ -297,8 +297,11 @@ pub fn jobs_retry(_app: AppHandle, _job_id: String) -> Value {
 /// before the first chunk arrives.
 #[tauri::command]
 pub async fn ai_generate(app: AppHandle, req: Value) -> Value {
-    let base = std::env::var("OLLAMA_HOST")
-        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+    let provider = req
+        .get("provider")
+        .and_then(|v| v.as_str())
+        .unwrap_or("ollama")
+        .to_string();
 
     let job_id = uuid_v4();
     app.state::<Mutex<JobTracker>>()
@@ -310,8 +313,33 @@ pub async fn ai_generate(app: AppHandle, req: Value) -> Value {
     let app_clone = app.clone();
 
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = stream_ollama_chat(&app_clone, &base, &job_id_clone, req).await {
-            // Emit an error chunk so the renderer's onStream handler can surface it.
+        let result = match provider.as_str() {
+            "openai" | "openai-compatible" => {
+                let api_key = get_provider_key(&app_clone, &provider).unwrap_or_default();
+                let base_url = req
+                    .get("baseUrl")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("https://api.openai.com/v1")
+                    .to_string();
+                stream_openai_chat(&app_clone, &base_url, &api_key, &job_id_clone, req).await
+            }
+            "anthropic" => {
+                let api_key = get_provider_key(&app_clone, "anthropic").unwrap_or_default();
+                stream_anthropic_chat(&app_clone, &api_key, &job_id_clone, req).await
+            }
+            "gemini" => {
+                let api_key = get_provider_key(&app_clone, "gemini").unwrap_or_default();
+                stream_gemini_chat(&app_clone, &api_key, &job_id_clone, req).await
+            }
+            _ => {
+                // Default: Ollama
+                let base = std::env::var("OLLAMA_HOST")
+                    .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                stream_ollama_chat(&app_clone, &base, &job_id_clone, req).await
+            }
+        };
+
+        if let Err(e) = result {
             let _ = app_clone.emit(
                 "ai:stream",
                 json!({ "jobId": job_id_clone, "delta": format!("\n\nError: {e}"), "done": true }),
@@ -423,6 +451,415 @@ async fn stream_ollama_chat(
         .unwrap()
         .complete(job_id, json!({ "done": true }));
 
+    Ok(())
+}
+
+// ── Cloud AI provider helpers ─────────────────────────────────────────────────
+
+/// Read a provider API key from the OS keychain.
+/// Keys are stored with board_id = "ai:{provider}" e.g. "ai:openai".
+fn get_provider_key(app: &AppHandle, provider: &str) -> Option<String> {
+    use crate::credentials::CredentialStore;
+    let store = app.state::<Mutex<CredentialStore>>();
+    let guard = store.lock().unwrap();
+    guard
+        .get_decrypted(&format!("ai:{provider}"))
+        .map(|(_, password)| password)
+}
+
+/// Store a cloud AI provider API key in the OS keychain.
+#[tauri::command]
+pub fn ai_set_provider_key(app: AppHandle, provider: String, api_key: String) -> Value {
+    use crate::credentials::CredentialStore;
+    let store = app.state::<Mutex<CredentialStore>>();
+    let guard = store.lock().unwrap();
+    match guard.set(&format!("ai:{provider}"), "apikey", &api_key) {
+        Ok(()) => json!({ "success": true }),
+        Err(e) => json!({ "success": false, "error": e }),
+    }
+}
+
+/// Remove a cloud AI provider API key from the OS keychain.
+#[tauri::command]
+pub fn ai_remove_provider_key(app: AppHandle, provider: String) -> Value {
+    use crate::credentials::CredentialStore;
+    let store = app.state::<Mutex<CredentialStore>>();
+    let guard = store.lock().unwrap();
+    match guard.remove(&format!("ai:{provider}")) {
+        Ok(()) => json!({ "success": true }),
+        Err(e) => json!({ "success": false, "error": e }),
+    }
+}
+
+/// Check whether an API key is stored for a provider (does not return the key).
+#[tauri::command]
+pub fn ai_has_provider_key(app: AppHandle, provider: String) -> Value {
+    json!({ "has": get_provider_key(&app, &provider).is_some() })
+}
+
+/// Fetch available models from a cloud provider using the stored API key.
+/// Returns [] gracefully if the key is missing or the request fails.
+#[tauri::command]
+pub async fn ai_list_provider_models(app: AppHandle, provider: String) -> Value {
+    let api_key = match get_provider_key(&app, &provider) {
+        Some(k) => k,
+        None => return json!([]),
+    };
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return json!([]),
+    };
+
+    match provider.as_str() {
+        "openai" | "openai-compatible" => {
+            let resp = client
+                .get("https://api.openai.com/v1/models")
+                .bearer_auth(&api_key)
+                .send()
+                .await;
+            if let Ok(r) = resp {
+                if let Ok(body) = r.json::<serde_json::Value>().await {
+                    if let Some(data) = body.get("data").and_then(|d| d.as_array()) {
+                        let models: Vec<Value> = data
+                            .iter()
+                            .filter_map(|m| m.get("id").and_then(|id| id.as_str()))
+                            .filter(|id| {
+                                id.starts_with("gpt-")
+                                    || id.starts_with("o1")
+                                    || id.starts_with("o3")
+                                    || id.starts_with("o4")
+                            })
+                            .map(|id| json!({ "name": id }))
+                            .collect();
+                        return json!(models);
+                    }
+                }
+            }
+            // Fallback hardcoded list
+            json!([
+                { "name": "gpt-4o" }, { "name": "gpt-4o-mini" },
+                { "name": "gpt-4-turbo" }, { "name": "gpt-3.5-turbo" },
+                { "name": "o1" }, { "name": "o1-mini" }
+            ])
+        }
+        "anthropic" => json!([
+            { "name": "claude-opus-4-7" },
+            { "name": "claude-sonnet-4-6" },
+            { "name": "claude-haiku-4-5-20251001" }
+        ]),
+        "gemini" => json!([
+            { "name": "gemini-2.0-flash" },
+            { "name": "gemini-1.5-pro" },
+            { "name": "gemini-1.5-flash" },
+            { "name": "gemini-1.0-pro" }
+        ]),
+        _ => json!([]),
+    }
+}
+
+// ── Cloud provider streaming ───────────────────────────────────────────────────
+
+/// Stream from OpenAI-compatible API (OpenAI, Groq, Together, LM Studio, etc.)
+async fn stream_openai_chat(
+    app: &AppHandle,
+    base_url: &str,
+    api_key: &str,
+    job_id: &str,
+    req: Value,
+) -> Result<(), String> {
+    let model = req
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("gpt-4o")
+        .to_string();
+    let messages = req.get("messages").cloned().unwrap_or(json!([]));
+    let temperature = req.get("temperature").and_then(|v| v.as_f64()).unwrap_or(0.7);
+
+    let body = json!({
+        "model": model,
+        "messages": messages,
+        "stream": true,
+        "temperature": temperature,
+    });
+
+    let mut response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?
+        .post(format!("{base_url}/chat/completions"))
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("OpenAI unreachable: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        return Err(format!("OpenAI {status}: {body_text}"));
+    }
+
+    let mut line_buf = String::new();
+
+    while let Some(bytes) = response.chunk().await.map_err(|e| e.to_string())? {
+        line_buf.push_str(&String::from_utf8_lossy(&bytes));
+
+        while let Some(nl) = line_buf.find('\n') {
+            let line = line_buf[..nl].trim().to_string();
+            line_buf = line_buf[nl + 1..].to_string();
+
+            let data = match line.strip_prefix("data: ") {
+                Some(d) => d.trim(),
+                None => continue,
+            };
+
+            if data == "[DONE]" {
+                let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+                app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
+                return Ok(());
+            }
+
+            let event: Value = match serde_json::from_str(data) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            let delta = event
+                .get("choices")
+                .and_then(|c| c.get(0))
+                .and_then(|c| c.get("delta"))
+                .and_then(|d| d.get("content"))
+                .and_then(|c| c.as_str())
+                .unwrap_or("");
+
+            if !delta.is_empty() {
+                let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": delta, "done": false }));
+            }
+        }
+    }
+
+    let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+    app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
+    Ok(())
+}
+
+/// Stream from Anthropic Claude API.
+async fn stream_anthropic_chat(
+    app: &AppHandle,
+    api_key: &str,
+    job_id: &str,
+    req: Value,
+) -> Result<(), String> {
+    let model = req
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("claude-sonnet-4-6")
+        .to_string();
+    let temperature = req.get("temperature").and_then(|v| v.as_f64()).unwrap_or(0.7);
+
+    // Anthropic separates system messages from user/assistant messages.
+    let messages_raw = req.get("messages").and_then(|m| m.as_array()).cloned().unwrap_or_default();
+    let system_content: String = messages_raw
+        .iter()
+        .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("system"))
+        .filter_map(|m| m.get("content").and_then(|c| c.as_str()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let messages: Vec<Value> = messages_raw
+        .iter()
+        .filter(|m| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+        .cloned()
+        .collect();
+
+    let mut body = json!({
+        "model": model,
+        "messages": messages,
+        "max_tokens": 4096,
+        "stream": true,
+        "temperature": temperature,
+    });
+    if !system_content.is_empty() {
+        body["system"] = json!(system_content);
+    }
+
+    let mut response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Anthropic unreachable: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        return Err(format!("Anthropic {status}: {body_text}"));
+    }
+
+    let mut line_buf = String::new();
+    let mut last_event = String::new();
+
+    while let Some(bytes) = response.chunk().await.map_err(|e| e.to_string())? {
+        line_buf.push_str(&String::from_utf8_lossy(&bytes));
+
+        while let Some(nl) = line_buf.find('\n') {
+            let line = line_buf[..nl].trim().to_string();
+            line_buf = line_buf[nl + 1..].to_string();
+
+            if let Some(event) = line.strip_prefix("event: ") {
+                last_event = event.trim().to_string();
+                continue;
+            }
+
+            let data = match line.strip_prefix("data: ") {
+                Some(d) => d.trim(),
+                None => continue,
+            };
+
+            if last_event == "message_stop" || data.contains("\"type\":\"message_stop\"") {
+                let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+                app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
+                return Ok(());
+            }
+
+            let event: Value = match serde_json::from_str(data) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            let delta = event
+                .get("delta")
+                .and_then(|d| d.get("text"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("");
+
+            if !delta.is_empty() {
+                let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": delta, "done": false }));
+            }
+        }
+    }
+
+    let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+    app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
+    Ok(())
+}
+
+/// Stream from Google Gemini API.
+async fn stream_gemini_chat(
+    app: &AppHandle,
+    api_key: &str,
+    job_id: &str,
+    req: Value,
+) -> Result<(), String> {
+    let model = req
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("gemini-2.0-flash")
+        .to_string();
+    let temperature = req.get("temperature").and_then(|v| v.as_f64()).unwrap_or(0.7);
+
+    let messages_raw = req.get("messages").and_then(|m| m.as_array()).cloned().unwrap_or_default();
+
+    // Gemini uses "user"/"model" roles; extract system prompt into systemInstruction.
+    let system_text: String = messages_raw
+        .iter()
+        .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("system"))
+        .filter_map(|m| m.get("content").and_then(|c| c.as_str()))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let contents: Vec<Value> = messages_raw
+        .iter()
+        .filter(|m| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+        .map(|m| {
+            let role = if m.get("role").and_then(|r| r.as_str()) == Some("assistant") {
+                "model"
+            } else {
+                "user"
+            };
+            let text = m.get("content").and_then(|c| c.as_str()).unwrap_or("");
+            json!({ "role": role, "parts": [{ "text": text }] })
+        })
+        .collect();
+
+    let mut body = json!({
+        "contents": contents,
+        "generationConfig": { "temperature": temperature },
+    });
+    if !system_text.is_empty() {
+        body["systemInstruction"] = json!({ "parts": [{ "text": system_text }] });
+    }
+
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?key={}",
+        model, api_key
+    );
+
+    let mut response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Gemini unreachable: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        return Err(format!("Gemini {status}: {body_text}"));
+    }
+
+    // Gemini streams a JSON array — accumulate chunks and parse each complete object.
+    let mut buf = String::new();
+    let mut depth: i32 = 0;
+    let mut in_string = false;
+    let mut escape = false;
+
+    while let Some(bytes) = response.chunk().await.map_err(|e| e.to_string())? {
+        let chunk = String::from_utf8_lossy(&bytes).to_string();
+        for ch in chunk.chars() {
+            if escape { escape = false; buf.push(ch); continue; }
+            if ch == '\\' && in_string { escape = true; buf.push(ch); continue; }
+            if ch == '"' { in_string = !in_string; }
+            if !in_string {
+                if ch == '{' { depth += 1; }
+                else if ch == '}' { depth -= 1; }
+            }
+            buf.push(ch);
+
+            // Each top-level object is a complete candidate chunk.
+            if depth == 0 && buf.trim_start().starts_with('{') && !buf.trim().is_empty() {
+                if let Ok(event) = serde_json::from_str::<Value>(buf.trim()) {
+                    let delta = event
+                        .get("candidates")
+                        .and_then(|c| c.get(0))
+                        .and_then(|c| c.get("content"))
+                        .and_then(|c| c.get("parts"))
+                        .and_then(|p| p.get(0))
+                        .and_then(|p| p.get("text"))
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("");
+                    if !delta.is_empty() {
+                        let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": delta, "done": false }));
+                    }
+                }
+                buf.clear();
+            }
+        }
+    }
+
+    let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+    app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
     Ok(())
 }
 

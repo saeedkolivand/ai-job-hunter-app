@@ -65,6 +65,10 @@ export function createTauriInvokeClient(): AppClient {
       embed: (req) => invoke('ai_embed', { req }),
       onStream: (handler) =>
         asyncUnsub(() => listen<AiStreamChunk>('ai:stream', (e) => handler(e.payload))),
+      setProviderKey: ({ provider, apiKey }) => invoke('ai_set_provider_key', { provider, apiKey }),
+      removeProviderKey: ({ provider }) => invoke('ai_remove_provider_key', { provider }),
+      hasProviderKey: ({ provider }) => invoke('ai_has_provider_key', { provider }),
+      listProviderModels: ({ provider }) => invoke('ai_list_provider_models', { provider }),
     },
 
     documents: {
