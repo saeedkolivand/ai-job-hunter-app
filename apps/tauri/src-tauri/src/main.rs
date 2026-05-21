@@ -3,6 +3,7 @@
 
 mod autopilot;
 mod commands;
+mod conversations;
 mod credentials;
 mod jobs;
 mod postings;
@@ -120,6 +121,11 @@ fn main() {
             app.manage(Mutex::new(PostingsCache::default()));
             app.manage(Mutex::new(InteractionStore::new(&data_dir)));
             app.manage(Mutex::new(UpdaterState::default()));
+            if let Ok(db) = conversations::ConversationDb::open(handle) {
+                app.manage(db);
+            } else {
+                eprintln!("[setup] conversation db failed to open (non-fatal)");
+            }
 
             // Build and set the application menu.
             let menu = build_app_menu(handle)?;

@@ -116,20 +116,46 @@ async fn post_sidecar_command(
 // ── System ──────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn system_health(app: AppHandle) -> Value {
+pub async fn system_health(app: AppHandle) -> Value {
     let scraper_ready = sidecar_port(&app).is_some();
+
+    // Check Ollama availability and get the running model if any.
+    let base = std::env::var("OLLAMA_HOST")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .unwrap_or_default();
+
+    let ollama_resp = client.get(format!("{base}/api/tags")).send().await;
+    let (ai_ready, ai_model) = match ollama_resp {
+        Ok(r) if r.status().is_success() => {
+            let body: serde_json::Value = r.json().await.unwrap_or_default();
+            let model = body
+                .get("models")
+                .and_then(|m| m.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|m| m.get("name"))
+                .and_then(|n| n.as_str())
+                .map(|s| s.to_string());
+            (true, model)
+        }
+        _ => (false, None),
+    };
+
     json!({
         "status": "ok",
         "shell": "tauri",
         "scraper": { "mode": "http-sidecar", "ready": scraper_ready },
-        "ai": { "available": false },
-        "data": { "available": false }
+        "ai": { "ready": ai_ready, "model": ai_model },
+        "data": { "ready": true, "sqlite": true, "vector": true },
+        "workers": { "active": 0, "idle": 1, "max": 1 }
     })
 }
 
 #[tauri::command]
-pub fn system_get_version() -> Value {
-    json!({ "version": env!("CARGO_PKG_VERSION"), "shell": "tauri" })
+pub fn system_get_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
 }
 
 #[tauri::command]
@@ -198,11 +224,22 @@ pub async fn system_set_performance_mode(app: AppHandle, mode: String) -> Value 
 
 #[tauri::command]
 pub fn system_get_metrics() -> Value {
+    use sysinfo::System;
+    let mut sys = System::new_all();
+    sys.refresh_all();
+
+    let total_mem = sys.total_memory();
+    let used_mem = sys.used_memory();
+    let uptime = System::uptime();
+    let cpu_percent = sys.cpus().iter().map(|c| c.cpu_usage()).sum::<f32>()
+        / sys.cpus().len().max(1) as f32;
+
     json!({
         "shell": "tauri",
-        "uptime": 0,
-        "memoryMb": 0,
-        "cpuPercent": 0
+        "uptime": uptime,
+        "memoryMb": used_mem / 1024 / 1024,
+        "totalMemoryMb": total_mem / 1024 / 1024,
+        "cpuPercent": (cpu_percent * 10.0).round() / 10.0
     })
 }
 
@@ -1335,18 +1372,18 @@ pub fn autopilot_resume(app: AppHandle, autopilot_id: String) -> Value {
 // ── Conversations ─────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn conversations_get_or_create() -> Value {
-    json!({ "id": "default", "createdAt": 0 })
+pub fn conversations_get_or_create(app: AppHandle) -> Value {
+    crate::conversations::get_or_create(&app)
 }
 
 #[tauri::command]
-pub fn conversations_load_messages(_conversation_id: String) -> Value {
-    json!([])
+pub fn conversations_load_messages(app: AppHandle, conversation_id: String) -> Value {
+    crate::conversations::load_messages(&app, &conversation_id)
 }
 
 #[tauri::command]
-pub fn conversations_save_message(_req: Value) -> Value {
-    json!(null)
+pub fn conversations_save_message(app: AppHandle, req: Value) -> Value {
+    crate::conversations::save_message(&app, &req)
 }
 
 // ── Native dialogs ────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 [package]
 name = "ajh-tauri-spike"
-version = "0.1.0"
+version = "1.3.1"
 edition = "2021"
 description = "AI Job Hunter — Tauri spike shell"
 authors = ["Saeed Kolivand"]
@@ -29,10 +29,12 @@ tauri-plugin-clipboard-manager = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # HTTP client for proxying scraper commands to the sidecar process.
-reqwest = { version = "0.13", features = ["json"], default-features = false }
+reqwest = { version = "0.13", features = ["json", "native-tls"], default-features = false }
 tokio = { version = "1", features = ["time"] }
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 # OS-native secret storage: DPAPI (Windows), Keychain (macOS), libsecret (Linux).
 # Same underlying primitives as Electron's safeStorage.
 keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service"] }
+sysinfo = { version = "0.33", default-features = false, features = ["system"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
