@@ -7,7 +7,7 @@ import { Button, GlassCard, useToast } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
-import { useAIModels, usePullModel, useSystemHealth, useOpenExternal } from '@/services';
+import { useAIModels, useOpenExternal, usePullModel, useSystemHealth } from '@/services';
 import { keys } from '@/services/query-client';
 import { useAIModel, usePreferencesStore } from '@/store/preferences-store';
 import type { Model } from '@/types';

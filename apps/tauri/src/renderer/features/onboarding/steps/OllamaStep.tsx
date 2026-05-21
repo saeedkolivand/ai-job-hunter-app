@@ -8,21 +8,25 @@ import {
   Download,
   ExternalLink,
   Loader2,
-  Cpu,
   MemoryStick,
   SkipForward,
   WifiOff,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { Button, useToast } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
-import { useAIModels, usePullModel } from '@/services';
-import { useSystemHealth, useSystemMetrics, useOpenExternal } from '@/services';
+import {
+  useAIModels,
+  useOpenExternal,
+  usePullModel,
+  useSystemHealth,
+  useSystemMetrics,
+} from '@/services';
 import { keys } from '@/services/query-client';
 import { useAIModel, usePreferencesStore } from '@/store/preferences-store';
 
@@ -72,10 +76,51 @@ const MODEL_RECS: ModelRec[] = [
 ];
 
 function getRecommended(totalRamGb: number): ModelRec {
-  if (totalRamGb >= 12) return MODEL_RECS[3]!;
-  if (totalRamGb >= 10) return MODEL_RECS[2]!;
-  if (totalRamGb >= 6) return MODEL_RECS[1]!;
-  return MODEL_RECS[0]!;
+  if (totalRamGb >= 12)
+    return (
+      MODEL_RECS[3] ??
+      MODEL_RECS[0] ??
+      MODEL_RECS[1] ??
+      MODEL_RECS[2] ?? {
+        name: 'llama3.2',
+        label: 'Llama 3.2',
+        description: '',
+        sizeGb: 2,
+        minRamGb: 6,
+      }
+    );
+  if (totalRamGb >= 10)
+    return (
+      MODEL_RECS[2] ??
+      MODEL_RECS[1] ??
+      MODEL_RECS[0] ?? {
+        name: 'mistral',
+        label: 'Mistral 7B',
+        description: '',
+        sizeGb: 4.1,
+        minRamGb: 10,
+      }
+    );
+  if (totalRamGb >= 6)
+    return (
+      MODEL_RECS[1] ??
+      MODEL_RECS[0] ?? {
+        name: 'llama3.2',
+        label: 'Llama 3.2',
+        description: '',
+        sizeGb: 2,
+        minRamGb: 6,
+      }
+    );
+  return (
+    MODEL_RECS[0] ?? {
+      name: 'llama3.2:1b',
+      label: 'Llama 3.2 (1B)',
+      description: '',
+      sizeGb: 1.3,
+      minRamGb: 4,
+    }
+  );
 }
 
 function getRamTier(totalRamGb: number): { label: string; color: string } {
@@ -99,7 +144,10 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
   const { data: metricsRaw } = useSystemMetrics();
   const metrics = metricsRaw as { totalMemoryMb?: number; memoryMb?: number } | undefined;
   const { data: modelsRaw, refetch: refetchModels } = useAIModels();
-  const models = (modelsRaw as Array<{ name: string }> | undefined) ?? [];
+  const models = useMemo(
+    () => (modelsRaw as Array<{ name: string }> | undefined) ?? [],
+    [modelsRaw]
+  );
 
   const totalRamGb = Math.round((metrics?.totalMemoryMb ?? 8192) / 1024);
   const recommended = getRecommended(totalRamGb);
@@ -137,14 +185,14 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
     }, 800);
     try {
       await pullModel.mutateAsync(selectedModel);
-      clearInterval(pollRef.current!);
+      if (pollRef.current) clearInterval(pollRef.current);
       setPullProgress(100);
       setPullState('done');
       await refetchModels();
       qc.invalidateQueries({ queryKey: keys.ai.models });
       toast(`${selectedModel} downloaded successfully.`, 'success');
     } catch (err) {
-      clearInterval(pollRef.current!);
+      if (pollRef.current) clearInterval(pollRef.current);
       setPullState('error');
       toast(err instanceof Error ? err.message : 'Download failed.', 'error');
     }
