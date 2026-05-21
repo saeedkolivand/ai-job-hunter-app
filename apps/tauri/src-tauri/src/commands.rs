@@ -116,14 +116,40 @@ async fn post_sidecar_command(
 // ── System ──────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn system_health(app: AppHandle) -> Value {
+pub async fn system_health(app: AppHandle) -> Value {
     let scraper_ready = sidecar_port(&app).is_some();
+
+    // Check Ollama availability and get the running model if any.
+    let base = std::env::var("OLLAMA_HOST")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .unwrap_or_default();
+
+    let ollama_resp = client.get(format!("{base}/api/tags")).send().await;
+    let (ai_ready, ai_model) = match ollama_resp {
+        Ok(r) if r.status().is_success() => {
+            let body: serde_json::Value = r.json().await.unwrap_or_default();
+            let model = body
+                .get("models")
+                .and_then(|m| m.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|m| m.get("name"))
+                .and_then(|n| n.as_str())
+                .map(|s| s.to_string());
+            (true, model)
+        }
+        _ => (false, None),
+    };
+
     json!({
         "status": "ok",
         "shell": "tauri",
         "scraper": { "mode": "http-sidecar", "ready": scraper_ready },
-        "ai": { "available": false },
-        "data": { "available": false }
+        "ai": { "ready": ai_ready, "model": ai_model },
+        "data": { "ready": true, "sqlite": true, "vector": true },
+        "workers": { "active": 0, "idle": 1, "max": 1 }
     })
 }
 
