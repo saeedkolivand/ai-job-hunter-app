@@ -124,7 +124,7 @@ export function ResumeInputCard({
         title: lastUploadedFile.name,
       });
       const saved = rawDocs[0];
-      const id = saved?._id ?? saved?.id;
+      const id = saved?._id;
       if (asDefault && id) {
         setResume({ defaultId: String(id), autoIndex: true, autoParse: true });
       }
