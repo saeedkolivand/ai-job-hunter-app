@@ -8,26 +8,25 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                     Electron Process Tree                     │
+│                        Tauri Process Tree                     │
 │                                                              │
-│  ┌─────────────┐   IPC    ┌──────────────────────────────┐  │
-│  │  Renderer   │◄────────►│         Main Process          │  │
+│  ┌─────────────┐  invoke  ┌──────────────────────────────┐  │
+│  │  Renderer   │◄────────►│      Tauri Core (Rust)        │  │
 │  │ (React UI)  │          │                              │  │
 │  │ TanStack    │  events  │  ┌──────────┐ ┌───────────┐  │  │
 │  │ React Query │◄─────────┤  │ JobQueue │ │ Scheduler │  │  │
 │  └─────────────┘          │  └──────────┘ └───────────┘  │  │
-│        ▲                  │  ┌──────────┐ ┌───────────┐  │  │
-│        │ contextBridge    │  │AiRuntime │ │DataRuntime│  │  │
-│  ┌─────┴──────┐           │  └──────────┘ └───────────┘  │  │
-│  │  Preload   │           └──────────────────────────────┘  │
-│  └────────────┘                                             │
+│                           │  ┌──────────────────────────┐ │  │
+│                           │  │   Sidecar (scraper-rt)   │ │  │
+│                           │  └──────────────────────────┘ │  │
+│                           └──────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────┘
 
 External dependencies (all local — no cloud):
   Ollama     ←→  AiRuntime      (local LLM inference)
   LanceDB    ←→  DataRuntime    (vector store)
   NeDB       ←→  DataRuntime    (document store)
-  Electron   ←→  ScraperRuntime (browser automation via ElectronBrowserController)
+  Sidecar    ←→  ScraperRuntime (browser automation)
 ```
 
 ---
@@ -35,17 +34,21 @@ External dependencies (all local — no cloud):
 ## Repository Structure
 
 ```
-apps/desktop/src/
-  main/        Main process — runtimes, job handlers, IPC router
-  preload/     Context bridge — window.api surface
-  renderer/
-    features/  Feature-scoped components (owned by one route)
-    routes/    TanStack Router file-based routes
-    services/  React Query hooks (only place calling window.api.*)
-    store/     Zustand stores
-    lib/       Pure utilities (cn, motion, i18n, machines)
-    providers/ React context providers
-    hooks/     Shared React hooks
+apps/tauri/
+  src-tauri/   Rust core — commands, menu, tray, updater, sidecar launcher
+  src/
+    tauri-client.ts   AppClient implementation over @tauri-apps/api invoke/listen
+    renderer/
+      features/  Feature-scoped components (owned by one route)
+      routes/    TanStack Router file-based routes
+      services/  React Query hooks (only place calling AppClient methods)
+      store/     Zustand stores
+      lib/       Pure utilities (cn, motion, i18n, machines)
+      providers/ React context providers
+      hooks/     Shared React hooks
+
+apps/scraper-runtime/
+  src/         Node.js HTTP sidecar — scraping, login, documents, AI
 
 packages/
   shared/   IPC contracts, Zod schemas, cross-process types
@@ -64,10 +67,10 @@ packages/
 Strict one-way flow. Lower layers never import from upper layers.
 
 ```
-apps/desktop
+apps/tauri
   ├── packages/shared, ui, prompts   (renderer-safe)
-  ├── packages/core, ai, data        (main process only)
-  └── packages/workers               (main process only)
+  ├── packages/core, ai, data        (sidecar / Rust side only)
+  └── packages/workers               (sidecar / Rust side only)
 
 packages/data   → shared, core, workers
 packages/ai     → shared, core
@@ -88,11 +91,11 @@ Cross-process contracts. Safe anywhere.
 
 - `types/index.ts` — `JobPosting`, `JobRecord`, `Autopilot`, `BootMetrics`, `AppMetrics`, etc.
 - `schemas/index.ts` — Zod schemas for IPC payload validation
-- `ipc/contracts.ts` — `IPC_CHANNELS` + typed `window.api` surface
+- `ipc/contracts.ts` — `IPC_CHANNELS` + typed `AppClient` surface
 
 ### `@ajh/core`
 
-Main-process infrastructure.
+Infrastructure used by the sidecar.
 
 | Export             | Role                                                       |
 | ------------------ | ---------------------------------------------------------- |
@@ -111,15 +114,15 @@ Ollama client and inference. `AiRuntime` (lazy start, idle model unload), `gener
 
 Data persistence, scraping, matching.
 
-| Export             | Role                                              |
-| ------------------ | ------------------------------------------------- |
-| `DataRuntime`      | SQLite + LanceDB vector store (both lazy-opened)  |
-| `ScraperRegistry`  | Board scrapers (HTTP + ElectronBrowserController) |
-| `ApplierRegistry`  | Auto-appliers per board                           |
-| `MatchingEngine`   | Keyword + semantic scoring                        |
-| `AutopilotStore`   | NeDB CRUD for autopilot configs                   |
-| `InMemoryJobStore` | Ephemeral live scrape results                     |
-| `VectorStore`      | LanceDB wrapper                                   |
+| Export             | Role                                             |
+| ------------------ | ------------------------------------------------ |
+| `DataRuntime`      | SQLite + LanceDB vector store (both lazy-opened) |
+| `ScraperRegistry`  | Board scrapers (HTTP + browser controller)       |
+| `ApplierRegistry`  | Auto-appliers per board                          |
+| `MatchingEngine`   | Keyword + semantic scoring                       |
+| `AutopilotStore`   | NeDB CRUD for autopilot configs                  |
+| `InMemoryJobStore` | Ephemeral live scrape results                    |
+| `VectorStore`      | LanceDB wrapper                                  |
 
 ### `@ajh/prompts`
 
@@ -130,13 +133,13 @@ Pure TS prompt builders. Zero deps. `buildResumeSystemPrompt`, `buildCoverLetter
 
 React component library and design system. Tailwind v4 tokens, motion utilities, shared CSS classes.
 
-### `apps/desktop` — Three Electron contexts
+### `apps/tauri`
 
-| Context  | Path            | Role                                  |
-| -------- | --------------- | ------------------------------------- |
-| Main     | `src/main/`     | Runtimes, job handlers, IPC router    |
-| Preload  | `src/preload/`  | `contextBridge` exposing `window.api` |
-| Renderer | `src/renderer/` | React + TanStack Router SPA           |
+| Context  | Path                  | Role                                        |
+| -------- | --------------------- | ------------------------------------------- |
+| Rust     | `src-tauri/src/`      | Commands, menu, tray, updater, sidecar      |
+| TS       | `src/tauri-client.ts` | `AppClient` implementation via Tauri invoke |
+| Renderer | `src/renderer/`       | React + TanStack Router SPA                 |
 
 ---
 
@@ -145,46 +148,44 @@ React component library and design system. Tailwind v4 tokens, motion utilities,
 ### AI generation
 
 ```
-Renderer → window.api.ai.generate(req) → jobs.enqueue('ai.generate')
-  → generateStream() yields { delta, done }
-  → ctx.stream() → EventBus → webContents.send('ai:stream')
-  → window.api.ai.onStream(chunk) → UI updates token by token
+Renderer → AppClient.ai.generate(req) → Tauri invoke('ai_generate')
+  → sidecar: generateStream() yields { delta, done }
+  → Tauri listen('ai:stream') → UI updates token by token
 ```
 
 ### Scraping
 
 ```
-window.api.scrape.board(req) → jobs.enqueue('scrape.board')
-  → InProcessScraperRuntime.scrapeBoard()
+AppClient.scrape.board(req) → Tauri invoke('scrape_board')
+  → sidecar: ScraperRuntime.scrapeBoard()
   → scraper.search() → onItem() streams JobPosting items to renderer
-  → results persisted to NeDB
+  → results persisted to SQLite
 ```
 
 ### Autopilot
 
 ```
-Scheduler tick OR window.api.autopilot.run(id)
-  → jobs.enqueue('autopilot.run')
-  → runAutopilot(): scrape → filter (keyword + score) → apply
-  → ctx.stream({ kind: 'autopilot.*' }) → renderer live feed
+Scheduler tick OR AppClient.autopilot.run(id)
+  → sidecar: runAutopilot(): scrape → filter (keyword + score) → apply
+  → Tauri listen('autopilot:*') → renderer live feed
 ```
 
 ---
 
 ## IPC Contract
 
-All renderer↔main communication is typed end-to-end and Zod-validated:
+All renderer↔Rust communication is typed end-to-end:
 
 ```
-window.api.X.method(payload)
-  → ipcRenderer.invoke(channel, payload)
+AppClient.X.method(payload)
+  → invoke(channel, payload)
   → Zod.parse(payload)   ← rejects bad payloads
-  → handler(validPayload)
+  → Rust handler(validPayload)
 ```
 
 - Channel names come from `IPC_CHANNELS` — never hardcode strings
-- Renderer never touches `ipcRenderer` directly
-- `services/` are the only place that calls `window.api.*`
+- Renderer never calls `invoke` directly
+- `services/` are the only place that calls `AppClient.*`
 
 ---
 
@@ -205,9 +206,9 @@ window.api.X.method(payload)
 
 1. Add to `IPC_CHANNELS` + type in `packages/shared/src/ipc/contracts.ts`
 2. Add Zod schema in `packages/shared/src/schemas/index.ts`
-3. Implement in `apps/desktop/src/main/ipc/router.ts`
-4. Expose in `apps/desktop/src/preload/index.ts`
-5. Create React Query hook in `apps/desktop/src/renderer/services/`
+3. Implement Rust command in `apps/tauri/src-tauri/src/commands.rs`
+4. Wire in `apps/tauri/src/tauri-client.ts`
+5. Create React Query hook in `apps/tauri/src/renderer/services/`
 
 ### New scraper
 
@@ -217,6 +218,6 @@ window.api.X.method(payload)
 
 ### New route
 
-1. `apps/desktop/src/renderer/routes/mypage.tsx` with `createFileRoute`
+1. `apps/tauri/src/renderer/routes/mypage.tsx` with `createFileRoute`
 2. Add nav item in `Sidebar.tsx`
-3. Add i18n key to all locale files in `apps/desktop/src/renderer/i18n/locales/`
+3. Add i18n key to all locale files in `apps/tauri/src/renderer/i18n/locales/`

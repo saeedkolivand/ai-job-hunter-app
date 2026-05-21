@@ -136,9 +136,9 @@ Features must not import from each other's internal directories.
 
 1. `packages/shared/src/ipc/contracts.ts` — add signature
 2. `packages/shared/src/schemas/index.ts` — add Zod schema
-3. `apps/desktop/src/main/ipc/router.ts` — implement handler
-4. `apps/desktop/src/preload/index.ts` — expose via contextBridge
-5. `apps/desktop/src/renderer/services/` — create React Query hook
+3. `apps/tauri/src-tauri/src/commands.rs` — implement Tauri command
+4. `apps/tauri/src/tauri-client.ts` — wire invoke call
+5. `apps/tauri/src/renderer/services/` — create React Query hook
 
 ---
 

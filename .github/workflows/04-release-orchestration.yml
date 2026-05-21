@@ -70,124 +70,6 @@ jobs:
             https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
           color: 0xED4245
 
-  build-windows:
-    name: Build Windows Application (Electron)
-
-    needs: determine-release
-
-    if: needs.determine-release.outputs.released == 'true'
-
-    runs-on: windows-latest
-
-    timeout-minutes: 45
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.1.3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Restore Turbo Cache
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: turbo-${{ runner.os }}-
-
-      - name: Restore Electron Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~\AppData\Local\electron\Cache
-            ~\AppData\Local\electron-builder\Cache
-          key: electron-${{ runner.os }}-${{ hashFiles('**/package.json') }}
-          restore-keys: electron-${{ runner.os }}-
-
-      - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build Packages
-        run: pnpm build:packages
-
-      - name: Sync Desktop App Version
-        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('apps/desktop/package.json'));p.version='${{ needs.determine-release.outputs.version }}';fs.writeFileSync('apps/desktop/package.json',JSON.stringify(p,null,2)+'\n');"
-
-      - name: Build Desktop App
-        run: pnpm --filter @ajh/desktop build
-
-      - name: Package Windows
-        run: pnpm --filter @ajh/desktop package -- --win --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  build-macos:
-    name: Build macOS Application (Electron)
-
-    needs: determine-release
-
-    if: needs.determine-release.outputs.released == 'true'
-
-    runs-on: macos-latest
-
-    timeout-minutes: 45
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.1.3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Restore Turbo Cache
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: turbo-${{ runner.os }}-
-
-      - name: Restore Electron Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/Library/Caches/electron
-            ~/Library/Caches/electron-builder
-          key: electron-${{ runner.os }}-${{ hashFiles('**/package.json') }}
-          restore-keys: electron-${{ runner.os }}-
-
-      - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build Packages
-        run: pnpm build:packages
-
-      - name: Sync Desktop App Version
-        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('apps/desktop/package.json'));p.version='${{ needs.determine-release.outputs.version }}';fs.writeFileSync('apps/desktop/package.json',JSON.stringify(p,null,2)+'\n');"
-
-      - name: Build Desktop App
-        run: pnpm --filter @ajh/desktop build
-
-      - name: Package macOS
-        run: pnpm --filter @ajh/desktop package -- --mac --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   # ── Tauri builds ─────────────────────────────────────────────────────────────
   #
   # Prerequisites (set these GitHub repository secrets before first release):
@@ -344,8 +226,6 @@ jobs:
 
     needs:
       - determine-release
-      - build-windows
-      - build-macos
       - build-tauri-windows
       - build-tauri-macos
 
@@ -361,7 +241,7 @@ jobs:
           title: 'Production Release Published'
           description: |
             Version v${{ needs.determine-release.outputs.version }} was released successfully.
-            Electron + Tauri artifacts uploaded to GitHub Releases.
+            Tauri artifacts uploaded to GitHub Releases.
 
             Repository:
             ${{ github.repository }}
