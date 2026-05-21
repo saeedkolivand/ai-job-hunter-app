@@ -104,7 +104,7 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="mt-auto space-y-2 border-t border-white/[0.06] px-3 pb-3 pt-3">
+      <div className="mt-auto space-y-2  px-3 pb-3 pt-3">
         {userName && (
           <div className="flex items-center gap-2.5 px-1">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-soft/25 to-brand/10 ring-1 ring-brand/20">

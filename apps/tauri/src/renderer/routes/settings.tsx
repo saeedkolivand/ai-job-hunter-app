@@ -121,7 +121,7 @@ function SettingsPage() {
   return (
     <PageTransition className="flex h-full overflow-hidden">
       {/* ── Sidebar nav ─────────────────────────────────────────────── */}
-      <aside className="flex w-56 shrink-0 flex-col gap-6 overflow-y-auto border-r border-white/[0.05] px-3 py-8">
+      <aside className="flex w-56 shrink-0 flex-col gap-6 overflow-y-auto border-white/[0.05] px-3 py-8">
         {navGroups.map((group) => (
           <div key={group.label}>
             <div className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-widest text-foreground/30">
@@ -172,7 +172,7 @@ function SettingsPage() {
       {/* ── Content ─────────────────────────────────────────────────── */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Section header */}
-        <div className="shrink-0 border-b border-white/[0.05] px-8 py-6">
+        <div className="shrink-0 border-white/[0.05] px-8 py-6">
           <div className="flex items-center gap-3">
             <IconBadge icon={current.icon} size="md" />
             <div>

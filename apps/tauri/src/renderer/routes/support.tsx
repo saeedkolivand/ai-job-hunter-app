@@ -190,8 +190,8 @@ function AccordionItem({
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-xl border transition-colors duration-150',
-        open ? 'border-white/10 bg-white/[0.04]' : 'border-white/[0.05] bg-white/[0.02]'
+        'overflow-hidden rounded-xl border-transparent transition-colors duration-150',
+        open ? 'border-transparent bg-white/[0.04]' : 'border-transparent bg-white/[0.02]'
       )}
     >
       <Button
@@ -223,7 +223,7 @@ function AccordionItem({
             exit={{ height: 0, opacity: 0 }}
             transition={transition.relaxed}
           >
-            <div className="border-t border-white/[0.05] px-5 py-4 text-sm leading-relaxed text-foreground/60">
+            <div className="border-transparent px-5 py-4 text-sm leading-relaxed text-foreground/60">
               <div dangerouslySetInnerHTML={{ __html: problem.a }} />
             </div>
           </motion.div>
