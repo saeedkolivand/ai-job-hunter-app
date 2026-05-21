@@ -78,7 +78,7 @@ impl DocumentStore {
                     locale: row.get(3)?,
                     text: row.get(4)?,
                     pages: row.get(5)?,
-                    created_at: row.get(6)?,
+                    created_at: row.get::<_, i64>(6)? as u64,
                     indexed: row.get::<_, i64>(7)? != 0,
                 })
             })
@@ -100,7 +100,7 @@ impl DocumentStore {
                 rec.locale,
                 rec.text,
                 rec.pages,
-                rec.created_at,
+                rec.created_at as i64,
                 rec.indexed as i64,
             ],
         )
@@ -197,28 +197,18 @@ fn extract_docx(bytes: &[u8]) -> Result<String, String> {
         .read_to_string(&mut xml)
         .map_err(|e| e.to_string())?;
 
+    // Strip XML tags with a simple state machine — avoids quick-xml API churn.
     let mut text = String::new();
-    let mut reader = quick_xml::Reader::from_str(&xml);
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(quick_xml::events::Event::Text(e)) => {
-                if let Ok(t) = e.unescape() {
-                    let s = t.trim();
-                    if !s.is_empty() {
-                        if !text.is_empty() {
-                            text.push(' ');
-                        }
-                        text.push_str(s);
-                    }
-                }
-            }
-            Ok(quick_xml::events::Event::Eof) | Err(_) => break,
+    let mut in_tag = false;
+    for c in xml.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag && !c.is_control() => text.push(c),
             _ => {}
         }
-        buf.clear();
     }
-    Ok(text)
+    Ok(text.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
 // ── Ollama embedding ──────────────────────────────────────────────────────────
