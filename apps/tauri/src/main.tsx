@@ -1,10 +1,8 @@
 /**
- * Tauri spike entry point.
+ * Tauri entry point.
  *
- * This file mirrors apps/desktop/src/renderer/main.tsx but supplies a
- * TauriInvokeClient to AppClientProvider instead of the Electron IPC client.
- * Everything else — routes, components, service hooks — is imported from the
- * desktop renderer source via the `@` alias in vite.config.ts.
+ * Supplies a TauriInvokeClient to AppClientProvider. All routes, components,
+ * and service hooks live in src/renderer/ and are shared via the `@` alias.
  */
 import React from 'react';
 import ReactDOM from 'react-dom/client';

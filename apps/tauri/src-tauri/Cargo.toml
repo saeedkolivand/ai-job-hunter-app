@@ -1,8 +1,8 @@
 [package]
-name = "ajh-tauri-spike"
+name = "ajh-tauri"
 version = "1.3.1"
 edition = "2021"
-description = "AI Job Hunter — Tauri spike shell"
+description = "AI Job Hunter — Tauri desktop shell"
 authors = ["Saeed Kolivand"]
 
 # Disable default binary stripping so debug symbols survive in dev builds.
