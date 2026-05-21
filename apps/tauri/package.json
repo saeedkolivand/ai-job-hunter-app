@@ -11,7 +11,7 @@
     "dev:frontend": "vite --port 5174",
     "build:frontend": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@ajh/prompts": "workspace:*",
