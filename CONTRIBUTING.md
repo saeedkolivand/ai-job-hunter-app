@@ -45,24 +45,24 @@ pnpm build
 pnpm dev
 ```
 
-The Electron app opens automatically. Hot-reload is enabled for the renderer.
+The Tauri app opens automatically. Hot-reload is enabled for the renderer.
 
 ### Available scripts
 
-| Command              | Description                                        |
-| -------------------- | -------------------------------------------------- |
-| `pnpm dev`           | Build packages then start Electron with hot-reload |
-| `pnpm build`         | Build all packages                                 |
-| `pnpm typecheck`     | Run TypeScript type check across all packages      |
-| `pnpm lint`          | Run ESLint                                         |
-| `pnpm lint:fix`      | Run ESLint with auto-fix                           |
-| `pnpm format`        | Format all files with Prettier                     |
-| `pnpm format:check`  | Check formatting without writing                   |
-| `pnpm test`          | Run unit tests (Vitest)                            |
-| `pnpm test:watch`    | Run tests in watch mode                            |
-| `pnpm test:coverage` | Run tests with coverage report                     |
-| `pnpm package`       | Build and package the Electron app                 |
-| `pnpm clean`         | Remove all build artifacts                         |
+| Command              | Description                                     |
+| -------------------- | ----------------------------------------------- |
+| `pnpm dev`           | Build packages then start Tauri with hot-reload |
+| `pnpm build`         | Build all packages                              |
+| `pnpm typecheck`     | Run TypeScript type check across all packages   |
+| `pnpm lint`          | Run ESLint                                      |
+| `pnpm lint:fix`      | Run ESLint with auto-fix                        |
+| `pnpm format`        | Format all files with Prettier                  |
+| `pnpm format:check`  | Check formatting without writing                |
+| `pnpm test`          | Run unit tests (Vitest)                         |
+| `pnpm test:watch`    | Run tests in watch mode                         |
+| `pnpm test:coverage` | Run tests with coverage report                  |
+| `pnpm package`       | Build and package the Tauri app                 |
+| `pnpm clean`         | Remove all build artifacts                      |
 
 ---
 
@@ -71,10 +71,10 @@ The Electron app opens automatically. Hot-reload is enabled for the renderer.
 ```
 ai-job-hunter/
 ├── apps/
-│   └── desktop/                # Electron app (main + preload + renderer)
-│       ├── src/main/           # Electron main process
-│       ├── src/preload/        # Context bridge (IPC)
-│       └── src/renderer/       # React UI
+│   ├── tauri/                  # Tauri app (Rust core + React renderer)
+│   │   ├── src-tauri/          # Rust core (commands, menu, tray, updater)
+│   │   └── src/                # React UI + tauri-client.ts
+│   └── scraper-runtime/        # Node.js HTTP sidecar
 │
 ├── packages/
 │   ├── shared/                 # Types, Zod schemas, IPC contracts
@@ -98,13 +98,12 @@ ai-job-hunter/
 ### Package dependency graph
 
 ```
-@ajh/desktop
+@ajh/tauri (renderer)
+  └── @ajh/shared
+  └── @ajh/ui
+@ajh/data
   └── @ajh/shared
   └── @ajh/core
-  └── @ajh/ai
-  └── @ajh/data
-        └── @ajh/shared
-        └── @ajh/core
 @ajh/ai
   └── @ajh/shared
   └── @ajh/core
@@ -112,7 +111,7 @@ ai-job-hunter/
   └── @ajh/shared
 ```
 
-Build order: `shared → core → ai → data → desktop`
+Build order: `shared → core → ai → data → tauri`
 
 ---
 
@@ -196,7 +195,7 @@ pnpm test:coverage     # With HTML coverage report → ./coverage/
 
 - **Always**: pure utility functions, Zod schema validation, matching logic
 - **When practical**: state store reducers, data transforms
-- **Skip**: Electron IPC glue, Playwright browser automation (covered by e2e), UI components
+- **Skip**: Tauri IPC glue, Playwright browser automation (covered by e2e), UI components
 
 ---
 
