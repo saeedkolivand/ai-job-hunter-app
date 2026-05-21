@@ -58,7 +58,7 @@ export function createWebHttpClient({ baseUrl, token }: WebHttpClientOptions): A
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   /** POST /api/<namespace>/<method> and return parsed JSON. */
-  async function cmd(namespace: string, method: string, payload?: unknown): Promise<unknown> {
+  async function cmd<T = never>(namespace: string, method: string, payload?: unknown): Promise<T> {
     const res = await fetch(`${base}/api/${namespace}/${method}`, {
       method: 'POST',
       headers,
@@ -68,21 +68,21 @@ export function createWebHttpClient({ baseUrl, token }: WebHttpClientOptions): A
       const msg = await res.text().catch(() => res.statusText);
       throw new Error(`[web-http] ${namespace}.${method} → ${res.status}: ${msg}`);
     }
-    return res.json() as Promise<unknown>;
+    return res.json() as Promise<T>;
   }
 
   /**
    * Subscribe to a Server-Sent Events channel.
    * Returns a sync unsubscribe function (closes the EventSource).
    */
-  function subscribe(channel: string, handler: (event: unknown) => void): UnsubFn {
+  function subscribe<T>(channel: string, handler: (event: T) => void): UnsubFn {
     const url = new URL(`${base}/api/events/${channel}`);
     if (token) url.searchParams.set('token', token);
 
     const es = new EventSource(url.toString());
     es.onmessage = (e) => {
       try {
-        handler(JSON.parse(e.data as string) as unknown);
+        handler(JSON.parse(e.data as string) as T);
       } catch {
         // malformed event — ignore
       }
@@ -211,19 +211,21 @@ export function createWebHttpClient({ baseUrl, token }: WebHttpClientOptions): A
 
     conversations: {
       getOrCreateConversation: () => cmd('conversations', 'getOrCreateConversation'),
-      loadMessages: (conversationId) => cmd('conversations', 'loadMessages', { conversationId }),
+      loadMessages: ({ conversationId }) =>
+        cmd('conversations', 'loadMessages', { conversationId }),
       saveMessage: (req) => cmd('conversations', 'saveMessage', req),
+      saveAllMessages: (opts) => cmd('conversations', 'saveAllMessages', opts),
     },
 
     autopilot: {
       list: () => cmd('autopilot', 'list'),
-      get: (id) => cmd('autopilot', 'get', { autopilotId: id }),
+      get: ({ autopilotId }) => cmd('autopilot', 'get', { autopilotId }),
       create: (req) => cmd('autopilot', 'create', req),
-      update: (id, req) => cmd('autopilot', 'update', { autopilotId: id, ...(req as object) }),
-      remove: (id) => cmd('autopilot', 'remove', { autopilotId: id }),
-      run: (id) => cmd('autopilot', 'run', { autopilotId: id }),
-      pause: (id) => cmd('autopilot', 'pause', { autopilotId: id }),
-      resume: (id) => cmd('autopilot', 'resume', { autopilotId: id }),
+      update: ({ autopilotId, ...data }) => cmd('autopilot', 'update', { autopilotId, ...data }),
+      remove: ({ autopilotId }) => cmd('autopilot', 'remove', { autopilotId }),
+      run: ({ autopilotId }) => cmd('autopilot', 'run', { autopilotId }),
+      pause: ({ autopilotId }) => cmd('autopilot', 'pause', { autopilotId }),
+      resume: ({ autopilotId }) => cmd('autopilot', 'resume', { autopilotId }),
     },
 
     dialog: {

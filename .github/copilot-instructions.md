@@ -1,6 +1,6 @@
 # AI Job Hunter — Copilot Instructions
 
-Local-first Electron desktop app. pnpm monorepo. React 19 + TypeScript strict.
+Local-first Tauri desktop app. pnpm monorepo. React 19 + TypeScript strict.
 ESLint `--max-warnings 0` in CI — every warning fails the build.
 
 ---
@@ -54,9 +54,9 @@ If branch gone: `rtk git checkout main && rtk git pull origin main`.
 ## New IPC capability
 
 1. `packages/shared/src/ipc/contracts.ts` — add signature
-2. `apps/desktop/src/main/ipc/router.ts` — implement
-3. `apps/desktop/src/preload/index.ts` — expose
-4. `apps/desktop/src/renderer/services/` — create hook
+2. `apps/tauri/src-tauri/src/commands.rs` — implement Tauri command
+3. `apps/tauri/src/tauri-client.ts` — wire invoke call
+4. `apps/tauri/src/renderer/services/` — create hook
 5. `services/query-client.ts` — add query key
 
 ---

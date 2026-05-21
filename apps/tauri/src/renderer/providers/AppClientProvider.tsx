@@ -1,18 +1,12 @@
 import { createContext, type ReactNode, useContext, useMemo } from 'react';
 
-import {
-  _registerClient,
-  type AppClient,
-  createDesktopIpcClient,
-  getClient,
-} from '@/lib/app-client';
+import { _registerClient, type AppClient, getClient } from '@/lib/app-client';
 
 export { getClient };
 
 interface AppClientProviderProps {
   children: ReactNode;
-  /** Override the transport. Desktop omits this (falls back to Electron IPC).
-   *  The Tauri entry and test harnesses pass their own client here. */
+  /** Override the transport. Tauri entry passes createTauriInvokeClient(); tests pass a mock. */
   client?: AppClient;
 }
 
@@ -20,9 +14,9 @@ const AppClientContext = createContext<AppClient | null>(null);
 
 export function AppClientProvider({ children, client: injected }: AppClientProviderProps) {
   const client = useMemo(() => {
-    const c = injected ?? createDesktopIpcClient();
-    _registerClient(c);
-    return c;
+    if (!injected) throw new Error('AppClientProvider requires a client prop');
+    _registerClient(injected);
+    return injected;
   }, [injected]);
 
   return <AppClientContext.Provider value={client}>{children}</AppClientContext.Provider>;

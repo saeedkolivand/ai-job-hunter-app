@@ -8,6 +8,7 @@
 | ------- | --------- | --------------------------------------------------------- |
 | Node.js | ≥ 20.11.0 | [nodejs.org](https://nodejs.org)                          |
 | pnpm    | ≥ 11      | `npm install -g pnpm`                                     |
+| Rust    | stable    | [rustup.rs](https://rustup.rs)                            |
 | Ollama  | Latest    | [ollama.ai](https://ollama.ai) — required for AI features |
 | Git     | Any       | With commit hook support                                  |
 
@@ -34,21 +35,21 @@ ollama pull llama3.2
 ### Development
 
 ```bash
-# Start the Electron app in dev mode (hot reload on renderer changes)
+# Start the Tauri app in dev mode (hot reload on renderer changes)
 pnpm dev
 
-# Start only the renderer (Vite dev server, no Electron shell)
-pnpm --filter @ajh/desktop dev:renderer
+# Start only the renderer (Vite dev server, no Tauri shell)
+pnpm --filter @ajh/tauri dev:renderer
 ```
 
 ### Build
 
 ```bash
-# Build all packages then the desktop app
+# Build all packages then the Tauri app
 pnpm build
 
-# Build only the desktop app (packages must already be built)
-pnpm --filter @ajh/desktop build
+# Build only the packages (Tauri must already have packages built)
+pnpm build:packages
 ```
 
 ### Type checking
@@ -58,7 +59,7 @@ pnpm --filter @ajh/desktop build
 pnpm typecheck
 
 # Type-check one package
-pnpm --filter @ajh/desktop typecheck
+pnpm --filter @ajh/tauri typecheck
 pnpm --filter @ajh/shared typecheck
 ```
 
@@ -97,20 +98,19 @@ pnpm --filter @ajh/ui storybook
 
 All scripts are defined at the root `package.json` and delegate to packages via `pnpm -r` (recursive) or `--filter`.
 
-| Script           | What it does                     |
-| ---------------- | -------------------------------- |
-| `pnpm dev`       | Start Electron + Vite dev server |
-| `pnpm build`     | Build all packages then desktop  |
-| `pnpm typecheck` | Type-check all packages          |
-| `pnpm lint`      | ESLint across all packages       |
-| `pnpm -r test`   | Run Vitest in all packages       |
-| `pnpm -r build`  | Build all packages (no desktop)  |
+| Script           | What it does                      |
+| ---------------- | --------------------------------- |
+| `pnpm dev`       | Start Tauri app + Vite dev server |
+| `pnpm build`     | Build all packages then Tauri     |
+| `pnpm typecheck` | Type-check all packages           |
+| `pnpm lint`      | ESLint across all packages        |
+| `pnpm -r test`   | Run Vitest in all packages        |
 
 ---
 
 ## Package Builds
 
-Packages must be built before the desktop app can import them. The root `pnpm build` handles ordering automatically. If you change a package during development, rebuild it:
+Packages must be built before the Tauri app can import them. The root `pnpm build` handles ordering automatically. If you change a package during development, rebuild it:
 
 ```bash
 pnpm --filter @ajh/shared build   # most common — after changing IPC contracts
@@ -118,7 +118,7 @@ pnpm --filter @ajh/prompts build  # after changing prompt templates
 pnpm --filter @ajh/ui build       # after changing design tokens
 ```
 
-In dev mode (`pnpm dev`), electron-vite watches `packages/` so most changes are picked up automatically.
+In dev mode (`pnpm dev`), Vite watches `packages/` so most changes are picked up automatically.
 
 ---
 
@@ -130,10 +130,10 @@ The app is fully local — no `.env` file is required for basic development.
 | ---------------------------------------- | -------------------------------------------------- |
 | User preferences (language, model, etc.) | `localStorage` key `ai-job-hunter-preferences`     |
 | Ollama endpoint                          | Hardcoded to `http://localhost:11434` in `@ajh/ai` |
-| App data (DB, vector store)              | Electron `userData` directory                      |
-| Encrypted credentials                    | OS keychain via `keytar`                           |
+| App data (DB, vector store)              | Tauri `appData` directory                          |
+| Encrypted credentials                    | OS keychain via keyring crate                      |
 
-**userData paths:**
+**App data paths:**
 
 | OS      | Path                                                        |
 | ------- | ----------------------------------------------------------- |
@@ -161,7 +161,7 @@ type(scope): lowercase description
 feat(ui): add dark mode toggle
 fix(ipc): handle missing payload in listInteractions
 docs(arch): update architecture for onboarding wizard
-chore(deps): upgrade electron to 33.x
+chore(deps): upgrade tauri to latest
 ```
 
 Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `style`, `perf`, `ci`.  
@@ -175,20 +175,13 @@ Subject must be **all lowercase** (commitlint enforces `subject-case`).
 
 In dev mode, DevTools open automatically. Press `Ctrl+Shift+I` / `Cmd+Option+I` to toggle.
 
-### Main process
+### Tauri / Rust side
 
-Add `--inspect` to the electron command or use VS Code's built-in Electron debugger.  
 Logs go to stdout via pino — structured JSON by default, pretty-printed in dev.
 
 ### IPC tracing
 
-The IPC router logs every invocation at `debug` level:
-
-```
-{"level":"debug","channel":"ai:generate","msg":"ipc handler called"}
-```
-
-Set `LOG_LEVEL=debug` to see all IPC traffic.
+The Tauri command layer logs every invocation at `debug` level. Set `LOG_LEVEL=debug` to see all IPC traffic.
 
 ### Resetting app state
 
@@ -196,7 +189,7 @@ Set `LOG_LEVEL=debug` to see all IPC traffic.
 # Clear localStorage (renderer state + preferences)
 # Open DevTools → Application → Local Storage → clear
 
-# Clear userData (DB, vector store, credentials)
+# Clear app data (DB, vector store, credentials)
 # Windows: rm -rf %APPDATA%\ai-job-hunter-assistant-app
 # macOS:   rm -rf ~/Library/Application\ Support/ai-job-hunter-assistant-app
 ```
@@ -213,10 +206,7 @@ Always add to the right package, not the root:
 
 ```bash
 # Renderer-only dependency
-pnpm --filter @ajh/desktop add some-package
-
-# Main-process only
-pnpm --filter @ajh/desktop add -D some-node-package
+pnpm --filter @ajh/tauri add some-package
 
 # Shared across packages
 pnpm add -w some-package          # workspace root
@@ -251,4 +241,4 @@ TypeScript type-checking and full build verification run only in CI.
 
 See `docs/RELEASE.md` for the full release pipeline.
 
-**Short version:** push a `feat:` or `fix:` commit to `main` and the release happens automatically — semantic-release creates the GitHub Release and the build workflow attaches Windows, Linux, and macOS installers.
+**Short version:** push a `feat:` or `fix:` commit to `main` and the release happens automatically — semantic-release creates the GitHub Release and the build workflow attaches Windows, Linux, and macOS Tauri installers.

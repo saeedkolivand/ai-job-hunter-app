@@ -17,14 +17,16 @@
  * Every method is a jest/vitest spy-friendly async stub. Provide overrides as a
  * deep-partial — only the methods you care about need to be specified.
  */
+import type { Locale, SearchHit } from '@ajh/shared/types';
+
 import type { AppClient } from './app-client';
 
 type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
 };
 
-const noop = () => Promise.resolve(null) as Promise<unknown>;
-const emptyList = () => Promise.resolve([]) as Promise<unknown>;
+const noop = () => Promise.resolve() as Promise<never>;
+const emptyList = () => Promise.resolve([]) as Promise<never>;
 const unsub = () => () => {};
 
 export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppClient {
@@ -32,7 +34,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     system: {
       health: noop,
       getVersion: noop,
-      getLocale: async () => 'en' as unknown,
+      getLocale: async () => 'en' as Locale,
       setLocale: noop,
       getPlatform: noop,
       openExternal: noop,
@@ -64,7 +66,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     },
 
     search: {
-      hybrid: async () => ({ items: [], total: 0 }) as unknown,
+      hybrid: async () => [] as SearchHit<unknown>[],
     },
 
     scrape: {
@@ -83,7 +85,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     },
 
     credentials: {
-      available: async () => false as unknown,
+      available: async () => false,
       list: emptyList,
       set: noop,
       remove: noop,
@@ -92,13 +94,13 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     linkedin: {
       connect: noop,
       disconnect: noop,
-      getStatus: async () => ({ status: 'not_connected' }) as unknown,
+      getStatus: async () => ({ connected: false }),
     },
 
     boards: {
-      connect: async () => ({ status: 'not_connected' }) as unknown,
+      connect: async () => ({ connected: false }),
       disconnect: noop,
-      getStatus: async () => ({ status: 'not_connected' }) as unknown,
+      getStatus: async () => ({ connected: false }),
     },
 
     privacy: {
@@ -144,9 +146,10 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     },
 
     conversations: {
-      getOrCreateConversation: async () => ({ id: 'mock', createdAt: 0 }) as unknown,
+      getOrCreateConversation: async () => ({ id: 'mock', title: 'Mock' }),
       loadMessages: emptyList,
       saveMessage: noop,
+      saveAllMessages: noop,
     },
 
     autopilot: {
@@ -166,9 +169,9 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
   };
 
   // Shallow-merge overrides at the namespace level.
-  for (const ns of Object.keys(overrides) as Array<keyof AppClient>) {
+  for (const ns of Object.keys(overrides) as Array<string & keyof AppClient>) {
     if (overrides[ns]) {
-      (base as Record<string, unknown>)[ns] = {
+      (base as unknown as Record<string, unknown>)[ns] = {
         ...(base[ns] as object),
         ...overrides[ns],
       };
