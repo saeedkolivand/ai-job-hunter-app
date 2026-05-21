@@ -184,18 +184,13 @@ export class LinkedInJobsApiClient {
     onProgress?: (progress: number) => void,
     onItem?: (item: JobPosting) => void
   ): Promise<JobPosting[]> {
-    if (!this.client.hasSession()) {
-      throw new Error(
-        'LinkedIn session not found. Please connect your LinkedIn account in Settings first.'
-      );
-    }
-
+    const authenticated = this.client.hasSession();
     const maxPages = Math.min(Math.max(pages, 1), 10);
     const allJobs: JobPosting[] = [];
     const seen = new Set<string>();
 
     logger.info(
-      { keywords: params.keywords, pages: maxPages, authenticated: true },
+      { keywords: params.keywords, pages: maxPages, authenticated },
       'Starting paginated search'
     );
 

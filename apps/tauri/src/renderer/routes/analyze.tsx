@@ -29,6 +29,7 @@ import { AnalysisSectionAnalysis } from '@/features/analyze/components/AnalysisS
 import { AnalysisSkills } from '@/features/analyze/components/AnalysisSkills';
 import { AnalysisStrengths } from '@/features/analyze/components/AnalysisStrengths';
 import { AnalysisVerdict } from '@/features/analyze/components/AnalysisVerdict';
+import { ResumeInputCard } from '@/features/ai-workspace/components/ResumeInputCard';
 import { CustomDropdown } from '@/features/settings/components/CustomDropdown';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
@@ -189,16 +190,13 @@ function Analyze() {
 
           {/* Inputs */}
           <div className="px-6 space-y-3 pb-4">
-            <CollapsibleInput
-              label={t('analyze.resume')}
-              icon={FileText}
+            <ResumeInputCard
               value={resume}
               onChange={setResume}
+              onUpload={(f) => handleUpload('resume', f)}
               uploading={uploading === 'resume'}
-              onUpload={(f) => void handleUpload('resume', f)}
-              placeholder={t('analyze.resumePlaceholder')}
               disabled={stage === 'running'}
-              t={t}
+              placeholder={t('analyze.resumePlaceholder')}
             />
             <CollapsibleInput
               label={t('analyze.jobAd')}

@@ -19,6 +19,7 @@ import { Button, GlassCard, Input, useToast } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
+import { useAppClient } from '@/providers/AppClientProvider';
 import {
   useAIModels,
   useHasProviderKey,
@@ -100,14 +101,15 @@ export function AISettingsTab() {
   const { t } = useTranslation();
   const toast = useToast();
   const qc = useQueryClient();
+  const api = useAppClient();
 
   const providerConfig = useAiProviderConfig();
-  const setAiProviderConfig = usePreferencesStore((s) => s.setAiProviderConfig);
+  const setActiveProvider = usePreferencesStore((s) => s.setActiveProvider);
+  const setProviderSettings = usePreferencesStore((s) => s.setProviderSettings);
   const setAIModel = usePreferencesStore((s) => s.setAIModel);
   const aiModel = useAIModel();
 
-  const activeProvider: AiProvider = providerConfig?.provider ?? 'ollama';
-  const meta = PROVIDERS[activeProvider];
+  const activeProvider: AiProvider = providerConfig?.activeProvider ?? 'ollama';
 
   // Ollama
   const { data: health } = useSystemHealth();
@@ -118,30 +120,43 @@ export function AISettingsTab() {
   const openExternal = useOpenExternal();
   const [pulling, setPulling] = useState<string | null>(null);
 
-  // Cloud provider
-  const { data: hasKeyData } = useHasProviderKey(activeProvider);
-  const hasKey = hasKeyData?.has ?? false;
-  const setProviderKey = useSetProviderKey();
-  const removeProviderKey = useRemoveProviderKey();
-  const { data: cloudModelsRaw = [] } = useListProviderModels(activeProvider, hasKey);
-  const cloudModels = cloudModelsRaw as Array<{ name: string }>;
+  // Key status for every cloud provider (hooks must be called unconditionally)
+  const openaiKey = useHasProviderKey('openai');
+  const anthropicKey = useHasProviderKey('anthropic');
+  const geminiKey = useHasProviderKey('gemini');
+  const compatKey = useHasProviderKey('openai-compatible');
 
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [baseUrlInput, setBaseUrlInput] = useState(providerConfig?.baseUrl ?? '');
-  const [showKey, setShowKey] = useState(false);
-  const [savingKey, setSavingKey] = useState(false);
-
-  const selectedModel = providerConfig?.model || aiModel?.defaultModel || '';
-
-  const handleSelectProvider = (provider: AiProvider) => {
-    setAiProviderConfig({ provider, model: '', baseUrl: undefined });
-    setApiKeyInput('');
-    setShowKey(false);
+  const keyStatus: Record<string, boolean> = {
+    ollama: ollamaReady,
+    openai: openaiKey.data?.has ?? false,
+    anthropic: anthropicKey.data?.has ?? false,
+    gemini: geminiKey.data?.has ?? false,
+    'openai-compatible': compatKey.data?.has ?? false,
   };
 
-  const handleSelectModel = (model: string) => {
-    setAiProviderConfig({ ...providerConfig, provider: activeProvider, model });
-    if (activeProvider === 'ollama') {
+  const setProviderKey = useSetProviderKey();
+  const removeProviderKey = useRemoveProviderKey();
+
+  // Which provider row is expanded for editing
+  const [expanded, setExpanded] = useState<AiProvider | null>(null);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [savingKey, setSavingKey] = useState<AiProvider | null>(null);
+  const [baseUrlInput, setBaseUrlInput] = useState(
+    providerConfig?.providers?.['openai-compatible']?.baseUrl ?? ''
+  );
+
+  // Models for the expanded cloud provider
+  const expandedIsCloud = expanded !== null && expanded !== 'ollama';
+  const { data: expandedModelsRaw = [] } = useListProviderModels(
+    expanded ?? 'openai',
+    expandedIsCloud && (keyStatus[expanded ?? 'openai'] ?? false)
+  );
+  const expandedModels = expandedModelsRaw as Array<{ name: string }>;
+
+  const handleSelectModel = (provider: AiProvider, model: string) => {
+    setProviderSettings(provider, { model });
+    if (provider === 'ollama') {
       setAIModel({
         defaultModel: model,
         temperature: aiModel?.temperature ?? 0.7,
@@ -150,24 +165,46 @@ export function AISettingsTab() {
     }
   };
 
-  const handleSaveKey = async () => {
+  const handleSaveKey = async (provider: AiProvider) => {
     if (!apiKeyInput.trim()) return;
-    setSavingKey(true);
+    const meta = PROVIDERS[provider];
+    setSavingKey(provider);
     try {
-      await setProviderKey.mutateAsync({ provider: activeProvider, apiKey: apiKeyInput.trim() });
+      await setProviderKey.mutateAsync({ provider, apiKey: apiKeyInput.trim() });
       setApiKeyInput('');
-      toast(`${meta.label} API key saved.`, 'success');
+      try {
+        const models = await api.ai.listProviderModels({ provider });
+        const count = Array.isArray(models) ? models.length : 0;
+        toast(
+          count > 0
+            ? `${meta.label} connected — ${count} model${count === 1 ? '' : 's'} available.`
+            : `${meta.label} key saved, but no models returned. Double-check the key.`,
+          count > 0 ? 'success' : 'warning'
+        );
+        qc.invalidateQueries({ queryKey: [...keys.ai.models, 'provider-models', provider] });
+      } catch {
+        toast(
+          `${meta.label} key saved, but couldn't verify it. Check that it's correct.`,
+          'warning'
+        );
+      }
+      // Auto-set as active if no other active provider is connected
+      if (!keyStatus[activeProvider] && activeProvider !== 'ollama') {
+        setActiveProvider(provider);
+      }
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Failed to save key.', 'error');
     } finally {
-      setSavingKey(false);
+      setSavingKey(null);
     }
   };
 
-  const handleRemoveKey = async () => {
+  const handleRemoveKey = async (provider: AiProvider) => {
+    const meta = PROVIDERS[provider];
     try {
-      await removeProviderKey.mutateAsync({ provider: activeProvider });
-      toast(`${meta.label} API key removed.`, 'success');
+      await removeProviderKey.mutateAsync({ provider });
+      toast(`${meta.label} disconnected.`, 'success');
+      if (activeProvider === provider) setActiveProvider('ollama');
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Failed to remove key.', 'error');
     }
@@ -178,7 +215,7 @@ export function AISettingsTab() {
     try {
       await pullModel.mutateAsync(model);
       qc.invalidateQueries({ queryKey: keys.ai.models });
-      handleSelectModel(model);
+      handleSelectModel('ollama', model);
       toast(`${model} downloaded and selected.`, 'success');
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Download failed.', 'error');
@@ -187,12 +224,8 @@ export function AISettingsTab() {
     }
   };
 
-  const modelOptions =
-    activeProvider === 'ollama'
-      ? ollamaModels
-      : cloudModels.length > 0
-        ? cloudModels
-        : (PROVIDERS[activeProvider]?.models ?? []).map((m) => ({ name: m }));
+  // Connected providers available to be set active
+  const connectedProviders = PROVIDER_ORDER.filter((p) => keyStatus[p]);
 
   return (
     <motion.div
@@ -201,245 +234,311 @@ export function AISettingsTab() {
       transition={transition.normal}
       className="space-y-4"
     >
-      {/* Provider selector */}
+      {/* Active provider switcher */}
+      {connectedProviders.length > 1 && (
+        <GlassCard>
+          <div className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+            {t('settings.aiProvider.activeProvider')}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {connectedProviders.map((p) => {
+              const m = PROVIDERS[p];
+              const isActive = p === activeProvider;
+              return (
+                <button
+                  key={p}
+                  onClick={() => setActiveProvider(p)}
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
+                    isActive
+                      ? 'border-brand/40 bg-brand/10 text-brand-soft'
+                      : 'border-white/[0.07] bg-white/[0.02] text-foreground/50 hover:border-white/20 hover:text-foreground/80'
+                  }`}
+                >
+                  <Bot size={11} className={isActive ? m.color : ''} />
+                  {m.label}
+                  {isActive && <CheckCircle2 size={10} className="text-brand-soft" />}
+                </button>
+              );
+            })}
+          </div>
+        </GlassCard>
+      )}
+
+      {/* Provider list */}
       <GlassCard>
         <div className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
           {t('settings.aiProvider.title')}
         </div>
-        <p className="mb-4 text-sm text-foreground/55">{t('settings.aiProvider.description')}</p>
         <div className="space-y-2">
           {PROVIDER_ORDER.map((p) => {
             const m = PROVIDERS[p];
+            const connected = keyStatus[p] ?? false;
             const isActive = p === activeProvider;
+            const isExpanded = expanded === p;
+            const providerModel = providerConfig?.providers?.[p]?.model ?? '';
+            const isSaving = savingKey === p;
+
             return (
-              <button
+              <div
                 key={p}
-                onClick={() => handleSelectProvider(p)}
-                className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all duration-150 ${
-                  isActive
-                    ? 'border-brand/40 bg-brand/10'
-                    : 'border-white/[0.07] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
-                }`}
+                className={`rounded-xl border transition-all ${isExpanded ? 'border-white/15 bg-white/[0.03]' : 'border-white/[0.06] bg-white/[0.01]'}`}
               >
-                <Bot size={16} className={isActive ? m.color : 'text-foreground/30'} />
-                <div className="min-w-0 flex-1">
-                  <div
-                    className={`text-sm font-medium ${isActive ? 'text-foreground/90' : 'text-foreground/60'}`}
-                  >
-                    {m.label}
+                {/* Row header */}
+                <button
+                  onClick={() => {
+                    setExpanded(isExpanded ? null : p);
+                    setApiKeyInput('');
+                    setShowKey(false);
+                  }}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left"
+                >
+                  <Bot size={15} className={connected ? m.color : 'text-foreground/25'} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-sm font-medium text-foreground/80">
+                      {m.label}
+                      {isActive && connected && (
+                        <span className="rounded-full border border-brand/30 bg-brand/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-brand-soft">
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-foreground/35">{m.description}</div>
                   </div>
-                  <div className="mt-0.5 text-xs text-foreground/30">{m.description}</div>
-                </div>
-                {isActive && <CheckCircle2 size={14} className="shrink-0 text-brand-soft" />}
-              </button>
+                  {/* Status badge */}
+                  {p === 'ollama' ? (
+                    connected ? (
+                      <span className="flex items-center gap-1 text-[10px] text-emerald-400/80">
+                        <CheckCircle2 size={10} /> Running
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-[10px] text-amber-400/60">
+                        <WifiOff size={10} /> Not detected
+                      </span>
+                    )
+                  ) : connected ? (
+                    <span className="flex items-center gap-1 text-[10px] text-emerald-400/80">
+                      <Key size={10} /> Connected
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-foreground/30">Not connected</span>
+                  )}
+                </button>
+
+                {/* Expanded config */}
+                {isExpanded && (
+                  <div className="border-t border-white/[0.06] px-4 pb-4 pt-3 space-y-3">
+                    {p === 'ollama' ? (
+                      /* Ollama config */
+                      <>
+                        {!connected && (
+                          <div className="flex gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-foreground/50"
+                              onClick={() => void openExternal.mutateAsync('https://ollama.com')}
+                            >
+                              <ExternalLink size={11} /> Download Ollama
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-foreground/40"
+                              onClick={() => {
+                                qc.invalidateQueries({ queryKey: keys.system.health });
+                                qc.invalidateQueries({ queryKey: keys.ai.models });
+                              }}
+                            >
+                              <Loader2 size={11} /> Recheck
+                            </Button>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+                            {t('settings.aiModel.title')}
+                          </span>
+                          <Button
+                            onClick={() => void qc.invalidateQueries({ queryKey: keys.ai.models })}
+                            disabled={loadingOllama}
+                            className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2 py-1 text-xs text-foreground/60 hover:text-foreground h-auto border-transparent"
+                          >
+                            <RefreshCw size={11} className={loadingOllama ? 'animate-spin' : ''} />
+                            {t('settings.aiModel.refresh')}
+                          </Button>
+                        </div>
+                        {ollamaModels.length === 0 ? (
+                          <div className="space-y-2">
+                            <p className="text-sm text-foreground/50">
+                              {t('settings.aiModel.noModels')}
+                            </p>
+                            {connected &&
+                              QUICK_MODELS.map((qm) => (
+                                <button
+                                  key={qm}
+                                  onClick={() => void handlePullOllama(qm)}
+                                  disabled={pulling !== null}
+                                  className="flex w-full items-center justify-between rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-left text-sm hover:bg-white/[0.04] disabled:opacity-50"
+                                >
+                                  <span className="text-foreground/70">{qm}</span>
+                                  {pulling === qm ? (
+                                    <Loader2 size={13} className="animate-spin text-brand-soft" />
+                                  ) : (
+                                    <Download size={13} className="text-foreground/30" />
+                                  )}
+                                </button>
+                              ))}
+                          </div>
+                        ) : (
+                          <CustomDropdown
+                            models={ollamaModels}
+                            selectedModel={providerModel || aiModel?.defaultModel || ''}
+                            onSelectModel={(m) => handleSelectModel('ollama', m)}
+                          />
+                        )}
+                        {connected && (
+                          <Button
+                            variant="glass"
+                            size="sm"
+                            onClick={() => setActiveProvider('ollama')}
+                            disabled={isActive}
+                            className={isActive ? 'opacity-40' : 'glow-subtle'}
+                          >
+                            {isActive ? 'Currently active' : 'Set as active'}
+                          </Button>
+                        )}
+                      </>
+                    ) : (
+                      /* Cloud provider config */
+                      <>
+                        {connected ? (
+                          <div className="flex items-center justify-between rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-3 py-2">
+                            <div className="flex items-center gap-2 text-sm text-emerald-300/80">
+                              <Key size={12} /> {t('settings.aiProvider.keyStored')}
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs text-red-400/60 hover:text-red-400"
+                              onClick={() => void handleRemoveKey(p)}
+                            >
+                              <Trash2 size={11} /> {t('settings.aiProvider.removeKey')}
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <p className="text-xs text-foreground/40">
+                              {t('settings.aiProvider.getKeyAt')}{' '}
+                              <button
+                                onClick={() => void openExternal.mutateAsync(m.docsUrl)}
+                                className="text-brand-soft/70 underline underline-offset-2 hover:text-brand-soft"
+                              >
+                                {m.docsUrl.replace('https://', '')}
+                              </button>
+                            </p>
+                            <div className="flex flex-col gap-2">
+                              <div className="relative">
+                                <Input
+                                  type={showKey ? 'text' : 'password'}
+                                  value={apiKeyInput}
+                                  onChange={(e) => setApiKeyInput(e.target.value)}
+                                  onKeyDown={(e) => e.key === 'Enter' && void handleSaveKey(p)}
+                                  placeholder={t('settings.aiProvider.keyPlaceholder')}
+                                  className="w-full pr-9 text-sm"
+                                />
+                                <button
+                                  onClick={() => setShowKey((v) => !v)}
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-foreground/30 hover:text-foreground/60"
+                                >
+                                  {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                                </button>
+                              </div>
+                              <div className="flex justify-end">
+                                <Button
+                                  variant="glass"
+                                  size="sm"
+                                  disabled={!apiKeyInput.trim() || isSaving}
+                                  onClick={() => void handleSaveKey(p)}
+                                  className={apiKeyInput.trim() && !isSaving ? 'glow-subtle' : ''}
+                                >
+                                  {isSaving ? (
+                                    <Loader2 size={13} className="animate-spin" />
+                                  ) : (
+                                    t('settings.aiProvider.saveKey')
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Base URL for openai-compatible */}
+                        {p === 'openai-compatible' && (
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-medium uppercase tracking-widest text-foreground/30">
+                              {t('settings.aiProvider.baseUrl')}
+                            </label>
+                            <div className="flex gap-2">
+                              <Input
+                                value={baseUrlInput}
+                                onChange={(e) => setBaseUrlInput(e.target.value)}
+                                placeholder="https://api.groq.com/openai/v1"
+                                className="flex-1 text-sm"
+                              />
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="shrink-0"
+                                onClick={() =>
+                                  setProviderSettings('openai-compatible', {
+                                    baseUrl: baseUrlInput || undefined,
+                                  })
+                                }
+                              >
+                                {t('settings.aiProvider.saveUrl')}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Model selector */}
+                        {connected && (
+                          <div className="space-y-1.5">
+                            <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+                              {t('settings.aiModel.title')}
+                            </div>
+                            <CustomDropdown
+                              models={
+                                expandedModels.length > 0
+                                  ? expandedModels
+                                  : (PROVIDERS[p]?.models ?? []).map((n) => ({ name: n }))
+                              }
+                              selectedModel={providerModel}
+                              onSelectModel={(m) => handleSelectModel(p, m)}
+                            />
+                          </div>
+                        )}
+
+                        {/* Set active button */}
+                        {connected && (
+                          <Button
+                            variant="glass"
+                            size="sm"
+                            onClick={() => setActiveProvider(p)}
+                            disabled={isActive}
+                            className={isActive ? 'opacity-40' : 'glow-subtle'}
+                          >
+                            {isActive ? 'Currently active' : 'Set as active'}
+                          </Button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
       </GlassCard>
-
-      {/* Ollama config */}
-      {activeProvider === 'ollama' && (
-        <GlassCard>
-          <div className="mb-3 flex items-center justify-between">
-            <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
-              Ollama
-            </div>
-            {ollamaReady ? (
-              <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-                <CheckCircle2 size={12} /> Running
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 text-xs text-amber-400/80">
-                <WifiOff size={12} /> Not detected
-              </div>
-            )}
-          </div>
-
-          {!ollamaReady && (
-            <div className="mb-3 flex gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="flex items-center gap-1.5 text-foreground/50"
-                onClick={() => void openExternal.mutateAsync('https://ollama.com')}
-              >
-                <ExternalLink size={11} /> Download Ollama
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="flex items-center gap-1.5 text-foreground/40"
-                onClick={() => {
-                  qc.invalidateQueries({ queryKey: keys.system.health });
-                  qc.invalidateQueries({ queryKey: keys.ai.models });
-                }}
-              >
-                <Loader2 size={11} /> Recheck
-              </Button>
-            </div>
-          )}
-
-          <div className="mb-3 flex items-center justify-between">
-            <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
-              {t('settings.aiModel.title')}
-            </div>
-            <Button
-              onClick={() => void qc.invalidateQueries({ queryKey: keys.ai.models })}
-              disabled={loadingOllama}
-              className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2 py-1 text-xs text-foreground/60 hover:text-foreground h-auto border-transparent"
-            >
-              <RefreshCw size={11} className={loadingOllama ? 'animate-spin' : ''} />
-              {t('settings.aiModel.refresh')}
-            </Button>
-          </div>
-
-          {ollamaModels.length === 0 ? (
-            <div className="space-y-3">
-              <p className="text-sm text-foreground/50">{t('settings.aiModel.noModels')}</p>
-              {ollamaReady && (
-                <div className="space-y-2">
-                  <p className="text-xs text-foreground/30">{t('onboarding.ollama.chooseModel')}</p>
-                  {QUICK_MODELS.map((m) => (
-                    <button
-                      key={m}
-                      onClick={() => void handlePullOllama(m)}
-                      disabled={pulling !== null}
-                      className="flex w-full items-center justify-between rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2.5 text-left text-sm transition-colors hover:border-white/20 hover:bg-white/[0.04] disabled:opacity-50"
-                    >
-                      <span className="text-foreground/70">{m}</span>
-                      {pulling === m ? (
-                        <Loader2 size={13} className="animate-spin text-brand-soft" />
-                      ) : (
-                        <Download size={13} className="text-foreground/30" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <CustomDropdown
-              models={ollamaModels}
-              selectedModel={selectedModel}
-              onSelectModel={handleSelectModel}
-            />
-          )}
-        </GlassCard>
-      )}
-
-      {/* Cloud provider config */}
-      {activeProvider !== 'ollama' && (
-        <GlassCard>
-          <div className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
-            {t('settings.aiProvider.apiKey')}
-          </div>
-
-          {hasKey ? (
-            <div className="mb-4 flex items-center justify-between rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-2.5">
-              <div className="flex items-center gap-2 text-sm text-emerald-300/80">
-                <Key size={13} />
-                {t('settings.aiProvider.keyStored')}
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="flex items-center gap-1 text-xs text-red-400/60 hover:text-red-400"
-                onClick={() => void handleRemoveKey()}
-              >
-                <Trash2 size={11} /> {t('settings.aiProvider.removeKey')}
-              </Button>
-            </div>
-          ) : (
-            <div className="mb-4 space-y-2">
-              <p className="text-xs text-foreground/40">
-                {t('settings.aiProvider.getKeyAt')}{' '}
-                <button
-                  onClick={() => void openExternal.mutateAsync(meta.docsUrl)}
-                  className="text-brand-soft/70 underline underline-offset-2 hover:text-brand-soft"
-                >
-                  {meta.docsUrl.replace('https://', '')}
-                </button>
-              </p>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Input
-                    type={showKey ? 'text' : 'password'}
-                    value={apiKeyInput}
-                    onChange={(e) => setApiKeyInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && void handleSaveKey()}
-                    placeholder={t('settings.aiProvider.keyPlaceholder')}
-                    className="pr-9 font-mono text-sm"
-                  />
-                  <button
-                    onClick={() => setShowKey((v) => !v)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-foreground/30 hover:text-foreground/60"
-                  >
-                    {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
-                </div>
-                <Button
-                  variant="glass"
-                  size="sm"
-                  disabled={!apiKeyInput.trim() || savingKey}
-                  onClick={() => void handleSaveKey()}
-                  className="shrink-0"
-                >
-                  {savingKey ? (
-                    <Loader2 size={13} className="animate-spin" />
-                  ) : (
-                    t('settings.aiProvider.saveKey')
-                  )}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Base URL for openai-compatible */}
-          {activeProvider === 'openai-compatible' && (
-            <div className="mb-4 space-y-2">
-              <label className="text-xs font-medium uppercase tracking-widest text-foreground/30">
-                {t('settings.aiProvider.baseUrl')}
-              </label>
-              <div className="flex gap-2">
-                <Input
-                  value={baseUrlInput}
-                  onChange={(e) => setBaseUrlInput(e.target.value)}
-                  placeholder="https://api.groq.com/openai/v1"
-                  className="flex-1 font-mono text-sm"
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() =>
-                    setAiProviderConfig({
-                      provider: activeProvider,
-                      model: providerConfig?.model ?? '',
-                      baseUrl: baseUrlInput || undefined,
-                    })
-                  }
-                >
-                  {t('settings.aiProvider.saveUrl')}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Model selector */}
-          {hasKey && modelOptions.length > 0 && (
-            <div className="space-y-2">
-              <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
-                {t('settings.aiModel.title')}
-              </div>
-              <CustomDropdown
-                models={modelOptions}
-                selectedModel={selectedModel}
-                onSelectModel={handleSelectModel}
-              />
-            </div>
-          )}
-        </GlassCard>
-      )}
     </motion.div>
   );
 }

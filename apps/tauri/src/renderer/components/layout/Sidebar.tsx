@@ -17,8 +17,6 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useRef, useState } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 
-import { Button } from '@ajh/ui';
-
 import { ROUTES } from '@/constants/routes';
 import { cn } from '@/lib/cn';
 import { getTimeGreeting } from '@/lib/greeting';
@@ -162,26 +160,26 @@ export function Sidebar() {
               </span>
             </div>
           </div>
+        </div>
 
-          <div className="relative">
-            <Button
-              onClick={showVersion}
-              className="font-mono text-[9px] tabular-nums text-foreground/20 transition-colors hover:text-foreground/40"
-            >
-              {appVersion}
-            </Button>
-            <AnimatePresence>
-              {versionTooltip && (
-                <motion.div
-                  {...variants.fadeSlideDown}
-                  transition={transition.fast}
-                  className="absolute bottom-full right-0 mb-1.5 whitespace-nowrap rounded-lg border border-white/10 bg-secondary px-2.5 py-1.5 text-[10px] text-foreground/60 shadow-xl"
-                >
-                  {appVersion} · local build
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+        <div className="relative flex justify-center">
+          <button
+            onClick={showVersion}
+            className="font-mono text-[9px] tabular-nums text-foreground/20 transition-colors hover:text-foreground/40"
+          >
+            {appVersion}
+          </button>
+          <AnimatePresence>
+            {versionTooltip && (
+              <motion.div
+                {...variants.fadeSlideDown}
+                transition={transition.fast}
+                className="absolute bottom-full mb-1.5 whitespace-nowrap rounded-lg border border-white/10 bg-secondary px-2.5 py-1.5 text-[10px] text-foreground/60 shadow-xl"
+              >
+                {appVersion} · local build
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </aside>

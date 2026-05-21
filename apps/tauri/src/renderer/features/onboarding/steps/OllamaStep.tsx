@@ -264,8 +264,8 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
       await setProviderKey.mutateAsync({ provider: cloudProvider, apiKey: cloudApiKey.trim() });
       setCloudApiKey('');
       setAiProviderConfig({
-        provider: cloudProvider,
-        model: CLOUD_DEFAULT_MODELS[cloudProvider] ?? '',
+        activeProvider: cloudProvider,
+        providers: { [cloudProvider]: { model: CLOUD_DEFAULT_MODELS[cloudProvider] ?? '' } },
       });
       toast(`${cloudMeta?.label ?? cloudProvider} API key saved.`, 'success');
     } catch (err) {
@@ -278,12 +278,15 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
   const handleContinue = () => {
     if (mode === 'cloud') {
       setAiProviderConfig({
-        provider: cloudProvider,
-        model: CLOUD_DEFAULT_MODELS[cloudProvider] ?? '',
+        activeProvider: cloudProvider,
+        providers: { [cloudProvider]: { model: CLOUD_DEFAULT_MODELS[cloudProvider] ?? '' } },
       });
     } else if (selectedModel) {
       setAIModel({ defaultModel: selectedModel, temperature: 0.7, maxTokens: 2048 });
-      setAiProviderConfig({ provider: 'ollama', model: selectedModel });
+      setAiProviderConfig({
+        activeProvider: 'ollama',
+        providers: { ollama: { model: selectedModel } },
+      });
     }
     onNext();
   };
@@ -420,15 +423,15 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
                       {(cloudMeta?.docsUrl ?? '').replace('https://', '')}
                     </button>
                   </p>
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
+                  <div className="flex flex-col gap-2">
+                    <div className="relative">
                       <Input
                         type={showCloudKey ? 'text' : 'password'}
                         value={cloudApiKey}
                         onChange={(e) => setCloudApiKey(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && void handleSaveCloudKey()}
                         placeholder={cloudMeta?.placeholder ?? '…'}
-                        className="pr-9 font-mono text-sm"
+                        className="w-full pr-9 text-sm"
                       />
                       <button
                         onClick={() => setShowCloudKey((v) => !v)}
@@ -437,19 +440,21 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
                         {showCloudKey ? <EyeOff size={13} /> : <Eye size={13} />}
                       </button>
                     </div>
-                    <Button
-                      variant="glass"
-                      size="sm"
-                      disabled={!cloudApiKey.trim() || savingCloudKey}
-                      onClick={() => void handleSaveCloudKey()}
-                      className="shrink-0"
-                    >
-                      {savingCloudKey ? (
-                        <Loader2 size={13} className="animate-spin" />
-                      ) : (
-                        t('settings.aiProvider.saveKey')
-                      )}
-                    </Button>
+                    <div className="flex justify-end">
+                      <Button
+                        variant="glass"
+                        size="sm"
+                        disabled={!cloudApiKey.trim() || savingCloudKey}
+                        onClick={() => void handleSaveCloudKey()}
+                        className={cloudApiKey.trim() && !savingCloudKey ? 'glow-subtle' : ''}
+                      >
+                        {savingCloudKey ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          t('settings.aiProvider.saveKey')
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
