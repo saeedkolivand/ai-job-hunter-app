@@ -1,7 +1,7 @@
 import { Copy } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, SelectDropdown, TextArea } from '@ajh/ui';
+import { Button, SelectDropdown, TextArea, useToast } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import {
@@ -26,6 +26,7 @@ export function ContactFeedback() {
   const [feedbackType, setFeedbackType] = useState<string>('bugReport');
   const [description, setDescription] = useState('');
 
+  const toast = useToast();
   const exportDiagnostics = useExportDiagnostics();
   const copyEnvDetails = useCopyEnvironmentDetails();
   const copyAppVersion = useCopyAppVersion();
@@ -67,7 +68,18 @@ export function ContactFeedback() {
           variant="glass"
           className="mt-4"
           loading={exportDiagnostics.isPending}
-          onClick={() => void exportDiagnostics.mutateAsync()}
+          onClick={async () => {
+            try {
+              const res = (await exportDiagnostics.mutateAsync()) as {
+                success: boolean;
+                bundlePath?: string;
+              };
+              if (res.success) toast('Diagnostics bundle exported.', 'success');
+              else toast('Export failed.', 'error');
+            } catch (err) {
+              toast(err instanceof Error ? err.message : 'Export failed.', 'error');
+            }
+          }}
         >
           {t('support.contact.exportBundle')}
         </Button>
@@ -112,7 +124,10 @@ export function ContactFeedback() {
             variant="ghost"
             className="w-full justify-start"
             loading={copyEnvDetails.isPending}
-            onClick={() => void copyEnvDetails.mutateAsync()}
+            onClick={async () => {
+              await copyEnvDetails.mutateAsync();
+              toast('Copied to clipboard.', 'success');
+            }}
           >
             <Copy size={14} className="mr-2" />
             {t('support.contact.copyEnvironmentDetails')}
@@ -122,7 +137,10 @@ export function ContactFeedback() {
             variant="ghost"
             className="w-full justify-start"
             loading={copyAppVersion.isPending}
-            onClick={() => void copyAppVersion.mutateAsync()}
+            onClick={async () => {
+              await copyAppVersion.mutateAsync();
+              toast('Copied to clipboard.', 'success');
+            }}
           >
             <Copy size={14} className="mr-2" />
             {t('support.contact.copyAppVersion')}
@@ -132,7 +150,10 @@ export function ContactFeedback() {
             variant="ghost"
             className="w-full justify-start"
             loading={copySystemInfo.isPending}
-            onClick={() => void copySystemInfo.mutateAsync()}
+            onClick={async () => {
+              await copySystemInfo.mutateAsync();
+              toast('Copied to clipboard.', 'success');
+            }}
           >
             <Copy size={14} className="mr-2" />
             {t('support.contact.copySystemInfo')}
