@@ -5,8 +5,13 @@ import {
   Bot,
   CheckCircle2,
   ChevronRight,
+  Cloud,
+  Computer,
   Download,
   ExternalLink,
+  Eye,
+  EyeOff,
+  Key,
   Loader2,
   MemoryStick,
   SkipForward,
@@ -16,19 +21,59 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { Button, useToast } from '@ajh/ui';
+import { Button, Input, useToast } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
 import {
   useAIModels,
+  useHasProviderKey,
   useOpenExternal,
   usePullModel,
+  useSetProviderKey,
   useSystemHealth,
   useSystemMetrics,
 } from '@/services';
 import { keys } from '@/services/query-client';
+import type { AiProvider } from '@/store/preferences-schema';
 import { useAIModel, usePreferencesStore } from '@/store/preferences-store';
+
+// Cloud providers available in onboarding (simpler list than settings)
+const CLOUD_PROVIDERS: Array<{
+  id: AiProvider;
+  label: string;
+  placeholder: string;
+  docsUrl: string;
+  color: string;
+}> = [
+  {
+    id: 'openai',
+    label: 'OpenAI',
+    placeholder: 'sk-...',
+    docsUrl: 'https://platform.openai.com/api-keys',
+    color: 'text-green-400',
+  },
+  {
+    id: 'anthropic',
+    label: 'Anthropic (Claude)',
+    placeholder: 'sk-ant-...',
+    docsUrl: 'https://console.anthropic.com/settings/keys',
+    color: 'text-orange-400',
+  },
+  {
+    id: 'gemini',
+    label: 'Google Gemini',
+    placeholder: 'AIza...',
+    docsUrl: 'https://aistudio.google.com/app/apikey',
+    color: 'text-blue-400',
+  },
+];
+
+const CLOUD_DEFAULT_MODELS: Record<string, string> = {
+  openai: 'gpt-4o',
+  anthropic: 'claude-sonnet-4-6',
+  gemini: 'gemini-2.0-flash',
+};
 
 interface Props {
   onBack: () => void;
@@ -136,9 +181,21 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
   const toast = useToast();
   const qc = useQueryClient();
   const setAIModel = usePreferencesStore((s) => s.setAIModel);
+  const setAiProviderConfig = usePreferencesStore((s) => s.setAiProviderConfig);
   const currentAIModel = useAIModel();
   const openExternal = useOpenExternal();
   const pullModel = usePullModel();
+  const setProviderKey = useSetProviderKey();
+
+  // Tab: 'local' = Ollama, 'cloud' = cloud provider
+  const [mode, setMode] = useState<'local' | 'cloud'>('local');
+  const [cloudProvider, setCloudProvider] = useState<AiProvider>('openai');
+  const [cloudApiKey, setCloudApiKey] = useState('');
+  const [showCloudKey, setShowCloudKey] = useState(false);
+  const [savingCloudKey, setSavingCloudKey] = useState(false);
+
+  const cloudMeta = CLOUD_PROVIDERS.find((p) => p.id === cloudProvider) ?? CLOUD_PROVIDERS[0];
+  const { data: hasCloudKeyData } = useHasProviderKey(cloudProvider);
 
   const { data: health, isLoading: healthLoading } = useSystemHealth();
   const { data: metricsRaw } = useSystemMetrics();
@@ -198,9 +255,35 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
     }
   };
 
+  const hasCloudKey = hasCloudKeyData?.has ?? false;
+
+  const handleSaveCloudKey = async () => {
+    if (!cloudApiKey.trim()) return;
+    setSavingCloudKey(true);
+    try {
+      await setProviderKey.mutateAsync({ provider: cloudProvider, apiKey: cloudApiKey.trim() });
+      setCloudApiKey('');
+      setAiProviderConfig({
+        provider: cloudProvider,
+        model: CLOUD_DEFAULT_MODELS[cloudProvider] ?? '',
+      });
+      toast(`${cloudMeta?.label ?? cloudProvider} API key saved.`, 'success');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Failed to save key.', 'error');
+    } finally {
+      setSavingCloudKey(false);
+    }
+  };
+
   const handleContinue = () => {
-    if (selectedModel) {
+    if (mode === 'cloud') {
+      setAiProviderConfig({
+        provider: cloudProvider,
+        model: CLOUD_DEFAULT_MODELS[cloudProvider] ?? '',
+      });
+    } else if (selectedModel) {
       setAIModel({ defaultModel: selectedModel, temperature: 0.7, maxTokens: 2048 });
+      setAiProviderConfig({ provider: 'ollama', model: selectedModel });
     }
     onNext();
   };
@@ -210,7 +293,7 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
     setTimeout(() => onNext(), 1200);
   };
 
-  const canContinue = ollamaReady && selectedInstalled;
+  const canContinue = mode === 'cloud' ? hasCloudKey : ollamaReady && selectedInstalled;
 
   return (
     <motion.div
@@ -250,16 +333,130 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
         </div>
 
         {/* Heading */}
-        <div className="mb-6 text-center">
+        <div className="mb-5 text-center">
           <h1 className="mb-2 text-xl font-semibold text-foreground/95">
             {t('onboarding.ollama.title')}
           </h1>
           <p className="text-sm text-foreground/50">{t('onboarding.ollama.subtitle')}</p>
         </div>
 
+        {/* Local / Cloud tab switcher */}
+        <div className="mb-5 flex rounded-xl border border-white/[0.07] bg-white/[0.02] p-1">
+          {[
+            { id: 'local' as const, label: 'Local (Ollama)', icon: Computer },
+            { id: 'cloud' as const, label: 'Cloud AI', icon: Cloud },
+          ].map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setMode(id)}
+              className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition-all duration-150 ${
+                mode === id
+                  ? 'bg-brand/15 text-brand-soft border border-brand/30'
+                  : 'text-foreground/40 hover:text-foreground/70'
+              }`}
+            >
+              <Icon size={14} />
+              {label}
+            </button>
+          ))}
+        </div>
+
         {/* Content — switches between not-installed and model selection */}
         <AnimatePresence mode="wait">
-          {healthLoading ? (
+          {/* ── Cloud provider panel ──────────────────────── */}
+          {mode === 'cloud' && (
+            <motion.div
+              key="cloud"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={transition.normal}
+              className="mb-6 space-y-4"
+            >
+              {/* Provider selector */}
+              <div className="space-y-2">
+                {CLOUD_PROVIDERS.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => setCloudProvider(p.id)}
+                    className={`flex w-full items-center gap-3 rounded-xl border px-4 py-2.5 text-left transition-all duration-150 ${
+                      cloudProvider === p.id
+                        ? 'border-brand/40 bg-brand/10'
+                        : 'border-white/[0.07] bg-white/[0.02] hover:border-white/20'
+                    }`}
+                  >
+                    <Bot
+                      size={14}
+                      className={cloudProvider === p.id ? p.color : 'text-foreground/30'}
+                    />
+                    <span
+                      className={`text-sm font-medium ${cloudProvider === p.id ? 'text-foreground/90' : 'text-foreground/60'}`}
+                    >
+                      {p.label}
+                    </span>
+                    {cloudProvider === p.id && hasCloudKey && (
+                      <CheckCircle2 size={12} className="ml-auto text-emerald-400" />
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* API key input */}
+              {hasCloudKey ? (
+                <div className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-2.5">
+                  <Key size={13} className="text-emerald-400" />
+                  <span className="text-sm text-emerald-300/80">
+                    {t('settings.aiProvider.keyStored')}
+                  </span>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-foreground/35">
+                    {t('settings.aiProvider.getKeyAt')}{' '}
+                    <button
+                      onClick={() => void openExternal.mutateAsync(cloudMeta?.docsUrl ?? '')}
+                      className="text-brand-soft/70 underline underline-offset-2 hover:text-brand-soft"
+                    >
+                      {(cloudMeta?.docsUrl ?? '').replace('https://', '')}
+                    </button>
+                  </p>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Input
+                        type={showCloudKey ? 'text' : 'password'}
+                        value={cloudApiKey}
+                        onChange={(e) => setCloudApiKey(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && void handleSaveCloudKey()}
+                        placeholder={cloudMeta?.placeholder ?? '…'}
+                        className="pr-9 font-mono text-sm"
+                      />
+                      <button
+                        onClick={() => setShowCloudKey((v) => !v)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-foreground/30 hover:text-foreground/60"
+                      >
+                        {showCloudKey ? <EyeOff size={13} /> : <Eye size={13} />}
+                      </button>
+                    </div>
+                    <Button
+                      variant="glass"
+                      size="sm"
+                      disabled={!cloudApiKey.trim() || savingCloudKey}
+                      onClick={() => void handleSaveCloudKey()}
+                      className="shrink-0"
+                    >
+                      {savingCloudKey ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        t('settings.aiProvider.saveKey')
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {mode === 'local' && healthLoading ? (
             <motion.div
               key="checking"
               initial={{ opacity: 0 }}
@@ -270,7 +467,7 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
               <Loader2 size={24} className="animate-spin text-brand-soft" />
               <p className="text-sm text-foreground/40">{t('onboarding.ollama.checking')}</p>
             </motion.div>
-          ) : !ollamaReady ? (
+          ) : mode === 'local' && !ollamaReady ? (
             /* ── Ollama not found ─────────────────────────── */
             <motion.div
               key="not-installed"
@@ -329,7 +526,7 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
                 {t('onboarding.ollama.recheck')}
               </Button>
             </motion.div>
-          ) : (
+          ) : mode === 'local' ? (
             /* ── Ollama ready — model selection ──────────── */
             <motion.div
               key="model-select"
@@ -466,7 +663,7 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
                 </AnimatePresence>
               )}
             </motion.div>
-          )}
+          ) : null}
         </AnimatePresence>
 
         {/* Step dots */}
