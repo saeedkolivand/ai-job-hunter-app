@@ -19,7 +19,6 @@ import { Button, GlassCard, Input, useToast } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
-import type { AiProvider } from '@/store/preferences-schema';
 import {
   useAIModels,
   useHasProviderKey,
@@ -31,6 +30,7 @@ import {
   useSystemHealth,
 } from '@/services';
 import { keys } from '@/services/query-client';
+import type { AiProvider } from '@/store/preferences-schema';
 import { useAIModel, useAiProviderConfig, usePreferencesStore } from '@/store/preferences-store';
 import type { Model } from '@/types';
 
