@@ -57,6 +57,7 @@ function Analyze() {
   const [stream, setStream] = useState('');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<'resume' | 'jobAd' | null>(null);
+  const [runId, setRunId] = useState(0);
   const { data: modelList = [], isFetching: loadingModels } = useAIModels();
   const models = modelList as Model[];
   const qc = useQueryClient();
@@ -103,6 +104,7 @@ function Analyze() {
 
   const run = async () => {
     if (!canRun) return;
+    setRunId((n) => n + 1);
     setStage('running');
     setError(null);
     setResult(null);
@@ -133,6 +135,8 @@ function Analyze() {
     setError(null);
     setUploadError(null);
     setStage('idle');
+    setRunId(0);
+    extractTextMutation.reset();
   };
 
   return (
@@ -301,7 +305,7 @@ function Analyze() {
             {/* Done */}
             {stage === 'done' && result && (
               <motion.div
-                key="done"
+                key={`done-${runId}`}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 className="flex flex-1 flex-col overflow-hidden"
