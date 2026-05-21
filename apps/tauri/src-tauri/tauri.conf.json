@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AI Job Hunter",
+  "productName": "AI Job Hunter Assistant",
   "identifier": "com.ajh.desktop",
   "version": "1.3.1",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "AI Job Hunter",
+        "title": "AI Job Hunter Assistant",
         "width": 1280,
         "height": 800,
         "minWidth": 900,
