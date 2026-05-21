@@ -1506,14 +1506,52 @@ async fn sidecar_board_status(app: &AppHandle, board_id: &str) -> Value {
 }
 
 async fn sidecar_board_disconnect(app: &AppHandle, board_id: &str) -> Value {
-    let Some(port) = sidecar_port(app) else {
-        return json!(null);
-    };
-    let job_id = uuid_v4();
-    let cmd = json!({ "kind": "board.disconnect", "boardId": board_id });
-    post_sidecar_command(app, port, &cmd, &job_id).await.ok();
-    json!(null)
+    // Always write { connected: false } to disk so the status survives a sidecar restart.
+    write_board_auth_status(board_id, false);
+
+    // Also tell the live sidecar so it clears in-memory state and session cookies.
+    if let Some(port) = sidecar_port(app) {
+        let job_id = uuid_v4();
+        let cmd = json!({ "kind": "board.disconnect", "boardId": board_id });
+        post_sidecar_command(app, port, &cmd, &job_id).await.ok();
+    }
+
+    json!({ "success": true })
 }
+
+/// Resolve the directory the scraper sidecar uses for persistent data.
+///
+/// Mirrors scraper-runtime/src/index.ts:
+///   process.env.AJH_DATA_DIR ?? path.join(os.homedir(), '.ajh')
+fn sidecar_data_dir() -> std::path::PathBuf {
+    if let Ok(dir) = std::env::var("AJH_DATA_DIR") {
+        return std::path::PathBuf::from(dir);
+    }
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_default();
+    std::path::PathBuf::from(home).join(".ajh")
+}
+
+/// Persist the board's connected state directly to the auth-status file on disk.
+///
+/// The sidecar reads this file on startup to determine whether a board is
+/// connected without opening a browser. Writing it from Rust ensures the
+/// status survives sidecar restarts even when the sidecar is not running
+/// at the time the user clicks Disconnect.
+fn write_board_auth_status(board_id: &str, connected: bool) {
+    let path = sidecar_data_dir()
+        .join("browser-state")
+        .join(board_id)
+        .join("auth-status.json");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    let payload = if connected { r#"{"connected":true}"# } else { r#"{"connected":false}"# };
+    std::fs::write(&path, payload).ok();
+}
+
+const KNOWN_BOARDS: &[&str] = &["linkedin", "indeed", "xing", "glassdoor"];
 
 #[tauri::command]
 pub async fn linkedin_connect(app: AppHandle) -> Value {
@@ -1548,9 +1586,12 @@ pub async fn boards_get_status(app: AppHandle, board_id: String) -> Value {
 // ── Privacy ──────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn privacy_sign_out_all(app: AppHandle) -> Value {
+pub async fn privacy_sign_out_all(app: AppHandle) -> Value {
+    // Disconnect every known board — write auth-status to disk AND tell the sidecar.
+    for board_id in KNOWN_BOARDS {
+        sidecar_board_disconnect(&app, board_id).await;
+    }
     // Clear cached postings and interactions from the in-process stores.
-    // Browser state directories are managed by the sidecar (Playwright storage).
     app.state::<Mutex<PostingsCache>>()
         .lock()
         .unwrap()
