@@ -1,0 +1,179 @@
+/**
+ * createMockClient — factory for a fully-stubbed AppClient.
+ *
+ * Intended for:
+ *   • Vitest / Jest unit tests of renderer components and service hooks.
+ *   • Storybook stories that need a client but no backend.
+ *   • A future web HTTP adapter: start with stubs, replace one namespace at a
+ *     time with real fetch calls until parity is reached.
+ *
+ * Usage:
+ *   const client = createMockClient();
+ *   // override individual methods for a specific test:
+ *   const client = createMockClient({
+ *     system: { health: async () => ({ status: 'ok' }) },
+ *   });
+ *
+ * Every method is a jest/vitest spy-friendly async stub. Provide overrides as a
+ * deep-partial — only the methods you care about need to be specified.
+ */
+import type { AppClient } from './app-client';
+
+type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
+};
+
+const noop = () => Promise.resolve(null) as Promise<unknown>;
+const emptyList = () => Promise.resolve([]) as Promise<unknown>;
+const unsub = () => () => {};
+
+export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppClient {
+  const base: AppClient = {
+    system: {
+      health: noop,
+      getVersion: noop,
+      getLocale: async () => 'en' as unknown,
+      setLocale: noop,
+      getPlatform: noop,
+      openExternal: noop,
+      setPerformanceMode: noop,
+      getMetrics: noop,
+    },
+
+    jobs: {
+      list: emptyList,
+      get: noop,
+      cancel: noop,
+      retry: noop,
+      onEvent: unsub,
+    },
+
+    ai: {
+      generate: noop,
+      listModels: emptyList,
+      pullModel: noop,
+      unloadModel: noop,
+      embed: noop,
+      onStream: unsub,
+    },
+
+    documents: {
+      list: emptyList,
+      import: noop,
+      remove: noop,
+    },
+
+    search: {
+      hybrid: async () => ({ items: [], total: 0 }) as unknown,
+    },
+
+    scrape: {
+      board: noop,
+      url: noop,
+      persistJob: noop,
+      listPostings: emptyList,
+      clearPostings: noop,
+      listInteractions: emptyList,
+      exportData: noop,
+      importData: noop,
+    },
+
+    match: {
+      resume: noop,
+    },
+
+    credentials: {
+      available: async () => false as unknown,
+      list: emptyList,
+      set: noop,
+      remove: noop,
+    },
+
+    linkedin: {
+      connect: noop,
+      disconnect: noop,
+      getStatus: async () => ({ status: 'not_connected' }) as unknown,
+    },
+
+    boards: {
+      connect: async () => ({ status: 'not_connected' }) as unknown,
+      disconnect: noop,
+      getStatus: async () => ({ status: 'not_connected' }) as unknown,
+    },
+
+    privacy: {
+      signOutAll: noop,
+      clearInteractions: noop,
+    },
+
+    apply: {
+      start: noop,
+      catalog: emptyList,
+    },
+
+    updater: {
+      check: noop,
+      download: noop,
+      install: noop,
+      onStatus: unsub,
+    },
+
+    shortcuts: {
+      onCommandPalette: unsub,
+    },
+
+    resume: {
+      extractText: noop,
+    },
+
+    support: {
+      exportDiagnostics: noop,
+      reloadAiRuntime: noop,
+      unloadAllModels: noop,
+      resetModelConfiguration: noop,
+      rebuildVectorIndexes: noop,
+      clearEmbeddingsCache: noop,
+      resetVectorDatabase: noop,
+      clearOcrCache: noop,
+      reindexAllDocuments: noop,
+      resetAllSessions: noop,
+      clearScrapingQueue: noop,
+      copyEnvironmentDetails: noop,
+      copyAppVersion: noop,
+      copySystemInfo: noop,
+    },
+
+    conversations: {
+      getOrCreateConversation: async () => ({ id: 'mock', createdAt: 0 }) as unknown,
+      loadMessages: emptyList,
+      saveMessage: noop,
+    },
+
+    autopilot: {
+      list: emptyList,
+      get: noop,
+      create: noop,
+      update: noop,
+      remove: noop,
+      run: noop,
+      pause: noop,
+      resume: noop,
+    },
+
+    dialog: {
+      openFiles: async () => [] as string[],
+    },
+  };
+
+  // Shallow-merge overrides at the namespace level.
+  for (const ns of Object.keys(overrides) as Array<keyof AppClient>) {
+    if (overrides[ns]) {
+      (base as Record<string, unknown>)[ns] = {
+        ...(base[ns] as object),
+        ...overrides[ns],
+      };
+    }
+  }
+
+  return base;
+}

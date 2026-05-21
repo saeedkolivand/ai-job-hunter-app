@@ -1,0 +1,1154 @@
+{
+  "app": {
+    "title": "AI Job Hunter",
+    "tagline": "Ruhig. Lokal. KI-nativ."
+  },
+  "nav": {
+    "dashboard": "Übersicht",
+    "analyze": "Lebenslauf-Analyse",
+    "generate": "KI-Generator",
+    "jobs": "Jobs",
+    "autopilot": "Autopilot",
+    "documents": "Dokumente",
+    "resumes": "Lebensläufe",
+    "search": "Suche",
+    "ai": "KI-Arbeitsbereich",
+    "monitoring": "Monitoring",
+    "support": "Hilfe & Support",
+    "settings": "Einstellungen"
+  },
+  "analyze": {
+    "title": "Lebenslauf-Analyse",
+    "subtitle": "Füge deinen Lebenslauf und eine Stellenanzeige ein. Erhalte sofort einen lokalen ATS-Score, semantischen Abgleich, Lückenanalyse und maßgeschneiderte Empfehlungen.",
+    "resume": "Dein Lebenslauf",
+    "resumeHint": "Klartext einfügen",
+    "resumePlaceholder": "Füge hier deinen Lebenslauf ein…\n\nIncludiere Fähigkeiten, Erfahrung, Ausbildung und Schlüsselwörter, die bewertet werden sollen.",
+    "jobAd": "Stellenanzeige",
+    "jobAdHint": "Komplette Anzeige einfügen",
+    "jobAdPlaceholder": "Füge hier die Stellenbeschreibung ein…\n\nIncludiere Anforderungen, Aufgaben und genannte Tools oder Qualifikationen.",
+    "run": "Analysieren",
+    "running": "Analysiere…",
+    "reset": "Zurücksetzen",
+    "scores": {
+      "ats": "ATS-Score",
+      "semantic": "Semantischer Abgleich",
+      "combined": "Gesamt"
+    },
+    "matched": "Übereinstimmende Begriffe",
+    "gaps": "Fehlende Begriffe",
+    "recommendations": "Empfehlungen",
+    "noMatches": "Noch keine Übereinstimmungen.",
+    "noGaps": "Keine Lücken — starke Abdeckung.",
+    "semantic": {
+      "embeddings": "Semantischer Abgleich · lokale Embeddings",
+      "fallback": "Semantischer Abgleich · Token-Proxy (Ollama offline)"
+    },
+    "upload": {
+      "button": "Datei hochladen",
+      "unsupported": "Nicht unterstütztes Dateiformat: .{{ext}}. Bitte PDF, DOCX, TXT oder MD.",
+      "tooLarge": "Datei zu groß (max. 25 MB).",
+      "empty": "Aus dieser Datei konnte kein Text extrahiert werden.",
+      "failed": "Datei konnte nicht gelesen werden."
+    },
+    "error": "Analyse fehlgeschlagen",
+    "errorBody": "Analyse fehlgeschlagen. Bitte erneut versuchen.",
+    "reAnalyse": "Erneut analysieren",
+    "selectModel": "Bitte zuerst ein Modell auswählen",
+    "pasteContent": "Lebenslauf & Stellenanzeige einfügen",
+    "idleTitle": "Lebenslauf-Analysator",
+    "idleSubtitle": "Lebenslauf und Stellenanzeige einfügen für eine vollständige KI-Analyse",
+    "features": {
+      "ats": "ATS-Kompatibilitätsbewertung",
+      "keywords": "Stichwort-Lückenanalyse",
+      "feedback": "Abschnittsweise Rückmeldung",
+      "verdict": "Perspektive des Personalers & abschließendes Urteil"
+    },
+    "progress": {
+      "reading": "Lebenslauf wird gelesen…",
+      "scanning": "Stellenanforderungen werden gescannt…",
+      "calculating": "ATS-Kompatibilität wird berechnet…",
+      "checking": "Stichwort-Abdeckung wird geprüft…",
+      "measuring": "Lesbarkeit wird gemessen…",
+      "identifying": "Fehlende Fähigkeiten werden identifiziert…",
+      "prioritising": "Empfehlungen werden priorisiert…",
+      "scoring": "Lebenslauf-Abschnitte werden bewertet…",
+      "generating": "Umformulierungen werden generiert…",
+      "risks": "ATS-Formatierungsrisiken werden geprüft…",
+      "writing": "Perspektive des Personalers wird verfasst…",
+      "finalising": "Urteil wird finalisiert…",
+      "almostDone": "Fast fertig…"
+    },
+    "languageMismatch": "Sprachkonflikt erkannt",
+    "languageMismatchBody": "Lebenslauf: {{resume}} — Stellenanzeige: {{jobAd}}. ATS-Systeme könnten Sie niedriger bewerten. Siehe Sprachempfehlungen unten.",
+    "resultScores": {
+      "ats": "ATS-Score",
+      "jobMatch": "Stellenübereinstimmung",
+      "keywordCoverage": "Stichwörter",
+      "readability": "Lesbarkeit",
+      "languageAlignment": "Sprache"
+    },
+    "verdict": "Endurteil",
+    "recruiterView": "Sichtweise des Personalers —",
+    "strengths": "Stärken",
+    "noStrengths": "Keine bemerkenswerten Stärken identifiziert.",
+    "weaknesses": "Schwächen",
+    "noWeaknesses": "Keine wesentlichen Schwächen gefunden.",
+    "matchedSkills": "Übereinstimmende Fähigkeiten",
+    "atsRisks": "ATS-Risiken",
+    "sectionAnalysis": "Abschnittsanalyse",
+    "languageRecommendations": "Sprachempfehlungen",
+    "categories": {
+      "keyword": "Stichwort",
+      "skill": "Fähigkeit",
+      "format": "Format",
+      "language": "Sprache",
+      "experience": "Erfahrung"
+    },
+    "uploadButton": "Hochladen"
+  },
+  "generate": {
+    "eyebrow": "KI-Generierung",
+    "title": "Maßgeschneidert. Jedes Wort.",
+    "subtitle": "Generiere einen maßgeschneiderten Lebenslauf oder ein Anschreiben aus jeder Stellenanzeige. Streamt lokal von Ollama in deiner Sprache.",
+    "modes": {
+      "resume": "Lebenslauf",
+      "cover": "Anschreiben"
+    },
+    "resume": "Dein Lebenslauf",
+    "resumePlaceholder": "Füge hier deinen Master-Lebenslauf ein…",
+    "jobAd": "Ziel-Stellenanzeige",
+    "jobAdPlaceholder": "Füge hier die Stellenbeschreibung ein…",
+    "run": "Generieren",
+    "running": "Generiere…",
+    "reset": "Zurücksetzen",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "output": {
+      "resume": "Maßgeschneiderter Lebenslauf",
+      "cover": "Anschreiben"
+    },
+    "error": "Lokale KI nicht erreichbar. Stelle sicher, dass Ollama läuft."
+  },
+  "monitoring": {
+    "title": "Überwachung",
+    "subtitle": "Live-Job-Warteschlange, Systemgesundheit und Aktivität.",
+    "badge": "Live",
+    "metrics": {
+      "completed": "Abgeschlossen",
+      "running": "Läuft",
+      "failed": "Fehlgeschlagen",
+      "successRate": "Erfolgsrate"
+    },
+    "status": {
+      "ollama": "Ollama",
+      "database": "Datenbank"
+    },
+    "sections": {
+      "activeJobs": "Aktive Jobs",
+      "activityFeed": "Aktivitätsfeed",
+      "hourlyActivity": "Stündliche Aktivität (diese Sitzung)"
+    },
+    "emptyStates": {
+      "noActiveJobs": "Keine aktiven Jobs",
+      "waitingForActivity": "Warte auf Aktivität…"
+    },
+    "actions": {
+      "clear": "Löschen",
+      "live": "live"
+    },
+    "timeLabels": {
+      "last24Hours": "letzte 24 Stunden",
+      "streaming": "Streaming"
+    },
+    "footer": {
+      "localProcessing": "Alle Verarbeitungen laufen lokal auf Ihrem Computer",
+      "localPrivateOffline": "lokal · privat · offline-fähig"
+    },
+    "jobKinds": {
+      "aiGenerate": "KI-Generierung",
+      "aiEmbed": "Embedding",
+      "documentImport": "Dokumentimport",
+      "documentOcr": "OCR-Lauf",
+      "documentChunk": "Chunking",
+      "documentIndex": "Indizierung",
+      "scrapeBoard": "Board-Scraping",
+      "scrapeUrl": "URL-Scraping",
+      "persistJob": "Interaktion gespeichert",
+      "matchResume": "Lebenslauf-Match",
+      "applyJob": "Bewerbung"
+    },
+    "jobKindsShort": {
+      "aiGenerate": "KI",
+      "aiEmbed": "Embed",
+      "documentImport": "Doc",
+      "scrapeBoard": "Scrape",
+      "scrapeUrl": "Scrape",
+      "persistJob": "Save",
+      "matchResume": "Match",
+      "applyJob": "Apply"
+    }
+  },
+  "settings": {
+    "groups": {
+      "preferences": "Einstellungen",
+      "system": "System"
+    },
+    "sections": {
+      "general": {
+        "label": "Allgemein",
+        "description": "Name, Sprache, Aussehen"
+      },
+      "ai": {
+        "label": "KI",
+        "description": "Modelle, Ton, Generierung"
+      },
+      "jobs": {
+        "label": "Jobs",
+        "description": "Standort, Gehalt, Stack"
+      },
+      "resume": {
+        "label": "Lebenslauf",
+        "description": "Lebenslaufdateien verwalten"
+      },
+      "accounts": {
+        "label": "Konten",
+        "description": "Verbundene Boards & Sitzungen"
+      },
+      "privacy": {
+        "label": "Datenschutz",
+        "description": "Daten, Export, Cache"
+      },
+      "performance": {
+        "label": "Leistung",
+        "description": "Arbeitsspeicher, Animationen, Parallelität"
+      }
+    },
+    "profile": {
+      "title": "Profil",
+      "displayName": "Anzeigename",
+      "placeholder": "Ihr Name",
+      "save": "Speichern"
+    },
+    "language": {
+      "title": "Sprache"
+    },
+    "onboarding": {
+      "title": "Einführungsassistent",
+      "description": "Den Einführungsassistenten erneut abspielen, um die Funktionsübersicht zu wiederholen.",
+      "replay": "Assistent erneut abspielen"
+    },
+    "aiModel": {
+      "title": "KI-Modell",
+      "refresh": "Aktualisieren",
+      "description": "Wählen Sie das lokale KI-Modell zur Generierung von Antworten.",
+      "loading": "Modelle werden geladen...",
+      "noModels": "Keine Modelle verfügbar. Stellen Sie sicher, dass Ollama läuft."
+    },
+    "accounts": {
+      "credentialsWarning": "Anmeldedaten werden lokal verschlüsselt auf Ihrem Gerät gespeichert. Sie werden niemals an einen Server gesendet.",
+      "noEncryptionWarning": "Sichere Speicherung von Anmeldedaten ist auf diesem System nicht verfügbar. Anmeldedaten können nicht gespeichert werden."
+    },
+    "privacy": {
+      "exportData": "Daten exportieren",
+      "exportDataDescription": "Speichern Sie Ihre beworbenen, angesehenen und gespeicherten Jobs in einer JSON-Datei.",
+      "export": "Exportieren",
+      "importData": "Daten importieren",
+      "importDataDescription": "Wiederherstellung aus einem vorherigen Export. Vorhandene Datensätze bleiben erhalten.",
+      "import": "Importieren",
+      "signOutAll": "Alle Konten abmelden",
+      "signOutAllDescription": "Löscht alle Browser-Sitzungen. Verbinden Sie Boards über Kontoeinstellungen neu.",
+      "signOut": "Abmelden",
+      "clearHistory": "Interaktionsverlauf löschen",
+      "clearHistoryDescription": "Löscht dauerhaft alle beworbenen, angesehenen und gespeicherten Job-Datensätze.",
+      "clear": "Löschen",
+      "signOutAllConfirmTitle": "Alle Konten abmelden",
+      "signOutAllConfirmDescription": "Dadurch werden alle Browser-Sitzungen gelöscht und Sie von jedem verbundenen Job-Board abgemeldet. Ihr Interaktionsverlauf bleibt davon unberührt.",
+      "signOutAllConfirm": "Alle abmelden",
+      "clearHistoryConfirmTitle": "Interaktionsverlauf löschen",
+      "clearHistoryConfirmDescription": "Dadurch werden alle Ihre beworbenen, angesehenen und gespeicherten Job-Datensätze dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "clearHistoryConfirm": "Verlauf löschen",
+      "somethingWentWrong": "Etwas ist schiefgelaufen.",
+      "signedOutSuccess": "Von allen Konten abgemeldet. Neuverbindung über Einstellungen → Konten.",
+      "historyClearedSuccess": "Interaktionsverlauf gelöscht.",
+      "exportSuccess": "Daten erfolgreich exportiert.",
+      "importSuccess": "{{count}} Datensatz{{plural}} importiert."
+    },
+    "location": {
+      "title": "Bevorzugter Standort",
+      "description": "Legen Sie Ihren bevorzugten Job-Standort fest, um Suchergebnisse und Empfehlungen zu personalisieren.",
+      "searchPlaceholder": "Standort suchen...",
+      "recent": "Kürzlich"
+    },
+    "remote": {
+      "title": "Arbeitspräferenz",
+      "description": "Wählen Sie Ihre bevorzugte Arbeitsweise, um Job-Empfehlungen zu personalisieren.",
+      "remote": "Remote",
+      "remoteDescription": "Von überall arbeiten",
+      "hybrid": "Hybrid",
+      "hybridDescription": "Mix aus Remote und Büro",
+      "onSite": "Vor Ort",
+      "onSiteDescription": "Im Büro arbeiten",
+      "any": "Beliebig",
+      "anyDescription": "Keine Präferenz"
+    },
+    "techStack": {
+      "title": "Tech-Stack",
+      "description": "Fügen Sie Ihre technischen Fähigkeiten hinzu, um Job-Empfehlungen und KI-Analyse zu personalisieren.",
+      "searchPlaceholder": "Technologien suchen...",
+      "popular": "Beliebt"
+    },
+    "salary": {
+      "title": "Gehaltserwartungen",
+      "description": "Legen Sie Ihre Gehaltserwartungen fest, um Job-Empfehlungen zu filtern.",
+      "currency": "Währung",
+      "period": "Zeitraum",
+      "range": "Bereich",
+      "minimum": "Minimum",
+      "maximum": "Maximum"
+    },
+    "outputTone": {
+      "title": "KI-Ausgabestil",
+      "description": "Wählen Sie, wie KI-Antworten klingen sollen, um Ihren Kommunikationsstil anzupassen.",
+      "professional": "Professionell",
+      "professionalDescription": "Formell und geschäftlich angemessen",
+      "casual": "Locker",
+      "casualDescription": "Gesprächig und freundlich",
+      "formal": "Formell",
+      "formalDescription": "Strukturiert und detailliert",
+      "creative": "Kreativ",
+      "creativeDescription": "Engagierend und ausdrucksstark"
+    },
+    "resume": {
+      "title": "Lebenslaufverwaltung",
+      "description": "Laden Sie Ihre Lebensläufe hoch und verwalten Sie sie für KI-gestützte Job-Matching und ATS-Analyse.",
+      "dragDrop": "Lebenslauf hierher ziehen",
+      "orClick": "oder klicken zum Durchsuchen",
+      "fileTypes": "PDF, DOC, DOCX",
+      "uploading": "Wird hochgeladen und analysiert...",
+      "setAsDefault": "Als Standard festlegen",
+      "uploaded": "Hochgeladen",
+      "indexed": "Indiziert",
+      "default": "Standard",
+      "extractedSkills": "Extrahierte Fähigkeiten",
+      "more": "mehr",
+      "atsScore": "ATS-Score",
+      "noResumes": "Noch keine Lebensläufe hochgeladen"
+    }
+  },
+  "aiGenerate": {
+    "title": "KI-Generierung",
+    "subtitle": "Laden Sie Ihren Lebenslauf und die Stellenanzeige hoch, um maßgeschneiderte, ATS-optimierte Dokumente zu erstellen.",
+    "resumeLabel": "Lebenslauf",
+    "jobAdLabel": "Stellenanzeige",
+    "detectedContext": "Erkannter Kontext",
+    "candidate": "Kandidat",
+    "role": "Rolle",
+    "company": "Unternehmen",
+    "languages": "Sprachen",
+    "languageMismatch": "Sprachkonflikt — Ausgabe wird lokalisiert nach {{lang}}",
+    "generate": "Generieren",
+    "style": "Stil",
+    "resume": "Lebenslauf",
+    "coverLetter": "Anschreiben",
+    "both": "Beides",
+    "generating": "Generierung…",
+    "selectModel": "Wählen Sie zuerst ein Modell",
+    "pasteResumeJob": "Lebenslauf & Stellenanzeige einfügen",
+    "continue": "Weiter",
+    "yourAICareerCopilot": "Ihr KI-Karriere-Copilot",
+    "pasteResumeJobAd": "Fügen Sie Ihren Lebenslauf und eine Stellenanzeige ein, um zu beginnen",
+    "features": {
+      "atsOptimized": "ATS-optimierter Lebenslauf, angepasst an die Stelle",
+      "personalizedCover": "Personalisiertes Anschreiben, das nicht nach KI generiert klingt",
+      "multilingual": "Mehrsprachige Lokalisierung für internationale Bewerbungen",
+      "smartExport": "Intelligenter Export mit automatisch generiertem Dateinamen"
+    },
+    "analyzingDocuments": "Dokumente werden mit KI analysiert…",
+    "generatingResume": "Lebenslauf wird generiert…",
+    "generatingCoverLetter": "Anschreiben wird generiert…",
+    "copied": "Kopiert",
+    "copy": "Kopieren",
+    "export": "Exportieren",
+    "download": "Herunterladen .{{fmt}}",
+    "error": "Fehler",
+    "upload": "Hochladen",
+    "regenerate": "Neu generieren",
+    "placeholder": "Generierte Ausgabe erscheint hier…",
+    "stages": {
+      "analyzing": "Anforderungen werden analysiert…",
+      "extracting": "Prioritäten werden extrahiert…",
+      "mapping": "Erfahrung wird zugeordnet…",
+      "optimizing": "ATS-Schlüsselwörter werden optimiert…",
+      "rewriting": "Für maximale Wirkung umgeschrieben…",
+      "adapting": "Ton und Sprache werden angepasst…",
+      "finalizing": "Ausgabe wird finalisiert…"
+    },
+    "errors": {
+      "unsupportedFileType": "Nicht unterstützter Dateityp: .{{ext}}",
+      "fileTooLarge": "Datei zu groß (max 25MB)",
+      "couldNotExtract": "Text konnte nicht extrahiert werden",
+      "uploadFailed": "Upload fehlgeschlagen",
+      "extractionFailed": "Extraktion fehlgeschlagen",
+      "generationFailed": "Generierung fehlgeschlagen"
+    },
+    "localized": "Lokalisiert"
+  },
+  "autopilot": {
+    "title": "Autopilot",
+    "subtitle": "Automatisierte Jobsuche und Bewerbungsworkflows",
+    "newAutopilot": "Neuer Autopilot",
+    "loading": "Laden…",
+    "empty": {
+      "title": "Noch keine Autopilots",
+      "description": "Richten Sie einen Autopilot ein, um automatisch Jobs zu suchen, anhand Ihres Lebenslaufs zu bewerten und sich zu bewerben.",
+      "step1": "Wählen Sie ein Board, ein Stichwort und einen Standort",
+      "step2": "Legen Sie eine Mindestübereinstimmung fest, um schwache Ergebnisse zu filtern",
+      "step3": "Wählen Sie Speichern, Überprüfen oder Auto-Bewerbung",
+      "step4": "Planen Sie stündlich, täglich oder manuelle Ausführungen",
+      "createFirst": "Erstellen Sie Ihren ersten Autopilot"
+    },
+    "wizard": {
+      "title": "Neuer Autopilot",
+      "steps": ["Ziel", "Filter", "Aktion", "Zeitplan"],
+      "cancel": "Abbrechen",
+      "back": "Zurück",
+      "next": "Weiter",
+      "create": "Autopilot erstellen",
+      "target": {
+        "title": "Wo sollen wir suchen?",
+        "subtitle": "Wählen Sie ein Job-Board und geben Sie Ihre Suche ein.",
+        "name": "Autopilot-Name",
+        "namePlaceholder": "z.B. Senior Frontend Berlin",
+        "board": "Job-Board",
+        "query": "Suchanfrage",
+        "queryPlaceholder": "z.B. React Entwickler",
+        "location": "Standort",
+        "locationOptional": "(optional)",
+        "locationPlaceholder": "z.B. Berlin, remote",
+        "fromLocationSettings": "aus Standortseinstellungen",
+        "workType": "Arbeitsart",
+        "pages": "Zu scrapende Seiten",
+        "postedWithin": "Veröffentlicht innerhalb",
+        "anyTime": "Jederzeit",
+        "last24h": "Letzte 24h",
+        "lastWeek": "Letzte Woche",
+        "lastMonth": "Letzter Monat"
+      },
+      "filter": {
+        "title": "Wie sollen wir Ergebnisse filtern?",
+        "subtitle": "Nur Jobs, die diese Filter bestehen, werden verarbeitet.",
+        "minMatchScore": "Mindestübereinstimmung — {{score}}%",
+        "minMatchScoreHint": "(0 = kein Filter)",
+        "minMatchScoreDesc": "Jobs mit niedrigerer Bewertung werden übersprungen.",
+        "resume": "Lebenslauf",
+        "resumeOptional": "(optional — für Übereinstimmungsbewertung)",
+        "resumePlaceholder": "Lebenslauftext hier einfügen für genaue Bewertung…",
+        "mustInclude": "Muss Stichwörter enthalten",
+        "commaSeparated": "(kommagetrennt)",
+        "keywordsPlaceholder": "TypeScript, React",
+        "fromTechStackSettings": "aus Tech-Stack-Einstellungen",
+        "excludeKeywords": "Stichwörter ausschließen",
+        "excludePlaceholder": "Praktikant, Junior"
+      },
+      "action": {
+        "title": "Was soll mit passenden Jobs passieren?",
+        "subtitle": "Wählen Sie, wie viel Automatisierung Sie wünschen.",
+        "saveOnly": "Nur speichern",
+        "saveOnlyDesc": "Sammeln Sie passende Jobs in Ihrer Liste. Sie überprüfen und bewerben sich manuell.",
+        "applyReview": "Bewerben & Überprüfen",
+        "applyReviewDesc": "Starten Sie die Bewerbung, stoppen Sie jedoch vor dem Absenden. Sie bestätigen jede.",
+        "autoApply": "Auto-Bewerbung",
+        "autoApplyDesc": "Senden Sie Bewerbungen automatisch. Vorsicht — kann nicht rückgängig gemacht werden.",
+        "coverLetter": "Anschreiben",
+        "coverLetterOptional": "(optional)",
+        "coverLetterPlaceholder": "Anschreiben für Bewerbungen hinzufügen…",
+        "autoSubmitWarning": "Auto-Absenden ist standardmäßig deaktiviert.",
+        "autoSubmitDesc": "Bewerbungen stoppen auf der finalen Überprüfungsseite. Aktivieren Sie nur, wenn Sie der Formularfüllgenauigkeit vertrauen."
+      },
+      "schedule": {
+        "title": "Wie oft soll dies laufen?",
+        "subtitle": "Die App muss geöffnet sein, damit geplante Läufe ausgeführt werden.",
+        "manual": "Nur manuell",
+        "manualDesc": "Läuft nur, wenn Sie die Ausführen-Schaltfläche drücken.",
+        "hourly": "Stündlich",
+        "hourlyDesc": "Läuft alle 60 Minuten, während die App geöffnet ist.",
+        "twiceDaily": "Zweimal täglich",
+        "twiceDailyDesc": "Läuft beim Start und erneut 12 Stunden später.",
+        "daily": "Einmal täglich",
+        "dailyDesc": "Läuft einmal pro Tag, während die App geöffnet ist.",
+        "summary": "Zusammenfassung",
+        "summaryName": "Name",
+        "summaryBoard": "Board",
+        "summaryQuery": "Abfrage",
+        "summaryAction": "Aktion",
+        "summarySchedule": "Zeitplan",
+        "summaryMinScore": "Min. Bewertung"
+      },
+      "runFailed": "Ausführung fehlgeschlagen",
+      "createFailed": "Autopilot konnte nicht erstellt werden",
+      "running": "Läuft…",
+      "run": "Ausführen",
+      "never": "Nie",
+      "lastRun": "Letzte Ausführung:",
+      "found": "Gefunden",
+      "applied": "Beworben"
+    }
+  },
+  "dashboard": {
+    "welcome": "Willkommen zurück",
+    "subtitle": "Ihr lokaler AI-Co-Pilot für Jobs, Lebensläufe und Dokumente.",
+    "quick": "Schnellaktionen",
+    "recentActivity": "Aktuelle Aktivität",
+    "jobPipeline": "Job-Pipeline",
+    "continueWorking": "Weiterarbeiten",
+    "savedJobs": "Gespeicherte Jobs",
+    "applied": "Beworben",
+    "interviews": "Vorstellungsgespräche",
+    "aiMatches": "KI-Treffer",
+    "thisWeek": "+{{count}} diese Woche",
+    "aiSystemStatus": "KI / Systemstatus",
+    "aiInsights": "KI-Erkenntnisse",
+    "insights": {
+      "addTsSuggestion": "\"TypeScript\" zu Fähigkeiten hinzufügen",
+      "addTsDesc": "Viele aktuelle Jobs erfordern TypeScript-Kenntnisse",
+      "highMatchTitle": "3 neue hochwertige Treffer",
+      "highMatchDesc": "Basierend auf Ihren Präferenzen und Ihrem Profil",
+      "resumeAlertTitle": "Lebenslauf benötigt Aktualisierung",
+      "resumeAlertDesc": "Letzter ATS-Score war 65%, erwägen Sie mehr Kennzahlen hinzuzufügen"
+    }
+  },
+  "jobs": {
+    "eyebrow": "Live-Anzeigen",
+    "title": "Jobbörse",
+    "subtitle": "Gescrapte Job-Anzeigen von Ihren konfigurierten Boards. Filtern, ansehen und direkt bewerben.",
+    "searchPlaceholder": "Nach Titel, Unternehmen, Ort suchen…",
+    "empty": "Noch keine Anzeigen. Starten Sie einen Scrape, um dieses Board zu füllen.",
+    "open": "Öffnen",
+    "apply": "Bewerben",
+    "applyNotSupported": "Bewerbung für dieses Board nicht unterstützt",
+    "scrapeJobs": "Jobs scrapen",
+    "cancel": "Abbrechen",
+    "clear": "Löschen",
+    "clearScrapedJobs": "Gescrapte Jobs löschen",
+    "sort": "Sortieren",
+    "sortNewest": "Neueste",
+    "sortOldest": "Älteste",
+    "sortCompany": "Unternehmen",
+    "newScrape": "Neues Scraping",
+    "queryPlaceholder": "Berufsbezeichnung, Fähigkeiten oder Stichwörter…",
+    "board": "Board",
+    "location": "Standort",
+    "locationPlaceholder": "z.B. Berlin, Deutschland",
+    "posted": "Veröffentlicht",
+    "anyTime": "Jederzeit",
+    "past8h": "Letzte 8h",
+    "past24h": "Letzte 24h",
+    "pastWeek": "Letzte Woche",
+    "pastMonth": "Letzter Monat",
+    "pages": "Seiten",
+    "region": "Region",
+    "selectRegion": "Region auswählen",
+    "scraping": "Scraping läuft",
+    "startScrape": "Scraping starten",
+    "done": "Fertig",
+    "failed": "Fehlgeschlagen",
+    "remote": "remote",
+    "applied": "beworben",
+    "viewed": "angesehen",
+    "saved": "gespeichert",
+    "close": "Schließen",
+    "timeJustNow": "Gerade eben",
+    "timeMinutesAgo": "vor {{m}} Min.",
+    "timeHoursAgo": "vor {{h}} Std.",
+    "timeDaysAgo": "vor {{d}} T.",
+    "timeWeeksAgo": "vor {{w}} Wo.",
+    "timeMonthsAgo": "vor {{m}} Mo.",
+    "boards": {
+      "linkedin": "LinkedIn",
+      "indeed": "Indeed",
+      "stepstone": "StepStone",
+      "xing": "XING",
+      "arbeitsagentur": "Arbeitsagentur",
+      "berlinstartupjobs": "Berlin Startup",
+      "germantechjobs": "German Tech",
+      "greenhouse": "Greenhouse",
+      "lever": "Lever",
+      "ashby": "Ashby",
+      "workday": "Workday",
+      "smartrecruiters": "SmartRecruiters",
+      "recruitee": "Recruitee",
+      "personio": "Personio",
+      "remoteok": "RemoteOK",
+      "remotive": "Remotive",
+      "arbeitnow": "Arbeit Now",
+      "wwr": "WWR",
+      "ycombinator": "YC Jobs"
+    },
+    "regions": {
+      "us": "🇺🇸 Vereinigte Staaten — indeed.com",
+      "de": "🇩🇪 Deutschland — de.indeed.com",
+      "uk": "🇬🇧 Vereinigtes Königreich — uk.indeed.com",
+      "fr": "🇫🇷 Frankreich — fr.indeed.com",
+      "at": "🇦🇹 Österreich — at.indeed.com",
+      "ch": "🇨🇭 Schweiz — ch.indeed.com",
+      "au": "🇦🇺 Australien — au.indeed.com",
+      "ca": "🇨🇦 Kanada — ca.indeed.com",
+      "nl": "🇳🇱 Niederlande — nl.indeed.com",
+      "be": "🇧🇪 Belgien — be.indeed.com",
+      "es": "🇪🇸 Spanien — es.indeed.com",
+      "it": "🇮🇹 Italien — it.indeed.com",
+      "pl": "🇵🇱 Polen — pl.indeed.com",
+      "br": "🇧🇷 Brasilien — br.indeed.com",
+      "in": "🇮🇳 Indien — in.indeed.com",
+      "sg": "🇸🇬 Singapur — sg.indeed.com",
+      "jp": "🇯🇵 Japan — jp.indeed.com"
+    },
+    "applyDrawer": {
+      "eyebrow": "Bewerben bei",
+      "warningTitle": "Verwenden Sie Ihre eigenen Konten und befolgen Sie die Nutzungsbedingungen jeder Plattform.",
+      "warningBody": "Automatisierter Zugriff kann eingeschränkt sein. Dieses Tool stoppt vor der finalen Einreichung zur Überprüfung.",
+      "coverLetter": "Anschreiben",
+      "coverLetterPlaceholder": "Optional: Ein benutzerdefiniertes Anschreiben hinzufügen…",
+      "autoSubmit": "Automatisch einreichen",
+      "autoSubmitHint": "Automatisch nach dem Ausfüllen von Formularen einreichen (mit Vorsicht verwenden)",
+      "steps": "Bewerbungsschritte",
+      "submitted": "Bewerbung eingereicht",
+      "reviewPending": "Überprüfung ausstehend",
+      "localized": "Lokalisiert",
+      "failed": "Fehlgeschlagen",
+      "cancel": "Abbrechen",
+      "running": "Läuft…",
+      "start": "Bewerbung starten"
+    }
+  },
+  "resumes": {
+    "title": "Lebensläufe",
+    "subtitle": "Verfolgen Sie Ihre beworbenen, angesehenen und gespeicherten Jobs über alle Boards hinweg.",
+    "badge": "Interaktionen",
+    "tabs": {
+      "applied": "Beworben",
+      "viewed": "Angesehen",
+      "bookmarked": "Gespeichert"
+    },
+    "relativeTime": {
+      "justNow": "Gerade eben",
+      "minutesAgo": "vor {{m}} Min.",
+      "hoursAgo": "vor {{h}} Std.",
+      "daysAgo": "vor {{d}} T."
+    },
+    "filterPlaceholder": "Nach Titel oder Unternehmen suchen...",
+    "noResults": "Keine Ergebnisse gefunden",
+    "noJobsYet": "Noch keine {{tab}} Jobs",
+    "jobsWillAppear": "Jobs erscheinen hier, wenn Sie mit Job-Anzeigen interagieren.",
+    "unknownPosition": "Unbekannte Position",
+    "open": "Öffnen"
+  },
+  "ai": {
+    "placeholder": "Frag alles. Die KI antwortet in deiner Sprache.",
+    "send": "Senden",
+    "processing": "Verarbeitung...",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "uploadResume": "Lebenslauf hochladen",
+    "removeResume": "Lebenslauf entfernen",
+    "copyMessage": "Nachricht kopieren",
+    "errors": {
+      "unsupportedFileType": "Nicht unterstützter Dateityp: {{ext}}",
+      "fileTooLarge": "Datei zu groß (max. 25 MB)",
+      "failedToExtractText": "Text konnte nicht aus Datei extrahiert werden",
+      "failedToUploadResume": "Lebenslauf konnte nicht hochgeladen werden",
+      "failedToReachAI": "Lokale KI nicht erreichbar. Bitte sicherstellen, dass Ollama läuft."
+    }
+  },
+  "status": {
+    "ready": "Bereit",
+    "ollamaOffline": "Ollama offline"
+  },
+  "command": {
+    "placeholder": "Suchen, KI fragen, Befehl ausführen…",
+    "empty": "Keine Ergebnisse. Tippe, um die KI zu fragen.",
+    "groups": {
+      "actions": "Aktionen",
+      "ai": "KI",
+      "navigate": "Navigieren"
+    }
+  },
+  "support": {
+    "title": "Hilfe & Support",
+    "subtitle": "Diagnose, Fehlerbehebung und Wiederherstellungstools",
+    "faq": {
+      "title": "Hilfe & Support",
+      "subtitle": "Häufige Probleme und deren Lösungen.",
+      "badge": "Support",
+      "jobScraping": "Job-Scraping",
+      "aiFeatures": "KI-Funktionen",
+      "accountsSessions": "Konten & Sitzungen",
+      "general": "Allgemein",
+      "connectivity": "Konnektivität",
+      "jobScrapingQuestions": {
+        "linkedinNoResults": {
+          "q": "LinkedIn-Scraping liefert keine Ergebnisse oder hängt",
+          "a": "Ihre LinkedIn-Sitzung ist wahrscheinlich abgelaufen. Beheben Sie es in dieser Reihenfolge: 1. Gehen Sie zu Einstellungen → Konten und klicken Sie auf Trennen neben LinkedIn. 2. Klicken Sie auf Verbinden — ein Browserfenster öffnet sich. Melden Sie sich manuell bei Ihrem LinkedIn-Konto an. 3. Schließen Sie das Browserfenster nach der Anmeldung und versuchen Sie das Scraping erneut. Wenn es immer noch fehlschlägt, könnte LinkedIn Ihre IP begrenzen. Warten Sie 15–30 Minuten vor dem nächsten Versuch."
+        },
+        "scrapingZeroJobs": {
+          "q": "Scraping startet, zeigt aber 0 Jobs nach Abschluss",
+          "a": "Dies bedeutet normalerweise, dass die Suche keine passenden Ergebnisse zurückgegeben hat oder LinkedIn die Anfrage blockiert hat. Versuchen Sie eine breitere Suchanfrage (z.B. \"Ingenieur\" statt \"Senior Frontend Engineer React\"). Entfernen oder lockern Sie den Datumsfilter — \"Letzte 24 Stunden\" bei einer Nischenanfrage gibt oft 0 Ergebnisse. Verbinden Sie Ihr LinkedIn-Konto neu — unauthentifiziertes Scraping gibt weniger Ergebnisse zurück. Versuchen Sie, die Seiten auf 1 zu reduzieren, um zu testen, ob Ergebnisse zurückgegeben werden."
+        },
+        "indeedWrongCountry": {
+          "q": "Indeed zeigt Jobs aus dem falschen Land",
+          "a": "Indeed hat separate Jobbörsen pro Land. Beim Scraping: 1. Wählen Sie Indeed als Board im Scraping-Formular. 2. Ein Region-Dropdown erscheint — wählen Sie Ihr Land (z.B. \"Deutschland — de.indeed.com\"). 3. Das Standortfeld sollte der Sprache und dem Format der ausgewählten Region entsprechen."
+        },
+        "jobsDisappeared": {
+          "q": "Gescrapte Jobs verschwanden nach Neustart der App",
+          "a": "Standardmäßig sind gescrapte Jobs flüchtig — sie leben nur im Arbeitsspeicher und werden beim Neustart gelöscht. Dies hält die Daten frisch, da sich Stellenangebote täglich ändern. Führen Sie einfach ein neues Scraping durch, wenn Sie die App öffnen. Wenn Sie speichern möchten, welche Jobs Sie beworben oder angesehen haben, werden diese Interaktionen dauerhaft in Einstellungen → Datenschutz → Daten exportieren gespeichert."
+        },
+        "clearButtonRemoved": {
+          "q": "Die Schaltfläche \"Löschen\" hat meine gescrapten Jobs entfernt",
+          "a": "Die Schaltfläche Löschen leert die aktuelle In-Memory-Liste. Führen Sie ein weiteres Scraping mit denselben Kriterien durch, um sie zurückzubekommen. Ihr angesehener/beworbener Interaktionsverlauf wird separat gespeichert und ist von Löschen nicht betroffen."
+        }
+      },
+      "aiFeaturesQuestions": {
+        "aiDoesNothing": {
+          "q": "KI-Generierung tut nichts / Spinner läuft ewig",
+          "a": "Die KI erfordert, dass Ollama lokal mit mindestens einem installierten Modell läuft. 1. Stellen Sie sicher, dass Ollama installiert und läuft: ollama serve 2. Laden Sie ein Modell herunter, falls noch nicht: ollama pull llama3.2 3. Gehen Sie zu Einstellungen → KI und wählen Sie das heruntergeladene Modell. 4. Versuchen Sie erneut zu generieren."
+        },
+        "outputToneWrong": {
+          "q": "Lebenslauf- oder Anschreiben-Ausgabe klingt falsch / unpassend",
+          "a": "Der KI-Ausgabestil wird durch Ihre Einstellung gesteuert. 1. Gehen Sie zu Einstellungen → KI → KI-Ausgabestil. 2. Wählen Sie den Stil, der Ihrem Stil entspricht (Professionell, Locker, Formell, Kreativ). 3. Erneut generieren — der neue Stil tritt sofort in Kraft."
+        },
+        "noRecommendations": {
+          "q": "Lebenslaufanalyse gibt keine Empfehlungen",
+          "a": "Empfehlungen erscheinen nur, wenn die ATS-Analyse Kompetenzlücken findet. Prüfen Sie: Sowohl ein Lebenslauf als auch eine Stellenanzeige sind eingefügt/hochgeladen. Die Stellenanzeige enthält tatsächliche Anforderungen (nicht nur einen Titel). Ein KI-Modell ist in den Einstellungen ausgewählt — ohne Modell läuft die Lückenanalyse, aber Empfehlungen können nicht generiert werden."
+        }
+      },
+      "accountsSessionsQuestions": {
+        "browserWindowNotOpen": {
+          "q": "Das Browser-Verbindungsfenster öffnet sich nicht",
+          "a": "Das Browserfenster ist ein Chromium-Popup, das von der App gestartet wird. Prüfen Sie, ob es hinter anderen Fenstern geöffnet wurde — es erscheint bei einigen Einstellungen standardmäßig nicht in Ihrer Taskleiste. Wenn nach 10 Sekunden nichts erscheint, versuchen Sie erneut auf Verbinden zu klicken. Gehen Sie zu Einstellungen → Datenschutz → Alle Konten abmelden und versuchen Sie dann erneut zu verbinden."
+        },
+        "linkedinGuestMode": {
+          "q": "Ich habe LinkedIn verbunden, aber Scraping verwendet immer noch den Gastmodus",
+          "a": "Die Sitzung wurde möglicherweise nicht korrekt gespeichert. 1. Trennen Sie LinkedIn in Einstellungen → Konten. 2. Klicken Sie auf Verbinden und melden Sie sich erneut an — stellen Sie sicher, dass Sie Ihren LinkedIn-Feed sehen, bevor Sie das Fenster schließen. 3. Warten Sie 3–5 Sekunden nach dem Laden der Seite, bevor Sie schließen. 4. Versuchen Sie erneut zu scrapen — Sie sollten authentifizierte Ergebnisse sehen (mehr Jobs, weniger CAPTCHAs)."
+        }
+      },
+      "generalQuestions": {
+        "interactionHistoryGone": {
+          "q": "Mein Interaktionsverlauf (beworbene/angesehene Jobs) ist weg",
+          "a": "Dies kann passieren, wenn die Datenbank geleert oder das App-Datenverzeichnis gelöscht wurde. Um Datenverlust zu vermeiden: Exportieren Sie Ihre Daten regelmäßig: Einstellungen → Datenschutz → Daten exportieren. Zur Wiederherstellung aus einem Backup: Einstellungen → Datenschutz → Daten importieren und wählen Sie Ihre Exportdatei."
+        },
+        "appSlow": {
+          "q": "Die App ist langsam oder reagiert nicht",
+          "a": "Die meiste Langsamkeit kommt von Ollama, das zu viel Arbeitsspeicher verwendet. Schließen Sie andere schwere Apps während der KI-Generierung. Verwenden Sie ein kleineres Modell in Einstellungen → KI (z.B. llama3.2:1b statt 8b). Wenn Sie KI nicht verwenden, können Sie Ollama komplett stoppen — die Scraping- und Job-Tracking-Funktionen benötigen es nicht."
+        },
+        "languageNotChanged": {
+          "q": "Sprache wurde geändert, aber einige Texte sind noch in der alten Sprache",
+          "a": "Einige UI-Texte werden zwischengespeichert. Nachdem Sie die Sprache in Einstellungen → Allgemein geändert haben, starten Sie die App vollständig neu, um sie überall anzuwenden."
+        },
+        "resetEverything": {
+          "q": "Ich möchte alles zurücksetzen und neu beginnen",
+          "a": "Sie können selektiv Daten löschen, ohne neu zu installieren: Interaktionen löschen: Einstellungen → Datenschutz → Interaktionsverlauf löschen. Von allen Boards abmelden: Einstellungen → Datenschutz → Alle Konten abmelden. Einstellungen entfernen: Leeren Sie Ihren Browser-localStorage (DevTools öffnen → Anwendung → Lokaler Speicher)."
+        }
+      },
+      "connectivityQuestions": {
+        "networkError": {
+          "q": "Scraping schlägt mit einem Netzwerkfehler fehl",
+          "a": "Die App macht direkte HTTP-Anfragen an Jobbörsen. Netzwerkprobleme können diese blockieren. Prüfen Sie Ihre Internetverbindung. Einige Unternehmens- oder Universitätsnetzwerke blockieren Scraping-Traffic — versuchen Sie ein anderes Netzwerk oder nutzen Sie ein VPN. LinkedIn und Indeed blockieren IPs gelegentlich vorübergehend nach vielen Anfragen. Warten Sie 15–30 Minuten und versuchen Sie es erneut. Versuchen Sie, weniger Seiten zu scrapen (Seiten auf 1 setzen), um das Anfragevolumen zu reduzieren."
+        },
+        "captchaAppears": {
+          "q": "CAPTCHA erscheint beim Scraping",
+          "a": "CAPTCHAs von LinkedIn/Indeed bedeuten, dass Ihre IP oder Sitzung markiert wurde. Die beste Lösung: Verbinden Sie Ihr LinkedIn-Konto neu (authentifizierte Anfragen lösen viel seltener CAPTCHAs aus als Gastanfragen). Wenn Sie bereits authentifiziert sind, warten Sie 30 Minuten und versuchen Sie, 1 Seite auf einmal zu scrapen."
+        }
+      },
+      "diagnostics": {
+        "providerHealth": "Anbieter-Status",
+        "scrapingSessionStatus": "Scraping-Sitzungsstatus",
+        "commonScrapingIssues": "Häufige Scraping-Probleme",
+        "sessionTokens": "Sitzungstoken",
+        "sessionTokensDesc": "3 von 4 Anbietern haben aktive Sitzungen",
+        "cookieStorage": "Cookie-Speicher",
+        "cookieStorageDesc": "Cookies verschlüsselt und gespeichert",
+        "rateLimitTracker": "Ratenlimit-Tracker",
+        "rateLimitTrackerDesc": "Ratenlimits werden eingehalten",
+        "proxyConfiguration": "Proxy-Konfiguration",
+        "proxyConfigurationDesc": "Kein Proxy konfiguriert",
+        "rateLimitingIssue": "Anbieter wegen Ratenlimit blockiert",
+        "rateLimitingSolution1": "Warten Sie, bis das Ratenlimit zurückgesetzt wird (normalerweise 1–24 Stunden)",
+        "rateLimitingSolution2": "Reduzieren Sie die Scraping-Häufigkeit in den Einstellungen",
+        "rateLimitingSolution3": "Verwenden Sie mehrere Kontositzungen",
+        "rateLimitingSolution4": "Aktivieren Sie Proxy-Rotation, falls verfügbar",
+        "captchaIssue": "CAPTCHA beim Scraping erkannt",
+        "captchaSolution1": "Manuelles Eingreifen erforderlich",
+        "captchaSolution2": "Verwenden Sie ein anderes Konto, falls verfügbar",
+        "captchaSolution3": "Reduzieren Sie die Scraping-Intensität",
+        "captchaSolution4": "Erwägen Sie die Nutzung offizieller APIs, wenn möglich",
+        "sessionExpiredIssue": "Sitzung abgelaufen",
+        "sessionExpiredSolution1": "Erneut beim Anbieter authentifizieren",
+        "sessionExpiredSolution2": "Kontoanmeldedaten prüfen",
+        "sessionExpiredSolution3": "Cookies löschen und neu anmelden",
+        "sessionExpiredSolution4": "Prüfen, ob das Konto gesperrt ist"
+      },
+      "recovery": {
+        "destructiveActions": "Destruktive Aktionen",
+        "destructiveActionsDesc": "Diese Aktionen können nicht rückgängig gemacht werden. Mit Vorsicht verwenden.",
+        "vectorDatabaseRecovery": "Vektor-Datenbank-Wiederherstellung",
+        "aiRuntimeRecovery": "KI-Laufzeit-Wiederherstellung",
+        "documentOcrRecovery": "Dokument- & OCR-Wiederherstellung",
+        "scrapingRecovery": "Scraping-Wiederherstellung",
+        "rebuildIndexesTitle": "Vektor-Indizes neu aufbauen",
+        "rebuildIndexesDesc": "Alle Vektor-Indizes von Grund auf neu aufbauen. Dies kann mehrere Minuten dauern.",
+        "clearCacheTitle": "Embedding-Cache leeren",
+        "clearCacheDesc": "Alle zwischengespeicherten Embeddings entfernen. Sie werden bei Bedarf neu generiert.",
+        "resetDatabaseTitle": "Vektor-Datenbank zurücksetzen",
+        "resetDatabaseDesc": "Die Vektor-Datenbank vollständig zurücksetzen. Alle indizierten Daten gehen verloren.",
+        "reloadRuntimeTitle": "KI-Laufzeit neu laden",
+        "reloadRuntimeDesc": "Die KI-Laufzeit neu starten und alle Modelle neu laden.",
+        "unloadModelsTitle": "Alle Modelle entladen",
+        "unloadModelsDesc": "Alle aktuell geladenen KI-Modelle entladen, um Arbeitsspeicher freizugeben.",
+        "resetConfigTitle": "Modellkonfiguration zurücksetzen",
+        "resetConfigDesc": "Alle Modelleinstellungen auf Standardwerte zurücksetzen.",
+        "clearOcrCacheTitle": "OCR-Cache leeren",
+        "clearOcrCacheDesc": "Alle zwischengespeicherten OCR-Ergebnisse entfernen. Dokumente werden erneut gescannt.",
+        "reindexDocsTitle": "Alle Dokumente neu indizieren",
+        "reindexDocsDesc": "Alle Dokumente in der Datenbank neu indizieren.",
+        "resetSessionsTitle": "Alle Sitzungen zurücksetzen",
+        "resetSessionsDesc": "Alle Scraping-Sitzungen und Cookies löschen.",
+        "clearQueueTitle": "Scraping-Warteschlange leeren",
+        "clearQueueDesc": "Alle ausstehenden Scraping-Jobs löschen."
+      }
+    },
+    "settings": {
+      "groups": {
+        "preferences": "Einstellungen",
+        "system": "System"
+      },
+      "sections": {
+        "general": {
+          "label": "Allgemein",
+          "description": "Name, Sprache, Aussehen"
+        },
+        "ai": {
+          "label": "KI",
+          "description": "Modelle, Ton, Generierung"
+        },
+        "jobs": {
+          "label": "Jobs",
+          "description": "Standort, Gehalt, Stack"
+        },
+        "resume": {
+          "label": "Lebenslauf",
+          "description": "Lebenslaufdateien verwalten"
+        },
+        "accounts": {
+          "label": "Konten",
+          "description": "Verbundene Boards & Sitzungen"
+        },
+        "privacy": {
+          "label": "Datenschutz",
+          "description": "Daten, Export, Cache"
+        }
+      },
+      "profile": {
+        "title": "Profil",
+        "displayName": "Anzeigename",
+        "placeholder": "Ihr Name",
+        "save": "Speichern"
+      },
+      "language": {
+        "title": "Sprache"
+      }
+    },
+    "tabs": {
+      "health": "System-Status",
+      "ai": "AI-Laufzeit",
+      "documents": "Dokumente",
+      "scraping": "Scraping",
+      "performance": "Leistung",
+      "logs": "Protokolle",
+      "recovery": "Wiederherstellung",
+      "knowledge": "Wissensdatenbank",
+      "contact": "Kontakt & Feedback"
+    },
+    "systemHealth": {
+      "ollamaRuntime": "Ollama-Laufzeit",
+      "ollamaRuntimeDesc": "KI-Modell-Laufzeit läuft",
+      "embeddingsEngine": "Embeddings-Engine",
+      "embeddingsEngineDesc": "Vektor-Embeddings betriebsbereit",
+      "sqliteDatabase": "SQLite-Datenbank",
+      "sqliteDatabaseDesc": "Lokale Datenbank verbunden",
+      "lanceDb": "LanceDB",
+      "lanceDbDesc": "Vektor-Index benötigt Optimierung",
+      "ocrEngine": "OCR-Engine",
+      "ocrEngineDesc": "Textextraktion bereit",
+      "scrapingRuntime": "Scraping-Laufzeit",
+      "scrapingRuntimeDesc": "Job-Board-Scraping aktiv",
+      "fileWatcher": "Datei-Watcher",
+      "fileWatcherDesc": "Dokumentüberwachung aktiv",
+      "workerPool": "Worker-Pool",
+      "workerPoolDesc": "Hintergrundaufgaben laufen",
+      "vectorIndex": "Vektor-Index",
+      "vectorIndexDesc": "Semantische Suche bereit"
+    },
+    "aiRuntime": {
+      "ollamaRuntimeStatus": "Ollama-Laufzeitstatus",
+      "ollamaInstallation": "Ollama-Installation",
+      "ollamaInstallationDesc": "Ollama ist installiert und zugänglich",
+      "ollamaService": "Ollama-Dienst",
+      "ollamaServiceDesc": "Ollama-Daemon läuft",
+      "defaultModel": "Standardmodell",
+      "defaultModelDesc": "llama3 ist verfügbar und geladen",
+      "gpuAcceleration": "GPU-Beschleunigung",
+      "gpuAccelerationDesc": "Läuft im CPU-Modus (GPU nicht erkannt)",
+      "enableGpu": "GPU aktivieren",
+      "modelLoadingDiagnostics": "Modell-Ladediagnose",
+      "contextWindow": "Kontextfenster",
+      "contextWindowDesc": "4096 Token verfügbar",
+      "memoryUsage": "Speichernutzung",
+      "memoryUsageDesc": "2.4GB / 8GB zugewiesen",
+      "modelLoadingTime": "Modell-Ladezeit",
+      "modelLoadingTimeDesc": "1.2s Durchschnitt",
+      "commonIssues": "Häufige Probleme",
+      "suggestedFixes": "Vorgeschlagene Lösungen:",
+      "modelFailedToLoadInsufficientMemory": "Modell konnte wegen unzureichendem Speicher nicht geladen werden",
+      "modelFailedToLoadSolution1": "Auf ein speichersparenderes Modell wechseln (z.B. llama3:8b statt llama3:70b)",
+      "modelFailedToLoadSolution2": "Niedrigspeicher-Modus in den Einstellungen aktivieren",
+      "modelFailedToLoadSolution3": "Inaktive Modelle entladen",
+      "modelFailedToLoadSolution4": "Andere Anwendungen schließen, um RAM freizugeben",
+      "ollamaNotResponding": "Ollama antwortet nicht",
+      "ollamaNotRespondingSolution1": "Ollama-Dienst neu starten",
+      "ollamaNotRespondingSolution2": "Prüfen, ob Ollama läuft: ollama list",
+      "ollamaNotRespondingSolution3": "Ollama bei Bedarf neu installieren",
+      "ollamaNotRespondingSolution4": "Ollama-Installationspfad überprüfen",
+      "timeoutDuringGeneration": "Zeitüberschreitung während der Generierung",
+      "timeoutDuringGenerationSolution1": "Zeitüberschreitung in den Einstellungen erhöhen",
+      "timeoutDuringGenerationSolution2": "Kleineres Modell verwenden",
+      "timeoutDuringGenerationSolution3": "Kontextfenstergröße reduzieren",
+      "timeoutDuringGenerationSolution4": "Netzwerkverbindung für Remote-Modelle prüfen"
+    },
+    "logs": {
+      "logViewer": "Protokollanzeige",
+      "filter": "Filter",
+      "export": "Export",
+      "clear": "Löschen",
+      "logCategories": "Protokollkategorien",
+      "aiRuntime": "AI-Laufzeit",
+      "scraping": "Scraping",
+      "documentParser": "Dokument-Parser",
+      "indexing": "Indizierung",
+      "ocr": "OCR",
+      "workerPool": "Worker-Pool",
+      "total": "Gesamt",
+      "errors": "Fehler",
+      "warnings": "Warnungen",
+      "noArticlesFound": "Keine Artikel gefunden, die Ihren Kriterien entsprechen.",
+      "exampleTimestamp1": "2024-01-15 14:32:15",
+      "exampleMessage1": "Modell erfolgreich geladen: llama3:8b",
+      "exampleTimestamp2": "2024-01-15 14:31:42",
+      "exampleMessage2": "Ratenlimit für LinkedIn-Anbieter erkannt",
+      "exampleTimestamp3": "2024-01-15 14:30:18",
+      "exampleMessage3": "PDF-Parsing fehlgeschlagen: resume_corrupted.pdf",
+      "exampleTimestamp4": "2024-01-15 14:28:55",
+      "exampleMessage4": "Dokument indiziert: job_post_123.pdf",
+      "exampleTimestamp5": "2024-01-15 14:27:33",
+      "exampleMessage5": "156 Embeddings für Dokument generiert"
+    },
+    "recovery": {
+      "destructiveActions": "Destruktive Aktionen",
+      "destructiveActionsDesc": "Diese Aktionen können Daten löschen. Überprüfen Sie sorgfältig, bevor Sie fortfahren.",
+      "vectorDatabaseRecovery": "Vektor-Datenbank-Wiederherstellung",
+      "aiRuntimeRecovery": "AI-Laufzeit-Wiederherstellung",
+      "documentOcrRecovery": "Dokument- & OCR-Wiederherstellung",
+      "scrapingRecovery": "Scraping-Wiederherstellung"
+    },
+    "knowledgeBase": {
+      "searchKnowledgeBase": "Wissensdatenbank durchsuchen",
+      "searchPlaceholder": "Artikel suchen...",
+      "categories": "Kategorien",
+      "all": "Alle",
+      "aiModels": "KI-Modelle",
+      "ollama": "Ollama",
+      "documents": "Dokumente",
+      "ocr": "OCR",
+      "scraping": "Scraping",
+      "search": "Suche",
+      "performance": "Leistung",
+      "installation": "Installation",
+      "article1Title": "Wie man Ollama auf macOS installiert",
+      "article1Summary": "Schritt-für-Schritt-Anleitung zur Installation von Ollama auf macOS mit Homebrew oder dem offiziellen Installer.",
+      "article2Title": "Modell lädt nicht — unzureichender Arbeitsspeicher",
+      "article2Summary": "Fehlerbehebung bei Modell-Ladefehlern aufgrund von Speicherbeschränkungen und Wechsel zu kleineren Modellen.",
+      "article3Title": "OCR-Konfidenz zu niedrig",
+      "article3Summary": "OCR-Genauigkeit verbessern durch Anpassung der Scanqualität, DPI-Einstellungen und Sprachmodelle.",
+      "article4Title": "Scraping durch Ratenlimit blockiert",
+      "article4Summary": "Ratenlimits von Jobbörsen verwalten und Strategien zur Vermeidung von Blockierungen umsetzen.",
+      "article5Title": "Semantische Suche liefert keine relevanten Ergebnisse",
+      "article5Summary": "Relevanz der semantischen Suche durch Anpassung von Embedding-Modellen und Abfragestrategien verbessern.",
+      "article6Title": "Anwendung läuft langsam",
+      "article6Summary": "Leistung durch Speicherverwaltung, Cache-Bereinigung und Einstellungsanpassungen optimieren."
+    },
+    "contact": {
+      "exportDiagnosticsBundle": "Diagnosepaket exportieren",
+      "exportDiagnosticsBundleDesc": "Exportieren Sie ein Diagnosepaket mit Systeminformationen, Protokollen und Konfigurationen zur Fehlerbehebung.",
+      "systemInformation": "Systeminformationen",
+      "systemInformationDesc": "OS-Version, App-Version, Laufzeitversionen",
+      "logs": "Protokolle",
+      "logsDesc": "Aktuelle Protokolle aller Komponenten",
+      "enabledModels": "Aktivierte Modelle",
+      "enabledModelsDesc": "Liste der verfügbaren KI-Modelle",
+      "configuration": "Konfiguration",
+      "configurationDesc": "App-Einstellungen und Präferenzen",
+      "documentContents": "Dokumentinhalte",
+      "documentContentsDesc": "Dokumenttext und Metadaten (ausgeschlossen für Datenschutz)",
+      "personalData": "Persönliche Daten",
+      "personalDataDesc": "Benutzeranmeldeinformationen und persönliche Infos (ausgeschlossen)",
+      "exportBundle": "Diagnosepaket exportieren",
+      "submitFeedback": "Feedback senden",
+      "feedbackType": "Feedback-Typ",
+      "bugReport": "Fehlerbericht",
+      "featureRequest": "Feature-Anfrage",
+      "generalFeedback": "Allgemeines Feedback",
+      "performanceIssue": "Leistungsproblem",
+      "other": "Sonstiges",
+      "description": "Beschreibung",
+      "descriptionPlaceholder": "Beschreiben Sie Ihr Feedback im Detail...",
+      "submit": "Feedback senden",
+      "quickActions": "Schnellaktionen",
+      "copyEnvironmentDetails": "Umgebungsdetails kopieren",
+      "copyAppVersion": "App-Version kopieren",
+      "copySystemInfo": "Systeminfo kopieren"
+    },
+    "performance": {
+      "memoryUsage": "Speichernutzung",
+      "ramUsage": "RAM-Nutzung",
+      "modelMemory": "Modell-Speicher",
+      "vectorDatabase": "Vektordatenbank",
+      "embeddingsCache": "Embeddings-Cache",
+      "systemResources": "Systemressourcen",
+      "documentsIndexed": "Indizierte Dokumente",
+      "embeddingsGenerated": "Generierte Embeddings",
+      "activeWorkers": "Aktive Worker",
+      "queueSize": "Warteschlangengröße",
+      "optimizationRecommendations": "Optimierungsempfehlungen",
+      "unloadInactiveModels": "Inaktive Modelle entladen",
+      "unloadInactiveModelsDesc": "2.4 GB freigeben durch Entladen inaktiver Modelle",
+      "unloadModels": "Modelle entladen",
+      "rebuildVectorIndexes": "Vektorindizes neu aufbauen",
+      "rebuildVectorIndexesDesc": "Suchleistung optimieren und Speicher reduzieren",
+      "rebuildIndexes": "Indizes neu aufbauen",
+      "clearEmbeddingsCache": "Embeddings-Cache leeren",
+      "clearEmbeddingsCacheDesc": "512 MB Cache-Speicher freigeben",
+      "clearCache": "Cache leeren"
+    },
+    "documentParsing": {
+      "documentParsingStatus": "Dokument-Parsing-Status",
+      "pdfParser": "PDF-Parser",
+      "pdfParserDesc": "PDF-Parsing-Engine betriebsbereit",
+      "docxParser": "DOCX-Parser",
+      "docxParserDesc": "Word-Dokument-Parsing betriebsbereit",
+      "ocrEngine": "OCR-Engine",
+      "ocrEngineDesc": "Tesseract OCR bereit",
+      "textExtraction": "Textextraktion",
+      "textExtractionDesc": "Textextraktion funktioniert",
+      "recentDocumentIssues": "Aktuelle Dokumentprobleme",
+      "ocrConfidenceLow": "OCR-Konfidenz niedrig (45%)",
+      "forceReOcr": "Erneutes OCR erzwingen",
+      "manualEdit": "Manuelle Bearbeitung",
+      "emptyExtraction": "Leere Extraktion",
+      "retryParsing": "Erneutes Parsen",
+      "checkFileCorruption": "Dateikorruption prüfen",
+      "encodingDetectedAsBinary": "Kodierung als binär erkannt",
+      "reencodeAsUtf8": "Als UTF-8 neu kodieren",
+      "useOcr": "OCR verwenden",
+      "commonDocumentIssues": "Häufige Dokumentprobleme",
+      "pdfParsingFailed": "PDF-Parsing fehlgeschlagen",
+      "pdfParsingFailedSolution1": "Prüfen, ob PDF passwortgeschützt ist",
+      "pdfParsingFailedSolution2": "Überprüfen, ob PDF nicht beschädigt ist",
+      "pdfParsingFailedSolution3": "In einem anderen PDF-Viewer öffnen",
+      "pdfParsingFailedSolution4": "OCR als Fallback-Extraktionsmethode verwenden",
+      "ocrConfidenceTooLow": "OCR-Konfidenz zu niedrig",
+      "ocrConfidenceTooLowSolution1": "Sicherstellen, dass Dokument mit 300 DPI oder höher gescannt wurde",
+      "ocrConfidenceTooLowSolution2": "Prüfen, ob Text lesbar und nicht zu klein ist",
+      "ocrConfidenceTooLowSolution3": "Kontrast vor dem Scannen verbessern",
+      "ocrConfidenceTooLowSolution4": "Anderes OCR-Sprachmodell verwenden",
+      "emptyExtractionFromDocument": "Leere Extraktion aus Dokument",
+      "emptyExtractionFromDocumentSolution1": "Überprüfen, ob Dokument Text enthält (nur Bilder)",
+      "emptyExtractionFromDocumentSolution2": "Prüfen, ob Text als Bilder eingebettet ist",
+      "emptyExtractionFromDocumentSolution3": "OCR-Extraktion statt Text-Parsing versuchen",
+      "emptyExtractionFromDocumentSolution4": "Prüfen, ob Dokument beschädigt ist"
+    },
+    "diagnostics": {
+      "providerHealth": "Anbieter-Status",
+      "providerLinkedIn": "LinkedIn",
+      "providerIndeed": "Indeed",
+      "providerGreenhouse": "Greenhouse",
+      "providerWorkday": "Workday",
+      "lastScrape2HoursAgo": "vor 2 Stunden",
+      "lastScrape1HourAgo": "vor 1 Stunde",
+      "lastScrape5HoursAgo": "vor 5 Stunden",
+      "lastScrape3HoursAgo": "vor 3 Stunden",
+      "rateLimitingDetected": "Ratenlimit erkannt"
+    }
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Willkommen bei AI Job Hunter",
+      "subtitle": "Ihr lokaler, KI-nativer Job-Jagd-Assistent. Lassen Sie uns einrichten.",
+      "nameLabel": "Wie ist Ihr Name?",
+      "namePlaceholder": "Geben Sie Ihren Namen ein",
+      "next": "Loslegen"
+    },
+    "prefs": {
+      "title": "Schnelleinrichtung",
+      "subtitle": "Legen Sie Ihre Einstellungen fest — Sie können diese jederzeit ändern.",
+      "languageLabel": "Sprache",
+      "remoteLabel": "Wo möchten Sie arbeiten?",
+      "remote": {
+        "remote": "Remote",
+        "hybrid": "Hybrid",
+        "on-site": "Vor Ort",
+        "any": "Alles offen"
+      },
+      "back": "Zurück",
+      "next": "Funktionen ansehen"
+    },
+    "tour": {
+      "title": "Kurze Tour",
+      "subtitle": "Hier ist, was Sie tun können",
+      "step": "{{current}} von {{total}}",
+      "skip": "Tour überspringen",
+      "next": "Weiter",
+      "finish": "Job-Jagd starten",
+      "dashboard": {
+        "title": "Dashboard",
+        "desc": "Ihr Missionskontrollzentrum — sehen Sie aktive Jobs, KI-Status und aktuelle Aktivitäten auf einen Blick."
+      },
+      "analyze": {
+        "title": "Lebenslauf-Analysator",
+        "desc": "Fügen Sie eine Stellenbeschreibung und Ihren Lebenslauf ein. Erhalten Sie sofort einen ATS-Score, Lückenanalyse und handlungsrelevante Empfehlungen."
+      },
+      "generate": {
+        "title": "KI-Generierung",
+        "desc": "Generieren Sie maßgeschneiderte Lebensläufe und Anschreiben in Sekunden, optimiert für jede Stellenbeschreibung."
+      },
+      "jobs": {
+        "title": "Jobs",
+        "desc": "Durchsuchen Sie von Top-Boards gescrapte Job-Anzeigen. Filtern, speichern und verfolgen Sie Ihre Bewerbungen."
+      },
+      "autopilot": {
+        "title": "Autopilot",
+        "desc": "Legen Sie Suchkriterien fest und lassen Sie KI automatisch passende Jobs entdecken, filtern und optional bewerben."
+      },
+      "documents": {
+        "title": "Dokumente",
+        "desc": "Importieren und verwalten Sie Ihre Lebensläufe und Anschreiben. KI indiziert sie für intelligentes Matching."
+      },
+      "search": {
+        "title": "Suche",
+        "desc": "Semantische Suche über alle Ihre Dokumente und Job-Anzeigen mit KI-Embeddings."
+      },
+      "ai": {
+        "title": "KI-Arbeitsbereich",
+        "desc": "Chatten Sie mit Ihrem persönlichen Job-Jagd-Assistenten. Stellen Sie Fragen, erhalten Sie Rat, verfeinern Sie Ihre Strategie."
+      }
+    }
+  }
+}
