@@ -127,36 +127,50 @@ function SettingsPage() {
             <div className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-widest text-foreground/30">
               {group.label}
             </div>
-            <div className="flex flex-col gap-0.5">
+            <nav className="flex flex-col gap-1">
               {group.items.map(({ id, label, icon: Icon }) => {
                 const active = activeSection === id;
                 return (
-                  <Button
-                    key={id}
-                    variant="ghost"
-                    onClick={() => setActiveSection(id)}
-                    className={cn(
-                      'group flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-all duration-150 justify-start',
-                      active
-                        ? 'bg-white/[0.07] text-foreground'
-                        : 'text-foreground/50 hover:bg-white/[0.04] hover:text-foreground/80'
+                  <div key={id} className="relative">
+                    {active && (
+                      <motion.div
+                        layoutId="settings-pill"
+                        className="absolute inset-0 rounded-xl"
+                        style={{
+                          background:
+                            'linear-gradient(135deg, rgba(168,85,247,0.18) 0%, rgba(99,102,241,0.10) 100%)',
+                          border: '1px solid rgba(168,85,247,0.25)',
+                          boxShadow: '0 0 16px rgba(168,85,247,0.12)',
+                        }}
+                        transition={transition.spring}
+                      />
                     )}
-                  >
-                    <Icon
-                      size={15}
+                    <div
+                      role="button"
+                      onClick={() => setActiveSection(id)}
                       className={cn(
-                        'shrink-0 transition-colors',
+                        'group relative flex cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors duration-150',
                         active
-                          ? 'text-brand-soft'
-                          : 'text-foreground/35 group-hover:text-foreground/60'
+                          ? 'text-foreground'
+                          : 'text-foreground/45 hover:bg-white/[0.04] hover:text-foreground/75'
                       )}
-                    />
-                    <span className="font-medium">{label}</span>
-                    {active && <ChevronRight size={12} className="ml-auto text-foreground/30" />}
-                  </Button>
+                    >
+                      <Icon
+                        size={15}
+                        className={cn(
+                          'shrink-0 transition-colors duration-150',
+                          active
+                            ? 'text-brand-soft'
+                            : 'text-foreground/35 group-hover:text-foreground/55'
+                        )}
+                      />
+                      <span className="flex-1 font-medium">{label}</span>
+                      {active && <ChevronRight size={12} className="text-foreground/30" />}
+                    </div>
+                  </div>
                 );
               })}
-            </div>
+            </nav>
           </div>
         ))}
       </aside>
