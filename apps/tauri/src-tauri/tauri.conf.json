@@ -36,13 +36,7 @@
   },
   "plugins": {
     "shell": {
-      "open": "https?://",
-      "scope": [
-        { "name": "npx", "cmd": "npx", "args": true },
-        { "name": "npx-win", "cmd": "npx.cmd", "args": true },
-        { "name": "npx-mac", "cmd": "/usr/local/bin/npx", "args": true },
-        { "name": "npx-mac-nvm", "cmd": "/opt/homebrew/bin/npx", "args": true }
-      ]
+      "open": "https?://"
     },
     "dialog": null,
     "updater": {
