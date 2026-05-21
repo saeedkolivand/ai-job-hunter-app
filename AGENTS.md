@@ -16,17 +16,18 @@ Never `find -exec`, never PowerShell syntax. Git Bash paths: `/c/Users/...`
 
 ## Architecture
 
-Local-first Electron desktop app in a pnpm monorepo.
+Local-first Tauri desktop app in a pnpm monorepo.
 
 ```
 packages/shared    ← IPC contracts, Zod schemas, shared types (no UI, no Node)
 packages/ui        ← React component library (@ajh/ui — no app logic)
 packages/prompts   ← AI prompt templates (pure TS, zero deps)
-packages/core/ai/data/workers ← Main process only. Never import in renderer.
-apps/desktop       ← Electron app (main + preload + renderer)
+packages/core/ai/data/workers ← Sidecar only. Never import in renderer.
+apps/tauri         ← Tauri app (Rust core + React renderer)
+apps/scraper-runtime ← Node.js HTTP sidecar
 ```
 
-Renderer → main: `window.api.*` only (via `AppClient` context → service hooks).
+Renderer → Tauri: `AppClient` context → service hooks → `invoke/listen`.
 IPC contract: `packages/shared/src/ipc/contracts.ts`.
 
 ---
