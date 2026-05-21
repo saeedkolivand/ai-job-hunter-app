@@ -1110,6 +1110,32 @@
       "back": "Back",
       "next": "See the features"
     },
+    "ollama": {
+      "title": "Set up your AI",
+      "subtitle": "AI Job Hunter runs models locally via Ollama — no API keys, no cloud.",
+      "checking": "Checking for Ollama…",
+      "notFound": "Ollama not detected",
+      "notFoundDesc": "Ollama needs to be installed and running before AI features will work.",
+      "installSteps": "How to install",
+      "step": {
+        "download": "Download Ollama from ollama.com",
+        "install": "Run the installer",
+        "run": "Ollama starts automatically"
+      },
+      "downloadButton": "Download Ollama",
+      "recheck": "I've installed it — check again",
+      "ready": "Ollama is running",
+      "ram": "Available RAM",
+      "chooseModel": "Choose a model",
+      "recommended": "Recommended",
+      "download": "Download",
+      "downloading": "Downloading",
+      "pullError": "Download failed. Check your connection and try again.",
+      "back": "Back",
+      "next": "Continue",
+      "skip": "Skip for now",
+      "skipWarning": "AI features won't work without a model"
+    },
     "tour": {
       "title": "Quick tour",
       "subtitle": "Here's what you can do",
