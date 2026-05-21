@@ -1,0 +1,7 @@
+/* Tauri-specific CSS entry point.
+ * Adds @source so Tailwind v4 scans the desktop renderer tree, which lives
+ * outside apps/tauri and would otherwise be invisible to the auto-scanner.
+ */
+@source "../../desktop/src/renderer";
+@source "../src";
+@import '../../desktop/src/renderer/styles/globals.css';
