@@ -31,11 +31,18 @@
     "active": true,
     "targets": ["nsis", "msi", "dmg", "app"],
     "icon": ["icons/icon.ico", "icons/icon.png"],
-    "resources": []
+    "resources": [],
+    "externalBin": ["binaries/scraper-runtime"]
   },
   "plugins": {
     "shell": {
-      "open": "https?://"
+      "open": "https?://",
+      "scope": [
+        { "name": "npx", "cmd": "npx", "args": true },
+        { "name": "npx-win", "cmd": "npx.cmd", "args": true },
+        { "name": "npx-mac", "cmd": "/usr/local/bin/npx", "args": true },
+        { "name": "npx-mac-nvm", "cmd": "/opt/homebrew/bin/npx", "args": true }
+      ]
     },
     "dialog": null,
     "updater": {

@@ -131,6 +131,11 @@ jobs:
       - name: Build Packages
         run: pnpm build:packages
 
+      - name: Build Sidecar Binary (Windows)
+        run: pnpm --filter @ajh/scraper-runtime build:binary
+        env:
+          PKG_CACHE_PATH: ${{ runner.temp }}/pkg-cache
+
       - name: Sync Tauri Version and Inject Signing Key
         run: node scripts/sync-tauri-version.cjs ${{ needs.determine-release.outputs.version }}
         env:
@@ -199,6 +204,11 @@ jobs:
 
       - name: Build Packages
         run: pnpm build:packages
+
+      - name: Build Sidecar Binary (macOS)
+        run: pnpm --filter @ajh/scraper-runtime build:binary
+        env:
+          PKG_CACHE_PATH: ${{ runner.temp }}/pkg-cache
 
       - name: Sync Tauri Version and Inject Signing Key
         run: node scripts/sync-tauri-version.cjs ${{ needs.determine-release.outputs.version }}

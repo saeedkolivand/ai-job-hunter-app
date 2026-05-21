@@ -40,19 +40,31 @@ pub fn try_start(app: &AppHandle) -> tauri::Result<()> {
         }
     }
 
-    // In dev mode: launch via `node dist/index.js` from apps/scraper-runtime.
-    // In production: the binary would be bundled via externalBin.
     let shell = app.shell();
-    let sidecar_dist = std::env::var("AJH_SIDECAR_DIST").unwrap_or_else(|_| {
-        // Default dev path relative to the Tauri src-tauri directory.
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        format!("{manifest_dir}/../../scraper-runtime/dist/index.js")
-    });
 
-    let (mut rx, _child) = match shell.command("node").args([&sidecar_dist]).spawn() {
+    // In production: launch the bundled native binary registered as externalBin.
+    // In dev (debug builds): run TypeScript directly with tsx — no build step needed,
+    // changes take effect on Tauri restart.
+    #[cfg(not(debug_assertions))]
+    let spawn_result = shell.sidecar("scraper-runtime").and_then(|cmd| cmd.spawn());
+
+    #[cfg(debug_assertions)]
+    let spawn_result = {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let src = format!("{manifest_dir}/../../scraper-runtime/src/index.ts");
+        // Use npx so tsx doesn't need to be globally installed.
+        // On Windows the binary is npx.cmd; on Unix it's npx.
+        #[cfg(target_os = "windows")]
+        let npx = "npx.cmd";
+        #[cfg(not(target_os = "windows"))]
+        let npx = "npx";
+        shell.command(npx).args(["tsx", &src]).spawn()
+    };
+
+    let (mut rx, _child) = match spawn_result {
         Ok(pair) => pair,
         Err(e) => {
-            eprintln!("[sidecar] failed to spawn scraper-runtime (node {sidecar_dist}): {e}");
+            eprintln!("[sidecar] failed to spawn scraper-runtime: {e}");
             return Ok(());
         }
     };
