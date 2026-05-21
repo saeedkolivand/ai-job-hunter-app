@@ -237,6 +237,13 @@ export class LoginManager {
 
     const connected = await waitForAuth(context, page, config);
 
+    // Export storage state (cookies + localStorage) to state.json so the
+    // HTTP scraper can read session cookies without needing a browser.
+    if (connected) {
+      const stateFile = path.join(statePath, 'state.json');
+      await context.storageState({ path: stateFile }).catch(() => {});
+    }
+
     await context.close().catch(() => {});
 
     this.writeAuthStatus(boardId, connected);
