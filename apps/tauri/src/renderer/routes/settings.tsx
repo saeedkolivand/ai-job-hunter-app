@@ -138,7 +138,7 @@ function SettingsPage() {
                     className={cn(
                       'group flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-all duration-150 justify-start',
                       active
-                        ? 'bg-white/[0.07] text-foreground ring-1 ring-white/[0.08]'
+                        ? 'bg-white/[0.07] text-foreground'
                         : 'text-foreground/50 hover:bg-white/[0.04] hover:text-foreground/80'
                     )}
                   >
