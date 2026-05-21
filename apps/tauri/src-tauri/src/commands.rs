@@ -1493,36 +1493,14 @@ async fn sidecar_open_login(app: &AppHandle, board_id: &str) -> Value {
     }
 }
 
-async fn sidecar_board_status(app: &AppHandle, board_id: &str) -> Value {
-    let Some(port) = sidecar_port(app) else {
-        return json!({ "connected": false });
-    };
-    let job_id = uuid_v4();
-    let cmd = json!({ "kind": "board.status", "boardId": board_id });
-    match post_sidecar_command(app, port, &cmd, &job_id).await {
-        Ok(result) => result,
-        Err(_) => json!({ "connected": false }),
-    }
-}
+// ── Board auth — native Rust file I/O, no sidecar dependency ─────────────────
+//
+// Auth state lives in <sidecar_data_dir>/browser-state/<boardId>/auth-status.json.
+// Reading and writing this file directly from Rust means status checks and
+// disconnects work regardless of whether the sidecar process is running.
+// The sidecar is only needed for login (opening the browser) and scraping.
 
-async fn sidecar_board_disconnect(app: &AppHandle, board_id: &str) -> Value {
-    // Always write { connected: false } to disk so the status survives a sidecar restart.
-    write_board_auth_status(board_id, false);
-
-    // Also tell the live sidecar so it clears in-memory state and session cookies.
-    if let Some(port) = sidecar_port(app) {
-        let job_id = uuid_v4();
-        let cmd = json!({ "kind": "board.disconnect", "boardId": board_id });
-        post_sidecar_command(app, port, &cmd, &job_id).await.ok();
-    }
-
-    json!({ "success": true })
-}
-
-/// Resolve the directory the scraper sidecar uses for persistent data.
-///
-/// Mirrors scraper-runtime/src/index.ts:
-///   process.env.AJH_DATA_DIR ?? path.join(os.homedir(), '.ajh')
+/// Returns ~/.ajh or $AJH_DATA_DIR — mirrors scraper-runtime/src/index.ts.
 fn sidecar_data_dir() -> std::path::PathBuf {
     if let Ok(dir) = std::env::var("AJH_DATA_DIR") {
         return std::path::PathBuf::from(dir);
@@ -1533,22 +1511,50 @@ fn sidecar_data_dir() -> std::path::PathBuf {
     std::path::PathBuf::from(home).join(".ajh")
 }
 
-/// Persist the board's connected state directly to the auth-status file on disk.
-///
-/// The sidecar reads this file on startup to determine whether a board is
-/// connected without opening a browser. Writing it from Rust ensures the
-/// status survives sidecar restarts even when the sidecar is not running
-/// at the time the user clicks Disconnect.
-fn write_board_auth_status(board_id: &str, connected: bool) {
-    let path = sidecar_data_dir()
+fn auth_status_path(board_id: &str) -> std::path::PathBuf {
+    sidecar_data_dir()
         .join("browser-state")
         .join(board_id)
-        .join("auth-status.json");
+        .join("auth-status.json")
+}
+
+/// Read connected state for a board directly from the auth-status file.
+fn read_board_connected(board_id: &str) -> bool {
+    std::fs::read_to_string(auth_status_path(board_id))
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("connected").and_then(|c| c.as_bool()))
+        .unwrap_or(false)
+}
+
+/// Write connected state for a board directly to the auth-status file.
+fn write_board_connected(board_id: &str, connected: bool) {
+    let path = auth_status_path(board_id);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).ok();
     }
     let payload = if connected { r#"{"connected":true}"# } else { r#"{"connected":false}"# };
     std::fs::write(&path, payload).ok();
+}
+
+/// Disconnect a board: write the auth-status file immediately, then fire-and-forget
+/// a sidecar notification so it can clear its in-memory session state.
+///
+/// The sidecar call is intentionally non-blocking — the file write is the
+/// authoritative operation. Awaiting the sidecar HTTP call caused the command
+/// to block indefinitely when the sidecar was slow or not responding, preventing
+/// the frontend mutation from resolving and the toast from appearing.
+fn disconnect_board(app: &AppHandle, board_id: &str) {
+    write_board_connected(board_id, false);
+    if let Some(port) = sidecar_port(app) {
+        let app = app.clone();
+        let board_id = board_id.to_string();
+        tauri::async_runtime::spawn(async move {
+            let job_id = uuid_v4();
+            let cmd = json!({ "kind": "board.disconnect", "boardId": board_id });
+            post_sidecar_command(&app, port, &cmd, &job_id).await.ok();
+        });
+    }
 }
 
 const KNOWN_BOARDS: &[&str] = &["linkedin", "indeed", "xing", "glassdoor"];
@@ -1559,13 +1565,14 @@ pub async fn linkedin_connect(app: AppHandle) -> Value {
 }
 
 #[tauri::command]
-pub async fn linkedin_disconnect(app: AppHandle) -> Value {
-    sidecar_board_disconnect(&app, "linkedin").await
+pub fn linkedin_disconnect(app: AppHandle) -> Value {
+    disconnect_board(&app, "linkedin");
+    json!({ "success": true })
 }
 
 #[tauri::command]
-pub async fn linkedin_get_status(app: AppHandle) -> Value {
-    sidecar_board_status(&app, "linkedin").await
+pub fn linkedin_get_status() -> Value {
+    json!({ "connected": read_board_connected("linkedin") })
 }
 
 #[tauri::command]
@@ -1574,32 +1581,25 @@ pub async fn boards_connect(app: AppHandle, board_id: String) -> Value {
 }
 
 #[tauri::command]
-pub async fn boards_disconnect(app: AppHandle, board_id: String) -> Value {
-    sidecar_board_disconnect(&app, &board_id).await
+pub fn boards_disconnect(app: AppHandle, board_id: String) -> Value {
+    disconnect_board(&app, &board_id);
+    json!({ "success": true })
 }
 
 #[tauri::command]
-pub async fn boards_get_status(app: AppHandle, board_id: String) -> Value {
-    sidecar_board_status(&app, &board_id).await
+pub fn boards_get_status(board_id: String) -> Value {
+    json!({ "connected": read_board_connected(&board_id) })
 }
 
 // ── Privacy ──────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn privacy_sign_out_all(app: AppHandle) -> Value {
-    // Disconnect every known board — write auth-status to disk AND tell the sidecar.
+pub fn privacy_sign_out_all(app: AppHandle) -> Value {
     for board_id in KNOWN_BOARDS {
-        sidecar_board_disconnect(&app, board_id).await;
+        disconnect_board(&app, board_id);
     }
-    // Clear cached postings and interactions from the in-process stores.
-    app.state::<Mutex<PostingsCache>>()
-        .lock()
-        .unwrap()
-        .clear_all();
-    app.state::<Mutex<InteractionStore>>()
-        .lock()
-        .unwrap()
-        .clear_all();
+    app.state::<Mutex<PostingsCache>>().lock().unwrap().clear_all();
+    app.state::<Mutex<InteractionStore>>().lock().unwrap().clear_all();
     json!({ "success": true })
 }
 

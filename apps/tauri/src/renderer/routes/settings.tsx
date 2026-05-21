@@ -121,42 +121,50 @@ function SettingsPage() {
   return (
     <PageTransition className="flex h-full overflow-hidden">
       {/* ── Sidebar nav ─────────────────────────────────────────────── */}
-      <aside className="flex w-56 shrink-0 flex-col gap-6 overflow-y-auto border-r border-white/[0.05] px-3 py-8">
+      <aside className="flex w-56 shrink-0 flex-col gap-6 overflow-y-auto border-white/[0.05] px-3 py-8">
         {navGroups.map((group) => (
           <div key={group.label}>
             <div className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-widest text-foreground/30">
               {group.label}
             </div>
-            <div className="flex flex-col gap-0.5">
+            <nav className="flex flex-col gap-1">
               {group.items.map(({ id, label, icon: Icon }) => {
                 const active = activeSection === id;
                 return (
-                  <Button
-                    key={id}
-                    variant="ghost"
-                    onClick={() => setActiveSection(id)}
-                    className={cn(
-                      'group flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-all duration-150 justify-start',
-                      active
-                        ? 'bg-white/[0.07] text-foreground ring-1 ring-white/[0.08]'
-                        : 'text-foreground/50 hover:bg-white/[0.04] hover:text-foreground/80'
+                  <div key={id} className="relative">
+                    {active && (
+                      <motion.div
+                        layoutId="settings-pill"
+                        className="absolute inset-0 rounded-xl bg-white/[0.07]"
+                        transition={transition.spring}
+                      />
                     )}
-                  >
-                    <Icon
-                      size={15}
+                    <div
+                      role="button"
+                      onClick={() => setActiveSection(id)}
                       className={cn(
-                        'shrink-0 transition-colors',
+                        'group relative flex cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors duration-150',
                         active
-                          ? 'text-brand-soft'
-                          : 'text-foreground/35 group-hover:text-foreground/60'
+                          ? 'text-foreground'
+                          : 'text-foreground/45 hover:bg-white/[0.04] hover:text-foreground/75'
                       )}
-                    />
-                    <span className="font-medium">{label}</span>
-                    {active && <ChevronRight size={12} className="ml-auto text-foreground/30" />}
-                  </Button>
+                    >
+                      <Icon
+                        size={15}
+                        className={cn(
+                          'shrink-0 transition-colors duration-150',
+                          active
+                            ? 'text-foreground/70'
+                            : 'text-foreground/35 group-hover:text-foreground/55'
+                        )}
+                      />
+                      <span className="flex-1 font-medium">{label}</span>
+                      {active && <ChevronRight size={12} className="text-foreground/30" />}
+                    </div>
+                  </div>
                 );
               })}
-            </div>
+            </nav>
           </div>
         ))}
       </aside>
@@ -164,7 +172,7 @@ function SettingsPage() {
       {/* ── Content ─────────────────────────────────────────────────── */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Section header */}
-        <div className="shrink-0 border-b border-white/[0.05] px-8 py-6">
+        <div className="shrink-0 border-white/[0.05] px-8 py-6">
           <div className="flex items-center gap-3">
             <IconBadge icon={current.icon} size="md" />
             <div>

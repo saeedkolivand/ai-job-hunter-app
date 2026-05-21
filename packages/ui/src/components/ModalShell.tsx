@@ -63,10 +63,14 @@ export function ModalShell({
     <AnimatePresence>
       {open && (
         <>
-          <GlassOverlay onClick={onClose} zIndex={zIndex - 1} />
+          {/* Visual backdrop — no click handler; the outer container handles dismissal */}
+          <GlassOverlay zIndex={zIndex - 1} />
+          {/* Click on the backdrop area (outside the panel) closes the modal.
+              Click on the panel calls stopPropagation so it never reaches here. */}
           <motion.div
-            className="pointer-events-none fixed inset-0 flex items-center justify-center p-4"
+            className="fixed inset-0 flex items-center justify-center p-4"
             style={{ zIndex }}
+            onClick={onClose}
             {...variants.overlay}
             transition={transition.overlay}
           >
@@ -75,7 +79,7 @@ export function ModalShell({
               role="dialog"
               aria-modal="true"
               className={cn(
-                'glass-modal pointer-events-auto relative w-full overflow-hidden rounded-2xl border shadow-xl',
+                'glass-modal relative w-full overflow-hidden rounded-2xl border shadow-xl',
                 maxWidth,
                 borderClass ?? 'border-white/[0.12]',
                 className
