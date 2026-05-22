@@ -586,7 +586,11 @@
     "locationPlaceholder": "z.B. Berlin, Deutschland",
     "posted": "Veröffentlicht",
     "anyTime": "Jederzeit",
-    "past8h": "Letzte 8h",
+    "past30m": "Letzte 30 Minuten",
+    "past1h": "Letzte 1 Stunde",
+    "past2h": "Letzte 2 Stunden",
+    "past4h": "Letzte 4 Stunden",
+    "past8h": "Letzte 8 Stunden",
     "past24h": "Letzte 24h",
     "pastWeek": "Letzte Woche",
     "pastMonth": "Letzter Monat",
@@ -666,7 +670,12 @@
       "start": "Bewerbung starten"
     },
     "authHint": "Verbinde dein Konto in den Einstellungen für mehr Ergebnisse und bessere Genauigkeit.",
-    "authHintLink": "Konto verbinden"
+    "authHintLink": "Konto verbinden",
+    "disconnect": "Trennen",
+    "modeAuthenticated": "Authentifiziert",
+    "modeAuthNote": "Volle Ergebnisse · Feine Zeitfilter",
+    "modeGuest": "Gastmodus",
+    "modeGuestNote": "Begrenzte Ergebnisse · nur 24h / Woche / Monat"
   },
   "resumes": {
     "title": "Lebensläufe",

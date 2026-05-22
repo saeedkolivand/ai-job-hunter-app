@@ -88,6 +88,10 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       resume: noop,
     },
 
+    geocode: {
+      suggest: async () => [],
+    },
+
     credentials: {
       available: async () => false,
       list: emptyList,

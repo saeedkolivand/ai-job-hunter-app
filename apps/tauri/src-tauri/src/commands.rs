@@ -73,7 +73,7 @@ async fn post_sidecar_command(
                             .lock()
                             .unwrap()
                             .complete(job_id, last_done.clone());
-                        let _ = app.emit("jobs:event", json!({"type":"completed","jobId":job_id}));
+                        let _ = app.emit("jobs:event", json!({"type":"job.completed","jobId":job_id}));
                     }
                     "progress" => {
                         let p = event.get("p").and_then(|v| v.as_f64()).unwrap_or(0.0);
@@ -241,6 +241,75 @@ pub fn system_get_metrics() -> Value {
         "totalMemoryMb": total_mem / 1024 / 1024,
         "cpuPercent": (cpu_percent * 10.0).round() / 10.0
     })
+}
+
+// ── Geocoding ────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn geocode_suggest(query: String) -> Value {
+    if query.trim().len() < 2 {
+        return json!([]);
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .user_agent("AJH-App/1.0")
+        .build()
+        .unwrap_or_default();
+    let Ok(resp) = client
+        .get("https://nominatim.openstreetmap.org/search")
+        .query(&[
+            ("q", query.trim()),
+            ("format", "json"),
+            ("addressdetails", "1"),
+            ("limit", "6"),
+            ("featuretype", "city"),
+        ])
+        .header("Accept-Language", "en")
+        .send()
+        .await
+    else {
+        return json!([]);
+    };
+    let Ok(data) = resp.json::<serde_json::Value>().await else {
+        return json!([]);
+    };
+    let Some(arr) = data.as_array() else {
+        return json!([]);
+    };
+
+    let mut seen = std::collections::HashSet::new();
+    let suggestions: Vec<serde_json::Value> = arr
+        .iter()
+        .filter_map(|item| {
+            let addr = item.get("address")?;
+            let city = addr
+                .get("city")
+                .or_else(|| addr.get("town"))
+                .or_else(|| addr.get("village"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if city.is_empty() {
+                return None;
+            }
+            let parts: Vec<&str> = [
+                city,
+                addr.get("state").and_then(|v| v.as_str()).unwrap_or(""),
+                addr.get("country").and_then(|v| v.as_str()).unwrap_or(""),
+            ]
+            .iter()
+            .filter(|s| !s.is_empty())
+            .copied()
+            .collect();
+            let display = parts.join(", ");
+            if seen.contains(&display) {
+                return None;
+            }
+            seen.insert(display.clone());
+            Some(json!({ "display": display }))
+        })
+        .collect();
+
+    json!(suggestions)
 }
 
 // ── Jobs ─────────────────────────────────────────────────────────────────────
