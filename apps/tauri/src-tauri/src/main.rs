@@ -236,6 +236,7 @@ fn main() {
             commands::conversations_save_message,
             // native dialogs
             commands::dialog_open_files,
+            commands::geocode_suggest,
             // autopilot
             commands::autopilot_list,
             commands::autopilot_get,

@@ -586,7 +586,11 @@
     "locationPlaceholder": "e.g. Berlin, Germany",
     "posted": "Posted",
     "anyTime": "Any time",
-    "past8h": "Past 8h",
+    "past30m": "Past 30 minutes",
+    "past1h": "Past 1 hour",
+    "past2h": "Past 2 hours",
+    "past4h": "Past 4 hours",
+    "past8h": "Past 8 hours",
     "past24h": "Past 24h",
     "pastWeek": "Past week",
     "pastMonth": "Past month",
@@ -666,7 +670,12 @@
       "start": "Start application"
     },
     "authHint": "Connect your account in Settings for more results and better accuracy.",
-    "authHintLink": "Connect account"
+    "authHintLink": "Connect account",
+    "disconnect": "Disconnect",
+    "modeAuthenticated": "Authenticated",
+    "modeAuthNote": "Full results · fine-grained time filters",
+    "modeGuest": "Guest mode",
+    "modeGuestNote": "Limited results · 24h / week / month filters only"
   },
   "resumes": {
     "title": "Resumes",

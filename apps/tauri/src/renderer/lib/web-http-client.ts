@@ -149,6 +149,11 @@ export function createWebHttpClient({ baseUrl, token }: WebHttpClientOptions): A
       resume: (req) => cmd('match', 'resume', req),
     },
 
+    geocode: {
+      suggest: (query: string) =>
+        cmd('geocode', 'suggest', { query }) as Promise<Array<{ display: string }>>,
+    },
+
     credentials: {
       available: () => cmd('credentials', 'available'),
       list: () => cmd('credentials', 'list'),

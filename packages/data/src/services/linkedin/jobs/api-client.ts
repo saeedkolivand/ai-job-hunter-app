@@ -77,8 +77,12 @@ export class LinkedInJobsApiClient {
 
     // Map date filter to LinkedIn f_TPR parameter
     let f_TPR = '';
-    if (dateFilter === '24h') f_TPR = 'r86400';
+    if (dateFilter === '30m') f_TPR = 'r1800';
+    else if (dateFilter === '1h') f_TPR = 'r3600';
+    else if (dateFilter === '2h') f_TPR = 'r7200';
+    else if (dateFilter === '4h') f_TPR = 'r14400';
     else if (dateFilter === '8h') f_TPR = 'r28800';
+    else if (dateFilter === '24h') f_TPR = 'r86400';
     else if (dateFilter === 'week') f_TPR = 'r604800';
     else if (dateFilter === 'month') f_TPR = 'r2592000';
 
@@ -111,8 +115,24 @@ export class LinkedInJobsApiClient {
     logger.info({ cardsCount: cards.length }, 'Found li elements');
 
     if (cards.length === 0) {
-      logger.info('No job cards found');
-      logger.info({ htmlSample: html.substring(0, 1000) }, 'Sample HTML response');
+      logger.error(
+        {
+          url,
+          htmlLength: html.length,
+          htmlSample: html.substring(0, 2000),
+          // Detect common failure signatures
+          isAuthWall: html.includes('authwall') || html.includes('auth-wall'),
+          isCaptcha: html.includes('captcha') || html.includes('CAPTCHA'),
+          isChallenge: html.includes('challenge') || html.includes('bot'),
+          isRedirect: html.includes('<meta http-equiv="refresh"'),
+          bodySnippet: html
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .substring(0, 500),
+        },
+        'Guest API returned 0 job cards — possible block or HTML structure change'
+      );
       return [];
     }
 

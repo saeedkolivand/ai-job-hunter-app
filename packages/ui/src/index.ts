@@ -5,6 +5,7 @@ export { applyTheme, getActiveTheme, restoreTheme, type ThemeId, THEMES } from '
 
 // ── Primitives ────────────────────────────────────────────────────────────
 export { ActionTile } from './components/ActionTile';
+export { LocationInput, type LocationInputProps } from './components/LocationInput';
 export { Button, type ButtonProps } from './components/Button';
 export { GlassCard, type GlassCardProps } from './components/GlassCard';
 export { IconBadge, type IconBadgeProps } from './components/IconBadge';

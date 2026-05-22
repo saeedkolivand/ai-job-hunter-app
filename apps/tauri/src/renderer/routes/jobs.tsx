@@ -18,11 +18,20 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useMemo, useRef, useState } from 'react';
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute } from '@tanstack/react-router';
 
 import type { DATE_FILTER_OPTIONS, JobInteraction } from '@ajh/shared';
-import { Button, GlassCard, Input, SelectDropdown, TextArea, useToast } from '@ajh/ui';
+import {
+  Button,
+  GlassCard,
+  Input,
+  LocationInput,
+  SelectDropdown,
+  TextArea,
+  useToast,
+} from '@ajh/ui';
 
+import { useAppClient } from '@/providers/AppClientProvider';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { cn } from '@/lib/cn';
@@ -30,9 +39,15 @@ import { useTranslation } from '@/lib/i18n';
 import { staggeredItem, transition } from '@/lib/motion';
 import {
   useApplyJob,
+  useBoardConnect,
+  useBoardStatus,
   useCancelJob,
   useClearPostings,
   useJobEvents,
+  useLinkedInConnect,
+  useLinkedInDisconnect,
+  useLinkedInStatus,
+  useBoardDisconnect,
   useOpenExternal,
   usePersistJob,
   usePostings,
@@ -100,6 +115,7 @@ function Jobs() {
     return t('jobs.timeMonthsAgo', { m: months });
   };
 
+  const api = useAppClient();
   const toast = useToast();
   const { data: postingsData = [] } = usePostings();
   const postings = postingsData as Posting[];
@@ -119,6 +135,47 @@ function Jobs() {
     dateFilter: '' as '' | (typeof DATE_FILTER_OPTIONS)[number],
     locale: 'us',
   });
+
+  // Inline connect — avoids sending user to Settings just to link an account
+  const isLinkedInBoard = scrapeForm.board === 'linkedin';
+  const linkedInStatus = useLinkedInStatus();
+  const boardStatus = useBoardStatus(
+    AUTH_BENEFITS.has(scrapeForm.board) && !isLinkedInBoard ? scrapeForm.board : ''
+  );
+  const linkedInConnect = useLinkedInConnect();
+  const linkedInDisconnect = useLinkedInDisconnect();
+  const boardConnect = useBoardConnect();
+  const boardDisconnect = useBoardDisconnect();
+  const boardConnected = isLinkedInBoard
+    ? ((linkedInStatus.data as { connected?: boolean } | undefined)?.connected ?? false)
+    : ((boardStatus.data as { connected?: boolean } | undefined)?.connected ?? false);
+  const connectPending = isLinkedInBoard ? linkedInConnect.isPending : boardConnect.isPending;
+  const disconnectPending = isLinkedInBoard
+    ? linkedInDisconnect.isPending
+    : boardDisconnect.isPending;
+
+  const handleInlineDisconnect = async () => {
+    try {
+      if (isLinkedInBoard) await linkedInDisconnect.mutateAsync();
+      else await boardDisconnect.mutateAsync(scrapeForm.board);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Disconnect failed.', 'error');
+    }
+  };
+
+  const handleInlineConnect = async () => {
+    try {
+      const result = isLinkedInBoard
+        ? await linkedInConnect.mutateAsync()
+        : await boardConnect.mutateAsync(scrapeForm.board);
+      const res = result as { connected?: boolean; error?: string } | undefined;
+      if (res?.error) toast(res.error, 'error');
+      else if (!res?.connected)
+        toast(`${scrapeForm.board} sign-in was cancelled or timed out.`, 'warning');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Connection failed.', 'error');
+    }
+  };
   const [scraping, setScraping] = useState(false);
   const [scrapeJobId, setScrapeJobId] = useState<string | null>(null);
   const [scrapeOutcome, setScrapeOutcome] = useState<{ ok: boolean; note?: string } | null>(null);
@@ -166,21 +223,52 @@ function Jobs() {
     return [...extra, ...postings];
   }, [postings, livePostings]);
 
+  const doScrape = async () => {
+    const res = (await scrapeBoard.mutateAsync({
+      board: scrapeForm.board,
+      query: scrapeForm.query,
+      ...(scrapeForm.location ? { location: scrapeForm.location } : {}),
+      pages: scrapeForm.pages,
+      ...(scrapeForm.dateFilter ? { dateFilter: scrapeForm.dateFilter } : {}),
+      ...(scrapeForm.board === 'indeed' ? { locale: scrapeForm.locale } : {}),
+    } as Parameters<typeof scrapeBoard.mutateAsync>[0])) as { jobId: string; error?: string };
+    return res;
+  };
+
   const startScrape = async () => {
     setScrapeOutcome(null);
     setScraping(true);
     setLivePostings([]);
-    try {
-      const res = (await scrapeBoard.mutateAsync({
-        board: scrapeForm.board,
-        query: scrapeForm.query,
-        ...(scrapeForm.location ? { location: scrapeForm.location } : {}),
-        pages: scrapeForm.pages,
-        ...(scrapeForm.dateFilter ? { dateFilter: scrapeForm.dateFilter } : {}),
-        ...(scrapeForm.board === 'indeed' ? { locale: scrapeForm.locale } : {}),
-      } as Parameters<typeof scrapeBoard.mutateAsync>[0])) as { jobId: string; error?: string };
 
-      // Sidecar not running or returned an error — surface it immediately.
+    // Cancel any previously tracked job before starting — prevents concurrency errors
+    // from leftover sidecar jobs the UI lost track of.
+    const prevJobId = scrapeJobRef.current;
+    if (prevJobId) {
+      scrapeJobRef.current = null;
+      setScrapeJobId(null);
+      try {
+        await cancelJob.mutateAsync(prevJobId);
+      } catch {
+        // best-effort
+      }
+    }
+
+    try {
+      let res = await doScrape();
+
+      // Concurrency limit hit despite cancelling the tracked job (e.g. a second
+      // job was started from another session). Cancel via the sidecar and retry once.
+      if (res.error?.includes('Concurrency limit')) {
+        if (res.jobId) {
+          try {
+            await cancelJob.mutateAsync(res.jobId);
+          } catch {
+            // best-effort
+          }
+        }
+        res = await doScrape();
+      }
+
       if (res.error) {
         setScraping(false);
         setScrapeOutcome({ ok: false, note: res.error });
@@ -401,9 +489,57 @@ function Jobs() {
                   </div>
                 </div>
 
-                {/* Auth hint — shown for boards that benefit from a connected account */}
+                {/* Auth mode badge — shown for boards that support authentication */}
                 <AnimatePresence>
                   {AUTH_BENEFITS.has(scrapeForm.board) && (
+                    <motion.div
+                      key={`mode-${scrapeForm.board}-${boardConnected ? 'auth' : 'guest'}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={transition.fast}
+                      className="mb-3 flex items-center gap-1.5"
+                    >
+                      {boardConnected ? (
+                        <>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                            {t('jobs.modeAuthenticated')}
+                          </span>
+                          <span className="text-[10px] text-foreground/35">
+                            {t('jobs.modeAuthNote')}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={disconnectPending}
+                            onClick={() => void handleInlineDisconnect()}
+                            className="ml-auto shrink-0 text-[10px] text-red-400/70 underline-offset-2 hover:text-red-400 hover:underline disabled:opacity-50"
+                          >
+                            {disconnectPending ? (
+                              <Loader2 size={10} className="animate-spin" />
+                            ) : (
+                              t('jobs.disconnect')
+                            )}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-400">
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                            {t('jobs.modeGuest')}
+                          </span>
+                          <span className="text-[10px] text-foreground/35">
+                            {t('jobs.modeGuestNote')}
+                          </span>
+                        </>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Auth hint — shown for boards that benefit from a connected account */}
+                <AnimatePresence>
+                  {AUTH_BENEFITS.has(scrapeForm.board) && !boardConnected && (
                     <motion.div
                       key="auth-hint"
                       initial={{ opacity: 0, height: 0, marginBottom: 0 }}
@@ -415,12 +551,18 @@ function Jobs() {
                       <div className="flex items-center gap-2 rounded-lg border border-blue-400/15 bg-blue-400/5 px-3 py-2 text-[11px] text-blue-200/75">
                         <Info size={12} className="shrink-0 text-blue-400/60" />
                         <span>{t('jobs.authHint')}</span>
-                        <Link
-                          to="/settings"
-                          className="ml-auto shrink-0 text-brand-soft underline-offset-2 hover:underline"
+                        <button
+                          type="button"
+                          disabled={connectPending}
+                          onClick={() => void handleInlineConnect()}
+                          className="ml-auto shrink-0 text-brand-soft underline-offset-2 hover:underline disabled:opacity-50"
                         >
-                          {t('jobs.authHintLink')}
-                        </Link>
+                          {connectPending ? (
+                            <Loader2 size={11} className="animate-spin" />
+                          ) : (
+                            t('jobs.authHintLink')
+                          )}
+                        </button>
                       </div>
                     </motion.div>
                   )}
@@ -432,13 +574,12 @@ function Jobs() {
                     <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.18em] text-foreground/35">
                       {t('jobs.location')}
                     </label>
-                    <Input
-                      type="text"
+                    <LocationInput
                       value={scrapeForm.location}
-                      onChange={(e) => setScrapeForm({ ...scrapeForm, location: e.target.value })}
+                      onChange={(v) => setScrapeForm({ ...scrapeForm, location: v })}
                       placeholder={t('jobs.locationPlaceholder')}
                       disabled={scraping}
-                      className="w-full bg-white/[0.03] text-xs text-foreground placeholder:text-foreground/25 disabled:opacity-50"
+                      onFetchSuggestions={(q) => api.geocode.suggest(q)}
                     />
                   </div>
                   <div>
@@ -448,7 +589,15 @@ function Jobs() {
                     <SelectDropdown
                       options={[
                         { value: '', label: t('jobs.anyTime') },
-                        { value: '8h', label: t('jobs.past8h') },
+                        ...(AUTH_BENEFITS.has(scrapeForm.board) && boardConnected
+                          ? [
+                              { value: '30m', label: t('jobs.past30m') },
+                              { value: '1h', label: t('jobs.past1h') },
+                              { value: '2h', label: t('jobs.past2h') },
+                              { value: '4h', label: t('jobs.past4h') },
+                              { value: '8h', label: t('jobs.past8h') },
+                            ]
+                          : []),
                         { value: '24h', label: t('jobs.past24h') },
                         { value: 'week', label: t('jobs.pastWeek') },
                         { value: 'month', label: t('jobs.pastMonth') },
