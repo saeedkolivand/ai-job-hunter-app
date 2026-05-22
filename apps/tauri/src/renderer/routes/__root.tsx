@@ -11,9 +11,11 @@ import { Titlebar } from '@/components/layout/Titlebar';
 import { UpdateBanner } from '@/components/ui/UpdateBanner';
 import { OnboardingWizard } from '@/features/onboarding/OnboardingWizard';
 import { CapabilityProvider } from '@/providers/CapabilityProvider';
+import { useOnboardingCompleted } from '@/store/preferences-store';
 
 function RootLayout() {
   const router = useRouter();
+  const onboardingCompleted = useOnboardingCompleted();
 
   useEffect(() => {
     // Prevent mouse side-buttons (back/forward, buttons 3 & 4) from triggering
@@ -59,7 +61,7 @@ function RootLayout() {
             </main>
           </div>
           <StatusBar />
-          <CommandPalette />
+          {onboardingCompleted && <CommandPalette />}
           <OnboardingWizard />
           <UpdateBanner />
         </div>

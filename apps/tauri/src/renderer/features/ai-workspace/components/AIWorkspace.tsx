@@ -1,6 +1,7 @@
-import { Check, Copy, Send, Sparkles, Upload, X } from 'lucide-react';
+import { Check, ChevronDown, Copy, RefreshCw, Send, Sparkles, Upload, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { buildWorkspaceSystemPrompt } from '@ajh/prompts';
 import type { AiStreamChunk, JobEvent } from '@ajh/shared';
@@ -11,13 +12,16 @@ import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
 import {
+  useAIModels,
   useAIStream,
   useExtractText,
   useGenerateAI,
   useGetOrCreateConversation,
   useJobEvents,
 } from '@/services';
-import { useAIModel } from '@/store/preferences-store';
+import { keys } from '@/services/query-client';
+import { useAIModel, usePreferencesStore } from '@/store/preferences-store';
+import type { Model } from '@/types';
 
 const ACCEPTED_EXTS = ['pdf', 'docx', 'txt', 'md', 'markdown'] as const;
 const ACCEPT_ATTR = '.pdf,.docx,.txt,.md,.markdown';
@@ -42,10 +46,15 @@ export function AIWorkspace() {
   const [resumeFileName, setResumeFileName] = useState<string>('');
   const [uploading, setUploading] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [showModelPicker, setShowModelPicker] = useState(false);
   const activeJobRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const aiModel = useAIModel();
+  const { data: modelList = [], isFetching: loadingModels } = useAIModels();
+  const models = modelList as Model[];
+  const qc = useQueryClient();
+  const setAIModel = usePreferencesStore((s) => s.setAIModel);
 
   const getOrCreateConversation = useGetOrCreateConversation();
   const extractText = useExtractText();
@@ -199,7 +208,82 @@ export function AIWorkspace() {
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col relative">
+      {/* Floating model selector button */}
+      <div className="absolute top-4 right-4 z-10">
+        <div className="relative">
+          <button
+            onClick={() => setShowModelPicker(!showModelPicker)}
+            className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-foreground/70 hover:bg-white/[0.06] hover:text-foreground/90 transition-all backdrop-blur-sm"
+          >
+            <Sparkles size={12} className="text-brand-soft" />
+            <span className="max-w-[120px] truncate">
+              {aiModel?.defaultModel || 'Select model'}
+            </span>
+            <ChevronDown
+              size={12}
+              className={cn('transition-transform', showModelPicker && 'rotate-180')}
+            />
+          </button>
+
+          {/* Model picker dropdown */}
+          {showModelPicker && (
+            <>
+              {/* Backdrop to close dropdown */}
+              <div className="fixed inset-0 z-20" onClick={() => setShowModelPicker(false)} />
+              <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-white/[0.08] bg-[#0a0a0a]/95 backdrop-blur-xl shadow-2xl z-30 overflow-hidden">
+                {/* Refresh button */}
+                <div className="border-b border-white/[0.06] p-2">
+                  <button
+                    onClick={() => void qc.invalidateQueries({ queryKey: keys.ai.models })}
+                    disabled={loadingModels}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-foreground/60 hover:bg-white/[0.05] hover:text-foreground/80 transition-colors disabled:opacity-40"
+                  >
+                    <RefreshCw size={12} className={loadingModels ? 'animate-spin' : ''} />
+                    Refresh models
+                  </button>
+                </div>
+
+                {/* Model list */}
+                <div className="max-h-80 overflow-y-auto p-2">
+                  {models.length === 0 ? (
+                    <div className="px-3 py-4 text-center text-xs text-foreground/40">
+                      No models available
+                    </div>
+                  ) : (
+                    models.map((model) => {
+                      const isSelected = model.name === aiModel?.defaultModel;
+                      return (
+                        <button
+                          key={model.name}
+                          onClick={() => {
+                            setAIModel({
+                              defaultModel: model.name,
+                              temperature: 0.7,
+                              maxTokens: 2000,
+                            });
+                            setShowModelPicker(false);
+                          }}
+                          className={cn(
+                            'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors',
+                            isSelected
+                              ? 'bg-brand/20 text-brand-soft'
+                              : 'text-foreground/70 hover:bg-white/[0.05] hover:text-foreground/90'
+                          )}
+                        >
+                          {isSelected && <Check size={12} className="shrink-0" />}
+                          <span className="flex-1 truncate">{model.name}</span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-8 py-6">
         {messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center text-center">

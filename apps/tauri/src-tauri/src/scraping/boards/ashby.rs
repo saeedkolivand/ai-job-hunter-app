@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 /// Ashby — public posting API
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};

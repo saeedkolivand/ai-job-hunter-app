@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 /// Greenhouse — public per-company JSON board API
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};

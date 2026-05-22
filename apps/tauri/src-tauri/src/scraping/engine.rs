@@ -63,6 +63,7 @@ impl ScraperEngine {
             ("linkedin", "LinkedIn", "http"),
             ("indeed", "Indeed", "browser"),
             ("xing", "Xing", "browser"),
+            ("glassdoor", "Glassdoor", "browser"),
         ];
         ROWS.iter()
             .map(|(id, name, mode)| ScraperCatalogEntry {
@@ -130,6 +131,7 @@ impl ScraperEngine {
             "linkedin" => Scraper::search(&LinkedInScraper, input, ctx).await,
             "indeed" => Scraper::search(&IndeedScraper, input, ctx).await,
             "xing" => Scraper::search(&XingScraper, input, ctx).await,
+            "glassdoor" => Scraper::search(&GlassdoorScraper, input, ctx).await,
             _ => Err(anyhow::anyhow!("Unknown board: {}", board)),
         };
 

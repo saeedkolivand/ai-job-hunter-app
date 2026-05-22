@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 /// HTTP client for scrapers.
 ///
 /// - sane default headers (modern desktop UA)

@@ -1979,17 +1979,20 @@ pub fn autopilot_remove(app: AppHandle, autopilot_id: String) -> Value {
 
 #[tauri::command]
 pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
-    let target = {
+    let autopilot = {
         let store = app.state::<Mutex<AutopilotStore>>();
         let guard = store.lock().unwrap();
-        guard.get(&autopilot_id).map(|ap| ap.target.clone())
+        guard.get(&autopilot_id)
     };
 
-    let Some(target) = target else {
+    let Some(autopilot) = autopilot else {
         return json!({ "error": format!("autopilot not found: {autopilot_id}") });
     };
 
-    // Use the in-process Rust engine for scraping
+    let target = autopilot.target.clone();
+    let filter = autopilot.filter.clone();
+
+    // Register a cancellation token under the job_id so `jobs_cancel` works.
     let job_id = uuid_v4();
     app.state::<Mutex<JobTracker>>()
         .lock()
@@ -1997,6 +2000,19 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         .start(&job_id, "autopilot.run");
 
     let engine = app.state::<std::sync::Arc<ScraperEngine>>().inner().clone();
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+    engine.register_token(&job_id, cancel_token.clone()).await;
+
+    let ap_id = autopilot_id.clone();
+    let emit_step = move |app: &AppHandle, job_id: &str, step: &str, detail: &str| {
+        let _ = app.emit(
+            "autopilot.step",
+            json!({ "jobId": job_id, "autopilotId": ap_id, "step": step, "detail": detail }),
+        );
+    };
+
+    emit_step(&app, &job_id, "scrape_start", &format!("Scraping {}", target.board));
+
     let input = BoardSearchInput {
         query: target.query.clone(),
         location: target.location.clone(),
@@ -2019,11 +2035,6 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
             "scrape.progress",
             json!({ "jobId": job_id_progress, "progress": p }),
         );
-        if let Some(tracker) = app_progress.try_state::<Mutex<JobTracker>>() {
-            if let Ok(mut g) = tracker.lock() {
-                g.update_progress(&job_id_progress, p as f64);
-            }
-        }
     });
 
     let app_item = app.clone();
@@ -2036,24 +2047,114 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         .scrape_board(&target.board, input, job_id.clone(), Some(on_progress), Some(on_item))
         .await;
 
-    let tracker = app.state::<Mutex<JobTracker>>();
-    match &result {
-        Ok(results) => {
-            if let Ok(mut g) = tracker.lock() {
-                g.complete(&job_id, json!({ "count": results.len() }));
-            }
-        }
+    let postings = match result {
+        Ok(p) => p,
         Err(e) => {
-            if let Ok(mut g) = tracker.lock() {
+            engine.unregister_token(&job_id).await;
+            if let Ok(mut g) = app.state::<Mutex<JobTracker>>().lock() {
                 g.fail(&job_id, e.to_string());
             }
+            return json!({ "error": e.to_string(), "jobId": job_id });
+        }
+    };
+
+    let total_found = postings.len();
+    emit_step(&app, &job_id, "scrape_done", &format!("Found {} postings", total_found));
+
+    // ── Ranking ──────────────────────────────────────────────────────────────
+    // Score each posting against the autopilot's resume text using semantic
+    // similarity. Postings below `filter.min_match_score` are discarded.
+    let resume_vec = match &autopilot.resume_text {
+        Some(text) if !text.is_empty() => crate::documents::embed(text).await,
+        _ => None,
+    };
+
+    let mut scored: Vec<(f64, crate::scraping::JobPosting)> = Vec::new();
+    for posting in postings {
+        if cancel_token.is_cancelled() {
+            break;
+        }
+        let score = match (&resume_vec, &posting.description) {
+            (Some(rv), Some(desc)) if !desc.is_empty() => {
+                match crate::documents::embed(desc).await {
+                    Some(jv) => (crate::documents::cosine_similarity(rv, &jv) * 100.0).round(),
+                    None => 0.0,
+                }
+            }
+            _ => 0.0,
+        };
+        if score >= filter.min_match_score {
+            scored.push((score, posting));
         }
     }
 
-    match result {
-        Ok(results) => json!({ "jobId": job_id, "count": results.len() }),
-        Err(e) => json!({ "error": e.to_string(), "jobId": job_id }),
+    // Sort descending by score.
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    let top_n = target.top_n.max(1) as usize;
+    let candidates: Vec<_> = scored.into_iter().take(top_n).collect();
+
+    emit_step(
+        &app,
+        &job_id,
+        "rank_done",
+        &format!("{} candidates above min_match_score {}", candidates.len(), filter.min_match_score),
+    );
+
+    // ── Apply chaining ───────────────────────────────────────────────────────
+    let mut applied = 0u32;
+    for (i, (score, posting)) in candidates.iter().enumerate() {
+        if cancel_token.is_cancelled() {
+            emit_step(&app, &job_id, "cancelled", "Autopilot cancelled by user");
+            break;
+        }
+
+        emit_step(
+            &app,
+            &job_id,
+            "apply_start",
+            &format!("[{}/{}] Applying to {} (score {score})", i + 1, candidates.len(), posting.title),
+        );
+
+        let apply_req = json!({
+            "board": target.board,
+            "url": posting.url,
+            "coverLetter": autopilot.cover_letter,
+            "autoSubmit": autopilot.auto_submit,
+        });
+        let apply_result = apply_start(app.clone(), apply_req).await;
+
+        let ok = apply_result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+        if ok {
+            applied += 1;
+        }
+
+        emit_step(
+            &app,
+            &job_id,
+            "apply_done",
+            &format!("[{}/{}] {} — ok={ok}", i + 1, candidates.len(), posting.title),
+        );
     }
+
+    // Update autopilot totals.
+    {
+        let store = app.state::<Mutex<AutopilotStore>>();
+        let _ = store.lock().unwrap().update(
+            &autopilot_id,
+            json!({ "totalFound": total_found, "totalApplied": applied }),
+        );
+    }
+
+    engine.unregister_token(&job_id).await;
+
+    if let Ok(mut g) = app.state::<Mutex<JobTracker>>().lock() {
+        g.complete(&job_id, json!({ "found": total_found, "applied": applied }));
+    }
+
+    emit_step(&app, &job_id, "complete", &format!("Found {total_found}, applied to {applied}"));
+
+    json!({ "jobId": job_id, "found": total_found, "applied": applied })
 }
 
 #[tauri::command]
