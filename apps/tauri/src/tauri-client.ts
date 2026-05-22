@@ -75,6 +75,7 @@ export function createTauriInvokeClient(): AppClient {
       list: () => invoke('documents_list'),
       import: (req) => invoke('documents_import', { req }),
       remove: (id) => invoke('documents_remove', { id }),
+      exportDocument: (req) => invoke('documents_export_document', { req }),
     },
 
     search: {

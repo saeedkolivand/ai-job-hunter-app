@@ -1483,18 +1483,28 @@ export async function exportDOCX(
       templateId = 'modern';
     }
 
-    const { Packer } = await import('docx');
-    const tpl = TEMPLATES[templateId];
-    const doc =
-      type === 'resume'
-        ? await buildResumeDocx(text, meta, tpl)
-        : await buildCoverLetterDocx(text, meta, tpl);
-
-    const blob = new Blob([new Uint8Array(await Packer.toBuffer(doc))], {
-      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    // Use Rust backend for export
+    const { getClient } = await import('@/lib/app-client');
+    const api = getClient();
+    const result = await api.documents.exportDocument({
+      text,
+      format: 'docx',
+      documentType: type,
+      templateId: templateId as 'classic' | 'modern' | 'executive',
+      meta: meta
+        ? {
+            candidateName: meta.candidateName,
+            jobTitle: meta.jobTitle,
+            companyName: meta.companyName,
+            targetLanguage: meta.targetLanguage,
+          }
+        : undefined,
     });
+
+    // Save the file
+    const blob = new Blob([new Uint8Array(result.data)], { type: result.mimeType });
     const url = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+    const a = Object.assign(document.createElement('a'), { href: url, download: result.filename });
     a.click();
     URL.revokeObjectURL(url);
   } catch (error) {
@@ -1526,8 +1536,30 @@ export async function exportPDF(
       templateId = 'modern';
     }
 
-    if (type === 'cover-letter') await exportCoverLetterPDF(text, filename, meta, templateId);
-    else await exportResumePDF(text, filename, meta, templateId);
+    // Use Rust backend for export
+    const { getClient } = await import('@/lib/app-client');
+    const api = getClient();
+    const result = await api.documents.exportDocument({
+      text,
+      format: 'pdf',
+      documentType: type,
+      templateId: templateId as 'classic' | 'modern' | 'executive',
+      meta: meta
+        ? {
+            candidateName: meta.candidateName,
+            jobTitle: meta.jobTitle,
+            companyName: meta.companyName,
+            targetLanguage: meta.targetLanguage,
+          }
+        : undefined,
+    });
+
+    // Save the file
+    const blob = new Blob([new Uint8Array(result.data)], { type: result.mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), { href: url, download: result.filename });
+    a.click();
+    URL.revokeObjectURL(url);
   } catch (error) {
     console.error('PDF export failed:', error);
     throw new Error(
