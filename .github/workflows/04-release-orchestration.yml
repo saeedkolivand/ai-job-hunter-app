@@ -337,9 +337,10 @@ jobs:
             WIN_URL="${BASE_URL}/AI.Job.Hunter.Assistant_${VERSION}_x64_en-US.msi"
           fi
 
-          # Build platforms object — only include platforms that have a signature
+          # Build platforms object — include platforms with or without signatures
           PLATFORMS="{}"
 
+          # Always include macOS if the artifact exists (with or without signature)
           if [ -n "${MACOS_SIG}" ]; then
             PLATFORMS=$(echo "${PLATFORMS}" | node -e "
               const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
@@ -349,8 +350,18 @@ jobs:
               };
               process.stdout.write(JSON.stringify(d));
             " MACOS_SIG="${MACOS_SIG}")
+          else
+            # Fallback: include macOS without signature (for unsigned builds)
+            PLATFORMS=$(echo "${PLATFORMS}" | node -e "
+              const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+              d['darwin-universal'] = {
+                url: '${BASE_URL}/AI.Job.Hunter.Assistant_universal.app.tar.gz'
+              };
+              process.stdout.write(JSON.stringify(d));
+            ")
           fi
 
+          # Always include Windows if the artifact exists (with or without signature)
           if [ -n "${WIN_SIG}" ]; then
             PLATFORMS=$(echo "${PLATFORMS}" | node -e "
               const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
@@ -360,6 +371,15 @@ jobs:
               };
               process.stdout.write(JSON.stringify(d));
             " WIN_SIG="${WIN_SIG}")
+          else
+            # Fallback: include Windows without signature (for unsigned builds)
+            PLATFORMS=$(echo "${PLATFORMS}" | node -e "
+              const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+              d['windows-x86_64'] = {
+                url: '${BASE_URL}/AI.Job.Hunter.Assistant_${VERSION}_x64-setup.exe'
+              };
+              process.stdout.write(JSON.stringify(d));
+            ")
           fi
 
           # Generate latest.json

@@ -1,16 +1,15 @@
 import { Sparkles, Star, Zap } from 'lucide-react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { IconText } from '../components/IconText';
 
-const meta: Meta<typeof IconText> = {
-  title: 'Primitives/IconText',
+const meta = {
   component: IconText,
   tags: ['autodocs'],
   argTypes: {
     gap: { control: 'select', options: ['sm', 'md', 'lg'] },
   },
-};
+} satisfies Meta<typeof IconText>;
 export default meta;
 type Story = StoryObj<typeof IconText>;
 

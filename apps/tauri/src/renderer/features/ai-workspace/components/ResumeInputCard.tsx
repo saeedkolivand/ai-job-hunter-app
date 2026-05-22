@@ -92,8 +92,7 @@ export function ResumeInputCard({
     const raw = rawDocs.find((d) => d._id === resumePref?.defaultId) ?? rawDocs[0];
     const text = raw?.text?.trim();
     if (text) onChange(text);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawDocs.length]);
+  }, [value, rawDocs, resumePref?.defaultId, onChange]);
 
   /** Load text from a saved document record into the textarea */
   const handleSelectSaved = (doc: DocumentRecord) => {

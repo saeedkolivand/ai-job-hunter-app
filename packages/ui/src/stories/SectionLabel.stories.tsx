@@ -1,13 +1,12 @@
 import { Filter, Star } from 'lucide-react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { SectionLabel } from '../components/SectionLabel';
 
-const meta: Meta<typeof SectionLabel> = {
-  title: 'Primitives/SectionLabel',
+const meta = {
   component: SectionLabel,
   tags: ['autodocs'],
-};
+} satisfies Meta<typeof SectionLabel>;
 export default meta;
 type Story = StoryObj<typeof SectionLabel>;
 

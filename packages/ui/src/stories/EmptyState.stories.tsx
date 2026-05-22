@@ -1,14 +1,13 @@
 import { Briefcase, FileText, Search, Sparkles } from 'lucide-react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 
-const meta: Meta<typeof EmptyState> = {
-  title: 'Feedback/EmptyState',
+const meta = {
   component: EmptyState,
   tags: ['autodocs'],
-};
+} satisfies Meta<typeof EmptyState>;
 export default meta;
 type Story = StoryObj<typeof EmptyState>;
 

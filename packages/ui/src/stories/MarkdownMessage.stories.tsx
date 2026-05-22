@@ -1,12 +1,11 @@
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { MarkdownMessage } from '../components/MarkdownMessage';
 
-const meta: Meta<typeof MarkdownMessage> = {
-  title: 'Content/MarkdownMessage',
+const meta = {
   component: MarkdownMessage,
   tags: ['autodocs'],
-};
+} satisfies Meta<typeof MarkdownMessage>;
 export default meta;
 type Story = StoryObj<typeof MarkdownMessage>;
 

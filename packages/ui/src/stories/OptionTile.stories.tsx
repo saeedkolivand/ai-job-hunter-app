@@ -1,14 +1,13 @@
 import { Brain, Globe, Zap } from 'lucide-react';
 import { useState } from 'react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { OptionTile } from '../components/OptionTile';
 
-const meta: Meta<typeof OptionTile> = {
-  title: 'Primitives/OptionTile',
+const meta = {
   component: OptionTile,
   tags: ['autodocs'],
-};
+} satisfies Meta<typeof OptionTile>;
 export default meta;
 type Story = StoryObj<typeof OptionTile>;
 

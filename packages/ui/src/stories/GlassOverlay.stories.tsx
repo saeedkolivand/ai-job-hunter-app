@@ -1,13 +1,12 @@
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { GlassOverlay } from '../components/GlassOverlay';
 
-const meta: Meta<typeof GlassOverlay> = {
-  title: 'Overlays/GlassOverlay',
+const meta = {
   component: GlassOverlay,
   tags: ['autodocs'],
   parameters: { layout: 'fullscreen' },
-};
+} satisfies Meta<typeof GlassOverlay>;
 export default meta;
 type Story = StoryObj<typeof GlassOverlay>;
 
