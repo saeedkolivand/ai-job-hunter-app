@@ -128,6 +128,7 @@ export function createWebHttpClient({ baseUrl, token }: WebHttpClientOptions): A
       list: () => cmd('documents', 'list'),
       import: (req) => cmd('documents', 'import', req),
       remove: (id) => cmd('documents', 'remove', { id }),
+      exportDocument: (req) => cmd('documents', 'exportDocument', req),
     },
 
     search: {
