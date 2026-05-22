@@ -1,15 +1,15 @@
 import { Cpu, Globe, Search } from 'lucide-react';
-import type { Meta, StoryObj } from '@storybook/react';
 import { useState } from 'react';
+import type { Meta, StoryObj } from '@storybook/react';
 
 import { Dropdown } from '../components/Dropdown';
 
-const meta: Meta<typeof Dropdown> = {
+const meta = {
   title: 'Primitives/Dropdown',
   component: Dropdown,
   tags: ['autodocs'],
   parameters: { layout: 'centered' },
-};
+} satisfies Meta<typeof Dropdown>;
 export default meta;
 type Story = StoryObj<typeof Dropdown>;
 
