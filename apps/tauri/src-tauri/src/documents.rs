@@ -1,4 +1,4 @@
-/// Native document store — replaces the sidecar's DataStore (NeDB + LanceDB).
+/// Native document store (SQLite-backed). Holds metadata + embedding vectors.
 ///
 /// Metadata is persisted in SQLite (rusqlite, bundled). Embedding vectors are
 /// stored as JSON arrays in the same database — adequate for the small local
