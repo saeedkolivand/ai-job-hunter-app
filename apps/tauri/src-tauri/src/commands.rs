@@ -25,6 +25,30 @@ fn sidecar_port(app: &AppHandle) -> Option<u16> {
         .and_then(|g| g.port)
 }
 
+async fn ensure_sidecar_port(app: &AppHandle) -> Option<u16> {
+    if let Some(port) = sidecar_port(app) {
+        return Some(port);
+    }
+
+    let should_start = app
+        .state::<Mutex<ScraperSidecarState>>()
+        .lock()
+        .map(|g| !g.running)
+        .unwrap_or(false);
+    if should_start {
+        crate::sidecar::try_start(app).ok();
+    }
+
+    for _ in 0..50 {
+        if let Some(port) = sidecar_port(app) {
+            return Some(port);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    None
+}
+
 fn now_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
@@ -1250,7 +1274,7 @@ pub async fn search_hybrid(app: AppHandle, req: Value) -> Value {
 
 #[tauri::command]
 pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
-    let Some(port) = sidecar_port(&app) else {
+    let Some(port) = ensure_sidecar_port(&app).await else {
         return json!({ "error": "scraper sidecar not ready — start the scraper-runtime binary" });
     };
     let job_id = uuid_v4();
@@ -1267,7 +1291,7 @@ pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
 
 #[tauri::command]
 pub async fn scrape_url(app: AppHandle, req: Value) -> Value {
-    let Some(port) = sidecar_port(&app) else {
+    let Some(port) = ensure_sidecar_port(&app).await else {
         return json!({ "error": "scraper sidecar not ready — start the scraper-runtime binary" });
     };
     let job_id = uuid_v4();
@@ -1559,7 +1583,7 @@ pub fn credentials_remove(app: AppHandle, board_id: String) -> Value {
 // commands so the login flow runs in a headed Playwright browser.
 
 async fn sidecar_open_login(app: &AppHandle, board_id: &str) -> Value {
-    let Some(port) = sidecar_port(app) else {
+    let Some(port) = ensure_sidecar_port(app).await else {
         return json!({ "connected": false, "error": "scraper sidecar not ready" });
     };
     let job_id = uuid_v4();
@@ -1698,7 +1722,7 @@ pub fn privacy_clear_interactions(app: AppHandle) -> Value {
 /// which writes them to a temp file for the Playwright applier.
 #[tauri::command]
 pub async fn apply_start(app: AppHandle, req: Value) -> Value {
-    let Some(port) = sidecar_port(&app) else {
+    let Some(port) = ensure_sidecar_port(&app).await else {
         return json!({ "error": "scraper sidecar not ready" });
     };
 
@@ -1741,7 +1765,7 @@ pub async fn apply_start(app: AppHandle, req: Value) -> Value {
 /// Return the list of boards that support the apply flow.
 #[tauri::command]
 pub async fn apply_catalog(app: AppHandle) -> Value {
-    let Some(port) = sidecar_port(&app) else {
+    let Some(port) = ensure_sidecar_port(&app).await else {
         return json!([]);
     };
     let job_id = uuid_v4();
@@ -1927,7 +1951,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
 
     // Proxy to the sidecar as a scrape.board job — the result is tracked
     // via JobTracker so the renderer's job list updates in real time.
-    let Some(port) = sidecar_port(&app) else {
+    let Some(port) = ensure_sidecar_port(&app).await else {
         return json!({ "error": "scraper sidecar not ready" });
     };
 
