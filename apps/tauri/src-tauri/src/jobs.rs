@@ -1,12 +1,10 @@
 /// In-process job tracker for the Tauri shell.
 ///
-/// Mirrors the Electron JobQueue's observable state that the renderer reads via
-/// jobs_list / jobs_get. The actual work happens in the scraper-runtime sidecar;
-/// this struct just records what was dispatched and its current status so the UI
-/// can show progress, cancellation, and history.
+/// Records dispatched jobs and their current status so the UI can show
+/// progress, cancellation, and history. The actual work happens in
+/// `ScraperEngine` (in-process Rust).
 ///
-/// Jobs are kept in memory for the session. They are not persisted to disk —
-/// the sidecar is the authoritative source of truth for in-flight work.
+/// Jobs are kept in memory for the session and are not persisted to disk.
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -43,7 +41,7 @@ pub struct JobTracker {
 }
 
 impl JobTracker {
-    /// Register a new job as pending. Call before sending the command to the sidecar.
+    /// Register a new job as running. Call before dispatching to `ScraperEngine`.
     pub fn start(&mut self, id: &str, kind: &str) {
         self.jobs.insert(
             id.to_string(),

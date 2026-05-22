@@ -1,4 +1,4 @@
-/// PostingsCache — buffers live job items streamed from the sidecar via SSE.
+/// PostingsCache — buffers live job items streamed from the in-process scraper engine.
 /// InteractionStore — records user interactions (viewed, applied, bookmarked).
 ///
 /// Both are in-memory with optional JSON file persistence.
@@ -13,7 +13,7 @@ use serde_json::Value;
 
 // ── PostingsCache ─────────────────────────────────────────────────────────────
 
-/// Live job postings received from the sidecar during an active scrape.
+/// Live job postings received during an active scrape.
 /// Cleared on `scrape_clear_postings` or on next scrape start for the same board.
 #[derive(Default)]
 pub struct PostingsCache {
@@ -21,6 +21,7 @@ pub struct PostingsCache {
 }
 
 impl PostingsCache {
+    #[allow(dead_code)]
     pub fn add(&mut self, item: Value) {
         self.items.push(item);
     }
