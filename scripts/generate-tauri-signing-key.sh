@@ -26,8 +26,15 @@ set -euo pipefail
 
 KEY_PATH="${HOME}/.tauri/ajh"
 
+# Check if --force flag is passed
+FORCE_FLAG=""
+if [[ "$1" == "--force" ]]; then
+  FORCE_FLAG="--force"
+  echo "Force flag enabled - will overwrite existing key pair"
+fi
+
 echo "Generating Tauri signing key at ${KEY_PATH}.key ..."
-cargo tauri signer generate -w "${KEY_PATH}.key"
+cargo tauri signer generate -w "${KEY_PATH}.key" ${FORCE_FLAG}
 
 echo ""
 echo "✅ Key pair generated."

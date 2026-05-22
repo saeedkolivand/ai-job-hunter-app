@@ -47,11 +47,32 @@ attach-to-release
 
 ## GitHub Secrets Required
 
-| Secret         | Purpose                                                            |
-| -------------- | ------------------------------------------------------------------ |
-| `GITHUB_TOKEN` | Auto-provided by GitHub Actions — creates releases, uploads assets |
+| Secret                               | Purpose                                                            |
+| ------------------------------------ | ------------------------------------------------------------------ |
+| `GITHUB_TOKEN`                       | Auto-provided by GitHub Actions — creates releases, uploads assets |
+| `TAURI_SIGNING_PRIVATE_KEY`          | Minisign private key for signing Tauri artifacts (optional)        |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password for the private key (empty string if none)                |
+| `TAURI_SIGNING_PUBLIC_KEY`           | Minisign public key for verifying updates                          |
+| `DISCORD_WEBHOOK_URL`                | Optional: Discord webhook for release notifications                |
 
-No additional secrets are required for unsigned builds. For macOS code signing, you would add `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` secrets — but these are optional (unsigned builds work; users bypass Gatekeeper).
+### Setting Up Tauri Signing (Optional but Recommended)
+
+To enable artifact signing for secure updates:
+
+1. Generate a minisign key pair:
+
+   ```bash
+   bash scripts/generate-tauri-signing-key.sh
+   ```
+
+2. Add the following secrets to your GitHub repository:
+   - `TAURI_SIGNING_PRIVATE_KEY` — contents of `~/.tauri/ajh.key`
+   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — password you entered (or empty string)
+   - `TAURI_SIGNING_PUBLIC_KEY` — contents of `~/.tauri/ajh.key.pub`
+
+3. The CI pipeline automatically injects the public key into `tauri.conf.json` during builds.
+
+**Note:** The workflow will work without signing secrets (unsigned builds), but signed builds provide better security for auto-updates.
 
 ---
 
