@@ -137,19 +137,32 @@ impl LinkedInHttpClient {
             }
         }
 
+        eprintln!("[LinkedIn] GET {}", url);
+        eprintln!("[LinkedIn] Has session: {}", self.session_data.is_some());
+
         self.rate_limiter.wait_for_slot().await;
 
         let headers = self.get_default_headers();
         let response = self.client.get(url).headers(headers).send().await?;
 
         let status = response.status();
+        let content_type = response.headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("unknown");
+        
+        eprintln!("[LinkedIn] Response: {} {}", status, content_type);
+
         if !status.is_success() {
+            let error_body = response.text().await.unwrap_or_else(|_| String::from("<no body>"));
+            eprintln!("[LinkedIn] Error response body (first 500 chars): {}", &error_body[..error_body.len().min(500)]);
             return Err(anyhow::anyhow!("HTTP {}: Request failed", status));
         }
 
         let bytes = response.bytes().await?;
         let body = if bytes.starts_with(&[0x1f, 0x8b]) {
             // Gzip magic number
+            eprintln!("[LinkedIn] Decompressing gzip response");
             let mut decoder = GzDecoder::new(&bytes[..]);
             let mut decompressed = Vec::new();
             decoder.read_to_end(&mut decompressed)?;
@@ -157,6 +170,9 @@ impl LinkedInHttpClient {
         } else {
             String::from_utf8(bytes.to_vec())?
         };
+
+        eprintln!("[LinkedIn] Response body length: {} bytes", body.len());
+        eprintln!("[LinkedIn] Response preview (first 200 chars): {}", &body[..body.len().min(200)]);
 
         self.rate_limiter.record_request().await;
         Ok(body)

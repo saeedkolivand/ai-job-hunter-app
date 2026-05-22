@@ -1,4 +1,4 @@
-import { AlertCircle, FileText, Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
+import { AlertCircle, Download, FileText, Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 
@@ -96,6 +96,21 @@ export function ResumePreferences() {
     } catch {
       toast(t('settings.resume.removeFailed'), 'error');
     }
+  };
+
+  const handleDownload = (doc: DocumentRecord) => {
+    const rawDoc = rawDocs.find((d) => d._id === doc.id);
+    const text = (rawDoc as { text?: string })?.text || '';
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${doc.title.replace(/\.[^/.]+$/, '')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast(t('settings.resume.downloaded'), 'success');
   };
 
   const uploading = importDocument.isPending;
@@ -235,6 +250,15 @@ export function ResumePreferences() {
                     className="text-foreground/30 hover:text-brand-soft disabled:opacity-0"
                   >
                     <Sparkles size={13} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDownload(doc)}
+                    title={t('settings.resume.download')}
+                    className="text-foreground/30 hover:text-blue-400"
+                  >
+                    <Download size={13} />
                   </Button>
                   <Button
                     variant="ghost"

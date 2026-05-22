@@ -38,6 +38,8 @@ impl LinkedInJobsApiClient {
         params: &JobsSearchParams,
         signal: Option<&tokio_util::sync::CancellationToken>,
     ) -> Result<Vec<JobPosting>> {
+        eprintln!("[LinkedIn API] Searching with keywords: '{}', location: {:?}, start: {}", 
+            params.keywords, params.location, params.start);
         let f_tpr = match params.date_filter.as_deref() {
             Some("30m") => "r1800",
             Some("1h") => "r3600",
@@ -92,7 +94,11 @@ impl LinkedInJobsApiClient {
             url.push_str(&format!("&sortBy={}", sort_by));
         }
 
+        eprintln!("[LinkedIn API] Request URL: {}", url);
+        
         let html = self.client.get_html(&url, signal).await?;
+        
+        eprintln!("[LinkedIn API] Parsing HTML response...");
         let document = Html::parse_document(&html);
         let selector = scraper::Selector::parse("li").unwrap();
         let link_selector = scraper::Selector::parse("a.base-card__full-link, a.base-search-card__link").unwrap();
@@ -192,6 +198,7 @@ impl LinkedInJobsApiClient {
             jobs.push(job);
         }
 
+        eprintln!("[LinkedIn API] Found {} jobs on this page", jobs.len());
         Ok(jobs)
     }
 

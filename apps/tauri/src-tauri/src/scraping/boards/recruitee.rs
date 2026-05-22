@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 /// Recruitee — public per-company offers API
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};

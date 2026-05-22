@@ -67,12 +67,20 @@ const CLOUD_PROVIDERS: Array<{
     docsUrl: 'https://aistudio.google.com/app/apikey',
     color: 'text-blue-400',
   },
+  {
+    id: 'openai-compatible',
+    label: 'OpenAI-Compatible',
+    placeholder: 'API key...',
+    docsUrl: 'https://platform.openai.com/docs/api-reference',
+    color: 'text-purple-400',
+  },
 ];
 
 const CLOUD_DEFAULT_MODELS: Record<string, string> = {
   openai: 'gpt-4o',
   anthropic: 'claude-sonnet-4-6',
   gemini: 'gemini-2.0-flash',
+  'openai-compatible': 'gpt-4o',
 };
 
 interface Props {

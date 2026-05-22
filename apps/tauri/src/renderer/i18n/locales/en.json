@@ -349,7 +349,9 @@
       "uploadFailed": "Failed to upload resume",
       "removed": "Resume removed",
       "removeFailed": "Failed to remove resume",
-      "setDefault": "Set as default"
+      "setDefault": "Set as default",
+      "download": "Download resume",
+      "downloaded": "Resume downloaded"
     },
     "update": {
       "title": "Updates",

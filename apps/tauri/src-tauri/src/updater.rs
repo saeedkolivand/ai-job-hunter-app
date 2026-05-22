@@ -84,8 +84,18 @@ pub async fn updater_check(app: AppHandle) -> Value {
         }
         Err(e) => {
             let msg = e.to_string();
-            emit_status(&app, json!({ "state": "error", "message": msg }));
-            json!({ "error": msg })
+            // Provide helpful error messages for common issues
+            let user_msg = if msg.contains("missing field") && msg.contains("signature") {
+                "Update check failed: Release is not properly signed. Please check UPDATER_SETUP.md for instructions.".to_string()
+            } else if msg.contains("invalid encoding") || msg.contains("minisign") {
+                "Update check failed: Signature file is corrupted or invalid. Please regenerate signatures.".to_string()
+            } else if msg.contains("404") || msg.contains("not found") {
+                "Update check failed: No releases found. Make sure latest.json exists in GitHub releases.".to_string()
+            } else {
+                format!("Update check failed: {}", msg)
+            };
+            emit_status(&app, json!({ "state": "error", "message": user_msg }));
+            json!({ "error": user_msg })
         }
     }
 }
@@ -137,8 +147,17 @@ pub async fn updater_download(app: AppHandle) -> Value {
         }
         Err(e) => {
             let msg = e.to_string();
-            emit_status(&app, json!({ "state": "error", "message": msg }));
-            json!({ "error": msg })
+            let user_msg = if msg.contains("invalid encoding") || msg.contains("minisign") {
+                "Download failed: Signature verification failed. The update file may be corrupted.".to_string()
+            } else if msg.contains("404") || msg.contains("not found") {
+                "Download failed: Update file not found in GitHub releases.".to_string()
+            } else if msg.contains("timeout") || msg.contains("timed out") {
+                "Download failed: Connection timed out. Please check your internet connection.".to_string()
+            } else {
+                format!("Download failed: {}", msg)
+            };
+            emit_status(&app, json!({ "state": "error", "message": user_msg }));
+            json!({ "error": user_msg })
         }
     }
 }

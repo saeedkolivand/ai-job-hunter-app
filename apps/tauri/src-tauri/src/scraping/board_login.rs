@@ -162,13 +162,19 @@ where
     on_status(&format!("Opening {} login window…", config.display_name));
 
     // Launch headed Chromium with a per-board persistent profile.
-    let browser_config = BrowserConfig::builder()
+    let mut builder = BrowserConfig::builder()
         .with_head()
         .arg(format!("--user-data-dir={}", profile.display()))
         .arg("--disable-blink-features=AutomationControlled")
         .arg("--no-default-browser-check")
-        .arg("--no-first-run")
-        .build()
+        .arg("--no-first-run");
+
+    // Use system Chrome/Edge if available to avoid chromiumoxide's 120 MB download.
+    if let Some(chrome_path) = detect_system_chrome() {
+        builder = builder.chrome_executable(chrome_path);
+    }
+
+    let browser_config = builder.build()
         .map_err(|e| anyhow!("BrowserConfig build failed: {e}"))?;
 
     let (mut browser, mut handler) = Browser::launch(browser_config).await?;
@@ -425,6 +431,71 @@ pub fn to_cookie_params(cookies: &[StoredCookie]) -> Vec<CookieParam> {
 }
 
 // ── Init scripts ────────────────────────────────────────────────────────────
+
+/// Detect system Chrome or Edge to avoid chromiumoxide's 120 MB download.
+/// Returns the path if found, None otherwise.
+pub fn detect_system_chrome() -> Option<std::path::PathBuf> {
+    // Check $CHROME env var first.
+    if let Ok(path) = std::env::var("CHROME") {
+        let pb = std::path::PathBuf::from(path);
+        if pb.exists() {
+            return Some(pb);
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Query Windows registry for Chrome or Edge.
+        use std::process::Command;
+        for key in &[
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe",
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe",
+        ] {
+            let output = Command::new("reg")
+                .args(&["query", key, "/ve"])
+                .output();
+            if let Ok(out) = output {
+                if out.status.success() {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    for line in stdout.lines() {
+                        if line.contains("REG_SZ") {
+                            let parts: Vec<&str> = line.split("REG_SZ").collect();
+                            if parts.len() > 1 {
+                                let path = parts[1].trim();
+                                let pb = std::path::PathBuf::from(path);
+                                if pb.exists() {
+                                    return Some(pb);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Unix: try `which google-chrome` or `which chromium`.
+        use std::process::Command;
+        for bin in &["google-chrome", "chromium", "chromium-browser"] {
+            let output = Command::new("which").arg(bin).output();
+            if let Ok(out) = output {
+                if out.status.success() {
+                    let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    if !path.is_empty() {
+                        let pb = std::path::PathBuf::from(path);
+                        if pb.exists() {
+                            return Some(pb);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
 
 const DISABLE_PASSKEY_SCRIPT: &str = r#"
 (function () {

@@ -90,7 +90,7 @@ interface ProgressEvent {
   p: number;
 }
 
-const APPLIABLE = new Set(['linkedin', 'indeed', 'greenhouse', 'workday']);
+const APPLIABLE = new Set(['linkedin', 'indeed', 'greenhouse', 'workday', 'xing', 'glassdoor']);
 const AUTH_BENEFITS = new Set(['linkedin', 'indeed', 'xing']);
 
 function Jobs() {

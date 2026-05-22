@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 /// Browser controller using chromiumoxide (Chrome DevTools Protocol).
 ///
 /// Lazily spawns Chromium on first use, reuses a single context across scrapers,
