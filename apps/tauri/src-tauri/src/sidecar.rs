@@ -28,6 +28,46 @@ pub struct ScraperSidecarState {
     pub port: Option<u16>,
 }
 
+#[cfg(not(debug_assertions))]
+fn release_sidecar_binary_names(target: &str) -> Vec<String> {
+    #[cfg(target_os = "windows")]
+    {
+        return vec![format!("scraper-runtime-{target}.exe")];
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let runtime_target = match std::env::consts::ARCH {
+            "aarch64" => "aarch64-apple-darwin",
+            "x86_64" => "x86_64-apple-darwin",
+            _ => target,
+        };
+        let mut names = vec![format!("scraper-runtime-{runtime_target}")];
+        for candidate in [
+            format!("scraper-runtime-{target}"),
+            "scraper-runtime-aarch64-apple-darwin".to_string(),
+            "scraper-runtime-x86_64-apple-darwin".to_string(),
+        ] {
+            if !names.contains(&candidate) {
+                names.push(candidate);
+            }
+        }
+        return names;
+    }
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        vec![format!("scraper-runtime-{target}")]
+    }
+}
+
+fn mark_stopped(app: &AppHandle) {
+    let sidecar_state = app.state::<Mutex<ScraperSidecarState>>();
+    let mut guard = sidecar_state.lock().unwrap();
+    guard.running = false;
+    guard.port = None;
+}
+
 /// Attempt to launch the scraper sidecar and wait for its port announcement.
 ///
 /// Non-fatal: if the binary is absent the app opens with sidecar stubs.
@@ -47,14 +87,20 @@ pub fn try_start(app: &AppHandle) -> tauri::Result<()> {
     // changes take effect on Tauri restart.
     #[cfg(not(debug_assertions))]
     let spawn_result = {
-        use tauri::Manager;
         let target = env!("TAURI_ENV_TARGET_TRIPLE");
-        let bin_name = format!("scraper-runtime-{}", target);
+        let bin_names = release_sidecar_binary_names(target);
         let bin_path = app
             .path()
             .resource_dir()
-            .map(|d| d.join(&bin_name))
-            .unwrap_or_else(|_| std::path::PathBuf::from(&bin_name));
+            .map(|d| {
+                bin_names
+                    .iter()
+                    .flat_map(|name| [d.join("binaries").join(name), d.join(name)])
+                    .find(|path| path.exists())
+                    .unwrap_or_else(|| d.join("binaries").join(&bin_names[0]))
+            })
+            .unwrap_or_else(|_| std::path::PathBuf::from(&bin_names[0]));
+        eprintln!("[sidecar] launching {}", bin_path.display());
         shell.command(bin_path.to_string_lossy().as_ref()).spawn()
     };
 
@@ -95,7 +141,8 @@ pub fn try_start(app: &AppHandle) -> tauri::Result<()> {
                         if let Some(port) = v.get("port").and_then(|p| p.as_u64()) {
                             let port = port as u16;
                             {
-                                let sidecar_state = app_handle.state::<Mutex<ScraperSidecarState>>();
+                                let sidecar_state =
+                                    app_handle.state::<Mutex<ScraperSidecarState>>();
                                 let mut guard = sidecar_state.lock().unwrap();
                                 guard.port = Some(port);
                             }
@@ -109,10 +156,12 @@ pub fn try_start(app: &AppHandle) -> tauri::Result<()> {
                 }
                 CommandEvent::Error(msg) => {
                     eprintln!("[sidecar error] {msg}");
+                    mark_stopped(&app_handle);
                     break;
                 }
                 CommandEvent::Terminated(status) => {
                     eprintln!("[sidecar] process exited: {status:?}");
+                    mark_stopped(&app_handle);
                     break;
                 }
                 _ => {}
