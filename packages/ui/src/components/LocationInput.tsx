@@ -113,9 +113,9 @@ export function LocationInput({
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setActiveIndex((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter' && activeIndex >= 0) {
+    } else if (e.key === 'Enter' && activeIndex >= 0 && suggestions[activeIndex]) {
       e.preventDefault();
-      select(suggestions[activeIndex]);
+      select(suggestions[activeIndex]!);
     } else if (e.key === 'Escape') {
       setOpen(false);
     }
