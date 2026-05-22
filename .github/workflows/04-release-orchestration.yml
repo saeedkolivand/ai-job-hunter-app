@@ -342,14 +342,14 @@ jobs:
 
           # Always include macOS if the artifact exists (with or without signature)
           if [ -n "${MACOS_SIG}" ]; then
-            PLATFORMS=$(echo "${PLATFORMS}" | node -e "
+            PLATFORMS=$(echo "${PLATFORMS}" | MACOS_SIG="${MACOS_SIG}" node -e "
               const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
               d['darwin-universal'] = {
                 signature: process.env.MACOS_SIG,
                 url: '${BASE_URL}/AI.Job.Hunter.Assistant_universal.app.tar.gz'
               };
               process.stdout.write(JSON.stringify(d));
-            " MACOS_SIG="${MACOS_SIG}")
+            ")
           else
             # Fallback: include macOS without signature (for unsigned builds)
             PLATFORMS=$(echo "${PLATFORMS}" | node -e "
@@ -363,14 +363,14 @@ jobs:
 
           # Always include Windows if the artifact exists (with or without signature)
           if [ -n "${WIN_SIG}" ]; then
-            PLATFORMS=$(echo "${PLATFORMS}" | node -e "
+            PLATFORMS=$(echo "${PLATFORMS}" | WIN_SIG="${WIN_SIG}" node -e "
               const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
               d['windows-x86_64'] = {
                 signature: process.env.WIN_SIG,
                 url: '${WIN_URL}'
               };
               process.stdout.write(JSON.stringify(d));
-            " WIN_SIG="${WIN_SIG}")
+            ")
           else
             # Fallback: include Windows without signature (for unsigned builds)
             PLATFORMS=$(echo "${PLATFORMS}" | node -e "
@@ -383,7 +383,7 @@ jobs:
           fi
 
           # Generate latest.json
-          node -e "
+          NOTES="${NOTES}" PLATFORMS="${PLATFORMS}" node -e "
             const manifest = {
               version: '${VERSION}',
               notes: process.env.NOTES || '',
@@ -393,7 +393,7 @@ jobs:
             require('fs').writeFileSync('/tmp/latest.json', JSON.stringify(manifest, null, 2));
             console.log('Generated latest.json:');
             console.log(JSON.stringify(manifest, null, 2));
-          " NOTES="${NOTES}" PLATFORMS="${PLATFORMS}"
+          "
 
           # Upload latest.json to the release (overwrite if exists)
           gh release upload "${TAG}" \
