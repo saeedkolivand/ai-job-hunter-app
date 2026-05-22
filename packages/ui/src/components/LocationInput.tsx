@@ -1,8 +1,10 @@
 import { MapPin } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { cn } from '../lib/cn';
+import { transition } from '../lib/motion';
 
 interface Suggestion {
   display: string;
@@ -62,27 +64,22 @@ export function LocationInput({
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const [rect, setRect] = useState<DOMRect | null>(null);
+  const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLUListElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const fetchRef = useRef(onFetchSuggestions);
   fetchRef.current = onFetchSuggestions;
 
-  // Measure input position for the portal dropdown
   const measure = useCallback(() => {
-    if (inputRef.current) setRect(inputRef.current.getBoundingClientRect());
+    if (inputRef.current) {
+      const rect = inputRef.current.getBoundingClientRect();
+      setPosition({ top: rect.bottom + 6, left: rect.left, width: rect.width });
+    }
   }, []);
 
   useEffect(() => {
-    if (!open) return;
-    measure();
-    window.addEventListener('scroll', measure, true);
-    window.addEventListener('resize', measure);
-    return () => {
-      window.removeEventListener('scroll', measure, true);
-      window.removeEventListener('resize', measure);
-    };
+    if (open) measure();
   }, [open, measure]);
 
   useEffect(() => {
@@ -109,14 +106,15 @@ export function LocationInput({
     };
   }, [value, measure]);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (!inputRef.current?.contains(target) && !listRef.current?.contains(target)) {
-        setOpen(false);
-      }
+      if (
+        dropdownRef.current?.contains(e.target as Node) ||
+        inputRef.current?.contains(e.target as Node)
+      )
+        return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -147,10 +145,6 @@ export function LocationInput({
     }
   };
 
-  const dropdownStyle: React.CSSProperties = rect
-    ? { position: 'fixed', left: rect.left, top: rect.bottom + 4, width: rect.width, zIndex: 9999 }
-    : { display: 'none' };
-
   return (
     <div className="relative">
       <div className="relative">
@@ -175,39 +169,51 @@ export function LocationInput({
         />
       </div>
 
-      {open &&
-        suggestions.length > 0 &&
-        createPortal(
-          <ul
-            ref={listRef}
-            role="listbox"
-            style={dropdownStyle}
-            className="glass-modal overflow-hidden rounded-xl py-1.5 shadow-2xl shadow-black/60"
-          >
-            {suggestions.map((s, i) => (
-              <li
-                key={s.display}
-                role="option"
-                aria-selected={i === activeIndex}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  select(s);
-                }}
-                onMouseEnter={() => setActiveIndex(i)}
-                className={cn(
-                  'flex cursor-pointer items-center gap-2.5 px-3 py-2 text-xs transition-colors duration-75',
-                  i === activeIndex
-                    ? 'bg-brand/20 text-foreground'
-                    : 'text-foreground/60 hover:bg-white/[0.06] hover:text-foreground/90'
-                )}
-              >
-                <MapPin size={11} className="shrink-0 text-foreground/35" />
-                <span className="truncate">{s.display}</span>
-              </li>
-            ))}
-          </ul>,
-          document.body
-        )}
+      {createPortal(
+        <AnimatePresence>
+          {open && suggestions.length > 0 && (
+            <motion.div
+              ref={dropdownRef}
+              initial={{ opacity: 0, y: -6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.98 }}
+              transition={transition.fast}
+              style={{
+                position: 'fixed',
+                top: position.top,
+                left: position.left,
+                width: position.width,
+                zIndex: 9999,
+              }}
+              className="glass-elevated overflow-hidden rounded-xl shadow-2xl"
+            >
+              <div className="max-h-56 overflow-y-auto px-1 py-1 space-y-0.5">
+                {suggestions.map((s, i) => (
+                  <button
+                    key={s.display}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      select(s);
+                    }}
+                    onMouseEnter={() => setActiveIndex(i)}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors',
+                      i === activeIndex
+                        ? 'bg-brand/15 text-brand-soft'
+                        : 'text-foreground/70 hover:bg-white/[0.05] hover:text-foreground/90'
+                    )}
+                  >
+                    <MapPin size={11} className="shrink-0 text-foreground/35" />
+                    <span className="truncate">{s.display}</span>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 }
