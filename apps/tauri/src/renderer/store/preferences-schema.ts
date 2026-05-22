@@ -59,14 +59,22 @@ export const AiProviderSchema = z.enum([
   'openai-compatible',
 ]);
 
-export const AiProviderConfigSchema = z.object({
-  provider: AiProviderSchema.default('ollama'),
+// Per-provider settings (model choice, optional base URL)
+export const PerProviderSettingsSchema = z.object({
   model: z.string().default(''),
-  baseUrl: z.string().optional(), // for openai-compatible endpoints
+  baseUrl: z.string().optional(),
+});
+
+// Multi-provider config: each provider stores its own settings independently;
+// activeProvider is the one used for generation.
+export const AiProviderConfigSchema = z.object({
+  activeProvider: AiProviderSchema.default('ollama'),
+  providers: z.record(z.string(), PerProviderSettingsSchema).default({}),
 });
 
 export type AiProvider = z.infer<typeof AiProviderSchema>;
 export type AiProviderConfig = z.infer<typeof AiProviderConfigSchema>;
+export type PerProviderSettings = z.infer<typeof PerProviderSettingsSchema>;
 
 // Resume preference
 export const ResumePreferenceSchema = z.object({

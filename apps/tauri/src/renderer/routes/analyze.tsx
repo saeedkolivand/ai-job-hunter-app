@@ -3,7 +3,6 @@ import {
   Briefcase,
   CheckCircle2,
   ChevronDown,
-  FileText,
   RefreshCw,
   RotateCcw,
   ScanSearch,
@@ -18,6 +17,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { Button, TextArea } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
+import { ResumeInputCard } from '@/features/ai-workspace/components/ResumeInputCard';
 import { AnalysisATSRisks } from '@/features/analyze/components/AnalysisATSRisks';
 import { AnalysisLanguageMismatch } from '@/features/analyze/components/AnalysisLanguageMismatch';
 import { AnalysisLanguageRecommendations } from '@/features/analyze/components/AnalysisLanguageRecommendations';
@@ -189,16 +189,13 @@ function Analyze() {
 
           {/* Inputs */}
           <div className="px-6 space-y-3 pb-4">
-            <CollapsibleInput
-              label={t('analyze.resume')}
-              icon={FileText}
+            <ResumeInputCard
               value={resume}
               onChange={setResume}
+              onUpload={(f) => handleUpload('resume', f)}
               uploading={uploading === 'resume'}
-              onUpload={(f) => void handleUpload('resume', f)}
-              placeholder={t('analyze.resumePlaceholder')}
               disabled={stage === 'running'}
-              t={t}
+              placeholder={t('analyze.resumePlaceholder')}
             />
             <CollapsibleInput
               label={t('analyze.jobAd')}

@@ -20,7 +20,7 @@ export function Titlebar() {
 
   return (
     <div
-      className="app-drag relative flex h-10 select-none items-center justify-between"
+      className="app-drag relative z-[300] flex h-10 select-none items-center justify-between"
       style={{ paddingLeft: platform === 'darwin' ? 80 : 16 }}
       data-tauri-drag-region
     >

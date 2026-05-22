@@ -67,7 +67,7 @@ export const BOARD_IDS = [
 ] as const;
 export type BoardId = (typeof BOARD_IDS)[number];
 
-export const DATE_FILTER_OPTIONS = ['24h', '8h', 'week', 'month'] as const;
+export const DATE_FILTER_OPTIONS = ['30m', '1h', '2h', '4h', '8h', '24h', 'week', 'month'] as const;
 export type DateFilterOption = (typeof DATE_FILTER_OPTIONS)[number];
 
 export const ScrapeBoardRequestSchema = z.object({

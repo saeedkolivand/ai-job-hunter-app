@@ -4,7 +4,6 @@ import {
   Briefcase,
   Check,
   ChevronDown,
-  FileText,
   RefreshCw,
   RotateCcw,
   Upload,
@@ -24,6 +23,7 @@ import { OutputPanelDone } from '@/features/ai-generate/components/OutputPanelDo
 import { OutputPanelExtracting } from '@/features/ai-generate/components/OutputPanelExtracting';
 import { OutputPanelGenerating } from '@/features/ai-generate/components/OutputPanelGenerating';
 import { OutputPanelIdle } from '@/features/ai-generate/components/OutputPanelIdle';
+import { ResumeInputCard } from '@/features/ai-workspace/components/ResumeInputCard';
 import { CustomDropdown } from '@/features/settings/components/CustomDropdown';
 import { cn } from '@/lib/cn';
 import {
@@ -316,15 +316,13 @@ function AIGeneratePage() {
 
           <div className="px-6 space-y-3 pb-4">
             {/* Resume input */}
-            <FileInput
-              label={t('aiGenerate.resumeLabel')}
-              icon={FileText}
+            <ResumeInputCard
               value={resume}
               onChange={setResume}
+              onUpload={(f) => handleUpload('resume', f)}
               uploading={uploading === 'resume'}
-              onUpload={(f) => void handleUpload('resume', f)}
               disabled={stage !== 'idle'}
-              t={t}
+              placeholder={t('aiGenerate.resumePlaceholder')}
             />
 
             {/* Job ad input */}

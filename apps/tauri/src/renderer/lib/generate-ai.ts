@@ -54,7 +54,9 @@ async function streamGenerate(
 ): Promise<string> {
   const api = getClient();
   const providerConfig = usePreferencesStore.getState().aiProviderConfig;
-  const activeModel = providerConfig?.model || model;
+  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+  const providerSettings = providerConfig?.providers?.[activeProvider];
+  const activeModel = providerSettings?.model || model;
   const res = (await api.ai.generate({
     model: activeModel,
     messages: [
@@ -63,8 +65,8 @@ async function streamGenerate(
     ],
     locale: safeLocale(locale),
     temperature,
-    ...(providerConfig?.provider && providerConfig.provider !== 'ollama'
-      ? { provider: providerConfig.provider, baseUrl: providerConfig.baseUrl }
+    ...(activeProvider !== 'ollama'
+      ? { provider: activeProvider, baseUrl: providerSettings?.baseUrl }
       : {}),
   } as Parameters<typeof api.ai.generate>[0])) as { jobId: string };
 

@@ -7,9 +7,10 @@ import { useOnboardingCompleted, usePreferencesStore } from '@/store/preferences
 import { SpotlightTour } from './SpotlightTour';
 import { OllamaStep } from './steps/OllamaStep';
 import { PrefsStep } from './steps/PrefsStep';
+import { ResumeStep } from './steps/ResumeStep';
 import { WelcomeStep } from './steps/WelcomeStep';
 
-type Step = 'welcome' | 'prefs' | 'ollama' | 'tour';
+type Step = 'welcome' | 'prefs' | 'resume' | 'ollama' | 'tour';
 
 export function OnboardingWizard() {
   const onboardingCompleted = useOnboardingCompleted();
@@ -54,6 +55,14 @@ export function OnboardingWizard() {
             key="prefs"
             direction={direction}
             onBack={() => goBack('welcome')}
+            onNext={() => goNext('resume')}
+          />
+        )}
+        {step === 'resume' && (
+          <ResumeStep
+            key="resume"
+            direction={direction}
+            onBack={() => goBack('prefs')}
             onNext={() => goNext('ollama')}
           />
         )}
@@ -61,7 +70,7 @@ export function OnboardingWizard() {
           <OllamaStep
             key="ollama"
             direction={direction}
-            onBack={() => goBack('prefs')}
+            onBack={() => goBack('resume')}
             onNext={() => goNext('tour')}
           />
         )}
