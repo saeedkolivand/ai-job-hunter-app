@@ -1,5 +1,6 @@
 import { MapPin } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { cn } from '../lib/cn';
 
@@ -61,10 +62,28 @@ export function LocationInput({
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [rect, setRect] = useState<DOMRect | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const fetchRef = useRef(onFetchSuggestions);
   fetchRef.current = onFetchSuggestions;
+
+  // Measure input position for the portal dropdown
+  const measure = useCallback(() => {
+    if (inputRef.current) setRect(inputRef.current.getBoundingClientRect());
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    measure();
+    window.addEventListener('scroll', measure, true);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('scroll', measure, true);
+      window.removeEventListener('resize', measure);
+    };
+  }, [open, measure]);
 
   useEffect(() => {
     const trimmed = value.trim();
@@ -81,23 +100,27 @@ export function LocationInput({
           setSuggestions(s);
           setOpen(s.length > 0);
           setActiveIndex(-1);
+          measure();
         })
         .catch(() => {});
     }, 300);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [value]);
+  }, [value, measure]);
 
+  // Close on outside click
   useEffect(() => {
+    if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (!inputRef.current?.contains(target) && !listRef.current?.contains(target)) {
         setOpen(false);
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  }, [open]);
 
   const select = (s: Suggestion) => {
     onChange(s.display);
@@ -124,14 +147,19 @@ export function LocationInput({
     }
   };
 
+  const dropdownStyle: React.CSSProperties = rect
+    ? { position: 'fixed', left: rect.left, top: rect.bottom + 4, width: rect.width, zIndex: 9999 }
+    : { display: 'none' };
+
   return (
-    <div ref={containerRef} className="relative">
+    <div className="relative">
       <div className="relative">
         <MapPin
-          size={11}
-          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-foreground/30"
+          size={12}
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-foreground/30"
         />
         <input
+          ref={inputRef}
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -141,40 +169,45 @@ export function LocationInput({
           disabled={disabled}
           autoComplete="off"
           className={cn(
-            'h-8 w-full rounded-md border border-white/[0.07] bg-white/[0.03] pl-7 pr-3 text-xs text-foreground outline-none transition-colors placeholder:text-foreground/25 focus:border-brand/40 focus:ring-1 focus:ring-brand/20 disabled:cursor-not-allowed disabled:opacity-50',
+            'input-field glass-dropdown w-full rounded-lg pl-8 pr-3 text-sm text-foreground placeholder:text-foreground/30',
             className
           )}
         />
       </div>
 
-      {open && suggestions.length > 0 && (
-        <ul
-          role="listbox"
-          className="absolute z-50 mt-1.5 w-full overflow-hidden rounded-xl border border-white/[0.12] bg-[oklch(0.14_0.02_270)] py-1.5 shadow-2xl shadow-black/60 backdrop-blur-xl"
-        >
-          {suggestions.map((s, i) => (
-            <li
-              key={s.display}
-              role="option"
-              aria-selected={i === activeIndex}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                select(s);
-              }}
-              onMouseEnter={() => setActiveIndex(i)}
-              className={cn(
-                'flex cursor-pointer items-center gap-2.5 px-3 py-2 text-xs transition-colors duration-75',
-                i === activeIndex
-                  ? 'bg-brand/20 text-foreground'
-                  : 'text-foreground/60 hover:bg-white/[0.06] hover:text-foreground/90'
-              )}
-            >
-              <MapPin size={11} className="shrink-0 text-foreground/35" />
-              <span className="truncate">{s.display}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+      {open &&
+        suggestions.length > 0 &&
+        createPortal(
+          <ul
+            ref={listRef}
+            role="listbox"
+            style={dropdownStyle}
+            className="overflow-hidden rounded-xl border border-white/[0.12] bg-[oklch(0.14_0.02_270)] py-1.5 shadow-2xl shadow-black/60 backdrop-blur-xl"
+          >
+            {suggestions.map((s, i) => (
+              <li
+                key={s.display}
+                role="option"
+                aria-selected={i === activeIndex}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  select(s);
+                }}
+                onMouseEnter={() => setActiveIndex(i)}
+                className={cn(
+                  'flex cursor-pointer items-center gap-2.5 px-3 py-2 text-xs transition-colors duration-75',
+                  i === activeIndex
+                    ? 'bg-brand/20 text-foreground'
+                    : 'text-foreground/60 hover:bg-white/[0.06] hover:text-foreground/90'
+                )}
+              >
+                <MapPin size={11} className="shrink-0 text-foreground/35" />
+                <span className="truncate">{s.display}</span>
+              </li>
+            ))}
+          </ul>,
+          document.body
+        )}
     </div>
   );
 }
