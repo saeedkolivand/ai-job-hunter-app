@@ -262,7 +262,8 @@ fn main() {
             commands::autopilot_pause,
             commands::autopilot_resume,
             // export
-            export::export_document,
+            export::commands::documents_export_document,
+            export::commands::documents_export_and_save,
             // updater
             updater::updater_check,
             updater::updater_download,

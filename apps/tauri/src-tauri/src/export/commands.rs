@@ -1,4 +1,5 @@
 use tauri::command;
+use tauri_plugin_dialog::DialogExt;
 
 use super::{
     docx::generate_docx,
@@ -8,7 +9,7 @@ use super::{
 
 /// Tauri command to export resume or cover letter
 #[command]
-pub async fn export_document(request: ExportRequest) -> Result<ExportResult, String> {
+pub async fn documents_export_document(request: ExportRequest) -> Result<ExportResult, String> {
     // Validate input
     if request.text.trim().is_empty() {
         return Err("Cannot export empty document. Please generate content first.".to_string());
@@ -44,6 +45,43 @@ pub async fn export_document(request: ExportRequest) -> Result<ExportResult, Str
         mime_type,
         filename,
     })
+}
+
+/// Tauri command to export and save document with file dialog
+#[command]
+pub async fn documents_export_and_save(
+    app: tauri::AppHandle,
+    request: ExportRequest,
+) -> Result<String, String> {
+    // Generate the document
+    let result = documents_export_document(request).await?;
+
+    // Extract extension for filter
+    let ext = result.filename.split('.').last().unwrap_or("*").to_string();
+    let filter_name = format!("{} files", ext.to_uppercase());
+
+    // Open save dialog (blocking)
+    let file_path = app
+        .dialog()
+        .file()
+        .add_filter(&filter_name, &[&ext])
+        .set_title("Save Document")
+        .set_file_name(&result.filename)
+        .blocking_save_file()
+        .ok_or_else(|| "Save dialog was cancelled".to_string())?;
+
+    // Resolve to PathBuf
+    let path = match file_path {
+        tauri_plugin_dialog::FilePath::Path(p) => p,
+        #[allow(unreachable_patterns)]
+        _ => return Err("Unsupported file path type".to_string()),
+    };
+
+    // Write bytes to file
+    std::fs::write(&path, result.data)
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+
+    Ok(path.to_string_lossy().to_string())
 }
 
 /// Generate filename from metadata

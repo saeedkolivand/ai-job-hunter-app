@@ -83,6 +83,7 @@ pub struct TextSegment {
 
 /// Parsed line with metadata
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ParsedLine {
     pub kind: LineKind,
     pub raw: String,
@@ -93,6 +94,7 @@ pub struct ParsedLine {
 
 /// Parsed document structure
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ParsedDocument {
     pub lines: Vec<ParsedLine>,
     pub has_name: bool,

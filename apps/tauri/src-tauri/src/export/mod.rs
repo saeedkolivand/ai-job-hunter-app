@@ -17,8 +17,3 @@ pub mod templates;
 pub mod types;
 pub mod commands;
 
-pub use types::{ExportFormat, ExportRequest, ExportResult, TemplateId};
-pub use parser::parse_resume;
-pub use docx::generate_docx;
-pub use pdf::generate_pdf;
-pub use commands::export_document;
