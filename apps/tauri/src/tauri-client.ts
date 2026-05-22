@@ -96,6 +96,11 @@ export function createTauriInvokeClient(): AppClient {
       resume: (req) => invoke('match_resume', { req }),
     },
 
+    geocode: {
+      suggest: (query: string) =>
+        invoke('geocode_suggest', { query }) as Promise<Array<{ display: string }>>,
+    },
+
     credentials: {
       available: () => invoke('credentials_available'),
       list: () => invoke('credentials_list'),

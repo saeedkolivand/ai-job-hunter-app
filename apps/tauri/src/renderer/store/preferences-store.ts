@@ -1,26 +1,34 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-import type { Preferences } from './preferences-schema';
+import type { AiProvider, PerProviderSettings, Preferences } from './preferences-schema';
 
 // Migration function to handle version updates
-const STORE_VERSION = 1;
+const STORE_VERSION = 2;
 
-const migratePreferences = (state: Record<string, unknown>): Preferences => {
-  const version = (state.version as number | undefined) || 0;
-
-  // Migration from version 0 to 1
-  if (version === 0) {
-    return { ...state, version: 1, lastUpdated: new Date().toISOString() } as Preferences;
+const migratePreferences = (state: Record<string, unknown>, version: number): Preferences => {
+  // v0 → v1: baseline
+  if (version < 1) {
+    state = { ...state, version: 1, lastUpdated: new Date().toISOString() };
   }
 
-  // Future migrations can be added here
-  if (version < STORE_VERSION) {
-    return {
-      ...state,
-      version: STORE_VERSION,
-      lastUpdated: new Date().toISOString(),
-    } as Preferences;
+  // v1 → v2: flatten { provider, model, baseUrl } → { activeProvider, providers: { … } }
+  if (version < 2) {
+    const old = state.aiProviderConfig as
+      | { provider?: string; model?: string; baseUrl?: string }
+      | undefined;
+    if (old && 'provider' in old) {
+      const p = old.provider ?? 'ollama';
+      state = {
+        ...state,
+        aiProviderConfig: {
+          activeProvider: p,
+          providers: { [p]: { model: old.model ?? '', baseUrl: old.baseUrl } },
+        },
+        version: 2,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
   }
 
   return state as Preferences;
@@ -45,6 +53,8 @@ interface PreferencesActions {
   setLanguage: (language: string) => void;
   setAIModel: (aiModel: Preferences['aiModel']) => void;
   setAiProviderConfig: (config: Preferences['aiProviderConfig']) => void;
+  setActiveProvider: (provider: AiProvider) => void;
+  setProviderSettings: (provider: AiProvider, settings: Partial<PerProviderSettings>) => void;
   setOutputTone: (outputTone: Preferences['outputTone']) => void;
   setLocation: (location: Preferences['location']) => void;
   setRemote: (remote: Preferences['remote']) => void;
@@ -92,6 +102,32 @@ export const usePreferencesStore = create<PreferencesStore>()(
           aiProviderConfig,
           lastUpdated: new Date().toISOString(),
         })),
+
+      setActiveProvider: (provider: AiProvider) =>
+        set((state) => ({
+          ...state,
+          aiProviderConfig: {
+            activeProvider: provider,
+            providers: state.aiProviderConfig?.providers ?? {},
+          },
+          lastUpdated: new Date().toISOString(),
+        })),
+
+      setProviderSettings: (provider: AiProvider, settings: Partial<PerProviderSettings>) =>
+        set((state) => {
+          const existing = state.aiProviderConfig?.providers?.[provider] ?? { model: '' };
+          return {
+            ...state,
+            aiProviderConfig: {
+              activeProvider: state.aiProviderConfig?.activeProvider ?? 'ollama',
+              providers: {
+                ...state.aiProviderConfig?.providers,
+                [provider]: { ...existing, ...settings },
+              },
+            },
+            lastUpdated: new Date().toISOString(),
+          };
+        }),
 
       setOutputTone: (outputTone: Preferences['outputTone']) =>
         set((state) => ({
@@ -175,13 +211,9 @@ export const usePreferencesStore = create<PreferencesStore>()(
     {
       name: 'ai-job-hunter-preferences',
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: STORE_VERSION,
       migrate: (persistedState: unknown, version: number) => {
-        const state = persistedState as Record<string, unknown>;
-        if (version === 0) {
-          return migratePreferences(state);
-        }
-        return state;
+        return migratePreferences(persistedState as Record<string, unknown>, version);
       },
     }
   )

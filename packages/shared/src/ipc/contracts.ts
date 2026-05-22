@@ -138,6 +138,10 @@ export interface IpcContract {
     resume(req: MatchResumeRequest): Promise<MatchScore>;
   };
 
+  geocode: {
+    suggest(query: string): Promise<Array<{ display: string }>>;
+  };
+
   credentials: {
     /** Whether the OS supports encrypted secret storage. */
 

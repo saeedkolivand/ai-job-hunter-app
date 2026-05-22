@@ -166,6 +166,18 @@ jobs:
           prerelease: false
           projectPath: ./apps/tauri
 
+      - name: Upload Windows .sig files
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $tag = "v${{ needs.determine-release.outputs.version }}"
+          $sigs = Get-ChildItem -Recurse -Filter "*.sig" apps/tauri/src-tauri/target 2>$null
+          foreach ($sig in $sigs) {
+            Write-Host "Uploading $($sig.Name)"
+            gh release upload $tag $sig.FullName --repo ${{ github.repository }} --clobber
+          }
+
   build-tauri-macos:
     name: Build macOS Application (Tauri)
 
@@ -255,6 +267,122 @@ jobs:
           projectPath: ./apps/tauri
           args: --target universal-apple-darwin
 
+      - name: Upload macOS .sig files
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ needs.determine-release.outputs.version }}"
+          find apps/tauri/src-tauri/target -name "*.sig" 2>/dev/null | while read sig; do
+            echo "Uploading $(basename $sig)"
+            gh release upload "$TAG" "$sig" --repo "${{ github.repository }}" --clobber
+          done
+
+  generate-updater-manifest:
+    name: Generate Updater Manifest (latest.json)
+
+    needs:
+      - determine-release
+      - build-tauri-windows
+      - build-tauri-macos
+
+    if: needs.determine-release.outputs.released == 'true'
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Generate and upload latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.determine-release.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          TAG="v${VERSION}"
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          # Fetch release notes from the GitHub release body
+          NOTES=$(gh release view "${TAG}" --repo "${REPO}" --json body -q '.body' 2>/dev/null || echo "")
+
+          # Download all .sig files from the release
+          gh release download "${TAG}" \
+            --repo "${REPO}" \
+            --pattern "*.sig" \
+            --dir /tmp/sigs \
+            2>/dev/null || true
+
+          ls /tmp/sigs/ 2>/dev/null || echo "No .sig files found"
+
+          # Read signatures (empty string if file not present)
+          read_sig() {
+            local f="$1"
+            if [ -f "/tmp/sigs/${f}" ]; then
+              cat "/tmp/sigs/${f}"
+            else
+              echo ""
+            fi
+          }
+
+          MACOS_SIG=$(read_sig "AI.Job.Hunter.Assistant_universal.app.tar.gz.sig")
+          WIN_NSIS_SIG=$(read_sig "AI.Job.Hunter.Assistant_${VERSION}_x64-setup.exe.sig")
+          WIN_MSI_SIG=$(read_sig "AI.Job.Hunter.Assistant_${VERSION}_x64_en-US.msi.zip.sig")
+
+          # Prefer NSIS sig for Windows; fall back to MSI
+          WIN_SIG="${WIN_NSIS_SIG:-$WIN_MSI_SIG}"
+          WIN_URL="${BASE_URL}/AI.Job.Hunter.Assistant_${VERSION}_x64-setup.exe"
+          if [ -z "${WIN_SIG}" ] && [ -n "${WIN_MSI_SIG}" ]; then
+            WIN_SIG="${WIN_MSI_SIG}"
+            WIN_URL="${BASE_URL}/AI.Job.Hunter.Assistant_${VERSION}_x64_en-US.msi"
+          fi
+
+          # Build platforms object — only include platforms that have a signature
+          PLATFORMS="{}"
+
+          if [ -n "${MACOS_SIG}" ]; then
+            PLATFORMS=$(echo "${PLATFORMS}" | node -e "
+              const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+              d['darwin-universal'] = {
+                signature: process.env.MACOS_SIG,
+                url: '${BASE_URL}/AI.Job.Hunter.Assistant_universal.app.tar.gz'
+              };
+              process.stdout.write(JSON.stringify(d));
+            " MACOS_SIG="${MACOS_SIG}")
+          fi
+
+          if [ -n "${WIN_SIG}" ]; then
+            PLATFORMS=$(echo "${PLATFORMS}" | node -e "
+              const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+              d['windows-x86_64'] = {
+                signature: process.env.WIN_SIG,
+                url: '${WIN_URL}'
+              };
+              process.stdout.write(JSON.stringify(d));
+            " WIN_SIG="${WIN_SIG}")
+          fi
+
+          # Generate latest.json
+          node -e "
+            const manifest = {
+              version: '${VERSION}',
+              notes: process.env.NOTES || '',
+              pub_date: '${PUB_DATE}',
+              platforms: JSON.parse(process.env.PLATFORMS)
+            };
+            require('fs').writeFileSync('/tmp/latest.json', JSON.stringify(manifest, null, 2));
+            console.log('Generated latest.json:');
+            console.log(JSON.stringify(manifest, null, 2));
+          " NOTES="${NOTES}" PLATFORMS="${PLATFORMS}"
+
+          # Upload latest.json to the release (overwrite if exists)
+          gh release upload "${TAG}" \
+            --repo "${REPO}" \
+            /tmp/latest.json \
+            --clobber
+
+          echo "latest.json uploaded to ${TAG}"
+
   notify-release-success:
     name: Notify Release Success
 
@@ -262,6 +390,7 @@ jobs:
       - determine-release
       - build-tauri-windows
       - build-tauri-macos
+      - generate-updater-manifest
 
     if: needs.determine-release.outputs.released == 'true'
 
@@ -275,7 +404,7 @@ jobs:
           title: 'Production Release Published'
           description: |
             Version v${{ needs.determine-release.outputs.version }} was released successfully.
-            Tauri artifacts uploaded to GitHub Releases.
+            Tauri artifacts and updater manifest uploaded to GitHub Releases.
 
             Repository:
             ${{ github.repository }}

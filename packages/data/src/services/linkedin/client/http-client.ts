@@ -8,8 +8,12 @@
 import { Pool, request } from 'undici';
 import { gunzipSync } from 'zlib';
 
+import { createLogger } from '@ajh/core';
+
 import type { LinkedInSessionData } from '../session/store.js';
 import { linkedinRateLimiter } from './rate-limiter.js';
+
+const logger = createLogger('linkedin.http');
 
 // Create connection pool for better performance
 const pool = new Pool('https://www.linkedin.com', {
@@ -81,12 +85,25 @@ export class LinkedInHttpClient {
    */
   async get<T>(url: string, signal?: AbortSignal): Promise<T> {
     return linkedinRateLimiter.execute(async () => {
+      const hasSession = !!this.sessionData?.li_at;
+      logger.info({ url, hasSession }, 'GET request');
+
       const response = await request(url, {
         method: 'GET',
         headers: this.getDefaultHeaders(),
         signal,
         dispatcher: pool,
       });
+
+      logger.info(
+        {
+          url,
+          status: response.statusCode,
+          contentType: response.headers['content-type'],
+          location: response.headers['location'],
+        },
+        'GET response'
+      );
 
       const buffer = await response.body.arrayBuffer();
       const bodyBuffer = Buffer.from(buffer);
@@ -101,6 +118,10 @@ export class LinkedInHttpClient {
       }
 
       if (response.statusCode !== 200) {
+        logger.error(
+          { url, status: response.statusCode, bodyPreview: body.substring(0, 500) },
+          'Non-200 response from LinkedIn'
+        );
         throw new Error(`HTTP ${response.statusCode}: Request failed`);
       }
 

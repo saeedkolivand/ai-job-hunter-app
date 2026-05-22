@@ -6,7 +6,7 @@ echo "▶ Running ESLint..."
 pnpm lint
 
 echo "▶ Running TypeScript type check..."
-pnpm typecheck
+pnpm typecheck --force
 
 echo "▶ Building packages..."
 pnpm build:packages
