@@ -4,10 +4,10 @@
  * continue to work unchanged.
  */
 import {
-  NotificationProvider,
-  useNotification,
   type NotificationItem,
+  NotificationProvider,
   type NotificationVariant,
+  useNotification,
 } from './Notification';
 
 export type ToastVariant = NotificationVariant;
