@@ -1145,6 +1145,8 @@
     }
   },
   "onboarding": {
+    "back": "Zurück",
+    "continue": "Weiter",
     "welcome": {
       "title": "Willkommen bei AI Job Hunter",
       "subtitle": "Ihr lokaler, KI-nativer Job-Jagd-Assistent. Lassen Sie uns einrichten.",

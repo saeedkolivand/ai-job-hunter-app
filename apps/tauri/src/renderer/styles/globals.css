@@ -63,6 +63,12 @@ html[data-performance-mode='low-memory'] body {
   background: #07060f;
 }
 
+/* ── SelectDropdown low-memory mode ─────────────────────────────────────────── */
+/* Reduce backdrop-blur on dropdowns when in low-memory mode. */
+html[data-performance-mode='low-memory'] [role='listbox'] {
+  backdrop-filter: blur(8px) !important;
+}
+
 /* ── Window drag regions (Electron + Tauri) ──────────────────────────────── */
 /* Electron: -webkit-app-region on the element is sufficient.               */
 /* Tauri:    also requires data-tauri-drag-region on the element (Windows).  */
