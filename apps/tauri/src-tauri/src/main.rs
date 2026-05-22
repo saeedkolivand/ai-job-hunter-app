@@ -1,5 +1,18 @@
 // Prevents a terminal window from appearing on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![allow(clippy::unnecessary_sort_by)]
+#![allow(clippy::unnecessary_lazy_evaluations)]
+#![allow(clippy::redundant_pattern_matching)]
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::needless_borrows_for_generic_args)]
+#![allow(clippy::manual_clamp)]
+#![allow(clippy::redundant_closure)]
+#![allow(clippy::manual_next_back)]
+#![allow(clippy::large_enum_variant)]
+#![allow(clippy::regex_creation_in_loops)]
+#![allow(clippy::get_first)]
+#![allow(clippy::double_ended_iterator_last)]
+#![allow(clippy::wrong_self_convention)]
 
 mod autopilot;
 mod applying;
@@ -8,6 +21,7 @@ mod commands;
 mod conversations;
 mod credentials;
 mod documents;
+mod export;
 mod jobs;
 mod postings;
 mod scraping;
@@ -247,6 +261,9 @@ fn main() {
             commands::autopilot_run,
             commands::autopilot_pause,
             commands::autopilot_resume,
+            // export
+            export::commands::documents_export_document,
+            export::commands::documents_export_and_save,
             // updater
             updater::updater_check,
             updater::updater_download,

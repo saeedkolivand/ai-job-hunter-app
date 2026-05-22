@@ -28,7 +28,7 @@ import {
   LocationInput,
   SelectDropdown,
   TextArea,
-  useToast,
+  useNotification,
 } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -90,7 +90,7 @@ interface ProgressEvent {
   p: number;
 }
 
-const APPLIABLE = new Set(['linkedin', 'indeed', 'greenhouse', 'workday']);
+const APPLIABLE = new Set(['linkedin', 'indeed', 'greenhouse', 'workday', 'xing', 'glassdoor']);
 const AUTH_BENEFITS = new Set(['linkedin', 'indeed', 'xing']);
 
 function Jobs() {
@@ -116,7 +116,7 @@ function Jobs() {
   };
 
   const api = useAppClient();
-  const toast = useToast();
+  const notify = useNotification();
   const { data: postingsData = [] } = usePostings();
   const postings = postingsData as Posting[];
   const scrapeBoard = useScrapeBoard();
@@ -159,7 +159,7 @@ function Jobs() {
       if (isLinkedInBoard) await linkedInDisconnect.mutateAsync();
       else await boardDisconnect.mutateAsync(scrapeForm.board);
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Disconnect failed.', 'error');
+      notify(err instanceof Error ? err.message : 'Disconnect failed.', 'error');
     }
   };
 
@@ -169,11 +169,11 @@ function Jobs() {
         ? await linkedInConnect.mutateAsync()
         : await boardConnect.mutateAsync(scrapeForm.board);
       const res = result as { connected?: boolean; error?: string } | undefined;
-      if (res?.error) toast(res.error, 'error');
+      if (res?.error) notify(res.error, 'error');
       else if (!res?.connected)
-        toast(`${scrapeForm.board} sign-in was cancelled or timed out.`, 'warning');
+        notify(`${scrapeForm.board} sign-in was cancelled or timed out.`, 'warning');
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Connection failed.', 'error');
+      notify(err instanceof Error ? err.message : 'Connection failed.', 'error');
     }
   };
   const [scraping, setScraping] = useState(false);
@@ -272,7 +272,7 @@ function Jobs() {
       if (res.error) {
         setScraping(false);
         setScrapeOutcome({ ok: false, note: res.error });
-        toast(res.error, 'error');
+        notify(res.error, 'error');
         return;
       }
 
@@ -281,7 +281,7 @@ function Jobs() {
     } catch (err) {
       setScraping(false);
       setScrapeOutcome({ ok: false, note: err instanceof Error ? err.message : String(err) });
-      toast(err instanceof Error ? err.message : 'Scraping failed.', 'error');
+      notify(err instanceof Error ? err.message : 'Scraping failed.', 'error');
     }
   };
 

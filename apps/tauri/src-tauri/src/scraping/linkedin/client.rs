@@ -143,7 +143,9 @@ impl LinkedInHttpClient {
         let response = self.client.get(url).headers(headers).send().await?;
 
         let status = response.status();
+
         if !status.is_success() {
+            let _error_body = response.text().await.unwrap_or_else(|_| String::from("<no body>"));
             return Err(anyhow::anyhow!("HTTP {}: Request failed", status));
         }
 

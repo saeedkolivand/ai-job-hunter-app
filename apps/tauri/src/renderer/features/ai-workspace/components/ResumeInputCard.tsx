@@ -17,7 +17,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 
 import type { DocumentRecord } from '@ajh/shared';
-import { Button, TextArea, useToast } from '@ajh/ui';
+import { Button, TextArea, useNotification } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
@@ -68,7 +68,7 @@ export function ResumeInputCard({
   placeholder,
 }: Props) {
   const { t } = useTranslation();
-  const toast = useToast();
+  const notify = useNotification();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [expanded, setExpanded] = useState(true);
@@ -108,7 +108,7 @@ export function ResumeInputCard({
     });
     setShowSaved(false);
     setLastUploadedFile(null);
-    toast(t('resumeInput.selectedSaved', { name: doc.title }), 'success');
+    notify(t('resumeInput.selectedSaved', { name: doc.title }), 'success');
   };
 
   /** Save the freshly-uploaded file to the document library */
@@ -127,13 +127,13 @@ export function ResumeInputCard({
       if (asDefault && id) {
         setResume({ defaultId: String(id), autoIndex: true, autoParse: true });
       }
-      toast(
+      notify(
         asDefault ? t('resumeInput.savedAsDefault') : t('resumeInput.savedToLibrary'),
         'success'
       );
       setLastUploadedFile(null);
     } catch {
-      toast(t('resumeInput.saveFailed'), 'error');
+      notify(t('resumeInput.saveFailed'), 'error');
     } finally {
       setSaving(false);
     }
@@ -141,7 +141,7 @@ export function ResumeInputCard({
 
   const handleFileChange = async (file: File) => {
     if (file.size > MAX_BYTES) {
-      toast(t('resumeInput.tooLarge'), 'error');
+      notify(t('resumeInput.tooLarge'), 'error');
       return;
     }
     setLastUploadedFile(file);

@@ -30,7 +30,7 @@ pub async fn navigate_and_assist(
 
     emit_step(&ctx, "launching", true, Some("Opening browser…"));
 
-    let session = ApplySession::open(&app_data_dir, board_id, &posting_url).await?;
+    let session = ApplySession::open(&app_data_dir, board_id, &posting_url, false).await?;
 
     emit_step(
         &ctx,

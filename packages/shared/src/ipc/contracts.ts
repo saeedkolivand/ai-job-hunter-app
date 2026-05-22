@@ -99,6 +99,32 @@ export interface IpcContract {
     import(req: DocumentImportRequest): Promise<{ jobId: string }>;
 
     remove(id: string): Promise<void>;
+
+    exportDocument(req: {
+      text: string;
+      format: 'docx' | 'pdf' | 'txt';
+      documentType: 'resume' | 'cover-letter';
+      templateId: 'classic' | 'modern' | 'executive';
+      meta?: {
+        candidateName?: string;
+        jobTitle?: string;
+        companyName?: string;
+        targetLanguage?: string;
+      };
+    }): Promise<{ data: number[]; mimeType: string; filename: string }>;
+
+    exportAndSave(req: {
+      text: string;
+      format: 'docx' | 'pdf' | 'txt';
+      documentType: 'resume' | 'cover-letter';
+      templateId: 'classic' | 'modern' | 'executive';
+      meta?: {
+        candidateName?: string;
+        jobTitle?: string;
+        companyName?: string;
+        targetLanguage?: string;
+      };
+    }): Promise<string>;
   };
 
   search: {
@@ -407,6 +433,10 @@ export const IPC_CHANNELS = {
     import: 'documents:import',
 
     remove: 'documents:remove',
+
+    exportDocument: 'documents:export_document',
+
+    exportAndSave: 'documents:export_and_save',
   },
 
   search: {

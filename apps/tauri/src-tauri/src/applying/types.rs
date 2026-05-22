@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use tokio_util::sync::CancellationToken;
 
 pub struct ApplyContext {

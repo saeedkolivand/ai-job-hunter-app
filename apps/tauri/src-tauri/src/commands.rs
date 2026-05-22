@@ -1175,12 +1175,12 @@ pub async fn search_hybrid(app: AppHandle, req: Value) -> Value {
 
 #[tauri::command]
 pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
-    let board = req.get("board").and_then(|b| b.as_str()).unwrap_or("");
-    let query = req.get("query").and_then(|q| q.as_str()).unwrap_or("");
-    let location = req.get("location").and_then(|l| l.as_str());
+    let board = req.get("board").and_then(|b| b.as_str()).unwrap_or("").to_string();
+    let query = req.get("query").and_then(|q| q.as_str()).unwrap_or("").to_string();
+    let location = req.get("location").and_then(|l| l.as_str()).map(|s| s.to_string());
     let pages = req.get("pages").and_then(|p| p.as_u64()).unwrap_or(1) as u32;
-    let date_filter = req.get("dateFilter").and_then(|d| d.as_str());
-    let locale = req.get("locale").and_then(|l| l.as_str());
+    let date_filter = req.get("dateFilter").and_then(|d| d.as_str()).map(|s| s.to_string());
+    let locale = req.get("locale").and_then(|l| l.as_str()).map(|s| s.to_string());
 
     let job_id = uuid_v4();
     app.state::<Mutex<JobTracker>>()
@@ -1190,10 +1190,10 @@ pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
 
     let engine = app.state::<std::sync::Arc<ScraperEngine>>().inner().clone();
     let input = BoardSearchInput {
-        query: query.to_string(),
-        location: location.map(|s| s.to_string()),
+        query: query.clone(),
+        location: location.clone(),
         pages,
-        date_filter: date_filter.map(|s| s.to_string()),
+        date_filter: date_filter.clone(),
         job_type: None,
         work_type: None,
         experience_level: None,
@@ -1201,7 +1201,7 @@ pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
         actively_hiring: None,
         verified: None,
         sort_by: None,
-        locale: locale.map(|s| s.to_string()),
+        locale: locale.clone(),
     };
 
     // Progress events: emit to renderer AND update the JobTracker so jobs_get
@@ -1223,36 +1223,66 @@ pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
     let app_item = app.clone();
     let job_id_item = job_id.clone();
     let on_item = Box::new(move |item: crate::scraping::JobPosting| {
-        let _ = app_item.emit("scrape.item", json!({ "jobId": job_id_item, "item": item }));
+        // Add job to PostingsCache so it appears in the UI
+        if let Some(cache) = app_item.try_state::<Mutex<PostingsCache>>() {
+            if let Ok(mut guard) = cache.lock() {
+                if let Ok(item_json) = serde_json::to_value(&item) {
+                    guard.add(item_json);
+                }
+            }
+        }
+        
+        // Emit job item on jobs:event channel that frontend expects
+        let _ = app_item.emit(
+            "jobs:event",
+            json!({ "type": "job.stream", "jobId": job_id_item, "data": item, "ts": now_ms() })
+        );
     });
 
-    let result = engine
-        .scrape_board(board, input, job_id.clone(), Some(on_progress), Some(on_item))
-        .await;
+    // Return jobId immediately, then scrape in background
+    let app_clone = app.clone();
+    let job_id_clone = job_id.clone();
+    tokio::spawn(async move {
+        let result = engine
+            .scrape_board(&board, input, job_id_clone.clone(), Some(on_progress), Some(on_item))
+            .await;
 
-    let tracker = app.state::<Mutex<JobTracker>>();
-    match &result {
-        Ok(results) => {
-            if let Ok(mut g) = tracker.lock() {
-                g.complete(&job_id, json!({ "count": results.len() }));
+        let tracker = app_clone.state::<Mutex<JobTracker>>();
+        match &result {
+            Ok(results) => {
+                if let Ok(mut g) = tracker.lock() {
+                    g.complete(&job_id_clone, json!({ "count": results.len() }));
+                }
+                // Emit completion event that frontend expects
+                let _ = app_clone.emit(
+                    "jobs:event",
+                    json!({ "type": "job.completed", "jobId": job_id_clone, "data": { "count": results.len() }, "ts": now_ms() })
+                );
+            }
+            Err(e) => {
+                if let Ok(mut g) = tracker.lock() {
+                    g.fail(&job_id_clone, e.to_string());
+                }
+                // Emit error event that frontend expects
+                let _ = app_clone.emit(
+                    "jobs:event",
+                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": e.to_string(), "ts": now_ms() })
+                );
             }
         }
-        Err(e) => {
-            if let Ok(mut g) = tracker.lock() {
-                g.fail(&job_id, e.to_string());
-            }
-        }
-    }
 
-    match result {
-        Ok(results) => json!({ "jobId": job_id, "count": results.len() }),
-        Err(e) => json!({ "error": e.to_string(), "jobId": job_id }),
-    }
+        match result {
+            Ok(_) => {}
+            Err(_) => {}
+        }
+    });
+
+    json!({ "jobId": job_id })
 }
 
 #[tauri::command]
 pub async fn scrape_url(app: AppHandle, req: Value) -> Value {
-    let url = req.get("url").and_then(|u| u.as_str()).unwrap_or("");
+    let url = req.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string();
     if url.is_empty() {
         return json!({ "error": "url is required" });
     }
@@ -1263,29 +1293,60 @@ pub async fn scrape_url(app: AppHandle, req: Value) -> Value {
         .unwrap()
         .start(&job_id, "scrape.url");
 
-    let result = crate::scraping::scrape_url::resolve(url).await;
+    // Return jobId immediately, then scrape in background
+    let app_clone = app.clone();
+    let job_id_clone = job_id.clone();
+    tokio::spawn(async move {
+        let result = crate::scraping::scrape_url::resolve(&url).await;
 
-    let tracker = app.state::<Mutex<JobTracker>>();
-    match result {
-        Ok(Some(posting)) => {
-            if let Ok(mut g) = tracker.lock() {
-                g.complete(&job_id, json!({ "ok": true }));
+        let tracker = app_clone.state::<Mutex<JobTracker>>();
+        match result {
+            Ok(Some(posting)) => {
+                // Add to PostingsCache
+                if let Some(cache) = app_clone.try_state::<Mutex<PostingsCache>>() {
+                    if let Ok(mut guard) = cache.lock() {
+                        if let Ok(item_json) = serde_json::to_value(&posting) {
+                            guard.add(item_json);
+                        }
+                    }
+                }
+                
+                // Emit job item
+                let _ = app_clone.emit(
+                    "jobs:event",
+                    json!({ "type": "job.stream", "jobId": job_id_clone, "data": posting, "ts": now_ms() })
+                );
+
+                if let Ok(mut g) = tracker.lock() {
+                    g.complete(&job_id_clone, json!({ "ok": true }));
+                }
+                let _ = app_clone.emit(
+                    "jobs:event",
+                    json!({ "type": "job.completed", "jobId": job_id_clone, "data": { "count": 1 }, "ts": now_ms() })
+                );
             }
-            json!({ "jobId": job_id, "posting": posting })
-        }
-        Ok(None) => {
-            if let Ok(mut g) = tracker.lock() {
-                g.fail(&job_id, "no scraper matched this URL".to_string());
+            Ok(None) => {
+                if let Ok(mut g) = tracker.lock() {
+                    g.fail(&job_id_clone, "no scraper matched this URL".to_string());
+                }
+                let _ = app_clone.emit(
+                    "jobs:event",
+                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": "no scraper matched this URL", "ts": now_ms() })
+                );
             }
-            json!({ "jobId": job_id, "error": "no scraper matched this URL" })
-        }
-        Err(e) => {
-            if let Ok(mut g) = tracker.lock() {
-                g.fail(&job_id, e.to_string());
+            Err(e) => {
+                if let Ok(mut g) = tracker.lock() {
+                    g.fail(&job_id_clone, e.to_string());
+                }
+                let _ = app_clone.emit(
+                    "jobs:event",
+                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": e.to_string(), "ts": now_ms() })
+                );
             }
-            json!({ "jobId": job_id, "error": e.to_string() })
         }
-    }
+    });
+
+    json!({ "jobId": job_id })
 }
 
 #[tauri::command]
@@ -1979,17 +2040,20 @@ pub fn autopilot_remove(app: AppHandle, autopilot_id: String) -> Value {
 
 #[tauri::command]
 pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
-    let target = {
+    let autopilot = {
         let store = app.state::<Mutex<AutopilotStore>>();
         let guard = store.lock().unwrap();
-        guard.get(&autopilot_id).map(|ap| ap.target.clone())
+        guard.get(&autopilot_id)
     };
 
-    let Some(target) = target else {
+    let Some(autopilot) = autopilot else {
         return json!({ "error": format!("autopilot not found: {autopilot_id}") });
     };
 
-    // Use the in-process Rust engine for scraping
+    let target = autopilot.target.clone();
+    let filter = autopilot.filter.clone();
+
+    // Register a cancellation token under the job_id so `jobs_cancel` works.
     let job_id = uuid_v4();
     app.state::<Mutex<JobTracker>>()
         .lock()
@@ -1997,6 +2061,19 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         .start(&job_id, "autopilot.run");
 
     let engine = app.state::<std::sync::Arc<ScraperEngine>>().inner().clone();
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+    engine.register_token(&job_id, cancel_token.clone()).await;
+
+    let ap_id = autopilot_id.clone();
+    let emit_step = move |app: &AppHandle, job_id: &str, step: &str, detail: &str| {
+        let _ = app.emit(
+            "autopilot.step",
+            json!({ "jobId": job_id, "autopilotId": ap_id, "step": step, "detail": detail }),
+        );
+    };
+
+    emit_step(&app, &job_id, "scrape_start", &format!("Scraping {}", target.board));
+
     let input = BoardSearchInput {
         query: target.query.clone(),
         location: target.location.clone(),
@@ -2019,11 +2096,6 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
             "scrape.progress",
             json!({ "jobId": job_id_progress, "progress": p }),
         );
-        if let Some(tracker) = app_progress.try_state::<Mutex<JobTracker>>() {
-            if let Ok(mut g) = tracker.lock() {
-                g.update_progress(&job_id_progress, p as f64);
-            }
-        }
     });
 
     let app_item = app.clone();
@@ -2036,24 +2108,114 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         .scrape_board(&target.board, input, job_id.clone(), Some(on_progress), Some(on_item))
         .await;
 
-    let tracker = app.state::<Mutex<JobTracker>>();
-    match &result {
-        Ok(results) => {
-            if let Ok(mut g) = tracker.lock() {
-                g.complete(&job_id, json!({ "count": results.len() }));
-            }
-        }
+    let postings = match result {
+        Ok(p) => p,
         Err(e) => {
-            if let Ok(mut g) = tracker.lock() {
+            engine.unregister_token(&job_id).await;
+            if let Ok(mut g) = app.state::<Mutex<JobTracker>>().lock() {
                 g.fail(&job_id, e.to_string());
             }
+            return json!({ "error": e.to_string(), "jobId": job_id });
+        }
+    };
+
+    let total_found = postings.len();
+    emit_step(&app, &job_id, "scrape_done", &format!("Found {} postings", total_found));
+
+    // ── Ranking ──────────────────────────────────────────────────────────────
+    // Score each posting against the autopilot's resume text using semantic
+    // similarity. Postings below `filter.min_match_score` are discarded.
+    let resume_vec = match &autopilot.resume_text {
+        Some(text) if !text.is_empty() => crate::documents::embed(text).await,
+        _ => None,
+    };
+
+    let mut scored: Vec<(f64, crate::scraping::JobPosting)> = Vec::new();
+    for posting in postings {
+        if cancel_token.is_cancelled() {
+            break;
+        }
+        let score = match (&resume_vec, &posting.description) {
+            (Some(rv), Some(desc)) if !desc.is_empty() => {
+                match crate::documents::embed(desc).await {
+                    Some(jv) => (crate::documents::cosine_similarity(rv, &jv) * 100.0).round(),
+                    None => 0.0,
+                }
+            }
+            _ => 0.0,
+        };
+        if score >= filter.min_match_score {
+            scored.push((score, posting));
         }
     }
 
-    match result {
-        Ok(results) => json!({ "jobId": job_id, "count": results.len() }),
-        Err(e) => json!({ "error": e.to_string(), "jobId": job_id }),
+    // Sort descending by score.
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    let top_n = target.top_n.max(1) as usize;
+    let candidates: Vec<_> = scored.into_iter().take(top_n).collect();
+
+    emit_step(
+        &app,
+        &job_id,
+        "rank_done",
+        &format!("{} candidates above min_match_score {}", candidates.len(), filter.min_match_score),
+    );
+
+    // ── Apply chaining ───────────────────────────────────────────────────────
+    let mut applied = 0u32;
+    for (i, (score, posting)) in candidates.iter().enumerate() {
+        if cancel_token.is_cancelled() {
+            emit_step(&app, &job_id, "cancelled", "Autopilot cancelled by user");
+            break;
+        }
+
+        emit_step(
+            &app,
+            &job_id,
+            "apply_start",
+            &format!("[{}/{}] Applying to {} (score {score})", i + 1, candidates.len(), posting.title),
+        );
+
+        let apply_req = json!({
+            "board": target.board,
+            "url": posting.url,
+            "coverLetter": autopilot.cover_letter,
+            "autoSubmit": autopilot.auto_submit,
+        });
+        let apply_result = apply_start(app.clone(), apply_req).await;
+
+        let ok = apply_result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+        if ok {
+            applied += 1;
+        }
+
+        emit_step(
+            &app,
+            &job_id,
+            "apply_done",
+            &format!("[{}/{}] {} — ok={ok}", i + 1, candidates.len(), posting.title),
+        );
     }
+
+    // Update autopilot totals.
+    {
+        let store = app.state::<Mutex<AutopilotStore>>();
+        let _ = store.lock().unwrap().update(
+            &autopilot_id,
+            json!({ "totalFound": total_found, "totalApplied": applied }),
+        );
+    }
+
+    engine.unregister_token(&job_id).await;
+
+    if let Ok(mut g) = app.state::<Mutex<JobTracker>>().lock() {
+        g.complete(&job_id, json!({ "found": total_found, "applied": applied }));
+    }
+
+    emit_step(&app, &job_id, "complete", &format!("Found {total_found}, applied to {applied}"));
+
+    json!({ "jobId": job_id, "found": total_found, "applied": applied })
 }
 
 #[tauri::command]

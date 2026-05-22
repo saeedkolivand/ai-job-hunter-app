@@ -111,4 +111,52 @@ impl FormSelectors {
             ],
         }
     }
+
+    pub fn xing() -> Self {
+        Self {
+            name: vec!["input[name='name']".to_string()],
+            email: vec!["input[type='email']".to_string()],
+            phone: vec!["input[type='tel']".to_string()],
+            resume_upload: vec![
+                "input[type='file']".to_string(),
+                "[data-qa='file-upload']".to_string(),
+            ],
+            cover_letter: vec![
+                "textarea[name='coverLetter']".to_string(),
+                "[data-qa='cover-letter']".to_string(),
+            ],
+            submit_button: vec![
+                "button[type='submit']".to_string(),
+                "[data-qa='submit-button']".to_string(),
+            ],
+            captcha_detection: vec![
+                ".recaptcha".to_string(),
+                "[data-captcha]".to_string(),
+            ],
+        }
+    }
+
+    pub fn glassdoor() -> Self {
+        Self {
+            name: vec!["input[name='name']".to_string()],
+            email: vec!["input[type='email']".to_string()],
+            phone: vec!["input[type='tel']".to_string()],
+            resume_upload: vec![
+                "input[type='file']".to_string(),
+                "[data-test='resume-upload']".to_string(),
+            ],
+            cover_letter: vec![
+                "textarea[name='coverLetter']".to_string(),
+                "[data-test='cover-letter']".to_string(),
+            ],
+            submit_button: vec![
+                "button[type='submit']".to_string(),
+                "[data-test='submit-button']".to_string(),
+            ],
+            captcha_detection: vec![
+                ".recaptcha".to_string(),
+                "[data-test='captcha']".to_string(),
+            ],
+        }
+    }
 }

@@ -1,9 +1,9 @@
-import { AlertCircle, FileText, Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
+import { AlertCircle, Download, FileText, Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 
 import type { DocumentRecord } from '@ajh/shared';
-import { Button, GlassCard, useToast } from '@ajh/ui';
+import { Button, GlassCard, useNotification } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
@@ -13,7 +13,7 @@ import { usePreferencesStore, useResume } from '@/store/preferences-store';
 
 export function ResumePreferences() {
   const { t } = useTranslation();
-  const toast = useToast();
+  const notify = useNotification();
   const resume = useResume();
   const setResume = usePreferencesStore((state) => state.setResume);
 
@@ -53,9 +53,9 @@ export function ResumePreferences() {
         const firstId = rawDocs[0]?._id;
         if (firstId) setResume({ defaultId: firstId, autoIndex: true, autoParse: true });
       }
-      toast(t('settings.resume.uploaded'), 'success');
+      notify(t('settings.resume.uploaded'), 'success');
     } catch (err) {
-      toast(err instanceof Error ? err.message : t('settings.resume.uploadFailed'), 'error');
+      notify(err instanceof Error ? err.message : t('settings.resume.uploadFailed'), 'error');
     }
   };
 
@@ -92,10 +92,25 @@ export function ResumePreferences() {
           autoParse: resume?.autoParse ?? true,
         });
       }
-      toast(t('settings.resume.removed'), 'success');
+      notify(t('settings.resume.removed'), 'success');
     } catch {
-      toast(t('settings.resume.removeFailed'), 'error');
+      notify(t('settings.resume.removeFailed'), 'error');
     }
+  };
+
+  const handleDownload = (doc: DocumentRecord) => {
+    const rawDoc = rawDocs.find((d) => d._id === doc.id);
+    const text = (rawDoc as { text?: string })?.text || '';
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${doc.title.replace(/\.[^/.]+$/, '')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    notify(t('settings.resume.downloaded'), 'success');
   };
 
   const uploading = importDocument.isPending;
@@ -235,6 +250,15 @@ export function ResumePreferences() {
                     className="text-foreground/30 hover:text-brand-soft disabled:opacity-0"
                   >
                     <Sparkles size={13} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDownload(doc)}
+                    title={t('settings.resume.download')}
+                    className="text-foreground/30 hover:text-blue-400"
+                  >
+                    <Download size={13} />
                   </Button>
                   <Button
                     variant="ghost"
