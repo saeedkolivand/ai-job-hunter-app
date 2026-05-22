@@ -63,6 +63,8 @@ export function LocationInput({
   const [activeIndex, setActiveIndex] = useState(-1);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const fetchRef = useRef(onFetchSuggestions);
+  fetchRef.current = onFetchSuggestions;
 
   useEffect(() => {
     const trimmed = value.trim();
@@ -73,7 +75,8 @@ export function LocationInput({
     }
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      onFetchSuggestions(trimmed)
+      fetchRef
+        .current(trimmed)
         .then((s) => {
           setSuggestions(s);
           setOpen(s.length > 0);
@@ -144,7 +147,7 @@ export function LocationInput({
       {open && suggestions.length > 0 && (
         <ul
           role="listbox"
-          className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a2e] py-1 shadow-xl"
+          className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-white/[0.08] bg-secondary py-1 shadow-xl"
         >
           {suggestions.map((s, i) => (
             <li
