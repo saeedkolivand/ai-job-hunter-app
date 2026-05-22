@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 
 import type { DocumentRecord } from '@ajh/shared';
-import { Button, useToast } from '@ajh/ui';
+import { Button, useNotification } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
@@ -19,7 +19,7 @@ interface Props {
 
 export function ResumeStep({ onBack, onNext, direction }: Props) {
   const { t } = useTranslation();
-  const toast = useToast();
+  const notify = useNotification();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
 
@@ -38,9 +38,9 @@ export function ResumeStep({ onBack, onNext, direction }: Props) {
       const first = (documentsRaw as (DocumentRecord & { _id?: string })[]).find(Boolean);
       const id = first?._id ?? first?.id;
       if (id) setResume({ defaultId: String(id), autoIndex: true, autoParse: true });
-      toast(t('onboarding.resume.uploaded'), 'success');
+      notify(t('onboarding.resume.uploaded'), 'success');
     } catch (err) {
-      toast(err instanceof Error ? err.message : t('onboarding.resume.uploadFailed'), 'error');
+      notify(err instanceof Error ? err.message : t('onboarding.resume.uploadFailed'), 'error');
     }
   };
 

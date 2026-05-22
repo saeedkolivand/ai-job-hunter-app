@@ -1,6 +1,6 @@
 import { Activity, BarChart3, CheckCircle2, Clock, Cpu, Loader2, XCircle, Zap } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
 import { Button, GlassCard } from '@ajh/ui';
@@ -35,6 +35,7 @@ interface JobRecord {
   progress: number;
   createdAt: number;
   updatedAt: number;
+  finishedAt?: number;
 }
 
 interface ActivityItem {
@@ -69,73 +70,121 @@ const KIND_SHORT: Record<string, string> = {
   'apply.job': 'Apply',
 };
 
-// Persist session counters across navigation via module-level state
-let _counters = { completed: 0, running: 0, failed: 0, items: 0 };
-let _last24h: number[] = Array.from({ length: 24 }, () => 0);
-let _activity: ActivityItem[] = [];
-
 function MonitoringPage() {
   const { t } = useTranslation();
 
-  const KIND_LABEL: Record<string, string> = {
-    'ai.generate': t('monitoring.jobKinds.aiGenerate'),
-    'ai.embed': t('monitoring.jobKinds.aiEmbed'),
-    'document.import': t('monitoring.jobKinds.documentImport'),
-    'document.ocr': t('monitoring.jobKinds.documentOcr'),
-    'document.chunk': t('monitoring.jobKinds.documentChunk'),
-    'document.index': t('monitoring.jobKinds.documentIndex'),
-    'scrape.board': t('monitoring.jobKinds.scrapeBoard'),
-    'scrape.url': t('monitoring.jobKinds.scrapeUrl'),
-    'persist.job': t('monitoring.jobKinds.persistJob'),
-    'match.resume': t('monitoring.jobKinds.matchResume'),
-    'apply.job': t('monitoring.jobKinds.applyJob'),
-  };
+  const KIND_LABEL_MAP = useMemo(
+    () =>
+      ({
+        'ai.generate': t('monitoring.jobKinds.aiGenerate'),
+        'ai.embed': t('monitoring.jobKinds.aiEmbed'),
+        'document.import': t('monitoring.jobKinds.documentImport'),
+        'document.ocr': t('monitoring.jobKinds.documentOcr'),
+        'document.chunk': t('monitoring.jobKinds.documentChunk'),
+        'document.index': t('monitoring.jobKinds.documentIndex'),
+        'scrape.board': t('monitoring.jobKinds.scrapeBoard'),
+        'scrape.url': t('monitoring.jobKinds.scrapeUrl'),
+        'persist.job': t('monitoring.jobKinds.persistJob'),
+        'match.resume': t('monitoring.jobKinds.matchResume'),
+        'apply.job': t('monitoring.jobKinds.applyJob'),
+      }) as Record<string, string>,
+    [t]
+  );
 
-  const [activity, setActivity] = useState<ActivityItem[]>(_activity);
-  const [counters, setCounters] = useState(_counters);
-  const [last24h, setLast24h] = useState<number[]>(_last24h);
+  // Live-only events not yet reflected in the refetched queue
+  const [liveActivity, setLiveActivity] = useState<ActivityItem[]>([]);
 
   const { data: healthData } = useSystemHealth();
   const health = (healthData ?? {}) as {
     ai?: { ready: boolean; model?: string };
     data?: { ready: boolean; sqlite: boolean; vector: boolean };
   };
-  const { data: allJobs } = useJobQueue();
-  const activeJobs = ((allJobs ?? []) as JobRecord[]).filter(
-    (j) => j.status === 'queued' || j.status === 'running' || j.status === 'streaming'
-  );
+  const { data: allJobsData } = useJobQueue();
   const { data: appVersionData } = useAppVersion();
   const appVersion = (appVersionData as string | undefined) ?? '';
 
-  // Sync module-level cache when state updates
-  useEffect(() => {
-    _counters = counters;
-  }, [counters]);
-  useEffect(() => {
-    _last24h = last24h;
-  }, [last24h]);
-  useEffect(() => {
-    _activity = activity;
-  }, [activity]);
+  const allJobs = useMemo(() => (allJobsData ?? []) as JobRecord[], [allJobsData]);
 
-  // Subscribe to job events
+  // Counters derived from real job queue data
+  const activeJobs = useMemo(
+    () =>
+      allJobs.filter(
+        (j) => j.status === 'queued' || j.status === 'running' || j.status === 'streaming'
+      ),
+    [allJobs]
+  );
+  const completedCount = useMemo(
+    () => allJobs.filter((j) => j.status === 'completed').length,
+    [allJobs]
+  );
+  const failedCount = useMemo(
+    () => allJobs.filter((j) => j.status === 'failed' || j.status === 'cancelled').length,
+    [allJobs]
+  );
+
+  // Hourly activity chart derived from finishedAt timestamps
+  const last24h = useMemo(() => {
+    const bins = Array.from({ length: 24 }, () => 0);
+    allJobs
+      .filter((j) => j.status === 'completed')
+      .forEach((j) => {
+        const ts = j.finishedAt ?? j.updatedAt;
+        const h = new Date(ts).getHours();
+        if (h >= 0 && h < 24) bins[h] = (bins[h] ?? 0) + 1;
+      });
+    return bins;
+  }, [allJobs]);
+
+  // Historical activity from completed/failed jobs
+  const historicalActivity = useMemo(() => {
+    return allJobs
+      .filter((j) => j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled')
+      .sort((a, b) => (b.finishedAt ?? b.updatedAt) - (a.finishedAt ?? a.updatedAt))
+      .slice(0, 40)
+      .map((j) => {
+        const verb = j.status === 'completed' ? '✓' : j.status === 'failed' ? '✕' : '⊘';
+        const tone: ActivityItem['tone'] =
+          j.status !== 'completed'
+            ? 'amber'
+            : j.kind?.startsWith('scrape')
+              ? 'violet'
+              : j.kind?.startsWith('ai')
+                ? 'indigo'
+                : 'emerald';
+        return {
+          id: j.id,
+          time: j.finishedAt ?? j.updatedAt,
+          text: `${verb} ${KIND_LABEL_MAP[j.kind] ?? j.kind}`,
+          tone,
+        };
+      });
+  }, [allJobs, KIND_LABEL_MAP]);
+
+  // Merge live (top) with historical (deduped)
+  const activity = useMemo(() => {
+    const liveJobIds = new Set(liveActivity.map((a) => a.id.split('-')[0]));
+    return [...liveActivity, ...historicalActivity.filter((a) => !liveJobIds.has(a.id))].slice(
+      0,
+      40
+    );
+  }, [liveActivity, historicalActivity]);
+
+  // Subscribe to job events — prepend fresh events to live list
   useJobEvents((ev: unknown) => {
     const event = ev as JobEvent;
     void (async () => {
       const job = (await fetchJob(event.jobId)) as JobRecord | null;
-      const kindLabel = (job?.kind && KIND_LABEL[job.kind]) ?? 'Job';
+      const kindLabel = (job?.kind && KIND_LABEL_MAP[job.kind]) ?? 'Job';
       const tone: ActivityItem['tone'] =
         event.type === 'job.completed'
-          ? 'emerald'
-          : event.type === 'job.failed'
+          ? job?.kind?.startsWith('scrape')
+            ? 'violet'
+            : job?.kind?.startsWith('ai')
+              ? 'indigo'
+              : 'emerald'
+          : event.type === 'job.failed' || event.type === 'job.cancelled'
             ? 'amber'
-            : event.type === 'job.cancelled'
-              ? 'amber'
-              : job?.kind?.startsWith('scrape')
-                ? 'violet'
-                : job?.kind?.startsWith('ai')
-                  ? 'indigo'
-                  : 'blue';
+            : 'blue';
 
       if (['job.completed', 'job.failed', 'job.cancelled', 'job.started'].includes(event.type)) {
         const verb =
@@ -146,44 +195,26 @@ function MonitoringPage() {
               : event.type === 'job.cancelled'
                 ? '⊘'
                 : '▸';
-        const item: ActivityItem = {
-          id: `${event.jobId}-${event.ts}`,
-          time: event.ts,
-          text: `${verb} ${kindLabel}`,
-          tone,
-        };
-        setActivity((prev) => {
-          const next = [item, ...prev].slice(0, 40);
-          _activity = next;
-          return next;
-        });
-      }
-
-      setCounters((c) => {
-        let next = c;
-        if (event.type === 'job.completed')
-          next = { ...c, completed: c.completed + 1, running: Math.max(0, c.running - 1) };
-        else if (event.type === 'job.failed' || event.type === 'job.cancelled')
-          next = { ...c, failed: c.failed + 1, running: Math.max(0, c.running - 1) };
-        else if (event.type === 'job.started') next = { ...c, running: c.running + 1 };
-        else if (event.type === 'job.stream') next = { ...c, items: c.items + 1 };
-        _counters = next;
-        return next;
-      });
-
-      if (event.type === 'job.completed' || event.type === 'job.stream') {
-        const hour = new Date(event.ts).getHours();
-        setLast24h((bins) => {
-          const next = bins.map((v, i) => (i === hour ? v + 1 : v));
-          _last24h = next;
-          return next;
-        });
+        setLiveActivity((prev) =>
+          [
+            {
+              id: `${event.jobId}-${event.ts}`,
+              time: event.ts,
+              text: `${verb} ${kindLabel}`,
+              tone,
+            },
+            ...prev,
+          ].slice(0, 40)
+        );
       }
     })();
   });
 
-  const total = counters.completed + counters.failed;
-  const successRate = total ? Math.round((counters.completed / total) * 100) : 100;
+  const total = completedCount + failedCount;
+  const successRate = total ? Math.round((completedCount / total) * 100) : 100;
+  const counters = { completed: completedCount, running: activeJobs.length, failed: failedCount };
+
+  const KIND_LABEL = KIND_LABEL_MAP;
 
   const metrics = [
     {
@@ -311,10 +342,7 @@ function MonitoringPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => {
-                      setActivity([]);
-                      _activity = [];
-                    }}
+                    onClick={() => setLiveActivity([])}
                     className="text-[10px] text-foreground/30 hover:text-foreground/60 h-auto py-1"
                   >
                     {t('monitoring.actions.clear')}

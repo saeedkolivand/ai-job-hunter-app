@@ -21,21 +21,35 @@ pub struct ApplySession {
 
 impl ApplySession {
     /// Launch Chromium with the board's persistent profile and open the URL.
+    ///
+    /// `headless`: if true, run in headless mode (no window). Default false for
+    /// apply flows (user interaction needed). Set true for future scraping flows
+    /// that need JS rendering without showing a window.
     pub async fn open(
         app_data_dir: &Path,
         board_id: &str,
         posting_url: &str,
+        headless: bool,
     ) -> Result<ApplySession> {
         let profile = crate::scraping::board_login::profile_dir(app_data_dir, board_id);
         std::fs::create_dir_all(&profile).ok();
 
-        let config = BrowserConfig::builder()
-            .with_head()
+        let mut builder = BrowserConfig::builder();
+        if !headless {
+            builder = builder.with_head();
+        }
+        builder = builder
             .arg(format!("--user-data-dir={}", profile.display()))
             .arg("--disable-blink-features=AutomationControlled")
             .arg("--no-default-browser-check")
-            .arg("--no-first-run")
-            .build()
+            .arg("--no-first-run");
+
+        // Use system Chrome/Edge if available.
+        if let Some(chrome_path) = crate::scraping::board_login::detect_system_chrome() {
+            builder = builder.chrome_executable(chrome_path);
+        }
+
+        let config = builder.build()
             .map_err(|e| anyhow!("BrowserConfig build failed: {e}"))?;
 
         let (browser, mut handler) = Browser::launch(config).await?;

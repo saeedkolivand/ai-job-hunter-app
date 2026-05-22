@@ -28,6 +28,14 @@ pub struct AutopilotTarget {
     pub pages: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_filter: Option<String>,
+    /// How many top-scoring postings autopilot should apply to after scraping.
+    /// Defaults to 3 when absent.
+    #[serde(default = "default_top_n")]
+    pub top_n: u32,
+}
+
+fn default_top_n() -> u32 {
+    3
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,6 +123,7 @@ impl AutopilotStore {
                     work_type: None,
                     pages: 1,
                     date_filter: None,
+                    top_n: default_top_n(),
                 }
             }),
             filter: serde_json::from_value(input["filter"].clone()).unwrap_or_else(|_| {

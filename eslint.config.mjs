@@ -115,6 +115,7 @@ export default tseslint.config(
       '**/*.gen.ts',
       '**/*.tsbuildinfo',
       'coverage/**',
+      '**/src-tauri/target/**',
     ],
   },
 

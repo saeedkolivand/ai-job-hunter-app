@@ -15,7 +15,7 @@ import { motion } from 'motion/react';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { Button, GlassCard, Input, useToast } from '@ajh/ui';
+import { Button, GlassCard, Input, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
@@ -99,7 +99,7 @@ const QUICK_MODELS = ['llama3.2', 'mistral', 'llama3.1:8b', 'llama3.2:1b'];
 
 export function AISettingsTab() {
   const { t } = useTranslation();
-  const toast = useToast();
+  const notify = useNotification();
   const qc = useQueryClient();
   const api = useAppClient();
 
@@ -175,7 +175,7 @@ export function AISettingsTab() {
       try {
         const models = await api.ai.listProviderModels({ provider });
         const count = Array.isArray(models) ? models.length : 0;
-        toast(
+        notify(
           count > 0
             ? `${meta.label} connected — ${count} model${count === 1 ? '' : 's'} available.`
             : `${meta.label} key saved, but no models returned. Double-check the key.`,
@@ -183,7 +183,7 @@ export function AISettingsTab() {
         );
         qc.invalidateQueries({ queryKey: [...keys.ai.models, 'provider-models', provider] });
       } catch {
-        toast(
+        notify(
           `${meta.label} key saved, but couldn't verify it. Check that it's correct.`,
           'warning'
         );
@@ -193,7 +193,7 @@ export function AISettingsTab() {
         setActiveProvider(provider);
       }
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Failed to save key.', 'error');
+      notify(err instanceof Error ? err.message : 'Failed to save key.', 'error');
     } finally {
       setSavingKey(null);
     }
@@ -203,10 +203,10 @@ export function AISettingsTab() {
     const meta = PROVIDERS[provider];
     try {
       await removeProviderKey.mutateAsync({ provider });
-      toast(`${meta.label} disconnected.`, 'success');
+      notify(`${meta.label} disconnected.`, 'success');
       if (activeProvider === provider) setActiveProvider('ollama');
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Failed to remove key.', 'error');
+      notify(err instanceof Error ? err.message : 'Failed to remove key.', 'error');
     }
   };
 
@@ -216,9 +216,9 @@ export function AISettingsTab() {
       await pullModel.mutateAsync(model);
       qc.invalidateQueries({ queryKey: keys.ai.models });
       handleSelectModel('ollama', model);
-      toast(`${model} downloaded and selected.`, 'success');
+      notify(`${model} downloaded and selected.`, 'success');
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Download failed.', 'error');
+      notify(err instanceof Error ? err.message : 'Download failed.', 'error');
     } finally {
       setPulling(null);
     }

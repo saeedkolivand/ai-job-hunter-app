@@ -349,7 +349,9 @@
       "uploadFailed": "Upload fehlgeschlagen",
       "removed": "Lebenslauf entfernt",
       "removeFailed": "Entfernen fehlgeschlagen",
-      "setDefault": "Als Standard setzen"
+      "setDefault": "Als Standard setzen",
+      "download": "Lebenslauf herunterladen",
+      "downloaded": "Lebenslauf heruntergeladen"
     },
     "update": {
       "title": "Updates",

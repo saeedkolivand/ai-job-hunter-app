@@ -1,8 +1,8 @@
 //! Applier registry — looks up the right `Applier` by board id.
 
 use super::boards::{
-    greenhouse::GreenhouseApplier, indeed::IndeedApplier, linkedin::LinkedInApplier,
-    workday::WorkdayApplier,
+    glassdoor::GlassdoorApplier, greenhouse::GreenhouseApplier, indeed::IndeedApplier,
+    linkedin::LinkedInApplier, workday::WorkdayApplier, xing::XingApplier,
 };
 use super::types::Applier;
 
@@ -15,6 +15,8 @@ impl ApplierRegistry {
             ("indeed", "Indeed"),
             ("greenhouse", "Greenhouse"),
             ("workday", "Workday"),
+            ("xing", "Xing"),
+            ("glassdoor", "Glassdoor"),
         ]
     }
 
@@ -24,6 +26,8 @@ impl ApplierRegistry {
             "indeed" => Some(Box::new(IndeedApplier)),
             "greenhouse" => Some(Box::new(GreenhouseApplier)),
             "workday" => Some(Box::new(WorkdayApplier)),
+            "xing" => Some(Box::new(XingApplier)),
+            "glassdoor" => Some(Box::new(GlassdoorApplier)),
             _ => None,
         }
     }

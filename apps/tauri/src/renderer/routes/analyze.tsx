@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 
+import type { DocumentRecord } from '@ajh/shared';
 import { Button, TextArea } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -34,9 +35,14 @@ import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
 import { type AnalysisResult, runAnalysis } from '@/lib/resume-ai';
-import { useAIModels, useExtractText } from '@/services';
+import { useAIModels, useDocuments, useExtractText } from '@/services';
 import { keys } from '@/services/query-client';
-import { useAIModel, useOutputTone, usePreferencesStore } from '@/store/preferences-store';
+import {
+  useAIModel,
+  useOutputTone,
+  usePreferencesStore,
+  useResume,
+} from '@/store/preferences-store';
 import type { Model } from '@/types';
 
 export const Route = createFileRoute('/analyze')({ component: Analyze });
@@ -65,6 +71,17 @@ function Analyze() {
   const outputTone = useOutputTone();
   const setAIModel = usePreferencesStore((s) => s.setAIModel);
   const extractTextMutation = useExtractText();
+  const resumePref = useResume();
+  const { data: documentsRaw = [] } = useDocuments();
+
+  // Auto-fill default resume on mount
+  useEffect(() => {
+    if (resume) return; // Don't override if user already has content
+    const docs = documentsRaw as Array<DocumentRecord & { _id?: string; text?: string }>;
+    const defaultDoc = docs.find((d) => (d._id ?? d.id) === resumePref?.defaultId) ?? docs[0];
+    const text = defaultDoc?.text?.trim();
+    if (text) setResume(text);
+  }, [documentsRaw, resumePref?.defaultId, resume]);
 
   const handleUpload = async (target: 'resume' | 'jobAd', file: File) => {
     setUploadError(null);

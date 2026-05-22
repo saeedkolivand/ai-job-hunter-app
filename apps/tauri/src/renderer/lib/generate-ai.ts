@@ -14,8 +14,6 @@
  *   The user never sees literal asterisks.
  */
 
-import type { FileChild, ParagraphChild } from 'docx';
-
 import {
   buildCoverLetterPrompt,
   buildCoverLetterSystemPrompt,
@@ -206,13 +204,34 @@ interface MdSegment {
 }
 
 function parseInlineMd(line: string): MdSegment[] {
-  const parts = line.split(/\*\*([^*]+)\*\*/g);
+  // Handle edge cases: malformed markers, nested markers, escaped asterisks
   const segments: MdSegment[] = [];
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
-    if (!part) continue;
-    segments.push({ text: part, bold: i % 2 === 1 });
+  let current = '';
+  let inBold = false;
+  let i = 0;
+
+  while (i < line.length) {
+    // Check for ** (bold marker)
+    if (i < line.length - 1 && line[i] === '*' && line[i + 1] === '*') {
+      // Save current segment if any
+      if (current) {
+        segments.push({ text: current, bold: inBold });
+        current = '';
+      }
+      // Toggle bold state
+      inBold = !inBold;
+      i += 2;
+    } else {
+      current += line[i];
+      i++;
+    }
   }
+
+  // Save final segment
+  if (current) {
+    segments.push({ text: current, bold: inBold });
+  }
+
   return segments.length ? segments : [{ text: line, bold: false }];
 }
 
@@ -296,7 +315,53 @@ const SECTION_NAMES = new Set([
 ]);
 
 const DATE_RE =
-  /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|19\d\d|20\d\d)[\s\S]{0,30}?(?:Present|Current|Now|Heute|20\d\d|19\d\d)\b/i;
+  /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|19\d\d|20\d\d)[\s\S]{0,30}?(?:Present|Current|Now|Heute|Ongoing|Actuel|20\d\d|19\d\d)\b/i;
+
+// Common company/role keywords that should NOT be treated as section headers even if all caps
+const COMPANY_KEYWORDS = new Set([
+  'NASA',
+  'IBM',
+  'AWS',
+  'GCP',
+  'USA',
+  'UK',
+  'EU',
+  'CEO',
+  'CTO',
+  'VP',
+  'SVP',
+  'ENGINEER',
+  'DEVELOPER',
+  'MANAGER',
+  'DIRECTOR',
+  'LEAD',
+  'SENIOR',
+  'SR',
+  'JUNIOR',
+  'JR',
+  'STAFF',
+  'PRINCIPAL',
+  'ARCHITECT',
+  'ANALYST',
+  'CONSULTANT',
+  'IT',
+  'AI',
+  'ML',
+  'UI',
+  'UX',
+  'API',
+  'REST',
+  'SaaS',
+  'B2B',
+  'B2C',
+  'HR',
+]);
+
+// Check if all-caps text is likely a company/role, not a section header
+function isLikelyCompanyOrRole(text: string): boolean {
+  const words = text.split(/\s+/);
+  return words.some((word) => COMPANY_KEYWORDS.has(word));
+}
 
 function parseLine(raw: string, idx: number, all: string[]): ParsedLine {
   const trimmed = raw.trim();
@@ -313,11 +378,26 @@ function parseLine(raw: string, idx: number, all: string[]): ParsedLine {
   });
 
   if (!clean) return blank();
-  if (idx === 0) return make('name');
 
-  // Bullet
-  if (/^[•\-–*·▪▸►]\s/.test(clean)) {
-    const bulletText = trimmed.replace(/^[•\-–*·▪▸►]\s*/, '');
+  const lower = clean.toLowerCase();
+
+  // First line is name ONLY if it doesn't look like a section header or contact
+  if (idx === 0) {
+    // Skip if it's a known section header
+    if (SECTION_NAMES.has(lower)) {
+      return make('sectionHeader');
+    }
+    // Skip if it looks like contact info
+    if (clean.includes('@') || /\+?\d[\d\s\-().]{7,}/.test(clean)) {
+      return make('contact');
+    }
+    return make('name');
+  }
+
+  // Bullet - improved detection for various bullet styles and numbered lists
+  const bulletMatch = clean.match(/^([•\-–*·▪▸►✓✔○●◆◇■□▹▸]|\d+\.|[a-z]\))\s+(.+)$/i);
+  if (bulletMatch && bulletMatch[2]) {
+    const bulletText = trimmed.replace(/^([•\-–*·▪▸►✓✔○●◆◇■□▹▸]|\d+\.|[a-z]\))\s*/, '');
     return {
       kind: 'bullet',
       raw: bulletText,
@@ -326,28 +406,49 @@ function parseLine(raw: string, idx: number, all: string[]): ParsedLine {
     };
   }
 
-  // Section header: known name OR all-caps short line
-  const lower = clean.toLowerCase();
+  // Tab-indented bullet (common in copy-paste)
+  if (/^\t+/.test(raw) && clean.length > 5 && !SECTION_NAMES.has(lower)) {
+    const bulletText = trimmed;
+    return {
+      kind: 'bullet',
+      raw: bulletText,
+      text: stripMd(bulletText),
+      segments: parseInlineMd(bulletText),
+    };
+  }
+
+  // Section header: known name OR all-caps short line (but NOT company/role names)
+  if (SECTION_NAMES.has(lower)) {
+    return make('sectionHeader');
+  }
+
+  // All-caps detection - but exclude company names and roles
   if (
-    SECTION_NAMES.has(lower) ||
-    (clean === clean.toUpperCase() &&
-      clean.length <= 60 &&
-      /[A-ZÄÖÜ]{2,}/.test(clean) &&
-      !/\d{4}/.test(clean))
+    clean === clean.toUpperCase() &&
+    clean.length >= 4 &&
+    clean.length <= 60 &&
+    /[A-ZÄÖÜ]{2,}/.test(clean) &&
+    !/\d{4}/.test(clean) && // No years
+    !isLikelyCompanyOrRole(clean) && // Not a company/role
+    !DATE_RE.test(clean) && // Not a date
+    !clean.includes('@') // Not email
   ) {
     return make('sectionHeader');
   }
 
-  // Job entry: 3+ spaces gap before a date range
-  const gapMatch = clean.match(/^(.+?)\s{3,}(.+)$/);
+  // Job entry: 2+ spaces gap before a date range (more lenient)
+  const gapMatch = clean.match(/^(.+?)\s{2,}(.+)$/);
   if (gapMatch && gapMatch[1] && gapMatch[2] && DATE_RE.test(gapMatch[2])) {
-    return {
-      kind: 'jobEntry',
-      raw: trimmed,
-      text: gapMatch[1].trim(),
-      segments: parseInlineMd(trimmed.split(/\s{3,}/)[0] ?? trimmed),
-      rightText: gapMatch[2].trim(),
-    };
+    // Make sure left side is substantial (not just a word)
+    if (gapMatch[1].trim().split(/\s+/).length >= 2 || gapMatch[1].length > 10) {
+      return {
+        kind: 'jobEntry',
+        raw: trimmed,
+        text: gapMatch[1].trim(),
+        segments: parseInlineMd(trimmed.split(/\s{2,}/)[0] ?? trimmed),
+        rightText: gapMatch[2].trim(),
+      };
+    }
   }
   // Line that ends with a date range
   const endDate = clean.match(
@@ -363,12 +464,13 @@ function parseLine(raw: string, idx: number, all: string[]): ParsedLine {
     };
   }
 
-  // Contact: has @ or phone or pipe separators
+  // Contact: has @ or phone or pipe separators or URLs
   if (
     clean.includes('@') ||
     /\+?\d[\d\s\-().]{7,}/.test(clean) ||
-    clean.split(/[|·•]/).length >= 2 ||
-    /linkedin\.com/i.test(clean)
+    clean.split(/[|·•]/).length >= 3 || // At least 3 parts separated by pipes
+    /linkedin\.com|github\.com|portfolio|website/i.test(clean) ||
+    /^https?:\/\//i.test(clean)
   ) {
     return make('contact');
   }
@@ -485,428 +587,6 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
     sectionStyle: 'ruled-bottom',
   },
 };
-
-// ─── DOCX helpers ─────────────────────────────────────────────────────────────
-
-/** Convert **bold** markdown segments into TextRun[] for docx. */
-function mdRunsDocx(
-  text: string,
-  base: {
-    size: number;
-    color: string;
-    font: string;
-    italics?: boolean;
-    bold?: boolean;
-  },
-  emphasisColor?: string
-) {
-  const segs = parseInlineMd(text);
-  return (TextRun: new (opts: object) => ParagraphChild) =>
-    segs.map(
-      (seg) =>
-        new TextRun({
-          text: seg.text,
-          font: base.font,
-          size: base.size,
-          color: seg.bold ? (emphasisColor ?? base.color) : base.color,
-          bold: seg.bold || !!base.bold,
-          italics: base.italics,
-        })
-    );
-}
-
-// ─── DOCX Resume builder ──────────────────────────────────────────────────────
-
-async function buildResumeDocx(text: string, meta: GenerationMeta | undefined, tpl: DocTemplate) {
-  const { Document, Paragraph, TextRun, BorderStyle, TabStopType, convertInchesToTwip } =
-    await import('docx');
-
-  const F = 'Calibri';
-  const PT = (pt: number) => Math.round(pt * 2); // pt → half-pt
-  const PAGE_W = convertInchesToTwip(6.27);
-
-  const parsed = parseDocument(text);
-  const children: FileChild[] = [];
-
-  // Section header border config
-  const sectionBorder =
-    tpl.sectionStyle === 'ruled-bottom'
-      ? { bottom: { color: tpl.accentColor, space: 3, style: BorderStyle.SINGLE, size: 8 } }
-      : tpl.sectionStyle === 'underline'
-        ? { bottom: { color: tpl.accentColor, space: 2, style: BorderStyle.SINGLE, size: 4 } }
-        : undefined;
-
-  let nameWritten = false;
-
-  for (let i = 0; i < parsed.length; i++) {
-    const line = parsed[i];
-    if (!line) continue;
-
-    switch (line.kind) {
-      case 'blank':
-        if (i > 0 && parsed[i - 1]?.kind !== 'sectionHeader') {
-          children.push(new Paragraph({ children: [], spacing: { after: 60 } }));
-        }
-        break;
-
-      case 'name': {
-        nameWritten = true;
-        const nameText = meta?.candidateName || line.text;
-        children.push(
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: nameText,
-                bold: true,
-                size: PT(tpl.namePt),
-                color: tpl.nameColor,
-                font: F,
-              }),
-            ],
-            alignment: tpl.nameCentered ? 'center' : 'left',
-            spacing: { after: 40 },
-          })
-        );
-        break;
-      }
-
-      case 'contact':
-        children.push(
-          new Paragraph({
-            children: [
-              new TextRun({ text: line.text, size: PT(9), color: tpl.dateColor, font: F }),
-            ],
-            alignment: tpl.nameCentered ? 'center' : 'left',
-            spacing: { after: 0 },
-            border: {
-              bottom: { color: tpl.ruleColor, space: 6, style: BorderStyle.SINGLE, size: 3 },
-            },
-          })
-        );
-        children.push(new Paragraph({ children: [], spacing: { after: 80 } }));
-        break;
-
-      case 'sectionHeader': {
-        const headerText = tpl.sectionAllCaps ? line.text.toUpperCase() : line.text;
-        children.push(
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: headerText,
-                bold: true,
-                size: PT(tpl.sectionPt),
-                color: tpl.sectionColor,
-                font: F,
-                characterSpacing: tpl.sectionAllCaps ? 30 : 0,
-              }),
-            ],
-            spacing: { before: tpl.sectionSpacingBefore, after: 60 },
-            ...(sectionBorder ? { border: sectionBorder } : {}),
-          })
-        );
-        break;
-      }
-
-      case 'jobEntry': {
-        const runsFactory = mdRunsDocx(
-          line.raw.split(/\s{3,}/)[0] ?? line.raw,
-          {
-            size: PT(tpl.bodyPt),
-            color: tpl.bodyColor,
-            font: F,
-            bold: true,
-          },
-          tpl.emphasisColor
-        );
-        children.push(
-          new Paragraph({
-            tabStops: [{ type: TabStopType.RIGHT, position: PAGE_W }],
-            children: [
-              ...runsFactory(TextRun),
-              new TextRun({ text: '\t', font: F }),
-              new TextRun({
-                text: line.rightText ?? '',
-                size: PT(9.5),
-                color: tpl.dateColor,
-                font: F,
-              }),
-            ],
-            spacing: { before: 160, after: 20 },
-          })
-        );
-        break;
-      }
-
-      case 'jobTitle': {
-        const runsFactory = mdRunsDocx(
-          line.raw,
-          {
-            size: PT(tpl.bodyPt - 0.5),
-            color: tpl.dateColor,
-            font: F,
-            italics: true,
-          },
-          tpl.emphasisColor
-        );
-        children.push(
-          new Paragraph({
-            children: runsFactory(TextRun),
-            spacing: { after: 60 },
-          })
-        );
-        break;
-      }
-
-      case 'bullet': {
-        const runsFactory = mdRunsDocx(
-          line.raw,
-          {
-            size: PT(tpl.bodyPt),
-            color: tpl.bodyColor,
-            font: F,
-          },
-          tpl.emphasisColor
-        );
-        children.push(
-          new Paragraph({
-            children: runsFactory(TextRun),
-            bullet: { level: 0 },
-            spacing: { after: 40 },
-            indent: { left: convertInchesToTwip(0.2) },
-          })
-        );
-        break;
-      }
-
-      default: {
-        const runsFactory = mdRunsDocx(
-          line.raw,
-          {
-            size: PT(tpl.bodyPt),
-            color: tpl.bodyColor,
-            font: F,
-          },
-          tpl.emphasisColor
-        );
-        children.push(
-          new Paragraph({
-            children: runsFactory(TextRun),
-            spacing: { after: 80 },
-          })
-        );
-      }
-    }
-  }
-
-  if (!nameWritten && meta?.candidateName) {
-    children.unshift(
-      new Paragraph({
-        children: [
-          new TextRun({
-            text: meta.candidateName,
-            bold: true,
-            size: PT(tpl.namePt),
-            color: tpl.nameColor,
-            font: F,
-          }),
-        ],
-        alignment: tpl.nameCentered ? 'center' : 'left',
-        spacing: { after: 40 },
-      })
-    );
-  }
-
-  return new Document({
-    styles: {
-      default: {
-        document: {
-          run: { font: F, size: PT(tpl.bodyPt), color: tpl.bodyColor },
-          paragraph: { spacing: { line: tpl.lineSpacingDocx } },
-        },
-      },
-    },
-    sections: [
-      {
-        properties: {
-          page: {
-            margin: {
-              top: convertInchesToTwip(0.9),
-              bottom: convertInchesToTwip(0.9),
-              left: convertInchesToTwip(tpl.marginIn),
-              right: convertInchesToTwip(tpl.marginIn),
-            },
-          },
-        },
-        children,
-      },
-    ],
-  });
-}
-
-// ─── DOCX Cover Letter builder ────────────────────────────────────────────────
-
-async function buildCoverLetterDocx(
-  text: string,
-  meta: GenerationMeta | undefined,
-  tpl: DocTemplate
-) {
-  const { Document, Paragraph, TextRun, BorderStyle, convertInchesToTwip } = await import('docx');
-  const F = 'Calibri';
-  const PT = (pt: number) => Math.round(pt * 2);
-  const children: FileChild[] = [];
-
-  const lines = text.split('\n').map((l) => l.trim());
-  let headerDone = false;
-  let inBody = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i];
-    if (!raw) continue;
-    const clean = stripMd(raw);
-    if (!clean) {
-      children.push(new Paragraph({ children: [], spacing: { after: 120 } }));
-      continue;
-    }
-
-    const isSalutation = /^(?:Dear|Sehr geehrte|À l'attention|Estimado|Geachte)/i.test(clean);
-    const isSignoff =
-      /^(?:Kind regards|Sincerely|Best regards|Yours|Mit freundlichen|Cordialement|Atenciosamente)/i.test(
-        clean
-      );
-    const isDate =
-      i > 0 &&
-      !headerDone &&
-      /^(?:\d{1,2}\s+\w+|\w+\s+\d{4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec))/i.test(
-        clean
-      );
-
-    // Name — first line
-    if (i === 0) {
-      children.push(
-        new Paragraph({
-          children: [
-            new TextRun({
-              text: meta?.candidateName || clean,
-              bold: true,
-              size: PT(tpl.namePt - 2),
-              color: tpl.nameColor,
-              font: F,
-            }),
-          ],
-          spacing: { after: 40 },
-        })
-      );
-      continue;
-    }
-
-    // Contact line
-    if (
-      !headerDone &&
-      (clean.includes('@') || /\|/.test(clean) || /\+?\d[\d\s\-()]{6,}/.test(clean))
-    ) {
-      children.push(
-        new Paragraph({
-          children: [new TextRun({ text: clean, size: PT(9), color: tpl.dateColor, font: F })],
-          spacing: { after: 0 },
-          border: {
-            bottom: { color: tpl.ruleColor, space: 5, style: BorderStyle.SINGLE, size: 3 },
-          },
-        })
-      );
-      children.push(new Paragraph({ children: [], spacing: { after: 180 } }));
-      headerDone = true;
-      continue;
-    }
-
-    if (isDate) {
-      children.push(
-        new Paragraph({
-          children: [new TextRun({ text: clean, size: PT(9.5), color: tpl.dateColor, font: F })],
-          spacing: { after: 140 },
-        })
-      );
-      continue;
-    }
-
-    if (isSalutation) {
-      inBody = true;
-      children.push(
-        new Paragraph({
-          children: [
-            new TextRun({
-              text: clean,
-              bold: true,
-              size: PT(tpl.bodyPt),
-              color: tpl.bodyColor,
-              font: F,
-            }),
-          ],
-          spacing: { before: 120, after: 180 },
-        })
-      );
-      continue;
-    }
-
-    if (isSignoff) {
-      children.push(
-        new Paragraph({
-          children: [
-            new TextRun({ text: clean, size: PT(tpl.bodyPt), color: tpl.bodyColor, font: F }),
-          ],
-          spacing: { before: 180, after: 320 },
-        })
-      );
-      continue;
-    }
-
-    if (!inBody) {
-      // Addressee block
-      children.push(
-        new Paragraph({
-          children: [
-            new TextRun({ text: clean, size: PT(tpl.bodyPt - 1), color: tpl.dateColor, font: F }),
-          ],
-          spacing: { after: 60 },
-        })
-      );
-      continue;
-    }
-
-    // Body paragraph with inline bold
-    const runsFactory = mdRunsDocx(
-      raw,
-      { size: PT(tpl.bodyPt + 0.5), color: tpl.bodyColor, font: F },
-      tpl.emphasisColor
-    );
-    children.push(new Paragraph({ children: runsFactory(TextRun), spacing: { after: 200 } }));
-  }
-
-  return new Document({
-    styles: {
-      default: {
-        document: {
-          run: { font: F, size: PT(tpl.bodyPt), color: tpl.bodyColor },
-          paragraph: { spacing: { line: 300 } },
-        },
-      },
-    },
-    sections: [
-      {
-        properties: {
-          page: {
-            margin: {
-              top: convertInchesToTwip(1.0),
-              bottom: convertInchesToTwip(1.0),
-              left: convertInchesToTwip(tpl.marginIn + 0.15),
-              right: convertInchesToTwip(tpl.marginIn + 0.15),
-            },
-          },
-        },
-        children,
-      },
-    ],
-  });
-}
 
 // ─── PDF helpers ──────────────────────────────────────────────────────────────
 
@@ -1298,6 +978,33 @@ export async function exportCoverLetterPDF(
   doc.save(filename);
 }
 
+// ─── Cover letter text extraction ────────────────────────────────────────────
+
+/**
+ * Strips prompt scaffolding from AI cover letter output.
+ * If the AI echoed the resume/job-ad context, extract only the letter section.
+ */
+function extractCoverLetterText(raw: string): string {
+  const marker = '### COMPLETE COVER LETTER ###';
+  const idx = raw.indexOf(marker);
+  if (idx !== -1) {
+    return raw.slice(idx + marker.length).trim();
+  }
+  // Fallback: if the AI output contains the resume section marker, strip everything before the letter.
+  // Heuristic: find first "Dear " or "Sehr geehrte" that comes after any ### markers.
+  const lastHash = raw.lastIndexOf('###');
+  if (lastHash !== -1) {
+    const afterHash = raw.slice(lastHash);
+    const salutationMatch = afterHash.search(/\n(Dear |Sehr geehrte)/);
+    if (salutationMatch !== -1) {
+      return afterHash.slice(salutationMatch).trim();
+    }
+    // If no salutation found after last ###, just return everything after it.
+    return afterHash.replace(/^###[^\n]*\n/, '').trim();
+  }
+  return raw.trim();
+}
+
 // ─── Public export API ────────────────────────────────────────────────────────
 
 export async function exportDOCX(
@@ -1307,20 +1014,44 @@ export async function exportDOCX(
   meta?: GenerationMeta,
   templateId: TemplateId = 'modern'
 ): Promise<void> {
-  const { Packer } = await import('docx');
-  const tpl = TEMPLATES[templateId];
-  const doc =
-    type === 'resume'
-      ? await buildResumeDocx(text, meta, tpl)
-      : await buildCoverLetterDocx(text, meta, tpl);
+  try {
+    // Validation
+    if (!text || text.trim().length === 0) {
+      throw new Error('Cannot export empty document. Please generate content first.');
+    }
+    if (!filename || filename.trim().length === 0) {
+      throw new Error('Invalid filename provided.');
+    }
+    if (!TEMPLATES[templateId]) {
+      console.warn(`Template "${templateId}" not found, using "modern" instead.`);
+      templateId = 'modern';
+    }
 
-  const blob = new Blob([new Uint8Array(await Packer.toBuffer(doc))], {
-    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  });
-  const url = URL.createObjectURL(blob);
-  const a = Object.assign(document.createElement('a'), { href: url, download: filename });
-  a.click();
-  URL.revokeObjectURL(url);
+    // Use Rust backend for export with file dialog
+    const { getClient } = await import('@/lib/app-client');
+    const api = getClient();
+    const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
+    const _filePath = await api.documents.exportAndSave({
+      text: exportText,
+      format: 'docx',
+      documentType: type,
+      templateId: templateId as 'classic' | 'modern' | 'executive',
+      meta: meta
+        ? {
+            candidateName: meta.candidateName,
+            jobTitle: meta.jobTitle,
+            companyName: meta.companyName,
+            targetLanguage: meta.targetLanguage,
+          }
+        : undefined,
+    });
+  } catch (error) {
+    console.error('DOCX export failed:', error);
+    throw new Error(
+      `Failed to export DOCX: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      { cause: error }
+    );
+  }
 }
 
 export async function exportPDF(
@@ -1330,15 +1061,67 @@ export async function exportPDF(
   meta?: GenerationMeta,
   templateId: TemplateId = 'modern'
 ): Promise<void> {
-  if (type === 'cover-letter') await exportCoverLetterPDF(text, filename, meta, templateId);
-  else await exportResumePDF(text, filename, meta, templateId);
+  try {
+    // Validation
+    if (!text || text.trim().length === 0) {
+      throw new Error('Cannot export empty document. Please generate content first.');
+    }
+    if (!filename || filename.trim().length === 0) {
+      throw new Error('Invalid filename provided.');
+    }
+    if (!TEMPLATES[templateId]) {
+      console.warn(`Template "${templateId}" not found, using "modern" instead.`);
+      templateId = 'modern';
+    }
+
+    // Use Rust backend for export with file dialog
+    const { getClient } = await import('@/lib/app-client');
+    const api = getClient();
+    const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
+    const _filePath = await api.documents.exportAndSave({
+      text: exportText,
+      format: 'pdf',
+      documentType: type,
+      templateId: templateId as 'classic' | 'modern' | 'executive',
+      meta: meta
+        ? {
+            candidateName: meta.candidateName,
+            jobTitle: meta.jobTitle,
+            companyName: meta.companyName,
+            targetLanguage: meta.targetLanguage,
+          }
+        : undefined,
+    });
+  } catch (error) {
+    console.error('PDF export failed:', error);
+    throw new Error(
+      `Failed to export PDF: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      { cause: error }
+    );
+  }
 }
 
 export function exportTXT(text: string, filename: string): void {
-  const clean = stripMd(text); // no **asterisks** in plain text
-  const blob = new Blob([clean], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = Object.assign(document.createElement('a'), { href: url, download: filename });
-  a.click();
-  URL.revokeObjectURL(url);
+  try {
+    // Validation
+    if (!text || text.trim().length === 0) {
+      throw new Error('Cannot export empty document. Please generate content first.');
+    }
+    if (!filename || filename.trim().length === 0) {
+      throw new Error('Invalid filename provided.');
+    }
+
+    const clean = stripMd(text); // no **asterisks** in plain text
+    const blob = new Blob([clean], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('TXT export failed:', error);
+    throw new Error(
+      `Failed to export TXT: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      { cause: error }
+    );
+  }
 }

@@ -59,6 +59,25 @@ jobs:
       - name: Check Formatting
         run: pnpm format:check
 
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/tauri/src-tauri
+
+      - name: Cargo Check
+        working-directory: apps/tauri/src-tauri
+        run: cargo check --all-targets
+
+      - name: Cargo Clippy
+        working-directory: apps/tauri/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
       - name: Notify Discord Failure
         if: failure()
         uses: sarisia/actions-status-discord@v1

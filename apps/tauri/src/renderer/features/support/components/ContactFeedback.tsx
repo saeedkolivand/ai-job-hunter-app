@@ -1,7 +1,7 @@
 import { Copy } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, SelectDropdown, TextArea, useToast } from '@ajh/ui';
+import { Button, SelectDropdown, TextArea, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import {
@@ -26,7 +26,7 @@ export function ContactFeedback() {
   const [feedbackType, setFeedbackType] = useState<string>('bugReport');
   const [description, setDescription] = useState('');
 
-  const toast = useToast();
+  const notify = useNotification();
   const exportDiagnostics = useExportDiagnostics();
   const copyEnvDetails = useCopyEnvironmentDetails();
   const copyAppVersion = useCopyAppVersion();
@@ -74,10 +74,10 @@ export function ContactFeedback() {
                 success: boolean;
                 bundlePath?: string;
               };
-              if (res.success) toast('Diagnostics bundle exported.', 'success');
-              else toast('Export failed.', 'error');
+              if (res.success) notify('Diagnostics bundle exported.', 'success');
+              else notify('Export failed.', 'error');
             } catch (err) {
-              toast(err instanceof Error ? err.message : 'Export failed.', 'error');
+              notify(err instanceof Error ? err.message : 'Export failed.', 'error');
             }
           }}
         >
@@ -126,7 +126,7 @@ export function ContactFeedback() {
             loading={copyEnvDetails.isPending}
             onClick={async () => {
               await copyEnvDetails.mutateAsync();
-              toast('Copied to clipboard.', 'success');
+              notify('Copied to clipboard.', 'success');
             }}
           >
             <Copy size={14} className="mr-2" />
@@ -139,7 +139,7 @@ export function ContactFeedback() {
             loading={copyAppVersion.isPending}
             onClick={async () => {
               await copyAppVersion.mutateAsync();
-              toast('Copied to clipboard.', 'success');
+              notify('Copied to clipboard.', 'success');
             }}
           >
             <Copy size={14} className="mr-2" />
@@ -152,7 +152,7 @@ export function ContactFeedback() {
             loading={copySystemInfo.isPending}
             onClick={async () => {
               await copySystemInfo.mutateAsync();
-              toast('Copied to clipboard.', 'success');
+              notify('Copied to clipboard.', 'success');
             }}
           >
             <Copy size={14} className="mr-2" />
