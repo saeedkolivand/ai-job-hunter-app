@@ -131,21 +131,6 @@ jobs:
       - name: Build Packages
         run: pnpm build:packages
 
-      - name: Build Sidecar Binary (Windows)
-        run: pnpm --filter @ajh/scraper-runtime build:binary
-        env:
-          PKG_CACHE_PATH: ${{ runner.temp }}/pkg-cache
-
-      - name: Rename Sidecar Binary to Tauri Target Triple (Windows)
-        run: |
-          Move-Item `
-            apps/tauri/src-tauri/binaries/scraper-runtime.exe `
-            apps/tauri/src-tauri/binaries/scraper-runtime-x86_64-pc-windows-msvc.exe
-        shell: pwsh
-
-      - name: Inject Sidecar Binary into tauri.conf.json resources (Windows)
-        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('apps/tauri/src-tauri/tauri.conf.json'));p.bundle.resources=['binaries/scraper-runtime-x86_64-pc-windows-msvc.exe'];fs.writeFileSync('apps/tauri/src-tauri/tauri.conf.json',JSON.stringify(p,null,2)+'\n');"
-
       - name: Sync Tauri Version and Inject Signing Key
         run: node scripts/sync-tauri-version.cjs ${{ needs.determine-release.outputs.version }}
         env:
@@ -226,25 +211,6 @@ jobs:
 
       - name: Build Packages
         run: pnpm build:packages
-
-      - name: Build Sidecar Binary (macOS)
-        run: |
-          cd apps/scraper-runtime
-          pnpm build
-          npx --yes @vercel/ncc build dist/index.js -o dist/bundle --no-source-map-register -q
-          # Build each architecture separately with an explicit output path so no
-          # renaming is needed. pkg downloads the cross-compile Node base binary.
-          npx @yao-pkg/pkg dist/bundle/index.js --no-bytecode --public-packages "*" --public \
-            -t node20-macos-arm64 \
-            -o ../../apps/tauri/src-tauri/binaries/scraper-runtime-aarch64-apple-darwin
-          npx @yao-pkg/pkg dist/bundle/index.js --no-bytecode --public-packages "*" --public \
-            -t node20-macos-x64 \
-            -o ../../apps/tauri/src-tauri/binaries/scraper-runtime-x86_64-apple-darwin
-        env:
-          PKG_CACHE_PATH: ${{ runner.temp }}/pkg-cache
-
-      - name: Inject Sidecar Binary into tauri.conf.json resources (macOS)
-        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('apps/tauri/src-tauri/tauri.conf.json'));p.bundle.resources=['binaries/scraper-runtime-aarch64-apple-darwin','binaries/scraper-runtime-x86_64-apple-darwin'];fs.writeFileSync('apps/tauri/src-tauri/tauri.conf.json',JSON.stringify(p,null,2)+'\n');"
 
       - name: Sync Tauri Version and Inject Signing Key
         run: node scripts/sync-tauri-version.cjs ${{ needs.determine-release.outputs.version }}
