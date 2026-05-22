@@ -136,7 +136,7 @@ function NotificationCard({ item, onClose }: { item: NotificationItem; onClose: 
             justifyContent: 'center',
             borderRadius: '10px',
             background: cfg.iconBg,
-            color: '#fff',
+            color: 'var(--color-brand)',
             boxShadow: `0 4px 12px ${cfg.glow}`,
           }}
         >

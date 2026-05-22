@@ -73,19 +73,23 @@ const KIND_SHORT: Record<string, string> = {
 function MonitoringPage() {
   const { t } = useTranslation();
 
-  const KIND_LABEL_MAP: Record<string, string> = {
-    'ai.generate': t('monitoring.jobKinds.aiGenerate'),
-    'ai.embed': t('monitoring.jobKinds.aiEmbed'),
-    'document.import': t('monitoring.jobKinds.documentImport'),
-    'document.ocr': t('monitoring.jobKinds.documentOcr'),
-    'document.chunk': t('monitoring.jobKinds.documentChunk'),
-    'document.index': t('monitoring.jobKinds.documentIndex'),
-    'scrape.board': t('monitoring.jobKinds.scrapeBoard'),
-    'scrape.url': t('monitoring.jobKinds.scrapeUrl'),
-    'persist.job': t('monitoring.jobKinds.persistJob'),
-    'match.resume': t('monitoring.jobKinds.matchResume'),
-    'apply.job': t('monitoring.jobKinds.applyJob'),
-  };
+  const KIND_LABEL_MAP = useMemo(
+    () =>
+      ({
+        'ai.generate': t('monitoring.jobKinds.aiGenerate'),
+        'ai.embed': t('monitoring.jobKinds.aiEmbed'),
+        'document.import': t('monitoring.jobKinds.documentImport'),
+        'document.ocr': t('monitoring.jobKinds.documentOcr'),
+        'document.chunk': t('monitoring.jobKinds.documentChunk'),
+        'document.index': t('monitoring.jobKinds.documentIndex'),
+        'scrape.board': t('monitoring.jobKinds.scrapeBoard'),
+        'scrape.url': t('monitoring.jobKinds.scrapeUrl'),
+        'persist.job': t('monitoring.jobKinds.persistJob'),
+        'match.resume': t('monitoring.jobKinds.matchResume'),
+        'apply.job': t('monitoring.jobKinds.applyJob'),
+      }) as Record<string, string>,
+    [t]
+  );
 
   // Live-only events not yet reflected in the refetched queue
   const [liveActivity, setLiveActivity] = useState<ActivityItem[]>([]);
