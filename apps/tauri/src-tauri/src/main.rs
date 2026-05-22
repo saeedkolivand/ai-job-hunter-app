@@ -21,6 +21,7 @@ mod commands;
 mod conversations;
 mod credentials;
 mod documents;
+mod export;
 mod jobs;
 mod postings;
 mod scraping;
@@ -260,6 +261,8 @@ fn main() {
             commands::autopilot_run,
             commands::autopilot_pause,
             commands::autopilot_resume,
+            // export
+            export::export_document,
             // updater
             updater::updater_check,
             updater::updater_download,
