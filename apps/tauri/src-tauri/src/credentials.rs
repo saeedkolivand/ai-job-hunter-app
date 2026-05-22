@@ -12,12 +12,7 @@
 ///             { [boardId]: { board_id, username, saved_at } }
 ///
 /// The renderer only ever receives metadata — passwords stay in Rust and are
-/// forwarded to the scraper sidecar in-memory over localhost HTTP.
-///
-/// ── Phase B status ───────────────────────────────────────────────────────────
-/// Phase B (this file): OS keychain via the `keyring` crate.
-/// Phase C (future): expose `get_all_decrypted` to push credentials to the
-/// sidecar's set.credentials endpoint on startup.
+/// looked up by scrapers/appliers via `get_decrypted(board_id)`.
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -96,7 +91,7 @@ impl CredentialStore {
         Ok(())
     }
 
-    /// Returns (username, password) for internal use only (sidecar push).
+    /// Returns (username, password) for internal use only (scraper/applier).
     /// Never exposed directly over IPC — the renderer only ever sees metadata.
     pub fn get_decrypted(&self, board_id: &str) -> Option<(String, String)> {
         let meta = self.load_meta();
@@ -108,8 +103,8 @@ impl CredentialStore {
         Some((m.username.clone(), password))
     }
 
-    /// Returns all (boardId, username, password) tuples for pushing to the
-    /// scraper sidecar on startup.
+    /// Returns every stored (boardId, username, password) tuple.
+    #[allow(dead_code)]
     pub fn get_all_decrypted(&self) -> Vec<(String, String, String)> {
         self.list()
             .into_iter()
