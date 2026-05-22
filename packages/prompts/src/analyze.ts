@@ -8,10 +8,10 @@
  */
 
 import {
-  truncateResume,
-  getStrategyForModel,
-  getResumeStats,
   estimateTokens,
+  getResumeStats,
+  getStrategyForModel,
+  truncateResume,
 } from './context-manager';
 
 // ─── Output schema types ────────────────────────────────────────────────────
@@ -384,21 +384,12 @@ export function buildAnalysisPrompt(resume: string, jobAd: string, meta: PromptM
   const modelType = strategy.modelType || 'large';
 
   let r: string;
-  let truncationNote = '';
 
   if (resumeTokens > strategy.maxTokens) {
-    console.log(
+    console.warn(
       `Resume/model mismatch: ${stats.estimatedPages} pages (${resumeTokens} tokens) for ${modelType} model (limit: ${strategy.maxTokens})`
     );
     r = truncateResume(resume, strategy);
-
-    if (modelType === 'small') {
-      truncationNote = `\n\nNOTE: Using a small local model with limited context. Resume has been condensed to essential sections (Summary, Experience, Skills). For full analysis, consider using a larger model.`;
-    } else if (modelType === 'medium') {
-      truncationNote = `\n\nNOTE: Resume condensed for medium-sized model. Focus on core sections with some details omitted.`;
-    } else {
-      truncationNote = `\n\nNOTE: Large resume (${stats.estimatedPages}+ pages) condensed. Analysis focuses on most relevant sections.`;
-    }
   } else {
     r = resume;
   }

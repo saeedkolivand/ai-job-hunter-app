@@ -11,13 +11,6 @@
  * as literal asterisks.
  */
 
-import {
-  truncateResume,
-  GENERATION_STRATEGY,
-  getResumeStats,
-  estimateTokens,
-} from './context-manager';
-
 export type GenerationMode =
   | 'ats' // Conservative ATS Optimization
   | 'recruiter' // Recruiter-Friendly Rewrite
