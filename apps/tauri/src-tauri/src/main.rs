@@ -2,13 +2,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod autopilot;
+mod applying;
+mod browser;
 mod commands;
 mod conversations;
 mod credentials;
 mod documents;
 mod jobs;
 mod postings;
-mod sidecar;
+mod scraping;
 mod updater;
 
 use std::sync::Mutex;
@@ -21,7 +23,7 @@ use autopilot::AutopilotStore;
 use credentials::CredentialStore;
 use jobs::JobTracker;
 use postings::{InteractionStore, PostingsCache};
-use sidecar::ScraperSidecarState;
+use scraping::ScraperEngine;
 use updater::UpdaterState;
 
 // ── App menu ──────────────────────────────────────────────────────────────────
@@ -102,12 +104,10 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .manage(Mutex::new(ScraperSidecarState::default()))
         .setup(|app| {
             let handle = app.handle();
 
@@ -115,6 +115,12 @@ fn main() {
             let data_dir = app.path().app_data_dir().unwrap_or_else(|_| {
                 std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".ajh")
             });
+            // Export so scrapers (which don't have an AppHandle) can resolve
+            // the same directory via `std::env::var("AJH_DATA_DIR")`.
+            if std::env::var_os("AJH_DATA_DIR").is_none() {
+                // SAFETY: only writer, called once before any worker spawns.
+                unsafe { std::env::set_var("AJH_DATA_DIR", &data_dir); }
+            }
 
             app.manage(Mutex::new(AutopilotStore::new(&data_dir)));
             app.manage(Mutex::new(CredentialStore::new(&data_dir)));
@@ -126,6 +132,7 @@ fn main() {
             app.manage(Mutex::new(PostingsCache::default()));
             app.manage(Mutex::new(InteractionStore::new(&data_dir)));
             app.manage(Mutex::new(UpdaterState::default()));
+            app.manage(std::sync::Arc::new(ScraperEngine::new()));
             if let Ok(db) = conversations::ConversationDb::open(handle) {
                 app.manage(db);
             } else {
@@ -140,12 +147,6 @@ fn main() {
             // Build system tray.
             if let Err(e) = build_tray(handle) {
                 eprintln!("[setup] tray build error (non-fatal): {e}");
-            }
-
-            // Attempt to start the scraper sidecar. Failure is non-fatal —
-            // scrape commands return stubs when sidecar is unavailable.
-            if let Err(e) = sidecar::try_start(handle) {
-                eprintln!("[setup] sidecar start error (non-fatal): {e}");
             }
 
             // Schedule background update checks (10 s after launch, then every 4 h).

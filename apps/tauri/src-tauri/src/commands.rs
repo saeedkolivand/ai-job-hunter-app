@@ -1,7 +1,7 @@
 /// Tauri command implementations for the AJH shell.
 ///
 /// Real commands: system_health/version/platform/locale/openExternal,
-///                scrape_board, scrape_url (proxy to scraper sidecar),
+///                scrape_board (in-process Rust engine),
 ///                credentials_* (OS keychain via keyring crate),
 ///                dialog_open_files.
 ///
@@ -14,40 +14,7 @@ use crate::autopilot::{AutopilotStatus, AutopilotStore};
 use crate::credentials::CredentialStore;
 use crate::jobs::JobTracker;
 use crate::postings::{InteractionRecord, InteractionStore, PostingsCache};
-use crate::sidecar::ScraperSidecarState;
-
-// ── Sidecar HTTP helpers ──────────────────────────────────────────────────────
-
-fn sidecar_port(app: &AppHandle) -> Option<u16> {
-    app.state::<Mutex<ScraperSidecarState>>()
-        .lock()
-        .ok()
-        .and_then(|g| g.port)
-}
-
-async fn ensure_sidecar_port(app: &AppHandle) -> Option<u16> {
-    if let Some(port) = sidecar_port(app) {
-        return Some(port);
-    }
-
-    let should_start = app
-        .state::<Mutex<ScraperSidecarState>>()
-        .lock()
-        .map(|g| !g.running)
-        .unwrap_or(false);
-    if should_start {
-        crate::sidecar::try_start(app).ok();
-    }
-
-    for _ in 0..50 {
-        if let Some(port) = sidecar_port(app) {
-            return Some(port);
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
-
-    None
-}
+use crate::scraping::{BoardSearchInput, ScraperEngine};
 
 fn now_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -66,82 +33,12 @@ fn uuid_v4() -> String {
     format!("job-{t:x}")
 }
 
-/// POST a ScraperCommand to the sidecar, stream SSE events back, and
-/// update JobTracker + PostingsCache while events arrive.
-async fn post_sidecar_command(
-    app: &AppHandle,
-    port: u16,
-    cmd: &Value,
-    job_id: &str,
-) -> Result<Value, String> {
-    let url = format!("http://127.0.0.1:{port}/command");
-
-    let response = reqwest::Client::new()
-        .post(&url)
-        .json(cmd)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let body = response.text().await.map_err(|e| e.to_string())?;
-    let mut last_done: Value = json!(null);
-
-    for line in body.lines() {
-        if let Some(data) = line.strip_prefix("data: ") {
-            if let Ok(event) = serde_json::from_str::<Value>(data) {
-                let kind = event.get("kind").and_then(|k| k.as_str()).unwrap_or("");
-                match kind {
-                    "done" => {
-                        last_done = event.get("result").cloned().unwrap_or(json!(null));
-                        app.state::<Mutex<JobTracker>>()
-                            .lock()
-                            .unwrap()
-                            .complete(job_id, last_done.clone());
-                        let _ = app.emit("jobs:event", json!({"type":"job.completed","jobId":job_id}));
-                    }
-                    "progress" => {
-                        let p = event.get("p").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                        app.state::<Mutex<JobTracker>>()
-                            .lock()
-                            .unwrap()
-                            .update_progress(job_id, p);
-                        let _ = app.emit("jobs:event", event.clone());
-                    }
-                    "item" => {
-                        if let Some(item) = event.get("item").cloned() {
-                            app.state::<Mutex<PostingsCache>>()
-                                .lock()
-                                .unwrap()
-                                .add(item);
-                        }
-                        let _ = app.emit("jobs:event", event.clone());
-                    }
-                    "error" => {
-                        let msg = event
-                            .get("message")
-                            .and_then(|m| m.as_str())
-                            .unwrap_or("sidecar error")
-                            .to_string();
-                        app.state::<Mutex<JobTracker>>()
-                            .lock()
-                            .unwrap()
-                            .fail(job_id, msg.clone());
-                        return Err(msg);
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    Ok(last_done)
-}
-
 // ── System ──────────────────────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn system_health(app: AppHandle) -> Value {
-    let scraper_ready = sidecar_port(&app).is_some();
+    let engine = app.state::<std::sync::Arc<ScraperEngine>>();
+    let scraper_health = engine.health();
 
     // Check Ollama availability and get the running model if any.
     let base = std::env::var("OLLAMA_HOST")
@@ -170,7 +67,7 @@ pub async fn system_health(app: AppHandle) -> Value {
     json!({
         "status": "ok",
         "shell": "tauri",
-        "scraper": { "mode": "http-sidecar", "ready": scraper_ready },
+        "scraper": { "mode": scraper_health.mode, "ready": scraper_health.ready, "scrapers": scraper_health.scrapers },
         "ai": { "ready": ai_ready, "model": ai_model },
         "data": { "ready": true, "sqlite": true, "vector": true },
         "workers": { "active": 0, "idle": 1, "max": 1 }
@@ -237,12 +134,9 @@ pub async fn system_open_external(app: AppHandle, url: String) -> Result<(), Str
 
 #[tauri::command]
 pub async fn system_set_performance_mode(app: AppHandle, mode: String) -> Value {
-    // Forward to the sidecar so scraping concurrency is adjusted live.
-    if let Some(port) = sidecar_port(&app) {
-        let job_id = uuid_v4();
-        let cmd = json!({ "kind": "set.performance_mode", "mode": mode });
-        post_sidecar_command(&app, port, &cmd, &job_id).await.ok();
-    }
+    // Update the engine's performance mode
+    let engine = app.state::<std::sync::Arc<ScraperEngine>>();
+    engine.set_performance_mode(&mode);
     json!(null)
 }
 
@@ -362,16 +256,10 @@ pub fn jobs_get(app: AppHandle, job_id: String) -> Value {
 
 #[tauri::command]
 pub async fn jobs_cancel(app: AppHandle, job_id: String) -> Value {
-    // Tell the sidecar to abort then update local tracker.
-    if let Some(port) = sidecar_port(&app) {
-        let cmd = json!({ "kind": "cancel", "jobId": job_id });
-        reqwest::Client::new()
-            .post(format!("http://127.0.0.1:{port}/command"))
-            .json(&cmd)
-            .send()
-            .await
-            .ok();
-    }
+    // Cancel the job in the engine
+    let engine = app.state::<std::sync::Arc<ScraperEngine>>();
+    engine.cancel(&job_id).await;
+
     app.state::<Mutex<JobTracker>>()
         .lock()
         .unwrap()
@@ -380,9 +268,22 @@ pub async fn jobs_cancel(app: AppHandle, job_id: String) -> Value {
 }
 
 #[tauri::command]
-pub fn jobs_retry(_app: AppHandle, _job_id: String) -> Value {
-    // Retry is a no-op in the sidecar model — the caller re-enqueues.
-    json!({ "success": false, "reason": "retry not supported in sidecar mode" })
+pub fn jobs_retry(app: AppHandle, job_id: String) -> Value {
+    // We don't keep the original request payload on the Rust side — the
+    // renderer owns that. So `retry` just returns the original `kind` so the
+    // caller can re-dispatch the matching `<kind>` command with the same
+    // arguments it had on the first attempt.
+    let tracker = app.state::<Mutex<JobTracker>>();
+    let guard = tracker.lock().unwrap();
+    match guard.get(&job_id) {
+        Some(rec) => json!({
+            "success": true,
+            "kind": rec.kind,
+            "jobId": rec.id,
+            "note": "renderer should re-dispatch this kind with the original payload",
+        }),
+        None => json!({ "success": false, "reason": "job id not found" }),
+    }
 }
 
 // ── AI ───────────────────────────────────────────────────────────────────────
@@ -1274,36 +1175,116 @@ pub async fn search_hybrid(app: AppHandle, req: Value) -> Value {
 
 #[tauri::command]
 pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
-    let Some(port) = ensure_sidecar_port(&app).await else {
-        return json!({ "error": "scraper sidecar not ready — start the scraper-runtime binary" });
-    };
+    let board = req.get("board").and_then(|b| b.as_str()).unwrap_or("");
+    let query = req.get("query").and_then(|q| q.as_str()).unwrap_or("");
+    let location = req.get("location").and_then(|l| l.as_str());
+    let pages = req.get("pages").and_then(|p| p.as_u64()).unwrap_or(1) as u32;
+    let date_filter = req.get("dateFilter").and_then(|d| d.as_str());
+    let locale = req.get("locale").and_then(|l| l.as_str());
+
     let job_id = uuid_v4();
     app.state::<Mutex<JobTracker>>()
         .lock()
         .unwrap()
         .start(&job_id, "scrape.board");
-    let cmd = json!({ "kind": "scrape.board", "jobId": job_id, "payload": req });
-    match post_sidecar_command(&app, port, &cmd, &job_id).await {
-        Ok(_) => json!({ "jobId": job_id }),
-        Err(e) => json!({ "error": e, "jobId": job_id }),
+
+    let engine = app.state::<std::sync::Arc<ScraperEngine>>().inner().clone();
+    let input = BoardSearchInput {
+        query: query.to_string(),
+        location: location.map(|s| s.to_string()),
+        pages,
+        date_filter: date_filter.map(|s| s.to_string()),
+        job_type: None,
+        work_type: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        locale: locale.map(|s| s.to_string()),
+    };
+
+    // Progress events: emit to renderer AND update the JobTracker so jobs_get
+    // returns up-to-date progress without a separate poll.
+    let app_progress = app.clone();
+    let job_id_progress = job_id.clone();
+    let on_progress = Box::new(move |p: f32| {
+        let _ = app_progress.emit(
+            "scrape.progress",
+            json!({ "jobId": job_id_progress, "progress": p }),
+        );
+        if let Some(tracker) = app_progress.try_state::<Mutex<JobTracker>>() {
+            if let Ok(mut g) = tracker.lock() {
+                g.update_progress(&job_id_progress, p as f64);
+            }
+        }
+    });
+
+    let app_item = app.clone();
+    let job_id_item = job_id.clone();
+    let on_item = Box::new(move |item: crate::scraping::JobPosting| {
+        let _ = app_item.emit("scrape.item", json!({ "jobId": job_id_item, "item": item }));
+    });
+
+    let result = engine
+        .scrape_board(board, input, job_id.clone(), Some(on_progress), Some(on_item))
+        .await;
+
+    let tracker = app.state::<Mutex<JobTracker>>();
+    match &result {
+        Ok(results) => {
+            if let Ok(mut g) = tracker.lock() {
+                g.complete(&job_id, json!({ "count": results.len() }));
+            }
+        }
+        Err(e) => {
+            if let Ok(mut g) = tracker.lock() {
+                g.fail(&job_id, e.to_string());
+            }
+        }
+    }
+
+    match result {
+        Ok(results) => json!({ "jobId": job_id, "count": results.len() }),
+        Err(e) => json!({ "error": e.to_string(), "jobId": job_id }),
     }
 }
 
 #[tauri::command]
 pub async fn scrape_url(app: AppHandle, req: Value) -> Value {
-    let Some(port) = ensure_sidecar_port(&app).await else {
-        return json!({ "error": "scraper sidecar not ready — start the scraper-runtime binary" });
-    };
+    let url = req.get("url").and_then(|u| u.as_str()).unwrap_or("");
+    if url.is_empty() {
+        return json!({ "error": "url is required" });
+    }
+
     let job_id = uuid_v4();
     app.state::<Mutex<JobTracker>>()
         .lock()
         .unwrap()
         .start(&job_id, "scrape.url");
-    let url_str = req.get("url").and_then(|u| u.as_str()).unwrap_or("");
-    let cmd = json!({ "kind": "scrape.url", "jobId": job_id, "payload": { "url": url_str } });
-    match post_sidecar_command(&app, port, &cmd, &job_id).await {
-        Ok(result) => result,
-        Err(e) => json!({ "error": e }),
+
+    let result = crate::scraping::scrape_url::resolve(url).await;
+
+    let tracker = app.state::<Mutex<JobTracker>>();
+    match result {
+        Ok(Some(posting)) => {
+            if let Ok(mut g) = tracker.lock() {
+                g.complete(&job_id, json!({ "ok": true }));
+            }
+            json!({ "jobId": job_id, "posting": posting })
+        }
+        Ok(None) => {
+            if let Ok(mut g) = tracker.lock() {
+                g.fail(&job_id, "no scraper matched this URL".to_string());
+            }
+            json!({ "jobId": job_id, "error": "no scraper matched this URL" })
+        }
+        Err(e) => {
+            if let Ok(mut g) = tracker.lock() {
+                g.fail(&job_id, e.to_string());
+            }
+            json!({ "jobId": job_id, "error": e.to_string() })
+        }
     }
 }
 
@@ -1539,31 +1520,7 @@ pub fn credentials_set(app: AppHandle, req: Value) -> Value {
     let store = app.state::<Mutex<CredentialStore>>();
     let guard = store.lock().unwrap();
     match guard.set(board_id, username, password) {
-        Ok(()) => {
-            // Forward to sidecar if it is running.
-            let port = app
-                .state::<Mutex<ScraperSidecarState>>()
-                .lock()
-                .ok()
-                .and_then(|g| g.port);
-            if let Some(port) = port {
-                let cmd = serde_json::json!({
-                    "kind": "set.credentials",
-                    "boardId": board_id,
-                    "username": username,
-                    "password": password,
-                });
-                tauri::async_runtime::spawn(async move {
-                    reqwest::Client::new()
-                        .post(format!("http://127.0.0.1:{port}/command"))
-                        .json(&cmd)
-                        .send()
-                        .await
-                        .ok();
-                });
-            }
-            json!({ "success": true })
-        }
+        Ok(()) => json!({ "success": true }),
         Err(e) => json!({ "error": e }),
     }
 }
@@ -1579,125 +1536,123 @@ pub fn credentials_remove(app: AppHandle, board_id: String) -> Value {
 }
 
 // ── LinkedIn / Boards ─────────────────────────────────────────────────────────
-// Both sets delegate to the sidecar's open.login / board.status / board.disconnect
-// commands so the login flow runs in a headed Playwright browser.
+// Board auth state lives in <data_dir>/browser-state/<boardId>/auth-status.json.
+// Login opens a headed Chromium window via `board_login::open_login`.
 
-async fn sidecar_open_login(app: &AppHandle, board_id: &str) -> Value {
-    let Some(port) = ensure_sidecar_port(app).await else {
-        return json!({ "connected": false, "error": "scraper sidecar not ready" });
-    };
-    let job_id = uuid_v4();
-    let cmd = json!({ "kind": "open.login", "boardId": board_id });
-    match post_sidecar_command(app, port, &cmd, &job_id).await {
-        Ok(result) => result,
-        Err(e) => json!({ "connected": false, "error": e }),
-    }
-}
-
-// ── Board auth — native Rust file I/O, no sidecar dependency ─────────────────
-//
-// Auth state lives in <sidecar_data_dir>/browser-state/<boardId>/auth-status.json.
-// Reading and writing this file directly from Rust means status checks and
-// disconnects work regardless of whether the sidecar process is running.
-// The sidecar is only needed for login (opening the browser) and scraping.
-
-/// Returns ~/.ajh or $AJH_DATA_DIR — mirrors scraper-runtime/src/index.ts.
-fn sidecar_data_dir() -> std::path::PathBuf {
+/// Returns ~/.ajh or $AJH_DATA_DIR.
+fn resolve_data_dir(app: &AppHandle) -> std::path::PathBuf {
     if let Ok(dir) = std::env::var("AJH_DATA_DIR") {
         return std::path::PathBuf::from(dir);
     }
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_default();
-    std::path::PathBuf::from(home).join(".ajh")
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| {
+            let home = std::env::var("USERPROFILE")
+                .or_else(|_| std::env::var("HOME"))
+                .unwrap_or_default();
+            std::path::PathBuf::from(home).join(".ajh")
+        })
 }
 
-fn auth_status_path(board_id: &str) -> std::path::PathBuf {
-    sidecar_data_dir()
-        .join("browser-state")
-        .join(board_id)
-        .join("auth-status.json")
-}
+/// Run the headed Chromium login flow for `board_id` and report progress.
+async fn run_board_login(app: AppHandle, board_id: String) -> Value {
+    use crate::scraping::board_login;
 
-/// Read connected state for a board directly from the auth-status file.
-fn read_board_connected(board_id: &str) -> bool {
-    std::fs::read_to_string(auth_status_path(board_id))
-        .ok()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-        .and_then(|v| v.get("connected").and_then(|c| c.as_bool()))
-        .unwrap_or(false)
-}
+    let data_dir = resolve_data_dir(&app);
+    let app_for_status = app.clone();
+    let board_for_status = board_id.clone();
+    let on_status = move |note: &str| {
+        let _ = app_for_status.emit(
+            "login.status",
+            json!({
+                "boardId": board_for_status,
+                "connected": false,
+                "note": note,
+            }),
+        );
+    };
 
-/// Write connected state for a board directly to the auth-status file.
-fn write_board_connected(board_id: &str, connected: bool) {
-    let path = auth_status_path(board_id);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).ok();
-    }
-    let payload = if connected { r#"{"connected":true}"# } else { r#"{"connected":false}"# };
-    std::fs::write(&path, payload).ok();
-}
-
-/// Disconnect a board: write the auth-status file immediately, then fire-and-forget
-/// a sidecar notification so it can clear its in-memory session state.
-///
-/// The sidecar call is intentionally non-blocking — the file write is the
-/// authoritative operation. Awaiting the sidecar HTTP call caused the command
-/// to block indefinitely when the sidecar was slow or not responding, preventing
-/// the frontend mutation from resolving and the toast from appearing.
-fn disconnect_board(app: &AppHandle, board_id: &str) {
-    write_board_connected(board_id, false);
-    if let Some(port) = sidecar_port(app) {
-        let app = app.clone();
-        let board_id = board_id.to_string();
-        tauri::async_runtime::spawn(async move {
-            let job_id = uuid_v4();
-            let cmd = json!({ "kind": "board.disconnect", "boardId": board_id });
-            post_sidecar_command(&app, port, &cmd, &job_id).await.ok();
-        });
+    match board_login::open_login(&data_dir, &board_id, on_status).await {
+        Ok(connected) => {
+            let _ = app.emit(
+                "login.status",
+                json!({ "boardId": board_id, "connected": connected }),
+            );
+            json!({ "connected": connected })
+        }
+        Err(e) => {
+            let _ = app.emit(
+                "login.status",
+                json!({
+                    "boardId": board_id,
+                    "connected": false,
+                    "note": e.to_string(),
+                }),
+            );
+            json!({ "connected": false, "error": e.to_string() })
+        }
     }
 }
-
-const KNOWN_BOARDS: &[&str] = &["linkedin", "indeed", "xing", "glassdoor"];
 
 #[tauri::command]
 pub async fn linkedin_connect(app: AppHandle) -> Value {
-    sidecar_open_login(&app, "linkedin").await
+    run_board_login(app, "linkedin".to_string()).await
 }
 
 #[tauri::command]
 pub fn linkedin_disconnect(app: AppHandle) -> Value {
-    disconnect_board(&app, "linkedin");
+    let data_dir = resolve_data_dir(&app);
+    crate::scraping::board_login::disconnect(&data_dir, "linkedin");
     json!({ "success": true })
 }
 
 #[tauri::command]
-pub fn linkedin_get_status() -> Value {
-    json!({ "connected": read_board_connected("linkedin") })
+pub fn linkedin_get_status(app: AppHandle) -> Value {
+    board_status_json(&app, "linkedin")
 }
 
 #[tauri::command]
 pub async fn boards_connect(app: AppHandle, board_id: String) -> Value {
-    sidecar_open_login(&app, &board_id).await
+    run_board_login(app, board_id).await
 }
 
 #[tauri::command]
 pub fn boards_disconnect(app: AppHandle, board_id: String) -> Value {
-    disconnect_board(&app, &board_id);
+    let data_dir = resolve_data_dir(&app);
+    crate::scraping::board_login::disconnect(&data_dir, &board_id);
     json!({ "success": true })
 }
 
 #[tauri::command]
-pub fn boards_get_status(board_id: String) -> Value {
-    json!({ "connected": read_board_connected(&board_id) })
+pub fn boards_get_status(app: AppHandle, board_id: String) -> Value {
+    board_status_json(&app, &board_id)
+}
+
+/// Shared status payload: `{ connected, ageMs?, stale, expiresInMs? }`.
+/// The UI uses `stale` to show "session expired — please log in again" and
+/// `expiresInMs` to show a countdown badge.
+fn board_status_json(app: &AppHandle, board_id: &str) -> Value {
+    use crate::scraping::board_login;
+    let data_dir = resolve_data_dir(app);
+    let connected = board_login::get_status(&data_dir, board_id);
+    let age = board_login::session_age_ms(&data_dir, board_id);
+    let stale = board_login::session_is_stale(&data_dir, board_id);
+    let expires_in = age.map(|a| board_login::SESSION_MAX_AGE_MS.saturating_sub(a));
+    json!({
+        "connected": connected,
+        "ageMs": age,
+        "stale": stale,
+        "expiresInMs": expires_in,
+    })
 }
 
 // ── Privacy ──────────────────────────────────────────────────────────────────
 
 #[tauri::command]
 pub fn privacy_sign_out_all(app: AppHandle) -> Value {
-    for board_id in KNOWN_BOARDS {
-        disconnect_board(&app, board_id);
+    let data_dir = resolve_data_dir(&app);
+    for board_id in &["linkedin", "indeed", "xing", "glassdoor"] {
+        crate::scraping::board_login::disconnect(&data_dir, board_id);
     }
     app.state::<Mutex<PostingsCache>>().lock().unwrap().clear_all();
     app.state::<Mutex<InteractionStore>>().lock().unwrap().clear_all();
@@ -1715,65 +1670,145 @@ pub fn privacy_clear_interactions(app: AppHandle) -> Value {
 
 // ── Apply ────────────────────────────────────────────────────────────────────
 
-/// Start a job application via the scraper sidecar.
+/// Drive the apply flow for a board posting.
 ///
-/// The renderer passes `{ board, url, coverLetter?, bytes?: Uint8Array, name?: string, autoSubmit? }`.
-/// Resume bytes (if provided) are base64-encoded before sending to the sidecar,
-/// which writes them to a temp file for the Playwright applier.
+/// Body:
+///   { board, url, coverLetter?, resumeBytesBase64?, resumeName?, autoSubmit? }
 #[tauri::command]
 pub async fn apply_start(app: AppHandle, req: Value) -> Value {
-    let Some(port) = ensure_sidecar_port(&app).await else {
-        return json!({ "error": "scraper sidecar not ready" });
+    use crate::applying::registry::ApplierRegistry;
+    use crate::applying::types::{ApplyContext, ApplyStep};
+    use base64::Engine;
+
+    let board = req.get("board").and_then(|b| b.as_str()).unwrap_or("");
+    let url = req.get("url").and_then(|u| u.as_str()).unwrap_or("");
+    if board.is_empty() || url.is_empty() {
+        return json!({ "error": "board and url are required" });
+    }
+
+    let applier = match ApplierRegistry::get(board) {
+        Some(a) => a,
+        None => return json!({ "error": format!("no applier for board: {board}") }),
     };
 
-    let board = req.get("board").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let url = req.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let cover_letter = req.get("coverLetter").and_then(|v| v.as_str()).map(String::from);
-    let auto_submit = req.get("autoSubmit").and_then(|v| v.as_bool()).unwrap_or(false);
-
-    // Encode resume bytes as base64 if provided.
-    let (resume_bytes_b64, resume_name) = match req.get("bytes") {
-        Some(serde_json::Value::Array(arr)) => {
-            let bytes: Vec<u8> = arr.iter().filter_map(|v| v.as_u64().map(|n| n as u8)).collect();
-            use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-            let name = req.get("resumeName").and_then(|v| v.as_str()).unwrap_or("resume.pdf").to_string();
-            (Some(b64), Some(name))
+    // Decode optional resume bytes to a temp file. Cleanup is in `finally`.
+    let mut temp_resume: Option<std::path::PathBuf> = None;
+    if let (Some(b64), Some(name)) = (
+        req.get("resumeBytesBase64").and_then(|v| v.as_str()),
+        req.get("resumeName").and_then(|v| v.as_str()),
+    ) {
+        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) {
+            let ext = std::path::Path::new(name)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("pdf");
+            let path = std::env::temp_dir().join(format!("ajh-resume-{}.{ext}", uuid_v4()));
+            if std::fs::write(&path, &bytes).is_ok() {
+                temp_resume = Some(path);
+            }
         }
-        _ => (None, None),
-    };
+    }
 
     let job_id = uuid_v4();
-    app.state::<Mutex<JobTracker>>().lock().unwrap().start(&job_id, "apply.job");
+    app.state::<Mutex<JobTracker>>()
+        .lock()
+        .unwrap()
+        .start(&job_id, "apply.start");
 
-    let payload = serde_json::json!({
-        "board": board,
-        "url": url,
-        "coverLetter": cover_letter,
-        "resumeBytesBase64": resume_bytes_b64,
-        "resumeName": resume_name,
-        "autoSubmit": auto_submit,
+    let app_for_step = app.clone();
+    let job_id_for_step = job_id.clone();
+    let on_step = Box::new(move |step: ApplyStep| {
+        let _ = app_for_step.emit(
+            "apply.step",
+            json!({
+                "jobId": job_id_for_step,
+                "stage": step.stage,
+                "ok": step.ok,
+                "note": step.note,
+            }),
+        );
     });
-    let cmd = json!({ "kind": "apply.job", "jobId": job_id, "payload": payload });
 
-    match post_sidecar_command(&app, port, &cmd, &job_id).await {
-        Ok(result) => json!({ "jobId": job_id, "result": result }),
-        Err(e) => json!({ "error": e, "jobId": job_id }),
+    let app_for_progress = app.clone();
+    let job_id_for_progress = job_id.clone();
+    let on_progress = Box::new(move |p: f32, stage: String| {
+        let _ = app_for_progress.emit(
+            "apply.progress",
+            json!({ "jobId": job_id_for_progress, "progress": p, "stage": stage }),
+        );
+    });
+
+    // Register the apply token so `jobs_cancel(job_id)` can stop it.
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+    let engine = app.state::<std::sync::Arc<ScraperEngine>>().inner().clone();
+    engine.register_token(&job_id, cancel_token.clone()).await;
+
+    let ctx = ApplyContext {
+        signal: cancel_token,
+        cover_letter: req
+            .get("coverLetter")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        resume_path: temp_resume.as_ref().map(|p| p.to_string_lossy().to_string()),
+        auto_submit: req
+            .get("autoSubmit")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        on_progress: Some(on_progress),
+        on_step: Some(on_step),
+    };
+
+    let result = applier.apply(url.to_string(), ctx).await;
+
+    // Always unregister, success or failure.
+    engine.unregister_token(&job_id).await;
+
+    // Always remove the temp resume.
+    if let Some(path) = temp_resume {
+        let _ = std::fs::remove_file(path);
+    }
+
+    let tracker = app.state::<Mutex<JobTracker>>();
+    match result {
+        Ok(r) => {
+            if let Ok(mut g) = tracker.lock() {
+                g.complete(
+                    &job_id,
+                    json!({
+                        "ok": r.ok,
+                        "stage": r.stage,
+                        "submitted": r.submitted,
+                        "url": r.url,
+                        "note": r.note,
+                    }),
+                );
+            }
+            json!({
+                "jobId": job_id,
+                "ok": r.ok,
+                "stage": r.stage,
+                "submitted": r.submitted,
+                "url": r.url,
+                "note": r.note,
+            })
+        }
+        Err(e) => {
+            if let Ok(mut g) = tracker.lock() {
+                g.fail(&job_id, e.to_string());
+            }
+            json!({ "jobId": job_id, "error": e.to_string() })
+        }
     }
 }
 
 /// Return the list of boards that support the apply flow.
 #[tauri::command]
-pub async fn apply_catalog(app: AppHandle) -> Value {
-    let Some(port) = ensure_sidecar_port(&app).await else {
-        return json!([]);
-    };
-    let job_id = uuid_v4();
-    let cmd = json!({ "kind": "apply.catalog" });
-    match post_sidecar_command(&app, port, &cmd, &job_id).await {
-        Ok(result) => result,
-        Err(_) => json!([]),
-    }
+pub async fn apply_catalog(_app: AppHandle) -> Value {
+    let catalog: Vec<Value> = crate::applying::registry::ApplierRegistry::catalog()
+        .into_iter()
+        .map(|(id, name)| json!({ "id": id, "displayName": name }))
+        .collect();
+    json!(catalog)
 }
 
 // ── Resume ───────────────────────────────────────────────────────────────────
@@ -1847,8 +1882,13 @@ pub fn support_reindex_all_documents() -> Value {
 }
 
 #[tauri::command]
-pub fn support_reset_all_sessions() -> Value {
-    json!(null)
+pub fn support_reset_all_sessions(app: AppHandle) -> Value {
+    // Wipe every per-board Chromium profile and the cached cookies/auth-status
+    // for every board. Equivalent to "Sign out everywhere".
+    let dir = resolve_data_dir(&app).join("browser-state");
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) | Err(_) => json!({ "success": true, "path": dir.display().to_string() }),
+    }
 }
 
 #[tauri::command]
@@ -1949,33 +1989,71 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         return json!({ "error": format!("autopilot not found: {autopilot_id}") });
     };
 
-    // Proxy to the sidecar as a scrape.board job — the result is tracked
-    // via JobTracker so the renderer's job list updates in real time.
-    let Some(port) = ensure_sidecar_port(&app).await else {
-        return json!({ "error": "scraper sidecar not ready" });
-    };
-
+    // Use the in-process Rust engine for scraping
     let job_id = uuid_v4();
     app.state::<Mutex<JobTracker>>()
         .lock()
         .unwrap()
         .start(&job_id, "autopilot.run");
 
-    let payload = serde_json::json!({
-        "board": target.board,
-        "query": target.query,
-        "location": target.location,
-        "pages": target.pages,
-        "dateFilter": target.date_filter,
-    });
-    let cmd = serde_json::json!({ "kind": "scrape.board", "jobId": job_id, "payload": payload });
+    let engine = app.state::<std::sync::Arc<ScraperEngine>>().inner().clone();
+    let input = BoardSearchInput {
+        query: target.query.clone(),
+        location: target.location.clone(),
+        pages: target.pages,
+        date_filter: target.date_filter.clone(),
+        job_type: None,
+        work_type: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        locale: None,
+    };
 
-    let job_id_ret = job_id.clone();
-    tauri::async_runtime::spawn(async move {
-        post_sidecar_command(&app, port, &cmd, &job_id).await.ok();
+    let app_progress = app.clone();
+    let job_id_progress = job_id.clone();
+    let on_progress = Box::new(move |p: f32| {
+        let _ = app_progress.emit(
+            "scrape.progress",
+            json!({ "jobId": job_id_progress, "progress": p }),
+        );
+        if let Some(tracker) = app_progress.try_state::<Mutex<JobTracker>>() {
+            if let Ok(mut g) = tracker.lock() {
+                g.update_progress(&job_id_progress, p as f64);
+            }
+        }
     });
 
-    json!({ "jobId": job_id_ret })
+    let app_item = app.clone();
+    let job_id_item = job_id.clone();
+    let on_item = Box::new(move |item: crate::scraping::JobPosting| {
+        let _ = app_item.emit("scrape.item", json!({ "jobId": job_id_item, "item": item }));
+    });
+
+    let result = engine
+        .scrape_board(&target.board, input, job_id.clone(), Some(on_progress), Some(on_item))
+        .await;
+
+    let tracker = app.state::<Mutex<JobTracker>>();
+    match &result {
+        Ok(results) => {
+            if let Ok(mut g) = tracker.lock() {
+                g.complete(&job_id, json!({ "count": results.len() }));
+            }
+        }
+        Err(e) => {
+            if let Ok(mut g) = tracker.lock() {
+                g.fail(&job_id, e.to_string());
+            }
+        }
+    }
+
+    match result {
+        Ok(results) => json!({ "jobId": job_id, "count": results.len() }),
+        Err(e) => json!({ "error": e.to_string(), "jobId": job_id }),
+    }
 }
 
 #[tauri::command]
