@@ -20,52 +20,49 @@ const OPTIONS = [
   { value: 'greenhouse', label: 'Greenhouse' },
 ];
 
-export const Default: Story = {
-  render: () => {
-    const [value, setValue] = useState('');
-    return (
-      <SelectDropdown
-        options={OPTIONS}
-        value={value}
-        onChange={setValue}
-        placeholder="Select board…"
-      />
-    );
-  },
-};
+function DefaultDemo() {
+  const [value, setValue] = useState('');
+  return (
+    <SelectDropdown
+      options={OPTIONS}
+      value={value}
+      onChange={setValue}
+      placeholder="Select board…"
+    />
+  );
+}
 
-export const WithIcon: Story = {
-  render: () => {
-    const [value, setValue] = useState('linkedin');
-    return (
-      <SelectDropdown
-        options={OPTIONS}
-        value={value}
-        onChange={setValue}
-        icon={<Globe size={12} />}
-      />
-    );
-  },
-};
+function WithIconDemo() {
+  const [value, setValue] = useState('linkedin');
+  return (
+    <SelectDropdown
+      options={OPTIONS}
+      value={value}
+      onChange={setValue}
+      icon={<Globe size={12} />}
+    />
+  );
+}
 
+function SearchableDemo() {
+  const [value, setValue] = useState('');
+  const many = Array.from({ length: 12 }, (_, i) => ({
+    value: String(i),
+    label: `Option ${i + 1}`,
+  }));
+  return (
+    <SelectDropdown
+      options={many}
+      value={value}
+      onChange={setValue}
+      placeholder="Search options…"
+    />
+  );
+}
+
+export const Default: Story = { render: () => <DefaultDemo /> };
+export const WithIcon: Story = { render: () => <WithIconDemo /> };
 export const Disabled: Story = {
   render: () => <SelectDropdown options={OPTIONS} value="linkedin" onChange={() => {}} disabled />,
 };
-
-export const Searchable: Story = {
-  render: () => {
-    const [value, setValue] = useState('');
-    const many = Array.from({ length: 12 }, (_, i) => ({
-      value: String(i),
-      label: `Option ${i + 1}`,
-    }));
-    return (
-      <SelectDropdown
-        options={many}
-        value={value}
-        onChange={setValue}
-        placeholder="Search options…"
-      />
-    );
-  },
-};
+export const Searchable: Story = { render: () => <SearchableDemo /> };

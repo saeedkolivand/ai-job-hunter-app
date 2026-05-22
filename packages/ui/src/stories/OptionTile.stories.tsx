@@ -32,27 +32,27 @@ export const Unselected: Story = {
   },
 };
 
-export const Group: Story = {
-  render: () => {
-    const [selected, setSelected] = useState('ai');
-    return (
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { id: 'ai', icon: Brain, label: 'AI Mode', description: 'Local inference' },
-          { id: 'web', icon: Globe, label: 'Web Mode', description: 'Live scraping' },
-          { id: 'fast', icon: Zap, label: 'Fast Mode', description: 'Cached results' },
-        ].map(({ id, icon, label, description }) => (
-          <OptionTile
-            key={id}
-            icon={icon}
-            label={label}
-            description={description}
-            selected={selected === id}
-            onClick={() => setSelected(id)}
-            layoutId="option-group"
-          />
-        ))}
-      </div>
-    );
-  },
-};
+function GroupDemo() {
+  const [selected, setSelected] = useState('ai');
+  return (
+    <div className="grid grid-cols-3 gap-3">
+      {[
+        { id: 'ai', icon: Brain, label: 'AI Mode', description: 'Local inference' },
+        { id: 'web', icon: Globe, label: 'Web Mode', description: 'Live scraping' },
+        { id: 'fast', icon: Zap, label: 'Fast Mode', description: 'Cached results' },
+      ].map(({ id, icon, label, description }) => (
+        <OptionTile
+          key={id}
+          icon={icon}
+          label={label}
+          description={description}
+          selected={selected === id}
+          onClick={() => setSelected(id)}
+          layoutId="option-group"
+        />
+      ))}
+    </div>
+  );
+}
+
+export const Group: Story = { render: () => <GroupDemo /> };

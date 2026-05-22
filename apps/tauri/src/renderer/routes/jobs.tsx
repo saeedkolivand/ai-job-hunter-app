@@ -31,15 +31,16 @@ import {
   useToast,
 } from '@ajh/ui';
 
-import { useAppClient } from '@/providers/AppClientProvider';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { staggeredItem, transition } from '@/lib/motion';
+import { useAppClient } from '@/providers/AppClientProvider';
 import {
   useApplyJob,
   useBoardConnect,
+  useBoardDisconnect,
   useBoardStatus,
   useCancelJob,
   useClearPostings,
@@ -47,7 +48,6 @@ import {
   useLinkedInConnect,
   useLinkedInDisconnect,
   useLinkedInStatus,
-  useBoardDisconnect,
   useOpenExternal,
   usePersistJob,
   usePostings,
