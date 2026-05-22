@@ -31,10 +31,7 @@
     "active": true,
     "targets": ["nsis", "msi", "dmg", "app"],
     "icon": ["icons/icon.ico", "icons/icon.png"],
-    "resources": [],
-    "signing": {
-      "targets": ["nsis", "msi", "dmg", "app"]
-    }
+    "resources": []
   },
   "plugins": {
     "shell": {
