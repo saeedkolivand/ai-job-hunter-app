@@ -150,7 +150,7 @@ export function LocationInput({
       {open && suggestions.length > 0 && (
         <ul
           role="listbox"
-          className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-white/[0.08] bg-secondary py-1 shadow-xl"
+          className="absolute z-50 mt-1.5 w-full overflow-hidden rounded-xl border border-white/[0.12] bg-[oklch(0.14_0.02_270)] py-1.5 shadow-2xl shadow-black/60 backdrop-blur-xl"
         >
           {suggestions.map((s, i) => (
             <li
@@ -163,14 +163,14 @@ export function LocationInput({
               }}
               onMouseEnter={() => setActiveIndex(i)}
               className={cn(
-                'flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs',
+                'flex cursor-pointer items-center gap-2.5 px-3 py-2 text-xs transition-colors duration-75',
                 i === activeIndex
-                  ? 'bg-brand/15 text-foreground'
-                  : 'text-foreground/70 hover:bg-white/[0.04]'
+                  ? 'bg-brand/20 text-foreground'
+                  : 'text-foreground/60 hover:bg-white/[0.06] hover:text-foreground/90'
               )}
             >
-              <MapPin size={10} className="shrink-0 text-foreground/30" />
-              <span>{s.display}</span>
+              <MapPin size={11} className="shrink-0 text-foreground/35" />
+              <span className="truncate">{s.display}</span>
             </li>
           ))}
         </ul>
