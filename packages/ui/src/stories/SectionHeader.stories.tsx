@@ -1,16 +1,15 @@
 import { Brain, Settings, Shield } from 'lucide-react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { SectionHeader } from '../components/SectionHeader';
 
-const meta: Meta<typeof SectionHeader> = {
-  title: 'Primitives/SectionHeader',
+const meta = {
   component: SectionHeader,
   tags: ['autodocs'],
   argTypes: {
     size: { control: 'select', options: ['sm', 'md'] },
   },
-};
+} satisfies Meta<typeof SectionHeader>;
 export default meta;
 type Story = StoryObj<typeof SectionHeader>;
 

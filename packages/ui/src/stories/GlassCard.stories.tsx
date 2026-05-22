@@ -1,9 +1,8 @@
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { GlassCard } from '../components/GlassCard';
 
-const meta: Meta<typeof GlassCard> = {
-  title: 'Surfaces/GlassCard',
+const meta = {
   component: GlassCard,
   tags: ['autodocs'],
   argTypes: {
@@ -11,7 +10,7 @@ const meta: Meta<typeof GlassCard> = {
     highlight: { control: 'boolean' },
     glow: { control: 'boolean' },
   },
-};
+} satisfies Meta<typeof GlassCard>;
 export default meta;
 type Story = StoryObj<typeof GlassCard>;
 

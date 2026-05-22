@@ -1,14 +1,13 @@
 import { Bell, Shield } from 'lucide-react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { Button } from '../components/Button';
 import { SettingsSection } from '../components/SettingsSection';
 
-const meta: Meta<typeof SettingsSection> = {
-  title: 'Composition/SettingsSection',
+const meta = {
   component: SettingsSection,
   tags: ['autodocs'],
-};
+} satisfies Meta<typeof SettingsSection>;
 export default meta;
 type Story = StoryObj<typeof SettingsSection>;
 

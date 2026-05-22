@@ -1,9 +1,8 @@
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { TextArea } from '../components/TextArea';
 
-const meta: Meta<typeof TextArea> = {
-  title: 'Primitives/TextArea',
+const meta = {
   component: TextArea,
   tags: ['autodocs'],
   argTypes: {
@@ -11,7 +10,7 @@ const meta: Meta<typeof TextArea> = {
     disabled: { control: 'boolean' },
     rows: { control: 'number' },
   },
-};
+} satisfies Meta<typeof TextArea>;
 export default meta;
 type Story = StoryObj<typeof TextArea>;
 
