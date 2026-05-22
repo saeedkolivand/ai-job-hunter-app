@@ -14,7 +14,7 @@ const meta: Meta = {
       </ToastProvider>
     ),
   ],
-};
+} satisfies Meta;
 export default meta;
 type Story = StoryObj;
 
