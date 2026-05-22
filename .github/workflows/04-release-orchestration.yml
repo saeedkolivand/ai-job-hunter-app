@@ -355,6 +355,7 @@ jobs:
             PLATFORMS=$(echo "${PLATFORMS}" | node -e "
               const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
               d['darwin-universal'] = {
+                signature: '',
                 url: '${BASE_URL}/AI.Job.Hunter.Assistant_universal.app.tar.gz'
               };
               process.stdout.write(JSON.stringify(d));
@@ -376,6 +377,7 @@ jobs:
             PLATFORMS=$(echo "${PLATFORMS}" | node -e "
               const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
               d['windows-x86_64'] = {
+                signature: '',
                 url: '${BASE_URL}/AI.Job.Hunter.Assistant_${VERSION}_x64-setup.exe'
               };
               process.stdout.write(JSON.stringify(d));

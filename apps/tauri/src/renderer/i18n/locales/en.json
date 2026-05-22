@@ -1145,6 +1145,8 @@
     }
   },
   "onboarding": {
+    "back": "Back",
+    "continue": "Continue",
     "welcome": {
       "title": "Welcome to AI Job Hunter",
       "subtitle": "Your local, AI-native job hunting assistant. Let's get you set up.",
