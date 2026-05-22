@@ -6,10 +6,12 @@ export { applyTheme, getActiveTheme, restoreTheme, type ThemeId, THEMES } from '
 // ── Primitives ────────────────────────────────────────────────────────────
 export { ActionTile } from './components/ActionTile';
 export { Button, type ButtonProps } from './components/Button';
+export { Dropdown, type DropdownOption, type DropdownProps } from './components/Dropdown';
 export { GlassCard, type GlassCardProps } from './components/GlassCard';
 export { IconBadge, type IconBadgeProps } from './components/IconBadge';
 export { IconText } from './components/IconText';
 export { Input, type InputProps } from './components/Input';
+export { LocationInput, type LocationInputProps } from './components/LocationInput';
 export { SectionHeader } from './components/SectionHeader';
 export { SectionLabel } from './components/SectionLabel';
 export { SelectDropdown } from './components/SelectDropdown';
