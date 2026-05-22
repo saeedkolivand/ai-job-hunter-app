@@ -1,15 +1,14 @@
 import { useState } from 'react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { Button } from '../components/Button';
 import { ModalShell } from '../components/ModalShell';
 
-const meta: Meta<typeof ModalShell> = {
-  title: 'Overlays/ModalShell',
+const meta = {
   component: ModalShell,
   tags: ['autodocs'],
   parameters: { layout: 'centered' },
-};
+} satisfies Meta<typeof ModalShell>;
 export default meta;
 type Story = StoryObj<typeof ModalShell>;
 

@@ -1,17 +1,16 @@
 import { Lock, Settings, Shield, Sparkles, User } from 'lucide-react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { IconBadge } from '../components/IconBadge';
 
-const meta: Meta<typeof IconBadge> = {
-  title: 'Primitives/IconBadge',
+const meta = {
   component: IconBadge,
   tags: ['autodocs'],
   argTypes: {
     size: { control: 'select', options: ['xs', 'sm', 'md', 'lg'] },
     shape: { control: 'select', options: ['rounded', 'circle', 'square'] },
   },
-};
+} satisfies Meta<typeof IconBadge>;
 export default meta;
 type Story = StoryObj<typeof IconBadge>;
 

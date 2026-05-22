@@ -1,16 +1,15 @@
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { Input } from '../components/Input';
 
-const meta: Meta<typeof Input> = {
-  title: 'Primitives/Input',
+const meta = {
   component: Input,
   tags: ['autodocs'],
   argTypes: {
     variant: { control: 'select', options: ['default', 'glass'] },
     disabled: { control: 'boolean' },
   },
-};
+} satisfies Meta<typeof Input>;
 export default meta;
 type Story = StoryObj<typeof Input>;
 

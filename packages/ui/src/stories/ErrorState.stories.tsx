@@ -1,15 +1,14 @@
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { ErrorState } from '../components/ErrorState';
 
-const meta: Meta<typeof ErrorState> = {
-  title: 'Feedback/ErrorState',
+const meta = {
   component: ErrorState,
   tags: ['autodocs'],
   argTypes: {
     onRetry: { action: 'retry clicked' },
   },
-};
+} satisfies Meta<typeof ErrorState>;
 export default meta;
 type Story = StoryObj<typeof ErrorState>;
 

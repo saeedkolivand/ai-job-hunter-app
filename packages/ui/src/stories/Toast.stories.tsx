@@ -1,10 +1,10 @@
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { Button } from '../components/Button';
 import { ToastProvider, type ToastVariant, useToast } from '../components/Toast';
 
-const meta: Meta = {
-  title: 'Overlays/Toast',
+const meta = {
+  component: ToastProvider,
   tags: ['autodocs'],
   parameters: { layout: 'fullscreen' },
   decorators: [
@@ -14,7 +14,7 @@ const meta: Meta = {
       </ToastProvider>
     ),
   ],
-};
+} satisfies Meta;
 export default meta;
 type Story = StoryObj;
 

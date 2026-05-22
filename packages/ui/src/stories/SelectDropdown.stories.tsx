@@ -1,14 +1,13 @@
 import { Globe } from 'lucide-react';
 import { useState } from 'react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { SelectDropdown } from '../components/SelectDropdown';
 
-const meta: Meta<typeof SelectDropdown> = {
-  title: 'Primitives/SelectDropdown',
+const meta = {
   component: SelectDropdown,
   tags: ['autodocs'],
-};
+} satisfies Meta<typeof SelectDropdown>;
 export default meta;
 type Story = StoryObj<typeof SelectDropdown>;
 
