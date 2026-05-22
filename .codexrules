@@ -1,0 +1,138 @@
+# OpenAI Codex — Usage Rules
+
+OpenAI Codex API integration for code generation and completion. Follow these rules for safe, efficient, and cost-effective usage.
+
+---
+
+## API Key Management
+
+**Never commit API keys to version control.**
+- Store API keys in environment variables: `OPENAI_API_KEY`
+- Use `.env` files (add to `.gitignore`)
+- For Electron/Tauri: store in secure app config, never in renderer
+- Rotate keys if compromised
+
+---
+
+## Rate Limiting & Cost Control
+
+**Implement strict rate limiting to avoid excessive costs:**
+- Cache responses when possible (same prompt → same output)
+- Use streaming for long completions to detect early termination
+- Set `max_tokens` limits appropriate to the task
+- Monitor token usage via `usage` field in API responses
+- Implement request queuing for batch operations
+
+Recommended limits:
+- Code completion: `max_tokens: 256`
+- Code generation: `max_tokens: 1024`
+- Refactoring tasks: `max_tokens: 2048`
+
+---
+
+## Prompt Engineering
+
+**Follow best practices for reliable outputs:**
+
+1. **Be specific** — include language, framework, and context
+2. **Provide examples** — few-shot prompting improves accuracy
+3. **Specify format** — "Return as JSON with keys: X, Y, Z"
+4. **Set temperature** — lower (0.1-0.3) for deterministic code, higher (0.7-0.9) for creative tasks
+5. **Include constraints** — "Do not use external libraries", "Handle edge cases"
+
+Example prompt structure:
+```
+Language: TypeScript
+Framework: React 19
+Task: [specific description]
+Constraints: [list of constraints]
+Output format: [specify]
+```
+
+---
+
+## Error Handling
+
+**Always handle API errors gracefully:**
+- `429 Too Many Requests` — implement exponential backoff
+- `500/502/503` — retry with backoff (max 3 retries)
+- `401 Unauthorized` — prompt user to reconfigure API key
+- `400 Invalid Request` — log prompt for debugging, surface user-friendly error
+- Network errors — show offline state, queue for retry
+
+---
+
+## Security & Validation
+
+**Never trust Codex output blindly:**
+- Sanitize generated code before execution
+- Validate against security policies (no eval, no arbitrary code execution)
+- Review for malicious patterns (obfuscated code, data exfiltration)
+- Use TypeScript strict mode to catch type errors
+- Run generated code through linter before applying
+
+---
+
+## Architecture
+
+**Codex integration should follow package boundaries:**
+
+```
+packages/shared/src/codex/   → Types, Zod schemas, prompt templates (no API calls)
+packages/core/src/codex/     → API client, rate limiting, caching (main process only)
+apps/desktop/src/services/   → Service hooks for renderer (React Query wrappers)
+```
+
+Renderer → Codex: service hooks only, never direct API calls.
+
+---
+
+## Rules (ESLint-enforced where applicable)
+
+**1. No API keys in renderer** — Codex API calls only in main process/core packages.
+
+**2. Prompt templates in shared** — reusable prompts in `packages/shared/src/codex/prompts.ts`.
+
+**3. Type-safe responses** — Zod schemas for all API responses in `packages/shared/src/codex/schemas.ts`.
+
+**4. Caching required** — implement LRU cache for identical prompts (TTL: 1 hour).
+
+**5. Streaming for long outputs** — use `stream: true` for completions > 512 tokens.
+
+**6. Cost tracking** — log token usage per session, display to user in settings.
+
+**7. Fallback behavior** — provide degraded UX when API is unavailable (cached responses, manual input).
+
+**8. Rate limit per user** — implement per-user quotas (e.g., 100 requests/day).
+
+---
+
+## Testing
+
+**Test Codex integration without burning quota:**
+- Mock API responses in unit tests
+- Use OpenAI's playground for prompt development
+- Integration tests with test API key (separate from production)
+- Verify rate limiting and backoff logic
+- Test error scenarios (network failure, quota exceeded)
+
+---
+
+## Monitoring
+
+**Track key metrics:**
+- Total tokens used per session/day
+- Average response time
+- Error rate by error type
+- Cache hit rate
+- Cost per feature
+
+---
+
+## Commit conventions
+
+When modifying Codex integration:
+- `feat(codex):` — new capability or prompt template
+- `fix(codex):` — bug fix in API handling
+- `perf(codex):` — caching or rate limiting improvements
+- `refactor(codex):` — code cleanup without behavior change
