@@ -1,7 +1,7 @@
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, useToast } from '@ajh/ui';
+import { Button, useNotification } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 
@@ -22,7 +22,7 @@ export function RecoveryAction({
   successMessage,
   onAction,
 }: RecoveryActionProps) {
-  const toast = useToast();
+  const notify = useNotification();
   const [pending, setPending] = useState(false);
 
   const handleClick = async () => {
@@ -30,9 +30,9 @@ export function RecoveryAction({
     setPending(true);
     try {
       await onAction();
-      toast(successMessage ?? `${title} completed.`, 'success');
+      notify(successMessage ?? `${title} completed.`, 'success');
     } catch (err) {
-      toast(err instanceof Error ? err.message : `${title} failed.`, 'error');
+      notify(err instanceof Error ? err.message : `${title} failed.`, 'error');
     } finally {
       setPending(false);
     }

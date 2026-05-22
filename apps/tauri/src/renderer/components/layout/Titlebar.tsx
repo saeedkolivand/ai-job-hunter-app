@@ -7,10 +7,12 @@ import { useTranslation } from '@/lib/i18n';
 import { onWindowControlsRegistered } from '@/lib/window-controls-registry';
 import { useGetPlatform } from '@/services';
 import { useAppStore } from '@/store/app-store';
+import { useOnboardingCompleted } from '@/store/preferences-store';
 
 export function Titlebar() {
   const { t } = useTranslation();
   const togglePalette = useAppStore((s) => s.togglePalette);
+  const onboardingCompleted = useOnboardingCompleted();
   const { data: platform } = useGetPlatform();
   const [WindowControls, setWindowControls] = useState<ComponentType | null>(null);
 
@@ -30,15 +32,19 @@ export function Titlebar() {
         <span className="text-foreground/40">·</span>
         <span className="text-foreground/40">{t('app.tagline')}</span>
       </div>
-      <Button
-        onClick={togglePalette}
-        className="app-no-drag glass-dropdown flex items-center gap-3 rounded-lg px-4 py-2 text-sm text-foreground/70 transition-colors hover:text-foreground"
-        aria-label="Open command palette"
-      >
-        <Search size={14} />
-        <span>{t('command.placeholder')}</span>
-        <kbd className="ml-2 rounded bg-white/5 px-2 py-0.5 text-[10px] text-foreground/60">⌘K</kbd>
-      </Button>
+      {onboardingCompleted && (
+        <Button
+          onClick={togglePalette}
+          className="app-no-drag glass-dropdown flex items-center gap-3 rounded-lg px-4 py-2 text-sm text-foreground/70 transition-colors hover:text-foreground"
+          aria-label="Open command palette"
+        >
+          <Search size={14} />
+          <span>{t('command.placeholder')}</span>
+          <kbd className="ml-2 rounded bg-white/5 px-2 py-0.5 text-[10px] text-foreground/60">
+            ⌘K
+          </kbd>
+        </Button>
+      )}
       {WindowControls ? <WindowControls /> : <div className="w-32" />}
     </div>
   );

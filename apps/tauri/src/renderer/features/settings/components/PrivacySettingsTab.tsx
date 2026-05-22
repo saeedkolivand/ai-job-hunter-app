@@ -1,7 +1,7 @@
 import { Download, LogOut, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, ConfirmModal, useToast } from '@ajh/ui';
+import { Button, ConfirmModal, useNotification } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
@@ -99,7 +99,7 @@ export function PrivacySettingsTab() {
     open: false,
     action: 'signOut',
   });
-  const toast = useToast();
+  const notify = useNotification();
 
   const signOutAll = useSignOutAll();
   const clearInteractions = useClearInteractions();
@@ -117,9 +117,9 @@ export function PrivacySettingsTab() {
     setConfirm((c) => ({ ...c, open: false }));
     try {
       await signOutAll.mutateAsync();
-      toast(t('settings.privacy.signedOutSuccess'), 'success');
+      notify(t('settings.privacy.signedOutSuccess'), 'success');
     } catch {
-      toast(t('settings.privacy.somethingWentWrong'), 'error');
+      notify(t('settings.privacy.somethingWentWrong'), 'error');
     }
   };
 
@@ -127,19 +127,19 @@ export function PrivacySettingsTab() {
     setConfirm((c) => ({ ...c, open: false }));
     try {
       await clearInteractions.mutateAsync();
-      toast(t('settings.privacy.historyClearedSuccess'), 'success');
+      notify(t('settings.privacy.historyClearedSuccess'), 'success');
     } catch {
-      toast(t('settings.privacy.somethingWentWrong'), 'error');
+      notify(t('settings.privacy.somethingWentWrong'), 'error');
     }
   };
 
   const handleExport = async () => {
     try {
       const res = (await exportData.mutateAsync()) as { success: boolean; error?: string };
-      if (res.success) toast(t('settings.privacy.exportSuccess'), 'success');
-      else if (res.error) toast(t('settings.privacy.somethingWentWrong'), 'error');
+      if (res.success) notify(t('settings.privacy.exportSuccess'), 'success');
+      else if (res.error) notify(t('settings.privacy.somethingWentWrong'), 'error');
     } catch {
-      toast(t('settings.privacy.somethingWentWrong'), 'error');
+      notify(t('settings.privacy.somethingWentWrong'), 'error');
     }
   };
 
@@ -151,16 +151,16 @@ export function PrivacySettingsTab() {
         error?: string;
       };
       if (res.success)
-        toast(
+        notify(
           t('settings.privacy.importSuccess', {
             count: res.imported,
             plural: res.imported === 1 ? '' : 's',
           }),
           'success'
         );
-      else if (res.error) toast(t('settings.privacy.somethingWentWrong'), 'error');
+      else if (res.error) notify(t('settings.privacy.somethingWentWrong'), 'error');
     } catch {
-      toast(t('settings.privacy.somethingWentWrong'), 'error');
+      notify(t('settings.privacy.somethingWentWrong'), 'error');
     }
   };
 

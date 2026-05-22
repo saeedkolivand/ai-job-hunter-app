@@ -1,48 +1,52 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { Button } from '../components/Button';
-import { ToastProvider, type ToastVariant, useToast } from '../components/Toast';
+import {
+  NotificationProvider,
+  type NotificationVariant,
+  useNotification,
+} from '../components/Notification';
 
 const meta: Meta = {
-  component: ToastProvider,
+  component: NotificationProvider,
   tags: ['autodocs'],
   parameters: { layout: 'fullscreen' },
   decorators: [
     (Story) => (
-      <ToastProvider>
+      <NotificationProvider>
         <Story />
-      </ToastProvider>
+      </NotificationProvider>
     ),
   ],
 } satisfies Meta;
 export default meta;
 type Story = StoryObj;
 
-function ToastDemo({ variant }: { variant: ToastVariant }) {
-  const toast = useToast();
+function NotificationDemo({ variant }: { variant: NotificationVariant }) {
+  const notify = useNotification();
   return (
     <div className="p-8">
-      <Button variant="glass" onClick={() => toast(`This is a ${variant} message.`, variant)}>
-        Show {variant} toast
+      <Button variant="glass" onClick={() => notify(`This is a ${variant} message.`, variant)}>
+        Show {variant} notification
       </Button>
     </div>
   );
 }
 
-export const Success: Story = { render: () => <ToastDemo variant="success" /> };
-export const Error: Story = { render: () => <ToastDemo variant="error" /> };
-export const Info: Story = { render: () => <ToastDemo variant="info" /> };
-export const Warning: Story = { render: () => <ToastDemo variant="warning" /> };
+export const Success: Story = { render: () => <NotificationDemo variant="success" /> };
+export const Error: Story = { render: () => <NotificationDemo variant="error" /> };
+export const Info: Story = { render: () => <NotificationDemo variant="info" /> };
+export const Warning: Story = { render: () => <NotificationDemo variant="warning" /> };
 export const Stacked: Story = {
   render: () => {
     function StackDemo() {
-      const toast = useToast();
+      const notify = useNotification();
       return (
         <div className="flex gap-2 p-8">
-          <Button onClick={() => toast('Operation succeeded!', 'success')}>Success</Button>
-          <Button onClick={() => toast('Something went wrong.', 'error')}>Error</Button>
-          <Button onClick={() => toast('Update available.', 'info')}>Info</Button>
-          <Button onClick={() => toast('Check your settings.', 'warning')}>Warning</Button>
+          <Button onClick={() => notify('Operation succeeded!', 'success')}>Success</Button>
+          <Button onClick={() => notify('Something went wrong.', 'error')}>Error</Button>
+          <Button onClick={() => notify('Update available.', 'info')}>Info</Button>
+          <Button onClick={() => notify('Check your settings.', 'warning')}>Warning</Button>
         </div>
       );
     }
