@@ -5,6 +5,7 @@ import reactPlugin from 'eslint-plugin-react';
 import reactHooksPlugin from 'eslint-plugin-react-hooks';
 import unusedImports from 'eslint-plugin-unused-imports';
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
+import storybookPlugin from 'eslint-plugin-storybook';
 import globals from 'globals';
 
 // ── AST selectors ─────────────────────────────────────────────────────────────
@@ -337,6 +338,19 @@ export default tseslint.config(
       'no-restricted-imports': 'off',
       'no-restricted-syntax': 'off',
       'simple-import-sort/imports': 'off',
+    },
+  },
+
+  // ── Storybook story files ─────────────────────────────────────────────────
+  {
+    files: ['**/*.stories.@(ts|tsx)'],
+    plugins: { storybook: storybookPlugin },
+    rules: {
+      ...Object.fromEntries(
+        Object.entries(storybookPlugin.rules ?? {}).map(([k]) => [`storybook/${k}`, 'warn'])
+      ),
+      // Stories intentionally use raw <button> for demo content
+      'no-restricted-syntax': 'off',
     },
   },
 
