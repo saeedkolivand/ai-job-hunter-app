@@ -1,6 +1,6 @@
 import { Globe } from 'lucide-react';
-import type { Meta, StoryObj } from '@storybook/react';
 import { useState } from 'react';
+import type { Meta, StoryObj } from '@storybook/react';
 
 import { SelectDropdown } from '../components/SelectDropdown';
 
