@@ -282,10 +282,11 @@ jobs:
           ls /tmp/sigs/ 2>/dev/null || echo "No .sig files found"
 
           # Read signatures (empty string if file not present)
+          # Strip newlines from signature data to fix JSON encoding
           read_sig() {
             local f="$1"
             if [ -f "/tmp/sigs/${f}" ]; then
-              cat "/tmp/sigs/${f}"
+              cat "/tmp/sigs/${f}" | tr -d '\n'
             else
               echo ""
             fi
