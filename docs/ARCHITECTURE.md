@@ -17,16 +17,16 @@
 │  │ React Query │◄─────────┤  │ JobQueue │ │ Scheduler │  │  │
 │  └─────────────┘          │  └──────────┘ └───────────┘  │  │
 │                           │  ┌──────────────────────────┐ │  │
-│                           │  │   Sidecar (scraper-rt)   │ │  │
+│                           │  │  ScraperEngine (Rust)    │ │  │
+│                           │  │  chromiumoxide (Rust)    │ │  │
 │                           │  └──────────────────────────┘ │  │
 │                           └──────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────┘
 
 External dependencies (all local — no cloud):
-  Ollama     ←→  AiRuntime      (local LLM inference)
-  LanceDB    ←→  DataRuntime    (vector store)
-  NeDB       ←→  DataRuntime    (document store)
-  Sidecar    ←→  ScraperRuntime (browser automation)
+  Ollama          ←→  AI inference (local LLM)
+  SQLite          ←→  Job storage, documents, vectors
+  Chromiumoxide   ←→  Browser automation (in-process)
 ```
 
 ---
@@ -35,29 +35,34 @@ External dependencies (all local — no cloud):
 
 ```
 apps/tauri/
-  src-tauri/   Rust core — commands, menu, tray, updater, sidecar launcher
+  src-tauri/
+    src/
+      commands.rs         Tauri commands (IPC handlers)
+      autopilot.rs        Autopilot data model + store
+      documents.rs        Resume/cover letter parsing, vector embeddings
+      scraping/           In-process Rust scrapers
+        engine.rs         ScraperEngine orchestrator
+        boards/           Board-specific HTTP scrapers
+        board_login.rs    Browser-based board authentication
+        scrape_url.rs     URL → JobPosting resolver
+      applying/           Browser automation for job applications
+        runtime.rs        ApplySession (chromiumoxide wrapper)
+        boards/           Board-specific apply flows
+        form_filler.rs    Generic form-filling helpers
+      main.rs             Tauri app entry point
   src/
-    tauri-client.ts   AppClient implementation over @tauri-apps/api invoke/listen
+    tauri-client.ts       AppClient implementation over @tauri-apps/api
     renderer/
-      features/  Feature-scoped components (owned by one route)
-      routes/    TanStack Router file-based routes
-      services/  React Query hooks (only place calling AppClient methods)
-      store/     Zustand stores
-      lib/       Pure utilities (cn, motion, i18n, machines)
-      providers/ React context providers
-      hooks/     Shared React hooks
-
-apps/scraper-runtime/
-  src/         Node.js HTTP sidecar — scraping, login, documents, AI
+      features/           Feature-scoped components
+      routes/             TanStack Router file-based routes
+      services/           React Query hooks (only place calling AppClient)
+      store/              Zustand stores
+      lib/                Pure utilities (cn, motion, i18n, machines)
 
 packages/
   shared/   IPC contracts, Zod schemas, cross-process types
   ui/       React component library + design tokens
   prompts/  AI prompt templates (zero deps)
-  core/     EventBus, JobQueue, Logger, RuntimeManager
-  ai/       Ollama client, AI runtime, streaming
-  data/     DB, scraping, matching, applying, vector search
-  workers/  Worker thread pool
 ```
 
 ---
@@ -67,19 +72,15 @@ packages/
 Strict one-way flow. Lower layers never import from upper layers.
 
 ```
-apps/tauri
-  ├── packages/shared, ui, prompts   (renderer-safe)
-  ├── packages/core, ai, data        (sidecar / Rust side only)
-  └── packages/workers               (sidecar / Rust side only)
+apps/tauri/src-tauri/   Rust core (all scraping, applying, AI, data)
+apps/tauri/src/         TypeScript renderer + AppClient
 
-packages/data   → shared, core, workers
-packages/ai     → shared, core
-packages/core   → shared
-packages/ui     (no internal imports)
-packages/prompts (zero deps)
+packages/shared         IPC contracts (used by both Rust and TS)
+packages/ui             React components (renderer only)
+packages/prompts        Prompt templates (renderer only)
 ```
 
-**Renderer code never imports `packages/core`, `packages/ai`, `packages/data`, or `packages/workers`.**
+**Renderer code never calls Rust directly — only via `AppClient` → Tauri `invoke`.**
 
 ---
 
@@ -93,36 +94,22 @@ Cross-process contracts. Safe anywhere.
 - `schemas/index.ts` — Zod schemas for IPC payload validation
 - `ipc/contracts.ts` — `IPC_CHANNELS` + typed `AppClient` surface
 
-### `@ajh/core`
+### Rust Core (`apps/tauri/src-tauri/src/`)
 
-Infrastructure used by the sidecar.
+All scraping, applying, AI, and data logic runs in-process in Rust.
 
-| Export             | Role                                                       |
-| ------------------ | ---------------------------------------------------------- |
-| `EventBus`         | Typed pub/sub                                              |
-| `JobQueue`         | Async task queue — concurrency, retry, progress, streaming |
-| `TaskScheduler`    | Interval/timeout for recurring tasks                       |
-| `StateCoordinator` | Persisted key/value with change events                     |
-| `RuntimeManager`   | Lifecycle manager for registered runtimes                  |
-| `createLogger`     | pino structured logger                                     |
-
-### `@ajh/ai`
-
-Ollama client and inference. `AiRuntime` (lazy start, idle model unload), `generateStream`.
-
-### `@ajh/data`
-
-Data persistence, scraping, matching.
-
-| Export             | Role                                             |
-| ------------------ | ------------------------------------------------ |
-| `DataRuntime`      | SQLite + LanceDB vector store (both lazy-opened) |
-| `ScraperRegistry`  | Board scrapers (HTTP + browser controller)       |
-| `ApplierRegistry`  | Auto-appliers per board                          |
-| `MatchingEngine`   | Keyword + semantic scoring                       |
-| `AutopilotStore`   | NeDB CRUD for autopilot configs                  |
-| `InMemoryJobStore` | Ephemeral live scrape results                    |
-| `VectorStore`      | LanceDB wrapper                                  |
+| Module                 | Role                                                   |
+| ---------------------- | ------------------------------------------------------ |
+| `scraping/engine`      | ScraperEngine — orchestrates board scrapers            |
+| `scraping/boards/*`    | Board-specific HTTP scrapers (LinkedIn, Indeed, etc.)  |
+| `scraping/board_login` | Browser-based login flows, cookie persistence          |
+| `scraping/scrape_url`  | URL → JobPosting resolver (Greenhouse, Lever, etc.)    |
+| `applying/runtime`     | ApplySession — chromiumoxide wrapper                   |
+| `applying/boards/*`    | Board-specific apply flows (LinkedIn Easy Apply, etc.) |
+| `applying/form_filler` | Generic form-filling helpers                           |
+| `autopilot`            | Autopilot data model + JSON store                      |
+| `documents`            | Resume/cover letter parsing, vector embeddings         |
+| `commands`             | Tauri command handlers (IPC entry points)              |
 
 ### `@ajh/prompts`
 
@@ -149,26 +136,43 @@ React component library and design system. Tailwind v4 tokens, motion utilities,
 
 ```
 Renderer → AppClient.ai.generate(req) → Tauri invoke('ai_generate')
-  → sidecar: generateStream() yields { delta, done }
-  → Tauri listen('ai:stream') → UI updates token by token
+  → Rust: documents::embed() via Ollama HTTP API
+  → Tauri emit('ai:stream') → UI updates token by token
 ```
 
 ### Scraping
 
 ```
 AppClient.scrape.board(req) → Tauri invoke('scrape_board')
-  → sidecar: ScraperRuntime.scrapeBoard()
-  → scraper.search() → onItem() streams JobPosting items to renderer
-  → results persisted to SQLite
+  → Rust: ScraperEngine.scrape_board()
+  → Board scraper (HTTP or chromiumoxide)
+  → onItem() emits JobPosting items to renderer
+  → Results persisted to SQLite
 ```
 
 ### Autopilot
 
 ```
-Scheduler tick OR AppClient.autopilot.run(id)
-  → sidecar: runAutopilot(): scrape → filter (keyword + score) → apply
-  → Tauri listen('autopilot:*') → renderer live feed
+AppClient.autopilot.run(id) → Tauri invoke('autopilot_run')
+  → Rust: scrape → rank by AI match score → apply to top N
+  → Tauri emit('autopilot.step') → renderer live feed
 ```
+
+### Browser State
+
+```
+~/.ajh/browser-state/
+  linkedin/       Persistent Chromium profile for LinkedIn
+  indeed/         Persistent Chromium profile for Indeed
+  ...
+  <board>/
+    cookies.json  Exported cookies for HTTP client auth
+    auth.json     Session age, staleness metadata
+```
+
+Each board gets its own Chromium profile. Cookies are exported after login and
+reused by HTTP scrapers. `board_login::detect_system_chrome()` checks for system
+Chrome/Edge to avoid chromiumoxide's 120 MB download.
 
 ---
 
@@ -212,9 +216,15 @@ AppClient.X.method(payload)
 
 ### New scraper
 
-1. `packages/data/src/scraping/boards/myboard.ts` — implement `BaseScraper`
-2. Register in `packages/data/src/scraping/registry.ts`
-3. Add board ID to `packages/shared/src/schemas/index.ts`
+1. `apps/tauri/src-tauri/src/scraping/boards/myboard.rs` — implement `Scraper` trait
+2. Register in `apps/tauri/src-tauri/src/scraping/engine.rs` match arms
+3. Add board ID to catalog in `ScraperEngine::catalog()`
+
+### New applier
+
+1. `apps/tauri/src-tauri/src/applying/boards/myboard.rs` — implement `Applier` trait
+2. Register in `apps/tauri/src-tauri/src/applying/registry.rs`
+3. Add selectors to `apps/tauri/src-tauri/src/applying/selectors.rs`
 
 ### New route
 
