@@ -169,7 +169,7 @@ export function LocationInput({
           disabled={disabled}
           autoComplete="off"
           className={cn(
-            'input-field glass-dropdown w-full rounded-lg pl-8 pr-3 text-sm text-foreground placeholder:text-foreground/30',
+            'input-field glass-dropdown w-full rounded-lg bg-white/[0.03] pl-8 pr-3 text-sm text-foreground placeholder:text-foreground/25',
             className
           )}
         />
@@ -182,7 +182,7 @@ export function LocationInput({
             ref={listRef}
             role="listbox"
             style={dropdownStyle}
-            className="overflow-hidden rounded-xl border border-white/[0.12] bg-[oklch(0.14_0.02_270)] py-1.5 shadow-2xl shadow-black/60 backdrop-blur-xl"
+            className="glass-modal overflow-hidden rounded-xl py-1.5 shadow-2xl shadow-black/60"
           >
             {suggestions.map((s, i) => (
               <li
