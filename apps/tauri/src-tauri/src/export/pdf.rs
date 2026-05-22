@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use printpdf::*;
-use std::io::BufWriter;
 
 use super::{
     parser::{parse_resume, strip_md},
@@ -31,62 +30,125 @@ fn rgb_to_color(rgb: (u8, u8, u8)) -> Color {
     ))
 }
 
-/// Draw text with mixed bold/normal formatting
-fn draw_mixed_text(
-    layer: &PdfLayerReference,
+/// Build text operations for mixed bold/normal text
+fn build_text_ops(
     segments: &[TextSegment],
     x: f32,
-    mut y: f32,
-    max_width: f32,
-    line_height: f32,
-    font_regular: &IndirectFontRef,
-    font_bold: &IndirectFontRef,
+    y: f32,
+    font_regular: FontId,
+    font_bold: FontId,
     font_size: f32,
     normal_color: Color,
     bold_color: Color,
-) -> f32 {
-    let mut current_x = x;
+) -> Vec<Op> {
+    if segments.is_empty() {
+        return Vec::new();
+    }
+    let mut ops = Vec::new();
+    let text_pos = Point {
+        x: Mm(x).into(),
+        y: Mm(y).into(),
+    };
+    ops.push(Op::StartTextSection);
+    ops.push(Op::SetTextCursor { pos: text_pos });
 
     for segment in segments {
-        let font = if segment.bold { font_bold } else { font_regular };
-        let color = if segment.bold { bold_color } else { normal_color };
+        let font_id = if segment.bold { font_bold.clone() } else { font_regular.clone() };
+        let color = if segment.bold { bold_color.clone() } else { normal_color.clone() };
 
-        // Split into words for wrapping
-        let words: Vec<&str> = segment.text.split_whitespace().collect();
+        ops.push(Op::SetFillColor { col: color });
+        ops.push(Op::SetFont { 
+            font: PdfFontHandle::External(font_id), 
+            size: Pt(font_size) 
+        });
+        ops.push(Op::ShowText {
+            items: vec![TextItem::Text(segment.text.clone())],
+        });
+    }
+    ops.push(Op::EndTextSection);
 
-        for (i, word) in words.iter().enumerate() {
-            let word_with_space = if i < words.len() - 1 {
-                format!("{} ", word)
-            } else {
-                word.to_string()
-            };
+    ops
+}
 
-            // Estimate word width (rough approximation)
-            let char_width = font_size * 0.5;
-            let word_width = word_with_space.len() as f32 * char_width;
+/// Merge a word (with optional leading space) into the last segment if same boldness, else push new
+fn push_word_to_segs(segs: &mut Vec<super::types::TextSegment>, word: &str, bold: bool, space_before: bool) {
+    let is_punct_start = word.starts_with([',', '.', '!', '?', ';', ':']);
+    let text = if space_before && !is_punct_start { format!(" {}", word) } else { word.to_string() };
+    if let Some(last) = segs.last_mut() {
+        if last.bold == bold {
+            last.text.push_str(&text);
+            return;
+        }
+    }
+    segs.push(super::types::TextSegment { text, bold });
+}
 
-            // Check if word fits on current line
-            if current_x > x && current_x + word_width > x + max_width {
-                // Move to next line
-                y -= line_height;
-                current_x = x;
-            }
+/// Wrap text segments into lines fitting max_width_mm
+fn wrap_segments(
+    segments: &[super::types::TextSegment],
+    max_width_mm: f32,
+    font_size_pt: f32,
+) -> Vec<Vec<super::types::TextSegment>> {
+    let avg_char_width = pt_to_mm(font_size_pt) * 0.5;
+    let chars_per_line = ((max_width_mm / avg_char_width) as usize).max(20);
 
-            // Draw word
-            layer.use_text(
-                &word_with_space,
-                font_size,
-                Mm(current_x),
-                Mm(y),
-                font,
-            );
-            layer.set_fill_color(color.clone());
-
-            current_x += word_width;
+    let mut words: Vec<(String, bool)> = Vec::new();
+    for seg in segments {
+        for word in seg.text.split_whitespace() {
+            words.push((word.to_string(), seg.bold));
         }
     }
 
-    y - line_height
+    if words.is_empty() {
+        return vec![segments.to_vec()];
+    }
+
+    let mut lines: Vec<Vec<super::types::TextSegment>> = Vec::new();
+    let mut current: Vec<super::types::TextSegment> = Vec::new();
+    let mut current_len = 0usize;
+
+    for (word, bold) in &words {
+        let wl = word.len();
+        if current_len == 0 {
+            push_word_to_segs(&mut current, word, *bold, false);
+            current_len = wl;
+        } else if current_len + 1 + wl <= chars_per_line {
+            push_word_to_segs(&mut current, word, *bold, true);
+            current_len += 1 + wl;
+        } else {
+            if !current.is_empty() {
+                lines.push(std::mem::take(&mut current));
+            }
+            push_word_to_segs(&mut current, word, *bold, false);
+            current_len = wl;
+        }
+    }
+
+    if !current.is_empty() {
+        lines.push(current);
+    }
+
+    if lines.is_empty() {
+        lines.push(segments.to_vec());
+    }
+
+    lines
+}
+
+/// Build a horizontal line
+fn build_line(x1: f32, y1: f32, x2: f32, _y2: f32, color: Color, thickness: f32) -> Vec<Op> {
+    let line = Line {
+        points: vec![
+            LinePoint { p: Point::new(Mm(x1), Mm(y1)), bezier: false },
+            LinePoint { p: Point::new(Mm(x2), Mm(y1)), bezier: false },
+        ],
+        is_closed: false,
+    };
+    vec![
+        Op::SetOutlineColor { col: color },
+        Op::SetOutlineThickness { pt: Pt(thickness) },
+        Op::DrawLine { line },
+    ]
 }
 
 /// Generate PDF for resume
@@ -94,37 +156,30 @@ fn generate_resume_pdf(
     text: &str,
     meta: Option<&GenerationMeta>,
     template: &Template,
-) -> Result<PdfDocumentReference> {
+) -> Result<Vec<u8>> {
     let parsed = parse_resume(text);
+    let mut doc = PdfDocument::new("Resume");
 
-    // Create document
-    let (doc, page1, layer1) = PdfDocument::new(
-        "Resume",
-        Mm(210.0), // A4 width
-        Mm(297.0), // A4 height
-        "Layer 1",
-    );
+    // Load fonts
+    let font_data_regular = include_bytes!("../../fonts/calibri.ttf");
+    let font_data_bold = include_bytes!("../../fonts/calibrib.ttf");
 
-    // Get fonts
-    let font_data_regular = include_bytes!("../../fonts/Calibri-Regular.ttf");
-    let font_data_bold = include_bytes!("../../fonts/Calibri-Bold.ttf");
-    
-    let font_regular = doc.add_external_font(font_data_regular.as_ref())
-        .context("Failed to load regular font")?;
-    let font_bold = doc.add_external_font(font_data_bold.as_ref())
-        .context("Failed to load bold font")?;
+    let mut warnings = Vec::new();
+    let font_regular = ParsedFont::from_bytes(font_data_regular, 0, &mut warnings)
+        .context("Failed to parse regular font")?;
+    let font_bold = ParsedFont::from_bytes(font_data_bold, 0, &mut warnings)
+        .context("Failed to parse bold font")?;
 
-    let current_layer = doc.get_page(page1).get_layer(layer1);
+    let font_regular_id = doc.add_font(&font_regular);
+    let font_bold_id = doc.add_font(&font_bold);
 
     // Margins
     let margin_left = inch_to_mm(template.margin_in);
     let margin_right = inch_to_mm(template.margin_in);
     let margin_top = inch_to_mm(0.9);
-    let margin_bottom = inch_to_mm(0.9);
 
     let page_width = 210.0;
     let page_height = 297.0;
-    let usable_width = page_width - margin_left - margin_right;
 
     let mut y = page_height - margin_top;
     let line_height = pt_to_mm(template.body_pt) * template.line_spacing;
@@ -137,18 +192,12 @@ fn generate_resume_pdf(
     let emphasis_color = rgb_to_color(template.emphasis_color);
     let rule_color = rgb_to_color(template.rule_color);
 
+    let mut ops: Vec<Op> = Vec::new();
     let mut previous_kind: Option<LineKind> = None;
 
     for line in &parsed.lines {
         let spacing = calculate_spacing(&line.kind, previous_kind.as_ref());
         y -= pt_to_mm(spacing.0);
-
-        // Check if we need a new page
-        if y < margin_bottom + line_height * 2.0 {
-            let (page, layer) = doc.add_page(Mm(page_width), Mm(page_height), "Layer 1");
-            let current_layer = doc.get_page(page).get_layer(layer);
-            y = page_height - margin_top;
-        }
 
         match line.kind {
             LineKind::Blank => {
@@ -167,14 +216,15 @@ fn generate_resume_pdf(
                     margin_left
                 };
 
-                current_layer.use_text(
-                    name_text,
-                    template.name_pt,
-                    Mm(x),
-                    Mm(y),
-                    &font_bold,
-                );
-                current_layer.set_fill_color(name_color.clone());
+                let text_pos = Point { x: Mm(x).into(), y: Mm(y).into() };
+                ops.push(Op::StartTextSection);
+                ops.push(Op::SetFillColor { col: name_color.clone() });
+                ops.push(Op::SetTextCursor { pos: text_pos });
+                ops.push(Op::SetFont { font: PdfFontHandle::External(font_bold_id.clone()), size: Pt(template.name_pt) });
+                ops.push(Op::ShowText {
+                    items: vec![TextItem::Text(name_text.to_string())],
+                });
+                ops.push(Op::EndTextSection);
 
                 y -= pt_to_mm(template.name_pt) * 1.2;
             }
@@ -186,22 +236,20 @@ fn generate_resume_pdf(
                     margin_left
                 };
 
-                current_layer.use_text(&line.text, 9.0, Mm(x), Mm(y), &font_regular);
-                current_layer.set_fill_color(date_color.clone());
+                let text_pos = Point { x: Mm(x).into(), y: Mm(y).into() };
+                ops.push(Op::StartTextSection);
+                ops.push(Op::SetFillColor { col: date_color.clone() });
+                ops.push(Op::SetTextCursor { pos: text_pos });
+                ops.push(Op::SetFont { font: PdfFontHandle::External(font_regular_id.clone()), size: Pt(9.0) });
+                ops.push(Op::ShowText {
+                    items: vec![TextItem::Text(line.text.clone())],
+                });
+                ops.push(Op::EndTextSection);
 
                 y -= pt_to_mm(9.0) * 1.2;
 
                 // Draw line
-                let line_obj = Line {
-                    points: vec![
-                        (Point::new(Mm(margin_left), Mm(y)), false),
-                        (Point::new(Mm(page_width - margin_right), Mm(y)), false),
-                    ],
-                    is_closed: false,
-                };
-                current_layer.set_outline_color(rule_color.clone());
-                current_layer.set_outline_thickness(0.5);
-                current_layer.add_shape(line_obj);
+                ops.extend(build_line(margin_left, y, page_width - margin_right, y, rule_color.clone(), 0.5));
 
                 y -= pt_to_mm(5.0);
             }
@@ -215,41 +263,26 @@ fn generate_resume_pdf(
                     line.text.clone()
                 };
 
-                current_layer.use_text(
-                    &header_text,
-                    template.section_pt,
-                    Mm(margin_left),
-                    Mm(y),
-                    &font_bold,
-                );
-                current_layer.set_fill_color(section_color.clone());
+                let text_pos = Point { x: Mm(margin_left).into(), y: Mm(y).into() };
+                ops.push(Op::StartTextSection);
+                ops.push(Op::SetFillColor { col: section_color.clone() });
+                ops.push(Op::SetTextCursor { pos: text_pos });
+                ops.push(Op::SetFont { font: PdfFontHandle::External(font_bold_id.clone()), size: Pt(template.section_pt) });
+                ops.push(Op::ShowText {
+                    items: vec![TextItem::Text(header_text)],
+                });
+                ops.push(Op::EndTextSection);
 
                 y -= pt_to_mm(template.section_pt) * 1.2;
 
                 // Draw section line if needed
                 match template.section_style {
                     super::templates::SectionStyle::RuledBottom => {
-                        let line_obj = Line {
-                            points: vec![
-                                (Point::new(Mm(margin_left), Mm(y)), false),
-                                (Point::new(Mm(page_width - margin_right), Mm(y)), false),
-                            ],
-                            is_closed: false,
-                        };
-                        current_layer.set_outline_thickness(1.0);
-                        current_layer.add_shape(line_obj);
+                        ops.extend(build_line(margin_left, y, page_width - margin_right, y, section_color.clone(), 1.0));
                         y -= pt_to_mm(2.0);
                     }
                     super::templates::SectionStyle::Underline => {
-                        let line_obj = Line {
-                            points: vec![
-                                (Point::new(Mm(margin_left), Mm(y)), false),
-                                (Point::new(Mm(page_width - margin_right), Mm(y)), false),
-                            ],
-                            is_closed: false,
-                        };
-                        current_layer.set_outline_thickness(0.5);
-                        current_layer.add_shape(line_obj);
+                        ops.extend(build_line(margin_left, y, page_width - margin_right, y, section_color.clone(), 0.5));
                         y -= pt_to_mm(2.0);
                     }
                     _ => {}
@@ -259,79 +292,92 @@ fn generate_resume_pdf(
             }
 
             LineKind::JobEntry => {
-                // Company name (bold)
-                y = draw_mixed_text(
-                    &current_layer,
+                ops.extend(build_text_ops(
                     &line.segments,
                     margin_left,
                     y,
-                    usable_width * 0.7,
-                    line_height,
-                    &font_regular,
-                    &font_bold,
+                    font_regular_id.clone(),
+                    font_bold_id.clone(),
                     template.body_pt,
                     body_color.clone(),
                     emphasis_color.clone(),
-                );
+                ));
 
                 // Date on right
                 if let Some(date) = &line.right_text {
                     let date_x = page_width - margin_right - (date.len() as f32 * pt_to_mm(9.0) * 0.3);
-                    current_layer.use_text(date, 9.0, Mm(date_x), Mm(y + line_height), &font_regular);
-                    current_layer.set_fill_color(date_color.clone());
+                    let text_pos = Point { x: Mm(date_x).into(), y: Mm(y).into() };
+                    ops.push(Op::StartTextSection);
+                    ops.push(Op::SetFillColor { col: date_color.clone() });
+                    ops.push(Op::SetTextCursor { pos: text_pos });
+                    ops.push(Op::SetFont { font: PdfFontHandle::External(font_regular_id.clone()), size: Pt(9.0) });
+                    ops.push(Op::ShowText {
+                        items: vec![TextItem::Text(date.clone())],
+                    });
+                    ops.push(Op::EndTextSection);
                 }
 
-                y -= pt_to_mm(2.0);
+                y -= line_height + pt_to_mm(2.0);
             }
 
             LineKind::JobTitle => {
-                current_layer.use_text(
-                    &line.text,
-                    template.body_pt - 0.5,
-                    Mm(margin_left),
-                    Mm(y),
-                    &font_regular,
-                );
-                current_layer.set_fill_color(date_color.clone());
+                let text_pos = Point { x: Mm(margin_left).into(), y: Mm(y).into() };
+                ops.push(Op::StartTextSection);
+                ops.push(Op::SetFillColor { col: date_color.clone() });
+                ops.push(Op::SetTextCursor { pos: text_pos });
+                ops.push(Op::SetFont { font: PdfFontHandle::External(font_regular_id.clone()), size: Pt(template.body_pt - 0.5) });
+                ops.push(Op::ShowText {
+                    items: vec![TextItem::Text(line.text.clone())],
+                });
+                ops.push(Op::EndTextSection);
 
                 y -= line_height;
             }
 
             LineKind::Bullet => {
                 // Draw bullet point
-                current_layer.use_text("•", template.body_pt, Mm(margin_left + 1.3), Mm(y), &font_regular);
-                current_layer.set_fill_color(body_color.clone());
+                let bullet_pos = Point { x: Mm(margin_left + 1.3).into(), y: Mm(y).into() };
+                ops.push(Op::StartTextSection);
+                ops.push(Op::SetFillColor { col: body_color.clone() });
+                ops.push(Op::SetTextCursor { pos: bullet_pos });
+                ops.push(Op::SetFont { font: PdfFontHandle::External(font_regular_id.clone()), size: Pt(template.body_pt) });
+                ops.push(Op::ShowText {
+                    items: vec![TextItem::Text("•".to_string())],
+                });
+                ops.push(Op::EndTextSection);
 
-                // Draw text
-                y = draw_mixed_text(
-                    &current_layer,
-                    &line.segments,
-                    margin_left + 4.0,
-                    y,
-                    usable_width - 4.0,
-                    line_height,
-                    &font_regular,
-                    &font_bold,
-                    template.body_pt,
-                    body_color.clone(),
-                    emphasis_color.clone(),
-                );
+                // Draw wrapped bullet text
+                let bullet_content_width = page_width - margin_left - margin_right - 4.0;
+                for seg_line in wrap_segments(&line.segments, bullet_content_width, template.body_pt) {
+                    ops.extend(build_text_ops(
+                        &seg_line,
+                        margin_left + 4.0,
+                        y,
+                        font_regular_id.clone(),
+                        font_bold_id.clone(),
+                        template.body_pt,
+                        body_color.clone(),
+                        emphasis_color.clone(),
+                    ));
+                    y -= line_height;
+                }
             }
 
             LineKind::Text => {
-                y = draw_mixed_text(
-                    &current_layer,
-                    &line.segments,
-                    margin_left,
-                    y,
-                    usable_width,
-                    line_height + pt_to_mm(0.5),
-                    &font_regular,
-                    &font_bold,
-                    template.body_pt,
-                    body_color.clone(),
-                    emphasis_color.clone(),
-                );
+                let content_width = page_width - margin_left - margin_right;
+                for seg_line in wrap_segments(&line.segments, content_width, template.body_pt) {
+                    ops.extend(build_text_ops(
+                        &seg_line,
+                        margin_left,
+                        y,
+                        font_regular_id.clone(),
+                        font_bold_id.clone(),
+                        template.body_pt,
+                        body_color.clone(),
+                        emphasis_color.clone(),
+                    ));
+                    y -= line_height;
+                }
             }
         }
 
@@ -339,7 +385,13 @@ fn generate_resume_pdf(
         previous_kind = Some(line.kind);
     }
 
-    Ok(doc)
+    let page = PdfPage::new(Mm(page_width), Mm(page_height), ops);
+    let mut save_warnings = Vec::new();
+    let pdf_bytes = doc
+        .with_pages(vec![page])
+        .save(&PdfSaveOptions::default(), &mut save_warnings);
+
+    Ok(pdf_bytes)
 }
 
 /// Generate PDF for cover letter
@@ -347,29 +399,25 @@ fn generate_cover_letter_pdf(
     text: &str,
     meta: Option<&GenerationMeta>,
     template: &Template,
-) -> Result<PdfDocumentReference> {
-    let (doc, page1, layer1) = PdfDocument::new(
-        "Cover Letter",
-        Mm(210.0),
-        Mm(297.0),
-        "Layer 1",
-    );
+) -> Result<Vec<u8>> {
+    let mut doc = PdfDocument::new("Cover Letter");
 
-    let font_data_regular = include_bytes!("../../fonts/Calibri-Regular.ttf");
-    let font_data_bold = include_bytes!("../../fonts/Calibri-Bold.ttf");
-    
-    let font_regular = doc.add_external_font(font_data_regular.as_ref())
-        .context("Failed to load regular font")?;
-    let font_bold = doc.add_external_font(font_data_bold.as_ref())
-        .context("Failed to load bold font")?;
+    // Load fonts
+    let font_data_regular = include_bytes!("../../fonts/calibri.ttf");
+    let font_data_bold = include_bytes!("../../fonts/calibrib.ttf");
 
-    let current_layer = doc.get_page(page1).get_layer(layer1);
+    let mut warnings = Vec::new();
+    let font_regular = ParsedFont::from_bytes(font_data_regular, 0, &mut warnings)
+        .context("Failed to parse regular font")?;
+    let font_bold = ParsedFont::from_bytes(font_data_bold, 0, &mut warnings)
+        .context("Failed to parse bold font")?;
+
+    let font_regular_id = doc.add_font(&font_regular);
+    let font_bold_id = doc.add_font(&font_bold);
 
     let margin_left = inch_to_mm(template.margin_in + 0.15);
-    let margin_right = inch_to_mm(template.margin_in + 0.15);
     let page_width = 210.0;
     let page_height = 297.0;
-    let usable_width = page_width - margin_left - margin_right;
 
     let mut y = page_height - inch_to_mm(1.0);
     let line_height = pt_to_mm(template.body_pt) * template.line_spacing;
@@ -382,35 +430,44 @@ fn generate_cover_letter_pdf(
     let lines: Vec<&str> = text.lines().collect();
     let mut header_done = false;
     let mut in_body = false;
+    let mut ops: Vec<Op> = Vec::new();
+    let initial_y = y;
 
     for raw_line in lines {
         let trimmed = raw_line.trim();
         if trimmed.is_empty() {
-            y -= line_height * 0.7;
+            y -= pt_to_mm(3.5);
             continue;
         }
 
         let clean = strip_md(trimmed);
-        let segments = super::parser::parse_inline_md(trimmed);
+        // Strip # heading markers but keep ** intact for inline bold detection
+        let text_no_hash = trimmed.trim_start_matches('#').trim_start().trim_end_matches('#').trim_end();
+        let segments = super::parser::parse_inline_md(text_no_hash);
 
         let is_salutation = clean.starts_with("Dear") || clean.starts_with("Sehr geehrte");
-        let is_signoff = clean.starts_with("Kind regards") || clean.starts_with("Sincerely");
+        let is_signoff = clean.starts_with("Kind regards")
+            || clean.starts_with("Sincerely")
+            || clean.starts_with("Mit freundlichen Grüßen")
+            || clean.starts_with("Hochachtungsvoll")
+            || clean.starts_with("Viele Grüße");
 
         // First line is name
-        if !header_done && y == page_height - inch_to_mm(1.0) {
+        if !header_done && (y - initial_y).abs() < 0.1 {
             let name_text = meta
                 .and_then(|m| m.candidate_name.as_ref())
                 .map(|s| s.as_str())
                 .unwrap_or(&clean);
 
-            current_layer.use_text(
-                name_text,
-                template.name_pt - 2.0,
-                Mm(margin_left),
-                Mm(y),
-                &font_bold,
-            );
-            current_layer.set_fill_color(name_color.clone());
+            let text_pos = Point { x: Mm(margin_left).into(), y: Mm(y).into() };
+            ops.push(Op::StartTextSection);
+            ops.push(Op::SetFillColor { col: name_color.clone() });
+            ops.push(Op::SetTextCursor { pos: text_pos });
+            ops.push(Op::SetFont { font: PdfFontHandle::External(font_bold_id.clone()), size: Pt(template.name_pt - 2.0) });
+            ops.push(Op::ShowText {
+                items: vec![TextItem::Text(name_text.to_string())],
+            });
+            ops.push(Op::EndTextSection);
 
             y -= pt_to_mm(template.name_pt - 2.0) * 1.2 + pt_to_mm(1.5);
             continue;
@@ -418,8 +475,15 @@ fn generate_cover_letter_pdf(
 
         // Contact/address
         if !header_done && (clean.contains('@') || clean.contains('|')) {
-            current_layer.use_text(&clean, template.body_pt, Mm(margin_left), Mm(y), &font_regular);
-            current_layer.set_fill_color(date_color.clone());
+            let text_pos = Point { x: Mm(margin_left).into(), y: Mm(y).into() };
+            ops.push(Op::StartTextSection);
+            ops.push(Op::SetFillColor { col: date_color.clone() });
+            ops.push(Op::SetTextCursor { pos: text_pos });
+            ops.push(Op::SetFont { font: PdfFontHandle::External(font_regular_id.clone()), size: Pt(template.body_pt) });
+            ops.push(Op::ShowText {
+                items: vec![TextItem::Text(clean.clone())],
+            });
+            ops.push(Op::EndTextSection);
             y -= line_height + pt_to_mm(1.0);
             continue;
         }
@@ -428,8 +492,15 @@ fn generate_cover_letter_pdf(
         if is_salutation {
             header_done = true;
             in_body = true;
-            current_layer.use_text(&clean, template.body_pt + 0.5, Mm(margin_left), Mm(y), &font_bold);
-            current_layer.set_fill_color(body_color.clone());
+            let text_pos = Point { x: Mm(margin_left).into(), y: Mm(y).into() };
+            ops.push(Op::StartTextSection);
+            ops.push(Op::SetFillColor { col: body_color.clone() });
+            ops.push(Op::SetTextCursor { pos: text_pos });
+            ops.push(Op::SetFont { font: PdfFontHandle::External(font_bold_id.clone()), size: Pt(template.body_pt + 0.5) });
+            ops.push(Op::ShowText {
+                items: vec![TextItem::Text(clean.clone())],
+            });
+            ops.push(Op::EndTextSection);
             y -= line_height + pt_to_mm(3.0);
             continue;
         }
@@ -437,60 +508,111 @@ fn generate_cover_letter_pdf(
         // Signoff
         if is_signoff {
             y -= pt_to_mm(5.0);
-            current_layer.use_text(&clean, template.body_pt + 0.5, Mm(margin_left), Mm(y), &font_regular);
-            current_layer.set_fill_color(body_color.clone());
+            let text_pos = Point { x: Mm(margin_left).into(), y: Mm(y).into() };
+            ops.push(Op::StartTextSection);
+            ops.push(Op::SetFillColor { col: body_color.clone() });
+            ops.push(Op::SetTextCursor { pos: text_pos });
+            ops.push(Op::SetFont { font: PdfFontHandle::External(font_regular_id.clone()), size: Pt(template.body_pt + 0.5) });
+            ops.push(Op::ShowText {
+                items: vec![TextItem::Text(clean.clone())],
+            });
+            ops.push(Op::EndTextSection);
             y -= line_height + pt_to_mm(12.0);
             continue;
         }
 
-        // Addressee block
+        // Addressee block (wrapped)
         if !in_body {
-            current_layer.use_text(&clean, template.body_pt, Mm(margin_left), Mm(y), &font_regular);
-            current_layer.set_fill_color(date_color.clone());
-            y -= line_height + pt_to_mm(1.0);
+            let addr_width = page_width - margin_left - inch_to_mm(template.margin_in);
+            let addr_segs = super::parser::parse_inline_md(&clean);
+            let addr_wrapped = wrap_segments(&addr_segs, addr_width, template.body_pt);
+            let addr_last = addr_wrapped.len().saturating_sub(1);
+            for (i, seg_line) in addr_wrapped.into_iter().enumerate() {
+                let text_pos = Point { x: Mm(margin_left).into(), y: Mm(y).into() };
+                ops.push(Op::StartTextSection);
+                ops.push(Op::SetFillColor { col: date_color.clone() });
+                ops.push(Op::SetTextCursor { pos: text_pos });
+                ops.push(Op::SetFont { font: PdfFontHandle::External(font_regular_id.clone()), size: Pt(template.body_pt) });
+                ops.push(Op::ShowText {
+                    items: vec![TextItem::Text(seg_line.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(""))],
+                });
+                ops.push(Op::EndTextSection);
+                y -= if i == addr_last { line_height + pt_to_mm(1.5) } else { line_height };
+            }
             continue;
         }
 
-        // Body paragraphs
-        y = draw_mixed_text(
-            &current_layer,
-            &segments,
-            margin_left,
-            y,
-            usable_width,
-            line_height + pt_to_mm(1.0),
-            &font_regular,
-            &font_bold,
-            template.body_pt + 0.5,
-            body_color.clone(),
-            emphasis_color.clone(),
-        );
-
-        y -= pt_to_mm(2.0);
+        // Body paragraphs (wrapped)
+        let cover_content_width = page_width - margin_left - inch_to_mm(template.margin_in + 0.15);
+        let para_lines = wrap_segments(&segments, cover_content_width, template.body_pt + 0.5);
+        let last_idx = para_lines.len().saturating_sub(1);
+        for (i, seg_line) in para_lines.into_iter().enumerate() {
+            ops.extend(build_text_ops(
+                &seg_line,
+                margin_left,
+                y,
+                font_regular_id.clone(),
+                font_bold_id.clone(),
+                template.body_pt + 0.5,
+                body_color.clone(),
+                emphasis_color.clone(),
+            ));
+            y -= if i == last_idx { line_height + pt_to_mm(2.0) } else { line_height };
+        }
     }
 
-    Ok(doc)
+    let page = PdfPage::new(Mm(page_width), Mm(page_height), ops);
+    let mut save_warnings = Vec::new();
+    let pdf_bytes = doc
+        .with_pages(vec![page])
+        .save(&PdfSaveOptions::default(), &mut save_warnings);
+
+    Ok(pdf_bytes)
+}
+
+/// Extract the section between two markers, or the full text if not found
+fn extract_section<'a>(text: &'a str, start_marker: &str, end_marker: Option<&str>) -> &'a str {
+    let start = if let Some(idx) = text.find(start_marker) {
+        let after = &text[idx + start_marker.len()..];
+        // skip the marker line itself
+        after.find('\n').map(|i| idx + start_marker.len() + i + 1).unwrap_or(idx + start_marker.len())
+    } else {
+        return text;
+    };
+
+    let end = if let Some(em) = end_marker {
+        text[start..].find(em).map(|i| start + i).unwrap_or(text.len())
+    } else {
+        text.len()
+    };
+
+    text[start..end].trim()
 }
 
 /// Main export function
 pub fn generate_pdf(request: &ExportRequest) -> Result<Vec<u8>> {
     let template = Template::get(request.template_id);
 
-    let doc = match request.document_type {
+    match request.document_type {
         DocumentType::Resume => {
-            generate_resume_pdf(&request.text, request.meta.as_ref(), &template)
-                .context("Failed to generate resume PDF")?
+            let text = extract_section(
+                &request.text,
+                "### CANDIDATE RESUME ###",
+                Some("### JOB ADVERTISEMENT ###"),
+            );
+            let text = if text.is_empty() { &request.text } else { text };
+            generate_resume_pdf(text, request.meta.as_ref(), &template)
+                .context("Failed to generate resume PDF")
         }
         DocumentType::CoverLetter => {
-            generate_cover_letter_pdf(&request.text, request.meta.as_ref(), &template)
-                .context("Failed to generate cover letter PDF")?
+            let text = extract_section(
+                &request.text,
+                "### COMPLETE COVER LETTER ###",
+                None,
+            );
+            let text = if text.is_empty() { &request.text } else { text };
+            generate_cover_letter_pdf(text, request.meta.as_ref(), &template)
+                .context("Failed to generate cover letter PDF")
         }
-    };
-
-    // Convert to bytes
-    let mut buffer = Vec::new();
-    doc.save(&mut BufWriter::new(&mut buffer))
-        .context("Failed to save PDF to buffer")?;
-
-    Ok(buffer)
+    }
 }

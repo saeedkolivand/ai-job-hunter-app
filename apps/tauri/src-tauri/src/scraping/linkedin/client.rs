@@ -145,7 +145,7 @@ impl LinkedInHttpClient {
         let status = response.status();
 
         if !status.is_success() {
-            let error_body = response.text().await.unwrap_or_else(|_| String::from("<no body>"));
+            let _error_body = response.text().await.unwrap_or_else(|_| String::from("<no body>"));
             return Err(anyhow::anyhow!("HTTP {}: Request failed", status));
         }
 

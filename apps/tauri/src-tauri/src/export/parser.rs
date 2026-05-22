@@ -1,6 +1,5 @@
 use regex::Regex;
 use std::sync::LazyLock;
-use unicode_segmentation::UnicodeSegmentation;
 
 use super::types::{LineKind, ParsedDocument, ParsedLine, TextSegment};
 
@@ -94,9 +93,11 @@ pub fn parse_inline_md(line: &str) -> Vec<TextSegment> {
     segments
 }
 
-/// Strip **bold** markers from text
+/// Strip **bold** markers and leading/trailing # heading markers from text
 pub fn strip_md(text: &str) -> String {
-    text.replace("**", "")
+    let no_bold = text.replace("**", "");
+    let s = no_bold.trim_start_matches('#').trim_start();
+    s.trim_end_matches('#').trim_end().to_string()
 }
 
 /// Check if all-caps text is likely a company/role name

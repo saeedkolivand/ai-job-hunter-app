@@ -1000,10 +1000,10 @@ export async function exportDOCX(
       templateId = 'modern';
     }
 
-    // Use Rust backend for export
+    // Use Rust backend for export with file dialog
     const { getClient } = await import('@/lib/app-client');
     const api = getClient();
-    const result = await api.documents.exportDocument({
+    const filePath = await api.documents.exportAndSave({
       text,
       format: 'docx',
       documentType: type,
@@ -1017,13 +1017,6 @@ export async function exportDOCX(
           }
         : undefined,
     });
-
-    // Save the file
-    const blob = new Blob([new Uint8Array(result.data)], { type: result.mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement('a'), { href: url, download: result.filename });
-    a.click();
-    URL.revokeObjectURL(url);
   } catch (error) {
     console.error('DOCX export failed:', error);
     throw new Error(
@@ -1053,10 +1046,10 @@ export async function exportPDF(
       templateId = 'modern';
     }
 
-    // Use Rust backend for export
+    // Use Rust backend for export with file dialog
     const { getClient } = await import('@/lib/app-client');
     const api = getClient();
-    const result = await api.documents.exportDocument({
+    const filePath = await api.documents.exportAndSave({
       text,
       format: 'pdf',
       documentType: type,
@@ -1070,13 +1063,6 @@ export async function exportPDF(
           }
         : undefined,
     });
-
-    // Save the file
-    const blob = new Blob([new Uint8Array(result.data)], { type: result.mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement('a'), { href: url, download: result.filename });
-    a.click();
-    URL.revokeObjectURL(url);
   } catch (error) {
     console.error('PDF export failed:', error);
     throw new Error(

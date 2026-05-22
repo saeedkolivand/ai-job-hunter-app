@@ -2,6 +2,7 @@ use super::types::TemplateId;
 
 /// Template styling configuration
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Template {
     pub id: TemplateId,
     pub name: &'static str,
@@ -34,6 +35,7 @@ pub struct Template {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum SectionStyle {
     RuledBottom,
     Underline,
