@@ -1,17 +1,16 @@
 import { useState } from 'react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { StreamingText } from '../components/StreamingText';
 
-const meta: Meta<typeof StreamingText> = {
-  title: 'Content/StreamingText',
+const meta = {
   component: StreamingText,
   tags: ['autodocs'],
   argTypes: {
     isStreaming: { control: 'boolean' },
     autoScroll: { control: 'boolean' },
   },
-};
+} satisfies Meta<typeof StreamingText>;
 export default meta;
 type Story = StoryObj<typeof StreamingText>;
 

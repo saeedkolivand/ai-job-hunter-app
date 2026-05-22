@@ -1,10 +1,9 @@
 import { Download, Sparkles, Trash2 } from 'lucide-react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { Button } from '../components/Button';
 
-const meta: Meta<typeof Button> = {
-  title: 'Primitives/Button',
+const meta = {
   component: Button,
   tags: ['autodocs'],
   argTypes: {
@@ -16,7 +15,7 @@ const meta: Meta<typeof Button> = {
     loading: { control: 'boolean' },
     disabled: { control: 'boolean' },
   },
-};
+} satisfies Meta<typeof Button>;
 export default meta;
 type Story = StoryObj<typeof Button>;
 

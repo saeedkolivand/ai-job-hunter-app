@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { LocationInput } from '../components/LocationInput';
 
-const meta: Meta<typeof LocationInput> = {
-  title: 'Primitives/LocationInput',
+const meta = {
   component: LocationInput,
   tags: ['autodocs'],
   argTypes: {
@@ -18,7 +17,7 @@ const meta: Meta<typeof LocationInput> = {
       },
     },
   },
-};
+} satisfies Meta<typeof LocationInput>;
 export default meta;
 type Story = StoryObj<typeof LocationInput>;
 

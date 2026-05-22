@@ -1,13 +1,13 @@
 import React from 'react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ErrorState } from '../components/ErrorState';
 
-const meta: Meta = {
-  title: 'Feedback/ErrorBoundary',
+const meta = {
+  component: ErrorBoundary,
   tags: ['autodocs'],
-};
+} satisfies Meta;
 export default meta;
 type Story = StoryObj;
 

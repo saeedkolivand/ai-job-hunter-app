@@ -1,16 +1,15 @@
 import { Briefcase, FileText, Search, Settings, Sparkles, Zap } from 'lucide-react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { ActionTile } from '../components/ActionTile';
 
-const meta: Meta<typeof ActionTile> = {
-  title: 'Primitives/ActionTile',
+const meta = {
   component: ActionTile,
   tags: ['autodocs'],
   argTypes: {
     active: { control: 'boolean' },
   },
-};
+} satisfies Meta<typeof ActionTile>;
 export default meta;
 type Story = StoryObj<typeof ActionTile>;
 

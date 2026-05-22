@@ -1,11 +1,11 @@
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { CardSkeleton, RowSkeleton, Skeleton } from '../components/LoadingSkeleton';
 
-const meta: Meta = {
-  title: 'Feedback/LoadingSkeleton',
+const meta = {
+  component: Skeleton,
   tags: ['autodocs'],
-};
+} satisfies Meta;
 export default meta;
 type Story = StoryObj;
 

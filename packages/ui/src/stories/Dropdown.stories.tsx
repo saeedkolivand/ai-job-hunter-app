@@ -1,11 +1,10 @@
 import { Cpu, Globe, Search } from 'lucide-react';
 import { useState } from 'react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { Dropdown } from '../components/Dropdown';
 
 const meta = {
-  title: 'Primitives/Dropdown',
   component: Dropdown,
   tags: ['autodocs'],
   parameters: { layout: 'centered' },

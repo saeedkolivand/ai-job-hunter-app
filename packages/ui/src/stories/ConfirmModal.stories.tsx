@@ -1,15 +1,14 @@
 import { useState } from 'react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 
-const meta: Meta<typeof ConfirmModal> = {
-  title: 'Overlays/ConfirmModal',
+const meta = {
   component: ConfirmModal,
   tags: ['autodocs'],
   parameters: { layout: 'fullscreen' },
-};
+} satisfies Meta<typeof ConfirmModal>;
 export default meta;
 type Story = StoryObj<typeof ConfirmModal>;
 
