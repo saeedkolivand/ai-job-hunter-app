@@ -2,7 +2,7 @@ import { Check, Lock, Trash2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 
-import { Button, Input, useToast } from '@ajh/ui';
+import { Button, Input, useNotification } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
@@ -23,7 +23,7 @@ export function AccountRow({ board, saved, disabled, onSaved, onRemoved }: Accou
   const [open, setOpen] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const toast = useToast();
+  const notify = useNotification();
   const setCredential = useSetCredential();
   const removeCredential = useRemoveCredential();
   const busy = setCredential.isPending || removeCredential.isPending;
@@ -36,9 +36,9 @@ export function AccountRow({ board, saved, disabled, onSaved, onRemoved }: Accou
       setUsername('');
       setOpen(false);
       onSaved();
-      toast(`${board.name} credentials saved.`, 'success');
+      notify(`${board.name} credentials saved.`, 'success');
     } catch (err) {
-      toast(
+      notify(
         err instanceof Error ? err.message : `Failed to save ${board.name} credentials.`,
         'error'
       );
@@ -49,9 +49,9 @@ export function AccountRow({ board, saved, disabled, onSaved, onRemoved }: Accou
     try {
       await removeCredential.mutateAsync(board.id);
       onRemoved();
-      toast(`${board.name} credentials removed.`, 'success');
+      notify(`${board.name} credentials removed.`, 'success');
     } catch (err) {
-      toast(
+      notify(
         err instanceof Error ? err.message : `Failed to remove ${board.name} credentials.`,
         'error'
       );

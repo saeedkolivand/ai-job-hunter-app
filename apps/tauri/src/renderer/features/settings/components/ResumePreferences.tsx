@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 
 import type { DocumentRecord } from '@ajh/shared';
-import { Button, GlassCard, useToast } from '@ajh/ui';
+import { Button, GlassCard, useNotification } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
@@ -13,7 +13,7 @@ import { usePreferencesStore, useResume } from '@/store/preferences-store';
 
 export function ResumePreferences() {
   const { t } = useTranslation();
-  const toast = useToast();
+  const notify = useNotification();
   const resume = useResume();
   const setResume = usePreferencesStore((state) => state.setResume);
 
@@ -53,9 +53,9 @@ export function ResumePreferences() {
         const firstId = rawDocs[0]?._id;
         if (firstId) setResume({ defaultId: firstId, autoIndex: true, autoParse: true });
       }
-      toast(t('settings.resume.uploaded'), 'success');
+      notify(t('settings.resume.uploaded'), 'success');
     } catch (err) {
-      toast(err instanceof Error ? err.message : t('settings.resume.uploadFailed'), 'error');
+      notify(err instanceof Error ? err.message : t('settings.resume.uploadFailed'), 'error');
     }
   };
 
@@ -92,9 +92,9 @@ export function ResumePreferences() {
           autoParse: resume?.autoParse ?? true,
         });
       }
-      toast(t('settings.resume.removed'), 'success');
+      notify(t('settings.resume.removed'), 'success');
     } catch {
-      toast(t('settings.resume.removeFailed'), 'error');
+      notify(t('settings.resume.removeFailed'), 'error');
     }
   };
 
@@ -110,7 +110,7 @@ export function ResumePreferences() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    toast(t('settings.resume.downloaded'), 'success');
+    notify(t('settings.resume.downloaded'), 'success');
   };
 
   const uploading = importDocument.isPending;

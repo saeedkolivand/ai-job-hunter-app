@@ -21,7 +21,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { Button, Input, useToast } from '@ajh/ui';
+import { Button, Input, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
@@ -186,7 +186,7 @@ type PullState = 'idle' | 'pulling' | 'done' | 'error';
 
 export function OllamaStep({ onBack, onNext, direction }: Props) {
   const { t } = useTranslation();
-  const toast = useToast();
+  const notify = useNotification();
   const qc = useQueryClient();
   const setAIModel = usePreferencesStore((s) => s.setAIModel);
   const setAiProviderConfig = usePreferencesStore((s) => s.setAiProviderConfig);
@@ -255,11 +255,11 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
       setPullState('done');
       await refetchModels();
       qc.invalidateQueries({ queryKey: keys.ai.models });
-      toast(`${selectedModel} downloaded successfully.`, 'success');
+      notify(`${selectedModel} downloaded successfully.`, 'success');
     } catch (err) {
       if (pollRef.current) clearInterval(pollRef.current);
       setPullState('error');
-      toast(err instanceof Error ? err.message : 'Download failed.', 'error');
+      notify(err instanceof Error ? err.message : 'Download failed.', 'error');
     }
   };
 
@@ -275,9 +275,9 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
         activeProvider: cloudProvider,
         providers: { [cloudProvider]: { model: CLOUD_DEFAULT_MODELS[cloudProvider] ?? '' } },
       });
-      toast(`${cloudMeta?.label ?? cloudProvider} API key saved.`, 'success');
+      notify(`${cloudMeta?.label ?? cloudProvider} API key saved.`, 'success');
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Failed to save key.', 'error');
+      notify(err instanceof Error ? err.message : 'Failed to save key.', 'error');
     } finally {
       setSavingCloudKey(false);
     }

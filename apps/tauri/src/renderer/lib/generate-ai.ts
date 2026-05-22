@@ -1031,7 +1031,7 @@ export async function exportDOCX(
     const { getClient } = await import('@/lib/app-client');
     const api = getClient();
     const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
-    const filePath = await api.documents.exportAndSave({
+    const _filePath = await api.documents.exportAndSave({
       text: exportText,
       format: 'docx',
       documentType: type,
@@ -1078,7 +1078,7 @@ export async function exportPDF(
     const { getClient } = await import('@/lib/app-client');
     const api = getClient();
     const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
-    const filePath = await api.documents.exportAndSave({
+    const _filePath = await api.documents.exportAndSave({
       text: exportText,
       format: 'pdf',
       documentType: type,

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { createRootRoute, Outlet, useRouter } from '@tanstack/react-router';
 
-import { ToastProvider } from '@ajh/ui';
+import { NotificationProvider } from '@ajh/ui';
 
 import { CinematicBackground } from '@/components/background/CinematicBackground';
 import { CommandPalette } from '@/components/command-palette/CommandPalette';
@@ -49,7 +49,7 @@ function RootLayout() {
   }, [router]);
 
   return (
-    <ToastProvider>
+    <NotificationProvider>
       <CapabilityProvider>
         <div className="app-content relative flex h-screen flex-col overflow-hidden pt-3">
           <CinematicBackground />
@@ -66,7 +66,7 @@ function RootLayout() {
           <UpdateBanner />
         </div>
       </CapabilityProvider>
-    </ToastProvider>
+    </NotificationProvider>
   );
 }
 

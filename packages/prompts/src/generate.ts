@@ -311,16 +311,16 @@ Company: ${meta.companyName || 'Unknown'}
 ${langNote}
 ${emphasisBlock}
 
-### REWRITING PROCESS ###
+### REWRITING INSTRUCTIONS (internal — do NOT output any of this) ###
 
-PHASE 1 — INTERNAL ANALYSIS (do not output):
+Internally analyse before writing:
 1. Extract the 8–10 most important requirements from the job ad
 2. Map each requirement to the candidate's existing experience
 3. Identify the 2–3 experience items most relevant to this role
 4. Note which bullets lack quantification or strong action verbs
 5. List experience to minimize (irrelevant to this role)
 
-PHASE 2 — REWRITE:
+Rewriting rules:
 
 Professional Summary (3 sentences max):
 - Sentence 1: Seniority + domain + years of experience + specific value for THIS role
@@ -340,16 +340,38 @@ Skills Section:
 - Group: Languages | Frameworks | Tools | Platforms | Methodologies
 - Bold the skills that also appear in topRequirements
 
-PHASE 3 — ATS VERIFICATION:
-Before outputting, verify:
-✓ All section headers are standard
+Verify before writing:
+✓ All section headers are standard ALL_CAPS words
 ✓ Dates are consistent throughout
 ✓ Every bullet starts with action verb
 ✓ Key job-ad technologies appear bolded and naturally integrated
 ✓ No tables, columns, or special chars that break ATS parsers
 
 CRITICAL: Only use facts from the original resume.
-Output the complete rewritten resume now:`;
+
+### CANDIDATE RESUME ###
+
+Now output ONLY the rewritten resume. Do not output analysis, phase labels, or explanations.
+Use this exact structure:
+
+Line 1: Full name (plain text only — no #, no ALL_CAPS, no markdown)
+Line 2: Job title (plain text)
+Line 3: City, Country | email | phone | LinkedIn
+(blank line)
+PROFESSIONAL SUMMARY
+(summary paragraph)
+(blank line)
+WORK EXPERIENCE
+(blank line)
+Role Title, Company Name (Mon Year – Mon Year)
+• Bullet using CAR format with **bolded tech**
+• ...
+(blank line)
+SKILLS
+Category: Skill1, **Skill2**, Skill3
+...
+
+Start the resume now:`;
 }
 
 // ─── Cover letter system prompt ───────────────────────────────────────────────
