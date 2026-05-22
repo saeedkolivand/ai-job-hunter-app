@@ -255,15 +255,23 @@ pub async fn geocode_suggest(query: String) -> Value {
         .user_agent("AJH-App/1.0")
         .build()
         .unwrap_or_default();
+    let encoded_q = query
+        .trim()
+        .chars()
+        .flat_map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '~' || c == ' ' {
+                if c == ' ' { vec!['+']} else { vec![c] }
+            } else {
+                format!("%{:02X}", c as u32).chars().collect::<Vec<_>>()
+            }
+        })
+        .collect::<String>();
+    let url = format!(
+        "https://nominatim.openstreetmap.org/search?q={}&format=json&addressdetails=1&limit=6&featuretype=city",
+        encoded_q
+    );
     let Ok(resp) = client
-        .get("https://nominatim.openstreetmap.org/search")
-        .query(&[
-            ("q", query.trim()),
-            ("format", "json"),
-            ("addressdetails", "1"),
-            ("limit", "6"),
-            ("featuretype", "city"),
-        ])
+        .get(&url)
         .header("Accept-Language", "en")
         .send()
         .await
