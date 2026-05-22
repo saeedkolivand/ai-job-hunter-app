@@ -22,6 +22,12 @@ export { ConfirmModal } from './components/ConfirmModal';
 export { GlassOverlay } from './components/GlassOverlay';
 export { ModalShell, type ModalShellProps } from './components/ModalShell';
 export { type ToastItem, ToastProvider, type ToastVariant, useToast } from './components/Toast';
+export {
+  type NotificationItem,
+  NotificationProvider,
+  type NotificationVariant,
+  useNotification,
+} from './components/Notification';
 
 // ── Feedback States ───────────────────────────────────────────────────────
 export { EmptyState } from './components/EmptyState';
