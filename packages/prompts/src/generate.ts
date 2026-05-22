@@ -442,33 +442,26 @@ Today: ${today}
 ${langNote}
 ${emphasisBlock}
 
-### WRITING PROCESS ###
+### WRITING PROCESS (internal — do NOT output any of this) ###
 
-STEP 1 — ANALYZE:
-- What are the top 3 requirements in the job ad?
-- What does this company/team actually need to accomplish?
-- Which 1–2 resume achievements best prove the candidate can deliver?
-- What specific technologies/tools are emphasized in the job ad?
+Think through the following privately before writing:
+- Top 3 requirements in the job ad
+- What this company/team actually needs to accomplish
+- Which 1–2 resume achievements best prove the candidate can deliver
+- Specific technologies/tools emphasized in the job ad
 
-STEP 2 — WRITE the complete cover letter following your system instructions:
-- Header (name, contact, date)
-- Addressee block (company, hiring team)
-- Salutation
-- Hook: value-first opener, NOT "I am applying"
-- Evidence: specific achievement + bolded technology + result
-- Fit: show you understand the company's actual goals
-- Confident close
-- Sign-off appropriate to language/market
-
-STEP 3 — VERIFY before outputting:
+Verify before writing:
 ✓ First sentence does NOT start with "I am excited/applying/writing"
 ✓ Company name appears in the body
 ✓ At least one specific metric or achievement from the resume is referenced
 ✓ At least one job-ad requirement is directly addressed with a bolded keyword
 ✓ 200–300 words in the body
+✓ Only use facts from the resume
 
-CRITICAL: Only use facts from the resume.
-Write the complete cover letter now:`;
+### COMPLETE COVER LETTER ###
+
+Now output ONLY the cover letter below. Do not output analysis, explanations, or process steps.
+Start immediately with the candidate header:`;
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────

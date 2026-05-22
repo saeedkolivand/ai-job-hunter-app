@@ -978,6 +978,33 @@ export async function exportCoverLetterPDF(
   doc.save(filename);
 }
 
+// ─── Cover letter text extraction ────────────────────────────────────────────
+
+/**
+ * Strips prompt scaffolding from AI cover letter output.
+ * If the AI echoed the resume/job-ad context, extract only the letter section.
+ */
+function extractCoverLetterText(raw: string): string {
+  const marker = '### COMPLETE COVER LETTER ###';
+  const idx = raw.indexOf(marker);
+  if (idx !== -1) {
+    return raw.slice(idx + marker.length).trim();
+  }
+  // Fallback: if the AI output contains the resume section marker, strip everything before the letter.
+  // Heuristic: find first "Dear " or "Sehr geehrte" that comes after any ### markers.
+  const lastHash = raw.lastIndexOf('###');
+  if (lastHash !== -1) {
+    const afterHash = raw.slice(lastHash);
+    const salutationMatch = afterHash.search(/\n(Dear |Sehr geehrte)/);
+    if (salutationMatch !== -1) {
+      return afterHash.slice(salutationMatch).trim();
+    }
+    // If no salutation found after last ###, just return everything after it.
+    return afterHash.replace(/^###[^\n]*\n/, '').trim();
+  }
+  return raw.trim();
+}
+
 // ─── Public export API ────────────────────────────────────────────────────────
 
 export async function exportDOCX(
@@ -1003,8 +1030,9 @@ export async function exportDOCX(
     // Use Rust backend for export with file dialog
     const { getClient } = await import('@/lib/app-client');
     const api = getClient();
+    const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
     const filePath = await api.documents.exportAndSave({
-      text,
+      text: exportText,
       format: 'docx',
       documentType: type,
       templateId: templateId as 'classic' | 'modern' | 'executive',
@@ -1049,8 +1077,9 @@ export async function exportPDF(
     // Use Rust backend for export with file dialog
     const { getClient } = await import('@/lib/app-client');
     const api = getClient();
+    const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
     const filePath = await api.documents.exportAndSave({
-      text,
+      text: exportText,
       format: 'pdf',
       documentType: type,
       templateId: templateId as 'classic' | 'modern' | 'executive',

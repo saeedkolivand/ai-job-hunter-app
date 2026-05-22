@@ -72,7 +72,7 @@ fn build_text_ops(
 
 /// Merge a word (with optional leading space) into the last segment if same boldness, else push new
 fn push_word_to_segs(segs: &mut Vec<super::types::TextSegment>, word: &str, bold: bool, space_before: bool) {
-    let is_punct_start = word.starts_with([',', '.', '!', '?', ';', ':']);
+    let is_punct_start = word.starts_with([',', '.', '!', '?', ';', ':', '-']);
     let text = if space_before && !is_punct_start { format!(" {}", word) } else { word.to_string() };
     if let Some(last) = segs.last_mut() {
         if last.bold == bold {
@@ -415,12 +415,14 @@ fn generate_cover_letter_pdf(
     let font_regular_id = doc.add_font(&font_regular);
     let font_bold_id = doc.add_font(&font_bold);
 
-    let margin_left = inch_to_mm(template.margin_in + 0.15);
-    let page_width = 210.0;
-    let page_height = 297.0;
+    let margin_left = 30.0_f32;    // ~1.18" — generous symmetric margins
+    let margin_right = 30.0_f32;
+    let page_width = 210.0_f32;
+    let page_height = 297.0_f32;
+    let content_width = page_width - margin_left - margin_right; // ~150 mm
 
-    let mut y = page_height - inch_to_mm(1.0);
-    let line_height = pt_to_mm(template.body_pt) * template.line_spacing;
+    let mut y = page_height - 25.4_f32; // 1" top margin
+    let line_height = pt_to_mm(template.body_pt) * 1.55; // relaxed line spacing
 
     let name_color = rgb_to_color(template.name_color);
     let body_color = rgb_to_color(template.body_color);
@@ -436,7 +438,7 @@ fn generate_cover_letter_pdf(
     for raw_line in lines {
         let trimmed = raw_line.trim();
         if trimmed.is_empty() {
-            y -= pt_to_mm(3.5);
+            y -= pt_to_mm(5.0);
             continue;
         }
 
@@ -473,78 +475,82 @@ fn generate_cover_letter_pdf(
             continue;
         }
 
-        // Contact/address
+        // Contact/address — split on | and render each item on its own line
         if !header_done && (clean.contains('@') || clean.contains('|')) {
-            let text_pos = Point { x: Mm(margin_left).into(), y: Mm(y).into() };
-            ops.push(Op::StartTextSection);
-            ops.push(Op::SetFillColor { col: date_color.clone() });
-            ops.push(Op::SetTextCursor { pos: text_pos });
-            ops.push(Op::SetFont { font: PdfFontHandle::External(font_regular_id.clone()), size: Pt(template.body_pt) });
-            ops.push(Op::ShowText {
-                items: vec![TextItem::Text(clean.clone())],
-            });
-            ops.push(Op::EndTextSection);
-            y -= line_height + pt_to_mm(1.0);
+            let contact_font_size = template.body_pt - 0.5;
+            let contact_line_h = pt_to_mm(contact_font_size) * 1.4;
+            for item in clean.split('|').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                let text_pos = Point { x: Mm(margin_left).into(), y: Mm(y).into() };
+                ops.push(Op::StartTextSection);
+                ops.push(Op::SetFillColor { col: date_color.clone() });
+                ops.push(Op::SetTextCursor { pos: text_pos });
+                ops.push(Op::SetFont { font: PdfFontHandle::External(font_regular_id.clone()), size: Pt(contact_font_size) });
+                ops.push(Op::ShowText { items: vec![TextItem::Text(item.to_string())] });
+                ops.push(Op::EndTextSection);
+                y -= contact_line_h;
+            }
+            y -= pt_to_mm(2.0);
             continue;
         }
 
-        // Salutation
+        // Salutation — add extra gap between header block and letter body
         if is_salutation {
+            if !header_done {
+                y -= pt_to_mm(10.0); // professional gap before greeting
+            }
             header_done = true;
             in_body = true;
             let text_pos = Point { x: Mm(margin_left).into(), y: Mm(y).into() };
             ops.push(Op::StartTextSection);
             ops.push(Op::SetFillColor { col: body_color.clone() });
             ops.push(Op::SetTextCursor { pos: text_pos });
-            ops.push(Op::SetFont { font: PdfFontHandle::External(font_bold_id.clone()), size: Pt(template.body_pt + 0.5) });
+            ops.push(Op::SetFont { font: PdfFontHandle::External(font_regular_id.clone()), size: Pt(template.body_pt) });
             ops.push(Op::ShowText {
                 items: vec![TextItem::Text(clean.clone())],
             });
             ops.push(Op::EndTextSection);
-            y -= line_height + pt_to_mm(3.0);
+            y -= line_height + pt_to_mm(4.0);
             continue;
         }
 
         // Signoff
         if is_signoff {
-            y -= pt_to_mm(5.0);
+            y -= pt_to_mm(4.0);
             let text_pos = Point { x: Mm(margin_left).into(), y: Mm(y).into() };
             ops.push(Op::StartTextSection);
             ops.push(Op::SetFillColor { col: body_color.clone() });
             ops.push(Op::SetTextCursor { pos: text_pos });
-            ops.push(Op::SetFont { font: PdfFontHandle::External(font_regular_id.clone()), size: Pt(template.body_pt + 0.5) });
+            ops.push(Op::SetFont { font: PdfFontHandle::External(font_regular_id.clone()), size: Pt(template.body_pt) });
             ops.push(Op::ShowText {
                 items: vec![TextItem::Text(clean.clone())],
             });
             ops.push(Op::EndTextSection);
-            y -= line_height + pt_to_mm(12.0);
+            y -= line_height + pt_to_mm(6.0); // space for handwritten signature
             continue;
         }
 
         // Addressee block (wrapped)
         if !in_body {
-            let addr_width = page_width - margin_left - inch_to_mm(template.margin_in);
             let addr_segs = super::parser::parse_inline_md(&clean);
-            let addr_wrapped = wrap_segments(&addr_segs, addr_width, template.body_pt);
+            let addr_wrapped = wrap_segments(&addr_segs, content_width, template.body_pt);
             let addr_last = addr_wrapped.len().saturating_sub(1);
             for (i, seg_line) in addr_wrapped.into_iter().enumerate() {
                 let text_pos = Point { x: Mm(margin_left).into(), y: Mm(y).into() };
                 ops.push(Op::StartTextSection);
-                ops.push(Op::SetFillColor { col: date_color.clone() });
+                ops.push(Op::SetFillColor { col: body_color.clone() });
                 ops.push(Op::SetTextCursor { pos: text_pos });
                 ops.push(Op::SetFont { font: PdfFontHandle::External(font_regular_id.clone()), size: Pt(template.body_pt) });
                 ops.push(Op::ShowText {
                     items: vec![TextItem::Text(seg_line.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(""))],
                 });
                 ops.push(Op::EndTextSection);
-                y -= if i == addr_last { line_height + pt_to_mm(1.5) } else { line_height };
+                y -= if i == addr_last { line_height + pt_to_mm(1.0) } else { line_height };
             }
             continue;
         }
 
         // Body paragraphs (wrapped)
-        let cover_content_width = page_width - margin_left - inch_to_mm(template.margin_in + 0.15);
-        let para_lines = wrap_segments(&segments, cover_content_width, template.body_pt + 0.5);
+        let para_lines = wrap_segments(&segments, content_width, template.body_pt);
         let last_idx = para_lines.len().saturating_sub(1);
         for (i, seg_line) in para_lines.into_iter().enumerate() {
             ops.extend(build_text_ops(
@@ -553,11 +559,11 @@ fn generate_cover_letter_pdf(
                 y,
                 font_regular_id.clone(),
                 font_bold_id.clone(),
-                template.body_pt + 0.5,
+                template.body_pt,
                 body_color.clone(),
                 emphasis_color.clone(),
             ));
-            y -= if i == last_idx { line_height + pt_to_mm(2.0) } else { line_height };
+            y -= if i == last_idx { line_height + pt_to_mm(4.5) } else { line_height };
         }
     }
 
