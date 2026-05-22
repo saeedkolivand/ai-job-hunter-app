@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Button } from '../components/Button';
 import { ToastProvider, type ToastVariant, useToast } from '../components/Toast';
 
-const meta = {
+const meta: Meta = {
   component: ToastProvider,
   tags: ['autodocs'],
   parameters: { layout: 'fullscreen' },
@@ -14,7 +14,7 @@ const meta = {
       </ToastProvider>
     ),
   ],
-} satisfies Meta;
+};
 export default meta;
 type Story = StoryObj;
 
