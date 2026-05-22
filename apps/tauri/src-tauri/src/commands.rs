@@ -1282,7 +1282,7 @@ pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
 
 #[tauri::command]
 pub async fn scrape_url(app: AppHandle, req: Value) -> Value {
-    let url = req.get("url").and_then(|u| u.as_str()).unwrap_or("");
+    let url = req.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string();
     if url.is_empty() {
         return json!({ "error": "url is required" });
     }
@@ -1293,29 +1293,60 @@ pub async fn scrape_url(app: AppHandle, req: Value) -> Value {
         .unwrap()
         .start(&job_id, "scrape.url");
 
-    let result = crate::scraping::scrape_url::resolve(url).await;
+    // Return jobId immediately, then scrape in background
+    let app_clone = app.clone();
+    let job_id_clone = job_id.clone();
+    tokio::spawn(async move {
+        let result = crate::scraping::scrape_url::resolve(&url).await;
 
-    let tracker = app.state::<Mutex<JobTracker>>();
-    match result {
-        Ok(Some(posting)) => {
-            if let Ok(mut g) = tracker.lock() {
-                g.complete(&job_id, json!({ "ok": true }));
+        let tracker = app_clone.state::<Mutex<JobTracker>>();
+        match result {
+            Ok(Some(posting)) => {
+                // Add to PostingsCache
+                if let Some(cache) = app_clone.try_state::<Mutex<PostingsCache>>() {
+                    if let Ok(mut guard) = cache.lock() {
+                        if let Ok(item_json) = serde_json::to_value(&posting) {
+                            guard.add(item_json);
+                        }
+                    }
+                }
+                
+                // Emit job item
+                let _ = app_clone.emit(
+                    "jobs:event",
+                    json!({ "type": "job.stream", "jobId": job_id_clone, "data": posting, "ts": now_ms() })
+                );
+
+                if let Ok(mut g) = tracker.lock() {
+                    g.complete(&job_id_clone, json!({ "ok": true }));
+                }
+                let _ = app_clone.emit(
+                    "jobs:event",
+                    json!({ "type": "job.completed", "jobId": job_id_clone, "data": { "count": 1 }, "ts": now_ms() })
+                );
             }
-            json!({ "jobId": job_id, "posting": posting })
-        }
-        Ok(None) => {
-            if let Ok(mut g) = tracker.lock() {
-                g.fail(&job_id, "no scraper matched this URL".to_string());
+            Ok(None) => {
+                if let Ok(mut g) = tracker.lock() {
+                    g.fail(&job_id_clone, "no scraper matched this URL".to_string());
+                }
+                let _ = app_clone.emit(
+                    "jobs:event",
+                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": "no scraper matched this URL", "ts": now_ms() })
+                );
             }
-            json!({ "jobId": job_id, "error": "no scraper matched this URL" })
-        }
-        Err(e) => {
-            if let Ok(mut g) = tracker.lock() {
-                g.fail(&job_id, e.to_string());
+            Err(e) => {
+                if let Ok(mut g) = tracker.lock() {
+                    g.fail(&job_id_clone, e.to_string());
+                }
+                let _ = app_clone.emit(
+                    "jobs:event",
+                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": e.to_string(), "ts": now_ms() })
+                );
             }
-            json!({ "jobId": job_id, "error": e.to_string() })
         }
-    }
+    });
+
+    json!({ "jobId": job_id })
 }
 
 #[tauri::command]
