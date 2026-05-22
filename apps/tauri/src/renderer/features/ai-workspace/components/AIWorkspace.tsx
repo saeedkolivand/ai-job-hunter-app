@@ -231,7 +231,7 @@ export function AIWorkspace() {
             <>
               {/* Backdrop to close dropdown */}
               <div className="fixed inset-0 z-20" onClick={() => setShowModelPicker(false)} />
-              <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-white/[0.08] bg-[#0a0a0a]/95 backdrop-blur-xl shadow-2xl z-30 overflow-hidden">
+              <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-white/[0.08] bg-black/95 backdrop-blur-xl shadow-2xl z-30 overflow-hidden">
                 {/* Refresh button */}
                 <div className="border-b border-white/[0.06] p-2">
                   <button

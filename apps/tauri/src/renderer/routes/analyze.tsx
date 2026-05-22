@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 
+import type { DocumentRecord } from '@ajh/shared';
 import { Button, TextArea } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -33,8 +34,6 @@ import { CustomDropdown } from '@/features/settings/components/CustomDropdown';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
-import type { DocumentRecord } from '@ajh/shared';
-
 import { type AnalysisResult, runAnalysis } from '@/lib/resume-ai';
 import { useAIModels, useDocuments, useExtractText } from '@/services';
 import { keys } from '@/services/query-client';

@@ -1500,7 +1500,8 @@ export async function exportDOCX(
   } catch (error) {
     console.error('DOCX export failed:', error);
     throw new Error(
-      `Failed to export DOCX: ${error instanceof Error ? error.message : 'Unknown error'}`
+      `Failed to export DOCX: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      { cause: error }
     );
   }
 }
@@ -1530,7 +1531,8 @@ export async function exportPDF(
   } catch (error) {
     console.error('PDF export failed:', error);
     throw new Error(
-      `Failed to export PDF: ${error instanceof Error ? error.message : 'Unknown error'}`
+      `Failed to export PDF: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      { cause: error }
     );
   }
 }
@@ -1554,7 +1556,8 @@ export function exportTXT(text: string, filename: string): void {
   } catch (error) {
     console.error('TXT export failed:', error);
     throw new Error(
-      `Failed to export TXT: ${error instanceof Error ? error.message : 'Unknown error'}`
+      `Failed to export TXT: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      { cause: error }
     );
   }
 }

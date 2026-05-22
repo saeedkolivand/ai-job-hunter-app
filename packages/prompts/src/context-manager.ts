@@ -77,7 +77,7 @@ export function detectSections(resume: string): ResumeSection[] {
   let currentContent: string[] = [];
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+    const line = lines[i]?.trim() ?? '';
 
     // Check if this line is a section header
     let foundSection = false;
@@ -229,11 +229,13 @@ function truncateExperience(content: string, maxTokens: number): string {
   if (currentRole.length > 0) roles.push(currentRole);
 
   // Keep most recent roles in full, summarize older ones
-  let result: string[] = [];
+  const result: string[] = [];
   let currentTokens = 0;
 
   for (let i = 0; i < roles.length; i++) {
     const role = roles[i];
+    if (!role) continue;
+
     const roleText = role.join('\n');
     const roleTokens = estimateTokens(roleText);
 
@@ -247,7 +249,7 @@ function truncateExperience(content: string, maxTokens: number): string {
       const headerTokens = estimateTokens(header);
       if (currentTokens + headerTokens <= maxTokens) {
         result.push(header + '\n[Details truncated]');
-        currentTokens += headerTokens + 10;
+        // Note: currentTokens not used after this point in this branch
       }
       break;
     } else {
@@ -351,10 +353,10 @@ export function truncateResume(resume: string, strategy: TruncationStrategy): st
   }
 
   const modelType = strategy.modelType || 'large';
-  console.log(
+  console.warn(
     `Resume too large: ${totalTokens} tokens (limit: ${strategy.maxTokens} for ${modelType} model)`
   );
-  console.log(`Detected ${sections.length} sections, ${estimatePages(resume)} estimated pages`);
+  console.warn(`Detected ${sections.length} sections, ${estimatePages(resume)} estimated pages`);
 
   // Build result by priority
   const result: string[] = [];
@@ -398,7 +400,7 @@ export function truncateResume(resume: string, strategy: TruncationStrategy): st
 
   const finalResume = result.join('\n\n');
   const finalTokens = estimateTokens(finalResume);
-  console.log(
+  console.warn(
     `Truncated resume: ${finalTokens} tokens (${estimatePages(finalResume)} pages) for ${modelType} model`
   );
 
