@@ -10,18 +10,13 @@ pub enum ExportFormat {
 }
 
 /// Template ID for styling
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TemplateId {
+    #[default]
     Classic,
     Modern,
     Executive,
-}
-
-impl Default for TemplateId {
-    fn default() -> Self {
-        Self::Modern
-    }
 }
 
 /// Document type

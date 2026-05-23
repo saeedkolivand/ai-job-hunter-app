@@ -8,7 +8,7 @@ use super::{
 };
 
 const MM_PER_INCH: f32 = 25.4;
-const PT_PER_MM: f32 = 2.834645669;
+const PT_PER_MM: f32 = 2.834_645_7;
 
 /// Convert inches to millimeters
 fn inch_to_mm(inch: f32) -> f32 {
@@ -31,8 +31,7 @@ fn rgb_to_color(rgb: (u8, u8, u8)) -> Color {
 }
 
 /// Build text operations for mixed bold/normal text
-fn build_text_ops(
-    segments: &[TextSegment],
+struct TextOpsConfig {
     x: f32,
     y: f32,
     font_regular: FontId,
@@ -40,26 +39,28 @@ fn build_text_ops(
     font_size: f32,
     normal_color: Color,
     bold_color: Color,
-) -> Vec<Op> {
+}
+
+fn build_text_ops(segments: &[TextSegment], config: TextOpsConfig) -> Vec<Op> {
     if segments.is_empty() {
         return Vec::new();
     }
     let mut ops = Vec::new();
     let text_pos = Point {
-        x: Mm(x).into(),
-        y: Mm(y).into(),
+        x: Mm(config.x).into(),
+        y: Mm(config.y).into(),
     };
     ops.push(Op::StartTextSection);
     ops.push(Op::SetTextCursor { pos: text_pos });
 
     for segment in segments {
-        let font_id = if segment.bold { font_bold.clone() } else { font_regular.clone() };
-        let color = if segment.bold { bold_color.clone() } else { normal_color.clone() };
+        let font_id = if segment.bold { config.font_bold.clone() } else { config.font_regular.clone() };
+        let color = if segment.bold { config.bold_color.clone() } else { config.normal_color.clone() };
 
         ops.push(Op::SetFillColor { col: color });
         ops.push(Op::SetFont { 
             font: PdfFontHandle::External(font_id), 
-            size: Pt(font_size) 
+            size: Pt(config.font_size) 
         });
         ops.push(Op::ShowText {
             items: vec![TextItem::Text(segment.text.clone())],
@@ -294,13 +295,15 @@ fn generate_resume_pdf(
             LineKind::JobEntry => {
                 ops.extend(build_text_ops(
                     &line.segments,
-                    margin_left,
-                    y,
-                    font_regular_id.clone(),
-                    font_bold_id.clone(),
-                    template.body_pt,
-                    body_color.clone(),
-                    emphasis_color.clone(),
+                    TextOpsConfig {
+                        x: margin_left,
+                        y,
+                        font_regular: font_regular_id.clone(),
+                        font_bold: font_bold_id.clone(),
+                        font_size: template.body_pt,
+                        normal_color: body_color.clone(),
+                        bold_color: emphasis_color.clone(),
+                    },
                 ));
 
                 // Date on right
@@ -351,13 +354,15 @@ fn generate_resume_pdf(
                 for seg_line in wrap_segments(&line.segments, bullet_content_width, template.body_pt) {
                     ops.extend(build_text_ops(
                         &seg_line,
-                        margin_left + 4.0,
-                        y,
-                        font_regular_id.clone(),
-                        font_bold_id.clone(),
-                        template.body_pt,
-                        body_color.clone(),
-                        emphasis_color.clone(),
+                        TextOpsConfig {
+                            x: margin_left + 4.0,
+                            y,
+                            font_regular: font_regular_id.clone(),
+                            font_bold: font_bold_id.clone(),
+                            font_size: template.body_pt,
+                            normal_color: body_color.clone(),
+                            bold_color: emphasis_color.clone(),
+                        },
                     ));
                     y -= line_height;
                 }
@@ -368,13 +373,15 @@ fn generate_resume_pdf(
                 for seg_line in wrap_segments(&line.segments, content_width, template.body_pt) {
                     ops.extend(build_text_ops(
                         &seg_line,
-                        margin_left,
-                        y,
-                        font_regular_id.clone(),
-                        font_bold_id.clone(),
-                        template.body_pt,
-                        body_color.clone(),
-                        emphasis_color.clone(),
+                        TextOpsConfig {
+                            x: margin_left,
+                            y,
+                            font_regular: font_regular_id.clone(),
+                            font_bold: font_bold_id.clone(),
+                            font_size: template.body_pt,
+                            normal_color: body_color.clone(),
+                            bold_color: emphasis_color.clone(),
+                        },
                     ));
                     y -= line_height;
                 }
@@ -555,13 +562,15 @@ fn generate_cover_letter_pdf(
         for (i, seg_line) in para_lines.into_iter().enumerate() {
             ops.extend(build_text_ops(
                 &seg_line,
-                margin_left,
-                y,
-                font_regular_id.clone(),
-                font_bold_id.clone(),
-                template.body_pt,
-                body_color.clone(),
-                emphasis_color.clone(),
+                TextOpsConfig {
+                    x: margin_left,
+                    y,
+                    font_regular: font_regular_id.clone(),
+                    font_bold: font_bold_id.clone(),
+                    font_size: template.body_pt,
+                    normal_color: body_color.clone(),
+                    bold_color: emphasis_color.clone(),
+                },
             ));
             y -= if i == last_idx { line_height + pt_to_mm(4.5) } else { line_height };
         }
