@@ -246,7 +246,7 @@ fn get_gpu_info() -> Vec<Value> {
                             }
                             None
                         } else {
-                            0
+                            Some(0)
                         }
                     };
                     
