@@ -45,7 +45,7 @@ impl ApplySession {
             .arg("--no-first-run");
 
         // Use system Chrome/Edge if available.
-        if let Some(chrome_path) = crate::scraping::board_login::detect_system_chrome() {
+        if let Some(chrome_path) = crate::platform::detect_system_chrome() {
             builder = builder.chrome_executable(chrome_path);
         }
 
