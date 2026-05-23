@@ -1,5 +1,8 @@
 {
   "branches": ["main"],
+  "tagFormat": "v${version}",
+  "preset": "conventionalcommits",
+  "initialReleaseVersion": "0.1.0",
   "plugins": [
     [
       "@semantic-release/commit-analyzer",
@@ -49,8 +52,6 @@
         "changelogFile": "CHANGELOG.md"
       }
     ],
-    ["@semantic-release/npm", { "npmPublish": false }],
-    ["@semantic-release/npm", { "npmPublish": false, "pkgRoot": "apps/tauri" }],
     [
       "@semantic-release/exec",
       {
