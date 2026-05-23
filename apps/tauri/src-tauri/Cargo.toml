@@ -5,7 +5,6 @@ edition = "2021"
 description = "AI Job Hunter — Tauri desktop shell"
 authors = ["Saeed Kolivand"]
 
-# Disable default binary stripping so debug symbols survive in dev builds.
 [profile.dev]
 incremental = true
 
@@ -25,14 +24,19 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-clipboard-manager = "2"
+
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
 # HTTP client used by all in-process scrapers and the apply flow.
 reqwest = { version = "0.13", features = ["json", "native-tls", "cookies"], default-features = false }
+
 tokio = { version = "1", features = ["full"] }
-chromiumoxide = { version = "0.9", features = ["fetcher", "zip8"] }
-futures = "0.3"
 tokio-util = "0.7"
+
+chromiumoxide = { version = "0.9", features = ["fetcher", "zip8"] }
+
+futures = "0.3"
 regex = "1"
 anyhow = "1"
 chrono = "0.4"
@@ -41,19 +45,26 @@ urlencoding = "2"
 rand = "0.8"
 async-trait = "0.1"
 arc-swap = "1.7"
+
 uuid = { version = "1", features = ["v4"] }
+
 base64 = "0.22"
 scraper = "0.20"
 flate2 = "1.0"
+
 # OS-native secret storage: DPAPI (Windows), Keychain (macOS), libsecret (Linux).
 # Same underlying primitives as Electron's safeStorage.
 keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service"] }
+
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
-[target.'cfg(windows)'.dependencies]
-wmi = "0.14"
+
+# Cross-platform dependencies
 rusqlite = { version = "0.39", features = ["bundled"] }
 pdf-extract = "0.10"
 zip = "8"
 docx-rs = "0.4.19"
 printpdf = "0.9.1"
 unicode-segmentation = "1.10"
+
+[target.'cfg(windows)'.dependencies]
+wmi = "0.14"
