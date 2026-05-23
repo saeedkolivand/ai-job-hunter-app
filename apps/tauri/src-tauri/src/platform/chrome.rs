@@ -11,12 +11,12 @@ pub fn detect_system_chrome() -> Option<std::path::PathBuf> {
 
     #[cfg(target_os = "windows")]
     {
-        return detect_chrome_windows();
+        detect_chrome_windows()
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        return detect_chrome_unix();
+        detect_chrome_unix()
     }
 }
 
