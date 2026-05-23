@@ -9,7 +9,9 @@
     ".": "./dist/index.js",
     "./ipc": "./dist/ipc/contracts.js",
     "./schemas": "./dist/schemas/index.js",
-    "./types": "./dist/types/index.js"
+    "./types": "./dist/types/index.js",
+    "./utils": "./dist/utils.js",
+    "./ai-models": "./dist/ai-models.js"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

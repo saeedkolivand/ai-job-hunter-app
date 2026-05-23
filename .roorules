@@ -1,6 +1,6 @@
 # AI Job Hunter — Roo Rules
 
-Local-first Electron desktop app. pnpm monorepo. React 19 + TypeScript strict.
+Local-first Tauri desktop app. pnpm monorepo. React 19 + TypeScript strict.
 ESLint `--max-warnings 0` in CI — every warning is a build failure.
 
 ---

@@ -29,6 +29,7 @@ import {
   useRemoveProviderKey,
   useSetProviderKey,
   useSystemHealth,
+  useSystemResources,
 } from '@/services';
 import { keys } from '@/services/query-client';
 import type { AiProvider } from '@/store/preferences-schema';
@@ -119,6 +120,12 @@ export function AISettingsTab() {
   const pullModel = usePullModel();
   const openExternal = useOpenExternal();
   const [pulling, setPulling] = useState<string | null>(null);
+
+  // System resources for Ollama
+  const selectedOllamaModel = providerConfig?.providers?.ollama?.model || aiModel?.defaultModel;
+  const { resources, modelUsage } = useSystemResources(selectedOllamaModel);
+  const { totalRamGb, freeRamGb, deviceTier, hasGpu, freeVramGb } = resources;
+  const { mightLagRam, mightLagVram } = modelUsage;
 
   // Key status for every cloud provider (hooks must be called unconditionally)
   const openaiKey = useHasProviderKey('openai');
@@ -396,15 +403,43 @@ export function AISettingsTab() {
                           />
                         )}
                         {connected && (
-                          <Button
-                            variant="glass"
-                            size="sm"
-                            onClick={() => setActiveProvider('ollama')}
-                            disabled={isActive}
-                            className={isActive ? 'opacity-40' : 'glow-subtle'}
-                          >
-                            {isActive ? 'Currently active' : 'Set as active'}
-                          </Button>
+                          <div className="space-y-2">
+                            {/* System resources display */}
+                            <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-foreground/40">
+                                  RAM: {totalRamGb} GB ({freeRamGb} GB free)
+                                </span>
+                                <span className={`font-medium ${deviceTier.color}`}>
+                                  {deviceTier.label}
+                                </span>
+                              </div>
+                              {hasGpu && (
+                                <div className="mt-1 text-xs text-foreground/40">
+                                  VRAM: {freeVramGb} GB free
+                                </div>
+                              )}
+                              {mightLagRam && (
+                                <div className="mt-1 text-xs text-amber-400/80">
+                                  ⚠️ Selected model may lag due to limited RAM
+                                </div>
+                              )}
+                              {mightLagVram && (
+                                <div className="mt-1 text-xs text-orange-400/80">
+                                  ⚠️ Selected model may lag due to limited VRAM
+                                </div>
+                              )}
+                            </div>
+                            <Button
+                              variant="glass"
+                              size="sm"
+                              onClick={() => setActiveProvider('ollama')}
+                              disabled={isActive}
+                              className={isActive ? 'opacity-40' : 'glow-subtle'}
+                            >
+                              {isActive ? 'Currently active' : 'Set as active'}
+                            </Button>
+                          </div>
                         )}
                       </>
                     ) : (

@@ -1,6 +1,6 @@
-/**
+/*!
  * Export module for generating professional resumes and cover letters.
- * 
+ *
  * Architecture:
  * - parser.rs: Parse resume text into structured format
  * - docx.rs: Generate DOCX files

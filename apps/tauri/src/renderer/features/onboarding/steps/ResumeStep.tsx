@@ -145,7 +145,7 @@ export function ResumeStep({ onBack, onNext, direction }: Props) {
             onClick={onNext}
             className={hasResume ? 'hover:glow-purple px-6 gap-2' : 'px-6 gap-2'}
           >
-            {hasResume ? t('onboarding.continue') : t('onboarding.resume.skip')}
+            {hasResume ? t('onboarding.resume.next') : t('onboarding.resume.skip')}
             <ArrowRight size={14} />
           </Button>
         </div>
