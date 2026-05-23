@@ -29,18 +29,31 @@
         "presetConfig": {
           "types": [
             { "type": "feat", "section": "âœ¨ Features", "hidden": false },
-            { "type": "fix", "section": "ğŸ› Bug Fixes", "hidden": false },
+            { "type": "fix", "section": "í°› Bug Fixes", "hidden": false },
             { "type": "perf", "section": "âš¡ Performance", "hidden": false },
-            { "type": "ui", "section": "ğŸ¨ UI/UX", "hidden": false },
+            { "type": "ui", "section": "í¾¨ UI/UX", "hidden": false },
             { "type": "refactor", "section": "â™»ï¸ Refactors", "hidden": false },
-            { "type": "docs", "section": "ğŸ“š Documentation", "hidden": false },
-            { "type": "build", "section": "ğŸ”§ Build System", "hidden": true },
-            { "type": "ci", "section": "ğŸ‘· CI", "hidden": true },
+            { "type": "docs", "section": "í³š Documentation", "hidden": false },
+            { "type": "build", "section": "í´§ Build System", "hidden": true },
+            { "type": "ci", "section": "í±· CI", "hidden": true },
             { "type": "test", "section": "âœ… Tests", "hidden": true },
-            { "type": "chore", "section": "ğŸ§¹ Maintenance", "hidden": true },
+            { "type": "chore", "section": "í·¹ Maintenance", "hidden": true },
             { "type": "revert", "section": "âª Reverts", "hidden": false }
           ]
         }
+      }
+    ],
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "CHANGELOG.md"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": ["CHANGELOG.md", "package.json"],
+        "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
       }
     ],
     ["@semantic-release/npm", { "npmPublish": false }],
@@ -54,7 +67,7 @@
     [
       "@semantic-release/github",
       {
-        "successComment": "ğŸ‰ This is included in version ${nextRelease.version}.",
+        "successComment": "í¾‰ This is included in version ${nextRelease.version}.",
         "failComment": false,
         "addReleases": "bottom"
       }
