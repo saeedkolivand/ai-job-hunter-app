@@ -23,6 +23,12 @@ console.log(`updated apps/tauri/package.json → ${version}`);
 const confPath = resolve(root, 'apps/tauri/src-tauri/tauri.conf.json');
 const conf = JSON.parse(readFileSync(confPath, 'utf8'));
 conf.version = version;
+// Inject public key from environment variable (CI) or keep existing
+const publicKey = process.env.TAURI_SIGNING_PUBLIC_KEY;
+if (publicKey) {
+  conf.plugins.updater.pubkey = publicKey;
+  console.log(`updated apps/tauri/src-tauri/tauri.conf.json pubkey`);
+}
 writeFileSync(confPath, JSON.stringify(conf, null, 2) + '\n');
 console.log(`updated apps/tauri/src-tauri/tauri.conf.json → ${version}`);
 
