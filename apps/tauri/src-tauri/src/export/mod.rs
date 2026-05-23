@@ -12,7 +12,9 @@
 
 pub mod parser;
 pub mod docx;
+pub mod docx_renderer;
 pub mod pdf;
+pub mod pdf_renderer;
 pub mod templates;
 pub mod types;
 pub mod commands;

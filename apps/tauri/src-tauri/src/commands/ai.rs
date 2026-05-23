@@ -1,0 +1,725 @@
+use serde_json::{json, Value};
+use std::sync::Mutex;
+use tauri::{AppHandle, Emitter, Manager};
+use crate::credentials::CredentialStore;
+use crate::jobs::JobTracker;
+
+fn uuid_v4() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("job-{t:x}")
+}
+
+/// Stream an AI generation from Ollama.
+#[tauri::command]
+pub async fn ai_generate(app: AppHandle, req: Value) -> Value {
+    let provider = req
+        .get("provider")
+        .and_then(|v| v.as_str())
+        .unwrap_or("ollama")
+        .to_string();
+
+    let job_id = uuid_v4();
+    app.state::<Mutex<JobTracker>>()
+        .lock()
+        .unwrap()
+        .start(&job_id, "ai.generate");
+
+    let job_id_clone = job_id.clone();
+    let app_clone = app.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let result = match provider.as_str() {
+            "openai" | "openai-compatible" => {
+                let api_key = get_provider_key(&app_clone, &provider).unwrap_or_default();
+                let base_url = req
+                    .get("baseUrl")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("https://api.openai.com/v1")
+                    .to_string();
+                stream_openai_chat(&app_clone, &base_url, &api_key, &job_id_clone, req).await
+            }
+            "anthropic" => {
+                let api_key = get_provider_key(&app_clone, "anthropic").unwrap_or_default();
+                stream_anthropic_chat(&app_clone, &api_key, &job_id_clone, req).await
+            }
+            "gemini" => {
+                let api_key = get_provider_key(&app_clone, "gemini").unwrap_or_default();
+                stream_gemini_chat(&app_clone, &api_key, &job_id_clone, req).await
+            }
+            _ => {
+                let base = std::env::var("OLLAMA_HOST")
+                    .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                stream_ollama_chat(&app_clone, &base, &job_id_clone, req).await
+            }
+        };
+
+        if let Err(e) = result {
+            let _ = app_clone.emit(
+                "ai:stream",
+                json!({ "jobId": job_id_clone, "delta": format!("\n\nError: {e}"), "done": true }),
+            );
+            app_clone
+                .state::<Mutex<JobTracker>>()
+                .lock()
+                .unwrap()
+                .fail(&job_id_clone, e);
+        }
+    });
+
+    json!({ "jobId": job_id })
+}
+
+async fn stream_ollama_chat(
+    app: &AppHandle,
+    base: &str,
+    job_id: &str,
+    req: Value,
+) -> Result<(), String> {
+    let model = req
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let messages = req.get("messages").cloned().unwrap_or(json!([]));
+    let temperature = req.get("temperature").and_then(|v| v.as_f64());
+
+    let mut body = json!({
+        "model": model,
+        "messages": messages,
+        "stream": true,
+    });
+    if let Some(t) = temperature {
+        body["options"] = json!({ "temperature": t });
+    }
+
+    let mut response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?
+        .post(format!("{base}/api/chat"))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Ollama unreachable: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        return Err(format!("Ollama {status}: {body_text}"));
+    }
+
+    let mut line_buf = String::new();
+
+    while let Some(bytes) = response
+        .chunk()
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        line_buf.push_str(&String::from_utf8_lossy(&bytes));
+
+        while let Some(nl) = line_buf.find('\n') {
+            let line = line_buf[..nl].trim().to_string();
+            line_buf = line_buf[nl + 1..].to_string();
+
+            if line.is_empty() {
+                continue;
+            }
+
+            let event: Value = match serde_json::from_str(&line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            let delta = event
+                .get("message")
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
+                .unwrap_or("");
+            let done = event
+                .get("done")
+                .and_then(|d| d.as_bool())
+                .unwrap_or(false);
+
+            let _ = app.emit(
+                "ai:stream",
+                json!({ "jobId": job_id, "delta": delta, "done": done }),
+            );
+
+            if done {
+                app.state::<Mutex<JobTracker>>()
+                    .lock()
+                    .unwrap()
+                    .complete(job_id, json!({ "done": true }));
+                return Ok(());
+            }
+        }
+    }
+
+    let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+    app.state::<Mutex<JobTracker>>()
+        .lock()
+        .unwrap()
+        .complete(job_id, json!({ "done": true }));
+
+    Ok(())
+}
+
+fn get_provider_key(app: &AppHandle, provider: &str) -> Option<String> {
+    let store = app.state::<Mutex<CredentialStore>>();
+    let guard = store.lock().unwrap();
+    guard
+        .get_decrypted(&format!("ai:{provider}"))
+        .map(|(_, password)| password)
+}
+
+#[tauri::command]
+pub fn ai_set_provider_key(app: AppHandle, provider: String, api_key: String) -> Value {
+    let store = app.state::<Mutex<CredentialStore>>();
+    let guard = store.lock().unwrap();
+    match guard.set(&format!("ai:{provider}"), "apikey", &api_key) {
+        Ok(()) => json!({ "success": true }),
+        Err(e) => json!({ "success": false, "error": e }),
+    }
+}
+
+#[tauri::command]
+pub fn ai_remove_provider_key(app: AppHandle, provider: String) -> Value {
+    let store = app.state::<Mutex<CredentialStore>>();
+    let guard = store.lock().unwrap();
+    match guard.remove(&format!("ai:{provider}")) {
+        Ok(()) => json!({ "success": true }),
+        Err(e) => json!({ "success": false, "error": e }),
+    }
+}
+
+#[tauri::command]
+pub fn ai_has_provider_key(app: AppHandle, provider: String) -> Value {
+    json!({ "has": get_provider_key(&app, &provider).is_some() })
+}
+
+#[tauri::command]
+pub async fn ai_list_provider_models(app: AppHandle, provider: String) -> Value {
+    let api_key = match get_provider_key(&app, &provider) {
+        Some(k) => k,
+        None => return json!([]),
+    };
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return json!([]),
+    };
+
+    match provider.as_str() {
+        "openai" | "openai-compatible" => {
+            let resp = client
+                .get("https://api.openai.com/v1/models")
+                .bearer_auth(&api_key)
+                .send()
+                .await;
+            if let Ok(r) = resp {
+                if let Ok(body) = r.json::<serde_json::Value>().await {
+                    if let Some(data) = body.get("data").and_then(|d| d.as_array()) {
+                        let models: Vec<Value> = data
+                            .iter()
+                            .filter_map(|m| m.get("id").and_then(|id| id.as_str()))
+                            .filter(|id| {
+                                id.starts_with("gpt-")
+                                    || id.starts_with("o1")
+                                    || id.starts_with("o3")
+                                    || id.starts_with("o4")
+                            })
+                            .map(|id| json!({ "name": id }))
+                            .collect();
+                        return json!(models);
+                    }
+                }
+            }
+            json!([
+                { "name": "gpt-4o" }, { "name": "gpt-4o-mini" },
+                { "name": "gpt-4-turbo" }, { "name": "gpt-3.5-turbo" },
+                { "name": "o1" }, { "name": "o1-mini" }
+            ])
+        }
+        "anthropic" => json!([
+            { "name": "claude-opus-4-7" },
+            { "name": "claude-sonnet-4-6" },
+            { "name": "claude-haiku-4-5-20251001" }
+        ]),
+        "gemini" => json!([
+            { "name": "gemini-2.0-flash" },
+            { "name": "gemini-1.5-pro" },
+            { "name": "gemini-1.5-flash" },
+            { "name": "gemini-1.0-pro" }
+        ]),
+        _ => json!([]),
+    }
+}
+
+async fn stream_openai_chat(
+    app: &AppHandle,
+    base_url: &str,
+    api_key: &str,
+    job_id: &str,
+    req: Value,
+) -> Result<(), String> {
+    let model = req
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("gpt-4o")
+        .to_string();
+    let messages = req.get("messages").cloned().unwrap_or(json!([]));
+    let temperature = req.get("temperature").and_then(|v| v.as_f64()).unwrap_or(0.7);
+
+    let body = json!({
+        "model": model,
+        "messages": messages,
+        "stream": true,
+        "temperature": temperature,
+    });
+
+    let mut response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?
+        .post(format!("{base_url}/chat/completions"))
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("OpenAI unreachable: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        return Err(format!("OpenAI {status}: {body_text}"));
+    }
+
+    let mut line_buf = String::new();
+
+    while let Some(bytes) = response.chunk().await.map_err(|e| e.to_string())? {
+        line_buf.push_str(&String::from_utf8_lossy(&bytes));
+
+        while let Some(nl) = line_buf.find('\n') {
+            let line = line_buf[..nl].trim().to_string();
+            line_buf = line_buf[nl + 1..].to_string();
+
+            let data = match line.strip_prefix("data: ") {
+                Some(d) => d.trim(),
+                None => continue,
+            };
+
+            if data == "[DONE]" {
+                let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+                app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
+                return Ok(());
+            }
+
+            let event: Value = match serde_json::from_str(data) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            let delta = event
+                .get("choices")
+                .and_then(|c| c.get(0))
+                .and_then(|c| c.get("delta"))
+                .and_then(|d| d.get("content"))
+                .and_then(|c| c.as_str())
+                .unwrap_or("");
+
+            if !delta.is_empty() {
+                let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": delta, "done": false }));
+            }
+        }
+    }
+
+    let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+    app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
+    Ok(())
+}
+
+async fn stream_anthropic_chat(
+    app: &AppHandle,
+    api_key: &str,
+    job_id: &str,
+    req: Value,
+) -> Result<(), String> {
+    let model = req
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("claude-sonnet-4-6")
+        .to_string();
+    let temperature = req.get("temperature").and_then(|v| v.as_f64()).unwrap_or(0.7);
+
+    let messages_raw = req.get("messages").and_then(|m| m.as_array()).cloned().unwrap_or_default();
+    let system_content: String = messages_raw
+        .iter()
+        .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("system"))
+        .filter_map(|m| m.get("content").and_then(|c| c.as_str()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let messages: Vec<Value> = messages_raw
+        .iter()
+        .filter(|m| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+        .cloned()
+        .collect();
+
+    let mut body = json!({
+        "model": model,
+        "messages": messages,
+        "max_tokens": 4096,
+        "stream": true,
+        "temperature": temperature,
+    });
+    if !system_content.is_empty() {
+        body["system"] = json!(system_content);
+    }
+
+    let mut response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Anthropic unreachable: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        return Err(format!("Anthropic {status}: {body_text}"));
+    }
+
+    let mut line_buf = String::new();
+    let mut last_event = String::new();
+
+    while let Some(bytes) = response.chunk().await.map_err(|e| e.to_string())? {
+        line_buf.push_str(&String::from_utf8_lossy(&bytes));
+
+        while let Some(nl) = line_buf.find('\n') {
+            let line = line_buf[..nl].trim().to_string();
+            line_buf = line_buf[nl + 1..].to_string();
+
+            if let Some(event) = line.strip_prefix("event: ") {
+                last_event = event.trim().to_string();
+                continue;
+            }
+
+            let data = match line.strip_prefix("data: ") {
+                Some(d) => d.trim(),
+                None => continue,
+            };
+
+            if last_event == "message_stop" || data.contains("\"type\":\"message_stop\"") {
+                let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+                app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
+                return Ok(());
+            }
+
+            let event: Value = match serde_json::from_str(data) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            let delta = event
+                .get("delta")
+                .and_then(|d| d.get("text"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("");
+
+            if !delta.is_empty() {
+                let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": delta, "done": false }));
+            }
+        }
+    }
+
+    let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+    app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
+    Ok(())
+}
+
+async fn stream_gemini_chat(
+    app: &AppHandle,
+    api_key: &str,
+    job_id: &str,
+    req: Value,
+) -> Result<(), String> {
+    let model = req
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("gemini-2.0-flash")
+        .to_string();
+    let temperature = req.get("temperature").and_then(|v| v.as_f64()).unwrap_or(0.7);
+
+    let messages_raw = req.get("messages").and_then(|m| m.as_array()).cloned().unwrap_or_default();
+
+    let system_text: String = messages_raw
+        .iter()
+        .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("system"))
+        .filter_map(|m| m.get("content").and_then(|c| c.as_str()))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let contents: Vec<Value> = messages_raw
+        .iter()
+        .filter(|m| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+        .map(|m| {
+            let role = if m.get("role").and_then(|r| r.as_str()) == Some("assistant") {
+                "model"
+            } else {
+                "user"
+            };
+            let text = m.get("content").and_then(|c| c.as_str()).unwrap_or("");
+            json!({ "role": role, "parts": [{ "text": text }] })
+        })
+        .collect();
+
+    let mut body = json!({
+        "contents": contents,
+        "generationConfig": { "temperature": temperature },
+    });
+    if !system_text.is_empty() {
+        body["systemInstruction"] = json!({ "parts": [{ "text": system_text }] });
+    }
+
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?key={}",
+        model, api_key
+    );
+
+    let mut response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Gemini unreachable: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        return Err(format!("Gemini {status}: {body_text}"));
+    }
+
+    let mut buf = String::new();
+    let mut depth: i32 = 0;
+    let mut in_string = false;
+    let mut escape = false;
+
+    while let Some(bytes) = response.chunk().await.map_err(|e| e.to_string())? {
+        let chunk = String::from_utf8_lossy(&bytes).to_string();
+        for ch in chunk.chars() {
+            if escape { escape = false; buf.push(ch); continue; }
+            if ch == '\\' && in_string { escape = true; buf.push(ch); continue; }
+            if ch == '"' { in_string = !in_string; }
+            if !in_string {
+                if ch == '{' { depth += 1; }
+                else if ch == '}' { depth -= 1; }
+            }
+            buf.push(ch);
+
+            if depth == 0 && buf.trim_start().starts_with('{') && !buf.trim().is_empty() {
+                if let Ok(event) = serde_json::from_str::<Value>(buf.trim()) {
+                    let delta = event
+                        .get("candidates")
+                        .and_then(|c| c.get(0))
+                        .and_then(|c| c.get("content"))
+                        .and_then(|c| c.get("parts"))
+                        .and_then(|p| p.get(0))
+                        .and_then(|p| p.get("text"))
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("");
+                    if !delta.is_empty() {
+                        let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": delta, "done": false }));
+                    }
+                }
+                buf.clear();
+            }
+        }
+    }
+
+    let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+    app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn ai_list_models() -> Value {
+    let base = std::env::var("OLLAMA_HOST")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return json!([]),
+    };
+
+    let resp = match client.get(format!("{base}/api/tags")).send().await {
+        Ok(r) if r.status().is_success() => r,
+        _ => return json!([]),
+    };
+
+    let body: serde_json::Value = match resp.json().await {
+        Ok(v) => v,
+        Err(_) => return json!([]),
+    };
+
+    let models: Vec<serde_json::Value> = body
+        .get("models")
+        .and_then(|m| m.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| m.get("name").and_then(|n| n.as_str()))
+                .map(|name| json!({ "name": name }))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    json!(models)
+}
+
+#[tauri::command]
+pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
+    let base = std::env::var("OLLAMA_HOST")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+
+    let job_id = uuid_v4();
+    app.state::<Mutex<JobTracker>>()
+        .lock()
+        .unwrap()
+        .start(&job_id, "ai.pull_model");
+
+    let job_id_clone = job_id.clone();
+    let app_clone = app.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let result = pull_ollama_model(&app_clone, &base, &job_id_clone, &model).await;
+        match result {
+            Ok(()) => {
+                app_clone
+                    .state::<Mutex<JobTracker>>()
+                    .lock()
+                    .unwrap()
+                    .complete(&job_id_clone, json!({ "model": model, "done": true }));
+            }
+            Err(e) => {
+                app_clone
+                    .state::<Mutex<JobTracker>>()
+                    .lock()
+                    .unwrap()
+                    .fail(&job_id_clone, e);
+            }
+        }
+    });
+
+    json!({ "jobId": job_id })
+}
+
+async fn pull_ollama_model(
+    app: &AppHandle,
+    base: &str,
+    job_id: &str,
+    model: &str,
+) -> Result<(), String> {
+    let mut response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3600))
+        .build()
+        .map_err(|e| e.to_string())?
+        .post(format!("{base}/api/pull"))
+        .json(&json!({ "model": model, "stream": true }))
+        .send()
+        .await
+        .map_err(|e| format!("Ollama unreachable: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Ollama {status}: {body}"));
+    }
+
+    let mut line_buf = String::new();
+
+    while let Some(bytes) = response.chunk().await.map_err(|e| e.to_string())? {
+        line_buf.push_str(&String::from_utf8_lossy(&bytes));
+
+        while let Some(nl) = line_buf.find('\n') {
+            let line = line_buf[..nl].trim().to_string();
+            line_buf = line_buf[nl + 1..].to_string();
+            if line.is_empty() {
+                continue;
+            }
+            let event: Value = match serde_json::from_str(&line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            let status = event.get("status").and_then(|s| s.as_str()).unwrap_or("");
+            let completed = event.get("completed").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let total = event.get("total").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let digest = event.get("digest").and_then(|v| v.as_str()).unwrap_or("");
+            let p = if total > 0.0 { completed / total } else { 0.0 };
+
+            let _ = app.emit("jobs:event", json!({ "type": "job.stream", "jobId": job_id, "data": { "status": status, "p": p, "completed": completed, "total": total, "digest": digest } }));
+
+            if status == "success" {
+                return Ok(());
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn ai_unload_model(_model: String) -> Value {
+    json!({ "success": true })
+}
+
+#[tauri::command]
+pub async fn ai_embed(req: Value) -> Value {
+    let base = std::env::var("OLLAMA_HOST")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+
+    let text = req.get("text").and_then(|v| v.as_str()).unwrap_or("");
+    let model = req
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("nomic-embed-text");
+
+    let body = json!({ "model": model, "prompt": text });
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return json!(null),
+    };
+
+    let resp = match client.post(format!("{base}/api/embeddings")).json(&body).send().await {
+        Ok(r) if r.status().is_success() => r,
+        _ => return json!(null),
+    };
+
+    let data: Value = match resp.json().await {
+        Ok(v) => v,
+        Err(_) => return json!(null),
+    };
+
+    let vector = data.get("embedding").cloned().unwrap_or(json!([]));
+    let dim = vector.as_array().map(|a| a.len()).unwrap_or(0);
+    json!({ "vector": vector, "dim": dim })
+}
