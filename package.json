@@ -11,7 +11,7 @@
     "pnpm": ">=9.0.0"
   },
   "scripts": {
-    "dev": "pnpm build:packages && pnpm --filter @ajh/tauri dev",
+    "dev": "pnpm build:packages && cargo fetch --manifest-path apps/tauri/src-tauri/Cargo.toml && pnpm --filter @ajh/tauri dev",
     "build": "turbo build",
     "build:packages": "turbo build --filter=!@ajh/tauri",
     "package": "pnpm build:packages && pnpm --filter @ajh/tauri package",
