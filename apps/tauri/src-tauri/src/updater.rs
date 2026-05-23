@@ -132,7 +132,15 @@ pub async fn updater_download(app: AppHandle) -> Value {
                 let percent = total
                     .map(|t| (downloaded as f64 / t as f64 * 100.0) as u32)
                     .unwrap_or(0);
-                emit_status(&app_clone, json!({ "state": "downloading", "percent": percent }));
+                emit_status(
+                    &app_clone,
+                    json!({
+                        "state": "downloading",
+                        "percent": percent,
+                        "downloaded": downloaded,
+                        "total": total.unwrap_or(0)
+                    }),
+                );
             },
             || {},
         )

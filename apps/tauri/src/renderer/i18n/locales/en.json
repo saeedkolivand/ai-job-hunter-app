@@ -1168,7 +1168,7 @@
         "any": "Open to all"
       },
       "back": "Back",
-      "next": "Set up AI"
+      "next": "Upload resume"
     },
     "ollama": {
       "title": "Set up your AI",
@@ -1188,8 +1188,10 @@
       "ram": "Available RAM",
       "chooseModel": "Choose a model",
       "recommended": "Recommended",
+      "installed": "Installed",
       "download": "Download",
       "downloading": "Downloading",
+      "downloaded": "downloaded successfully",
       "pullError": "Download failed. Check your connection and try again.",
       "back": "Back",
       "next": "See the features",
@@ -1244,7 +1246,8 @@
       "uploaded": "Resume uploaded",
       "uploadFailed": "Upload failed",
       "replaceHint": "Click to replace",
-      "skip": "Skip for now"
+      "skip": "Skip for now",
+      "next": "Set up AI"
     }
   },
   "updater": {
