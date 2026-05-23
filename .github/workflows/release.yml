@@ -146,21 +146,3 @@ jobs:
             apps/tauri/src-tauri/target/release/bundle/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  notify:
-    name: Notify Release Failure
-    runs-on: ubuntu-latest
-    needs:
-      - release
-      - build
-    if: failure() && secrets.DISCORD_WEBHOOK_URL != ''
-
-    steps:
-      - uses: sarisia/actions-status-discord@v1
-        with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          title: 'Release Failed'
-          description: |
-            Repository: ${{ github.repository }}
-            Workflow: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          color: 0xED4245
