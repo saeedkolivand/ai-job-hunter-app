@@ -162,7 +162,6 @@ jobs:
           tag_name: v${{ needs.determine-release.outputs.new_release_version }}
           files: |
             apps/tauri/src-tauri/target/release/bundle/dmg/*.dmg
-            apps/tauri/src-tauri/target/release/bundle/macos/*.app.tar.gz
           fail_on_unmatched_files: true
 
   build-tauri-linux:
