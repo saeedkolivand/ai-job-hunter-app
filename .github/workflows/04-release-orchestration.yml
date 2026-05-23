@@ -53,6 +53,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           HUSKY: 0
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
 
   build-tauri-windows:
     name: Build Windows
@@ -95,6 +96,9 @@ jobs:
         run: pnpm --filter !@ajh/tauri build
 
       - name: Build Windows App
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm --filter @ajh/tauri tauri build
 
   build-tauri-macos:
@@ -138,6 +142,9 @@ jobs:
         run: pnpm --filter !@ajh/tauri build
 
       - name: Build macOS App
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm --filter @ajh/tauri tauri build
 
   build-tauri-linux:
@@ -195,4 +202,7 @@ jobs:
         run: pnpm --filter !@ajh/tauri build
 
       - name: Build Linux App
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm --filter @ajh/tauri tauri build

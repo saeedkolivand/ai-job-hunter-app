@@ -28,7 +28,7 @@ KEY_PATH="${HOME}/.tauri/ajh"
 
 # Check if --force flag is passed
 FORCE_FLAG=""
-if [[ "$1" == "--force" ]]; then
+if [[ "${1:-}" == "--force" ]]; then
   FORCE_FLAG="--force"
   echo "Force flag enabled - will overwrite existing key pair"
 fi
