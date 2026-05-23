@@ -48,29 +48,11 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
 
-      - name: Debug Git State
-        run: |
-          git remote -v
-          git status
-          git branch
-          git tag --sort=-creatordate | head
-
-      - name: Run Quality Checks
-        run: |
-          pnpm lint
-          pnpm typecheck
-
-      - name: Test Tauri Sync Script
-        run: |
-          node scripts/sync-tauri-version.mjs 9.9.9
-          git diff
-
       - name: Run Semantic Release
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DEBUG: semantic-release:*
           HUSKY: 0
 
   build-tauri-windows:
@@ -102,6 +84,8 @@ jobs:
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
+        env:
+          NODE_OPTIONS: --no-deprecation
         with:
           workspaces: apps/tauri/src-tauri
 
@@ -143,6 +127,8 @@ jobs:
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
+        env:
+          NODE_OPTIONS: --no-deprecation
         with:
           workspaces: apps/tauri/src-tauri
 
@@ -198,6 +184,8 @@ jobs:
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
+        env:
+          NODE_OPTIONS: --no-deprecation
         with:
           workspaces: apps/tauri/src-tauri
 

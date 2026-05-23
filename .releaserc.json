@@ -49,6 +49,8 @@
         "changelogFile": "CHANGELOG.md"
       }
     ],
+    ["@semantic-release/npm", { "npmPublish": false }],
+    ["@semantic-release/npm", { "npmPublish": false, "pkgRoot": "apps/tauri" }],
     [
       "@semantic-release/exec",
       {
