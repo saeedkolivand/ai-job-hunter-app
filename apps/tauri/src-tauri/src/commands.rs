@@ -180,7 +180,6 @@ fn get_gpu_info() -> Vec<Value> {
     {
         // Linux: Read GPU info from sysfs and lspci
         use std::fs;
-        use std::path::Path;
         
         if let Ok(entries) = fs::read_dir("/sys/class/drm") {
             for entry in entries.flatten() {
@@ -193,14 +192,15 @@ fn get_gpu_info() -> Vec<Value> {
                     
                     // Try to get GPU name from uevent
                     let gpu_name = if let Ok(uevent_content) = fs::read_to_string(device_path.join("uevent")) {
+                        let mut name = None;
                         for line in uevent_content.lines() {
                             if line.starts_with("PRODUCT=") {
-                                Some(line.strip_prefix("PRODUCT=").unwrap_or("Unknown GPU").to_string())
+                                name = Some(line.strip_prefix("PRODUCT=").unwrap_or("Unknown GPU").to_string());
                             } else if line.starts_with("PCI_ID=") {
-                                Some(line.strip_prefix("PCI_ID=").unwrap_or("Unknown GPU").to_string())
+                                name = Some(line.strip_prefix("PCI_ID=").unwrap_or("Unknown GPU").to_string());
                             }
                         }
-                        None
+                        name
                     } else {
                         None
                     };
@@ -221,11 +221,12 @@ fn get_gpu_info() -> Vec<Value> {
                         vram_str.trim().parse::<u64>().unwrap_or(0) / 1024
                     } else {
                         // Try lspci as fallback
-                        if let Ok(output) = std::process::Command::new("lspci")
+                        let vram_from_lspci = if let Ok(output) = std::process::Command::new("lspci")
                             .args(["-v"])
                             .output()
                         {
                             let lspci_output = String::from_utf8_lossy(&output.stdout);
+                            let mut vram = None;
                             for line in lspci_output.lines() {
                                 if line.contains("prefetchable") && line.contains("size=") {
                                     // Parse VRAM from lspci output (e.g., "size=8192M")
@@ -233,21 +234,16 @@ fn get_gpu_info() -> Vec<Value> {
                                         let size = size_str.trim_end_matches('M').trim_end_matches('G');
                                         if let Ok(size_mb) = size.parse::<u64>() {
                                             let multiplier = if line.contains('G') { 1024 } else { 1 };
-                                            Some(size_mb * multiplier)
-                                        } else {
-                                            None
+                                            vram = Some(size_mb * multiplier);
                                         }
-                                    } else {
-                                        None
                                     }
-                                } else {
-                                    None
                                 }
                             }
-                            None
+                            vram
                         } else {
-                            Some(0)
-                        }
+                            None
+                        };
+                        vram_from_lspci.unwrap_or(0)
                     };
                     
                     gpu_info.push(json!({

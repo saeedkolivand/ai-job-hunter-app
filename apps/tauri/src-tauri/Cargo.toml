@@ -53,7 +53,6 @@ scraper = "0.20"
 flate2 = "1.0"
 
 # OS-native secret storage: DPAPI (Windows), Keychain (macOS), libsecret (Linux).
-# Same underlying primitives as Electron's safeStorage.
 keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service"] }
 
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
