@@ -2,6 +2,10 @@
 # Runs before `git push`.
 # Quality gate: lint + typecheck + build + tests + rust clippy.
 
+if [ -n "$GITHUB_ACTIONS" ]; then
+  exit 0
+fi
+
 echo "▶ Running ESLint..."
 pnpm lint
 

@@ -71,6 +71,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEBUG: semantic-release:*
+          HUSKY: 0
 
   build-tauri-windows:
     name: Build Windows
