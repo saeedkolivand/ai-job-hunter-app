@@ -1444,10 +1444,7 @@ pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
             }
         }
 
-        match result {
-            Ok(_) => {}
-            Err(_) => {}
-        }
+        let _ = result;
     });
 
     json!({ "jobId": job_id })
