@@ -36,7 +36,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: pnpm
 
       - name: Install Dependencies
@@ -59,6 +59,11 @@ jobs:
         run: |
           pnpm lint
           pnpm typecheck
+
+      - name: Test Tauri Sync Script
+        run: |
+          node scripts/sync-tauri-version.mjs 9.9.9
+          git diff
 
       - name: Run Semantic Release
         id: semantic
@@ -88,7 +93,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: pnpm
 
       - name: Install Rust Stable
