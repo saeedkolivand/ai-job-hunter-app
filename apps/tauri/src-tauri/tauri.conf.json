@@ -20,9 +20,11 @@
         "center": true,
         "decorations": false,
         "resizable": true,
-        "backgroundColor": "#0a0a14"
+        "backgroundColor": "#0a0a14",
+        "titleBarStyle": "Overlay"
       }
     ],
+    "macOSPrivateApi": true,
     "security": {
       "csp": "default-src 'self' tauri: asset: https://asset.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: https://asset.localhost; font-src 'self' data: asset: https://asset.localhost; connect-src 'self' http://127.0.0.1:11434 http://127.0.0.1:* ws://127.0.0.1:* tauri: ipc: http://ipc.localhost"
     }

@@ -111,9 +111,9 @@ export function createTauriInvokeClient(): AppClient {
     },
 
     linkedin: {
-      connect: () => invoke('linkedin_connect'),
-      disconnect: () => invoke('linkedin_disconnect'),
-      getStatus: () => invoke('linkedin_get_status'),
+      connect: () => invoke('boards_login_with_browser', { boardId: 'linkedin' }),
+      disconnect: () => invoke('boards_logout', { boardId: 'linkedin' }),
+      getStatus: () => invoke('boards_get_status', { boardId: 'linkedin' }),
     },
 
     boards: {

@@ -170,8 +170,10 @@ function Jobs() {
         : await boardConnect.mutateAsync(scrapeForm.board);
       const res = result as { connected?: boolean; error?: string } | undefined;
       if (res?.error) notify(res.error, 'error');
-      else if (!res?.connected)
-        notify(`${scrapeForm.board} sign-in was cancelled or timed out.`, 'warning');
+      else if (!res?.connected) {
+        const boardName = isLinkedInBoard ? 'LinkedIn' : scrapeForm.board;
+        notify(`${boardName} sign-in was cancelled or timed out.`, 'warning');
+      }
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Connection failed.', 'error');
     }

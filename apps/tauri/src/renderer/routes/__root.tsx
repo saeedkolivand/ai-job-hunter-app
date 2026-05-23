@@ -36,6 +36,23 @@ function RootLayout() {
     };
   }, []);
 
+  // Allow standard keyboard shortcuts (Cmd+A, Cmd+C, Cmd+V, etc.) on Mac
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.userAgent.includes('Mac');
+      if (!isMac) return;
+
+      // Allow these standard shortcuts to pass through
+      const allowedShortcuts = ['a', 'c', 'v', 'x', 'z', 'f'];
+      if ((e.metaKey || e.ctrlKey) && allowedShortcuts.includes(e.key.toLowerCase())) {
+        // Don't prevent default - let the browser handle it
+        return;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
+
   // Redirect unknown paths to home instead of showing a blank screen.
   useEffect(() => {
     return router.subscribe('onResolved', ({ toLocation }) => {

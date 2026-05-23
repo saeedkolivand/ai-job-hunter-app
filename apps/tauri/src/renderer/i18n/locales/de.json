@@ -702,6 +702,7 @@
     "open": "Öffnen"
   },
   "ai": {
+    "title": "KI-Arbeitsbereich",
     "placeholder": "Frag alles. Die KI antwortet in deiner Sprache.",
     "send": "Senden",
     "processing": "Verarbeitung...",

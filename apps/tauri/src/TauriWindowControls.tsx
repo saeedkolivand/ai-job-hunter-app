@@ -4,11 +4,16 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 
 export function TauriWindowControls() {
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isMac, setIsMac] = useState(false);
   const win = getCurrentWindow();
 
   useEffect(() => {
+    // Detect platform via navigator
+    setIsMac(navigator.userAgent.includes('Mac'));
+  }, []);
+
+  useEffect(() => {
     win.isMaximized().then(setIsMaximized);
-    // tauri emits tauri://resize on every window resize — use it to sync state
     const unlisten = listen('tauri://resize', () => {
       win.isMaximized().then(setIsMaximized);
     });
@@ -16,6 +21,11 @@ export function TauriWindowControls() {
       unlisten.then((f) => f());
     };
   }, [win]);
+
+  // On macOS, use native window controls (traffic lights)
+  if (isMac) {
+    return null;
+  }
 
   return (
     <div className="app-no-drag flex h-10 shrink-0 items-center">

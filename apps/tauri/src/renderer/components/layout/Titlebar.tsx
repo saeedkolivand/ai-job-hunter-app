@@ -5,7 +5,6 @@ import { Button } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { onWindowControlsRegistered } from '@/lib/window-controls-registry';
-import { useGetPlatform } from '@/services';
 import { useAppStore } from '@/store/app-store';
 import { useOnboardingCompleted } from '@/store/preferences-store';
 
@@ -13,18 +12,19 @@ export function Titlebar() {
   const { t } = useTranslation();
   const togglePalette = useAppStore((s) => s.togglePalette);
   const onboardingCompleted = useOnboardingCompleted();
-  const { data: platform } = useGetPlatform();
   const [WindowControls, setWindowControls] = useState<ComponentType | null>(null);
+  const [isMac, setIsMac] = useState(false);
 
   useEffect(() => {
     onWindowControlsRegistered((c) => setWindowControls(() => c));
+    setIsMac(navigator.userAgent.includes('Mac'));
   }, []);
 
   return (
     <div
       className="app-drag relative z-[300] flex h-10 select-none items-center justify-between"
-      style={{ paddingLeft: platform === 'darwin' ? 80 : 16 }}
-      data-tauri-drag-region
+      style={{ paddingLeft: isMac ? 80 : 16 }}
+      data-tauri-drag-region={!isMac}
     >
       <div className="flex items-center gap-2 px-4 text-xs font-medium text-foreground/70">
         <Sparkles size={14} className="opacity-80" />
@@ -45,7 +45,7 @@ export function Titlebar() {
           </kbd>
         </Button>
       )}
-      {WindowControls ? <WindowControls /> : <div className="w-32" />}
+      {WindowControls && !isMac ? <WindowControls /> : <div className="w-32" />}
     </div>
   );
 }
