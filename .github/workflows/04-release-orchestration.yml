@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -12,29 +11,29 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: production-release
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   determine-release:
     name: Determine Release Version
-
     runs-on: ubuntu-latest
 
     outputs:
-      released: ${{ steps.semantic.outputs.new_release_published }}
-      version: ${{ steps.semantic.outputs.new_release_version }}
+      new_release_published: ${{ steps.semantic.outputs.new_release_published }}
+      new_release_version: ${{ steps.semantic.outputs.new_release_version }}
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Setup pnpm
+      - name: Setup PNPM
         uses: pnpm/action-setup@v4
         with:
-          version: 11.1.3
+          version: 11
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -45,71 +44,50 @@ jobs:
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Configure Git
+      - name: Configure Git Authentication
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+
+      - name: Debug Git State
+        run: |
+          git remote -v
+          git status
+          git branch
+          git tag --sort=-creatordate | head
+
+      - name: Run Quality Checks
+        run: |
+          pnpm lint
+          pnpm typecheck
 
       - name: Run Semantic Release
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
         env:
-          # GITHUB_TOKEN has contents:write which is sufficient for creating
-          # tags and GitHub Releases via the API. @semantic-release/git has
-          # been removed so no direct push to main is attempted.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GIT_CREDENTIALS: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Notify Discord Release Failure
-        if: failure()
-        uses: sarisia/actions-status-discord@v1
-        with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          title: 'Release Failed'
-          description: |
-            Release orchestration failed.
-
-            Repository:
-            ${{ github.repository }}
-
-            Workflow:
-            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          color: 0xED4245
-
-  # ── Tauri builds ─────────────────────────────────────────────────────────────
-  #
-  # Prerequisites (set these GitHub repository secrets before first release):
-  #
-  #   TAURI_SIGNING_PRIVATE_KEY         — contents of ~/.tauri/ajh.key
-  #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — password for the key (empty string if none)
-  #   TAURI_SIGNING_PUBLIC_KEY          — contents of ~/.tauri/ajh.key.pub
-  #
-  # Generate the key pair with:
-  #   bash scripts/generate-tauri-signing-key.sh
-  #
-  # The sync-tauri-version.js script injects TAURI_SIGNING_PUBLIC_KEY into
-  # tauri.conf.json before the build so signed artifacts use the real key.
+          DEBUG: semantic-release:*
 
   build-tauri-windows:
-    name: Build Windows Application (Tauri)
-
+    name: Build Windows
     needs: determine-release
-
-    if: needs.determine-release.outputs.released == 'true'
+    if: needs.determine-release.outputs.new_release_published == 'true'
 
     runs-on: windows-latest
 
-    timeout-minutes: 60
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.determine-release.outputs.new_release_version }}
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Setup pnpm
+      - name: Setup PNPM
         uses: pnpm/action-setup@v4
         with:
-          version: 11.1.3
+          version: 11
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -117,78 +95,39 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - name: Setup Rust
+      - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Restore Rust Cache
-        uses: Swatinem/rust-cache@v2
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
         with:
           workspaces: apps/tauri/src-tauri
-
-      - name: Restore Turbo Cache
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: turbo-tauri-${{ runner.os }}-${{ github.sha }}
-          restore-keys: turbo-tauri-${{ runner.os }}-
 
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build Packages
-        run: pnpm build:packages
-
-      - name: Sync Tauri Version and Inject Signing Key
-        run: node scripts/sync-tauri-version.cjs ${{ needs.determine-release.outputs.version }}
-        env:
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
-
-      - name: Build Tauri App (Windows)
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: v${{ needs.determine-release.outputs.version }}
-          releaseName: AI Job Hunter v${{ needs.determine-release.outputs.version }}
-          releaseBody: |
-            See the [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
-          releaseDraft: false
-          prerelease: false
-          projectPath: ./apps/tauri
-
-      - name: Upload Windows .sig files
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: pwsh
-        run: |
-          $tag = "v${{ needs.determine-release.outputs.version }}"
-          $sigs = Get-ChildItem -Recurse -Filter "*.sig" apps/tauri/src-tauri/target 2>$null
-          foreach ($sig in $sigs) {
-            Write-Host "Uploading $($sig.Name)"
-            gh release upload $tag $sig.FullName --repo ${{ github.repository }} --clobber
-          }
+      - name: Build Windows App
+        run: pnpm --filter @ajh/tauri tauri build
 
   build-tauri-macos:
-    name: Build macOS Application (Tauri)
-
+    name: Build macOS
     needs: determine-release
-
-    if: needs.determine-release.outputs.released == 'true'
+    if: needs.determine-release.outputs.new_release_published == 'true'
 
     runs-on: macos-latest
 
-    timeout-minutes: 60
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.determine-release.outputs.new_release_version }}
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Setup pnpm
+      - name: Setup PNPM
         uses: pnpm/action-setup@v4
         with:
-          version: 11.1.3
+          version: 11
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -196,215 +135,70 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - name: Setup Rust
+      - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
-      - name: Restore Rust Cache
-        uses: Swatinem/rust-cache@v2
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
         with:
           workspaces: apps/tauri/src-tauri
-
-      - name: Restore Turbo Cache
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: turbo-tauri-${{ runner.os }}-${{ github.sha }}
-          restore-keys: turbo-tauri-${{ runner.os }}-
 
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build Packages
-        run: pnpm build:packages
+      - name: Build macOS App
+        run: pnpm --filter @ajh/tauri tauri build
 
-      - name: Sync Tauri Version and Inject Signing Key
-        run: node scripts/sync-tauri-version.cjs ${{ needs.determine-release.outputs.version }}
-        env:
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
-
-      - name: Build Tauri App (macOS universal)
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: v${{ needs.determine-release.outputs.version }}
-          releaseName: AI Job Hunter v${{ needs.determine-release.outputs.version }}
-          releaseBody: |
-            See the [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
-          releaseDraft: false
-          prerelease: false
-          projectPath: ./apps/tauri
-          args: --target universal-apple-darwin
-
-      - name: Upload macOS .sig files
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="v${{ needs.determine-release.outputs.version }}"
-          find apps/tauri/src-tauri/target -name "*.sig" 2>/dev/null | while read sig; do
-            echo "Uploading $(basename $sig)"
-            gh release upload "$TAG" "$sig" --repo "${{ github.repository }}" --clobber
-          done
-
-  generate-updater-manifest:
-    name: Generate Updater Manifest (latest.json)
-
-    needs:
-      - determine-release
-      - build-tauri-windows
-      - build-tauri-macos
-
-    if: needs.determine-release.outputs.released == 'true'
+  build-tauri-linux:
+    name: Build Linux
+    needs: determine-release
+    if: needs.determine-release.outputs.new_release_published == 'true'
 
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Generate and upload latest.json
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.determine-release.outputs.version }}
-          REPO: ${{ github.repository }}
-        run: |
-          TAG="v${VERSION}"
-          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
-          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-          # Fetch release notes from the GitHub release body
-          NOTES=$(gh release view "${TAG}" --repo "${REPO}" --json body -q '.body' 2>/dev/null || echo "")
-
-          # Download all .sig files from the release
-          gh release download "${TAG}" \
-            --repo "${REPO}" \
-            --pattern "*.sig" \
-            --dir /tmp/sigs \
-            2>/dev/null || true
-
-          ls /tmp/sigs/ 2>/dev/null || echo "No .sig files found"
-
-          # Read signatures (empty string if file not present)
-          # Strip newlines from signature data to fix JSON encoding
-          read_sig() {
-            local f="$1"
-            if [ -f "/tmp/sigs/${f}" ]; then
-              cat "/tmp/sigs/${f}" | tr -d '\n'
-            else
-              echo ""
-            fi
-          }
-
-          MACOS_SIG=$(read_sig "AI.Job.Hunter.Assistant_universal.app.tar.gz.sig")
-          WIN_NSIS_SIG=$(read_sig "AI.Job.Hunter.Assistant_${VERSION}_x64-setup.exe.sig")
-          WIN_MSI_SIG=$(read_sig "AI.Job.Hunter.Assistant_${VERSION}_x64_en-US.msi.zip.sig")
-
-          # Prefer NSIS sig for Windows; fall back to MSI
-          WIN_SIG="${WIN_NSIS_SIG:-$WIN_MSI_SIG}"
-          WIN_URL="${BASE_URL}/AI.Job.Hunter.Assistant_${VERSION}_x64-setup.exe"
-          if [ -z "${WIN_SIG}" ] && [ -n "${WIN_MSI_SIG}" ]; then
-            WIN_SIG="${WIN_MSI_SIG}"
-            WIN_URL="${BASE_URL}/AI.Job.Hunter.Assistant_${VERSION}_x64_en-US.msi"
-          fi
-
-          # Build platforms object — include platforms with or without signatures
-          PLATFORMS="{}"
-
-          # Always include macOS if the artifact exists (with or without signature)
-          if [ -n "${MACOS_SIG}" ]; then
-            PLATFORMS=$(echo "${PLATFORMS}" | MACOS_SIG="${MACOS_SIG}" node -e "
-              const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
-              d['darwin-universal'] = {
-                signature: process.env.MACOS_SIG,
-                url: '${BASE_URL}/AI.Job.Hunter.Assistant_universal.app.tar.gz'
-              };
-              process.stdout.write(JSON.stringify(d));
-            ")
-          else
-            # Fallback: include macOS without signature (for unsigned builds)
-            PLATFORMS=$(echo "${PLATFORMS}" | node -e "
-              const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
-              d['darwin-universal'] = {
-                signature: '',
-                url: '${BASE_URL}/AI.Job.Hunter.Assistant_universal.app.tar.gz'
-              };
-              process.stdout.write(JSON.stringify(d));
-            ")
-          fi
-
-          # Always include Windows if the artifact exists (with or without signature)
-          if [ -n "${WIN_SIG}" ]; then
-            PLATFORMS=$(echo "${PLATFORMS}" | WIN_SIG="${WIN_SIG}" node -e "
-              const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
-              d['windows-x86_64'] = {
-                signature: process.env.WIN_SIG,
-                url: '${WIN_URL}'
-              };
-              process.stdout.write(JSON.stringify(d));
-            ")
-          else
-            # Fallback: include Windows without signature (for unsigned builds)
-            PLATFORMS=$(echo "${PLATFORMS}" | node -e "
-              const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
-              d['windows-x86_64'] = {
-                signature: '',
-                url: '${BASE_URL}/AI.Job.Hunter.Assistant_${VERSION}_x64-setup.exe'
-              };
-              process.stdout.write(JSON.stringify(d));
-            ")
-          fi
-
-          # Generate latest.json
-          NOTES="${NOTES}" PLATFORMS="${PLATFORMS}" node -e "
-            const manifest = {
-              version: '${VERSION}',
-              notes: process.env.NOTES || '',
-              pub_date: '${PUB_DATE}',
-              platforms: JSON.parse(process.env.PLATFORMS)
-            };
-            require('fs').writeFileSync('/tmp/latest.json', JSON.stringify(manifest, null, 2));
-            console.log('Generated latest.json:');
-            console.log(JSON.stringify(manifest, null, 2));
-          "
-
-          # Upload latest.json to the release (overwrite if exists)
-          gh release upload "${TAG}" \
-            --repo "${REPO}" \
-            /tmp/latest.json \
-            --clobber
-
-          echo "latest.json uploaded to ${TAG}"
-
-  notify-release-success:
-    name: Notify Release Success
-
-    needs:
-      - determine-release
-      - build-tauri-windows
-      - build-tauri-macos
-      - generate-updater-manifest
-
-    if: needs.determine-release.outputs.released == 'true'
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Notify Discord Success
-        uses: sarisia/actions-status-discord@v1
         with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          title: 'Production Release Published'
-          description: |
-            Version v${{ needs.determine-release.outputs.version }} was released successfully.
-            Tauri artifacts and updater manifest uploaded to GitHub Releases.
+          ref: v${{ needs.determine-release.outputs.new_release_version }}
+          fetch-depth: 0
+          persist-credentials: false
 
-            Repository:
-            ${{ github.repository }}
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
 
-            Workflow:
-            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          color: 0x57F287
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/tauri/src-tauri
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Linux App
+        run: pnpm --filter @ajh/tauri tauri build
