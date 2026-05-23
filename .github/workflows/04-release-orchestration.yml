@@ -229,6 +229,5 @@ jobs:
         with:
           tag_name: v${{ needs.determine-release.outputs.new_release_version }}
           files: |
-            apps/tauri/src-tauri/target/release/bundle/deb/*.deb
             apps/tauri/src-tauri/target/release/bundle/appimage/*.AppImage
           fail_on_unmatched_files: true
