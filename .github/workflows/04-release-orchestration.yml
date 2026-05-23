@@ -28,7 +28,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: false
 
       - name: Setup PNPM
         uses: pnpm/action-setup@v4
