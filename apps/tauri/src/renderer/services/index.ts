@@ -27,3 +27,4 @@ export * from './use-privacy';
 export * from './use-search';
 export * from './use-support';
 export * from './use-system';
+export * from './use-system-resources';

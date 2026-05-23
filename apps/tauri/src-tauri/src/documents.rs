@@ -144,7 +144,7 @@ impl DocumentStore {
             |row| row.get::<_, String>(0),
         )
         .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
+        .and_then(|s: String| serde_json::from_str(&s).ok())
     }
 
     pub fn all_vectors(&self) -> Vec<(String, Vec<f64>)> {
@@ -158,7 +158,7 @@ impl DocumentStore {
                 .ok()
                 .map(|rows| {
                     rows.filter_map(|r| r.ok())
-                        .filter_map(|(id, json)| {
+                        .filter_map(|(id, json): (String, String)| {
                             serde_json::from_str::<Vec<f64>>(&json).ok().map(|v| (id, v))
                         })
                         .collect()

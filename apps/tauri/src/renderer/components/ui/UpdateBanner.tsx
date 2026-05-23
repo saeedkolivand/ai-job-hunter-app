@@ -9,7 +9,16 @@ import { transition } from '@/lib/motion';
 import { useUpdater } from '@/services/use-updater';
 
 export function UpdateBanner() {
-  const { status, download, install } = useUpdater();
+  const {
+    status,
+    download,
+    install,
+    downloadSpeed,
+    downloadedBytes,
+    totalBytes,
+    timeRemaining,
+    formatBytes,
+  } = useUpdater();
   const { t } = useTranslation();
   const [dismissed, setDismissed] = useState(false);
 
@@ -47,13 +56,27 @@ export function UpdateBanner() {
             )}
 
             {/* Message */}
-            <span className="text-xs text-foreground/85">
-              {status.state === 'available' && t('updater.available', { version: status.version })}
-              {status.state === 'downloading' &&
-                t('updater.downloading', { percent: status.percent })}
-              {status.state === 'downloaded' &&
-                t('updater.downloaded', { version: status.version })}
-            </span>
+            <div className="flex flex-col">
+              <span className="text-xs text-foreground/85">
+                {status.state === 'available' &&
+                  t('updater.available', { version: status.version })}
+                {status.state === 'downloading' &&
+                  t('updater.downloading', { percent: status.percent })}
+                {status.state === 'downloaded' &&
+                  t('updater.downloaded', { version: status.version })}
+              </span>
+              {status.state === 'downloading' && (
+                <div className="flex items-center gap-3 text-[10px] text-foreground/50">
+                  {downloadSpeed && <span>{downloadSpeed}</span>}
+                  {totalBytes > 0 && (
+                    <span>
+                      {formatBytes(downloadedBytes)}/{formatBytes(totalBytes)}
+                    </span>
+                  )}
+                  {timeRemaining && <span>{timeRemaining}</span>}
+                </div>
+              )}
+            </div>
 
             {/* Action button */}
             {status.state === 'available' && (
