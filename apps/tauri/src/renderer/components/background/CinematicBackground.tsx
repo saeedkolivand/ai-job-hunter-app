@@ -24,6 +24,10 @@ export function CinematicBackground() {
   const mode = usePerformanceMode();
   const { x, y } = useMouseParallax();
 
+  // Detect Mac and use low-memory mode to avoid CSS rendering issues
+  const isMac = typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac');
+  const effectiveMode = isMac ? 'low-memory' : mode;
+
   // ── Lerp cursor blob ──────────────────────────────────────────────────────
   const blobRef = useRef<HTMLDivElement>(null);
   const targetRef = useRef({ x: 0, y: 0 }); // where the cursor IS
@@ -34,7 +38,7 @@ export function CinematicBackground() {
 
   useEffect(() => {
     // Skip RAF loop in low-memory mode — component returns null below.
-    if (mode === 'low-memory') return;
+    if (effectiveMode === 'low-memory') return;
     // Seed starting position to viewport center so blob doesn't slide in from (0,0)
     if (typeof window !== 'undefined') {
       const cx = window.innerWidth / 2;
@@ -65,11 +69,11 @@ export function CinematicBackground() {
       window.removeEventListener('pointermove', onMove);
       cancelAnimationFrame(rafRef.current);
     };
-  }, [mode]); // re-run if mode changes so RAF is cleaned up correctly
+  }, [effectiveMode]); // re-run if mode changes so RAF is cleaned up correctly
 
   // All hooks have been called — safe to bail out now.
   // Body is already #07060f in low-memory mode; skip all GPU layers.
-  if (mode === 'low-memory') return null;
+  if (effectiveMode === 'low-memory') return null;
 
   const orbA = { transform: `translate3d(${x * 30}px, ${y * 20}px, 0)` };
   const orbB = { transform: `translate3d(${x * -25}px, ${y * 15}px, 0)` };

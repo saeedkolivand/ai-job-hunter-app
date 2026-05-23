@@ -702,6 +702,7 @@
     "open": "Open"
   },
   "ai": {
+    "title": "AI Workspace",
     "placeholder": "Ask anything about jobs, resumes, or career advice...",
     "send": "Send message",
     "processing": "Processing...",

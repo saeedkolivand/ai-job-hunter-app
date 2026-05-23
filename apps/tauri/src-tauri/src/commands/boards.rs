@@ -46,8 +46,8 @@ pub async fn boards_login_with_browser(app: AppHandle, board_id: String) -> Valu
     };
     
     match crate::scraping::board_login::open_login(&data_dir, &board_id, on_status).await {
-        Ok(success) => json!({ "success": success }),
-        Err(e) => json!({ "success": false, "error": e.to_string() }),
+        Ok(success) => json!({ "connected": success }),
+        Err(e) => json!({ "connected": false, "error": e.to_string() }),
     }
 }
 
@@ -61,7 +61,7 @@ pub fn boards_logout(app: AppHandle, board_id: String) -> Value {
 #[tauri::command]
 pub fn boards_get_status(app: AppHandle, board_id: String) -> Value {
     let data_dir = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    json!({ "loggedIn": crate::scraping::board_login::get_status(&data_dir, &board_id) })
+    json!({ "connected": crate::scraping::board_login::get_status(&data_dir, &board_id) })
 }
 
 #[tauri::command]
@@ -103,7 +103,7 @@ pub fn boards_list(app: AppHandle) -> Value {
         boards.push(json!({
             "id": board_id,
             "displayName": board_id.to_uppercase(),
-            "loggedIn": crate::scraping::board_login::get_status(&data_dir, board_id),
+            "connected": crate::scraping::board_login::get_status(&data_dir, board_id),
         }));
     }
     json!(boards)

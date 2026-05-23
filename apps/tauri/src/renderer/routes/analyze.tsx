@@ -83,6 +83,16 @@ function Analyze() {
     if (text) setResume(text);
   }, [documentsRaw, resumePref?.defaultId, resume]);
 
+  // Reset state when component unmounts (route change)
+  useEffect(() => {
+    return () => {
+      setStage('idle');
+      setResult(null);
+      setError(null);
+      setStream('');
+    };
+  }, []);
+
   const handleUpload = async (target: 'resume' | 'jobAd', file: File) => {
     setUploadError(null);
     const ext = file.name.toLowerCase().split('.').pop() ?? '';
@@ -475,6 +485,7 @@ function AnalysisProgress({
 
   useEffect(() => {
     if (!running) return;
+
     startRef.current = Date.now();
     setProgress(0);
     setElapsed(0);
@@ -550,8 +561,7 @@ function AnalysisProgress({
             transition={transition.progress}
           />
         </div>
-        <div className="flex justify-between text-[10px] text-foreground/20">
-          <span>0%</span>
+        <div className="flex justify-end text-[10px] text-foreground/20">
           <span>{Math.round(progress)}%</span>
         </div>
       </div>
