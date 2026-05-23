@@ -125,7 +125,7 @@ export function AISettingsTab() {
   const selectedOllamaModel = providerConfig?.providers?.ollama?.model || aiModel?.defaultModel;
   const { resources, modelUsage } = useSystemResources(selectedOllamaModel);
   const { totalRamGb, freeRamGb, deviceTier, hasGpu, freeVramGb } = resources;
-  const { tooHeavy, mightLagRam, mightLagVram } = modelUsage;
+  const { mightLagRam, mightLagVram } = modelUsage;
 
   // Key status for every cloud provider (hooks must be called unconditionally)
   const openaiKey = useHasProviderKey('openai');

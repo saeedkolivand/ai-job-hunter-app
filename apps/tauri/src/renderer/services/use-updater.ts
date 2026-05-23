@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { useAppClient } from '@/providers/AppClientProvider';
 import {
   calculateDownloadSpeed,
   calculateTimeRemaining,
@@ -8,6 +7,8 @@ import {
   formatDownloadSpeed,
   formatTimeRemaining,
 } from '@ajh/shared';
+
+import { useAppClient } from '@/providers/AppClientProvider';
 
 export type UpdateStatus =
   | { state: 'idle' }

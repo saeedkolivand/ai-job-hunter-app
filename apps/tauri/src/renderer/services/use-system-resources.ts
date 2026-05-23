@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
+
+import { formatBytes, getDeviceTier, MODEL_RECS, type ModelRec } from '@ajh/shared';
+
 import { useSystemMetrics } from './use-system';
-import { formatBytes, getDeviceTier, type ModelRec, MODEL_RECS } from '@ajh/shared';
 
 export interface SystemResources {
   totalRamGb: number;

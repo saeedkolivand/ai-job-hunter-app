@@ -4,7 +4,6 @@ import {
   ArrowRight,
   Bot,
   CheckCircle2,
-  ChevronRight,
   Cloud,
   Computer,
   Download,
@@ -19,8 +18,16 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 
+import {
+  calculateDownloadSpeed,
+  calculateTimeRemaining,
+  formatBytes,
+  formatDownloadSpeed,
+  formatTimeRemaining,
+  getRecommended,
+  MODEL_RECS,
+} from '@ajh/shared';
 import { Button, Input, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
@@ -33,22 +40,11 @@ import {
   usePullModel,
   useSetProviderKey,
   useSystemHealth,
-  useSystemMetrics,
   useSystemResources,
 } from '@/services';
 import { keys, queryClient } from '@/services/query-client';
 import type { AiProvider } from '@/store/preferences-schema';
 import { useAIModel, usePreferencesStore } from '@/store/preferences-store';
-import {
-  calculateDownloadSpeed,
-  calculateTimeRemaining,
-  formatBytes,
-  formatDownloadSpeed,
-  formatTimeRemaining,
-  getDeviceTier,
-  getRecommended,
-  MODEL_RECS,
-} from '@ajh/shared';
 
 // Cloud providers available in onboarding (simpler list than settings)
 const CLOUD_PROVIDERS: Array<{
@@ -106,7 +102,6 @@ type PullState = 'idle' | 'pulling' | 'done' | 'error';
 export function OllamaStep({ onBack, onNext, direction }: Props) {
   const { t } = useTranslation();
   const notify = useNotification();
-  const qc = useQueryClient();
   const setAIModel = usePreferencesStore((s) => s.setAIModel);
   const setAiProviderConfig = usePreferencesStore((s) => s.setAiProviderConfig);
   const currentAIModel = useAIModel();
@@ -149,23 +144,19 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
     usedVramGb,
     cpuCount,
   } = resources;
-  const { tooHeavy, mightLagRam, mightLagVram } = modelUsage;
+  const { tooHeavy } = modelUsage;
   const recommended = getRecommended(totalRamGb);
   const [pullState, setPullState] = useState<PullState>('idle');
   const [pullProgress, setPullProgress] = useState(0);
   const [pullJobId, setPullJobId] = useState<string | null>(null);
   const [downloadSpeed, setDownloadSpeed] = useState<string>('');
-  const [downloadSpeedBytes, setDownloadSpeedBytes] = useState<number>(0);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [downloadedBytes, setDownloadedBytes] = useState<number>(0);
   const [totalBytes, setTotalBytes] = useState<number>(0);
-  const [downloadedFiles, setDownloadedFiles] = useState<Set<string>>(new Set());
   const [skipping, setSkipping] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevBytesRef = useRef(0);
   const prevTimeRef = useRef(0);
   const lastSpeedUpdateRef = useRef(0);
-  const lastBytesUpdateRef = useRef(0);
   const lastTimeUpdateRef = useRef(0);
 
   // Auto-select a model when models load
@@ -195,29 +186,11 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
 
       // Track downloaded and total bytes
       if (typeof data?.completed === 'number') {
-        const now = Date.now();
-        if (now - lastBytesUpdateRef.current > 500) {
-          setDownloadedBytes(data.completed);
-          lastBytesUpdateRef.current = now;
-        }
+        setDownloadedBytes(data.completed);
       }
       // Total bytes should update immediately (no throttle) since it's a one-time value
       if (typeof data?.total === 'number' && data.total > 0) {
         setTotalBytes(data.total);
-      }
-
-      // Track downloaded files by digest
-      if (typeof data?.digest === 'string' && data.digest) {
-        setDownloadedFiles((prev) => {
-          const newSet = new Set(prev);
-          if (!newSet.has(data.digest!)) {
-            newSet.add(data.digest!);
-          }
-          if (data.p === 1) {
-            newSet.add(data.digest!);
-          }
-          return newSet;
-        });
       }
 
       // Calculate download speed
@@ -231,8 +204,6 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
           const bytesPerSecond = calculateDownloadSpeed(bytes, prevBytes, now, prevTime);
 
           if (bytesPerSecond > 0) {
-            setDownloadSpeedBytes(bytesPerSecond);
-
             // Throttle speed updates to every 500ms
             if (now - lastSpeedUpdateRef.current > 500) {
               setDownloadSpeed(formatDownloadSpeed(bytesPerSecond));
@@ -263,18 +234,15 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
         setPullState('done');
         setPullJobId(null);
         setDownloadSpeed('');
-        setDownloadSpeedBytes(0);
         setTimeRemaining('');
         setDownloadedBytes(0);
         setTotalBytes(0);
-        setDownloadedFiles(new Set());
         prevBytesRef.current = 0;
         prevTimeRef.current = 0;
         lastSpeedUpdateRef.current = 0;
-        lastBytesUpdateRef.current = 0;
         lastTimeUpdateRef.current = 0;
         void refetchModels();
-        qc.invalidateQueries({ queryKey: keys.ai.models });
+        queryClient.invalidateQueries({ queryKey: keys.ai.models });
         notify(`${selectedModel} downloaded successfully.`, 'success');
       }
     } else if (event.type === 'job.completed' && event.jobId === pullJobId) {
@@ -282,32 +250,26 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
       setPullState('done');
       setPullJobId(null);
       setDownloadSpeed('');
-      setDownloadSpeedBytes(0);
       setTimeRemaining('');
       setDownloadedBytes(0);
       setTotalBytes(0);
-      setDownloadedFiles(new Set());
       prevBytesRef.current = 0;
       prevTimeRef.current = 0;
       lastSpeedUpdateRef.current = 0;
-      lastBytesUpdateRef.current = 0;
       lastTimeUpdateRef.current = 0;
       void refetchModels();
-      qc.invalidateQueries({ queryKey: keys.ai.models });
+      queryClient.invalidateQueries({ queryKey: keys.ai.models });
       notify(`${selectedModel} downloaded successfully.`, 'success');
     } else if (event.type === 'job.failed' && event.jobId === pullJobId) {
       setPullState('error');
       setPullJobId(null);
       setDownloadSpeed('');
-      setDownloadSpeedBytes(0);
       setTimeRemaining('');
       setDownloadedBytes(0);
       setTotalBytes(0);
-      setDownloadedFiles(new Set());
       prevBytesRef.current = 0;
       prevTimeRef.current = 0;
       lastSpeedUpdateRef.current = 0;
-      lastBytesUpdateRef.current = 0;
       lastTimeUpdateRef.current = 0;
       notify('Download failed.', 'error');
     }
@@ -366,12 +328,8 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
     setTimeout(() => onNext(), 1200);
   };
 
-  const handleRecheck = () => {
-    queryClient.invalidateQueries({ queryKey: keys.system.health });
-    queryClient.invalidateQueries({ queryKey: keys.ai.models });
-  };
-
-  const canContinue = mode === 'cloud' ? hasCloudKey : ollamaReady && selectedInstalled;
+  const canContinue =
+    mode === 'cloud' ? hasCloudKey : ollamaReady && selectedInstalled && !tooHeavy;
 
   return (
     <motion.div
@@ -600,8 +558,8 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
                   size="sm"
                   className="w-full justify-center gap-1.5 text-foreground/40 hover:text-foreground/70"
                   onClick={() => {
-                    qc.invalidateQueries({ queryKey: keys.system.health });
-                    qc.invalidateQueries({ queryKey: keys.ai.models });
+                    queryClient.invalidateQueries({ queryKey: keys.system.health });
+                    queryClient.invalidateQueries({ queryKey: keys.ai.models });
                   }}
                 >
                   <Loader2 size={12} />
