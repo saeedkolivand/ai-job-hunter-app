@@ -209,8 +209,9 @@ export function AIWorkspace() {
 
   return (
     <div className="flex h-full flex-col relative">
-      {/* Floating model selector button */}
-      <div className="absolute top-4 right-4 z-10">
+      {/* Header with model selector */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+        <h2 className="text-sm font-medium text-foreground/70">{t('ai.title')}</h2>
         <div className="relative">
           <button
             onClick={() => setShowModelPicker(!showModelPicker)}

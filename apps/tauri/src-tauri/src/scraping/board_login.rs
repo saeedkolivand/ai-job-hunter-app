@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 pub const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
-pub const POLL_INTERVAL: Duration = Duration::from_millis(750);
+pub const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 // ── Board configs ───────────────────────────────────────────────────────────
 
@@ -183,7 +183,7 @@ where
     // window the handler stream ends — we surface that as a cancellation flag.
     let closed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let closed_clone = closed.clone();
-    let handler_task = tokio::spawn(async move {
+    tokio::spawn(async move {
         while handler.next().await.is_some() {}
         closed_clone.store(true, std::sync::atomic::Ordering::SeqCst);
     });
@@ -208,8 +208,7 @@ where
     }
 
     // Close the browser cleanly. Ignore errors — the user may have closed it.
-    let _ = browser.close().await;
-    let _ = handler_task.await;
+    let _ = tokio::time::timeout(Duration::from_secs(5), browser.close()).await;
 
     write_auth_status(app_data_dir, board_id, connected);
     Ok(connected)
@@ -284,17 +283,21 @@ async fn wait_for_auth(
             return false;
         }
 
-        // URL check.
-        if let Ok(Some(url)) = page.url().await {
-            let url_ok = match config.is_authed_url {
-                Some(f) => f(&url),
-                None => default_is_authed_url(&url),
-            };
-            // Only trust URL when the page has left the login URL.
-            if url_ok && !url.starts_with(config.login_url) {
-                if config.is_authed_cookies.is_none() {
-                    return true;
-                }
+        // URL check - if this fails, the browser was likely closed
+        let url = match page.url().await {
+            Ok(Some(u)) => u,
+            Ok(None) => continue,
+            Err(_) => return false, // Browser closed or disconnected
+        };
+
+        let url_ok = match config.is_authed_url {
+            Some(f) => f(&url),
+            None => default_is_authed_url(&url),
+        };
+        // Only trust URL when the page has left the login URL.
+        if url_ok && !url.starts_with(config.login_url) {
+            if config.is_authed_cookies.is_none() {
+                return true;
             }
         }
 
@@ -305,6 +308,7 @@ async fn wait_for_auth(
                     return true;
                 }
             }
+            // If read_cookies fails, browser might be closed
         }
 
         tokio::time::sleep(POLL_INTERVAL).await;

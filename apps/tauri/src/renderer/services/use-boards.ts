@@ -24,6 +24,7 @@ export const useLinkedInConnect = () => {
   return useMutation({
     mutationFn: () => api.linkedin.connect(),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEYS.linkedinStatus }),
+    onSettled: () => qc.invalidateQueries({ queryKey: KEYS.linkedinStatus }),
   });
 };
 
