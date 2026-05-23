@@ -6,11 +6,10 @@ import { useOnboardingCompleted, usePreferencesStore } from '@/store/preferences
 
 import { SpotlightTour } from './SpotlightTour';
 import { OllamaStep } from './steps/OllamaStep';
-import { PrefsStep } from './steps/PrefsStep';
 import { ResumeStep } from './steps/ResumeStep';
 import { WelcomeStep } from './steps/WelcomeStep';
 
-type Step = 'welcome' | 'prefs' | 'resume' | 'ollama' | 'tour';
+type Step = 'welcome' | 'resume' | 'ollama' | 'tour';
 
 export function OnboardingWizard() {
   const onboardingCompleted = useOnboardingCompleted();
@@ -48,21 +47,13 @@ export function OnboardingWizard() {
 
       <AnimatePresence mode="wait" custom={direction}>
         {step === 'welcome' && (
-          <WelcomeStep key="welcome" direction={direction} onNext={() => goNext('prefs')} />
-        )}
-        {step === 'prefs' && (
-          <PrefsStep
-            key="prefs"
-            direction={direction}
-            onBack={() => goBack('welcome')}
-            onNext={() => goNext('resume')}
-          />
+          <WelcomeStep key="welcome" direction={direction} onNext={() => goNext('resume')} />
         )}
         {step === 'resume' && (
           <ResumeStep
             key="resume"
             direction={direction}
-            onBack={() => goBack('prefs')}
+            onBack={() => goBack('welcome')}
             onNext={() => goNext('ollama')}
           />
         )}

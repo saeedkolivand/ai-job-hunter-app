@@ -1168,7 +1168,7 @@
         "any": "Alles offen"
       },
       "back": "Zurück",
-      "next": "KI einrichten"
+      "next": "Lebenslauf hochladen"
     },
     "ollama": {
       "title": "KI einrichten",
@@ -1188,8 +1188,10 @@
       "ram": "Verfügbarer RAM",
       "chooseModel": "Modell wählen",
       "recommended": "Empfohlen",
+      "installed": "Installiert",
       "download": "Herunterladen",
       "downloading": "Wird heruntergeladen",
+      "downloaded": "erfolgreich heruntergeladen",
       "pullError": "Download fehlgeschlagen. Verbindung prüfen und erneut versuchen.",
       "back": "Zurück",
       "next": "Funktionen ansehen",
@@ -1244,7 +1246,8 @@
       "uploaded": "Lebenslauf hochgeladen",
       "uploadFailed": "Upload fehlgeschlagen",
       "replaceHint": "Klicken zum Ersetzen",
-      "skip": "Vorerst überspringen"
+      "skip": "Vorerst überspringen",
+      "next": "KI einrichten"
     }
   },
   "resumeInput": {
