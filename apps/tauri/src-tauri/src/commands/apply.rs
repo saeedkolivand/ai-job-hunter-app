@@ -93,20 +93,17 @@ fn decode_resume_to_temp(req: &Value) -> Option<std::path::PathBuf> {
         req.get("resumeName").and_then(|v| v.as_str()),
     );
 
-    match (b64, name) {
-        (Some(b64), Some(name)) => {
-            if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) {
-                let ext = std::path::Path::new(name)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("pdf");
-                let path = std::env::temp_dir().join(format!("ajh-resume-{}.{ext}", Uuid::new_v4()));
-                if std::fs::write(&path, &bytes).is_ok() {
-                    return Some(path);
-                }
+    if let (Some(b64), Some(name)) = (b64, name) {
+        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) {
+            let ext = std::path::Path::new(name)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("pdf");
+            let path = std::env::temp_dir().join(format!("ajh-resume-{}.{ext}", Uuid::new_v4()));
+            if std::fs::write(&path, &bytes).is_ok() {
+                return Some(path);
             }
         }
-        _ => {}
     }
     None
 }
