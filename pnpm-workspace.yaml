@@ -24,3 +24,14 @@ minimumReleaseAgeExclude:
   - '@typescript-eslint/utils@8.59.4'
   - '@typescript-eslint/visitor-keys@8.59.4'
   - typescript-eslint@8.59.4
+
+# Dependency hoisting settings
+nodeLinker: isolated
+shamefullyHoist: true
+
+# Peer dependency settings
+strictPeerDependencies: false
+autoInstallPeers: true
+
+# Build settings
+enablePrePostScripts: true
