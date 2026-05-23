@@ -208,3 +208,6 @@ temp/
 *.pid.lock
 *.seed
 CHANGELOG.md
+
+.claude
+.claude-flow
