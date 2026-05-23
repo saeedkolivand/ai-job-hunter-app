@@ -53,6 +53,7 @@ jobs:
           # tags and GitHub Releases via the API. @semantic-release/git has
           # been removed so no direct push to main is attempted.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIT_CREDENTIALS: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Notify Discord Release Failure
         if: failure()
