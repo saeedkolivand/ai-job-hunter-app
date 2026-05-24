@@ -71,3 +71,18 @@ const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, 'utf8'));
 rootPkg.version = version;
 fs.writeFileSync(rootPkgPath, JSON.stringify(rootPkg, null, 2) + '\n');
 console.log(`package.json → version=${version}`);
+
+// ── Commit changes ─────────────────────────────────────────────────────────────
+
+const { execSync } = require('child_process');
+try {
+  execSync(
+    'git add apps/tauri/src-tauri/tauri.conf.json apps/tauri/src-tauri/Cargo.toml apps/tauri/package.json package.json',
+    { cwd: root }
+  );
+  execSync(`git commit -m "chore(release): ${version}"`, { cwd: root });
+  console.log(`Changes committed for version ${version}`);
+} catch (error) {
+  console.error('Failed to commit changes:', error.message);
+  process.exit(1);
+}
