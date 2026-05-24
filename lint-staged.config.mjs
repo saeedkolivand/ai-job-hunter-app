@@ -10,8 +10,8 @@
  * the remote — the right gate for that check.
  */
 export default {
-  '**/*.{ts,tsx}': ['prettier --write'],
-  '**/*.{js,mjs,cjs}': ['prettier --write'],
-  '**/*.{json,md,yml,yaml}': ['prettier --write'],
-  '**/*.css': ['prettier --write'],
+  '**/*.{ts,tsx}': ['prettier --write', 'git add'],
+  '**/*.{js,mjs,cjs}': ['prettier --write', 'git add'],
+  '**/*.{json,md,yml,yaml}': ['prettier --write', 'git add'],
+  '**/*.css': ['prettier --write', 'git add'],
 };
