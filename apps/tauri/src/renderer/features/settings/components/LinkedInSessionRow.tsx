@@ -70,12 +70,22 @@ export function LinkedInSessionRow({ board }: LinkedInSessionRowProps) {
               <Loader2 size={14} className="animate-spin" />
             </Button>
           ) : (status as { connected?: boolean } | undefined)?.connected ? (
-            <Button size="sm" variant="glass" onClick={handleDisconnect} className="hover:glow-red">
+            <Button
+              size="sm"
+              variant="glass"
+              onClick={handleDisconnect}
+              className="transition-all duration-150 ease-out"
+            >
               <LogOut size={14} />
               Disconnect
             </Button>
           ) : (
-            <Button size="sm" variant="glass" onClick={handleConnect} className="hover:glow-purple">
+            <Button
+              size="sm"
+              variant="glass"
+              onClick={handleConnect}
+              className="transition-all duration-150 ease-out"
+            >
               <LinkIcon size={14} />
               Connect
             </Button>

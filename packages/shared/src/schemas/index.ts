@@ -172,8 +172,23 @@ export const AutopilotUpdateSchema = AutopilotCreateSchema.partial().extend({
 
 export const AutopilotIdSchema = z.object({ autopilotId: z.string().min(1) });
 
+export const TechStackItemSchema = z.object({
+  name: z.string().min(1),
+  category: z.string().min(1),
+});
+
+export const JobPreferencesSchema = z.object({
+  location: z.string().optional(),
+  remote: z.string().optional(),
+  seniority: z.string().optional(),
+  salaryMin: z.number().int().optional(),
+  salaryMax: z.number().int().optional(),
+  techStack: z.array(TechStackItemSchema).optional(),
+});
+
 export type AutopilotCreate = z.infer<typeof AutopilotCreateSchema>;
 export type AutopilotUpdate = z.infer<typeof AutopilotUpdateSchema>;
+export type JobPreferences = z.infer<typeof JobPreferencesSchema>;
 
 export type AiGenerateRequest = z.infer<typeof AiGenerateRequestSchema>;
 export type DocumentImportRequest = z.infer<typeof DocumentImportRequestSchema>;

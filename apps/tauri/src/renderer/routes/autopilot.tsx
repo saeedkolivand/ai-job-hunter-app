@@ -20,7 +20,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
-import type { Autopilot, AutopilotAction, AutopilotSchedule } from '@ajh/shared';
+import type { Autopilot, AutopilotAction, AutopilotSchedule, JobPreferences } from '@ajh/shared';
 import { Button, GlassCard } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -34,12 +34,12 @@ import { transition } from '@/lib/motion';
 import {
   useAutopilots,
   useCreateAutopilot,
+  useJobPreferences,
   usePauseAutopilot,
   useRemoveAutopilot,
   useResumeAutopilot,
   useRunAutopilot,
 } from '@/services';
-import { useLocation, useRemote, useTechStack } from '@/store/preferences-store';
 
 export const Route = createFileRoute('/autopilot')({ component: AutopilotPage });
 
@@ -67,24 +67,20 @@ export interface WizardState {
   schedule: AutopilotSchedule;
 }
 
-function buildDefaults(
-  location?: { city?: string },
-  remote?: string,
-  techStack?: { name: string }[]
-): WizardState {
+function buildDefaults(jobPrefs?: JobPreferences): WizardState {
   const validWorkType = ['remote', 'hybrid', 'on-site', 'any'] as const;
   return {
     name: '',
     board: 'linkedin',
     query: '',
-    location: location?.city ?? '',
-    workType: validWorkType.includes(remote as (typeof validWorkType)[number])
-      ? (remote as WizardState['workType'])
+    location: jobPrefs?.location ?? '',
+    workType: validWorkType.includes(jobPrefs?.remote as (typeof validWorkType)[number])
+      ? (jobPrefs?.remote as WizardState['workType'])
       : 'any',
     pages: 2,
     dateFilter: '24h',
     minMatchScore: 50,
-    keywords: techStack?.map((t) => t.name).join(', ') ?? '',
+    keywords: jobPrefs?.techStack?.map((t) => t.name).join(', ') ?? '',
     excludeKeywords: '',
     resumeText: '',
     action: 'save',
@@ -193,7 +189,7 @@ function AutopilotPage() {
             variant="glass"
             size="sm"
             onClick={() => setCreating(true)}
-            className="hover:glow-purple"
+            className="transition-all duration-150 ease-out"
           >
             <Plus size={13} /> {t('autopilot.newAutopilot')}
           </Button>
@@ -360,7 +356,12 @@ function EmptyState({ onNew }: { onNew(): void }) {
           </div>
         ))}
       </div>
-      <Button variant="glass" size="md" onClick={onNew} className="hover:glow-purple px-6 gap-2">
+      <Button
+        variant="glass"
+        size="md"
+        onClick={onNew}
+        className="transition-all duration-150 ease-out px-6 gap-2"
+      >
         <Plus size={14} /> {t('autopilot.empty.createFirst')}
       </Button>
     </div>
@@ -371,22 +372,18 @@ function EmptyState({ onNew }: { onNew(): void }) {
 
 function CreationWizard({ onDone, onCancel }: { onDone(ap: Autopilot): void; onCancel(): void }) {
   const { t } = useTranslation();
-  const prefLocation = useLocation();
-  const prefRemote = useRemote();
-  const prefTechStack = useTechStack();
+  const { data: jobPrefs } = useJobPreferences();
 
   const [step, setStep] = useState(0);
-  const [form, setForm] = useState<WizardState>(() =>
-    buildDefaults(prefLocation, prefRemote, prefTechStack)
-  );
+  const [form, setForm] = useState<WizardState>(() => buildDefaults(jobPrefs));
   const [error, setError] = useState<string | null>(null);
   const createAutopilot = useCreateAutopilot();
   const saving = createAutopilot.isPending;
 
   // Track which fields were pre-filled so we can show a hint
   const prefilledFields = {
-    location: !!prefLocation?.city,
-    keywords: (prefTechStack?.length ?? 0) > 0,
+    location: !!jobPrefs?.location,
+    keywords: (jobPrefs?.techStack?.length ?? 0) > 0,
   };
 
   const set: SetFn = <K extends keyof WizardState>(k: K, v: WizardState[K]) =>
@@ -635,7 +632,7 @@ function CreationWizard({ onDone, onCancel }: { onDone(ap: Autopilot): void; onC
               size="sm"
               disabled={!canNext()}
               onClick={() => setStep((s) => s + 1)}
-              className={canNext() ? 'hover:glow-purple' : ''}
+              className="transition-all duration-150 ease-out"
             >
               {t('autopilot.wizard.next')} <ChevronRight size={13} />
             </Button>
@@ -645,7 +642,7 @@ function CreationWizard({ onDone, onCancel }: { onDone(ap: Autopilot): void; onC
               size="sm"
               loading={saving}
               onClick={() => void save()}
-              className="hover:glow-purple"
+              className="transition-all duration-150 ease-out"
             >
               {!saving && <Zap size={13} />} {t('autopilot.wizard.create')}
             </Button>

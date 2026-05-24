@@ -1,25 +1,35 @@
 #!/usr/bin/env sh
 # Runs before `git push`.
-# Quality gate: lint + typecheck + build + tests + rust clippy.
+# Quality gate: matches CI workflow checks (lint, format, typecheck, build, tests, rust clippy).
 
 if [ -n "$GITHUB_ACTIONS" ]; then
   exit 0
 fi
 
-echo "▶ Running ESLint..."
-pnpm lint
+# Get the git root directory
+GIT_ROOT=$(git rev-parse --show-toplevel)
+cd "$GIT_ROOT" || exit 1
+
+echo "▶ Building shared packages..."
+pnpm build:packages
+
+echo "▶ Running ESLint strict..."
+pnpm lint:strict
+
+echo "▶ Checking formatting..."
+pnpm format:check
 
 echo "▶ Running TypeScript type check..."
 pnpm typecheck --force
 
-echo "▶ Building packages..."
-pnpm build:packages
-
-echo "▶ Building Tauri frontend..."
-pnpm --filter @ajh/tauri build:frontend
+echo "▶ Running cargo check..."
+cd apps/tauri/src-tauri && cargo check --all-targets --all-features
 
 echo "▶ Running package tests..."
-pnpm -r test
+cd "$GIT_ROOT" && pnpm test
+
+echo "▶ Running Rust tests..."
+cd apps/tauri/src-tauri && cargo test --all-features
 
 echo "▶ Running Rust clippy..."
-cd apps/tauri/src-tauri && cargo clippy --all-targets -- -D warnings
+cargo clippy --all-targets --all-features -- -D warnings

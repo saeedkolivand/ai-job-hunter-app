@@ -8,14 +8,16 @@ import { Button, GlassCard, useNotification } from '@ajh/ui';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
-import { useDocuments, useImportDocument, useRemoveDocument } from '@/services';
-import { usePreferencesStore, useResume } from '@/store/preferences-store';
+import {
+  useDocuments,
+  useImportDocument,
+  useRemoveDocument,
+  useSetDefaultDocument,
+} from '@/services';
 
 export function ResumePreferences() {
   const { t } = useTranslation();
   const notify = useNotification();
-  const resume = useResume();
-  const setResume = usePreferencesStore((state) => state.setResume);
 
   const { data: documentsRaw = [], isLoading } = useDocuments();
   // Rust serialises id as _id and created_at as createdAt — normalise here
@@ -38,6 +40,7 @@ export function ResumePreferences() {
   }));
   const importDocument = useImportDocument();
   const removeDocument = useRemoveDocument();
+  const setDefaultDocument = useSetDefaultDocument();
 
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -48,11 +51,6 @@ export function ResumePreferences() {
       const bytes = new Uint8Array(await file.arrayBuffer());
       await importDocument.mutateAsync({ name: file.name, bytes, title: file.name });
       if (fileInputRef.current) fileInputRef.current.value = '';
-      // Set as default only if none already selected
-      if (!resume?.defaultId) {
-        const firstId = rawDocs[0]?._id;
-        if (firstId) setResume({ defaultId: firstId, autoIndex: true, autoParse: true });
-      }
       notify(t('settings.resume.uploaded'), 'success');
     } catch (err) {
       notify(err instanceof Error ? err.message : t('settings.resume.uploadFailed'), 'error');
@@ -73,25 +71,18 @@ export function ResumePreferences() {
     if (file) void handleFileUpload(file);
   };
 
-  const handleSetDefault = (id: string) => {
-    setResume({
-      defaultId: id,
-      autoIndex: resume?.autoIndex ?? true,
-      autoParse: resume?.autoParse ?? true,
-    });
+  const handleSetDefault = async (id: string) => {
+    try {
+      await setDefaultDocument.mutateAsync(id);
+      notify(t('settings.resume.defaultSet'), 'success');
+    } catch {
+      notify(t('settings.resume.defaultSetFailed'), 'error');
+    }
   };
 
   const handleDelete = async (id: string) => {
     try {
       await removeDocument.mutateAsync(id);
-      if (resume?.defaultId === id) {
-        const next = documents.find((d) => d.id !== id);
-        setResume({
-          defaultId: next?.id,
-          autoIndex: resume?.autoIndex ?? true,
-          autoParse: resume?.autoParse ?? true,
-        });
-      }
       notify(t('settings.resume.removed'), 'success');
     } catch {
       notify(t('settings.resume.removeFailed'), 'error');
@@ -193,7 +184,7 @@ export function ResumePreferences() {
       ) : (
         <div className="space-y-2">
           {documents.map((doc) => {
-            const isDefault = resume?.defaultId === doc.id;
+            const isDefault = doc.isDefault ?? false;
             return (
               <motion.div
                 key={doc.id}
@@ -244,8 +235,8 @@ export function ResumePreferences() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleSetDefault(doc.id)}
-                    disabled={isDefault}
+                    onClick={() => void handleSetDefault(doc.id)}
+                    disabled={isDefault || setDefaultDocument.isPending}
                     title={t('settings.resume.setDefault')}
                     className="text-foreground/30 hover:text-brand-soft disabled:opacity-0"
                   >

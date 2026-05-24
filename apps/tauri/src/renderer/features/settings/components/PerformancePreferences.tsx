@@ -20,12 +20,7 @@ const PERFORMANCE_OPTIONS: {
     label: 'Low Memory',
     icon: Cpu,
     description: 'Optimized for older hardware',
-    details: [
-      'Reduced blur intensity',
-      'Minimal animations',
-      'Aggressive model unloading',
-      'Lower concurrency',
-    ],
+    details: ['Reduced blur intensity', 'Aggressive model unloading', 'Lower concurrency'],
   },
   {
     value: 'balanced',
@@ -69,12 +64,10 @@ export function PerformancePreferences() {
               key={opt.value}
               type="button"
               onClick={() => setPerformanceMode(opt.value)}
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
               className={cn(
                 'relative flex items-start gap-4 rounded-xl border p-4 text-left transition-all duration-150',
                 isSelected
-                  ? 'border-brand-soft/50 bg-brand-soft/10 glow-subtle'
+                  ? 'border-brand-soft/50 bg-brand-soft/10 ring-1 ring-brand/20'
                   : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10'
               )}
             >

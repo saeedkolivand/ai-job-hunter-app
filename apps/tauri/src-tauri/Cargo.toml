@@ -1,7 +1,7 @@
 [package]
 name = "ajh-tauri"
 version = "0.2.13"
-edition = "2021"
+edition = "2024"
 description = "AI Job Hunter — Tauri desktop shell"
 authors = ["Saeed Kolivand"]
 
@@ -19,7 +19,7 @@ strip = true
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-ico", "image-png"] }
+tauri = { version = "2", features = ["tray-icon", "image-ico", "image-png"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
@@ -67,3 +67,7 @@ unicode-segmentation = "1.10"
 
 [target.'cfg(windows)'.dependencies]
 wmi = "0.14"
+tauri = { version = "2", features = ["macos-private-api"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }

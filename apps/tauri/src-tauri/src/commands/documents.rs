@@ -48,6 +48,7 @@ pub async fn documents_import(app: AppHandle, req: Value) -> Value {
         pages: None,
         created_at: crate::documents::now_ms(),
         indexed: false,
+        is_default: false, // Will be set to true by insert() if it's the first document
     };
     match store.insert(&record) {
         Ok(()) => json!({ "id": doc_id, "success": true }),
@@ -56,9 +57,18 @@ pub async fn documents_import(app: AppHandle, req: Value) -> Value {
 }
 
 #[tauri::command]
-pub async fn documents_delete(app: AppHandle, id: String) -> Value {
+pub async fn documents_remove(app: AppHandle, id: String) -> Value {
     let store = app.state::<crate::documents::DocumentStore>();
     match store.remove(&id) {
+        Ok(()) => json!({ "success": true }),
+        Err(e) => json!({ "error": e.to_string() }),
+    }
+}
+
+#[tauri::command]
+pub async fn documents_set_default(app: AppHandle, id: String) -> Value {
+    let store = app.state::<crate::documents::DocumentStore>();
+    match store.set_default(&id) {
         Ok(()) => json!({ "success": true }),
         Err(e) => json!({ "error": e.to_string() }),
     }

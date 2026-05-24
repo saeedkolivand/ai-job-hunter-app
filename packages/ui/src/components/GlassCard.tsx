@@ -32,7 +32,7 @@ export function GlassCard({
         toneClass[tone],
         'p-5',
         highlight && 'glass-highlight',
-        glow && 'glow-subtle',
+        glow && 'ring-1 ring-brand/20',
         className
       )}
       {...rest}

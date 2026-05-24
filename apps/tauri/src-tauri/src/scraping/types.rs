@@ -6,7 +6,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JobPosting {
     pub id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "externalId")]
     pub external_id: Option<String>,
     pub title: String,
     pub company: String,
@@ -18,8 +18,9 @@ pub struct JobPosting {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requirements: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "postedAt")]
     pub posted_at: Option<i64>,
+    #[serde(rename = "capturedAt")]
     pub captured_at: i64,
     /// Board-specific metadata (salary, remote status, etc.)
     #[serde(flatten)]

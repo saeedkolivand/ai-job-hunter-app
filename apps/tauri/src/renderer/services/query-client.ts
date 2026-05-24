@@ -43,6 +43,7 @@ export const keys = {
   jobs: { all: ['jobs'] as const, detail: (id: string) => ['jobs', id] as const },
   ai: { models: ['ai', 'models'] as const },
   documents: { all: ['documents'] as const },
+  jobPreferences: { all: ['jobPreferences'] as const },
   postings: {
     all: ['postings'] as const,
     interactions: (type?: string) => ['postings', 'interactions', type] as const,

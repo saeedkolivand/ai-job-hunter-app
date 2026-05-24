@@ -37,12 +37,7 @@ import { transition } from '@/lib/motion';
 import { type AnalysisResult, runAnalysis } from '@/lib/resume-ai';
 import { useAIModels, useDocuments, useExtractText } from '@/services';
 import { keys } from '@/services/query-client';
-import {
-  useAIModel,
-  useOutputTone,
-  usePreferencesStore,
-  useResume,
-} from '@/store/preferences-store';
+import { useAIModel, useOutputTone, usePreferencesStore } from '@/store/preferences-store';
 import type { Model } from '@/types';
 
 export const Route = createFileRoute('/analyze')({ component: Analyze });
@@ -72,17 +67,16 @@ function Analyze() {
   const outputTone = useOutputTone();
   const setAIModel = usePreferencesStore((s) => s.setAIModel);
   const extractTextMutation = useExtractText();
-  const resumePref = useResume();
   const { data: documentsRaw = [] } = useDocuments();
 
   // Auto-fill default resume on mount
   useEffect(() => {
     if (resume) return; // Don't override if user already has content
     const docs = documentsRaw as Array<DocumentRecord & { _id?: string; text?: string }>;
-    const defaultDoc = docs.find((d) => (d._id ?? d.id) === resumePref?.defaultId) ?? docs[0];
+    const defaultDoc = docs.find((d) => d.isDefault) ?? docs[0];
     const text = defaultDoc?.text?.trim();
     if (text) setResume(text);
-  }, [documentsRaw, resumePref?.defaultId, resume]);
+  }, [documentsRaw, resume]);
 
   // Reset state when component unmounts (route change)
   useEffect(() => {
@@ -268,10 +262,7 @@ function Analyze() {
               onClick={() => void run()}
               loading={stage === 'running'}
               disabled={!canRun || stage === 'running'}
-              className={cn(
-                'w-full justify-center',
-                canRun && stage !== 'running' && 'hover:glow-purple'
-              )}
+              className={cn('w-full justify-center', 'transition-all duration-150 ease-out')}
             >
               {stage !== 'running' && <Sparkles size={14} />}
               {stage === 'running'

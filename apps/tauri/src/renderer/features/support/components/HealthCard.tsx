@@ -10,7 +10,7 @@ interface HealthCardProps {
 
 export function HealthCard({ name, status, description }: HealthCardProps) {
   const statusConfig = {
-    healthy: { icon: CheckCircle2, color: 'text-emerald-400', glow: 'glow-subtle' },
+    healthy: { icon: CheckCircle2, color: 'text-emerald-400', glow: 'ring-1 ring-emerald-400/20' },
     warning: { icon: AlertTriangle, color: 'text-amber-400', glow: '' },
     error: { icon: XCircle, color: 'text-red-400', glow: '' },
     disabled: { icon: XCircle, color: 'text-foreground/40', glow: '' },

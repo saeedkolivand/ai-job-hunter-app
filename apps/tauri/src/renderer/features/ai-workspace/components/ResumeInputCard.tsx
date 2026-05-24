@@ -21,8 +21,7 @@ import { Button, TextArea, useNotification } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
-import { useDocuments, useImportDocument } from '@/services';
-import { usePreferencesStore, useResume } from '@/store/preferences-store';
+import { useDocuments, useImportDocument, useSetDefaultDocument } from '@/services';
 
 const ACCEPT = '.pdf,.docx,.txt,.md,.markdown';
 const MAX_BYTES = 25 * 1024 * 1024;
@@ -79,33 +78,29 @@ export function ResumeInputCard({
   const { data: rawDocsUnknown = [] } = useDocuments();
   const rawDocs = rawDocsUnknown as unknown as RawDoc[];
   const docs = rawDocs.map(normalise);
-  const resumePref = useResume();
-  const setResume = usePreferencesStore((s) => s.setResume);
   const importDocument = useImportDocument();
+  const setDefaultDocument = useSetDefaultDocument();
 
   const hasSaved = docs.length > 0;
-  const defaultDoc = docs.find((d) => d.id === resumePref?.defaultId) ?? docs[0];
+  const defaultDoc = docs.find((d) => d.isDefault) ?? docs[0];
 
   // Auto-fill from default resume on first load (only if textarea is still empty)
   useEffect(() => {
     if (value) return;
-    const raw = rawDocs.find((d) => d._id === resumePref?.defaultId) ?? rawDocs[0];
+    const raw = rawDocs.find((d) => d.isDefault) ?? rawDocs[0];
     const text = raw?.text?.trim();
     if (text) onChange(text);
-  }, [value, rawDocs, resumePref?.defaultId, onChange]);
+  }, [value, rawDocs, onChange]);
 
   /** Load text from a saved document record into the textarea */
-  const handleSelectSaved = (doc: DocumentRecord) => {
+  const handleSelectSaved = async (doc: DocumentRecord) => {
     const raw = rawDocs.find((d) => d._id === doc.id);
     const text = raw?.text?.trim();
     if (text) {
       onChange(text);
     }
-    setResume({
-      defaultId: doc.id,
-      autoIndex: resumePref?.autoIndex ?? true,
-      autoParse: resumePref?.autoParse ?? true,
-    });
+    // Set as default in backend
+    await setDefaultDocument.mutateAsync(doc.id);
     setShowSaved(false);
     setLastUploadedFile(null);
     notify(t('resumeInput.selectedSaved', { name: doc.title }), 'success');
@@ -117,15 +112,13 @@ export function ResumeInputCard({
     setSaving(true);
     try {
       const bytes = new Uint8Array(await lastUploadedFile.arrayBuffer());
-      await importDocument.mutateAsync({
+      const result = await importDocument.mutateAsync({
         name: lastUploadedFile.name,
         bytes,
         title: lastUploadedFile.name,
       });
-      const saved = rawDocs[0];
-      const id = saved?._id;
-      if (asDefault && id) {
-        setResume({ defaultId: String(id), autoIndex: true, autoParse: true });
+      if (asDefault && result?.id) {
+        await setDefaultDocument.mutateAsync(result.id);
       }
       notify(
         asDefault ? t('resumeInput.savedAsDefault') : t('resumeInput.savedToLibrary'),
@@ -188,14 +181,14 @@ export function ResumeInputCard({
                         onClick={() => handleSelectSaved(doc)}
                         className={cn(
                           'flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors',
-                          doc.id === resumePref?.defaultId
+                          doc.isDefault
                             ? 'bg-brand/15 text-brand-soft'
                             : 'text-foreground/65 hover:bg-white/[0.05] hover:text-foreground/90'
                         )}
                       >
                         <FileText size={11} className="shrink-0" />
                         <span className="truncate flex-1">{doc.title}</span>
-                        {doc.id === resumePref?.defaultId && <Sparkles size={9} />}
+                        {doc.isDefault && <Sparkles size={9} />}
                       </button>
                     ))}
                   </div>
@@ -274,7 +267,7 @@ export function ResumeInputCard({
             variant="glass"
             size="sm"
             onClick={() => void handleSaveToLibrary(true)}
-            className="gap-1 text-[11px] h-6 px-2 glow-subtle"
+            className="gap-1 text-[11px] h-6 px-2 ring-1 ring-brand/20"
           >
             <Sparkles size={10} /> {t('resumeInput.setDefault')}
           </Button>

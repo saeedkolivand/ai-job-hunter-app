@@ -23,7 +23,6 @@ export function LanguageSelector() {
           <motion.button
             key={code}
             onClick={() => select(code)}
-            whileTap={{ scale: 0.97 }}
             className={cn(
               'relative flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-xs transition-all duration-150',
               active
