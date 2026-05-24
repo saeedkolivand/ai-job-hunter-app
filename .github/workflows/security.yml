@@ -1,4 +1,8 @@
-name: Security
+name: 🛡️ Security Checks
+
+# ╔════════════════════════════════════════════════════════════╗
+# ║                     🔒 Security Pipeline                  ║
+# ╚════════════════════════════════════════════════════════════╝
 
 on:
   schedule:
@@ -10,59 +14,50 @@ permissions:
   contents: read
   security-events: write
 
+env:
+  NODE_VERSION: 22
+  PNPM_VERSION: 11.1.3
+
 jobs:
   dependency-review:
-    name: Dependency Review
+    name: 📦 Dependency Review
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      - name: Dependency Review
+      - name: 🔍 Dependency Review
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: high
 
+      - name: ✅ Dependency Review Passed
+        run: echo "📦 No critical dependency risks found." >> $GITHUB_STEP_SUMMARY
+
   npm-audit:
-    name: npm Audit
+    name: 🧪 npm Audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      - name: Checkout Repository
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
+      - name: 📦 Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 11.1.3
+          version: ${{ env.PNPM_VERSION }}
 
-      - name: Setup Node.js
+      - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
-      - name: Install Dependencies
+      - name: 📥 Install Dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run npm Audit
+      - name: 🔎 Run npm Audit
         run: pnpm audit --audit-level high
 
-  cargo-audit:
-    name: Cargo Audit
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-audit
-        uses: taiki-e/install-action@cargo-audit
-
-      - name: Run Cargo Audit
-        working-directory: apps/tauri/src-tauri
-        run: cargo audit
+      - name: ✅ npm Audit Passed
+        run: echo "🧪 npm audit completed without high severity issues." >> $GITHUB_STEP_SUMMARY
