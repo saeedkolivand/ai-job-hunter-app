@@ -81,7 +81,8 @@ try {
     { cwd: root }
   );
   execSync(`git commit -m "chore(release): ${version} [skip ci]"`, { cwd: root });
-  console.log(`Changes committed for version ${version}`);
+  execSync('git push', { cwd: root });
+  console.log(`Changes committed and pushed for version ${version}`);
 } catch (error) {
   console.error('Failed to commit changes:', error.message);
   process.exit(1);
