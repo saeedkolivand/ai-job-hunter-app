@@ -256,7 +256,14 @@ jobs:
         run: |
           echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}" | base64 --decode > tauri.key
 
-      - name: � Add ARM64 Target (macOS only)
+      - name: 🔧 Add Intel Target (macOS only)
+        if: runner.os == 'macOS'
+        run: |
+          echo "::group::Adding Intel target"
+          rustup target add x86_64-apple-darwin
+          echo "::endgroup::"
+
+      - name: 🔧 Add ARM64 Target (macOS only)
         if: runner.os == 'macOS'
         run: |
           echo "::group::Adding ARM64 target"
@@ -266,6 +273,7 @@ jobs:
       - name: 🏗️ Build Tauri Application
         id: tauri-build
         continue-on-error: true
+        shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ./tauri.key
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
