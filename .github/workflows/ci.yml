@@ -173,7 +173,7 @@ jobs:
           cache: pnpm
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache@v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -230,7 +230,7 @@ jobs:
           cache: pnpm
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache@v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -357,7 +357,7 @@ jobs:
           cache: pnpm
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache@v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
