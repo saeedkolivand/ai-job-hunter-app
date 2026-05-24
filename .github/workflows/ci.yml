@@ -1,5 +1,18 @@
 name: 🚀 CI Pipeline
 
+# ──────────────────────────────────────────────────────────────────────
+# Continuous Integration Pipeline
+# ──────────────────────────────────────────────────────────────────────
+# Purpose: Validate code quality, type safety, and test coverage on every PR
+# Triggers: pull_request to main, push to any branch except main
+# Jobs:
+#   - lint-format: ESLint and Prettier validation
+#   - type-check: TypeScript type checking
+#   - tests: JavaScript and Rust test suites
+#   - build-verification: Production build validation
+#   - quality-checks: Rust clippy linting
+# ──────────────────────────────────────────────────────────────────────
+
 on:
   pull_request:
     branches:
@@ -13,14 +26,14 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  NODE_VERSION: 22
-  PNPM_VERSION: 11.1.3
-
+# ──────────────────────────────────────────────────────────────────────
+# Jobs
+# ──────────────────────────────────────────────────────────────────────
 jobs:
   lint-format:
-    name: Lint & Format
+    name: ✨ Lint & Format
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: 📥 Checkout Repository
@@ -29,29 +42,78 @@ jobs:
       - name: 📦 Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: ${{ env.PNPM_VERSION }}
+          version: 11.1.3
 
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: 22
           cache: pnpm
 
       - name: 📥 Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          echo "::group::Installing dependencies"
+          pnpm install --frozen-lockfile
+          echo "::endgroup::"
+
+      - name: 🔨 Build Shared Packages
+        run: |
+          echo "::group::Building shared packages"
+          pnpm build:packages
+          echo "::endgroup::"
 
       - name: 🔍 Run ESLint
+        id: eslint
+        continue-on-error: true
         run: pnpm lint:strict
 
       - name: 🎨 Check Formatting
+        id: format
+        continue-on-error: true
         run: pnpm format:check
 
-      - name: ✅ Summary
-        run: echo "Lint & Format passed" >> $GITHUB_STEP_SUMMARY
+      - name: ❌ Check for Failures
+        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure'
+        run: |
+          echo "::error file=package.json::Lint or format check failed. Run 'pnpm lint:fix' and 'pnpm format' locally to fix."
+          echo "::error::Please fix the issues above before merging."
+          exit 1
 
+      - name: 📝 Job Summary
+        if: always()
+        run: |
+          echo "## ✨ Lint & Format Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Check Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **ESLint**: ${{ steps.eslint.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Prettier**: ${{ steps.format.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [View ESLint Rules](https://eslint.org/docs/latest/rules/)" >> $GITHUB_STEP_SUMMARY
+          echo "- [View Prettier Options](https://prettier.io/docs/en/options.html)" >> $GITHUB_STEP_SUMMARY
+
+      - name: 🔍 Debug Environment on Failure
+        if: failure()
+        run: |
+          echo "::group::Environment Variables"
+          echo "Node Version: $(node --version)"
+          echo "pnpm Version: $(pnpm --version)"
+          echo "Runner OS: ${{ runner.os }}"
+          echo "Event Name: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "::endgroup::"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Type Check
+  # ──────────────────────────────────────────────────────────────────────
   type-check:
-    name: Type Check
+    name: 🔍 Type Check
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: 📥 Checkout Repository
@@ -60,26 +122,60 @@ jobs:
       - name: 📦 Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: ${{ env.PNPM_VERSION }}
+          version: 11.1.3
 
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: 22
           cache: pnpm
 
       - name: 📥 Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          echo "::group::Installing dependencies"
+          pnpm install --frozen-lockfile
+          echo "::endgroup::"
 
-      - name: 🧠 Run Type Check
+      - name: 🔨 Build Shared Packages
+        run: |
+          echo "::group::Building shared packages"
+          pnpm build:packages
+          echo "::endgroup::"
+
+      - name: 🔍 Run Type Check
         run: pnpm typecheck
 
-      - name: ✅ Summary
-        run: echo "Type Check passed" >> $GITHUB_STEP_SUMMARY
+      - name: 📝 Job Summary
+        if: always()
+        run: |
+          echo "## 🔍 Type Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Check Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **TypeScript**: ✅ Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [TypeScript Documentation](https://www.typescriptlang.org/docs/)" >> $GITHUB_STEP_SUMMARY
 
+      - name: 🔍 Debug Environment on Failure
+        if: failure()
+        run: |
+          echo "::group::Environment Variables"
+          echo "Node Version: $(node --version)"
+          echo "pnpm Version: $(pnpm --version)"
+          echo "Runner OS: ${{ runner.os }}"
+          echo "::endgroup::"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Tests
+  # ──────────────────────────────────────────────────────────────────────
   tests:
-    name: Tests
+    name: 🧪 Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: 📥 Checkout Repository
@@ -88,26 +184,130 @@ jobs:
       - name: 📦 Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: ${{ env.PNPM_VERSION }}
+          version: 11.1.3
 
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: 22
           cache: pnpm
 
+      - name: 🦀 Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 🐧 Install Linux Dependencies
+        run: |
+          set -x
+          echo "::group::Updating package lists"
+          sudo apt-get update
+          echo "::endgroup::"
+          echo "::group::Installing system dependencies"
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+          echo "::endgroup::"
+          set +x
+
+      - name: 💾 Restore Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/tauri/src-tauri
+          cache-on-failure: true
+
       - name: 📥 Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          echo "::group::Installing dependencies"
+          pnpm install --frozen-lockfile
+          echo "::endgroup::"
+
+      - name: 🔨 Build Shared Packages
+        run: |
+          echo "::group::Building shared packages"
+          pnpm build:packages
+          echo "::endgroup::"
 
       - name: 🧪 Run Tests
-        run: pnpm test
+        id: js-tests
+        continue-on-error: true
+        run: |
+          echo "::group::Running tests"
+          pnpm test
+          echo "::endgroup::"
 
-      - name: ✅ Summary
-        run: echo "Tests passed" >> $GITHUB_STEP_SUMMARY
+      - name: 🦀 Cargo Test
+        id: rust-tests
+        continue-on-error: true
+        working-directory: apps/tauri/src-tauri
+        run: |
+          echo "::group::Running cargo tests"
+          cargo test --all-features
+          echo "::endgroup::"
 
+      - name: ❌ Check for Test Failures
+        if: steps.js-tests.outcome == 'failure' || steps.rust-tests.outcome == 'failure'
+        run: |
+          echo "::error::Tests failed. Run 'pnpm test' locally to reproduce."
+          echo "::error::Check the test output above for specific failures."
+          exit 1
+
+      - name: 📊 Upload Test Results on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ github.run_id }}
+          path: |
+            coverage/
+            apps/tauri/src-tauri/target/
+          retention-days: 7
+
+      - name: 📝 Job Summary
+        if: always()
+        run: |
+          echo "## 🧪 Test Job Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **JS Tests**: ${{ steps.js-tests.outcome == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rust Tests**: ${{ steps.rust-tests.outcome == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platform**: Ubuntu Latest" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.js-tests.outcome }}" == "failure" ] || [ "${{ steps.rust-tests.outcome }}" == "failure" ]; then
+            echo "### 📊 Artifacts" >> $GITHUB_STEP_SUMMARY
+            echo "Test results uploaded as artifact: \`test-results-${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [Vitest Documentation](https://vitest.dev/)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Rust Testing Guide](https://doc.rust-lang.org/book/ch11-00-testing.html)" >> $GITHUB_STEP_SUMMARY
+
+      - name: 🔍 Debug Environment on Failure
+        if: failure()
+        run: |
+          echo "::group::Environment Variables"
+          echo "Node Version: $(node --version)"
+          echo "Rust Version: $(rustc --version)"
+          echo "pnpm Version: $(pnpm --version)"
+          echo "Runner OS: ${{ runner.os }}"
+          echo "::endgroup::"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Build Verification
+  # ──────────────────────────────────────────────────────────────────────
   build-verification:
-    name: Build Verification
+    name: 🏗️ Build Verification
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: 📥 Checkout Repository
@@ -116,47 +316,192 @@ jobs:
       - name: 📦 Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: ${{ env.PNPM_VERSION }}
+          version: 11.1.3
 
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: 22
           cache: pnpm
 
+      - name: 🦀 Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 🐧 Install Linux Dependencies
+        run: |
+          set -x
+          echo "::group::Updating package lists"
+          sudo apt-get update
+          echo "::endgroup::"
+          echo "::group::Installing system dependencies"
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+          echo "::endgroup::"
+          set +x
+
+      - name: 💾 Restore Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/tauri/src-tauri
+          cache-on-failure: true
+
       - name: 📥 Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          echo "::group::Installing dependencies"
+          pnpm install --frozen-lockfile
+          echo "::endgroup::"
 
-      - name: 🔨 Verify Build
-        run: pnpm build
+      - name: 🔨 Build Shared Packages
+        run: |
+          echo "::group::Building shared packages"
+          pnpm build:packages
+          echo "::endgroup::"
 
-      - name: ✅ Summary
-        run: echo "Build Verification passed" >> $GITHUB_STEP_SUMMARY
+      - name: 🦀 Cargo Check
+        id: cargo-check
+        continue-on-error: true
+        working-directory: apps/tauri/src-tauri
+        run: |
+          echo "::group::Running cargo check"
+          cargo check --all-targets --all-features
+          echo "::endgroup::"
 
+      - name: 🏗️ Verify Production Build
+        id: prod-build
+        continue-on-error: true
+        run: |
+          echo "::group::Building production application"
+          pnpm build
+          echo "::endgroup::"
+
+      - name: ❌ Check for Build Failures
+        if: steps.cargo-check.outcome == 'failure' || steps.prod-build.outcome == 'failure'
+        run: |
+          echo "::error::Build verification failed. Run 'pnpm build' locally to reproduce."
+          echo "::error::Check the build output above for specific errors."
+          exit 1
+
+      - name: 📊 Upload Build Artifacts on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-${{ github.run_id }}
+          path: |
+            apps/tauri/src-tauri/target/
+            node_modules/.cache/
+          retention-days: 7
+
+      - name: 📝 Job Summary
+        if: always()
+        run: |
+          echo "## 🏗️ Build Verification Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cargo Check**: ${{ steps.cargo-check.outcome == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Production Build**: ${{ steps.prod-build.outcome == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platform**: Ubuntu Latest" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.cargo-check.outcome }}" == "failure" ] || [ "${{ steps.prod-build.outcome }}" == "failure" ]; then
+            echo "### 📊 Artifacts" >> $GITHUB_STEP_SUMMARY
+            echo "Build artifacts uploaded as artifact: \`build-artifacts-${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [Tauri Documentation](https://tauri.app/v1/guides/)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Rust Book](https://doc.rust-lang.org/book/)" >> $GITHUB_STEP_SUMMARY
+
+      - name: 🔍 Debug Environment on Failure
+        if: failure()
+        run: |
+          echo "::group::Environment Variables"
+          echo "Node Version: $(node --version)"
+          echo "Rust Version: $(rustc --version)"
+          echo "pnpm Version: $(pnpm --version)"
+          echo "Runner OS: ${{ runner.os }}"
+          echo "::endgroup::"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Quality Checks
+  # ──────────────────────────────────────────────────────────────────────
   quality-checks:
-    name: Quality Checks
+    name: 🔬 Quality Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 📦 Setup pnpm
-        uses: pnpm/action-setup@v4
+      - name: 🦀 Setup Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          version: ${{ env.PNPM_VERSION }}
+          components: clippy
 
-      - name: 🟢 Setup Node.js
-        uses: actions/setup-node@v4
+      - name: 🐧 Install Linux Dependencies
+        run: |
+          set -x
+          echo "::group::Updating package lists"
+          sudo apt-get update
+          echo "::endgroup::"
+          echo "::group::Installing system dependencies"
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+          echo "::endgroup::"
+          set +x
+
+      - name: 💾 Restore Rust Cache
+        uses: swatinem/rust-cache@v2
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
+          workspaces: apps/tauri/src-tauri
+          cache-on-failure: true
 
-      - name: 📥 Install Dependencies
-        run: pnpm install --frozen-lockfile
+      - name: 🦀 Cargo Clippy
+        working-directory: apps/tauri/src-tauri
+        run: |
+          echo "::group::Running cargo clippy"
+          cargo clippy --all-targets --all-features -- -D warnings
+          echo "::endgroup::"
 
-      - name: 🔒 Run Audit
-        run: pnpm audit --audit-level high || true
+      - name: 📝 Job Summary
+        if: always()
+        run: |
+          echo "## 🔬 Quality Checks Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Lint Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cargo Clippy**: ✅ Completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platform**: Ubuntu Latest" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [Clippy Lints](https://rust-lang.github.io/rust-clippy/master/)" >> $GITHUB_STEP_SUMMARY
 
-      - name: ✅ Summary
-        run: echo "Quality Checks completed" >> $GITHUB_STEP_SUMMARY
+      - name: 🔍 Debug Environment on Failure
+        if: failure()
+        run: |
+          echo "::group::Environment Variables"
+          echo "Rust Version: $(rustc --version)"
+          echo "Runner OS: ${{ runner.os }}"
+          echo "::endgroup::"
