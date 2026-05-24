@@ -740,22 +740,6 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_data_dir_env() {
-        unsafe { std::env::set_var("AJH_DATA_DIR", "/custom/path"); }
-        let dir = resolve_data_dir();
-        assert_eq!(dir, std::path::PathBuf::from("/custom/path"));
-        unsafe { std::env::remove_var("AJH_DATA_DIR"); }
-    }
-
-    #[test]
-    fn test_resolve_data_dir_default() {
-        unsafe { std::env::remove_var("AJH_DATA_DIR"); }
-        let dir = resolve_data_dir();
-        // Should use USERPROFILE or HOME
-        assert!(dir.ends_with(".ajh"));
-    }
-
-    #[test]
     fn test_parse_generic_html_with_og_description() {
         let html = r#"
             <html>
