@@ -80,9 +80,7 @@ try {
     'git add apps/tauri/src-tauri/tauri.conf.json apps/tauri/src-tauri/Cargo.toml apps/tauri/package.json package.json',
     { cwd: root }
   );
-  execSync(`git commit -m "chore(release): ${version} [skip ci]"`, { cwd: root });
-  execSync('git push', { cwd: root });
-  console.log(`Changes committed and pushed for version ${version}`);
+  console.log(`Changes staged for version ${version}`);
 } catch (error) {
   console.error('Failed to commit changes:', error.message);
   process.exit(1);

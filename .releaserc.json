@@ -59,6 +59,18 @@
       }
     ],
     [
+      "@semantic-release/git",
+      {
+        "assets": [
+          "apps/tauri/src-tauri/tauri.conf.json",
+          "apps/tauri/src-tauri/Cargo.toml",
+          "apps/tauri/package.json",
+          "package.json"
+        ],
+        "message": "chore(release): ${nextRelease.version} [skip ci]"
+      }
+    ],
+    [
       "@semantic-release/github",
       {
         "successComment": "🎉 This is included in version ${nextRelease.version}.",
