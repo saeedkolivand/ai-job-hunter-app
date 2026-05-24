@@ -1,4 +1,14 @@
-name: 🚀 Release Pipeline
+name: 🚀 Release
+
+# ──────────────────────────────────────────────────────────────────────
+# Release Pipeline
+# ──────────────────────────────────────────────────────────────────────
+# Purpose: Automated semantic release and cross-platform Tauri app builds
+# Triggers: push to main, manual workflow_dispatch
+# Jobs:
+#   - release: Determine version and create GitHub release
+#   - build: Build Tauri apps for Windows, Linux, and macOS
+# ──────────────────────────────────────────────────────────────────────
 
 on:
   push:
@@ -12,10 +22,19 @@ permissions:
   pull-requests: write
   issues: write
 
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
 jobs:
   release:
-    name: 📦 Release
+    name: 📦 Create Release
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    outputs:
+      released: ${{ steps.semantic.outputs.new_release_published }}
+      version: ${{ steps.semantic.outputs.new_release_version }}
 
     steps:
       - name: 📥 Checkout Repository
@@ -35,13 +54,204 @@ jobs:
           cache: pnpm
 
       - name: 📥 Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          echo "::group::Installing dependencies"
+          pnpm install --frozen-lockfile
+          echo "::endgroup::"
 
-      - name: 🚀 Run Semantic Release
+      - name: ⚙️ Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: 🏷️ Run Semantic Release
+        id: semantic
         uses: cycjimmy/semantic-release-action@v4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          HUSKY: 0
 
-      - name: 📝 Summary
-        run: echo "Release completed" >> $GITHUB_STEP_SUMMARY
+      - name: 📝 Release Summary
+        if: always()
+        run: |
+          echo "## 📦 Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Release Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Published**: ${{ steps.semantic.outputs.new_release_published == 'true' && '✅ Yes' || '❌ No' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.semantic.outputs.new_release_version || 'N/A' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [Semantic Release Docs](https://semantic-release.gitbook.io/semantic-release/)" >> $GITHUB_STEP_SUMMARY
+
+      - name: 🔍 Debug Environment on Failure
+        if: failure()
+        run: |
+          echo "::group::Environment Variables"
+          echo "Node Version: $(node --version)"
+          echo "pnpm Version: $(pnpm --version)"
+          echo "Runner OS: ${{ runner.os }}"
+          echo "Event Name: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "::endgroup::"
+
+  build:
+    name: 🏗️ Build Tauri Apps
+    needs: release
+    if: needs.release.outputs.released == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: ''
+          - platform: ubuntu-22.04
+            args: ''
+          - platform: macos-latest
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.version }}
+          fetch-depth: 0
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 🦀 Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 🐧 Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          set -x
+          echo "::group::Updating package lists"
+          sudo apt-get update
+          echo "::endgroup::"
+          echo "::group::Installing system dependencies"
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+          echo "::endgroup::"
+          set +x
+
+      - name: 💾 Restore Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/tauri/src-tauri
+          cache-on-failure: true
+
+      - name: 📥 Install Dependencies
+        run: |
+          echo "::group::Installing dependencies"
+          pnpm install --frozen-lockfile
+          echo "::endgroup::"
+
+      - name: 🔨 Build Workspace
+        run: |
+          echo "::group::Building workspace packages"
+          pnpm build:packages
+          echo "::endgroup::"
+
+      - name: 🔐 Decode Tauri Key
+        if: runner.os != 'Linux' || runner.os == 'Linux'
+        shell: bash
+        run: |
+          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}" | base64 --decode > tauri.key
+
+      - name: 🏗️ Build Tauri Application
+        id: tauri-build
+        continue-on-error: true
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ./tauri.key
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          echo "::group::Building Tauri application"
+          pnpm --filter @ajh/tauri tauri build
+          echo "::endgroup::"
+
+      - name: ❌ Check for Build Failures
+        if: steps.tauri-build.outcome == 'failure'
+        run: |
+          echo "::error::Tauri build failed on ${{ matrix.platform }}. Please review the build output above."
+          exit 1
+
+      - name: 📤 Upload Release Assets
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.release.outputs.version }}
+          files: |
+            apps/tauri/src-tauri/target/release/bundle/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📊 Upload Build Logs on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ matrix.platform }}-${{ github.run_id }}
+          path: |
+            apps/tauri/src-tauri/target/
+            apps/tauri/src-tauri/bundle/
+          retention-days: 7
+
+      - name: 📝 Job Summary
+        if: always()
+        run: |
+          echo "## 🏗️ Tauri Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platform**: ${{ matrix.platform }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Status**: ${{ steps.tauri-build.outcome == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: v${{ needs.release.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Runner OS**: ${{ runner.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.tauri-build.outcome }}" == "failure" ]; then
+            echo "### 📊 Artifacts" >> $GITHUB_STEP_SUMMARY
+            echo "Build logs uploaded as artifact: \`build-logs-${{ matrix.platform }}-${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [Tauri Build Guide](https://tauri.app/v1/guides/building/)" >> $GITHUB_STEP_SUMMARY
+
+      - name: 🔍 Debug Environment on Failure
+        if: failure()
+        run: |
+          echo "::group::Environment Variables"
+          echo "Node Version: $(node --version)"
+          echo "Rust Version: $(rustc --version)"
+          echo "pnpm Version: $(pnpm --version)"
+          echo "Runner OS: ${{ runner.os }}"
+          echo "Platform: ${{ matrix.platform }}"
+          echo "::endgroup::"
