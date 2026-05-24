@@ -224,6 +224,7 @@ jobs:
 
       - name: 📝 Job Summary
         if: always()
+        shell: bash
         run: |
           echo "## 🏗️ Tauri Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
