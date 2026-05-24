@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "AI Job Hunter Assistant",
   "identifier": "com.ajh.desktop",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5174",
@@ -31,14 +31,22 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi", "dmg", "app"],
-    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "targets": [
+      "nsis",
+      "msi",
+      "dmg",
+      "app"
+    ],
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
     "resources": []
   },
   "plugins": {
     "dialog": null,
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRFRDI2NkFFQkMwQzQ1QTAKUldTZ1JReThybWJTVGpkYm9ZVXh5cGNaUUk2elA3dnVlcjhxdUkrYVBGeEZpbm55Mm5VZk1kVHkK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENCOEQxRUVBQkM4NjA1NzIKUldSeUJZYTg2aDZOeXloRU5kYXora3UxOExlYUtsSWtDM2l6UHUvMy94Y3ZHT0JZWml0N3FPRGoK",
       "endpoints": [
         "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/latest/download/latest.json"
       ]
