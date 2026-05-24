@@ -3,11 +3,10 @@ import { Building2, Globe, Home, type LucideIcon } from 'lucide-react';
 import { GlassCard, OptionTile, SectionLabel } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
-import type { RemotePreference } from '@/store/preferences-schema';
-import { usePreferencesStore, useRemote } from '@/store/preferences-store';
+import { useJobPreferences, useSetJobPreferences } from '@/services';
 
 const REMOTE_OPTIONS: {
-  value: RemotePreference;
+  value: string;
   labelKey: string;
   descriptionKey: string;
   icon: LucideIcon;
@@ -40,8 +39,8 @@ const REMOTE_OPTIONS: {
 
 export function RemotePreferences() {
   const { t } = useTranslation();
-  const remote = useRemote();
-  const setRemote = usePreferencesStore((s) => s.setRemote);
+  const { data: jobPrefs } = useJobPreferences();
+  const setJobPreferences = useSetJobPreferences();
 
   return (
     <GlassCard>
@@ -56,8 +55,8 @@ export function RemotePreferences() {
             icon={opt.icon}
             label={t(opt.labelKey)}
             description={t(opt.descriptionKey)}
-            selected={remote === opt.value}
-            onClick={() => setRemote(opt.value)}
+            selected={jobPrefs?.remote === opt.value}
+            onClick={() => setJobPreferences.mutate({ ...jobPrefs, remote: opt.value })}
             layoutId="remote-selection"
           />
         ))}

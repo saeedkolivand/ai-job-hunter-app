@@ -24,7 +24,7 @@ import { useTranslation } from '@/lib/i18n';
 import { transition, variants } from '@/lib/motion';
 import { useAICapability } from '@/providers/CapabilityProvider';
 import { useAppVersion } from '@/services/use-system';
-import { useUserName } from '@/store/preferences-store';
+import { useAIModel, useUserName } from '@/store/preferences-store';
 
 const NAV_ITEMS = [
   { to: ROUTES.DASHBOARD, label: 'nav.dashboard', icon: LayoutDashboard, tourId: 'dashboard' },
@@ -44,6 +44,7 @@ export function Sidebar() {
   const { t } = useTranslation();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const userName = useUserName();
+  const aiModel = useAIModel();
   const ai = useAICapability(); // from CapabilityProvider — no duplicate polling
   const { data: version = 'v0.1.0' } = useAppVersion();
   const appVersion = version.startsWith('v') ? version : `v${version}`;
@@ -151,8 +152,8 @@ export function Sidebar() {
               />
               <span className="truncate text-[10px] text-foreground/45">
                 {aiStatus === 'ready'
-                  ? ai.model
-                    ? ai.model.split(':')[0]
+                  ? aiModel?.defaultModel
+                    ? aiModel.defaultModel.split(':')[0]
                     : 'Ollama ready'
                   : aiStatus === 'offline'
                     ? 'Ollama offline'

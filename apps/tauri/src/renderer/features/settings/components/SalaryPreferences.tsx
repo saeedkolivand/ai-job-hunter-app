@@ -5,10 +5,8 @@ import { Button, GlassCard } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
-import type { SalaryExpectation } from '@/store/preferences-schema';
-import { usePreferencesStore, useSalary } from '@/store/preferences-store';
+import { useJobPreferences, useSetJobPreferences } from '@/services';
 
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY'] as const;
 const PERIODS = ['hourly', 'monthly', 'yearly'] as const;
 
 const SALARY_RANGES = {
@@ -26,40 +24,46 @@ const formatSalary = (value: number, period: string) => {
 
 export function SalaryPreferences() {
   const { t } = useTranslation();
-  const salary = useSalary();
-  const setSalary = usePreferencesStore((state) => state.setSalary);
+  const { data: jobPrefs } = useJobPreferences();
+  const setJobPreferences = useSetJobPreferences();
 
-  const [minValue, setMinValue] = useState(salary?.min || 50000);
-  const [maxValue, setMaxValue] = useState(salary?.max || 150000);
-  const [currency, setCurrency] = useState(salary?.currency || 'USD');
-  const [period, setPeriod] = useState<SalaryExpectation['period']>(salary?.period || 'yearly');
+  const [minValue, setMinValue] = useState(jobPrefs?.salaryMin || 50000);
+  const [maxValue, setMaxValue] = useState(jobPrefs?.salaryMax || 150000);
+  const [period, setPeriod] = useState('yearly');
 
   const handleMinChange = (value: number) => {
     const newMin = Math.min(value, maxValue - 10000);
     setMinValue(newMin);
-    setSalary({ min: newMin, max: maxValue, currency, period });
+    setJobPreferences.mutate({
+      ...jobPrefs,
+      salaryMin: newMin,
+      salaryMax: maxValue,
+    });
   };
 
   const handleMaxChange = (value: number) => {
     const newMax = Math.max(value, minValue + 10000);
     setMaxValue(newMax);
-    setSalary({ min: minValue, max: newMax, currency, period });
+    setJobPreferences.mutate({
+      ...jobPrefs,
+      salaryMin: minValue,
+      salaryMax: newMax,
+    });
   };
 
-  const handleCurrencyChange = (newCurrency: string) => {
-    setCurrency(newCurrency);
-    setSalary({ min: minValue, max: maxValue, currency: newCurrency, period });
-  };
-
-  const handlePeriodChange = (newPeriod: SalaryExpectation['period']) => {
+  const handlePeriodChange = (newPeriod: string) => {
     setPeriod(newPeriod);
-    const range = SALARY_RANGES[newPeriod];
+    const range = SALARY_RANGES[newPeriod as keyof typeof SALARY_RANGES];
     setMinValue(range.min);
     setMaxValue(range.max * 0.5);
-    setSalary({ min: range.min, max: range.max * 0.5, currency, period: newPeriod });
+    setJobPreferences.mutate({
+      ...jobPrefs,
+      salaryMin: range.min,
+      salaryMax: range.max * 0.5,
+    });
   };
 
-  const range = SALARY_RANGES[period];
+  const range = SALARY_RANGES[period as keyof typeof SALARY_RANGES];
 
   return (
     <GlassCard>
@@ -73,28 +77,6 @@ export function SalaryPreferences() {
 
       {/* Currency & Period Selection */}
       <div className="mb-6 grid grid-cols-2 gap-3">
-        <div>
-          <div className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
-            {t('settings.salary.currency')}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {CURRENCIES.map((curr) => (
-              <Button
-                key={curr}
-                onClick={() => handleCurrencyChange(curr)}
-                className={cn(
-                  'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors h-auto',
-                  currency === curr
-                    ? 'bg-brand-soft/20 text-brand-soft'
-                    : 'bg-white/5 text-foreground/60 hover:bg-white/10 hover:text-foreground'
-                )}
-              >
-                {curr}
-              </Button>
-            ))}
-          </div>
-        </div>
-
         <div>
           <div className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
             {t('settings.salary.period')}

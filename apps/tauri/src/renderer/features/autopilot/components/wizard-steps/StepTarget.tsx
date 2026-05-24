@@ -1,8 +1,9 @@
 import { BOARD_IDS } from '@ajh/shared';
-import { Button, Input, SelectDropdown } from '@ajh/ui';
+import { Button, Input, LocationInput, SelectDropdown } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
+import { useAppClient } from '@/providers/AppClientProvider';
 import type { Prefilled, SetFn, WizardState } from '@/routes/autopilot';
 
 import { PrefilledBadge } from './PrefilledBadge';
@@ -19,6 +20,7 @@ interface StepTargetProps {
 
 export function StepTarget({ form, set, prefilled }: StepTargetProps) {
   const { t } = useTranslation();
+  const api = useAppClient();
   return (
     <div className="space-y-4">
       <div>
@@ -70,11 +72,11 @@ export function StepTarget({ form, set, prefilled }: StepTargetProps) {
           hint={t('autopilot.wizard.target.locationOptional')}
         >
           <div className="space-y-1.5">
-            <Input
-              className={inputCls}
-              placeholder={t('autopilot.wizard.target.locationPlaceholder')}
+            <LocationInput
               value={form.location}
-              onChange={(e) => set('location', e.target.value)}
+              onChange={(value) => set('location', value)}
+              placeholder={t('autopilot.wizard.target.locationPlaceholder')}
+              onFetchSuggestions={(q) => api.geocode.suggest(q)}
             />
             {prefilled.location && (
               <PrefilledBadge field={t('autopilot.wizard.target.fromLocationSettings')} />

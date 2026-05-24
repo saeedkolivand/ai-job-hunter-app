@@ -75,8 +75,14 @@ export function createTauriInvokeClient(): AppClient {
       list: () => invoke('documents_list'),
       import: (req) => invoke('documents_import', { req }),
       remove: (id) => invoke('documents_remove', { id }),
+      setDefault: (id) => invoke('documents_set_default', { id }),
       exportDocument: (request) => invoke('documents_export_document', { request }),
       exportAndSave: (request) => invoke('documents_export_and_save', { request }),
+    },
+
+    jobPreferences: {
+      get: () => invoke('job_preferences_get'),
+      set: (prefs) => invoke('job_preferences_set', { prefs }),
     },
 
     search: {

@@ -29,12 +29,10 @@ export function OptionTile({
     <motion.button
       type="button"
       onClick={onClick}
-      whileHover={{ scale: 1.02 }}
-      whileTap={{ scale: 0.98 }}
       className={cn(
         'relative flex flex-col items-center gap-2 rounded-xl border p-4 text-center transition-all duration-150',
         selected
-          ? 'border-brand-soft/50 bg-brand-soft/10 glow-subtle'
+          ? 'border-brand-soft/50 bg-brand-soft/10'
           : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10'
       )}
     >

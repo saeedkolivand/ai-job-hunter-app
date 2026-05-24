@@ -16,3 +16,4 @@ pub mod geocoding;
 pub mod privacy;
 pub mod support;
 pub mod dialog;
+pub mod job_preferences;

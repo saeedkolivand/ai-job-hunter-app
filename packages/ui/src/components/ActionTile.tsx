@@ -30,9 +30,8 @@ export function ActionTile({
   return (
     <GlassCard
       className={cn(
-        'group cursor-pointer transition-all duration-200',
-        'hover:scale-[1.02] hover:glow-subtle active:scale-[0.98]',
-        active && 'ring-1 ring-brand/40 glow-subtle',
+        'group cursor-pointer transition-all duration-150 ease-out',
+        active && 'ring-1 ring-brand/40',
         className
       )}
       onClick={onClick}
@@ -41,13 +40,13 @@ export function ActionTile({
         <Icon
           size={20}
           className={cn(
-            'transition-all duration-200 group-hover:scale-110 group-hover:rotate-3',
+            'transition-all duration-150 ease-out group-hover:rotate-3',
             active ? 'text-brand-soft' : 'text-foreground/50 group-hover:text-brand-soft'
           )}
         />
         {badge}
       </div>
-      <div className="text-sm font-medium text-foreground/80 transition-colors duration-200 group-hover:text-foreground">
+      <div className="text-sm font-medium text-foreground/80 transition-colors duration-150 ease-out group-hover:text-foreground">
         {label}
       </div>
       {description && <div className="mt-0.5 text-xs text-foreground/40">{description}</div>}

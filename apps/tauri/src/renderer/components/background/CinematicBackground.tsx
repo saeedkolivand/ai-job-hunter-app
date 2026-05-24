@@ -34,7 +34,7 @@ export function CinematicBackground() {
   const posRef = useRef({ x: 0, y: 0 }); // where the blob IS (lerped)
   const rafRef = useRef(0);
   const HALF = 450; // half of 900px blob
-  const LERP = 0.08; // 8% per frame → silky trail at 60 fps
+  const LERP = 0.005; // 0.5% per frame → extremely slow, dreamy floating effect
 
   useEffect(() => {
     // Skip RAF loop in low-memory mode — component returns null below.

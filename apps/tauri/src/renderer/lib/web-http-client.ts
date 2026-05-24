@@ -128,8 +128,14 @@ export function createWebHttpClient({ baseUrl, token }: WebHttpClientOptions): A
       list: () => cmd('documents', 'list'),
       import: (req) => cmd('documents', 'import', req),
       remove: (id) => cmd('documents', 'remove', { id }),
+      setDefault: (id) => cmd('documents', 'setDefault', { id }),
       exportDocument: (req) => cmd('documents', 'exportDocument', req),
       exportAndSave: (req) => cmd('documents', 'exportAndSave', req),
+    },
+
+    jobPreferences: {
+      get: () => cmd('jobPreferences', 'get'),
+      set: (prefs) => cmd('jobPreferences', 'set', prefs),
     },
 
     search: {

@@ -11,6 +11,7 @@ html,
 body,
 #root {
   height: 100%;
+  color-scheme: dark;
 }
 
 body {
@@ -49,14 +50,6 @@ html[data-performance-mode='low-memory'] {
   --blur-xl: 12px;
   --blur-2xl: 16px;
   --blur-3xl: 24px;
-}
-html[data-performance-mode='low-memory'] * {
-  /* Stop all CSS keyframe animations and transitions.
-     animation: none is used instead of animation-duration: 0.01ms because
-     near-zero durations cause infinite rapid looping on continuous animations
-     (e.g. CinematicBackground blobs), which produces a visible flash. */
-  animation: none !important;
-  transition: none !important;
 }
 html[data-performance-mode='low-memory'] body {
   /* Remove expensive radial gradient — flat colour is composited cheaply. */

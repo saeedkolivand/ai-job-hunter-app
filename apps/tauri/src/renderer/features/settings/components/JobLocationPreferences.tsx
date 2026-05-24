@@ -7,7 +7,7 @@ import { Button, GlassCard, Input } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
-import { useLocation, usePreferencesStore } from '@/store/preferences-store';
+import { useJobPreferences, useSetJobPreferences } from '@/services';
 
 const COMMON_LOCATIONS = [
   'San Francisco, CA',
@@ -22,8 +22,8 @@ const COMMON_LOCATIONS = [
 
 export function JobLocationPreferences() {
   const { t } = useTranslation();
-  const location = useLocation();
-  const setLocation = usePreferencesStore((state) => state.setLocation);
+  const { data: jobPrefs } = useJobPreferences();
+  const setJobPreferences = useSetJobPreferences();
   const [inputValue, setInputValue] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [recentLocations, setRecentLocations] = useState<string[]>([]);
@@ -39,11 +39,10 @@ export function JobLocationPreferences() {
   );
 
   const handleAddLocation = (loc: string) => {
-    if (!location) {
-      setLocation({ city: loc });
-    } else if (!location.city) {
-      setLocation({ ...location, city: loc });
-    }
+    setJobPreferences.mutate({
+      ...jobPrefs,
+      location: loc,
+    });
     setInputValue('');
     setShowSuggestions(false);
 
@@ -54,7 +53,10 @@ export function JobLocationPreferences() {
   };
 
   const handleRemoveLocation = () => {
-    setLocation(undefined);
+    setJobPreferences.mutate({
+      ...jobPrefs,
+      location: undefined,
+    });
   };
 
   const updateDropdownPosition = () => {
@@ -79,7 +81,7 @@ export function JobLocationPreferences() {
       <p className="mb-4 text-sm text-foreground/55">{t('settings.location.description')}</p>
 
       {/* Current Location Display */}
-      {location?.city && (
+      {jobPrefs?.location && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -87,7 +89,7 @@ export function JobLocationPreferences() {
           className="mb-4 flex items-center gap-2 rounded-lg bg-white/5 px-4 py-3"
         >
           <MapPin size={16} className="text-brand-soft" />
-          <span className="flex-1 text-sm text-foreground">{location.city}</span>
+          <span className="flex-1 text-sm text-foreground">{jobPrefs.location}</span>
           <Button
             variant="ghost"
             size="sm"
