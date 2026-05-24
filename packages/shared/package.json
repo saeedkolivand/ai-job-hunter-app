@@ -8,6 +8,7 @@
   "exports": {
     ".": "./dist/index.js",
     "./ipc": "./dist/ipc/contracts.js",
+    "./language-detection": "./dist/language-detection.js",
     "./schemas": "./dist/schemas/index.js",
     "./types": "./dist/types/index.js",
     "./utils": "./dist/utils.js",
@@ -20,6 +21,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "franc": "^6.2.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
