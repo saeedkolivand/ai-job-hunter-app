@@ -267,7 +267,14 @@ jobs:
         with:
           tag_name: v${{ needs.release.outputs.version }}
           files: |
-            apps/tauri/src-tauri/target/release/bundle/**/*
+            apps/tauri/src-tauri/target/release/bundle/nsis/*.exe
+            apps/tauri/src-tauri/target/release/bundle/msi/*.msi
+            apps/tauri/src-tauri/target/release/bundle/dmg/*.dmg
+            apps/tauri/src-tauri/target/release/bundle/deb/*.deb
+            apps/tauri/src-tauri/target/release/bundle/rpm/*.rpm
+            apps/tauri/src-tauri/target/release/bundle/appimage/*.AppImage
+            apps/tauri/src-tauri/target/release/bundle/*/*.sig
+            apps/tauri/src-tauri/target/release/bundle/latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
