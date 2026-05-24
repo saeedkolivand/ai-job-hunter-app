@@ -8,6 +8,36 @@ use std::collections::HashSet;
 
 const PAGE_SIZE: usize = 25;
 
+/// Parse relative time strings like "1 hour ago", "2 weeks ago" into a DateTime
+fn parse_relative_time(text: &str) -> Option<chrono::DateTime<chrono::FixedOffset>> {
+    let now = chrono::Utc::now();
+    let text = text.to_lowercase();
+    
+    // Parse patterns like "1 hour ago", "2 hours ago", "1h ago", etc.
+    if let Some(num_str) = text.split_whitespace().next() {
+        if let Ok(num) = num_str.parse::<i64>() {
+            let duration = if text.contains("hour") || text.contains("h") {
+                chrono::Duration::hours(num)
+            } else if text.contains("day") || text.contains("d") {
+                chrono::Duration::days(num)
+            } else if text.contains("week") || text.contains("w") {
+                chrono::Duration::weeks(num)
+            } else if text.contains("month") || text.contains("m") {
+                chrono::Duration::days(num * 30)
+            } else if text.contains("minute") || text.contains("min") {
+                chrono::Duration::minutes(num)
+            } else {
+                return None;
+            };
+            
+            let posted = now - duration;
+            return Some(posted.into());
+        }
+    }
+    
+    None
+}
+
 #[derive(Debug, Clone)]
 pub struct JobsSearchParams {
     pub keywords: String,
@@ -164,12 +194,10 @@ impl LinkedInJobsApiClient {
                 .trim()
                 .to_string();
 
-            let date_attr = element
-                .select(&time_selector)
-                .next()
-                .and_then(|el| el.value().attr("datetime"));
-
-            let posted_at = date_attr.and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok());
+            let posted_at = element.select(&time_selector).next().and_then(|el| {
+                let text = el.text().collect::<String>().trim().to_lowercase();
+                parse_relative_time(&text)
+            });
 
             let job = JobPosting {
                 id: format!("linkedin:{}", id),

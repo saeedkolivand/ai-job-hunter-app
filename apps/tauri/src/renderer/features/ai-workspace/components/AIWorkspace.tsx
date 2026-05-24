@@ -1,11 +1,11 @@
-import { Check, ChevronDown, Copy, RefreshCw, Send, Sparkles, Upload, X } from 'lucide-react';
+import { Check, Copy, Send, Sparkles, Upload, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { buildWorkspaceSystemPrompt } from '@ajh/prompts';
 import type { AiStreamChunk, JobEvent } from '@ajh/shared';
-import { Button, Input, MarkdownMessage } from '@ajh/ui';
+import { Button, Input, MarkdownMessage, RefreshButton, SelectDropdown } from '@ajh/ui';
 
 import i18n from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -46,7 +46,6 @@ export function AIWorkspace() {
   const [resumeFileName, setResumeFileName] = useState<string>('');
   const [uploading, setUploading] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [showModelPicker, setShowModelPicker] = useState(false);
   const activeJobRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -212,83 +211,36 @@ export function AIWorkspace() {
       {/* Header with model selector */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
         <h2 className="text-sm font-medium text-foreground/70">{t('ai.title')}</h2>
-        <div className="relative">
-          <button
-            onClick={() => setShowModelPicker(!showModelPicker)}
-            className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-foreground/70 hover:bg-white/[0.06] hover:text-foreground/90 transition-all backdrop-blur-sm"
-          >
-            <Sparkles size={12} className="text-brand-soft" />
-            <span className="max-w-[120px] truncate">
-              {aiModel?.defaultModel || 'Select model'}
-            </span>
-            <ChevronDown
-              size={12}
-              className={cn('transition-transform', showModelPicker && 'rotate-180')}
+        <div className="flex items-center gap-2">
+          <RefreshButton
+            onRefresh={() => qc.invalidateQueries({ queryKey: keys.ai.models })}
+            disabled={loadingModels}
+            size={11}
+            className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-foreground/60 hover:bg-white/[0.05] hover:text-foreground/80 transition-colors disabled:opacity-40"
+            title="Refresh models"
+          />
+          <div className="w-48">
+            <SelectDropdown
+              options={models.map((m) => ({ value: m.name, label: m.name }))}
+              value={aiModel?.defaultModel ?? ''}
+              onChange={(value) => {
+                setAIModel({
+                  defaultModel: value,
+                  temperature: 0.7,
+                  maxTokens: 2000,
+                });
+              }}
+              placeholder="Select model"
+              icon={<Sparkles size={11} className="text-brand-soft" />}
             />
-          </button>
-
-          {/* Model picker dropdown */}
-          {showModelPicker && (
-            <>
-              {/* Backdrop to close dropdown */}
-              <div className="fixed inset-0 z-20" onClick={() => setShowModelPicker(false)} />
-              <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-white/[0.08] bg-black/95 backdrop-blur-xl shadow-2xl z-30 overflow-hidden">
-                {/* Refresh button */}
-                <div className="border-b border-white/[0.06] p-2">
-                  <button
-                    onClick={() => void qc.invalidateQueries({ queryKey: keys.ai.models })}
-                    disabled={loadingModels}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-foreground/60 hover:bg-white/[0.05] hover:text-foreground/80 transition-colors disabled:opacity-40"
-                  >
-                    <RefreshCw size={12} className={loadingModels ? 'animate-spin' : ''} />
-                    Refresh models
-                  </button>
-                </div>
-
-                {/* Model list */}
-                <div className="max-h-80 overflow-y-auto p-2">
-                  {models.length === 0 ? (
-                    <div className="px-3 py-4 text-center text-xs text-foreground/40">
-                      No models available
-                    </div>
-                  ) : (
-                    models.map((model) => {
-                      const isSelected = model.name === aiModel?.defaultModel;
-                      return (
-                        <button
-                          key={model.name}
-                          onClick={() => {
-                            setAIModel({
-                              defaultModel: model.name,
-                              temperature: 0.7,
-                              maxTokens: 2000,
-                            });
-                            setShowModelPicker(false);
-                          }}
-                          className={cn(
-                            'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors',
-                            isSelected
-                              ? 'bg-brand/20 text-brand-soft'
-                              : 'text-foreground/70 hover:bg-white/[0.05] hover:text-foreground/90'
-                          )}
-                        >
-                          {isSelected && <Check size={12} className="shrink-0" />}
-                          <span className="flex-1 truncate">{model.name}</span>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            </>
-          )}
+          </div>
         </div>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-8 py-6">
         {messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center text-center">
-            <div className="glass-elevated mb-5 flex h-14 w-14 items-center justify-center rounded-2xl glow-subtle">
+            <div className="glass-elevated mb-5 flex h-14 w-14 items-center justify-center rounded-2xl ring-1 ring-brand/20">
               <Sparkles size={22} className="text-brand-soft" />
             </div>
             <h2 className="text-gradient text-2xl font-semibold tracking-tight">{t('nav.ai')}</h2>
@@ -319,7 +271,7 @@ export function AIWorkspace() {
                   className={cn(
                     'glass-card rounded-2xl px-4 py-3',
                     m.role === 'user'
-                      ? 'self-end max-w-[80%] glow-subtle text-sm leading-relaxed'
+                      ? 'self-end max-w-[80%] ring-1 ring-brand/20 text-sm leading-relaxed'
                       : 'self-start max-w-[85%]'
                   )}
                 >
@@ -393,7 +345,7 @@ export function AIWorkspace() {
         <motion.div
           className={cn(
             'glass-elevated mx-auto flex max-w-3xl items-center gap-2 rounded-2xl px-4 py-2.5',
-            isInputFocused && 'glow-subtle'
+            isInputFocused && 'ring-1 ring-brand/20'
           )}
           animate={{
             boxShadow: isInputFocused ? '0 0 20px rgba(192, 132, 252, 0.3)' : 'none',

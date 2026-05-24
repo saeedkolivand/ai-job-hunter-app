@@ -1,8 +1,8 @@
-import { Download, Loader2, RefreshCw, Sparkles, X } from 'lucide-react';
+import { Download, Loader2, Sparkles, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 
-import { Button } from '@ajh/ui';
+import { Button, RefreshButton } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
@@ -49,8 +49,6 @@ export function UpdateBanner() {
             {/* Icon */}
             {status.state === 'downloading' ? (
               <Loader2 size={14} className="shrink-0 animate-spin text-brand-soft" />
-            ) : status.state === 'downloaded' ? (
-              <RefreshCw size={14} className="shrink-0 text-brand-soft" />
             ) : (
               <Sparkles size={14} className="shrink-0 text-brand-soft" />
             )}
@@ -89,13 +87,12 @@ export function UpdateBanner() {
               </Button>
             )}
             {status.state === 'downloaded' && (
-              <Button
-                onClick={() => void install()}
+              <RefreshButton
+                onRefresh={install}
                 className="flex items-center gap-1.5 rounded-lg border border-brand/40 bg-brand/20 px-2.5 py-1 text-[11px] font-medium text-brand-soft transition-colors hover:bg-brand/30"
               >
-                <RefreshCw size={11} />
                 {t('updater.installButton')}
-              </Button>
+              </RefreshButton>
             )}
 
             {/* Dismiss */}

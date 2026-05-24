@@ -8,7 +8,7 @@ import { Button, GlassCard, Input } from '@ajh/ui';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
-import { usePreferencesStore, useTechStack } from '@/store/preferences-store';
+import { useJobPreferences, useSetJobPreferences } from '@/services';
 
 const COMMON_TECH = [
   { name: 'JavaScript', category: 'language' },
@@ -38,9 +38,9 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 export function TechStackPreferences() {
   const { t } = useTranslation();
-  const techStack = useTechStack();
-  const addTechStackItem = usePreferencesStore((state) => state.addTechStackItem);
-  const removeTechStackItem = usePreferencesStore((state) => state.removeTechStackItem);
+  const { data: jobPrefs } = useJobPreferences();
+  const setJobPreferences = useSetJobPreferences();
+  const techStack = jobPrefs?.techStack || [];
   const [inputValue, setInputValue] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
@@ -55,16 +55,19 @@ export function TechStackPreferences() {
   );
 
   const handleAddTech = (name: string, category: string) => {
-    addTechStackItem({
-      name,
-      category: category as 'language' | 'framework' | 'database' | 'tool' | 'other',
+    setJobPreferences.mutate({
+      ...jobPrefs,
+      techStack: [...techStack, { name, category }],
     });
     setInputValue('');
     setShowSuggestions(false);
   };
 
   const handleRemoveTech = (name: string) => {
-    removeTechStackItem(name);
+    setJobPreferences.mutate({
+      ...jobPrefs,
+      techStack: techStack.filter((item) => item.name !== name),
+    });
   };
 
   useEffect(() => {

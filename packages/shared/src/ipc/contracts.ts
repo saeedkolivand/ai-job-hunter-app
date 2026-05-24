@@ -16,6 +16,7 @@ import type {
   AutopilotUpdate,
   DocumentImportRequest,
   HybridSearchRequest,
+  JobPreferences,
   MatchResumeRequest,
   ScrapeBoardRequest,
   ScrapeUrlRequest,
@@ -96,9 +97,11 @@ export interface IpcContract {
   documents: {
     list(): Promise<DocumentRecord[]>;
 
-    import(req: DocumentImportRequest): Promise<{ jobId: string }>;
+    import(req: DocumentImportRequest): Promise<{ id: string; success: boolean }>;
 
     remove(id: string): Promise<void>;
+
+    setDefault(id: string): Promise<void>;
 
     exportDocument(req: {
       text: string;
@@ -125,6 +128,12 @@ export interface IpcContract {
         targetLanguage?: string;
       };
     }): Promise<string>;
+  };
+
+  jobPreferences: {
+    get(): Promise<JobPreferences>;
+
+    set(prefs: JobPreferences): Promise<void>;
   };
 
   search: {

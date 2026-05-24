@@ -9,7 +9,7 @@ import i18n from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
-import type { RemotePreference } from '@/store/preferences-schema';
+import { useJobPreferences, useSetJobPreferences } from '@/services';
 import { usePreferencesStore } from '@/store/preferences-store';
 
 interface Props {
@@ -18,7 +18,7 @@ interface Props {
   direction: number;
 }
 
-const REMOTE_OPTIONS: { id: RemotePreference; emoji: string }[] = [
+const REMOTE_OPTIONS: { id: string; emoji: string }[] = [
   { id: 'remote', emoji: '🌍' },
   { id: 'hybrid', emoji: '🏠' },
   { id: 'on-site', emoji: '🏢' },
@@ -27,14 +27,21 @@ const REMOTE_OPTIONS: { id: RemotePreference; emoji: string }[] = [
 
 export function PrefsStep({ onBack, onNext, direction }: Props) {
   const { t } = useTranslation();
-  const remote = usePreferencesStore((s) => s.remote);
-  const setRemote = usePreferencesStore((s) => s.setRemote);
+  const { data: jobPrefs } = useJobPreferences();
+  const setJobPreferences = useSetJobPreferences();
   const setLanguage = usePreferencesStore((s) => s.setLanguage);
   const currentLang = i18n.language;
 
   const selectLanguage = (code: string) => {
     void i18n.changeLanguage(code);
     setLanguage(code);
+  };
+
+  const selectRemote = (remote: string) => {
+    setJobPreferences.mutate({
+      ...jobPrefs,
+      remote,
+    });
   };
 
   useEffect(() => {
@@ -111,11 +118,11 @@ export function PrefsStep({ onBack, onNext, direction }: Props) {
           </div>
           <div className="grid grid-cols-4 gap-1.5">
             {REMOTE_OPTIONS.map(({ id, emoji }) => {
-              const active = remote === id;
+              const active = jobPrefs?.remote === id;
               return (
                 <Button
                   key={id}
-                  onClick={() => setRemote(id)}
+                  onClick={() => selectRemote(id)}
                   className={cn(
                     'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-3 text-center transition-all duration-150 h-auto',
                     active

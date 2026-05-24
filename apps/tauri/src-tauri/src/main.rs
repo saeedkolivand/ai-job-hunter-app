@@ -22,6 +22,7 @@ mod conversations;
 mod credentials;
 mod documents;
 mod export;
+mod job_preferences;
 mod jobs;
 mod platform;
 mod postings;
@@ -143,6 +144,10 @@ fn main() {
                 Ok(store) => { app.manage(store); }
                 Err(e) => eprintln!("[setup] document store failed to open (non-fatal): {e}"),
             }
+            match job_preferences::JobPreferencesStore::open(&data_dir) {
+                Ok(store) => { app.manage(store); }
+                Err(e) => eprintln!("[setup] job preferences store failed to open (non-fatal): {e}"),
+            }
             app.manage(Mutex::new(JobTracker::default()));
             app.manage(Mutex::new(PostingsCache::default()));
             app.manage(Mutex::new(InteractionStore::new(&data_dir)));
@@ -197,7 +202,8 @@ fn main() {
             // documents
             commands::documents::documents_list,
             commands::documents::documents_import,
-            commands::documents::documents_delete,
+            commands::documents::documents_remove,
+            commands::documents::documents_set_default,
             commands::documents::documents_embed_text,
             commands::documents::documents_set_indexed,
             commands::documents::documents_upsert_vector,
@@ -205,6 +211,9 @@ fn main() {
             commands::documents::documents_all_vectors,
             commands::documents::documents_cosine_similarity,
             commands::documents::documents_strip_extension,
+            // job preferences
+            commands::job_preferences::job_preferences_get,
+            commands::job_preferences::job_preferences_set,
             // search
             commands::search::search_postings,
             // scrape

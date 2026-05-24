@@ -27,6 +27,7 @@ import {
   Input,
   LocationInput,
   SelectDropdown,
+  SourceBadge,
   TextArea,
   useNotification,
 } from '@ajh/ui';
@@ -355,7 +356,7 @@ function Jobs() {
                 size="sm"
                 variant="glass"
                 onClick={() => setShowScrapeForm(!showScrapeForm)}
-                className="hover:glow-purple"
+                className="transition-all duration-150 ease-out"
               >
                 <Plus size={12} />
                 {t('jobs.scrapeJobs')}
@@ -711,7 +712,7 @@ function Jobs() {
                     onClick={() => void startScrape()}
                     disabled={scraping || !scrapeForm.query.trim()}
                     loading={scraping}
-                    className={!scraping && scrapeForm.query.trim() ? 'hover:glow-purple' : ''}
+                    className="transition-all duration-150 ease-out"
                   >
                     {!scraping && <Search size={12} />}
                     {scraping ? t('jobs.scraping') : t('jobs.startScrape')}
@@ -815,71 +816,92 @@ function PostingRow({
   };
 
   return (
-    <div className="glass-graphite glass-highlight flex items-center gap-4 rounded-xl p-4 transition-colors hover:bg-white/[0.02]">
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/5 text-[10px] uppercase tracking-wider text-brand-soft">
-        {posting.source.slice(0, 2)}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 text-sm font-medium text-foreground/90">
-          <span className="truncate">{posting.title}</span>
-          {posting.remote && (
-            <span className="rounded-full border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-emerald-200/85">
-              {t('jobs.remote')}
-            </span>
-          )}
-          {/* Interaction indicators */}
-          {interactionTypes.has('applied') && (
-            <span className="rounded-full border border-purple-400/20 bg-purple-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-purple-200/85 flex items-center gap-1">
-              <CircleCheck size={8} /> {t('jobs.applied')}
-            </span>
-          )}
-          {interactionTypes.has('opened') && (
-            <span className="rounded-full border border-blue-400/20 bg-blue-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-blue-200/85 flex items-center gap-1">
-              <Eye size={8} /> {t('jobs.viewed')}
-            </span>
-          )}
-          {interactionTypes.has('bookmarked') && (
-            <span className="rounded-full border border-amber-400/20 bg-amber-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-amber-200/85 flex items-center gap-1">
-              <Bookmark size={8} /> {t('jobs.saved')}
-            </span>
-          )}
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={transition.normal}
+      className="relative group"
+    >
+      <div className="glass-graphite glass-highlight relative flex items-center gap-5 rounded-xl p-4 pl-5 transition-all duration-300 hover:bg-white/[0.03] hover:shadow-lg hover:shadow-brand/5 overflow-hidden">
+        {/* Subtle ambient glow for whole card */}
+        <div
+          className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ease-out"
+          style={{
+            background:
+              'linear-gradient(135deg, rgba(168,85,247,0.12) 0%, rgba(99,102,241,0.08) 50%, rgba(168,85,247,0.12) 100%)',
+            filter: 'blur-xl',
+          }}
+        />
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-white/10 to-white/5 text-[11px] uppercase tracking-wider text-brand-soft font-semibold shadow-inner">
+          {posting.source.slice(0, 2)}
         </div>
-        <div className="mt-0.5 flex items-center gap-3 text-[11px] text-foreground/55">
-          <span className="flex items-center gap-1">
-            <Building2 size={11} /> {posting.company}
-          </span>
-          {posting.location && (
-            <span className="flex items-center gap-1">
-              <MapPin size={11} /> {posting.location}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground/95 tracking-tight">
+            <span className="truncate">{posting.title}</span>
+            {posting.remote && (
+              <span className="rounded-full border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-emerald-200/85">
+                {t('jobs.remote')}
+              </span>
+            )}
+            {/* Interaction indicators */}
+            {interactionTypes.has('applied') && (
+              <span className="rounded-full border border-purple-400/20 bg-purple-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-purple-200/85 flex items-center gap-1">
+                <CircleCheck size={8} /> {t('jobs.applied')}
+              </span>
+            )}
+            {interactionTypes.has('opened') && (
+              <span className="rounded-full border border-blue-400/20 bg-blue-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-blue-200/85 flex items-center gap-1">
+                <Eye size={8} /> {t('jobs.viewed')}
+              </span>
+            )}
+            {interactionTypes.has('bookmarked') && (
+              <span className="rounded-full border border-amber-400/20 bg-amber-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-amber-200/85 flex items-center gap-1">
+                <Bookmark size={8} /> {t('jobs.saved')}
+              </span>
+            )}
+          </div>
+          <div className="mt-1 flex items-center gap-4 text-[11px]">
+            <span className="flex items-center gap-1.5 text-foreground/85">
+              <Building2 size={10} /> {posting.company}
             </span>
-          )}
-          <span className="text-foreground/35">· {posting.source}</span>
-          {posting.postedAt && (
-            <span className="text-foreground/35">· {formatRelativeTime(posting.postedAt)}</span>
-          )}
+            {posting.location && (
+              <span className="flex items-center gap-1.5 text-foreground/60">
+                <MapPin size={10} /> {posting.location}
+              </span>
+            )}
+            <SourceBadge source={posting.source} url={posting.url} />
+            {posting.postedAt && (
+              <span className="text-foreground/40">· {formatRelativeTime(posting.postedAt)}</span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <a
+            href={posting.url}
+            onClick={(e) => {
+              e.preventDefault();
+              void handleOpen();
+            }}
+            className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] text-foreground/70 hover:text-foreground hover:bg-white/10 transition-all duration-200"
+          >
+            <ExternalLink size={10} /> {t('jobs.open')}
+          </a>
+          <Button
+            size="sm"
+            variant={canApply ? 'glass' : 'ghost'}
+            onClick={handleApply}
+            disabled={!canApply}
+            title={canApply ? '' : t('jobs.applyNotSupported')}
+            className={cn(
+              'transition-all duration-150 ease-out',
+              canApply ? '' : 'cursor-not-allowed'
+            )}
+          >
+            <Send size={11} /> {t('jobs.apply')}
+          </Button>
         </div>
       </div>
-      <a
-        href={posting.url}
-        onClick={(e) => {
-          e.preventDefault();
-          void handleOpen();
-        }}
-        className="flex items-center gap-1 rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] text-foreground/70 hover:text-foreground transition-colors"
-      >
-        <ExternalLink size={11} /> {t('jobs.open')}
-      </a>
-      <Button
-        size="sm"
-        variant={canApply ? 'glass' : 'ghost'}
-        onClick={handleApply}
-        disabled={!canApply}
-        title={canApply ? '' : t('jobs.applyNotSupported')}
-        className={canApply ? 'hover:glow-purple' : 'cursor-not-allowed'}
-      >
-        <Send size={11} /> {t('jobs.apply')}
-      </Button>
-    </div>
+    </motion.div>
   );
 }
 
@@ -1099,7 +1121,7 @@ function ApplyDrawer({ posting, onClose }: { posting: Posting; onClose: () => vo
               onClick={() => void start()}
               disabled={running}
               loading={running}
-              className={!running ? 'hover:glow-purple' : ''}
+              className="transition-all duration-150 ease-out"
             >
               {!running && <Send size={14} />}
               {running ? t('jobs.applyDrawer.running') : t('jobs.applyDrawer.start')}

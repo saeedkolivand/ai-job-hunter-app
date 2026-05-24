@@ -143,7 +143,7 @@ export function ResumeStep({ onBack, onNext, direction }: Props) {
             variant="glass"
             size="md"
             onClick={onNext}
-            className={hasResume ? 'hover:glow-purple px-6 gap-2' : 'px-6 gap-2'}
+            className="transition-all duration-150 ease-out px-6 gap-2"
           >
             {hasResume ? t('onboarding.resume.next') : t('onboarding.resume.skip')}
             <ArrowRight size={14} />
