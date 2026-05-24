@@ -512,8 +512,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
         
-        store.upsert_vector("doc-1", &vec![0.1, 0.2]).unwrap();
-        store.upsert_vector("doc-2", &vec![0.3, 0.4]).unwrap();
+        store.upsert_vector("doc-1", &[0.1, 0.2]).unwrap();
+        store.upsert_vector("doc-2", &[0.3, 0.4]).unwrap();
         
         let vectors = store.all_vectors();
         assert_eq!(vectors.len(), 2);
