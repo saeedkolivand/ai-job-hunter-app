@@ -348,6 +348,34 @@ fn extract_section<'a>(text: &'a str, start_marker: &str, end_marker: Option<&st
     text[start..end].trim()
 }
 
+/// Main export function
+pub fn generate_pdf(request: &ExportRequest) -> Result<Vec<u8>> {
+    let template = Template::get(request.template_id);
+
+    match request.document_type {
+        DocumentType::Resume => {
+            let text = extract_section(
+                &request.text,
+                "### CANDIDATE RESUME ###",
+                Some("### JOB ADVERTISEMENT ###"),
+            );
+            let text = if text.is_empty() { &request.text } else { text };
+            generate_resume_pdf(text, request.meta.as_ref(), &template)
+                .context("Failed to generate resume PDF")
+        }
+        DocumentType::CoverLetter => {
+            let text = extract_section(
+                &request.text,
+                "### COMPLETE COVER LETTER ###",
+                None,
+            );
+            let text = if text.is_empty() { &request.text } else { text };
+            generate_cover_letter_pdf(text, request.meta.as_ref(), &template)
+                .context("Failed to generate cover letter PDF")
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -494,33 +522,5 @@ mod tests {
         };
         let result = generate_pdf(&request);
         assert!(result.is_ok());
-    }
-}
-
-/// Main export function
-pub fn generate_pdf(request: &ExportRequest) -> Result<Vec<u8>> {
-    let template = Template::get(request.template_id);
-
-    match request.document_type {
-        DocumentType::Resume => {
-            let text = extract_section(
-                &request.text,
-                "### CANDIDATE RESUME ###",
-                Some("### JOB ADVERTISEMENT ###"),
-            );
-            let text = if text.is_empty() { &request.text } else { text };
-            generate_resume_pdf(text, request.meta.as_ref(), &template)
-                .context("Failed to generate resume PDF")
-        }
-        DocumentType::CoverLetter => {
-            let text = extract_section(
-                &request.text,
-                "### COMPLETE COVER LETTER ###",
-                None,
-            );
-            let text = if text.is_empty() { &request.text } else { text };
-            generate_cover_letter_pdf(text, request.meta.as_ref(), &template)
-                .context("Failed to generate cover letter PDF")
-        }
     }
 }
