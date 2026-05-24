@@ -1,9 +1,5 @@
 name: 🚀 Release Pipeline
 
-# ╔════════════════════════════════════════════════════════════╗
-# ║                    📦 Automated Releases                  ║
-# ╚════════════════════════════════════════════════════════════╝
-
 on:
   push:
     branches:
@@ -16,23 +12,10 @@ permissions:
   pull-requests: write
   issues: write
 
-concurrency:
-  group: release-main
-  cancel-in-progress: false
-
-env:
-  NODE_VERSION: 22
-  PNPM_VERSION: 11.1.3
-
 jobs:
   release:
-    name: 🏷️ Create Release
+    name: 📦 Release
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    outputs:
-      released: ${{ steps.semantic.outputs.new_release_published }}
-      version: ${{ steps.semantic.outputs.new_release_version }}
 
     steps:
       - name: 📥 Checkout Repository
@@ -43,32 +26,22 @@ jobs:
       - name: 📦 Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: ${{ env.PNPM_VERSION }}
+          version: 11.1.3
 
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: 22
           cache: pnpm
 
       - name: 📥 Install Dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: 🔐 Configure Git
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
       - name: 🚀 Run Semantic Release
-        id: semantic
         uses: cycjimmy/semantic-release-action@v4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          HUSKY: 0
 
-      - name: 📋 Release Summary
-        run: |
-          echo "## 🚀 Release Status" >> $GITHUB_STEP_SUMMARY
-          echo "- Published: ${{ steps.semantic.outputs.new_release_published }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Version: v${{ steps.semantic.outputs.new_release_version }}" >> $GITHUB_STEP_SUMMARY
+      - name: 📝 Summary
+        run: echo "Release completed" >> $GITHUB_STEP_SUMMARY
