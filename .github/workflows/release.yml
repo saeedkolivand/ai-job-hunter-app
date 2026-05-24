@@ -7,6 +7,7 @@ name: 🚀 Release
 # Triggers: push to main, manual workflow_dispatch
 # Jobs:
 #   - release: Determine version and create GitHub release
+#   - sync-version-files: Commit tracked version files for the published release
 #   - build: Build Tauri apps for Windows, Linux, and macOS
 # ──────────────────────────────────────────────────────────────────────
 
@@ -99,6 +100,56 @@ jobs:
           echo "Event Name: ${{ github.event_name }}"
           echo "Ref: ${{ github.ref }}"
           echo "::endgroup::"
+
+  sync-version-files:
+    name: 🔖 Sync Version Files
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN || github.token }}
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 🔖 Sync Version Files
+        env:
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+        run: |
+          echo "::group::Syncing tracked version files"
+          node scripts/sync-tauri-version.cjs ${{ needs.release.outputs.version }}
+          echo "::endgroup::"
+
+      - name: 📤 Commit Version Files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet -- \
+            package.json \
+            apps/tauri/package.json \
+            apps/tauri/src-tauri/Cargo.toml \
+            apps/tauri/src-tauri/tauri.conf.json; then
+            echo "Version files are already synced."
+            exit 0
+          fi
+
+          git add \
+            package.json \
+            apps/tauri/package.json \
+            apps/tauri/src-tauri/Cargo.toml \
+            apps/tauri/src-tauri/tauri.conf.json
+          git commit -m "chore: sync version files to v${{ needs.release.outputs.version }} [skip ci]"
+          git push origin HEAD:main
 
   build:
     name: 🏗️ Build Tauri Apps
