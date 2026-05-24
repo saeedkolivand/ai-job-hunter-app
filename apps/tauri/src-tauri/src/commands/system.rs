@@ -326,8 +326,8 @@ mod tests {
         {
             let gpu_info = get_gpu_info();
             // On non-Windows, this may return empty or actual GPU info
-            // Just verify it returns a vector
-            assert!(gpu_info.len() >= 0);
+            // Just verify it returns a vector without panicking
+            let _ = gpu_info;
         }
     }
 }
