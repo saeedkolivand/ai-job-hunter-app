@@ -173,6 +173,14 @@ jobs:
           pnpm install --frozen-lockfile
           echo "::endgroup::"
 
+      - name: 🔖 Sync Release Version
+        env:
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+        run: |
+          echo "::group::Syncing Tauri release metadata"
+          node scripts/sync-tauri-version.cjs ${{ needs.release.outputs.version }}
+          echo "::endgroup::"
+
       - name: 🔨 Build Workspace
         run: |
           echo "::group::Building workspace packages"
