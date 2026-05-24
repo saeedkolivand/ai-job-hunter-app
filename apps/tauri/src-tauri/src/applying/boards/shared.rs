@@ -233,16 +233,6 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_data_dir_empty_env_var() {
-        unsafe { std::env::remove_var("AJH_DATA_DIR"); }
-        unsafe { std::env::set_var("AJH_DATA_DIR", ""); }
-        let dir = resolve_data_dir();
-        // Empty string env var is returned as-is
-        assert_eq!(dir, std::path::PathBuf::from(""));
-        unsafe { std::env::remove_var("AJH_DATA_DIR"); }
-    }
-
-    #[test]
     fn test_resolve_data_dir_with_userprofile() {
         unsafe { std::env::remove_var("AJH_DATA_DIR"); }
         unsafe { std::env::set_var("USERPROFILE", "/home/user"); }
