@@ -55,7 +55,7 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "node scripts/sync-tauri-version.mjs ${nextRelease.version}"
+        "prepareCmd": "node scripts/sync-tauri-version.cjs ${nextRelease.version}"
       }
     ],
     [
