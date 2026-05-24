@@ -137,7 +137,6 @@ function Analyze() {
     setError(null);
     setResult(null);
     setStream('');
-    setCurrentJobId(null);
 
     // Create new abort controller for this run
     const controller = new AbortController();
@@ -151,7 +150,6 @@ function Analyze() {
         locale: i18n.language,
         meta: { targetLocale: i18n.language, outputTone: outputTone ?? 'professional' },
         onToken: (tok) => setStream((p) => (p + tok).slice(-2000)),
-        onJobId: (id) => setCurrentJobId(id),
         signal: controller.signal,
       });
       setResult(analysis);
@@ -161,7 +159,6 @@ function Analyze() {
       setStage('idle');
     } finally {
       setStream('');
-      setCurrentJobId(null);
       abortControllerRef.current = null;
     }
   };
@@ -178,7 +175,6 @@ function Analyze() {
     setUploadError(null);
     setStage('idle');
     setRunId(0);
-    setCurrentJobId(null);
     extractTextMutation.reset();
   };
 
