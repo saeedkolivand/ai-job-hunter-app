@@ -30,10 +30,12 @@ concurrency:
 # Jobs
 # ──────────────────────────────────────────────────────────────────────
 jobs:
-  lint-format:
-    name: ✨ Lint & Format
+  dependencies:
+    name: 📦 Dependencies
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.value }}
 
     steps:
       - name: 📥 Checkout Repository
@@ -50,15 +52,19 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: � Restore Turbo Cache
-        uses: actions/cache@v4
+      - name: 🔑 Generate Cache Key
+        id: cache-key
+        run: echo "value=${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}" >> $GITHUB_OUTPUT
+
+      - name: 💾 Restore Turbo Cache
+        uses: actions/cache/restore@v4
         with:
           path: .turbo
-          key: ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}
+          key: ${{ steps.cache-key.outputs.value }}
           restore-keys: |
             ${{ runner.os }}-turbo-
 
-      - name: � Install Dependencies
+      - name: 📥 Install Dependencies
         run: |
           echo "::group::Installing dependencies"
           pnpm install --frozen-lockfile
@@ -69,6 +75,40 @@ jobs:
           echo "::group::Building shared packages"
           pnpm build:packages
           echo "::endgroup::"
+
+      - name: 💾 Save Turbo Cache
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: .turbo
+          key: ${{ steps.cache-key.outputs.value }}
+
+  lint-format:
+    name: ✨ Lint & Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: dependencies
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 💾 Restore Turbo Cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: ${{ needs.dependencies.outputs.cache-key }}
 
       - name: 🔍 Run ESLint
         id: eslint
@@ -122,6 +162,7 @@ jobs:
     name: 🔍 Type Check
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    needs: dependencies
 
     steps:
       - name: 📥 Checkout Repository
@@ -139,24 +180,10 @@ jobs:
           cache: pnpm
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .turbo
-          key: ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-
-
-      - name: 📥 Install Dependencies
-        run: |
-          echo "::group::Installing dependencies"
-          pnpm install --frozen-lockfile
-          echo "::endgroup::"
-
-      - name: 🔨 Build Shared Packages
-        run: |
-          echo "::group::Building shared packages"
-          pnpm build:packages
-          echo "::endgroup::"
+          key: ${{ needs.dependencies.outputs.cache-key }}
 
       - name: 🔍 Run Type Check
         run: pnpm typecheck
@@ -192,6 +219,7 @@ jobs:
     name: 🧪 Tests
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    needs: dependencies
 
     steps:
       - name: 📥 Checkout Repository
@@ -209,12 +237,10 @@ jobs:
           cache: pnpm
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .turbo
-          key: ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-
+          key: ${{ needs.dependencies.outputs.cache-key }}
 
       - name: 🦀 Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -244,18 +270,6 @@ jobs:
         with:
           workspaces: apps/tauri/src-tauri
           cache-on-failure: true
-
-      - name: 📥 Install Dependencies
-        run: |
-          echo "::group::Installing dependencies"
-          pnpm install --frozen-lockfile
-          echo "::endgroup::"
-
-      - name: 🔨 Build Shared Packages
-        run: |
-          echo "::group::Building shared packages"
-          pnpm build:packages
-          echo "::endgroup::"
 
       - name: 🧪 Run Tests
         id: js-tests
@@ -332,6 +346,7 @@ jobs:
     name: 🏗️ Build Verification
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    needs: dependencies
 
     steps:
       - name: 📥 Checkout Repository
@@ -349,12 +364,10 @@ jobs:
           cache: pnpm
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .turbo
-          key: ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-
+          key: ${{ needs.dependencies.outputs.cache-key }}
 
       - name: 🦀 Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -384,18 +397,6 @@ jobs:
         with:
           workspaces: apps/tauri/src-tauri
           cache-on-failure: true
-
-      - name: 📥 Install Dependencies
-        run: |
-          echo "::group::Installing dependencies"
-          pnpm install --frozen-lockfile
-          echo "::endgroup::"
-
-      - name: 🔨 Build Shared Packages
-        run: |
-          echo "::group::Building shared packages"
-          pnpm build:packages
-          echo "::endgroup::"
 
       - name: 🦀 Cargo Check
         id: cargo-check
@@ -472,6 +473,7 @@ jobs:
     name: 🔬 Quality Checks
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    needs: dependencies
 
     steps:
       - name: 📥 Checkout Repository
