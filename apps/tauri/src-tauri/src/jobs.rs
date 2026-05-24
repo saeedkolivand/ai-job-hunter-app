@@ -102,3 +102,96 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_start_job() {
+        let mut tracker = JobTracker::default();
+        tracker.start("job-1", "scrape");
+        let job = tracker.get("job-1").unwrap();
+        assert_eq!(job.id, "job-1");
+        assert_eq!(job.kind, "scrape");
+        assert_eq!(job.status, JobStatus::Running);
+        assert_eq!(job.progress, 0.0);
+        assert!(job.result.is_none());
+        assert!(job.error.is_none());
+    }
+
+    #[test]
+    fn test_update_progress() {
+        let mut tracker = JobTracker::default();
+        tracker.start("job-1", "scrape");
+        tracker.update_progress("job-1", 0.5);
+        let job = tracker.get("job-1").unwrap();
+        assert_eq!(job.progress, 0.5);
+    }
+
+    #[test]
+    fn test_complete_job() {
+        let mut tracker = JobTracker::default();
+        tracker.start("job-1", "scrape");
+        let result = json!({ "count": 10 });
+        tracker.complete("job-1", result.clone());
+        let job = tracker.get("job-1").unwrap();
+        assert_eq!(job.status, JobStatus::Completed);
+        assert_eq!(job.progress, 1.0);
+        assert_eq!(job.result, Some(result));
+    }
+
+    #[test]
+    fn test_fail_job() {
+        let mut tracker = JobTracker::default();
+        tracker.start("job-1", "scrape");
+        tracker.fail("job-1", "network error".to_string());
+        let job = tracker.get("job-1").unwrap();
+        assert_eq!(job.status, JobStatus::Failed);
+        assert_eq!(job.error, Some("network error".to_string()));
+    }
+
+    #[test]
+    fn test_cancel_job() {
+        let mut tracker = JobTracker::default();
+        tracker.start("job-1", "scrape");
+        tracker.cancel("job-1");
+        let job = tracker.get("job-1").unwrap();
+        assert_eq!(job.status, JobStatus::Cancelled);
+    }
+
+    #[test]
+    fn test_list_jobs() {
+        let mut tracker = JobTracker::default();
+        tracker.start("job-1", "scrape");
+        tracker.start("job-2", "apply");
+        let jobs = tracker.list();
+        assert_eq!(jobs.len(), 2);
+        // Should be sorted by created_at desc
+        assert!(jobs[0].created_at >= jobs[1].created_at);
+    }
+
+    #[test]
+    fn test_get_job() {
+        let mut tracker = JobTracker::default();
+        tracker.start("job-1", "scrape");
+        assert!(tracker.get("job-1").is_some());
+        assert!(tracker.get("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_multiple_jobs() {
+        let mut tracker = JobTracker::default();
+        tracker.start("job-1", "scrape");
+        tracker.start("job-2", "apply");
+        tracker.start("job-3", "scrape");
+        tracker.update_progress("job-1", 0.3);
+        tracker.complete("job-2", json!({ "success": true }));
+        tracker.fail("job-3", "error".to_string());
+
+        assert_eq!(tracker.get("job-1").unwrap().status, JobStatus::Running);
+        assert_eq!(tracker.get("job-2").unwrap().status, JobStatus::Completed);
+        assert_eq!(tracker.get("job-3").unwrap().status, JobStatus::Failed);
+    }
+}
+
