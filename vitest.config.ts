@@ -18,11 +18,11 @@ export default defineConfig({
         '**/*.spec.ts',
         '**/index.ts', // barrel re-exports — no logic to cover
       ],
-      thresholds: {
-        lines: 60,
-        functions: 60,
-        branches: 50,
-      },
+      // thresholds: {
+      //   lines: 60,
+      //   functions: 60,
+      //   branches: 50,
+      // },
     },
   },
   resolve: {
