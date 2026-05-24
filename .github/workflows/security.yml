@@ -1,5 +1,16 @@
 name: 🛡️ Security
 
+# ──────────────────────────────────────────────────────────────────────
+# Security Pipeline
+# ──────────────────────────────────────────────────────────────────────
+# Purpose: Automated security vulnerability scanning
+# Triggers: Weekly (Mondays at 3 AM UTC), manual workflow_dispatch
+# Jobs:
+#   - dependency-review: GitHub dependency review
+#   - npm-audit: npm/pnpm vulnerability scan
+#   - cargo-audit: Rust/Cargo vulnerability scan
+# ──────────────────────────────────────────────────────────────────────
+
 on:
   schedule:
     - cron: '0 3 * * 1'
@@ -67,7 +78,15 @@ jobs:
         run: |
           echo "## 📦 npm Audit Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Audit Status**: ${{ steps.npm-audit.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "### Audit Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ steps.npm-audit.outcome == 'success' && '✅ No vulnerabilities' || '❌ Vulnerabilities found' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [npm Audit Docs](https://docs.npmjs.com/cli/v9/commands/npm-audit)" >> $GITHUB_STEP_SUMMARY
 
   cargo-audit:
     name: 🦀 Cargo Audit
@@ -104,4 +123,11 @@ jobs:
         run: |
           echo "## 🦀 Cargo Audit Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Audit Status**: ${{ steps.cargo-audit.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "### Audit Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ steps.cargo-audit.outcome == 'success' && '✅ No vulnerabilities' || '❌ Vulnerabilities found' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [Cargo Audit Docs](https://github.com/rustsec/cargo-audit)" >> $GITHUB_STEP_SUMMARY

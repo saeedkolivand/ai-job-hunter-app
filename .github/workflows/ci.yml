@@ -3,7 +3,14 @@ name: 🚀 CI Pipeline
 # ──────────────────────────────────────────────────────────────────────
 # Continuous Integration Pipeline
 # ──────────────────────────────────────────────────────────────────────
-# Runs on: pull_request to main, push to any branch except main
+# Purpose: Validate code quality, type safety, and test coverage on every PR
+# Triggers: pull_request to main, push to any branch except main
+# Jobs:
+#   - lint-format: ESLint and Prettier validation
+#   - type-check: TypeScript type checking
+#   - tests: JavaScript and Rust test suites
+#   - build-verification: Production build validation
+#   - quality-checks: Rust clippy linting
 # ──────────────────────────────────────────────────────────────────────
 
 on:
@@ -68,7 +75,8 @@ jobs:
       - name: ❌ Check for Failures
         if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure'
         run: |
-          echo "::error::Lint or format check failed. Please fix the issues above."
+          echo "::error file=package.json::Lint or format check failed. Run 'pnpm lint:fix' and 'pnpm format' locally to fix."
+          echo "::error::Please fix the issues above before merging."
           exit 1
 
       - name: 📝 Job Summary
@@ -76,8 +84,17 @@ jobs:
         run: |
           echo "## ✨ Lint & Format Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Check Results" >> $GITHUB_STEP_SUMMARY
           echo "- **ESLint**: ${{ steps.eslint.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Prettier**: ${{ steps.format.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [View ESLint Rules](https://eslint.org/docs/latest/rules/)" >> $GITHUB_STEP_SUMMARY
+          echo "- [View Prettier Options](https://prettier.io/docs/en/options.html)" >> $GITHUB_STEP_SUMMARY
 
       - name: 🔍 Debug Environment on Failure
         if: failure()
@@ -133,7 +150,15 @@ jobs:
         run: |
           echo "## 🔍 Type Check Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **TypeScript**: Checked successfully" >> $GITHUB_STEP_SUMMARY
+          echo "### Check Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **TypeScript**: ✅ Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [TypeScript Documentation](https://www.typescriptlang.org/docs/)" >> $GITHUB_STEP_SUMMARY
 
       - name: 🔍 Debug Environment on Failure
         if: failure()
@@ -228,7 +253,8 @@ jobs:
       - name: ❌ Check for Test Failures
         if: steps.js-tests.outcome == 'failure' || steps.rust-tests.outcome == 'failure'
         run: |
-          echo "::error::Tests failed. Please review the test output above."
+          echo "::error::Tests failed. Run 'pnpm test' locally to reproduce."
+          echo "::error::Check the test output above for specific failures."
           exit 1
 
       - name: 📊 Upload Test Results on Failure
@@ -246,10 +272,24 @@ jobs:
         run: |
           echo "## 🧪 Test Job Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **JS Tests**: ${{ steps.js-tests.outcome }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Rust Tests**: ${{ steps.rust-tests.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **JS Tests**: ${{ steps.js-tests.outcome == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rust Tests**: ${{ steps.rust-tests.outcome == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
           echo "- **Platform**: Ubuntu Latest" >> $GITHUB_STEP_SUMMARY
-          echo "- **Node Version**: 22" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.js-tests.outcome }}" == "failure" ] || [ "${{ steps.rust-tests.outcome }}" == "failure" ]; then
+            echo "### 📊 Artifacts" >> $GITHUB_STEP_SUMMARY
+            echo "Test results uploaded as artifact: \`test-results-${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [Vitest Documentation](https://vitest.dev/)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Rust Testing Guide](https://doc.rust-lang.org/book/ch11-00-testing.html)" >> $GITHUB_STEP_SUMMARY
 
       - name: 🔍 Debug Environment on Failure
         if: failure()
@@ -345,7 +385,8 @@ jobs:
       - name: ❌ Check for Build Failures
         if: steps.cargo-check.outcome == 'failure' || steps.prod-build.outcome == 'failure'
         run: |
-          echo "::error::Build verification failed. Please review the build output above."
+          echo "::error::Build verification failed. Run 'pnpm build' locally to reproduce."
+          echo "::error::Check the build output above for specific errors."
           exit 1
 
       - name: 📊 Upload Build Artifacts on Failure
@@ -363,9 +404,24 @@ jobs:
         run: |
           echo "## 🏗️ Build Verification Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Cargo Check**: ${{ steps.cargo-check.outcome }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Production Build**: ${{ steps.prod-build.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cargo Check**: ${{ steps.cargo-check.outcome == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Production Build**: ${{ steps.prod-build.outcome == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
           echo "- **Platform**: Ubuntu Latest" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.cargo-check.outcome }}" == "failure" ] || [ "${{ steps.prod-build.outcome }}" == "failure" ]; then
+            echo "### 📊 Artifacts" >> $GITHUB_STEP_SUMMARY
+            echo "Build artifacts uploaded as artifact: \`build-artifacts-${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [Tauri Documentation](https://tauri.app/v1/guides/)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Rust Book](https://doc.rust-lang.org/book/)" >> $GITHUB_STEP_SUMMARY
 
       - name: 🔍 Debug Environment on Failure
         if: failure()
@@ -432,7 +488,15 @@ jobs:
         run: |
           echo "## 🔬 Quality Checks Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Cargo Clippy**: Completed" >> $GITHUB_STEP_SUMMARY
+          echo "### Lint Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cargo Clippy**: ✅ Completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platform**: Ubuntu Latest" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [Clippy Lints](https://rust-lang.github.io/rust-clippy/master/)" >> $GITHUB_STEP_SUMMARY
 
       - name: 🔍 Debug Environment on Failure
         if: failure()
