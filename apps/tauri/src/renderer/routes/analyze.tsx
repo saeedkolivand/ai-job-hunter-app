@@ -64,6 +64,8 @@ function Analyze() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<'resume' | 'jobAd' | null>(null);
   const [runId, setRunId] = useState(0);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const { data: modelList = [], isFetching: loadingModels } = useAIModels();
   const models = modelList as Model[];
   const qc = useQueryClient();
@@ -136,6 +138,12 @@ function Analyze() {
     setError(null);
     setResult(null);
     setStream('');
+    setCurrentJobId(null);
+
+    // Create new abort controller for this run
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const analysis = await runAnalysis({
         resume,
@@ -144,6 +152,8 @@ function Analyze() {
         locale: i18n.language,
         meta: { targetLocale: i18n.language, outputTone: outputTone ?? 'professional' },
         onToken: (tok) => setStream((p) => (p + tok).slice(-2000)),
+        onJobId: (id) => setCurrentJobId(id),
+        signal: controller.signal,
       });
       setResult(analysis);
       setStage('done');
@@ -152,10 +162,16 @@ function Analyze() {
       setStage('idle');
     } finally {
       setStream('');
+      setCurrentJobId(null);
+      abortControllerRef.current = null;
     }
   };
 
-  const reset = () => {
+  const reset = async () => {
+    // Abort running analysis if exists
+    if (abortControllerRef.current && stage === 'running') {
+      abortControllerRef.current.abort();
+    }
     setResume('');
     setJobAd('');
     setResult(null);
@@ -163,6 +179,7 @@ function Analyze() {
     setUploadError(null);
     setStage('idle');
     setRunId(0);
+    setCurrentJobId(null);
     extractTextMutation.reset();
   };
 
