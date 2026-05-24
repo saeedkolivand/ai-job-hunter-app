@@ -64,7 +64,6 @@ function Analyze() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<'resume' | 'jobAd' | null>(null);
   const [runId, setRunId] = useState(0);
-  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const { data: modelList = [], isFetching: loadingModels } = useAIModels();
   const models = modelList as Model[];
