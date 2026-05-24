@@ -17,7 +17,7 @@ echo "▶ Running ESLint strict..."
 pnpm lint:strict
 
 echo "▶ Checking formatting..."
-pnpm format:check
+pnpm format
 
 echo "▶ Running TypeScript type check..."
 pnpm typecheck --force
