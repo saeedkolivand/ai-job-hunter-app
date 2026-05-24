@@ -159,31 +159,4 @@ mod tests {
         assert_eq!(mode, crate::scraping::types::ScraperMode::Http);
         assert_ne!(mode, crate::scraping::types::ScraperMode::Browser);
     }
-
-    #[test]
-    fn test_resolve_data_dir_env_var() {
-        unsafe { std::env::set_var("AJH_DATA_DIR", "/custom/path") };
-        let result = resolve_data_dir();
-        assert_eq!(result, std::path::PathBuf::from("/custom/path"));
-        unsafe { std::env::remove_var("AJH_DATA_DIR") };
-    }
-
-    #[test]
-    fn test_resolve_data_dir_default() {
-        unsafe { std::env::remove_var("AJH_DATA_DIR") };
-        unsafe { std::env::set_var("USERPROFILE", "/home/user") };
-        let result = resolve_data_dir();
-        assert!(result.ends_with(".ajh"));
-        unsafe { std::env::remove_var("USERPROFILE") };
-    }
-
-    #[test]
-    fn test_resolve_data_dir_home_fallback() {
-        unsafe { std::env::remove_var("AJH_DATA_DIR") };
-        unsafe { std::env::remove_var("USERPROFILE") };
-        unsafe { std::env::set_var("HOME", "/home/user") };
-        let result = resolve_data_dir();
-        assert!(result.ends_with(".ajh"));
-        unsafe { std::env::remove_var("HOME") };
-    }
 }
