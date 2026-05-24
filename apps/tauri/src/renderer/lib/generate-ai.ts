@@ -26,6 +26,8 @@ import {
   validateMetadata,
 } from '@ajh/prompts/generate';
 
+import { detectLanguages } from '@ajh/shared/language-detection';
+
 import { usePreferencesStore } from '@/store/preferences-store';
 
 import { getClient } from './app-client';
@@ -48,7 +50,8 @@ async function streamGenerate(
   user: string,
   onToken: (tok: string) => void,
   temperature = 0.3,
-  locale = 'en'
+  locale = 'en',
+  signal?: AbortSignal
 ): Promise<string> {
   const api = getClient();
   const providerConfig = usePreferencesStore.getState().aiProviderConfig;
@@ -85,9 +88,21 @@ async function streamGenerate(
       }
     });
 
-    setTimeout(
+    // Handle abort signal
+    let abortListener: (() => void) | null = null;
+    if (signal) {
+      abortListener = () => {
+        off();
+        void api.jobs.cancel(jobId);
+        reject(new Error('Generation cancelled'));
+      };
+      signal.addEventListener('abort', abortListener);
+    }
+
+    const timeoutId = setTimeout(
       () => {
         off();
+        if (abortListener && signal) signal.removeEventListener('abort', abortListener);
         resolve(buffer);
       },
       5 * 60 * 1000
@@ -100,10 +115,16 @@ async function streamGenerate(
         } | null;
         if (job?.status === 'failed' || job?.status === 'cancelled') {
           clearInterval(poll);
+          clearTimeout(timeoutId);
           off();
+          if (abortListener && signal) signal.removeEventListener('abort', abortListener);
           reject(new Error(`Generation ${job.status}. Please try again.`));
         }
-        if (job?.status === 'completed') clearInterval(poll);
+        if (job?.status === 'completed') {
+          clearInterval(poll);
+          clearTimeout(timeoutId);
+          if (abortListener && signal) signal.removeEventListener('abort', abortListener);
+        }
       })();
     }, 3_000);
   });
@@ -117,11 +138,22 @@ export async function extractMetadata(
   model: string,
   locale = 'en'
 ): Promise<GenerationMeta> {
+  // Detect languages client-side
+  const clientSideDetection = detectLanguages(resume, jobAd);
+
   const { system, user } = buildMetadataPrompt(resume, jobAd);
   try {
     const raw = await streamGenerate(model, system, user, () => {}, 0.1, locale);
     const meta = validateMetadata(raw);
-    if (meta) return meta;
+    if (meta) {
+      // Override with client-side detection
+      return {
+        ...meta,
+        resumeLanguage: clientSideDetection.resumeName,
+        jobAdLanguage: clientSideDetection.jobAdName,
+        mismatch: clientSideDetection.mismatch,
+      };
+    }
   } catch {
     /* fall through */
   }
@@ -133,10 +165,10 @@ export async function extractMetadata(
     candidateName: nameMatch?.[1] ?? '',
     jobTitle: titleMatch?.[1]?.trim() ?? '',
     companyName: companyMatch?.[1]?.trim() ?? '',
-    resumeLanguage: 'en',
-    jobAdLanguage: 'en',
-    mismatch: false,
-    targetLanguage: 'en',
+    resumeLanguage: clientSideDetection.resumeName,
+    jobAdLanguage: clientSideDetection.jobAdName,
+    mismatch: clientSideDetection.mismatch,
+    targetLanguage: clientSideDetection.resumeName,
     topRequirements: [],
   };
 }
@@ -148,11 +180,12 @@ export async function generateResume(
   mode: GenerationMode,
   model: string,
   onToken: (tok: string) => void,
-  locale = 'en'
+  locale = 'en',
+  signal?: AbortSignal
 ): Promise<string> {
   const system = buildResumeSystemPrompt(mode);
   const user = buildResumePrompt(resume, jobAd, meta, mode);
-  const raw = await streamGenerate(model, system, user, onToken, 0.25, locale);
+  const raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal);
   return extractPlainText(raw);
 }
 
@@ -163,11 +196,12 @@ export async function generateCoverLetter(
   mode: GenerationMode,
   model: string,
   onToken: (tok: string) => void,
-  locale = 'en'
+  locale = 'en',
+  signal?: AbortSignal
 ): Promise<string> {
   const system = buildCoverLetterSystemPrompt(mode);
   const user = buildCoverLetterPrompt(resume, jobAd, meta, mode);
-  const raw = await streamGenerate(model, system, user, onToken, 0.4, locale);
+  const raw = await streamGenerate(model, system, user, onToken, 0.4, locale, signal);
   return extractPlainText(raw);
 }
 
