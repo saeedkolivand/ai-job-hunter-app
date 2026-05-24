@@ -265,8 +265,8 @@ mod tests {
         unsafe { std::env::remove_var("USERPROFILE"); }
         unsafe { std::env::remove_var("HOME"); }
         let dir = resolve_data_dir();
-        // Should return empty path + .ajh
-        assert!(dir.ends_with(".ajh"));
+        // Should return empty path + .ajh, which is just ".ajh"
+        assert_eq!(dir, std::path::PathBuf::from(".ajh"));
     }
 
     #[test]
