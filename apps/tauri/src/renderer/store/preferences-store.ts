@@ -39,9 +39,6 @@ const defaultPreferences: Preferences = {
   version: 1,
   language: 'en',
   outputTone: 'professional',
-  remote: 'any',
-  techStack: [],
-  seniority: 'any',
   performanceMode: 'balanced',
   onboardingCompleted: false,
   lastUpdated: new Date().toISOString(),
@@ -56,13 +53,6 @@ interface PreferencesActions {
   setActiveProvider: (provider: AiProvider) => void;
   setProviderSettings: (provider: AiProvider, settings: Partial<PerProviderSettings>) => void;
   setOutputTone: (outputTone: Preferences['outputTone']) => void;
-  setLocation: (location: Preferences['location']) => void;
-  setRemote: (remote: Preferences['remote']) => void;
-  setTechStack: (techStack: Preferences['techStack']) => void;
-  addTechStackItem: (item: Preferences['techStack'][number]) => void;
-  removeTechStackItem: (name: string) => void;
-  setSeniority: (seniority: Preferences['seniority']) => void;
-  setSalary: (salary: Preferences['salary']) => void;
   setResume: (resume: Preferences['resume']) => void;
   setPerformanceMode: (performanceMode: Preferences['performanceMode']) => void;
   setOnboardingComplete: () => void;
@@ -136,55 +126,6 @@ export const usePreferencesStore = create<PreferencesStore>()(
           lastUpdated: new Date().toISOString(),
         })),
 
-      setLocation: (location: Preferences['location']) =>
-        set((state) => ({
-          ...state,
-          location,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setRemote: (remote: Preferences['remote']) =>
-        set((state) => ({
-          ...state,
-          remote,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setTechStack: (techStack: Preferences['techStack']) =>
-        set((state) => ({
-          ...state,
-          techStack,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      addTechStackItem: (item: Preferences['techStack'][number]) =>
-        set((state) => ({
-          ...state,
-          techStack: [...state.techStack, item],
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      removeTechStackItem: (name: string) =>
-        set((state) => ({
-          ...state,
-          techStack: state.techStack.filter((item) => item.name !== name),
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setSeniority: (seniority: Preferences['seniority']) =>
-        set((state) => ({
-          ...state,
-          seniority,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setSalary: (salary: Preferences['salary']) =>
-        set((state) => ({
-          ...state,
-          salary,
-          lastUpdated: new Date().toISOString(),
-        })),
-
       setResume: (resume: Preferences['resume']) =>
         set((state) => ({
           ...state,
@@ -225,12 +166,7 @@ export const useLanguage = () => usePreferencesStore((state) => state.language);
 export const useAIModel = () => usePreferencesStore((state) => state.aiModel);
 export const useAiProviderConfig = () => usePreferencesStore((state) => state.aiProviderConfig);
 export const useOutputTone = () => usePreferencesStore((state) => state.outputTone);
-export const useLocation = () => usePreferencesStore((state) => state.location);
-export const useRemote = () => usePreferencesStore((state) => state.remote);
-export const useTechStack = () => usePreferencesStore((state) => state.techStack);
-export const useSeniority = () => usePreferencesStore((state) => state.seniority);
 export const useOnboardingCompleted = () =>
   usePreferencesStore((state) => state.onboardingCompleted);
-export const useSalary = () => usePreferencesStore((state) => state.salary);
 export const useResume = () => usePreferencesStore((state) => state.resume);
 export const usePerformanceMode = () => usePreferencesStore((state) => state.performanceMode);

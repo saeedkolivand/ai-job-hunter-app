@@ -124,7 +124,7 @@ export function GenerationConfig({
         onClick={onGenerate}
         disabled={isGenerating}
         loading={isGenerating}
-        className="w-full justify-center hover:glow-purple"
+        className="w-full justify-center transition-all duration-150 ease-out"
       >
         {!isGenerating && <Sparkles size={14} />}
         {isGenerating ? t('aiGenerate.generating') : t('aiGenerate.generate')}

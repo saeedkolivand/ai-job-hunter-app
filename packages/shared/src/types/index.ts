@@ -77,6 +77,7 @@ export interface DocumentRecord {
   language?: string;
   pages?: number;
   importedAt: number;
+  isDefault?: boolean;
 }
 
 export interface JobPosting {

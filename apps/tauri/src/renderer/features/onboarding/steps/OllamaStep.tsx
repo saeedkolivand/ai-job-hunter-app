@@ -480,7 +480,9 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
                           size="sm"
                           disabled={!cloudApiKey.trim() || savingCloudKey}
                           onClick={() => void handleSaveCloudKey()}
-                          className={cloudApiKey.trim() && !savingCloudKey ? 'glow-subtle' : ''}
+                          className={
+                            cloudApiKey.trim() && !savingCloudKey ? 'ring-1 ring-brand/20' : ''
+                          }
                         >
                           {savingCloudKey ? (
                             <Loader2 size={13} className="animate-spin" />

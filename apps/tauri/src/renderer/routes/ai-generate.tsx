@@ -397,7 +397,7 @@ function AIGeneratePage() {
                 variant={canGenerate ? 'glass' : 'ghost'}
                 onClick={() => void handleAnalyze()}
                 disabled={!canGenerate}
-                className={cn('w-full justify-center', canGenerate && 'hover:glow-purple')}
+                className="w-full justify-center transition-all duration-150 ease-out"
               >
                 <ArrowRight size={14} />
                 {!aiModel?.defaultModel

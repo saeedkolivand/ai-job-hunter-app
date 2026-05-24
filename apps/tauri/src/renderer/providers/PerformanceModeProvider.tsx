@@ -1,17 +1,14 @@
-import { MotionConfig } from 'motion/react';
 import { type ReactNode, useEffect, useRef } from 'react';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 import { usePerformanceMode } from '@/store/preferences-store';
 
 /**
- * Syncs the renderer's performanceMode preference to three side effects:
+ * Syncs the renderer's performanceMode preference to two side effects:
  *   1. data-performance-mode attribute on <html> — drives CSS-level blur
- *      reduction and kills CSS transitions/keyframe animations.
+ *      reduction.
  *   2. system.setPerformanceMode IPC — lets the main process adjust JobQueue
  *      concurrency and AiRuntime idle-unload timeout accordingly.
- *   3. MotionConfig reducedMotion — disables all Framer Motion JS animations
- *      in low-memory mode (CSS override alone does not reach them).
  *
  * Place this inside <AppClientProvider> so getClient() is always ready.
  */
@@ -31,9 +28,5 @@ export function PerformanceModeProvider({ children }: { children: ReactNode }) {
     });
   }, [client, mode]);
 
-  return (
-    <MotionConfig reducedMotion={mode === 'low-memory' ? 'always' : 'user'}>
-      {children}
-    </MotionConfig>
-  );
+  return <>{children}</>;
 }

@@ -1,7 +1,7 @@
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
-import { Button } from './Button';
+import { RefreshButton } from './RefreshButton';
 
 interface Props {
   children: ReactNode;
@@ -41,22 +41,25 @@ export class ErrorBoundary extends Component<Props, State> {
 
     if (this.props.fallback) return this.props.fallback(error, this.reset);
 
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 p-10 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 ring-1 ring-red-500/20">
-          <AlertTriangle size={24} className="text-red-400/70" />
-        </div>
-        <div className="space-y-1">
-          <p className="text-sm font-medium text-foreground/70">Something went wrong</p>
-          <p className="max-w-xs text-xs text-foreground/40">
-            {error.message || 'An unexpected error occurred in this panel.'}
-          </p>
-        </div>
-        <Button variant="ghost" size="sm" onClick={this.reset}>
-          <RefreshCw size={13} />
-          Try again
-        </Button>
-      </div>
-    );
+    return <ErrorBoundaryFallback onReset={this.reset} error={error} />;
   }
+}
+
+function ErrorBoundaryFallback({ onReset, error }: { onReset: () => void; error: Error }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 p-10 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 ring-1 ring-red-500/20">
+        <AlertTriangle size={24} className="text-red-400/70" />
+      </div>
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-foreground/70">Something went wrong</p>
+        <p className="max-w-xs text-xs text-foreground/40">
+          {error.message || 'An unexpected error occurred in this panel.'}
+        </p>
+      </div>
+      <RefreshButton onRefresh={onReset} size={13}>
+        Try again
+      </RefreshButton>
+    </div>
+  );
 }

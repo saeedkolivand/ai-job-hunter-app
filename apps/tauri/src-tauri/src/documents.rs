@@ -29,6 +29,8 @@ pub struct DocumentRecord {
     #[serde(rename = "createdAt")]
     pub created_at: u64,
     pub indexed: bool,
+    #[serde(rename = "isDefault")]
+    pub is_default: bool,
 }
 
 // ── DocumentStore ─────────────────────────────────────────────────────────────
@@ -51,7 +53,8 @@ impl DocumentStore {
                 text        TEXT NOT NULL,
                 pages       INTEGER,
                 created_at  INTEGER NOT NULL,
-                indexed     INTEGER NOT NULL DEFAULT 0
+                indexed     INTEGER NOT NULL DEFAULT 0,
+                is_default  INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS vectors (
                 doc_id  TEXT PRIMARY KEY,
@@ -59,13 +62,27 @@ impl DocumentStore {
             );",
         )
         .map_err(|e| e.to_string())?;
+        
+        // Migration: add is_default column if it doesn't exist
+        // SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so we check first
+        let has_column: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('documents') WHERE name = 'is_default'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        if has_column == 0 {
+            conn.execute("ALTER TABLE documents ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0", [])
+                .map_err(|e| e.to_string())?;
+        }
         Ok(Self { conn: Mutex::new(conn) })
     }
 
     pub fn list(&self) -> Vec<DocumentRecord> {
         let conn = self.conn.lock().unwrap();
         conn.prepare(
-            "SELECT id, title, name, locale, text, pages, created_at, indexed
+            "SELECT id, title, name, locale, text, pages, created_at, indexed, is_default
              FROM documents ORDER BY created_at DESC",
         )
         .ok()
@@ -80,6 +97,7 @@ impl DocumentStore {
                     pages: row.get(5)?,
                     created_at: row.get::<_, i64>(6)? as u64,
                     indexed: row.get::<_, i64>(7)? != 0,
+                    is_default: row.get::<_, i64>(8).unwrap_or(0) != 0,
                 })
             })
             .ok()
@@ -90,9 +108,15 @@ impl DocumentStore {
 
     pub fn insert(&self, rec: &DocumentRecord) -> Result<(), String> {
         let conn = self.conn.lock().unwrap();
+        // If this is the first document, automatically set it as default
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM documents", [], |row| row.get(0))
+            .unwrap_or(0);
+        let is_default = if count == 0 { true } else { rec.is_default };
+        
         conn.execute(
-            "INSERT INTO documents (id, title, name, locale, text, pages, created_at, indexed)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO documents (id, title, name, locale, text, pages, created_at, indexed, is_default)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 rec.id,
                 rec.title,
@@ -102,6 +126,7 @@ impl DocumentStore {
                 rec.pages,
                 rec.created_at as i64,
                 rec.indexed as i64,
+                is_default as i64,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -120,6 +145,16 @@ impl DocumentStore {
         conn.execute("DELETE FROM documents WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
         conn.execute("DELETE FROM vectors WHERE doc_id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn set_default(&self, id: &str) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        // Clear all defaults, then set the new one
+        conn.execute("UPDATE documents SET is_default = 0", [])
+            .map_err(|e| e.to_string())?;
+        conn.execute("UPDATE documents SET is_default = 1 WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
         Ok(())
     }

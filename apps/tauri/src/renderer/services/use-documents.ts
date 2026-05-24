@@ -29,6 +29,15 @@ export const useRemoveDocument = () => {
   });
 };
 
+export const useSetDefaultDocument = () => {
+  const api = useAppClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.documents.setDefault(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.documents.all }),
+  });
+};
+
 export const useExtractText = () => {
   const api = useAppClient();
   return useMutation({

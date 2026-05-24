@@ -9,7 +9,6 @@ import {
   Languages,
   Loader2,
   Lock,
-  RefreshCw,
   Shield,
   Sparkles,
   User,
@@ -19,7 +18,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
-import { Button, GlassCard, IconBadge, Input, SectionLabel } from '@ajh/ui';
+import { Button, GlassCard, IconBadge, Input, RefreshButton, SectionLabel } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
 import { AccountsSettingsTab } from '@/features/settings/components/AccountsSettingsTab';
@@ -271,10 +270,9 @@ function UpdateSection() {
         </div>
 
         {status.state === 'idle' || status.state === 'not-available' || status.state === 'error' ? (
-          <Button variant="glass" size="sm" onClick={() => void check()} className="shrink-0 gap-2">
-            <RefreshCw size={12} />
+          <RefreshButton onRefresh={check} variant="glass" size={12} className="shrink-0 gap-2">
             {t('settings.update.checkNow')}
-          </Button>
+          </RefreshButton>
         ) : status.state === 'checking' ? (
           <div className="flex items-center gap-2 text-xs text-foreground/40">
             <Loader2 size={13} className="animate-spin" />
@@ -285,7 +283,7 @@ function UpdateSection() {
             variant="glass"
             size="sm"
             onClick={() => void download()}
-            className="gap-2 glow-subtle"
+            className="gap-2 ring-1 ring-brand/20"
           >
             <Download size={12} />
             {t('settings.update.download', { version: status.version })}
@@ -296,15 +294,14 @@ function UpdateSection() {
             {status.percent}%
           </div>
         ) : status.state === 'downloaded' ? (
-          <Button
+          <RefreshButton
+            onRefresh={install}
             variant="glass"
-            size="sm"
-            onClick={() => void install()}
-            className="gap-2 glow-subtle"
+            size={12}
+            className="gap-2 ring-1 ring-brand/20"
           >
-            <RefreshCw size={12} />
             {t('settings.update.install')}
-          </Button>
+          </RefreshButton>
         ) : null}
       </div>
 

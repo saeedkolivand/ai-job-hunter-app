@@ -144,7 +144,7 @@ export function AccountRow({ board, saved, disabled, onSaved, onRemoved }: Accou
                     loading={busy}
                     disabled={!username.trim() || !password}
                     onClick={() => void save()}
-                    className={cn(!username.trim() || !password ? '' : 'glow-subtle')}
+                    className={cn(!username.trim() || !password ? '' : 'ring-1 ring-brand/20')}
                   >
                     {t('settings.accounts.save')}
                   </Button>

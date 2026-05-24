@@ -435,7 +435,7 @@ export function AISettingsTab() {
                               size="sm"
                               onClick={() => setActiveProvider('ollama')}
                               disabled={isActive}
-                              className={isActive ? 'opacity-40' : 'glow-subtle'}
+                              className={isActive ? 'opacity-40' : 'ring-1 ring-brand/20'}
                             >
                               {isActive ? 'Currently active' : 'Set as active'}
                             </Button>
@@ -493,7 +493,9 @@ export function AISettingsTab() {
                                   size="sm"
                                   disabled={!apiKeyInput.trim() || isSaving}
                                   onClick={() => void handleSaveKey(p)}
-                                  className={apiKeyInput.trim() && !isSaving ? 'glow-subtle' : ''}
+                                  className={
+                                    apiKeyInput.trim() && !isSaving ? 'ring-1 ring-brand/20' : ''
+                                  }
                                 >
                                   {isSaving ? (
                                     <Loader2 size={13} className="animate-spin" />

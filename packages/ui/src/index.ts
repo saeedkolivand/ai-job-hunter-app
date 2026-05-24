@@ -12,9 +12,11 @@ export { IconBadge, type IconBadgeProps } from './components/IconBadge';
 export { IconText } from './components/IconText';
 export { Input, type InputProps } from './components/Input';
 export { LocationInput, type LocationInputProps } from './components/LocationInput';
+export { RefreshButton } from './components/RefreshButton';
 export { SectionHeader } from './components/SectionHeader';
 export { SectionLabel } from './components/SectionLabel';
 export { SelectDropdown } from './components/SelectDropdown';
+export { SourceBadge, type SourceBadgeProps } from './components/SourceBadge';
 export { TextArea, type TextAreaProps } from './components/TextArea';
 
 // ── Overlays & Modals ─────────────────────────────────────────────────────

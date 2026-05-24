@@ -1,47 +1,10 @@
 import { z } from 'zod';
 
-// Remote preference options
-export const RemotePreferenceSchema = z.enum(['remote', 'hybrid', 'on-site', 'any']);
-
-// Seniority levels
-export const SenioritySchema = z.enum([
-  'entry',
-  'junior',
-  'mid',
-  'senior',
-  'lead',
-  'principal',
-  'any',
-]);
-
 // Performance modes
 export const PerformanceModeSchema = z.enum(['low-memory', 'balanced', 'performance']);
 
 // Output tone options
 export const OutputToneSchema = z.enum(['professional', 'casual', 'formal', 'creative']);
-
-// Location preference
-export const LocationPreferenceSchema = z.object({
-  city: z.string().optional(),
-  country: z.string().optional(),
-  region: z.string().optional(),
-  radius: z.number().min(0).max(500).optional(), // km
-});
-
-// Tech stack item
-export const TechStackItemSchema = z.object({
-  name: z.string(),
-  category: z.enum(['language', 'framework', 'database', 'tool', 'other']),
-  proficiency: z.enum(['beginner', 'intermediate', 'advanced', 'expert']).optional(),
-});
-
-// Salary expectations
-export const SalaryExpectationSchema = z.object({
-  min: z.number().min(0).optional(),
-  max: z.number().min(0).optional(),
-  currency: z.string().default('USD'),
-  period: z.enum(['hourly', 'monthly', 'yearly']).default('yearly'),
-});
 
 // AI model preference
 export const AIModelPreferenceSchema = z.object({
@@ -96,13 +59,6 @@ export const PreferencesSchema = z.object({
   aiProviderConfig: AiProviderConfigSchema.optional(),
   outputTone: OutputToneSchema.default('professional'),
 
-  // Job Preferences
-  location: LocationPreferenceSchema.optional(),
-  remote: RemotePreferenceSchema.default('any'),
-  techStack: z.array(TechStackItemSchema).default([]),
-  seniority: SenioritySchema.default('any'),
-  salary: SalaryExpectationSchema.optional(),
-
   // Resume Preferences
   resume: ResumePreferenceSchema.optional(),
 
@@ -117,12 +73,7 @@ export const PreferencesSchema = z.object({
 });
 
 export type Preferences = z.infer<typeof PreferencesSchema>;
-export type RemotePreference = z.infer<typeof RemotePreferenceSchema>;
-export type Seniority = z.infer<typeof SenioritySchema>;
 export type PerformanceMode = z.infer<typeof PerformanceModeSchema>;
 export type OutputTone = z.infer<typeof OutputToneSchema>;
-export type LocationPreference = z.infer<typeof LocationPreferenceSchema>;
-export type TechStackItem = z.infer<typeof TechStackItemSchema>;
-export type SalaryExpectation = z.infer<typeof SalaryExpectationSchema>;
 export type AIModelPreference = z.infer<typeof AIModelPreferenceSchema>;
 export type ResumePreference = z.infer<typeof ResumePreferenceSchema>;

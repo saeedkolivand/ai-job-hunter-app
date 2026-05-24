@@ -1,13 +1,13 @@
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { cn } from '../lib/cn';
-import { Button } from './Button';
+import { RefreshButton } from './RefreshButton';
 
 interface ErrorStateProps {
   title?: string;
   description?: string;
-  onRetry?: () => void;
+  onRetry?: () => void | Promise<void>;
   action?: ReactNode;
   className?: string;
 }
@@ -34,10 +34,9 @@ export function ErrorState({
         {description && <p className="max-w-xs text-xs text-foreground/40">{description}</p>}
       </div>
       {onRetry && (
-        <Button variant="ghost" size="sm" onClick={onRetry}>
-          <RefreshCw size={13} />
+        <RefreshButton onRefresh={onRetry} size={13}>
           Try again
-        </Button>
+        </RefreshButton>
       )}
       {action}
     </div>
