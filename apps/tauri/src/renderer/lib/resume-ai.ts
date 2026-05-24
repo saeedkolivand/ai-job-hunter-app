@@ -17,6 +17,7 @@ import {
   type PromptMeta,
   validateAndRepair,
 } from '@ajh/prompts/analyze';
+import { detectLanguages } from '@ajh/shared/language-detection';
 
 import { getClient } from './app-client';
 
@@ -29,6 +30,8 @@ interface RunAnalysisOptions {
   locale?: string;
   meta?: PromptMeta;
   onToken?: (token: string) => void;
+  onJobId?: (jobId: string) => void;
+  signal?: AbortSignal;
 }
 
 /**
@@ -43,9 +46,19 @@ export async function runAnalysis({
   locale = 'en',
   meta = {},
   onToken,
+  onJobId,
+  signal,
 }: RunAnalysisOptions): Promise<AnalysisResult> {
+  // Detect languages client-side for accurate mismatch detection
+  const clientSideDetection = detectLanguages(resume, jobAd);
+
   const systemPrompt = buildSystemPrompt();
-  const userPrompt = buildAnalysisPrompt(resume, jobAd, meta);
+  // Pass detected languages to LLM so it uses correct info during analysis
+  const userPrompt = buildAnalysisPrompt(resume, jobAd, {
+    ...meta,
+    resumeLanguage: clientSideDetection.resumeName,
+    jobAdLanguage: clientSideDetection.jobAdName,
+  });
 
   // Enqueue the generation job
   const validLocales = ['en', 'de', 'fr', 'es', 'it', 'tr', 'pt', 'ru', 'zh', 'ja', 'ko'] as const;
@@ -65,6 +78,7 @@ export async function runAnalysis({
   })) as { jobId: string };
 
   const jobId = res.jobId;
+  onJobId?.(jobId);
 
   // Collect streamed tokens into the full response
   const full = await new Promise<string>((resolve, reject) => {
@@ -82,10 +96,23 @@ export async function runAnalysis({
       }
     });
 
+    // Handle abort signal
+    let abortListener: (() => void) | null = null;
+    if (signal) {
+      abortListener = () => {
+        off();
+        // Cancel the job on the backend
+        void api.jobs.cancel(jobId);
+        reject(new Error('Analysis cancelled'));
+      };
+      signal.addEventListener('abort', abortListener);
+    }
+
     // Timeout safety — local LLMs can be slow
-    setTimeout(
+    const timeoutId = setTimeout(
       () => {
         off();
+        if (abortListener && signal) signal.removeEventListener('abort', abortListener);
         resolve(buffer);
       },
       5 * 60 * 1000
@@ -103,11 +130,15 @@ export async function runAnalysis({
           if (!job) return;
           if (job.status === 'failed' || job.status === 'cancelled') {
             clearInterval(failCheck);
+            clearTimeout(timeoutId);
             off();
+            if (abortListener && signal) signal.removeEventListener('abort', abortListener);
             reject(new Error(`Analysis job ${job.status}`));
           } else if (job.status === 'completed') {
             clearInterval(failCheck);
+            clearTimeout(timeoutId);
             off();
+            if (abortListener && signal) signal.removeEventListener('abort', abortListener);
             // Use the job result text if the stream already buffered everything,
             // otherwise fall back to whatever the job stored.
             resolve(buffer || job.result?.text || '');
@@ -126,6 +157,13 @@ export async function runAnalysis({
       `The AI returned malformed output. Try again — sometimes local models need a retry.\n\nRaw output preview:\n${full.slice(0, 300)}`
     );
   }
+
+  // Override LLM language detection with accurate client-side detection
+  result.detectedLanguages = {
+    resume: clientSideDetection.resumeName,
+    jobAd: clientSideDetection.jobAdName,
+    mismatch: clientSideDetection.mismatch,
+  };
 
   return result;
 }

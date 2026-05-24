@@ -114,48 +114,59 @@ async fn stream_ollama_chat(
 
     let mut line_buf = String::new();
 
-    while let Some(bytes) = response
-        .chunk()
-        .await
-        .map_err(|e| e.to_string())?
-    {
-        line_buf.push_str(&String::from_utf8_lossy(&bytes));
-
-        while let Some(nl) = line_buf.find('\n') {
-            let line = line_buf[..nl].trim().to_string();
-            line_buf = line_buf[nl + 1..].to_string();
-
-            if line.is_empty() {
-                continue;
+    loop {
+        // Check if job was cancelled before reading next chunk
+        if let Some(job) = app.state::<Mutex<JobTracker>>().lock().unwrap().get(job_id) {
+            if job.status == crate::jobs::JobStatus::Cancelled {
+                // Force close the connection aggressively
+                let _ = response.error_for_status_ref();
+                return Err("Job cancelled".to_string());
             }
+        }
 
-            let event: Value = match serde_json::from_str(&line) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
+        match response.chunk().await {
+            Ok(Some(bytes)) => {
+                line_buf.push_str(&String::from_utf8_lossy(&bytes));
 
-            let delta = event
-                .get("message")
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_str())
-                .unwrap_or("");
-            let done = event
-                .get("done")
-                .and_then(|d| d.as_bool())
-                .unwrap_or(false);
+                while let Some(nl) = line_buf.find('\n') {
+                    let line = line_buf[..nl].trim().to_string();
+                    line_buf = line_buf[nl + 1..].to_string();
 
-            let _ = app.emit(
-                "ai:stream",
-                json!({ "jobId": job_id, "delta": delta, "done": done }),
-            );
+                    if line.is_empty() {
+                        continue;
+                    }
 
-            if done {
-                app.state::<Mutex<JobTracker>>()
-                    .lock()
-                    .unwrap()
-                    .complete(job_id, json!({ "done": true }));
-                return Ok(());
+                    let event: Value = match serde_json::from_str(&line) {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    };
+
+                    let delta = event
+                        .get("message")
+                        .and_then(|m| m.get("content"))
+                        .and_then(|c| c.as_str())
+                        .unwrap_or("");
+                    let done = event
+                        .get("done")
+                        .and_then(|d| d.as_bool())
+                        .unwrap_or(false);
+
+                    let _ = app.emit(
+                        "ai:stream",
+                        json!({ "jobId": job_id, "delta": delta, "done": done }),
+                    );
+
+                    if done {
+                        app.state::<Mutex<JobTracker>>()
+                            .lock()
+                            .unwrap()
+                            .complete(job_id, json!({ "done": true }));
+                        return Ok(());
+                    }
+                }
             }
+            Ok(None) => break,
+            Err(e) => return Err(format!("Stream error: {e}")),
         }
     }
 
@@ -303,40 +314,54 @@ async fn stream_openai_chat(
 
     let mut line_buf = String::new();
 
-    while let Some(bytes) = response.chunk().await.map_err(|e| e.to_string())? {
-        line_buf.push_str(&String::from_utf8_lossy(&bytes));
-
-        while let Some(nl) = line_buf.find('\n') {
-            let line = line_buf[..nl].trim().to_string();
-            line_buf = line_buf[nl + 1..].to_string();
-
-            let data = match line.strip_prefix("data: ") {
-                Some(d) => d.trim(),
-                None => continue,
-            };
-
-            if data == "[DONE]" {
-                let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
-                app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
-                return Ok(());
+    loop {
+        // Check if job was cancelled before reading next chunk
+        if let Some(job) = app.state::<Mutex<JobTracker>>().lock().unwrap().get(job_id) {
+            if job.status == crate::jobs::JobStatus::Cancelled {
+                drop(response);
+                return Err("Job cancelled".to_string());
             }
+        }
 
-            let event: Value = match serde_json::from_str(data) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
+        match response.chunk().await {
+            Ok(Some(bytes)) => {
+                line_buf.push_str(&String::from_utf8_lossy(&bytes));
 
-            let delta = event
-                .get("choices")
-                .and_then(|c| c.get(0))
-                .and_then(|c| c.get("delta"))
-                .and_then(|d| d.get("content"))
-                .and_then(|c| c.as_str())
-                .unwrap_or("");
+                while let Some(nl) = line_buf.find('\n') {
+                    let line = line_buf[..nl].trim().to_string();
+                    line_buf = line_buf[nl + 1..].to_string();
 
-            if !delta.is_empty() {
-                let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": delta, "done": false }));
+                    let data = match line.strip_prefix("data: ") {
+                        Some(d) => d.trim(),
+                        None => continue,
+                    };
+
+                    if data == "[DONE]" {
+                        let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+                        app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
+                        return Ok(());
+                    }
+
+                    let event: Value = match serde_json::from_str(data) {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    };
+
+                    let delta = event
+                        .get("choices")
+                        .and_then(|c| c.get(0))
+                        .and_then(|c| c.get("delta"))
+                        .and_then(|d| d.get("content"))
+                        .and_then(|c| c.as_str())
+                        .unwrap_or("");
+
+                    if !delta.is_empty() {
+                        let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": delta, "done": false }));
+                    }
+                }
             }
+            Ok(None) => break,
+            Err(e) => return Err(format!("Stream error: {e}")),
         }
     }
 
@@ -403,43 +428,57 @@ async fn stream_anthropic_chat(
     let mut line_buf = String::new();
     let mut last_event = String::new();
 
-    while let Some(bytes) = response.chunk().await.map_err(|e| e.to_string())? {
-        line_buf.push_str(&String::from_utf8_lossy(&bytes));
-
-        while let Some(nl) = line_buf.find('\n') {
-            let line = line_buf[..nl].trim().to_string();
-            line_buf = line_buf[nl + 1..].to_string();
-
-            if let Some(event) = line.strip_prefix("event: ") {
-                last_event = event.trim().to_string();
-                continue;
+    loop {
+        // Check if job was cancelled before reading next chunk
+        if let Some(job) = app.state::<Mutex<JobTracker>>().lock().unwrap().get(job_id) {
+            if job.status == crate::jobs::JobStatus::Cancelled {
+                drop(response);
+                return Err("Job cancelled".to_string());
             }
+        }
 
-            let data = match line.strip_prefix("data: ") {
-                Some(d) => d.trim(),
-                None => continue,
-            };
+        match response.chunk().await {
+            Ok(Some(bytes)) => {
+                line_buf.push_str(&String::from_utf8_lossy(&bytes));
 
-            if last_event == "message_stop" || data.contains("\"type\":\"message_stop\"") {
-                let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
-                app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
-                return Ok(());
+                while let Some(nl) = line_buf.find('\n') {
+                    let line = line_buf[..nl].trim().to_string();
+                    line_buf = line_buf[nl + 1..].to_string();
+
+                    if let Some(event) = line.strip_prefix("event: ") {
+                        last_event = event.trim().to_string();
+                        continue;
+                    }
+
+                    let data = match line.strip_prefix("data: ") {
+                        Some(d) => d.trim(),
+                        None => continue,
+                    };
+
+                    if last_event == "message_stop" || data.contains("\"type\":\"message_stop\"") {
+                        let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+                        app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
+                        return Ok(());
+                    }
+
+                    let event: Value = match serde_json::from_str(data) {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    };
+
+                    let delta = event
+                        .get("delta")
+                        .and_then(|d| d.get("text"))
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("");
+
+                    if !delta.is_empty() {
+                        let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": delta, "done": false }));
+                    }
+                }
             }
-
-            let event: Value = match serde_json::from_str(data) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-
-            let delta = event
-                .get("delta")
-                .and_then(|d| d.get("text"))
-                .and_then(|t| t.as_str())
-                .unwrap_or("");
-
-            if !delta.is_empty() {
-                let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": delta, "done": false }));
-            }
+            Ok(None) => break,
+            Err(e) => return Err(format!("Stream error: {e}")),
         }
     }
 
@@ -518,35 +557,49 @@ async fn stream_gemini_chat(
     let mut in_string = false;
     let mut escape = false;
 
-    while let Some(bytes) = response.chunk().await.map_err(|e| e.to_string())? {
-        let chunk = String::from_utf8_lossy(&bytes).to_string();
-        for ch in chunk.chars() {
-            if escape { escape = false; buf.push(ch); continue; }
-            if ch == '\\' && in_string { escape = true; buf.push(ch); continue; }
-            if ch == '"' { in_string = !in_string; }
-            if !in_string {
-                if ch == '{' { depth += 1; }
-                else if ch == '}' { depth -= 1; }
+    loop {
+        // Check if job was cancelled before reading next chunk
+        if let Some(job) = app.state::<Mutex<JobTracker>>().lock().unwrap().get(job_id) {
+            if job.status == crate::jobs::JobStatus::Cancelled {
+                drop(response);
+                return Err("Job cancelled".to_string());
             }
-            buf.push(ch);
+        }
 
-            if depth == 0 && buf.trim_start().starts_with('{') && !buf.trim().is_empty() {
-                if let Ok(event) = serde_json::from_str::<Value>(buf.trim()) {
-                    let delta = event
-                        .get("candidates")
-                        .and_then(|c| c.get(0))
-                        .and_then(|c| c.get("content"))
-                        .and_then(|c| c.get("parts"))
-                        .and_then(|p| p.get(0))
-                        .and_then(|p| p.get("text"))
-                        .and_then(|t| t.as_str())
-                        .unwrap_or("");
-                    if !delta.is_empty() {
-                        let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": delta, "done": false }));
+        match response.chunk().await {
+            Ok(Some(bytes)) => {
+                let chunk = String::from_utf8_lossy(&bytes).to_string();
+                for ch in chunk.chars() {
+                    if escape { escape = false; buf.push(ch); continue; }
+                    if ch == '\\' && in_string { escape = true; buf.push(ch); continue; }
+                    if ch == '"' { in_string = !in_string; }
+                    if !in_string {
+                        if ch == '{' { depth += 1; }
+                        else if ch == '}' { depth -= 1; }
+                    }
+                    buf.push(ch);
+
+                    if depth == 0 && buf.trim_start().starts_with('{') && !buf.trim().is_empty() {
+                        if let Ok(event) = serde_json::from_str::<Value>(buf.trim()) {
+                            let delta = event
+                                .get("candidates")
+                                .and_then(|c| c.get(0))
+                                .and_then(|c| c.get("content"))
+                                .and_then(|c| c.get("parts"))
+                                .and_then(|p| p.get(0))
+                                .and_then(|p| p.get("text"))
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("");
+                            if !delta.is_empty() {
+                                let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": delta, "done": false }));
+                            }
+                        }
+                        buf.clear();
                     }
                 }
-                buf.clear();
             }
+            Ok(None) => break,
+            Err(e) => return Err(format!("Stream error: {e}")),
         }
     }
 

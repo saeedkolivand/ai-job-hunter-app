@@ -103,6 +103,7 @@ function AIGeneratePage() {
   const [streamBuffer, setStreamBuffer] = useState('');
   const stageIdxRef = useRef(0);
   const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Copy state
   const [copied, setCopied] = useState(false);
@@ -183,23 +184,45 @@ function AIGeneratePage() {
     setStage('generating');
     startStageRotation();
 
+    // Create abort controller for this generation
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       if (target === 'resume' || target === 'both') {
         setActiveOut('resume');
         setStreamBuffer('');
-        await generateResume(resume, jobAd, meta, mode, aiModel.defaultModel, (tok) => {
-          setResumeOut((p) => p + tok);
-          setStreamBuffer((p) => (p + tok).slice(-600));
-        });
+        await generateResume(
+          resume,
+          jobAd,
+          meta,
+          mode,
+          aiModel.defaultModel,
+          (tok) => {
+            setResumeOut((p) => p + tok);
+            setStreamBuffer((p) => (p + tok).slice(-600));
+          },
+          undefined,
+          controller.signal
+        );
       }
 
       if (target === 'cover' || target === 'both') {
         setActiveOut('cover');
         setStreamBuffer('');
-        await generateCoverLetter(resume, jobAd, meta, mode, aiModel.defaultModel, (tok) => {
-          setCoverOut((p) => p + tok);
-          setStreamBuffer((p) => (p + tok).slice(-600));
-        });
+        await generateCoverLetter(
+          resume,
+          jobAd,
+          meta,
+          mode,
+          aiModel.defaultModel,
+          (tok) => {
+            setCoverOut((p) => p + tok);
+            setStreamBuffer((p) => (p + tok).slice(-600));
+          },
+          undefined,
+          controller.signal
+        );
       }
 
       stopStageRotation();
@@ -210,10 +233,16 @@ function AIGeneratePage() {
       stopStageRotation();
       setError(err instanceof Error ? err.message : t('aiGenerate.errors.generationFailed'));
       setStage('configuring');
+    } finally {
+      abortControllerRef.current = null;
     }
   };
 
   const reset = () => {
+    // Abort running generation if exists
+    if (abortControllerRef.current && stage === 'generating') {
+      abortControllerRef.current.abort();
+    }
     stopStageRotation();
     setStage('idle');
     setMeta(null);

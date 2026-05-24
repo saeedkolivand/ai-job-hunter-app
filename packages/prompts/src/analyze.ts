@@ -373,6 +373,18 @@ export function buildAnalysisPrompt(resume: string, jobAd: string, meta: PromptM
       ? `Write all text fields (feedback, recommendations, rewrites, perspectives) in ${meta.targetLocale}.`
       : '';
 
+  // Pre-detected languages (skip LLM detection)
+  const langDetectionNote =
+    meta.resumeLanguage && meta.jobAdLanguage
+      ? `
+### PRE-DETECTED LANGUAGES (DO NOT RE-DETECT)
+- Resume language: ${meta.resumeLanguage}
+- Job ad language: ${meta.jobAdLanguage}
+- Language mismatch: ${meta.resumeLanguage !== meta.jobAdLanguage}
+
+Use these pre-detected languages for your analysis. DO NOT perform your own language detection in STEP 1.`
+      : '';
+
   // Smart truncation for large resumes AND small models
   const resumeTokens = estimateTokens(resume);
   const stats = getResumeStats(resume);
@@ -401,11 +413,12 @@ ${r}
 
 ### JOB ADVERTISEMENT ###
 ${j}
+${langDetectionNote}
 
 ### ANALYSIS STEPS ###
 
 STEP 1 — LANGUAGE DETECTION
-Detect the language of the resume and the job ad separately.
+${meta.resumeLanguage && meta.jobAdLanguage ? 'Use the pre-detected languages provided above. DO NOT re-detect.' : 'Detect the language of the resume and the job ad separately.'}
 
 STEP 2 — JOB REQUIREMENTS EXTRACTION
 Extract from the job ad:

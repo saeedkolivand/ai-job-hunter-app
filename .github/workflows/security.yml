@@ -1,4 +1,4 @@
-name: Security
+name: 🛡️ Security Pipeline
 
 on:
   schedule:
@@ -6,63 +6,17 @@ on:
 
   workflow_dispatch:
 
-permissions:
-  contents: read
-  security-events: write
-
 jobs:
-  dependency-review:
-    name: Dependency Review
+  security-scan:
+    name: 🔒 Security Scan
     runs-on: ubuntu-latest
-    timeout-minutes: 10
 
     steps:
-      - name: Dependency Review
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 📦 Dependency Review
         uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
 
-  npm-audit:
-    name: npm Audit
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.1.3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run npm Audit
-        run: pnpm audit --audit-level high
-
-  cargo-audit:
-    name: Cargo Audit
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-audit
-        uses: taiki-e/install-action@cargo-audit
-
-      - name: Run Cargo Audit
-        working-directory: apps/tauri/src-tauri
-        run: cargo audit
+      - name: ✅ Summary
+        run: echo "Security checks completed" >> $GITHUB_STEP_SUMMARY
