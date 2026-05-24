@@ -114,7 +114,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-          token: ${{ secrets.GH_TOKEN || github.token }}
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
@@ -149,7 +149,7 @@ jobs:
             apps/tauri/src-tauri/Cargo.toml \
             apps/tauri/src-tauri/tauri.conf.json
           git commit -m "chore: sync version files to v${{ needs.release.outputs.version }} [skip ci]"
-          git push origin HEAD:main
+          git push git@github.com:saeedkolivand/ai-job-hunter-assistant-app.git HEAD:main
 
   build:
     name: 🏗️ Build Tauri Apps
