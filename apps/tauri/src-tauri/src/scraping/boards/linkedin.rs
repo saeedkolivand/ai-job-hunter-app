@@ -130,3 +130,60 @@ fn resolve_data_dir() -> std::path::PathBuf {
         .unwrap_or_default();
     std::path::PathBuf::from(home).join(".ajh")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_linkedin_scraper_id() {
+        let scraper = LinkedInScraper;
+        assert_eq!(scraper.id(), "linkedin");
+    }
+
+    #[test]
+    fn test_linkedin_scraper_display_name() {
+        let scraper = LinkedInScraper;
+        assert_eq!(scraper.display_name(), "LinkedIn");
+    }
+
+    #[test]
+    fn test_linkedin_scraper_mode() {
+        let scraper = LinkedInScraper;
+        assert_eq!(scraper.mode(), crate::scraping::types::ScraperMode::Http);
+    }
+
+    #[test]
+    fn test_linkedin_scraper_mode_partial_eq() {
+        let mode = crate::scraping::types::ScraperMode::Http;
+        assert_eq!(mode, crate::scraping::types::ScraperMode::Http);
+        assert_ne!(mode, crate::scraping::types::ScraperMode::Browser);
+    }
+
+    #[test]
+    fn test_resolve_data_dir_env_var() {
+        unsafe { std::env::set_var("AJH_DATA_DIR", "/custom/path") };
+        let result = resolve_data_dir();
+        assert_eq!(result, std::path::PathBuf::from("/custom/path"));
+        unsafe { std::env::remove_var("AJH_DATA_DIR") };
+    }
+
+    #[test]
+    fn test_resolve_data_dir_default() {
+        unsafe { std::env::remove_var("AJH_DATA_DIR") };
+        unsafe { std::env::set_var("USERPROFILE", "/home/user") };
+        let result = resolve_data_dir();
+        assert!(result.ends_with(".ajh"));
+        unsafe { std::env::remove_var("USERPROFILE") };
+    }
+
+    #[test]
+    fn test_resolve_data_dir_home_fallback() {
+        unsafe { std::env::remove_var("AJH_DATA_DIR") };
+        unsafe { std::env::remove_var("USERPROFILE") };
+        unsafe { std::env::set_var("HOME", "/home/user") };
+        let result = resolve_data_dir();
+        assert!(result.ends_with(".ajh"));
+        unsafe { std::env::remove_var("HOME") };
+    }
+}

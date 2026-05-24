@@ -282,3 +282,169 @@ impl LinkedInJobsApiClient {
         self.client.update_session(session_data);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_relative_time_hours() {
+        let result = parse_relative_time("1 hour ago");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_parse_relative_time_days() {
+        let result = parse_relative_time("2 days ago");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_parse_relative_time_weeks() {
+        let result = parse_relative_time("1 week ago");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_parse_relative_time_minutes() {
+        let result = parse_relative_time("30 minutes ago");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_parse_relative_time_invalid() {
+        let result = parse_relative_time("invalid time");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_relative_time_empty() {
+        let result = parse_relative_time("");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_relative_time_months() {
+        let result = parse_relative_time("3 months ago");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_jobs_search_params_default() {
+        let params = JobsSearchParams {
+            keywords: "rust".to_string(),
+            location: None,
+            start: 0,
+            date_filter: None,
+            job_type: None,
+            work_type: None,
+            experience_level: None,
+            easy_apply: None,
+            actively_hiring: None,
+            verified: None,
+            sort_by: None,
+        };
+        assert_eq!(params.keywords, "rust");
+        assert_eq!(params.start, 0);
+    }
+
+    #[test]
+    fn test_jobs_search_params_with_filters() {
+        let params = JobsSearchParams {
+            keywords: "rust".to_string(),
+            location: Some("remote".to_string()),
+            start: 0,
+            date_filter: Some("week".to_string()),
+            job_type: Some("F".to_string()),
+            work_type: Some("1".to_string()),
+            experience_level: Some("2".to_string()),
+            easy_apply: Some(true),
+            actively_hiring: Some(true),
+            verified: Some(false),
+            sort_by: Some("DD".to_string()),
+        };
+        assert_eq!(params.location, Some("remote".to_string()));
+        assert_eq!(params.easy_apply, Some(true));
+    }
+
+    #[test]
+    fn test_parse_relative_time_zero() {
+        let result = parse_relative_time("0 hours ago");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_parse_relative_time_case_insensitive() {
+        let result = parse_relative_time("2 HOURS AGO");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_jobs_search_params_with_start() {
+        let params = JobsSearchParams {
+            keywords: "rust".to_string(),
+            location: None,
+            start: 25,
+            date_filter: None,
+            job_type: None,
+            work_type: None,
+            experience_level: None,
+            easy_apply: None,
+            actively_hiring: None,
+            verified: None,
+            sort_by: None,
+        };
+        assert_eq!(params.start, 25);
+    }
+
+    #[test]
+    fn test_jobs_search_params_all_filters_false() {
+        let params = JobsSearchParams {
+            keywords: "rust".to_string(),
+            location: None,
+            start: 0,
+            date_filter: None,
+            job_type: None,
+            work_type: None,
+            experience_level: None,
+            easy_apply: Some(false),
+            actively_hiring: Some(false),
+            verified: Some(false),
+            sort_by: None,
+        };
+        assert_eq!(params.easy_apply, Some(false));
+        assert_eq!(params.actively_hiring, Some(false));
+    }
+
+    #[test]
+    fn test_jobs_search_params_clone() {
+        let params = JobsSearchParams {
+            keywords: "rust".to_string(),
+            location: Some("remote".to_string()),
+            start: 0,
+            date_filter: Some("week".to_string()),
+            job_type: Some("F".to_string()),
+            work_type: Some("1".to_string()),
+            experience_level: Some("2".to_string()),
+            easy_apply: Some(true),
+            actively_hiring: Some(true),
+            verified: Some(false),
+            sort_by: Some("DD".to_string()),
+        };
+        let cloned = params.clone();
+        assert_eq!(params.keywords, cloned.keywords);
+        assert_eq!(params.location, cloned.location);
+    }
+
+    #[test]
+    fn test_parse_relative_time_with_spaces() {
+        let result = parse_relative_time("  2 hours ago  ");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_parse_relative_time_large_number() {
+        let result = parse_relative_time("100 days ago");
+        assert!(result.is_some());
+    }
+}
