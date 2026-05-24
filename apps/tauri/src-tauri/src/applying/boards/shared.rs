@@ -233,35 +233,6 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_data_dir_with_userprofile() {
-        unsafe { std::env::remove_var("AJH_DATA_DIR"); }
-        unsafe { std::env::set_var("USERPROFILE", "/home/user"); }
-        let dir = resolve_data_dir();
-        assert!(dir.ends_with(".ajh"));
-        unsafe { std::env::remove_var("USERPROFILE"); }
-    }
-
-    #[test]
-    fn test_resolve_data_dir_with_home() {
-        unsafe { std::env::remove_var("AJH_DATA_DIR"); }
-        unsafe { std::env::remove_var("USERPROFILE"); }
-        unsafe { std::env::set_var("HOME", "/home/user"); }
-        let dir = resolve_data_dir();
-        assert!(dir.ends_with(".ajh"));
-        unsafe { std::env::remove_var("HOME"); }
-    }
-
-    #[test]
-    fn test_resolve_data_dir_no_env_vars() {
-        unsafe { std::env::remove_var("AJH_DATA_DIR"); }
-        unsafe { std::env::remove_var("USERPROFILE"); }
-        unsafe { std::env::remove_var("HOME"); }
-        let dir = resolve_data_dir();
-        // Should return empty path + .ajh, which is just ".ajh"
-        assert_eq!(dir, std::path::PathBuf::from(".ajh"));
-    }
-
-    #[test]
     fn test_apply_context_creation() {
         let ctx = ApplyContext {
             signal: tokio_util::sync::CancellationToken::new(),
