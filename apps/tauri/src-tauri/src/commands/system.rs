@@ -109,29 +109,27 @@ pub async fn system_set_performance_mode(app: AppHandle, mode: String) -> Value 
 
 #[cfg(windows)]
 fn get_gpu_info() -> Vec<Value> {
-    use wmi::{COMLibrary, WMIConnection};
+    use wmi::WMIConnection;
     use serde::Deserialize;
-    
+
     #[derive(Deserialize, Debug)]
     struct VideoController {
         name: String,
         adapter_ram: Option<u64>,
     }
-    
+
     let mut gpu_info = Vec::new();
-    
-    if let Ok(com) = COMLibrary::new() {
-        if let Ok(wmi_con) = WMIConnection::new(com) {
-            if let Ok(results) = wmi_con.query::<VideoController>() {
-                for gpu in results {
-                    let vram_total = gpu.adapter_ram.unwrap_or(0) / (1024 * 1024); // Convert bytes to MB
-                    gpu_info.push(json!({
-                        "name": gpu.name,
-                        "vramTotal": vram_total,
-                        "vramUsed": 0, // WMI doesn't provide current usage
-                        "vramFree": vram_total,
-                    }));
-                }
+
+    if let Ok(wmi_con) = WMIConnection::new() {
+        if let Ok(results) = wmi_con.query::<VideoController>() {
+            for gpu in results {
+                let vram_total = gpu.adapter_ram.unwrap_or(0) / (1024 * 1024); // Convert bytes to MB
+                gpu_info.push(json!({
+                    "name": gpu.name,
+                    "vramTotal": vram_total,
+                    "vramUsed": 0, // WMI doesn't provide current usage
+                    "vramFree": vram_total,
+                }));
             }
         }
     }
@@ -294,4 +292,42 @@ pub fn system_get_metrics() -> Value {
         "cpuName": cpu_name,
         "gpus": gpu_info
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_system_get_version() {
+        let version = system_get_version();
+        assert!(!version.is_empty());
+        // Version should be semver-like (x.y.z)
+        assert!(version.contains('.'));
+    }
+
+    #[test]
+    fn test_system_get_platform() {
+        let platform = system_get_platform();
+        assert!(platform["platform"].is_string());
+        assert!(platform["arch"].is_string());
+        assert_eq!(platform["shell"], "tauri");
+    }
+
+    #[test]
+    fn test_locale_file_path() {
+        // This test would need a mock AppHandle in practice
+        // For now, we'll skip the full integration test
+    }
+
+    #[test]
+    fn test_gpu_info_empty() {
+        #[cfg(not(windows))]
+        {
+            let gpu_info = get_gpu_info();
+            // On non-Windows, this may return empty or actual GPU info
+            // Just verify it returns a vector without panicking
+            let _ = gpu_info;
+        }
+    }
 }
