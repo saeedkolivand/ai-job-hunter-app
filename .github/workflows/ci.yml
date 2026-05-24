@@ -57,7 +57,7 @@ jobs:
         run: echo "value=${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}" >> $GITHUB_OUTPUT
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache@v5
         with:
           path: .turbo
           key: ${{ steps.cache-key.outputs.value }}
@@ -75,13 +75,6 @@ jobs:
           echo "::group::Building shared packages"
           pnpm build:packages
           echo "::endgroup::"
-
-      - name: 💾 Save Turbo Cache
-        if: success()
-        uses: actions/cache/save@v4
-        with:
-          path: .turbo
-          key: ${{ steps.cache-key.outputs.value }}
 
   lint-format:
     name: ✨ Lint & Format
@@ -105,7 +98,7 @@ jobs:
           cache: pnpm
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache@v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
