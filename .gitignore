@@ -210,4 +210,7 @@ temp/
 CHANGELOG.md
 
 .claude
-.claude-flow
+.claude-flow*
+.profraw
+.cargo
+target/llvm-cov/
