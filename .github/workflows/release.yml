@@ -192,6 +192,14 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: 💾 Restore Turbo Cache
+        uses: actions/cache@v5
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
       - name: 🦀 Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -255,31 +263,27 @@ jobs:
           rustup target add aarch64-apple-darwin
           echo "::endgroup::"
 
-      - name: 🏗️ Build Tauri Application (Intel)
-        id: tauri-build-intel
+      - name: 🏗️ Build Tauri Application
+        id: tauri-build
         continue-on-error: true
         env:
           TAURI_SIGNING_PRIVATE_KEY: ./tauri.key
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          echo "::group::Building Tauri application (Intel x86_64)"
-          pnpm --filter @ajh/tauri tauri build --target x86_64-apple-darwin
-          echo "::endgroup::"
-
-      - name: �️ Build Tauri Application (Apple Silicon)
-        id: tauri-build-arm
-        if: runner.os == 'macOS'
-        continue-on-error: true
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ./tauri.key
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          echo "::group::Building Tauri application (ARM64)"
-          pnpm --filter @ajh/tauri tauri build --target aarch64-apple-darwin
+          echo "::group::Building Tauri application"
+          if [ "${{ runner.os }}" == "macOS" ]; then
+            # Build Intel
+            pnpm --filter @ajh/tauri tauri build --target x86_64-apple-darwin
+            # Build Apple Silicon
+            pnpm --filter @ajh/tauri tauri build --target aarch64-apple-darwin
+          else
+            # Build for current platform (Linux or Windows)
+            pnpm --filter @ajh/tauri tauri build
+          fi
           echo "::endgroup::"
 
       - name: ❌ Check for Build Failures
-        if: steps.tauri-build-intel.outcome == 'failure' || (runner.os == 'macOS' && steps.tauri-build-arm.outcome == 'failure')
+        if: steps.tauri-build.outcome == 'failure'
         run: |
           echo "::error::Tauri build failed on ${{ matrix.platform }}. Please review the build output above."
           exit 1
@@ -335,10 +339,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Build Details" >> $GITHUB_STEP_SUMMARY
           echo "- **Platform**: ${{ matrix.platform }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Build Status**: ${{ steps.tauri-build-intel.outcome == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ runner.os }}" == "macOS" ]; then
-            echo "- **ARM64 Build**: ${{ steps.tauri-build-arm.outcome == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "- **Build Status**: ${{ steps.tauri-build.outcome == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Version**: v${{ needs.sync-version-files.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Environment" >> $GITHUB_STEP_SUMMARY
@@ -347,7 +348,7 @@ jobs:
           echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
           echo "- **Runner OS**: ${{ runner.os }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.tauri-build-intel.outcome }}" == "failure" ] || [ "${{ runner.os }}" == "macOS" && "${{ steps.tauri-build-arm.outcome }}" == "failure" ]; then
+          if [ "${{ steps.tauri-build.outcome }}" == "failure" ]; then
             echo "### 📊 Artifacts" >> $GITHUB_STEP_SUMMARY
             echo "Build logs uploaded as artifact: \`build-logs-${{ matrix.platform }}-${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
           fi
