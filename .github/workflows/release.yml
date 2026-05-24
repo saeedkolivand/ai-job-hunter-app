@@ -1,5 +1,15 @@
 name: 🚀 Release
 
+# ──────────────────────────────────────────────────────────────────────
+# Release Pipeline
+# ──────────────────────────────────────────────────────────────────────
+# Purpose: Automated semantic release and cross-platform Tauri app builds
+# Triggers: push to main, manual workflow_dispatch
+# Jobs:
+#   - release: Determine version and create GitHub release
+#   - build: Build Tauri apps for Windows, Linux, and macOS
+# ──────────────────────────────────────────────────────────────────────
+
 on:
   push:
     branches:
@@ -67,8 +77,16 @@ jobs:
         run: |
           echo "## 📦 Release Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **New Release Published**: ${{ steps.semantic.outputs.new_release_published }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **New Release Version**: ${{ steps.semantic.outputs.new_release_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "### Release Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Published**: ${{ steps.semantic.outputs.new_release_published == 'true' && '✅ Yes' || '❌ No' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.semantic.outputs.new_release_version || 'N/A' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [Semantic Release Docs](https://semantic-release.gitbook.io/semantic-release/)" >> $GITHUB_STEP_SUMMARY
 
       - name: 🔍 Debug Environment on Failure
         if: failure()
@@ -208,9 +226,24 @@ jobs:
         run: |
           echo "## 🏗️ Tauri Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Details" >> $GITHUB_STEP_SUMMARY
           echo "- **Platform**: ${{ matrix.platform }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Build Status**: ${{ steps.tauri-build.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Status**: ${{ steps.tauri-build.outcome == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Version**: v${{ needs.release.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Runner OS**: ${{ runner.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.tauri-build.outcome }}" == "failure" ]; then
+            echo "### 📊 Artifacts" >> $GITHUB_STEP_SUMMARY
+            echo "Build logs uploaded as artifact: \`build-logs-${{ matrix.platform }}-${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [Tauri Build Guide](https://tauri.app/v1/guides/building/)" >> $GITHUB_STEP_SUMMARY
 
       - name: 🔍 Debug Environment on Failure
         if: failure()
