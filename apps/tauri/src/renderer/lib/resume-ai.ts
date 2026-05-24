@@ -17,7 +17,6 @@ import {
   type PromptMeta,
   validateAndRepair,
 } from '@ajh/prompts/analyze';
-
 import { detectLanguages } from '@ajh/shared/language-detection';
 
 import { getClient } from './app-client';

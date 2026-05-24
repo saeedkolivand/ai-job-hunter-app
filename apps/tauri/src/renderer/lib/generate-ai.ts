@@ -25,7 +25,6 @@ import {
   type GenerationMode,
   validateMetadata,
 } from '@ajh/prompts/generate';
-
 import { detectLanguages } from '@ajh/shared/language-detection';
 
 import { usePreferencesStore } from '@/store/preferences-store';
