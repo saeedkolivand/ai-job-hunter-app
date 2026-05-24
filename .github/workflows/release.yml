@@ -108,6 +108,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    outputs:
+      released: ${{ needs.release.outputs.released }}
+      version: ${{ needs.release.outputs.version }}
+
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
@@ -153,8 +157,8 @@ jobs:
 
   build:
     name: 🏗️ Build Tauri Apps
-    needs: release
-    if: needs.release.outputs.released == 'true'
+    needs: sync-version-files
+    if: needs.sync-version-files.outputs.released == 'true'
 
     strategy:
       fail-fast: false
@@ -174,7 +178,7 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
         with:
-          ref: v${{ needs.release.outputs.version }}
+          ref: v${{ needs.sync-version-files.outputs.version }}
           fetch-depth: 0
 
       - name: 📦 Setup pnpm
@@ -229,7 +233,7 @@ jobs:
           TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
         run: |
           echo "::group::Syncing Tauri release metadata"
-          node scripts/sync-tauri-version.cjs ${{ needs.release.outputs.version }}
+          node scripts/sync-tauri-version.cjs ${{ needs.sync-version-files.outputs.version }}
           echo "::endgroup::"
 
       - name: 🔨 Build Workspace
@@ -287,11 +291,11 @@ jobs:
           cd apps/tauri/src-tauri/target
           # Rename Intel DMG
           if [ -d "x86_64-apple-darwin/release/bundle/dmg" ]; then
-            mv x86_64-apple-darwin/release/bundle/dmg/*.dmg x86_64-apple-darwin/release/bundle/dmg/AI-Job-Hunter-Assistant-${{ needs.release.outputs.version }}-intel.dmg || true
+            mv x86_64-apple-darwin/release/bundle/dmg/*.dmg x86_64-apple-darwin/release/bundle/dmg/AI-Job-Hunter-Assistant-${{ needs.sync-version-files.outputs.version }}-intel.dmg || true
           fi
           # Rename ARM64 DMG
           if [ -d "aarch64-apple-darwin/release/bundle/dmg" ]; then
-            mv aarch64-apple-darwin/release/bundle/dmg/*.dmg aarch64-apple-darwin/release/bundle/dmg/AI-Job-Hunter-Assistant-${{ needs.release.outputs.version }}-apple-silicon.dmg || true
+            mv aarch64-apple-darwin/release/bundle/dmg/*.dmg aarch64-apple-darwin/release/bundle/dmg/AI-Job-Hunter-Assistant-${{ needs.sync-version-files.outputs.version }}-apple-silicon.dmg || true
           fi
           echo "::endgroup::"
 
@@ -299,7 +303,7 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.release.outputs.version }}
+          tag_name: v${{ needs.sync-version-files.outputs.version }}
           files: |
             apps/tauri/src-tauri/target/release/bundle/nsis/*.exe
             apps/tauri/src-tauri/target/release/bundle/msi/*.msi
@@ -335,7 +339,7 @@ jobs:
           if [ "${{ runner.os }}" == "macOS" ]; then
             echo "- **ARM64 Build**: ${{ steps.tauri-build-arm.outcome == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "- **Version**: v${{ needs.release.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: v${{ needs.sync-version-files.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Environment" >> $GITHUB_STEP_SUMMARY
           echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
