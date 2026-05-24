@@ -1,4 +1,15 @@
-name: 🛡️ Security Pipeline
+name: 🛡️ Security
+
+# ──────────────────────────────────────────────────────────────────────
+# Security Pipeline
+# ──────────────────────────────────────────────────────────────────────
+# Purpose: Automated security vulnerability scanning
+# Triggers: Weekly (Mondays at 3 AM UTC), manual workflow_dispatch
+# Jobs:
+#   - dependency-review: GitHub dependency review
+#   - npm-audit: npm/pnpm vulnerability scan
+#   - cargo-audit: Rust/Cargo vulnerability scan
+# ──────────────────────────────────────────────────────────────────────
 
 on:
   schedule:
@@ -6,17 +17,117 @@ on:
 
   workflow_dispatch:
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
-  security-scan:
-    name: 🔒 Security Scan
+  dependency-review:
+    name: 🔍 Dependency Review
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 🔍 Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
+  npm-audit:
+    name: 📦 npm Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 📦 Dependency Review
-        uses: actions/dependency-review-action@v4
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
 
-      - name: ✅ Summary
-        run: echo "Security checks completed" >> $GITHUB_STEP_SUMMARY
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 📥 Install Dependencies
+        run: |
+          echo "::group::Installing dependencies"
+          pnpm install --frozen-lockfile
+          echo "::endgroup::"
+
+      - name: 🔍 Run npm Audit
+        id: npm-audit
+        continue-on-error: true
+        run: |
+          echo "::group::Running npm audit"
+          pnpm audit --audit-level high
+          echo "::endgroup::"
+
+      - name: ❌ Check for Audit Failures
+        if: steps.npm-audit.outcome == 'failure'
+        run: |
+          echo "::error::npm audit found vulnerabilities. Please review the audit output above."
+          exit 1
+
+      - name: 📝 Job Summary
+        if: always()
+        run: |
+          echo "## 📦 npm Audit Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Audit Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ steps.npm-audit.outcome == 'success' && '✅ No vulnerabilities' || '❌ Vulnerabilities found' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [npm Audit Docs](https://docs.npmjs.com/cli/v9/commands/npm-audit)" >> $GITHUB_STEP_SUMMARY
+
+  cargo-audit:
+    name: 🦀 Cargo Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🦀 Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 📥 Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: 🔍 Run Cargo Audit
+        id: cargo-audit
+        continue-on-error: true
+        working-directory: apps/tauri/src-tauri
+        run: |
+          echo "::group::Running cargo audit"
+          cargo audit
+          echo "::endgroup::"
+
+      - name: ❌ Check for Audit Failures
+        if: steps.cargo-audit.outcome == 'failure'
+        run: |
+          echo "::error::cargo audit found vulnerabilities. Please review the audit output above."
+          exit 1
+
+      - name: 📝 Job Summary
+        if: always()
+        run: |
+          echo "## 🦀 Cargo Audit Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Audit Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ steps.cargo-audit.outcome == 'success' && '✅ No vulnerabilities' || '❌ Vulnerabilities found' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [Cargo Audit Docs](https://github.com/rustsec/cargo-audit)" >> $GITHUB_STEP_SUMMARY
