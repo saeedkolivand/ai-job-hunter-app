@@ -50,7 +50,15 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: 📥 Install Dependencies
+      - name: � Restore Turbo Cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: � Install Dependencies
         run: |
           echo "::group::Installing dependencies"
           pnpm install --frozen-lockfile
@@ -130,6 +138,14 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: 💾 Restore Turbo Cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
       - name: 📥 Install Dependencies
         run: |
           echo "::group::Installing dependencies"
@@ -191,6 +207,14 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+
+      - name: 💾 Restore Turbo Cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
 
       - name: 🦀 Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -323,6 +347,14 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+
+      - name: 💾 Restore Turbo Cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
 
       - name: 🦀 Setup Rust
         uses: dtolnay/rust-toolchain@stable
