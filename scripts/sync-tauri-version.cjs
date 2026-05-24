@@ -63,3 +63,11 @@ const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
 pkg.version = version;
 fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 console.log(`apps/tauri/package.json → version=${version}`);
+
+// ── root package.json ───────────────────────────────────────────────────────
+
+const rootPkgPath = path.join(root, 'package.json');
+const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, 'utf8'));
+rootPkg.version = version;
+fs.writeFileSync(rootPkgPath, JSON.stringify(rootPkg, null, 2) + '\n');
+console.log(`package.json → version=${version}`);
