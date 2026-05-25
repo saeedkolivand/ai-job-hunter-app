@@ -6,13 +6,34 @@
   "main": "./dist/index.js",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./dist/index.js",
-    "./ipc": "./dist/ipc/contracts.js",
-    "./language-detection": "./dist/language-detection.js",
-    "./schemas": "./dist/schemas/index.js",
-    "./types": "./dist/types/index.js",
-    "./utils": "./dist/utils.js",
-    "./ai-models": "./dist/ai-models.js"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./ipc": {
+      "types": "./src/ipc/contracts/index.ts",
+      "default": "./dist/ipc/contracts.js"
+    },
+    "./language-detection": {
+      "types": "./src/language-detection.ts",
+      "default": "./dist/language-detection.js"
+    },
+    "./schemas": {
+      "types": "./src/schemas/index.ts",
+      "default": "./dist/schemas/index.js"
+    },
+    "./types": {
+      "types": "./src/types/index.ts",
+      "default": "./dist/types/index.js"
+    },
+    "./utils": {
+      "types": "./src/utils.ts",
+      "default": "./dist/utils.js"
+    },
+    "./ai-models": {
+      "types": "./src/ai-models.ts",
+      "default": "./dist/ai-models.js"
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
