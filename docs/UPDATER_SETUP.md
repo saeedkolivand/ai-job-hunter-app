@@ -1,23 +1,52 @@
 # Tauri Updater Setup Guide
 
-## Problem
+## Overview
 
-The updater is failing with two errors:
+The auto-updater is configured to automatically detect and install updates from GitHub releases. The setup uses Tauri v2's built-in updater plugin with signature verification for security.
 
-1. **"check failed: missing field 'signature'"** - When checking for updates
-2. **"invalid encoding in minisign data"** - When downloading updates
+## Current Configuration
 
-## Root Cause
+The updater is already configured in `apps/tauri/src-tauri/tauri.conf.json`:
 
-Tauri v2's updater plugin requires:
+```json
+{
+  "bundle": {
+    "createUpdaterArtifacts": true,
+    ...
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "YOUR_PUBLIC_KEY",
+      "endpoints": [
+        "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}
+```
 
-1. A properly formatted `latest.json` file in GitHub releases
-2. `.sig` signature files for each platform installer
-3. The public key must match the private key used to sign releases
+## How It Works
 
-## Solution
+1. **Build Process**: When `createUpdaterArtifacts: true` is set, Tauri automatically generates:
+   - `.sig` signature files for each installer (MSI, NSIS, DMG, AppImage)
+   - These files contain cryptographic signatures of the installers
 
-### Step 1: Generate Signing Keys (One-Time Setup)
+2. **Release Workflow**: The GitHub Actions workflow:
+   - Builds the app for all platforms
+   - Collects the generated `.sig` files
+   - Constructs `latest.json` with version info, URLs, and signatures
+   - Uploads all artifacts to the GitHub release
+
+3. **Update Detection**: The app checks `latest.json` on startup and when manually triggered:
+   - Compares version in `latest.json` with current version
+   - If newer, shows update available
+   - Downloads and verifies signature before installing
+
+## Manual Setup (If Needed)
+
+### Generate Signing Keys
+
+If you need to regenerate the signing keys (only do this if the private key is lost):
 
 ```bash
 # Install tauri-cli if not already installed
@@ -34,190 +63,56 @@ tauri signer generate -w ~/.tauri/myapp.key
 
 **Important:** Save the private key securely! You'll need it for every release.
 
-### Step 2: Update tauri.conf.json
+## GitHub Secrets Configuration
 
-Replace the `pubkey` in `apps/tauri/src-tauri/tauri.conf.json` with your new public key:
+The release workflow requires these secrets in your GitHub repository settings:
 
-```json
-{
-  "plugins": {
-    "updater": {
-      "pubkey": "YOUR_NEW_PUBLIC_KEY_HERE",
-      "endpoints": [
-        "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/latest/download/latest.json"
-      ]
-    }
-  }
-}
-```
+- `TAURI_SIGNING_PRIVATE_KEY_BASE64` - Base64-encoded content of your private key file
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` - Password if you set one (optional)
 
-### Step 3: Sign Your Releases
-
-When building for release, sign each platform installer:
+To encode your private key:
 
 ```bash
-# Build the app
+base64 -i ~/.tauri/myapp.key
+# Copy the output and add it as TAURI_SIGNING_PRIVATE_KEY_BASE64 in GitHub secrets
+```
+
+## Testing Updates Locally
+
+To test the updater without releasing:
+
+1. Build the app locally with signing:
+
+```bash
+export TAURI_SIGNING_PRIVATE_KEY="~/.tauri/myapp.key"
 pnpm tauri build
-
-# Sign each installer (do this for EVERY platform)
-# Windows (.msi)
-tauri signer sign \
-  "apps/tauri/src-tauri/target/release/bundle/msi/AI Job Hunter Assistant_1.3.1_x64_en-US.msi" \
-  -k ~/.tauri/myapp.key
-
-# Windows (.exe)
-tauri signer sign \
-  "apps/tauri/src-tauri/target/release/bundle/nsis/AI Job Hunter Assistant_1.3.1_x64-setup.exe" \
-  -k ~/.tauri/myapp.key
-
-# macOS (.dmg)
-tauri signer sign \
-  "apps/tauri/src-tauri/target/release/bundle/dmg/AI Job Hunter Assistant_1.3.1_x64.dmg" \
-  -k ~/.tauri/myapp.key
-
-# macOS (.app)
-tauri signer sign \
-  "apps/tauri/src-tauri/target/release/bundle/macos/AI Job Hunter Assistant.app" \
-  -k ~/.tauri/myapp.key
 ```
 
-This creates `.sig` files next to each installer:
+2. Manually create a `latest.json` in your test location with a higher version
+3. Point the updater endpoint to your test location
+4. Run the app and check for updates
 
-- `AI Job Hunter Assistant_1.3.1_x64_en-US.msi.sig`
-- `AI Job Hunter Assistant_1.3.1_x64-setup.exe.sig`
-- etc.
+## Troubleshooting
 
-### Step 4: Create latest.json
+### "Update check failed: missing field 'signature'"
 
-Create a `latest.json` file with this format:
+- Ensure `createUpdaterArtifacts: true` is set in `tauri.conf.json`
+- Verify the build completed successfully and generated `.sig` files
+- Check that `latest.json` contains the signature field for your platform
 
-```json
-{
-  "version": "1.3.1",
-  "notes": "Release notes go here",
-  "pub_date": "2026-05-22T09:00:00Z",
-  "platforms": {
-    "windows-x86_64": {
-      "signature": "CONTENT_OF_MSI_SIG_FILE",
-      "url": "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v1.3.1/AI_Job_Hunter_Assistant_1.3.1_x64_en-US.msi"
-    },
-    "darwin-x86_64": {
-      "signature": "CONTENT_OF_DMG_SIG_FILE",
-      "url": "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v1.3.1/AI_Job_Hunter_Assistant_1.3.1_x64.dmg"
-    },
-    "darwin-aarch64": {
-      "signature": "CONTENT_OF_AARCH64_DMG_SIG_FILE",
-      "url": "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v1.3.1/AI_Job_Hunter_Assistant_1.3.1_aarch64.dmg"
-    }
-  }
-}
-```
+### "Update check failed: No releases found"
 
-**To get signature content:**
+- Verify the GitHub release exists and is published (not draft)
+- Check that `latest.json` is uploaded to the release assets
+- Ensure the endpoint URL in `tauri.conf.json` is correct
 
-```bash
-cat "AI Job Hunter Assistant_1.3.1_x64_en-US.msi.sig"
-# Copy the entire output into the "signature" field
-```
+### "Download failed: Signature verification failed"
 
-### Step 5: Upload to GitHub Release
-
-1. Create a new GitHub release (e.g., `v1.3.1`)
-2. Upload ALL files:
-   - `AI Job Hunter Assistant_1.3.1_x64_en-US.msi`
-   - `AI Job Hunter Assistant_1.3.1_x64_en-US.msi.sig`
-   - `AI Job Hunter Assistant_1.3.1_x64-setup.exe`
-   - `AI Job Hunter Assistant_1.3.1_x64-setup.exe.sig`
-   - `AI Job Hunter Assistant_1.3.1_x64.dmg`
-   - `AI Job Hunter Assistant_1.3.1_x64.dmg.sig`
-   - `latest.json`
-3. Publish the release
-
-## Alternative: Disable Signature Verification (NOT RECOMMENDED)
-
-If you want to disable signature verification for testing:
-
-```json
-{
-  "plugins": {
-    "updater": {
-      "pubkey": "",
-      "endpoints": [
-        "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/latest/download/latest.json"
-      ]
-    }
-  }
-}
-```
-
-**Warning:** This makes your app vulnerable to man-in-the-middle attacks!
-
-## Automated Release Script
-
-Create `.github/workflows/release.yml`:
-
-```yaml
-name: Release
-
-on:
-  push:
-    tags:
-      - 'v*'
-
-jobs:
-  release:
-    strategy:
-      matrix:
-        platform: [macos-latest, ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.platform }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Build Tauri app
-        run: pnpm tauri build
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
-      - name: Upload Release Assets
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            apps/tauri/src-tauri/target/release/bundle/**/*.msi
-            apps/tauri/src-tauri/target/release/bundle/**/*.exe
-            apps/tauri/src-tauri/target/release/bundle/**/*.dmg
-            apps/tauri/src-tauri/target/release/bundle/**/*.app
-            apps/tauri/src-tauri/target/release/bundle/**/*.sig
-```
-
-Add secrets to GitHub repository settings:
-
-- `TAURI_SIGNING_PRIVATE_KEY` - Content of `~/.tauri/myapp.key`
-- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` - Password if you set one
-
-## Testing
-
-```bash
-# Test update check locally
-pnpm tauri dev
-
-# In the app, go to Settings → Check for Updates
-```
+- The public key in `tauri.conf.json` doesn't match the private key used for signing
+- The `.sig` file may be corrupted or missing
+- Rebuild the release with the correct signing key
 
 ## References
 
 - [Tauri Updater Plugin Docs](https://v2.tauri.app/plugin/updater/)
 - [Tauri Signer CLI](https://v2.tauri.app/reference/cli/#signer)
-- [GitHub Actions for Tauri](https://tauri.app/v1/guides/building/cross-platform/)
