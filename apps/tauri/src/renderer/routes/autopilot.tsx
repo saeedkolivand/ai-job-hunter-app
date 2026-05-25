@@ -163,11 +163,13 @@ function AutopilotPage() {
   const autopilots = autopilotList as Autopilot[];
   const [creating, setCreating] = useState(false);
   const [runStates, setRunStates] = useReducer(
-    (prev: RunStateMap, patch: Partial<RunStateMap>) => ({ ...prev, ...patch }),
+    (prev: RunStateMap, patch: Partial<RunStateMap>): RunStateMap =>
+      ({ ...prev, ...patch }) as RunStateMap,
     {} as RunStateMap
   );
   const [stepLogs, setStepLogs] = useReducer(
-    (prev: StepLogMap, patch: Partial<StepLogMap>) => ({ ...prev, ...patch }),
+    (prev: StepLogMap, patch: Partial<StepLogMap>): StepLogMap =>
+      ({ ...prev, ...patch }) as StepLogMap,
     {} as StepLogMap
   );
   const [error, setError] = useState<string | null>(null);
