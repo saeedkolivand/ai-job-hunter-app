@@ -79,7 +79,7 @@ async fn tick(app: &AppHandle, store: &Arc<Mutex<AutopilotStore>>) {
 
     for ap in due {
         // Stamp lastRunAt immediately so a slow run doesn't trigger twice.
-        if let Ok(mut g) = store.lock() {
+        if let Ok(g) = store.lock() {
             g.stamp_last_run(&ap.id);
         }
 
