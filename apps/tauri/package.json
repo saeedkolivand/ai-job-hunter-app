@@ -1,6 +1,6 @@
 {
   "name": "@ajh/tauri",
-  "version": "0.5.12",
+  "version": "0.5.13",
   "private": true,
   "description": "AI Job Hunter — desktop application",
   "scripts": {
