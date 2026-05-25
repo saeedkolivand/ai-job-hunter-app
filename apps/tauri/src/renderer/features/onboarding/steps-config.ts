@@ -1,12 +1,12 @@
+import { AISelectionStep } from './steps/AISelectionStep';
 import { BrowserStep } from './steps/BrowserStep';
-import { OllamaStep } from './steps/OllamaStep';
 import { ResumeStep } from './steps/ResumeStep';
 import { WelcomeStep } from './steps/WelcomeStep';
 
 export const ONBOARDING_STEPS = [
   { id: 'welcome', component: WelcomeStep },
   { id: 'resume', component: ResumeStep },
-  { id: 'ollama', component: OllamaStep },
+  { id: 'ai', component: AISelectionStep },
   { id: 'browser', component: BrowserStep },
 ] as const;
 

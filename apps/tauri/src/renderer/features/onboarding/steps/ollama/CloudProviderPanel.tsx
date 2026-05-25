@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 import { Button, Input, useNotification } from '@ajh/ui';
 
+import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
 import { useHasProviderKey, useOpenExternal, useSetProviderKey } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
@@ -64,6 +65,7 @@ export function CloudProviderPanel({
   selectedProvider,
   onProviderChange,
 }: CloudProviderPanelProps) {
+  const { t } = useTranslation();
   const notify = useNotification();
   const openExternal = useOpenExternal();
   const setProviderKey = useSetProviderKey();
@@ -135,12 +137,12 @@ export function CloudProviderPanel({
       {hasKey ? (
         <div className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-2.5">
           <Key size={13} className="text-emerald-400" />
-          <span className="text-sm text-emerald-300/80">API key stored</span>
+          <span className="text-sm text-emerald-300/80">{t('onboarding.ai.apiKeyStored')}</span>
         </div>
       ) : (
         <div className="space-y-2">
           <p className="text-xs text-foreground/35">
-            Get your API key at{' '}
+            {t('onboarding.ai.getApiKeyAt')}{' '}
             <button
               onClick={() => void openExternal.mutateAsync(cloudMeta?.docsUrl ?? '')}
               className="text-brand-soft/70 underline underline-offset-2 hover:text-brand-soft"
@@ -173,7 +175,11 @@ export function CloudProviderPanel({
                 onClick={() => void handleSaveKey()}
                 className={apiKey.trim() && !saving ? 'ring-1 ring-brand/20' : ''}
               >
-                {saving ? <Loader2 size={13} className="animate-spin" /> : 'Save Key'}
+                {saving ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  t('onboarding.ai.saveKey')
+                )}
               </Button>
             </div>
           </div>
