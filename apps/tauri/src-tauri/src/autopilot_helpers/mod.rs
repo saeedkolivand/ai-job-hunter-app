@@ -54,6 +54,7 @@ pub async fn autopilot_scrape(
 }
 
 /// Rank job postings by semantic similarity to resume
+#[allow(dead_code)]
 pub async fn autopilot_rank(
     postings: Vec<JobPosting>,
     resume_text: Option<&str>,
