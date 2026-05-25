@@ -101,6 +101,13 @@ pub fn system_get_platform() -> Value {
 }
 
 #[tauri::command]
+pub fn system_open_devtools(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        window.open_devtools();
+    }
+}
+
+#[tauri::command]
 pub async fn system_open_external(app: AppHandle, url: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     app.opener()

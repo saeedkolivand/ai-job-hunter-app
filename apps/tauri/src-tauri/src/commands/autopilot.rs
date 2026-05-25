@@ -1,8 +1,9 @@
+use std::sync::{Arc, Mutex};
+
 use crate::autopilot::{AutopilotStatus, AutopilotStore};
 use crate::autopilot_helpers::autopilot_scrape;
 use crate::scraping::{JobPosting, ScraperEngine};
 use serde_json::{json, Value};
-use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio_util::sync::CancellationToken;
 
@@ -15,48 +16,43 @@ fn uuid_v4() -> String {
     format!("job-{t:x}")
 }
 
+fn store(app: &AppHandle) -> Arc<Mutex<AutopilotStore>> {
+    app.state::<Arc<Mutex<AutopilotStore>>>().inner().clone()
+}
+
 #[tauri::command]
 pub fn autopilot_list(app: AppHandle) -> Value {
-    let binding = app.state::<Mutex<AutopilotStore>>();
-    let list = binding.lock().unwrap().list();
+    let list = store(&app).lock().unwrap().list();
     json!(list)
 }
 
 #[tauri::command]
 pub fn autopilot_get(app: AppHandle, autopilot_id: String) -> Value {
-    let binding = app.state::<Mutex<AutopilotStore>>();
-    let ap = binding.lock().unwrap().get(&autopilot_id);
+    let ap = store(&app).lock().unwrap().get(&autopilot_id);
     json!(ap)
 }
 
 #[tauri::command]
 pub fn autopilot_create(app: AppHandle, req: Value) -> Value {
-    let store = app.state::<Mutex<AutopilotStore>>();
-    let ap = store.lock().unwrap().create(req);
+    let ap = store(&app).lock().unwrap().create(req);
     json!(ap)
 }
 
 #[tauri::command]
 pub fn autopilot_update(app: AppHandle, autopilot_id: String, req: Value) -> Value {
-    let binding = app.state::<Mutex<AutopilotStore>>();
-    let ap = binding.lock().unwrap().update(&autopilot_id, req);
+    let ap = store(&app).lock().unwrap().update(&autopilot_id, req);
     json!(ap)
 }
 
 #[tauri::command]
 pub fn autopilot_remove(app: AppHandle, autopilot_id: String) -> Value {
-    let store = app.state::<Mutex<AutopilotStore>>();
-    store.lock().unwrap().remove(&autopilot_id);
+    store(&app).lock().unwrap().remove(&autopilot_id);
     json!(null)
 }
 
 #[tauri::command]
 pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
-    let autopilot = {
-        let store = app.state::<Mutex<AutopilotStore>>();
-        let guard = store.lock().unwrap();
-        guard.get(&autopilot_id)
-    };
+    let autopilot = store(&app).lock().unwrap().get(&autopilot_id);
 
     let Some(autopilot) = autopilot else {
         return json!({ "error": format!("autopilot not found: {autopilot_id}") });
@@ -71,7 +67,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         .unwrap()
         .start(&job_id, "autopilot.run");
 
-    let engine = app.state::<std::sync::Arc<ScraperEngine>>().inner().clone();
+    let engine = app.state::<Arc<ScraperEngine>>().inner().clone();
     let cancel_token = CancellationToken::new();
     engine.register_token(&job_id, cancel_token.clone()).await;
 
@@ -152,8 +148,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     }
 
     {
-        let store = app.state::<Mutex<AutopilotStore>>();
-        let _ = store.lock().unwrap().update(
+        store(&app).lock().unwrap().update(
             &autopilot_id,
             json!({ "totalFound": total_found, "totalApplied": applied }),
         );
@@ -172,15 +167,13 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
 
 #[tauri::command]
 pub fn autopilot_pause(app: AppHandle, autopilot_id: String) -> Value {
-    let store = app.state::<Mutex<AutopilotStore>>();
-    store.lock().unwrap().set_status(&autopilot_id, AutopilotStatus::Paused);
+    store(&app).lock().unwrap().set_status(&autopilot_id, AutopilotStatus::Paused);
     json!(null)
 }
 
 #[tauri::command]
 pub fn autopilot_resume(app: AppHandle, autopilot_id: String) -> Value {
-    let store = app.state::<Mutex<AutopilotStore>>();
-    store.lock().unwrap().set_status(&autopilot_id, AutopilotStatus::Active);
+    store(&app).lock().unwrap().set_status(&autopilot_id, AutopilotStatus::Active);
     json!(null)
 }
 
@@ -218,24 +211,24 @@ pub async fn autopilot_rank(
 fn simple_similarity(resume: &str, description: &str) -> f64 {
     let resume_lower = resume.to_lowercase();
     let desc_lower = description.to_lowercase();
-    
+
     let resume_words: std::collections::HashSet<&str> = resume_lower
         .split_whitespace()
         .filter(|w| w.len() > 3)
         .collect();
-    
+
     let desc_words: std::collections::HashSet<&str> = desc_lower
         .split_whitespace()
         .filter(|w| w.len() > 3)
         .collect();
-    
+
     if resume_words.is_empty() || desc_words.is_empty() {
         return 0.0;
     }
-    
+
     let intersection = resume_words.intersection(&desc_words).count();
     let union = resume_words.union(&desc_words).count();
-    
+
     if union == 0 {
         0.0
     } else {

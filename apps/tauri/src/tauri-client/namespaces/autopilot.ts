@@ -1,4 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+
+import { asyncUnsub } from '../utils.js';
+
+export interface AutopilotStepEvent {
+  jobId: string;
+  autopilotId: string;
+  step: string;
+  detail: string;
+}
 
 export const autopilot = {
   list: () => invoke('autopilot_list'),
@@ -10,4 +20,6 @@ export const autopilot = {
   run: ({ autopilotId }: { autopilotId: string }) => invoke('autopilot_run', { autopilotId }),
   pause: ({ autopilotId }: { autopilotId: string }) => invoke('autopilot_pause', { autopilotId }),
   resume: ({ autopilotId }: { autopilotId: string }) => invoke('autopilot_resume', { autopilotId }),
+  onStep: (handler: (event: AutopilotStepEvent) => void) =>
+    asyncUnsub(() => listen<AutopilotStepEvent>('autopilot.step', (e) => handler(e.payload))),
 };

@@ -11,4 +11,5 @@ export const system = {
     invoke('system_set_performance_mode', { mode }),
   getMetrics: () => invoke('system_get_metrics'),
   checkBrowser: () => invoke('system_check_browser'),
+  openDevtools: () => invoke('system_open_devtools'),
 };

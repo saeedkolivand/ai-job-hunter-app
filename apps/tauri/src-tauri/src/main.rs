@@ -17,6 +17,7 @@
 mod ai_generations;
 mod autopilot;
 mod autopilot_helpers;
+mod autopilot_scheduler;
 mod apply_helpers;
 mod applying;
 mod browser;
@@ -34,7 +35,7 @@ mod updater;
 
 use std::sync::Mutex;
 
-use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
 
@@ -64,7 +65,17 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
         .item(&quit)
         .build()?;
 
-    MenuBuilder::new(app).item(&app_submenu).build()
+    let edit_submenu = SubmenuBuilder::new(app, "Edit")
+        .item(&PredefinedMenuItem::undo(app, None)?)
+        .item(&PredefinedMenuItem::redo(app, None)?)
+        .separator()
+        .item(&PredefinedMenuItem::cut(app, None)?)
+        .item(&PredefinedMenuItem::copy(app, None)?)
+        .item(&PredefinedMenuItem::paste(app, None)?)
+        .item(&PredefinedMenuItem::select_all(app, None)?)
+        .build()?;
+
+    MenuBuilder::new(app).item(&app_submenu).item(&edit_submenu).build()
 }
 
 fn on_menu_event(app: &AppHandle, id: &str) {
@@ -141,7 +152,7 @@ fn main() {
                 unsafe { std::env::set_var("AJH_DATA_DIR", &data_dir); }
             }
 
-            app.manage(Mutex::new(AutopilotStore::new(&data_dir)));
+            app.manage(std::sync::Arc::new(Mutex::new(AutopilotStore::new(&data_dir))));
             app.manage(Mutex::new(CredentialStore::new(&data_dir)));
             match documents::DocumentStore::open(&data_dir) {
                 Ok(store) => { app.manage(store); }
@@ -193,6 +204,9 @@ fn main() {
             // Schedule background update checks (10 s after launch, then every 4 h).
             updater::setup_auto_check(handle);
 
+            // Start autopilot schedule runner (checks every minute).
+            autopilot_scheduler::start(handle.clone());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -206,6 +220,7 @@ fn main() {
             commands::system::system_set_performance_mode,
             commands::system::system_get_metrics,
             commands::system::system_check_browser,
+            commands::system::system_open_devtools,
             // jobs
             commands::jobs::jobs_list,
             commands::jobs::jobs_get,

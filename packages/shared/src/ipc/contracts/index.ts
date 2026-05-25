@@ -108,7 +108,11 @@ export {
   type AiGenerationsContract,
 } from './aiGenerations.js';
 export { APPLY_CHANNELS, type ApplyContract } from './apply.js';
-export { AUTOPILOT_CHANNELS, type AutopilotContract } from './autopilot.js';
+export {
+  AUTOPILOT_CHANNELS,
+  type AutopilotContract,
+  type AutopilotStepEvent,
+} from './autopilot.js';
 export { BOARDS_CHANNELS, type BoardsContract } from './boards.js';
 export { CONVERSATIONS_CHANNELS, type ConversationsContract } from './conversations.js';
 export { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js';
