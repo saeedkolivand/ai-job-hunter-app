@@ -15,6 +15,8 @@
 #![allow(clippy::wrong_self_convention)]
 
 mod autopilot;
+mod autopilot_helpers;
+mod apply_helpers;
 mod applying;
 mod browser;
 mod commands;
