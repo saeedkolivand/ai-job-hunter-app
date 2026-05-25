@@ -1,7 +1,7 @@
 {
   "name": "ai-job-hunter-desktop",
   "private": true,
-  "version": "0.5.15",
+  "version": "0.5.16",
   "description": "AI Job Hunter — local-first, AI-native desktop application",
   "license": "UNLICENSED",
   "type": "module",
