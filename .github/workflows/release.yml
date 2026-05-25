@@ -291,12 +291,18 @@ jobs:
           fi
           echo "::endgroup::"
 
-      - name: � Generate latest.json
+      - name: 🏷️ Generate latest.json
         if: success()
         shell: bash
         run: |
           echo "::group::Generating latest.json"
-          cd apps/tauri/src-tauri/target/release/bundle
+          # For macOS, artifacts are in target-specific directories
+          # For Windows/Linux, they're in target/release/bundle
+          if [ "${{ runner.os }}" == "macOS" ]; then
+            cd apps/tauri/src-tauri/target
+          else
+            cd apps/tauri/src-tauri/target/release/bundle
+          fi
 
           # Collect signature files and URLs
           VERSION="${{ needs.sync-version-files.outputs.version }}"
@@ -312,16 +318,16 @@ jobs:
           EOF
 
           # Add Windows signatures if they exist
-          if [ -d "nsis" ] && ls nsis/*.sig 1> /dev/null 2>&1; then
-            SIG=$(cat nsis/*.sig | tr -d '\n')
+          if [ -d "release/bundle/nsis" ] && ls release/bundle/nsis/*.sig 1> /dev/null 2>&1; then
+            SIG=$(cat release/bundle/nsis/*.sig | tr -d '\n')
             echo '    "windows-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
             echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI_Job_Hunter_Assistant_${VERSION}_x64-setup.exe\"" >> latest.json
             echo '    },' >> latest.json
           fi
 
-          if [ -d "msi" ] && ls msi/*.sig 1> /dev/null 2>&1; then
-            SIG=$(cat msi/*.sig | tr -d '\n')
+          if [ -d "release/bundle/msi" ] && ls release/bundle/msi/*.sig 1> /dev/null 2>&1; then
+            SIG=$(cat release/bundle/msi/*.sig | tr -d '\n')
             echo '    "windows-x86_64-msi": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
             echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI_Job_Hunter_Assistant_${VERSION}_x64_en-US.msi\"" >> latest.json
@@ -329,8 +335,8 @@ jobs:
           fi
 
           # Add Linux signatures if they exist
-          if [ -d "appimage" ] && ls appimage/*.sig 1> /dev/null 2>&1; then
-            SIG=$(cat appimage/*.sig | tr -d '\n')
+          if [ -d "release/bundle/appimage" ] && ls release/bundle/appimage/*.sig 1> /dev/null 2>&1; then
+            SIG=$(cat release/bundle/appimage/*.sig | tr -d '\n')
             echo '    "linux-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
             echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-x86_64.AppImage\"" >> latest.json
@@ -338,16 +344,16 @@ jobs:
           fi
 
           # Add macOS signatures if they exist
-          if [ -d "../../x86_64-apple-darwin/release/bundle/dmg" ] && ls ../../x86_64-apple-darwin/release/bundle/dmg/*.sig 1> /dev/null 2>&1; then
-            SIG=$(cat ../../x86_64-apple-darwin/release/bundle/dmg/*.sig | tr -d '\n')
+          if [ -d "x86_64-apple-darwin/release/bundle/dmg" ] && ls x86_64-apple-darwin/release/bundle/dmg/*.sig 1> /dev/null 2>&1; then
+            SIG=$(cat x86_64-apple-darwin/release/bundle/dmg/*.sig | tr -d '\n')
             echo '    "darwin-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
             echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-intel.dmg\"" >> latest.json
             echo '    },' >> latest.json
           fi
 
-          if [ -d "../../aarch64-apple-darwin/release/bundle/dmg" ] && ls ../../aarch64-apple-darwin/release/bundle/dmg/*.sig 1> /dev/null 2>&1; then
-            SIG=$(cat ../../aarch64-apple-darwin/release/bundle/dmg/*.sig | tr -d '\n')
+          if [ -d "aarch64-apple-darwin/release/bundle/dmg" ] && ls aarch64-apple-darwin/release/bundle/dmg/*.sig 1> /dev/null 2>&1; then
+            SIG=$(cat aarch64-apple-darwin/release/bundle/dmg/*.sig | tr -d '\n')
             echo '    "darwin-aarch64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
             echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-apple-silicon.dmg\"" >> latest.json
@@ -360,7 +366,11 @@ jobs:
           echo '}' >> latest.json
 
           # Move to a consistent location
-          mv latest.json ../../../release/bundle/latest.json || true
+          if [ "${{ runner.os }}" == "macOS" ]; then
+            mv latest.json release/bundle/latest.json || true
+          else
+            mv latest.json ../../../release/bundle/latest.json || true
+          fi
           echo "::endgroup::"
 
       - name: Upload Release Assets
