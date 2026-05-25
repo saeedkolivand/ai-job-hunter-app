@@ -14,6 +14,7 @@
  */
 import type { AppClient } from '@/lib/app-client';
 
+import { aiGenerations } from './namespaces/aiGenerations.js';
 import { ai } from './namespaces/ai.js';
 import { apply } from './namespaces/apply.js';
 import { autopilot } from './namespaces/autopilot.js';
@@ -38,6 +39,7 @@ import { updater } from './namespaces/updater.js';
 
 export function createTauriInvokeClient(): AppClient {
   return {
+    aiGenerations: aiGenerations as AppClient['aiGenerations'],
     system: system as AppClient['system'],
     jobs: jobs as AppClient['jobs'],
     ai: ai as AppClient['ai'],

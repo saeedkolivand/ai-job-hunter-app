@@ -686,7 +686,27 @@
     "tabs": {
       "applied": "Beworben",
       "viewed": "Angesehen",
-      "bookmarked": "Gespeichert"
+      "bookmarked": "Gespeichert",
+      "generated": "Generiert"
+    },
+    "generated": {
+      "noGenerationsYet": "Noch keine KI-generierten Dokumente",
+      "noGenerationsDesc": "Generiere einen angepassten Lebenslauf oder ein Anschreiben, um es hier zu sehen.",
+      "resume": "Lebenslauf",
+      "coverLetter": "Anschreiben",
+      "mode": "Modus",
+      "requirements": "Top-Anforderungen",
+      "jobAd": "Stellenanzeige",
+      "viewJobAd": "Stellenanzeige anzeigen",
+      "copyResume": "Lebenslauf kopieren",
+      "copyCoverLetter": "Anschreiben kopieren",
+      "copied": "Kopiert",
+      "delete": "Löschen",
+      "noResume": "Kein Lebenslauf generiert",
+      "noCoverLetter": "Kein Anschreiben generiert",
+      "export": "Exportieren",
+      "exportResume": "Lebenslauf",
+      "exportCoverLetter": "Anschreiben"
     },
     "relativeTime": {
       "justNow": "Gerade eben",
