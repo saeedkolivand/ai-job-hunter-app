@@ -5,6 +5,25 @@ ESLint `--max-warnings 0` in CI — every warning fails the build.
 
 ---
 
+## Path Privacy
+
+- Never expose real local file system paths
+- Never output absolute Windows, macOS, or Linux paths
+- Always use repository-relative paths
+
+❌ `C:\Users\username\project\apps\tauri\src\main.rs`
+❌ `/home/username/project/apps/api/src/server.ts`
+❌ `~/Projects/app/src/index.ts`
+
+✅ `apps/tauri/src/main.rs`
+✅ `apps/api/src/server.ts`
+
+- Never expose usernames, home directories, drive letters, workspace roots, temp paths, or IDE-specific paths
+- Sanitize absolute paths in logs, stack traces, screenshots, terminal output, PRs, commits, comments, and markdown
+- Prefer repository-root-relative paths. If needed, use: `file:///app/<relative-path>`
+
+---
+
 ## Shell — prefix EVERY command with `rtk`
 
 `rtk pnpm build` · `rtk git status` · `rtk rg foo` · `rtk fd src` · `rtk bat file.ts` — 60-90% token savings.

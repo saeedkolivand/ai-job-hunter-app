@@ -1172,7 +1172,7 @@
       "back": "Zurück",
       "next": "Lebenslauf hochladen"
     },
-    "ollama": {
+    "ai": {
       "title": "KI einrichten",
       "subtitle": "AI Job Hunter führt Modelle lokal über Ollama aus – keine API-Schlüssel, keine Cloud.",
       "checking": "Suche nach Ollama…",
@@ -1198,7 +1198,25 @@
       "back": "Zurück",
       "next": "Funktionen ansehen",
       "skip": "Vorerst überspringen",
-      "skipWarning": "KI-Funktionen sind ohne Modell nicht verfügbar"
+      "skipWarning": "KI-Funktionen sind ohne Modell nicht verfügbar",
+      "localTab": "Lokal (Ollama)",
+      "cloudTab": "Cloud-KI",
+      "readyBadge": "Ollama bereit",
+      "systemPerformance": "Systemleistung",
+      "ramLabel": "RAM",
+      "cpuLabel": "CPU",
+      "vramLabel": "VRAM",
+      "cores": "Kerne",
+      "free": "frei",
+      "mayLagRam": "Kann laggen (RAM)",
+      "mayLagVram": "Kann laggen (VRAM)",
+      "downloadModel": "{{model}} herunterladen",
+      "downloadingModel": "{{model}} wird heruntergeladen…",
+      "modelDownloaded": "{{model}} heruntergeladen",
+      "downloadFailed": "Download fehlgeschlagen. Bitte erneut versuchen.",
+      "apiKeyStored": "API-Schlüssel gespeichert",
+      "getApiKeyAt": "API-Schlüssel erhalten unter",
+      "saveKey": "Schlüssel speichern"
     },
     "browser": {
       "title": "Browser erforderlich",

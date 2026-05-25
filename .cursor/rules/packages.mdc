@@ -6,6 +6,23 @@ alwaysApply: true
 
 # Package Rules
 
+## Path Privacy
+
+- Never expose real local file system paths
+- Never output absolute Windows, macOS, or Linux paths
+- Always use repository-relative paths
+
+❌ `C:\Users\username\project\apps\tauri\src\main.rs`
+❌ `/home/username/project/apps/api/src/server.ts`
+❌ `~/Projects/app/src/index.ts`
+
+✅ `apps/tauri/src/main.rs`
+✅ `apps/api/src/server.ts`
+
+- Never expose usernames, home directories, drive letters, workspace roots, temp paths, or IDE-specific paths
+- Sanitize absolute paths in logs, stack traces, screenshots, terminal output, PRs, commits, comments, and markdown
+- Prefer repository-root-relative paths. If needed, use: `file:///app/<relative-path>`
+
 ## @ajh/ui (packages/ui)
 - No app logic — no Zustand, no IPC, no routing imports
 - Components import design utilities from local `./lib/cn`, `./lib/motion`

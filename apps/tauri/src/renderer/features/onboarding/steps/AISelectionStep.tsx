@@ -33,7 +33,7 @@ interface Props {
   totalSteps: number;
 }
 
-export function OllamaStep({ onBack, onNext, direction, stepIndex, totalSteps }: Props) {
+export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSteps }: Props) {
   const { t } = useTranslation();
   const setAIModel = usePreferencesStore((s) => s.setAIModel);
   const setAiProviderConfig = usePreferencesStore((s) => s.setAiProviderConfig);
@@ -131,9 +131,9 @@ export function OllamaStep({ onBack, onNext, direction, stepIndex, totalSteps }:
         className="mb-5 text-center"
       >
         <h1 className="mb-2 text-xl font-semibold text-foreground/95">
-          {t('onboarding.ollama.title')}
+          {t('onboarding.ai.title')}
         </h1>
-        <p className="text-sm text-foreground/50">{t('onboarding.ollama.subtitle')}</p>
+        <p className="text-sm text-foreground/50">{t('onboarding.ai.subtitle')}</p>
       </motion.div>
 
       {/* Tab switcher */}
@@ -157,7 +157,7 @@ export function OllamaStep({ onBack, onNext, direction, stepIndex, totalSteps }:
           )}
 
           {mode === 'local' && healthLoading && (
-            <OllamaCheckingState key="local-checking" message={t('onboarding.ollama.checking')} />
+            <OllamaCheckingState key="local-checking" message={t('onboarding.ai.checking')} />
           )}
 
           {mode === 'local' && !healthLoading && !ollamaReady && (
@@ -193,7 +193,7 @@ export function OllamaStep({ onBack, onNext, direction, stepIndex, totalSteps }:
       >
         <Button variant="ghost" size="sm" onClick={onBack} className="flex items-center gap-1.5">
           <ArrowLeft size={13} />
-          {t('onboarding.ollama.back')}
+          {t('onboarding.ai.back')}
         </Button>
 
         <div className="flex-1" />
@@ -206,7 +206,7 @@ export function OllamaStep({ onBack, onNext, direction, stepIndex, totalSteps }:
             className="flex items-center gap-1.5 text-foreground/35 hover:text-foreground/60"
           >
             <SkipForward size={12} />
-            {t('onboarding.ollama.skip')}
+            {t('onboarding.ai.skip')}
           </Button>
         )}
 
@@ -217,7 +217,7 @@ export function OllamaStep({ onBack, onNext, direction, stepIndex, totalSteps }:
             className="flex items-center gap-2 text-xs text-amber-400/70"
           >
             <AlertTriangle size={12} />
-            {t('onboarding.ollama.skipWarning')}
+            {t('onboarding.ai.skipWarning')}
           </motion.div>
         )}
 
@@ -228,7 +228,7 @@ export function OllamaStep({ onBack, onNext, direction, stepIndex, totalSteps }:
           disabled={!canContinue}
           className="flex items-center gap-1.5"
         >
-          {t('onboarding.ollama.next')}
+          {t('onboarding.ai.next')}
           <ArrowRight size={13} />
         </Button>
       </motion.div>

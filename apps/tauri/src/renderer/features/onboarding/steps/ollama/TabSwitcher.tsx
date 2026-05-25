@@ -1,6 +1,8 @@
 import { Cloud, Computer, type LucideIcon } from 'lucide-react';
 import { motion } from 'motion/react';
 
+import { useTranslation } from '@/lib/i18n';
+
 type TabMode = 'local' | 'cloud';
 
 interface TabOption {
@@ -14,12 +16,13 @@ interface TabSwitcherProps {
   onModeChange: (mode: TabMode) => void;
 }
 
-const TABS: TabOption[] = [
-  { id: 'local', label: 'Local (Ollama)', icon: Computer },
-  { id: 'cloud', label: 'Cloud AI', icon: Cloud },
-];
-
 export function TabSwitcher({ mode, onModeChange }: TabSwitcherProps) {
+  const { t } = useTranslation();
+
+  const TABS: TabOption[] = [
+    { id: 'local', label: t('onboarding.ai.localTab'), icon: Computer },
+    { id: 'cloud', label: t('onboarding.ai.cloudTab'), icon: Cloud },
+  ];
   return (
     <motion.div
       initial={{ y: 10, opacity: 0 }}
