@@ -5,6 +5,7 @@ import { transition } from '@/lib/motion';
 import { useOnboardingCompleted, usePreferencesStore } from '@/store/preferences-store';
 
 import { SpotlightTour } from './SpotlightTour';
+import { ONBOARDING_STEPS, TOTAL_STEPS } from './steps-config';
 import { BrowserStep } from './steps/BrowserStep';
 import { OllamaStep } from './steps/OllamaStep';
 import { ResumeStep } from './steps/ResumeStep';
@@ -15,17 +16,28 @@ type Step = 'welcome' | 'resume' | 'ollama' | 'browser' | 'tour';
 export function OnboardingWizard() {
   const onboardingCompleted = useOnboardingCompleted();
   const setOnboardingComplete = usePreferencesStore((s) => s.setOnboardingComplete);
-  const [step, setStep] = useState<Step>('welcome');
+  const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState(1);
+  const [showTour, setShowTour] = useState(false);
 
-  const goNext = (next: Step) => {
-    setDirection(1);
-    setStep(next);
+  const currentStep = ONBOARDING_STEPS[stepIndex];
+  const stepId = showTour ? 'tour' : (currentStep?.id ?? 'welcome');
+
+  const goNext = () => {
+    if (stepIndex < ONBOARDING_STEPS.length - 1) {
+      setDirection(1);
+      setStepIndex((prev) => prev + 1);
+    } else {
+      setDirection(1);
+      setShowTour(true);
+    }
   };
 
-  const goBack = (prev: Step) => {
-    setDirection(-1);
-    setStep(prev);
+  const goBack = () => {
+    if (stepIndex > 0) {
+      setDirection(-1);
+      setStepIndex((prev) => prev - 1);
+    }
   };
 
   if (onboardingCompleted) return null;
@@ -34,7 +46,7 @@ export function OnboardingWizard() {
     <div className="fixed inset-0 z-[200] flex items-center justify-center overflow-hidden">
       {/* Backdrop — hidden during tour so the app UI is visible */}
       <AnimatePresence>
-        {step !== 'tour' && (
+        {!showTour && (
           <motion.div
             key="backdrop"
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -47,34 +59,46 @@ export function OnboardingWizard() {
       </AnimatePresence>
 
       <AnimatePresence mode="wait" custom={direction}>
-        {step === 'welcome' && (
-          <WelcomeStep key="welcome" direction={direction} onNext={() => goNext('resume')} />
+        {stepId === 'welcome' && (
+          <WelcomeStep
+            key="welcome"
+            direction={direction}
+            stepIndex={0}
+            totalSteps={TOTAL_STEPS}
+            onNext={goNext}
+          />
         )}
-        {step === 'resume' && (
+        {stepId === 'resume' && (
           <ResumeStep
             key="resume"
             direction={direction}
-            onBack={() => goBack('welcome')}
-            onNext={() => goNext('ollama')}
+            stepIndex={1}
+            totalSteps={TOTAL_STEPS}
+            onBack={goBack}
+            onNext={goNext}
           />
         )}
-        {step === 'ollama' && (
+        {stepId === 'ollama' && (
           <OllamaStep
             key="ollama"
             direction={direction}
-            onBack={() => goBack('resume')}
-            onNext={() => goNext('browser')}
+            stepIndex={2}
+            totalSteps={TOTAL_STEPS}
+            onBack={goBack}
+            onNext={goNext}
           />
         )}
-        {step === 'browser' && (
+        {stepId === 'browser' && (
           <BrowserStep
             key="browser"
             direction={direction}
-            onBack={() => goBack('ollama')}
-            onNext={() => goNext('tour')}
+            stepIndex={3}
+            totalSteps={TOTAL_STEPS}
+            onBack={goBack}
+            onNext={goNext}
           />
         )}
-        {step === 'tour' && <SpotlightTour key="tour" onFinish={setOnboardingComplete} />}
+        {showTour && <SpotlightTour key="tour" onFinish={setOnboardingComplete} />}
       </AnimatePresence>
     </div>
   );

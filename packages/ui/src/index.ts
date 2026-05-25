@@ -44,6 +44,8 @@ export { StreamingText } from './components/StreamingText';
 // ── Composition Helpers ───────────────────────────────────────────────────
 export { OptionTile } from './components/OptionTile';
 export { SettingsSection } from './components/SettingsSection';
+export { StepDots } from './components/StepDots';
+export { FloatingIcon } from './components/FloatingIcon';
 
 // ── Hooks ─────────────────────────────────────────────────────────────────
 export { useFocusTrap } from './hooks/use-focus-trap';
