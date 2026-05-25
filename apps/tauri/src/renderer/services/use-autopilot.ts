@@ -4,8 +4,8 @@ import type { AutopilotCreate, AutopilotUpdate } from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
-import { useCheckBrowser } from './use-system';
 import { keys } from './query-client';
+import { useCheckBrowser } from './use-system';
 
 export const useAutopilots = () => {
   const api = useAppClient();

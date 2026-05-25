@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAppClient } from '@/providers/AppClientProvider';
+
 import { useCheckBrowser } from './use-system';
 
 const KEYS = {
