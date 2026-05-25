@@ -280,7 +280,7 @@ export function OllamaStep({ onBack, onNext, direction }: Props) {
     setPullProgress(0);
     try {
       const result = await pullModel.mutateAsync(selectedModel);
-      setPullJobId(result.jobId);
+      setPullJobId((result as { jobId: string }).jobId);
     } catch (err) {
       setPullState('error');
       notify(err instanceof Error ? err.message : 'Download failed.', 'error');

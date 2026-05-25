@@ -51,7 +51,7 @@ export function TechStackPreferences() {
     (tech) =>
       tech.name.toLowerCase().includes(inputValue.toLowerCase()) &&
       inputValue.length > 0 &&
-      !techStack.some((item) => item.name === tech.name)
+      !techStack.some((item: { name: string }) => item.name === tech.name)
   );
 
   const handleAddTech = (name: string, category: string) => {
@@ -66,7 +66,7 @@ export function TechStackPreferences() {
   const handleRemoveTech = (name: string) => {
     setJobPreferences.mutate({
       ...jobPrefs,
-      techStack: techStack.filter((item) => item.name !== name),
+      techStack: techStack.filter((item: { name: string }) => item.name !== name),
     });
   };
 
@@ -114,7 +114,7 @@ export function TechStackPreferences() {
       {/* Current Tech Stack */}
       {techStack.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2">
-          {techStack.map((item) => (
+          {techStack.map((item: { name: string; category: string }) => (
             <motion.div
               key={item.name}
               initial={{ opacity: 0, scale: 0.9 }}
@@ -161,13 +161,15 @@ export function TechStackPreferences() {
               const match = COMMON_TECH.find(
                 (t) => t.name.toLowerCase() === inputValue.toLowerCase()
               );
-              if (match && !techStack.some((item) => item.name === match.name)) {
+              if (match && !techStack.some((item: { name: string }) => item.name === match.name)) {
                 handleAddTech(match.name, match.category);
               }
             }}
             disabled={
               !inputValue ||
-              techStack.some((item) => item.name.toLowerCase() === inputValue.toLowerCase())
+              techStack.some(
+                (item: { name: string }) => item.name.toLowerCase() === inputValue.toLowerCase()
+              )
             }
           >
             <Plus size={16} />
