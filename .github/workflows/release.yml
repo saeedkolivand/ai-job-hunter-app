@@ -363,7 +363,7 @@ jobs:
 
   generate-update-manifest:
     name: 📝 Generate Update Manifest
-    needs: build
+    needs: [sync-version-files, build]
     if: needs.sync-version-files.outputs.released == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
