@@ -343,20 +343,20 @@ jobs:
             echo '    },' >> latest.json
           fi
 
-          # Add macOS signatures if they exist
-          if [ -d "x86_64-apple-darwin/release/bundle/dmg" ] && ls x86_64-apple-darwin/release/bundle/dmg/*.sig 1> /dev/null 2>&1; then
-            SIG=$(cat x86_64-apple-darwin/release/bundle/dmg/*.sig | tr -d '\n')
+          # Add macOS signatures (Tauri signs .app.tar.gz for updater, not .dmg)
+          if [ -d "x86_64-apple-darwin/release/bundle/macos" ] && ls x86_64-apple-darwin/release/bundle/macos/*.tar.gz.sig 1> /dev/null 2>&1; then
+            SIG=$(cat x86_64-apple-darwin/release/bundle/macos/*.tar.gz.sig | tr -d '\n')
             echo '    "darwin-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-intel.dmg\"" >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-intel.app.tar.gz\"" >> latest.json
             echo '    },' >> latest.json
           fi
 
-          if [ -d "aarch64-apple-darwin/release/bundle/dmg" ] && ls aarch64-apple-darwin/release/bundle/dmg/*.sig 1> /dev/null 2>&1; then
-            SIG=$(cat aarch64-apple-darwin/release/bundle/dmg/*.sig | tr -d '\n')
+          if [ -d "aarch64-apple-darwin/release/bundle/macos" ] && ls aarch64-apple-darwin/release/bundle/macos/*.tar.gz.sig 1> /dev/null 2>&1; then
+            SIG=$(cat aarch64-apple-darwin/release/bundle/macos/*.tar.gz.sig | tr -d '\n')
             echo '    "darwin-aarch64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-apple-silicon.dmg\"" >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-apple-silicon.app.tar.gz\"" >> latest.json
             echo '    },' >> latest.json
           fi
 
@@ -388,9 +388,11 @@ jobs:
             apps/tauri/src-tauri/target/release/bundle/msi/*.msi
             apps/tauri/src-tauri/target/release/bundle/msi/*.sig
             apps/tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
-            apps/tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.sig
+            apps/tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.tar.gz
+            apps/tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.tar.gz.sig
             apps/tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-            apps/tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.sig
+            apps/tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.tar.gz
+            apps/tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.tar.gz.sig
             apps/tauri/src-tauri/target/release/bundle/deb/*.deb
             apps/tauri/src-tauri/target/release/bundle/rpm/*.rpm
             apps/tauri/src-tauri/target/release/bundle/appimage/*.AppImage
