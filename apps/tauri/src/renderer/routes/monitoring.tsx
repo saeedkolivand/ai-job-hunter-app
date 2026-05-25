@@ -57,6 +57,7 @@ const KIND_LABEL: Record<string, string> = {
   'persist.job': 'Interaction saved',
   'match.resume': 'Resume match',
   'apply.job': 'Application',
+  'autopilot.run': 'Autopilot run',
 };
 
 const KIND_SHORT: Record<string, string> = {
@@ -68,6 +69,7 @@ const KIND_SHORT: Record<string, string> = {
   'persist.job': 'Save',
   'match.resume': 'Match',
   'apply.job': 'Apply',
+  'autopilot.run': 'Autopilot',
 };
 
 function MonitoringPage() {
@@ -87,6 +89,7 @@ function MonitoringPage() {
         'persist.job': t('monitoring.jobKinds.persistJob'),
         'match.resume': t('monitoring.jobKinds.matchResume'),
         'apply.job': t('monitoring.jobKinds.applyJob'),
+        'autopilot.run': t('monitoring.jobKinds.autopilotRun'),
       }) as Record<string, string>,
     [t]
   );

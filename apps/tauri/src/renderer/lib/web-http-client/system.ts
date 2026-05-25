@@ -13,5 +13,6 @@ export function system(opts: WebHttpClientOptions) {
       cmd('system', 'setPerformanceMode', { mode }),
     getMetrics: () => cmd('system', 'getMetrics'),
     checkBrowser: () => cmd('system', 'checkBrowser'),
+    openDevtools: () => cmd('system', 'openDevtools'),
   };
 }

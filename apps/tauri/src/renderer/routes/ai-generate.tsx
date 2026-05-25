@@ -40,10 +40,10 @@ import {
 } from '@/lib/generate-ai';
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
-import { useAIModels, useExtractText } from '@/services';
+import { useAIModels, useExtractText, useHasProviderKey, useListProviderModels } from '@/services';
 import { keys } from '@/services/query-client';
 import { useSaveAiGeneration } from '@/services/use-ai-generations';
-import { useAIModel, usePreferencesStore } from '@/store/preferences-store';
+import { useAIModel, useAiProviderConfig, usePreferencesStore } from '@/store/preferences-store';
 import type { Model } from '@/types';
 
 export const Route = createFileRoute('/ai-generate')({ component: AIGeneratePage });
@@ -81,11 +81,27 @@ function AIGeneratePage() {
   // Config
   const [mode, setMode] = useState<GenerationMode>('ats');
   const [target, setTarget] = useState<GenTarget>('both');
-  const { data: modelList = [], isFetching: loadingModels } = useAIModels();
-  const models = modelList as Model[];
+  const { data: modelList = [], isFetching: loadingOllama } = useAIModels();
+  const ollamaModels = modelList as Model[];
   const qc = useQueryClient();
   const aiModel = useAIModel();
   const setAIModel = usePreferencesStore((s) => s.setAIModel);
+  const setProviderSettings = usePreferencesStore((s) => s.setProviderSettings);
+  const providerConfig = useAiProviderConfig();
+  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+  const isCloudProvider = activeProvider !== 'ollama';
+  const { data: cloudModelsRaw = [], isFetching: loadingCloud } = useListProviderModels(
+    activeProvider,
+    isCloudProvider
+  );
+  const cloudModels = cloudModelsRaw as Array<{ name: string }>;
+  const providerKeyQuery = useHasProviderKey(activeProvider);
+  const providerConnected = isCloudProvider ? (providerKeyQuery.data?.has ?? false) : true;
+  const activeProviderModel = providerConfig?.providers?.[activeProvider]?.model ?? '';
+  // Unified model list, selected value and loading state for the dropdown
+  const models = isCloudProvider ? cloudModels : ollamaModels;
+  const loadingModels = isCloudProvider ? loadingCloud : loadingOllama;
+  const selectedModel = isCloudProvider ? activeProviderModel : (aiModel?.defaultModel ?? '');
   const extractTextMutation = useExtractText();
 
   // Stage
@@ -99,6 +115,7 @@ function AIGeneratePage() {
   const [coverOut, setCoverOut] = useState('');
   const [activeOut, setActiveOut] = useState<'resume' | 'cover'>('resume');
   const [templateId, setTemplateId] = useState<TemplateId>('modern');
+  const [atsMode, setAtsMode] = useState(false);
 
   // Streaming preview
   const [streamBuffer, setStreamBuffer] = useState('');
@@ -141,7 +158,10 @@ function AIGeneratePage() {
   };
 
   const canProceed = resume.trim().length > 50 && jobAd.trim().length > 50;
-  const canGenerate = canProceed && !!aiModel?.defaultModel;
+  const hasActiveModel = isCloudProvider
+    ? providerConnected && !!activeProviderModel
+    : !!aiModel?.defaultModel;
+  const canGenerate = canProceed && hasActiveModel;
 
   const startStageRotation = () => {
     stageIdxRef.current = 0;
@@ -304,10 +324,10 @@ function AIGeneratePage() {
       fmt
     );
     if (fmt === 'pdf') {
-      await exportPDF(text, name, type, meta ?? undefined, templateId);
+      await exportPDF(text, name, type, meta ?? undefined, templateId, atsMode);
     }
     if (fmt === 'docx') {
-      await exportDOCX(text, name, type, meta ?? undefined, templateId);
+      await exportDOCX(text, name, type, meta ?? undefined, templateId, atsMode);
     }
     if (fmt === 'txt') {
       exportTXT(text, name);
@@ -347,22 +367,39 @@ function AIGeneratePage() {
           </div>
 
           {/* Model selector */}
-          <div className="px-6 pb-4 flex items-center gap-2">
-            <Button
-              onClick={() => void qc.invalidateQueries({ queryKey: keys.ai.models })}
-              disabled={loadingModels}
-              className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.04] text-foreground/40 hover:text-foreground/70 transition-colors disabled:opacity-40 border-transparent p-0"
-            >
-              <RefreshCw size={11} className={loadingModels ? 'animate-spin' : ''} />
-            </Button>
-            <div className="flex-1">
-              <CustomDropdown
-                models={models}
-                selectedModel={aiModel?.defaultModel ?? ''}
-                onSelectModel={(n) =>
-                  setAIModel({ defaultModel: n, temperature: 0.25, maxTokens: 3000 })
-                }
-              />
+          <div className="px-6 pb-4 space-y-1.5">
+            {isCloudProvider && (
+              <div className="flex items-center gap-1.5 text-[10px]">
+                <span className={providerConnected ? 'text-emerald-400/80' : 'text-amber-400/60'}>
+                  {providerConnected ? '● ' : '○ '}
+                  {activeProvider.charAt(0).toUpperCase() + activeProvider.slice(1)}
+                </span>
+                {!providerConnected && (
+                  <span className="text-foreground/35">— add API key in Settings</span>
+                )}
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => void qc.invalidateQueries({ queryKey: keys.ai.models })}
+                disabled={loadingModels}
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.04] text-foreground/40 hover:text-foreground/70 transition-colors disabled:opacity-40 border-transparent p-0"
+              >
+                <RefreshCw size={11} className={loadingModels ? 'animate-spin' : ''} />
+              </Button>
+              <div className="flex-1">
+                <CustomDropdown
+                  models={models}
+                  selectedModel={selectedModel}
+                  onSelectModel={(n) => {
+                    if (isCloudProvider) {
+                      setProviderSettings(activeProvider, { model: n });
+                    } else {
+                      setAIModel({ defaultModel: n, temperature: 0.25, maxTokens: 3000 });
+                    }
+                  }}
+                />
+              </div>
             </div>
           </div>
 
@@ -405,9 +442,14 @@ function AIGeneratePage() {
             mode={mode}
             target={target}
             templateId={templateId}
+            atsMode={atsMode}
             onModeChange={setMode}
             onTargetChange={setTarget}
-            onTemplateChange={setTemplateId}
+            onTemplateChange={(id) => {
+              setTemplateId(id);
+              if (id !== 'two-column') setAtsMode(false);
+            }}
+            onAtsModeChange={setAtsMode}
             onGenerate={() => void handleGenerate()}
             isGenerating={isGenerating}
           />
@@ -423,8 +465,10 @@ function AIGeneratePage() {
                 className="w-full justify-center transition-all duration-150 ease-out"
               >
                 <ArrowRight size={14} />
-                {!aiModel?.defaultModel
-                  ? t('aiGenerate.selectModel')
+                {!hasActiveModel
+                  ? isCloudProvider && !providerConnected
+                    ? t('aiGenerate.addApiKey')
+                    : t('aiGenerate.selectModel')
                   : !canProceed
                     ? t('aiGenerate.pasteResumeJob')
                     : t('aiGenerate.continue')}
@@ -459,7 +503,7 @@ function AIGeneratePage() {
                 activeOut={activeOut}
                 meta={meta}
                 mode={mode}
-                _templateId={templateId}
+                templateId={templateId}
                 onActiveOutChange={setActiveOut}
                 onCopy={() => void copyOutput()}
                 onExport={doExport}

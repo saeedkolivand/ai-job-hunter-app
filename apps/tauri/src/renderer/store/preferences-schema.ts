@@ -65,6 +65,9 @@ export const PreferencesSchema = z.object({
   // Performance Preferences
   performanceMode: PerformanceModeSchema.default('balanced'),
 
+  // Developer / debug
+  debugMode: z.boolean().default(false),
+
   // Onboarding
   onboardingCompleted: z.boolean().default(false),
 

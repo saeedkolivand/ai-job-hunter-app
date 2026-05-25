@@ -22,6 +22,7 @@ fn test_generate_filename() {
             company_name: Some("Tech Corp".to_string()),
             target_language: None,
         }),
+        ats_mode: false,
     };
 
     let filename = generate_filename(&request, "docx");

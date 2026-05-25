@@ -4,25 +4,25 @@ use docx_rs::*;
 use super::{
     parser::{parse_resume, strip_md},
     templates::{calculate_spacing, Template},
-    types::{DocumentType, ExportRequest, GenerationMeta, LineKind},
+    types::{DocumentType, ExportRequest, GenerationMeta, LineKind, TemplateId},
 };
 
 use super::docx_renderer::*;
 
-/// Generate DOCX for resume
+// ─── Resume DOCX ──────────────────────────────────────────────────────────────
+
 fn generate_resume_docx(text: &str, meta: Option<&GenerationMeta>, template: &Template) -> Result<Docx> {
     let parsed = parse_resume(text);
     let mut docx = Docx::new();
 
-    // Page setup
     let page_margin = PageMargin::new()
         .top(inch_to_dxa(0.9))
         .bottom(inch_to_dxa(0.9))
         .left(inch_to_dxa(template.margin_in))
         .right(inch_to_dxa(template.margin_in));
 
-    // Setup colors
     let colors = setup_colors(template);
+    let _font_name = docx_font_name(template.fonts.body_family);
 
     let mut name_written = false;
     let mut previous_kind: Option<LineKind> = None;
@@ -34,9 +34,7 @@ fn generate_resume_docx(text: &str, meta: Option<&GenerationMeta>, template: &Te
 
         match line.kind {
             LineKind::Blank => {
-                docx = docx.add_paragraph(
-                    Paragraph::new().add_run(Run::new())
-                );
+                // Blank lines in DOCX handled by paragraph spacing — skip emitting empty paras
             }
 
             LineKind::Name => {
@@ -47,31 +45,32 @@ fn generate_resume_docx(text: &str, meta: Option<&GenerationMeta>, template: &Te
 
             LineKind::Contact => {
                 let para = render_contact_line(&line.text, template, &colors);
-                docx = docx.add_paragraph(para);
-                // Add spacing after contact
                 docx = docx.add_paragraph(
-                    Paragraph::new().add_run(Run::new())
+                    para.line_spacing(LineSpacing::new().after(120))
                 );
             }
 
             LineKind::SectionHeader => {
                 let para = render_section_header(&line.text, template, &colors);
-                docx = docx.add_paragraph(para);
+                docx = docx.add_paragraph(
+                    para.line_spacing(
+                        LineSpacing::new()
+                            .before(pt_to_dxa(template.section_spacing_before) as u32)
+                            .after(60),
+                    )
+                );
             }
 
             LineKind::JobEntry => {
-                let para = render_job_entry(
-                    &line.segments,
-                    line.right_text.as_deref(),
-                    template,
-                    &colors,
-                );
+                let para = render_job_entry(&line.segments, line.right_text.as_deref(), template, &colors);
                 docx = docx.add_paragraph(para);
             }
 
             LineKind::JobTitle => {
                 let para = render_job_title(&line.segments, template, &colors);
-                docx = docx.add_paragraph(para);
+                docx = docx.add_paragraph(
+                    para.line_spacing(LineSpacing::new().after(60))
+                );
             }
 
             LineKind::Bullet => {
@@ -88,17 +87,14 @@ fn generate_resume_docx(text: &str, meta: Option<&GenerationMeta>, template: &Te
         previous_kind = Some(line.kind);
     }
 
-    // Add name at the beginning if not written
     if !name_written {
         if let Some(meta) = meta {
-            if let Some(name) = &meta.candidate_name {
-                let _para = render_name_line(name, Some(meta), template, &colors);
-                // Insert at beginning (would need to rebuild, so we'll skip for now)
+            if let Some(_name) = &meta.candidate_name {
+                // Name would be prepended — skip for now (requires rebuild)
             }
         }
     }
 
-    // Add bullet numbering definition
     let (abstract_num, num) = create_bullet_numbering();
 
     docx = docx
@@ -109,41 +105,45 @@ fn generate_resume_docx(text: &str, meta: Option<&GenerationMeta>, template: &Te
     Ok(docx)
 }
 
-/// Generate DOCX for cover letter
-fn generate_cover_letter_docx(text: &str, meta: Option<&GenerationMeta>, template: &Template) -> Result<Docx> {
+// ─── Cover letter DOCX ────────────────────────────────────────────────────────
+
+fn generate_cover_letter_docx(
+    text: &str,
+    meta: Option<&GenerationMeta>,
+    template: &Template,
+) -> Result<Docx> {
     let mut docx = Docx::new();
 
-    // Page setup with slightly larger margins
     let page_margin = PageMargin::new()
         .top(inch_to_dxa(1.0))
         .bottom(inch_to_dxa(1.0))
         .left(inch_to_dxa(template.margin_in + 0.15))
         .right(inch_to_dxa(template.margin_in + 0.15));
 
-    // Setup colors
     let colors = setup_colors(template);
+    let font_name = docx_font_name(template.fonts.body_family);
+    let name_font = docx_font_name(template.fonts.name_family);
 
     let lines: Vec<&str> = text.lines().collect();
     let mut header_done = false;
     let mut in_body = false;
 
-    for raw_line in lines {
+    for raw_line in &lines {
         let trimmed = raw_line.trim();
         if trimmed.is_empty() {
-            docx = docx.add_paragraph(
-                Paragraph::new().add_run(Run::new())
-            );
+            // Blank lines — DOCX flow handles spacing; skip blank para emission
             continue;
         }
 
         let clean = strip_md(trimmed);
-        let segments = super::parser::parse_inline_md(trimmed);
+        let _segments = super::parser::parse_inline_md(trimmed);
 
-        // Detect salutation and signoff
         let is_salutation = clean.starts_with("Dear") || clean.starts_with("Sehr geehrte");
         let is_signoff = clean.starts_with("Kind regards")
             || clean.starts_with("Sincerely")
             || clean.starts_with("Best regards")
+            || clean.starts_with("Best,")
+            || clean.starts_with("Regards")
             || clean.starts_with("Mit freundlichen");
 
         // First line is name
@@ -158,26 +158,30 @@ fn generate_cover_letter_docx(text: &str, meta: Option<&GenerationMeta>, templat
                     .add_run(
                         Run::new()
                             .add_text(name_text)
-                            .size(pt_to_dxa(template.name_pt - 2.0))
+                            .size(pt_to_dxa(template.name_pt))
                             .bold()
                             .color(&colors.name)
-                            .fonts(RunFonts::new().ascii("Calibri")),
-                    ),
+                            .fonts(RunFonts::new().ascii(name_font)),
+                    )
+                    .line_spacing(LineSpacing::new().after(60)),
             );
             continue;
         }
 
         // Contact/address lines
-        if !header_done && (clean.contains('@') || clean.contains('|') || clean.chars().filter(|c| c.is_numeric()).count() > 5) {
+        if !header_done && (clean.contains('@') || clean.contains('|') || clean.contains('·')
+            || clean.chars().filter(|c| c.is_numeric()).count() > 5)
+        {
             docx = docx.add_paragraph(
                 Paragraph::new()
                     .add_run(
                         Run::new()
                             .add_text(&clean)
-                            .size(pt_to_dxa(template.body_pt - 1.0))
+                            .size(pt_to_dxa(9.0))
                             .color(&colors.date)
-                            .fonts(RunFonts::new().ascii("Calibri")),
-                    ),
+                            .fonts(RunFonts::new().ascii(font_name)),
+                    )
+                    .line_spacing(LineSpacing::new().after(40)),
             );
             continue;
         }
@@ -191,11 +195,11 @@ fn generate_cover_letter_docx(text: &str, meta: Option<&GenerationMeta>, templat
                     .add_run(
                         Run::new()
                             .add_text(&clean)
-                            .size(pt_to_dxa(template.body_pt + 0.5))
-                            .bold()
+                            .size(pt_to_dxa(template.body_pt))
                             .color(&colors.body)
-                            .fonts(RunFonts::new().ascii("Calibri")),
-                    ),
+                            .fonts(RunFonts::new().ascii(font_name)),
+                    )
+                    .line_spacing(LineSpacing::new().before(160).after(160)),
             );
             continue;
         }
@@ -209,8 +213,9 @@ fn generate_cover_letter_docx(text: &str, meta: Option<&GenerationMeta>, templat
                             .add_text(&clean)
                             .size(pt_to_dxa(template.body_pt))
                             .color(&colors.body)
-                            .fonts(RunFonts::new().ascii("Calibri")),
-                    ),
+                            .fonts(RunFonts::new().ascii(font_name)),
+                    )
+                    .line_spacing(LineSpacing::new().before(240).after(480)),
             );
             continue;
         }
@@ -222,37 +227,26 @@ fn generate_cover_letter_docx(text: &str, meta: Option<&GenerationMeta>, templat
                     .add_run(
                         Run::new()
                             .add_text(&clean)
-                            .size(pt_to_dxa(template.body_pt - 1.0))
+                            .size(pt_to_dxa(template.body_pt))
                             .color(&colors.date)
-                            .fonts(RunFonts::new().ascii("Calibri")),
-                    ),
+                            .fonts(RunFonts::new().ascii(font_name)),
+                    )
+                    .line_spacing(LineSpacing::new().after(40)),
             );
             continue;
         }
 
-        // Body paragraphs with inline bold
-        let runs = create_runs(
-            &segments,
-            pt_to_dxa(template.body_pt + 0.5),
-            &colors.body,
-            Some(&colors.emphasis),
-        );
-
-        let mut para = Paragraph::new();
-
-        for run in runs {
-            para = para.add_run(run);
-        }
-
+        // Body paragraphs — use proper spacing via pPr, no blank-paragraph spacers
+        let para = render_cover_letter_paragraph(&clean, template, &colors, font_name);
         docx = docx.add_paragraph(para);
     }
 
     docx = docx.page_margin(page_margin);
-
     Ok(docx)
 }
 
-/// Extract a section from the full AI output between two markers
+// ─── Extract section helper ───────────────────────────────────────────────────
+
 fn extract_section<'a>(text: &'a str, start_marker: &str, end_marker: Option<&str>) -> &'a str {
     let start = if let Some(idx) = text.find(start_marker) {
         let after = &text[idx + start_marker.len()..];
@@ -260,19 +254,24 @@ fn extract_section<'a>(text: &'a str, start_marker: &str, end_marker: Option<&st
     } else {
         return text;
     };
-
     let end = if let Some(em) = end_marker {
         text[start..].find(em).map(|i| start + i).unwrap_or(text.len())
     } else {
         text.len()
     };
-
     text[start..end].trim()
 }
 
-/// Main export function
+// ─── Public entry point ───────────────────────────────────────────────────────
+
 pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
-    let template = Template::get(request.template_id);
+    // Two-column is PDF-only — DOCX always linearizes to single column.
+    let effective_id = request.template_id;
+    let mut template = Template::get(effective_id);
+    if matches!(effective_id, TemplateId::TwoColumn) {
+        template.two_column = None;
+        template.margin_in = 1.0;
+    }
 
     let docx = match request.document_type {
         DocumentType::Resume => {
@@ -289,7 +288,6 @@ pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
         }
     };
 
-    // Convert to bytes
     let mut buffer = std::io::Cursor::new(Vec::new());
     docx.build().pack(&mut buffer).context("Failed to pack DOCX")?;
     Ok(buffer.into_inner())

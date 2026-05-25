@@ -80,6 +80,7 @@ fn test_generate_pdf_resume_basic() {
         document_type: DocumentType::Resume,
         template_id: super::super::types::TemplateId::Classic,
         meta: None,
+        ats_mode: false,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -93,6 +94,7 @@ fn test_generate_pdf_cover_letter_basic() {
         document_type: DocumentType::CoverLetter,
         template_id: super::super::types::TemplateId::Modern,
         meta: None,
+        ats_mode: false,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -111,6 +113,7 @@ fn test_generate_pdf_resume_with_meta() {
             company_name: Some("Test Corp".to_string()),
             target_language: None,
         }),
+        ats_mode: false,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -125,6 +128,7 @@ fn test_generate_pdf_resume_with_section_markers() {
         document_type: DocumentType::Resume,
         template_id: super::super::types::TemplateId::Classic,
         meta: None,
+        ats_mode: false,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -139,6 +143,7 @@ fn test_generate_pdf_cover_letter_with_section_markers() {
         document_type: DocumentType::CoverLetter,
         template_id: super::super::types::TemplateId::Modern,
         meta: None,
+        ats_mode: false,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());

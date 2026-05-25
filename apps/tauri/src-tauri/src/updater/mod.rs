@@ -1,8 +1,5 @@
 /// Auto-updater for the Tauri shell.
 ///
-/// Mirrors the Electron updater (apps/desktop/src/main/updater.ts) but uses
-/// tauri-plugin-updater instead of electron-updater.
-///
 /// ── UpdateStatus shapes (must match use-updater.ts) ──────────────────────────
 ///   { state: "idle" }
 ///   { state: "checking" }
@@ -13,29 +10,29 @@
 ///   { state: "error",         message }
 ///
 /// ── Event channel ────────────────────────────────────────────────────────────
-///   updater:status  — emitted by every state transition; the renderer's
-///   TauriInvokeClient.updater.onStatus subscribes to it via listen().
+///   updater:status  — emitted by every state transition.
 ///
 /// ── Three-step flow ──────────────────────────────────────────────────────────
-///   updater_check    → check, emit available / not-available
-///   updater_download → download with progress, emit downloading/downloaded
-///   updater_install  → install bytes and relaunch
+///   updater_check    → check once, store the Update object, emit available/not-available
+///   updater_download → use stored Update to download with progress, store bytes
+///   updater_install  → use stored Update + stored bytes to install, then relaunch
 ///
-/// ── Background polling ───────────────────────────────────────────────────────
-///   setup_auto_check() — silent check 10 s after launch, then every 4 h.
-///   Call from main.rs setup closure.
-use std::sync::Mutex;
+/// The Update object is stored across commands so the download URL and signature
+/// are never re-fetched, avoiding race conditions and unnecessary network calls.
+use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_updater::UpdaterExt;
+use tauri_plugin_updater::{Update, UpdaterExt};
 
-/// Holds the downloaded bytes between updater_download and updater_install.
+/// Holds the pending Update and downloaded bytes between commands.
 #[derive(Default)]
 pub struct UpdaterState {
-    /// Version string of the available update (set by updater_check).
+    /// The Update object returned by check(). Stored so download/install don't re-fetch.
+    pub pending_update: Option<Arc<Update>>,
+    /// Version string for UI display (mirrors pending_update.version).
     pub pending_version: Option<String>,
-    /// Raw bytes from the last successful download (set by updater_download).
+    /// Raw bytes from the last successful download.
     pub downloaded_bytes: Option<Vec<u8>>,
 }
 
@@ -49,6 +46,7 @@ fn emit_status(app: &AppHandle, status: Value) {
 
 /// Check for an available update.
 /// Emits checking → available(version) | not-available | error.
+/// Stores the Update object for use by updater_download.
 #[tauri::command]
 pub async fn updater_check(app: AppHandle) -> Value {
     emit_status(&app, json!({ "state": "checking" }));
@@ -70,6 +68,7 @@ pub async fn updater_check(app: AppHandle) -> Value {
                 let state = app.state::<Mutex<UpdaterState>>();
                 let mut guard = state.lock().unwrap();
                 guard.pending_version = Some(version.clone());
+                guard.pending_update = Some(Arc::new(update));
                 guard.downloaded_bytes = None;
             }
             emit_status(
@@ -84,11 +83,10 @@ pub async fn updater_check(app: AppHandle) -> Value {
         }
         Err(e) => {
             let msg = e.to_string();
-            // Provide helpful error messages for common issues
             let user_msg = if msg.contains("missing field") && msg.contains("signature") {
                 "Update check failed: Release is not properly signed. Please check UPDATER_SETUP.md for instructions.".to_string()
             } else if msg.contains("invalid encoding") || msg.contains("minisign") {
-                "Update check failed: Signature file is corrupted or invalid. Please regenerate signatures.".to_string()
+                "Update check failed: Signature file is corrupted or invalid.".to_string()
             } else if msg.contains("404") || msg.contains("not found") {
                 "Update check failed: No releases found. Make sure latest.json exists in GitHub releases.".to_string()
             } else {
@@ -101,28 +99,17 @@ pub async fn updater_check(app: AppHandle) -> Value {
 }
 
 /// Download the pending update with progress events.
+/// Uses the Update object stored by updater_check — no re-fetch.
 /// Emits downloading(percent) → downloaded(version) | error.
 #[tauri::command]
 pub async fn updater_download(app: AppHandle) -> Value {
-    let version = {
+    let (update, version) = {
         let state = app.state::<Mutex<UpdaterState>>();
         let guard = state.lock().unwrap();
-        guard.pending_version.clone()
-    };
-
-    let Some(version) = version else {
-        return json!({ "error": "no pending update — call updater_check first" });
-    };
-
-    let updater = match app.updater() {
-        Ok(u) => u,
-        Err(e) => return json!({ "error": e.to_string() }),
-    };
-
-    let update = match updater.check().await {
-        Ok(Some(u)) => u,
-        Ok(None) => return json!({ "error": "update no longer available" }),
-        Err(e) => return json!({ "error": e.to_string() }),
+        match (guard.pending_update.clone(), guard.pending_version.clone()) {
+            (Some(u), Some(v)) => (u, v),
+            _ => return json!({ "error": "no pending update — call updater_check first" }),
+        }
     };
 
     let app_clone = app.clone();
@@ -171,27 +158,17 @@ pub async fn updater_download(app: AppHandle) -> Value {
 }
 
 /// Install the downloaded update and relaunch.
+/// Uses the Update object and bytes stored by earlier commands — no re-fetch.
 #[tauri::command]
 pub async fn updater_install(app: AppHandle) -> Value {
-    let bytes = {
+    let (update, bytes) = {
         let state = app.state::<Mutex<UpdaterState>>();
         let mut guard = state.lock().unwrap();
-        guard.downloaded_bytes.take()
-    };
-
-    let Some(bytes) = bytes else {
-        return json!({ "error": "no downloaded update — call updater_download first" });
-    };
-
-    let updater = match app.updater() {
-        Ok(u) => u,
-        Err(e) => return json!({ "error": e.to_string() }),
-    };
-
-    let update = match updater.check().await {
-        Ok(Some(u)) => u,
-        Ok(None) => return json!({ "error": "update no longer available" }),
-        Err(e) => return json!({ "error": e.to_string() }),
+        match (guard.pending_update.clone(), guard.downloaded_bytes.take()) {
+            (Some(u), Some(b)) => (u, b),
+            (None, _) => return json!({ "error": "no pending update — call updater_check first" }),
+            (_, None) => return json!({ "error": "no downloaded update — call updater_download first" }),
+        }
     };
 
     match update.install(bytes) {
@@ -208,8 +185,7 @@ pub async fn updater_install(app: AppHandle) -> Value {
 
 // ── Background polling ────────────────────────────────────────────────────────
 
-/// Silent check 10 s after launch, then every 4 h — mirrors Electron's
-/// updater.ts schedule.
+/// Silent check 10 s after launch, then every 4 h.
 pub fn setup_auto_check(app: &AppHandle) {
     let app_10s = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -233,6 +209,8 @@ async fn silent_check(app: &AppHandle) {
                 let state = app.state::<Mutex<UpdaterState>>();
                 let mut guard = state.lock().unwrap();
                 guard.pending_version = Some(version.clone());
+                guard.pending_update = Some(Arc::new(update));
+                guard.downloaded_bytes = None;
             }
             emit_status(
                 app,
