@@ -67,14 +67,14 @@ tauri signer generate -w ~/.tauri/myapp.key
 
 The release workflow requires these secrets in your GitHub repository settings:
 
-- `TAURI_SIGNING_PRIVATE_KEY_BASE64` - Base64-encoded content of your private key file
+- `TAURI_SIGNING_PRIVATE_KEY_BASE64` - Raw content of your private key file (not base64-encoded)
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` - Password if you set one (optional)
 
-To encode your private key:
+To get your private key content:
 
 ```bash
-base64 -i ~/.tauri/myapp.key
-# Copy the output and add it as TAURI_SIGNING_PRIVATE_KEY_BASE64 in GitHub secrets
+cat ~/.tauri/myapp.key
+# Copy the entire output and add it as TAURI_SIGNING_PRIVATE_KEY_BASE64 in GitHub secrets
 ```
 
 ## Testing Updates Locally

@@ -236,11 +236,11 @@ jobs:
           pnpm build:packages
           echo "::endgroup::"
 
-      - name: 🔐 Decode Tauri Key
+      - name: 🔐 Setup Tauri Key
         if: runner.os != 'Linux' || runner.os == 'Linux'
         shell: bash
         run: |
-          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}" | base64 --decode > tauri.key
+          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}" > tauri.key
 
       - name: 🔧 Add Intel Target (macOS only)
         if: runner.os == 'macOS'
