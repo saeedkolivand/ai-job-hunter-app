@@ -117,7 +117,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
-          fetch-depth: 0
+          fetch-depth: 1
           ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
       - name: 🟢 Setup Node.js
@@ -179,7 +179,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: v${{ needs.sync-version-files.outputs.version }}
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: 📦 Setup pnpm
         uses: pnpm/action-setup@v4
@@ -205,24 +205,10 @@ jobs:
 
       - name: 🐧 Install Linux Dependencies
         if: runner.os == 'Linux'
-        run: |
-          set -x
-          echo "::group::Updating package lists"
-          sudo apt-get update
-          echo "::endgroup::"
-          echo "::group::Installing system dependencies"
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
-          echo "::endgroup::"
-          set +x
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          version: latest
 
       - name: 💾 Restore Rust Cache
         uses: swatinem/rust-cache@v2
@@ -338,6 +324,7 @@ jobs:
             apps/tauri/src-tauri/target/
             apps/tauri/src-tauri/bundle/
           retention-days: 7
+          compression-level: 9
 
       - name: 📝 Job Summary
         if: always()
