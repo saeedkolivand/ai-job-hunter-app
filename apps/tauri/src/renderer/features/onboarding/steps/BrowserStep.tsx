@@ -1,7 +1,3 @@
-import { Globe } from 'lucide-react';
-
-import { FloatingIcon } from '@ajh/ui';
-
 import { useTranslation } from '@/lib/i18n';
 import { useCheckBrowser } from '@/services';
 
@@ -46,11 +42,6 @@ export function BrowserStep({
       onNext={onNext}
       canAdvance={isDetected || !showLoading}
     >
-      {/* Icon */}
-      <div className="mb-6 flex justify-center">
-        <FloatingIcon icon={Globe} size={24} />
-      </div>
-
       {/* Loading state */}
       {showLoading && <BrowserLoadingState message={t('onboarding.browser.checking')} />}
 

@@ -1172,7 +1172,7 @@
       "back": "Back",
       "next": "Upload resume"
     },
-    "ollama": {
+    "ai": {
       "title": "Set up your AI",
       "subtitle": "AI Job Hunter runs models locally via Ollama — no API keys, no cloud.",
       "checking": "Checking for Ollama…",
@@ -1198,7 +1198,25 @@
       "back": "Back",
       "next": "See the features",
       "skip": "Skip for now",
-      "skipWarning": "AI features won't work without a model"
+      "skipWarning": "AI features won't work without a model",
+      "localTab": "Local (Ollama)",
+      "cloudTab": "Cloud AI",
+      "readyBadge": "Ollama ready",
+      "systemPerformance": "System Performance",
+      "ramLabel": "RAM",
+      "cpuLabel": "CPU",
+      "vramLabel": "VRAM",
+      "cores": "cores",
+      "free": "free",
+      "mayLagRam": "May lag (RAM)",
+      "mayLagVram": "May lag (VRAM)",
+      "downloadModel": "Download {{model}}",
+      "downloadingModel": "Downloading {{model}}…",
+      "modelDownloaded": "{{model}} downloaded",
+      "downloadFailed": "Download failed. Please try again.",
+      "apiKeyStored": "API key stored",
+      "getApiKeyAt": "Get your API key at",
+      "saveKey": "Save Key"
     },
     "browser": {
       "title": "Browser Required",
