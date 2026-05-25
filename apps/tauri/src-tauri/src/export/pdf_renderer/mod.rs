@@ -414,6 +414,7 @@ pub fn wrap_segments(
 
 /// Render the name + contact + accent rule header — shared between resume and cover letter.
 /// When both documents use the same template the top 1.5" is pixel-identical.
+#[allow(clippy::too_many_arguments)]
 pub fn render_letterhead(
     template: &Template,
     layout: &LayoutConfig,
@@ -898,6 +899,7 @@ pub fn estimate_paragraph_height(
 
 /// Render a cover-letter paragraph with the template's paragraph_indent style.
 /// Returns (ops, new_y).
+#[allow(clippy::too_many_arguments)]
 pub fn render_cover_letter_paragraph(
     text: &str,
     template: &Template,
