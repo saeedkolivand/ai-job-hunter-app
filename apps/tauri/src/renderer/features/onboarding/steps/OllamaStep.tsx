@@ -153,7 +153,6 @@ export function OllamaStep({ onBack, onNext, direction, stepIndex, totalSteps }:
               key="cloud-panel"
               selectedProvider={cloudProvider}
               onProviderChange={setCloudProvider}
-              onContinue={handleContinue}
             />
           )}
 
