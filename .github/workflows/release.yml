@@ -320,7 +320,7 @@ jobs:
           # Add Windows signatures if they exist
           if [ -d "release/bundle/nsis" ] && ls release/bundle/nsis/*.sig 1> /dev/null 2>&1; then
             SIG=$(cat release/bundle/nsis/*.sig | tr -d '\n')
-            echo '    "windows-x86_64": {' >> latest.json
+            echo '    "windows-x86_64-nsis": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
             echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI_Job_Hunter_Assistant_${VERSION}_x64-setup.exe\"" >> latest.json
             echo '    },' >> latest.json
@@ -337,7 +337,7 @@ jobs:
           # Add Linux signatures if they exist
           if [ -d "release/bundle/appimage" ] && ls release/bundle/appimage/*.sig 1> /dev/null 2>&1; then
             SIG=$(cat release/bundle/appimage/*.sig | tr -d '\n')
-            echo '    "linux-x86_64": {' >> latest.json
+            echo '    "linux-x86_64-appimage": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
             echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-x86_64.AppImage\"" >> latest.json
             echo '    },' >> latest.json
@@ -361,7 +361,11 @@ jobs:
           fi
 
           # Close JSON (remove trailing comma and close)
-          sed -i '$ s/,$//' latest.json
+          if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' '$ s/,$//' latest.json
+          else
+            sed -i '$ s/,$//' latest.json
+          fi
           echo '  }' >> latest.json
           echo '}' >> latest.json
 
