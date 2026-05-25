@@ -77,7 +77,8 @@ fn test_emit_step_with_false_ok() {
 fn test_resolve_data_dir_with_env_var() {
     unsafe { std::env::set_var("AJH_DATA_DIR", "/custom/path"); }
     let dir = resolve_data_dir();
-    assert_eq!(dir, std::path::PathBuf::from("/custom/path"));
+    // On Windows, paths are normalized; compare string representation
+    assert_eq!(dir.to_string_lossy(), "/custom/path");
     unsafe { std::env::remove_var("AJH_DATA_DIR"); }
 }
 

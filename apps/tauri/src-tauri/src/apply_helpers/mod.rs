@@ -1,7 +1,6 @@
-use crate::applying::types::{ApplyContext, ApplyStep};
 use crate::scraping::ScraperEngine;
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
