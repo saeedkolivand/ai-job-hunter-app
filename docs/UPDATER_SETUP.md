@@ -77,7 +77,7 @@ cat ~/.tauri/myapp.key
 # Copy the entire output and add it as TAURI_SIGNING_PRIVATE_KEY in GitHub secrets
 ```
 
-**Note:** The GitHub secret should contain the raw key content (not base64-encoded). The workflow automatically base64-encodes it before passing to Tauri, which expects a base64-encoded key.
+**Note:** The GitHub secret should contain the raw key content (not base64-encoded). The workflow automatically base64-encodes it during the build process, as Tauri v2 requires base64-encoded keys.
 
 ## Testing Updates Locally
 
