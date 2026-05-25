@@ -13,7 +13,7 @@ export function Titlebar() {
   const togglePalette = useAppStore((s) => s.togglePalette);
   const onboardingCompleted = useOnboardingCompleted();
   const [WindowControls, setWindowControls] = useState<ComponentType | null>(null);
-  const [isMac, setIsMac] = useState(true);
+  const [isMac, setIsMac] = useState(false);
 
   useEffect(() => {
     onWindowControlsRegistered((c) => setWindowControls(() => c));
