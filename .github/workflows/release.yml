@@ -297,20 +297,96 @@ jobs:
           fi
           echo "::endgroup::"
 
-      - name: 📤 Upload Release Assets
+      - name: � Generate latest.json
+        if: success()
+        shell: bash
+        run: |
+          echo "::group::Generating latest.json"
+          cd apps/tauri/src-tauri/target/release/bundle
+
+          # Collect signature files and URLs
+          VERSION="${{ needs.sync-version-files.outputs.version }}"
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          # Start JSON structure
+          cat > latest.json << EOF
+          {
+            "version": "$VERSION",
+            "notes": "See https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/tag/v$VERSION for details",
+            "pub_date": "$PUB_DATE",
+            "platforms": {
+          EOF
+
+          # Add Windows signatures if they exist
+          if [ -d "nsis" ] && ls nsis/*.sig 1> /dev/null 2>&1; then
+            SIG=$(cat nsis/*.sig | tr -d '\n')
+            echo '    "windows-x86_64": {' >> latest.json
+            echo "      \"signature\": \"$SIG\"," >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI_Job_Hunter_Assistant_${VERSION}_x64-setup.exe\"" >> latest.json
+            echo '    },' >> latest.json
+          fi
+
+          if [ -d "msi" ] && ls msi/*.sig 1> /dev/null 2>&1; then
+            SIG=$(cat msi/*.sig | tr -d '\n')
+            echo '    "windows-x86_64-msi": {' >> latest.json
+            echo "      \"signature\": \"$SIG\"," >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI_Job_Hunter_Assistant_${VERSION}_x64_en-US.msi\"" >> latest.json
+            echo '    },' >> latest.json
+          fi
+
+          # Add Linux signatures if they exist
+          if [ -d "appimage" ] && ls appimage/*.sig 1> /dev/null 2>&1; then
+            SIG=$(cat appimage/*.sig | tr -d '\n')
+            echo '    "linux-x86_64": {' >> latest.json
+            echo "      \"signature\": \"$SIG\"," >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-x86_64.AppImage\"" >> latest.json
+            echo '    },' >> latest.json
+          fi
+
+          # Add macOS signatures if they exist
+          if [ -d "../../x86_64-apple-darwin/release/bundle/dmg" ] && ls ../../x86_64-apple-darwin/release/bundle/dmg/*.sig 1> /dev/null 2>&1; then
+            SIG=$(cat ../../x86_64-apple-darwin/release/bundle/dmg/*.sig | tr -d '\n')
+            echo '    "darwin-x86_64": {' >> latest.json
+            echo "      \"signature\": \"$SIG\"," >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-intel.dmg\"" >> latest.json
+            echo '    },' >> latest.json
+          fi
+
+          if [ -d "../../aarch64-apple-darwin/release/bundle/dmg" ] && ls ../../aarch64-apple-darwin/release/bundle/dmg/*.sig 1> /dev/null 2>&1; then
+            SIG=$(cat ../../aarch64-apple-darwin/release/bundle/dmg/*.sig | tr -d '\n')
+            echo '    "darwin-aarch64": {' >> latest.json
+            echo "      \"signature\": \"$SIG\"," >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-apple-silicon.dmg\"" >> latest.json
+            echo '    },' >> latest.json
+          fi
+
+          # Close JSON (remove trailing comma and close)
+          sed -i '$ s/,$//' latest.json
+          echo '  }' >> latest.json
+          echo '}' >> latest.json
+
+          # Move to a consistent location
+          mv latest.json ../../../release/bundle/latest.json || true
+          echo "::endgroup::"
+
+      - name: Upload Release Assets
         if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.sync-version-files.outputs.version }}
           files: |
             apps/tauri/src-tauri/target/release/bundle/nsis/*.exe
+            apps/tauri/src-tauri/target/release/bundle/nsis/*.sig
             apps/tauri/src-tauri/target/release/bundle/msi/*.msi
+            apps/tauri/src-tauri/target/release/bundle/msi/*.sig
             apps/tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+            apps/tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.sig
             apps/tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            apps/tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.sig
             apps/tauri/src-tauri/target/release/bundle/deb/*.deb
             apps/tauri/src-tauri/target/release/bundle/rpm/*.rpm
             apps/tauri/src-tauri/target/release/bundle/appimage/*.AppImage
-            apps/tauri/src-tauri/target/release/bundle/*/*.sig
+            apps/tauri/src-tauri/target/release/bundle/appimage/*.sig
             apps/tauri/src-tauri/target/release/bundle/latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
