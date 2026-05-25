@@ -3,16 +3,13 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { getRecommended } from '@ajh/shared';
-import { Button, useNotification } from '@ajh/ui';
+import { Button, FloatingIcon } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@/lib/motion';
 import { useAIModels, useSystemHealth, useSystemResources } from '@/services';
 import { keys, queryClient } from '@/services/query-client';
 import type { AiProvider } from '@/store/preferences-schema';
 import { useAIModel, usePreferencesStore } from '@/store/preferences-store';
-
-import { FloatingIcon } from '@ajh/ui';
 
 import { OnboardingStepWrapper } from '../components/OnboardingStepWrapper';
 import { CloudProviderPanel } from './ollama/CloudProviderPanel';
@@ -38,7 +35,6 @@ interface Props {
 
 export function OllamaStep({ onBack, onNext, direction, stepIndex, totalSteps }: Props) {
   const { t } = useTranslation();
-  const notify = useNotification();
   const setAIModel = usePreferencesStore((s) => s.setAIModel);
   const setAiProviderConfig = usePreferencesStore((s) => s.setAiProviderConfig);
   const currentAIModel = useAIModel();
@@ -48,7 +44,7 @@ export function OllamaStep({ onBack, onNext, direction, stepIndex, totalSteps }:
   const [skipping, setSkipping] = useState(false);
 
   const { data: health, isLoading: healthLoading } = useSystemHealth();
-  const { data: modelsRaw, refetch: refetchModels } = useAIModels();
+  const { data: modelsRaw } = useAIModels();
   const models = useMemo(
     () => (modelsRaw as Array<{ name: string }> | undefined) ?? [],
     [modelsRaw]

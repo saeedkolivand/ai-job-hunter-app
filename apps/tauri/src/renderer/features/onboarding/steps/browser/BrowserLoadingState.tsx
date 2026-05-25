@@ -1,4 +1,4 @@
-import { Globe, Loader2 } from 'lucide-react';
+import { Globe } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface BrowserLoadingStateProps {

@@ -14,7 +14,6 @@ import { Button, useNotification } from '@ajh/ui';
 
 import { transition } from '@/lib/motion';
 import { useJobEvents, usePullModel } from '@/services';
-import { keys, queryClient } from '@/services/query-client';
 
 interface ModelSelectionPanelProps {
   selectedModel: string;

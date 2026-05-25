@@ -4,7 +4,6 @@ import { useState } from 'react';
 
 import { Button, Input, useNotification } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
 import { useHasProviderKey, useOpenExternal, useSetProviderKey } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
@@ -59,15 +58,12 @@ const CLOUD_DEFAULT_MODELS: Record<string, string> = {
 interface CloudProviderPanelProps {
   selectedProvider: AiProvider;
   onProviderChange: (provider: AiProvider) => void;
-  onContinue: () => void;
 }
 
 export function CloudProviderPanel({
   selectedProvider,
   onProviderChange,
-  onContinue,
 }: CloudProviderPanelProps) {
-  const { t } = useTranslation();
   const notify = useNotification();
   const openExternal = useOpenExternal();
   const setProviderKey = useSetProviderKey();
