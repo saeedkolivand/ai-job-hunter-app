@@ -65,17 +65,15 @@ export function DeveloperPreferences() {
           </div>
         </button>
 
-        {/* Open DevTools — only in dev builds; uses private WebKit APIs on macOS */}
-        {import.meta.env.DEV && (
-          <Button
-            onClick={() => openDevtools()}
-            disabled={isPending}
-            className="w-full flex items-center gap-2 justify-start rounded-lg border border-white/[0.05] bg-transparent px-3 py-2.5 text-[11px] text-foreground/55 hover:border-white/[0.08] hover:text-foreground/80 transition-colors h-auto"
-          >
-            <Terminal size={13} />
-            {t('settings.developer.openDevtools')}
-          </Button>
-        )}
+        {/* Open DevTools */}
+        <Button
+          onClick={() => openDevtools()}
+          disabled={isPending}
+          className="w-full flex items-center gap-2 justify-start rounded-lg border border-white/[0.05] bg-transparent px-3 py-2.5 text-[11px] text-foreground/55 hover:border-white/[0.08] hover:text-foreground/80 transition-colors h-auto"
+        >
+          <Terminal size={13} />
+          {t('settings.developer.openDevtools')}
+        </Button>
       </div>
     </GlassCard>
   );

@@ -26,6 +26,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 /// Holds the pending Update and downloaded bytes between commands.
+#[derive(Default)]
 pub struct UpdaterState {
     /// The Update object returned by check(). Stored so download/install don't re-fetch.
     pub pending_update: Option<Arc<Update>>,
@@ -33,16 +34,6 @@ pub struct UpdaterState {
     pub pending_version: Option<String>,
     /// Raw bytes from the last successful download.
     pub downloaded_bytes: Option<Vec<u8>>,
-}
-
-impl Default for UpdaterState {
-    fn default() -> Self {
-        Self {
-            pending_update: None,
-            pending_version: None,
-            downloaded_bytes: None,
-        }
-    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
