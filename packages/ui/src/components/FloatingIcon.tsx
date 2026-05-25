@@ -1,15 +1,14 @@
-import { LucideIcon } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { motion } from 'motion/react';
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 interface FloatingIconProps {
   icon: LucideIcon;
   size?: number;
-  className?: string;
   children?: ReactNode;
 }
 
-export function FloatingIcon({ icon: Icon, size = 24, className, children }: FloatingIconProps) {
+export function FloatingIcon({ icon: Icon, size = 24, children }: FloatingIconProps) {
   return (
     <motion.div
       animate={{

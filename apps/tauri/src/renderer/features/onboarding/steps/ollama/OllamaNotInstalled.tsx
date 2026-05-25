@@ -4,7 +4,6 @@ import { motion } from 'motion/react';
 import { Button } from '@ajh/ui';
 
 import { transition } from '@/lib/motion';
-import { keys, queryClient } from '@/services';
 import { useOpenExternal } from '@/services';
 
 interface OllamaNotInstalledProps {

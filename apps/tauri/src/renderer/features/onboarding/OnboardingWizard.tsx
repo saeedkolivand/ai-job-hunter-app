@@ -5,13 +5,11 @@ import { transition } from '@/lib/motion';
 import { useOnboardingCompleted, usePreferencesStore } from '@/store/preferences-store';
 
 import { SpotlightTour } from './SpotlightTour';
-import { ONBOARDING_STEPS, TOTAL_STEPS } from './steps-config';
 import { BrowserStep } from './steps/BrowserStep';
 import { OllamaStep } from './steps/OllamaStep';
 import { ResumeStep } from './steps/ResumeStep';
 import { WelcomeStep } from './steps/WelcomeStep';
-
-type Step = 'welcome' | 'resume' | 'ollama' | 'browser' | 'tour';
+import { ONBOARDING_STEPS, TOTAL_STEPS } from './steps-config';
 
 export function OnboardingWizard() {
   const onboardingCompleted = useOnboardingCompleted();

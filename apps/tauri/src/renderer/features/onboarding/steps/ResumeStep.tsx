@@ -3,15 +3,12 @@ import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 
 import type { DocumentRecord } from '@ajh/shared';
-import { Button, useNotification } from '@ajh/ui';
+import { Button, FloatingIcon, useNotification } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@/lib/motion';
 import { useDocuments, useImportDocument } from '@/services';
 import { usePreferencesStore } from '@/store/preferences-store';
-
-import { FloatingIcon } from '@ajh/ui';
 
 import { OnboardingStepWrapper } from '../components/OnboardingStepWrapper';
 

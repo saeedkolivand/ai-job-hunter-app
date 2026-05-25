@@ -1,15 +1,13 @@
 import { ArrowRight, Check, Wand2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { Button, Input } from '@ajh/ui';
+import { Button, FloatingIcon, Input } from '@ajh/ui';
 
 import { LOCALES } from '@/constants/locales';
 import i18n from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { usePreferencesStore } from '@/store/preferences-store';
-
-import { FloatingIcon } from '@ajh/ui';
 
 import { OnboardingStepWrapper } from '../components/OnboardingStepWrapper';
 

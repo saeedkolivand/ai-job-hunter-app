@@ -1,12 +1,12 @@
 import { motion } from 'motion/react';
-import { ReactNode, useEffect } from 'react';
+import { useEffect } from 'react';
 
-import { FloatingIcon, StepDots } from '@ajh/ui';
+import { StepDots } from '@ajh/ui';
 
 import { transition } from '@/lib/motion';
 
 interface OnboardingStepWrapperProps {
-  children: ReactNode;
+  children: React.ReactNode;
   direction: number;
   stepIndex: number;
   totalSteps: number;
