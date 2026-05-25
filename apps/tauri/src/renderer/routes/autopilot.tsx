@@ -17,7 +17,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useCallback, useState, useReducer } from 'react';
+import { useCallback, useReducer, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
 import type {
@@ -36,17 +36,17 @@ import { StepSchedule } from '@/features/autopilot/components/wizard-steps/StepS
 import { StepTarget } from '@/features/autopilot/components/wizard-steps/StepTarget';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
+import { transition as machineTransition } from '@/lib/machine';
 import {
   autopilotRunMachine,
   type AutopilotRunState,
   RUN_STATE_LABEL,
   stepToEvent,
 } from '@/lib/machines/autopilot-run.machine';
-import { transition as machineTransition } from '@/lib/machine';
 import { transition } from '@/lib/motion';
 import {
-  useAutopilotStepEvents,
   useAutopilots,
+  useAutopilotStepEvents,
   useCreateAutopilot,
   useJobPreferences,
   usePauseAutopilot,

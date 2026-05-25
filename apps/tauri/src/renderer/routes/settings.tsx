@@ -23,8 +23,8 @@ import { Button, GlassCard, IconBadge, Input, RefreshButton, SectionLabel } from
 
 import { PageTransition } from '@/components/layout/PageTransition';
 import { AccountsSettingsTab } from '@/features/settings/components/AccountsSettingsTab';
-import { DeveloperPreferences } from '@/features/settings/components/DeveloperPreferences';
 import { AISettingsTab } from '@/features/settings/components/AISettingsTab';
+import { DeveloperPreferences } from '@/features/settings/components/DeveloperPreferences';
 import { JobLocationPreferences } from '@/features/settings/components/JobLocationPreferences';
 import { LanguageSelector } from '@/features/settings/components/LanguageSelector';
 import { OutputTonePreferences } from '@/features/settings/components/OutputTonePreferences';
