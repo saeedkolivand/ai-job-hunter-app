@@ -255,10 +255,9 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          # Base64-encode the private key (secret contains raw content)
-          export TAURI_SIGNING_PRIVATE_KEY=$(echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" | base64 -w 0)
           echo "::group::Building Tauri application"
           if [ "${{ runner.os }}" == "macOS" ]; then
             # Build Intel
