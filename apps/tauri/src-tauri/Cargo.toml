@@ -67,10 +67,8 @@ unicode-segmentation = "1.10"
 
 [target.'cfg(windows)'.dependencies]
 wmi = "0.18"
-tauri = { version = "2", features = ["macos-private-api"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
 
 [dev-dependencies]
 mockall = "0.14"
