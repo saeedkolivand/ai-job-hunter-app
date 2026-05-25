@@ -1,6 +1,51 @@
 import type { DocumentImportRequest } from '../../schemas/index.js';
 import type { DocumentRecord } from '../../types/index.js';
 
+export type TemplateId =
+  | 'classic'
+  | 'modern'
+  | 'executive'
+  | 'editorial-serif'
+  | 'swiss-minimal'
+  | 'two-column'
+  | 'mono-technical'
+  | 'refined-executive'
+  | 'academic';
+
+interface ExportMeta {
+  candidateName?: string;
+  jobTitle?: string;
+  companyName?: string;
+  targetLanguage?: string;
+}
+
+interface BaseExportRequest {
+  text: string;
+  format: 'docx' | 'pdf' | 'txt';
+  documentType: 'resume' | 'cover-letter';
+  templateId: TemplateId;
+  meta?: ExportMeta;
+  /** Linearize two-column layouts for ATS parsers. Only affects two-column template. */
+  atsMode?: boolean;
+}
+
+export interface CoverLetterExportRequest {
+  templateId: TemplateId;
+  /** Recipient first/last name — used for salutation. */
+  recipientName?: string;
+  /** Honorific: "Dr.", "Prof.", "Ms.", etc. — prepended to salutation. */
+  recipientTitle?: string;
+  recipientCompany?: string;
+  /** Multi-line OK — rendered as recipient block. */
+  recipientAddress?: string;
+  /** Overrides the template's default closing phrase. */
+  closingPhrase?: string;
+  /** User's professional title — shown in NameAndTitle / ScriptStyle signatures. */
+  signatureTitle?: string;
+  /** Overrides the app locale for salutation and closing phrase resolution. */
+  locale?: 'en' | 'de';
+}
+
 export interface DocumentsContract {
   list(): Promise<DocumentRecord[]>;
 
@@ -10,31 +55,11 @@ export interface DocumentsContract {
 
   setDefault(id: string): Promise<void>;
 
-  exportDocument(req: {
-    text: string;
-    format: 'docx' | 'pdf' | 'txt';
-    documentType: 'resume' | 'cover-letter';
-    templateId: 'classic' | 'modern' | 'executive';
-    meta?: {
-      candidateName?: string;
-      jobTitle?: string;
-      companyName?: string;
-      targetLanguage?: string;
-    };
-  }): Promise<{ data: number[]; mimeType: string; filename: string }>;
+  exportDocument(
+    req: BaseExportRequest
+  ): Promise<{ data: number[]; mimeType: string; filename: string }>;
 
-  exportAndSave(req: {
-    text: string;
-    format: 'docx' | 'pdf' | 'txt';
-    documentType: 'resume' | 'cover-letter';
-    templateId: 'classic' | 'modern' | 'executive';
-    meta?: {
-      candidateName?: string;
-      jobTitle?: string;
-      companyName?: string;
-      targetLanguage?: string;
-    };
-  }): Promise<string>;
+  exportAndSave(req: BaseExportRequest): Promise<string>;
 }
 
 export const DOCUMENTS_CHANNELS = {
