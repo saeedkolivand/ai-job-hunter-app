@@ -291,92 +291,6 @@ jobs:
           fi
           echo "::endgroup::"
 
-      - name: 🏷️ Generate latest.json
-        if: success()
-        shell: bash
-        run: |
-          echo "::group::Generating latest.json"
-          # For macOS, artifacts are in target-specific directories
-          # For Windows/Linux, they're in target/release/bundle
-          if [ "${{ runner.os }}" == "macOS" ]; then
-            cd apps/tauri/src-tauri/target
-          else
-            cd apps/tauri/src-tauri/target/release/bundle
-          fi
-
-          # Collect signature files and URLs
-          VERSION="${{ needs.sync-version-files.outputs.version }}"
-          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-          # Start JSON structure
-          cat > latest.json << EOF
-          {
-            "version": "$VERSION",
-            "notes": "See https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/tag/v$VERSION for details",
-            "pub_date": "$PUB_DATE",
-            "platforms": {
-          EOF
-
-          # Add Windows signatures if they exist
-          if [ -d "release/bundle/nsis" ] && ls release/bundle/nsis/*.sig 1> /dev/null 2>&1; then
-            SIG=$(cat release/bundle/nsis/*.sig | tr -d '\n')
-            echo '    "windows-x86_64-nsis": {' >> latest.json
-            echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI_Job_Hunter_Assistant_${VERSION}_x64-setup.exe\"" >> latest.json
-            echo '    },' >> latest.json
-          fi
-
-          if [ -d "release/bundle/msi" ] && ls release/bundle/msi/*.sig 1> /dev/null 2>&1; then
-            SIG=$(cat release/bundle/msi/*.sig | tr -d '\n')
-            echo '    "windows-x86_64-msi": {' >> latest.json
-            echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI_Job_Hunter_Assistant_${VERSION}_x64_en-US.msi\"" >> latest.json
-            echo '    },' >> latest.json
-          fi
-
-          # Add Linux signatures if they exist
-          if [ -d "release/bundle/appimage" ] && ls release/bundle/appimage/*.sig 1> /dev/null 2>&1; then
-            SIG=$(cat release/bundle/appimage/*.sig | tr -d '\n')
-            echo '    "linux-x86_64-appimage": {' >> latest.json
-            echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-x86_64.AppImage\"" >> latest.json
-            echo '    },' >> latest.json
-          fi
-
-          # Add macOS signatures (Tauri signs .app.tar.gz for updater, not .dmg)
-          if [ -d "x86_64-apple-darwin/release/bundle/macos" ] && ls x86_64-apple-darwin/release/bundle/macos/*.tar.gz.sig 1> /dev/null 2>&1; then
-            SIG=$(cat x86_64-apple-darwin/release/bundle/macos/*.tar.gz.sig | tr -d '\n')
-            echo '    "darwin-x86_64": {' >> latest.json
-            echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-intel.app.tar.gz\"" >> latest.json
-            echo '    },' >> latest.json
-          fi
-
-          if [ -d "aarch64-apple-darwin/release/bundle/macos" ] && ls aarch64-apple-darwin/release/bundle/macos/*.tar.gz.sig 1> /dev/null 2>&1; then
-            SIG=$(cat aarch64-apple-darwin/release/bundle/macos/*.tar.gz.sig | tr -d '\n')
-            echo '    "darwin-aarch64": {' >> latest.json
-            echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-apple-silicon.app.tar.gz\"" >> latest.json
-            echo '    },' >> latest.json
-          fi
-
-          # Close JSON (remove trailing comma and close)
-          if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' '$ s/,$//' latest.json
-          else
-            sed -i '$ s/,$//' latest.json
-          fi
-          echo '  }' >> latest.json
-          echo '}' >> latest.json
-
-          # Move to a consistent location
-          if [ "${{ runner.os }}" == "macOS" ]; then
-            mv latest.json release/bundle/latest.json || true
-          else
-            mv latest.json ../../../release/bundle/latest.json || true
-          fi
-          echo "::endgroup::"
-
       - name: Upload Release Assets
         if: success()
         uses: softprops/action-gh-release@v2
@@ -397,7 +311,6 @@ jobs:
             apps/tauri/src-tauri/target/release/bundle/rpm/*.rpm
             apps/tauri/src-tauri/target/release/bundle/appimage/*.AppImage
             apps/tauri/src-tauri/target/release/bundle/appimage/*.sig
-            apps/tauri/src-tauri/target/release/bundle/latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -447,3 +360,97 @@ jobs:
           echo "Runner OS: ${{ runner.os }}"
           echo "Platform: ${{ matrix.platform }}"
           echo "::endgroup::"
+
+  generate-update-manifest:
+    name: 📝 Generate Update Manifest
+    needs: build
+    if: needs.sync-version-files.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.sync-version-files.outputs.version }}
+          fetch-depth: 1
+
+      - name: 🏷️ Generate latest.json
+        run: |
+          echo "::group::Generating latest.json"
+          VERSION="${{ needs.sync-version-files.outputs.version }}"
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          # Start JSON structure
+          cat > latest.json << EOF
+          {
+            "version": "$VERSION",
+            "notes": "See https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/tag/v$VERSION for details",
+            "pub_date": "$PUB_DATE",
+            "platforms": {
+          EOF
+
+          # Download signatures from GitHub release
+          gh release download "v$VERSION" --dir temp/ --pattern "*.sig" || true
+
+          # Add Windows signatures
+          if [ -f "temp/AI_Job_Hunter_Assistant_${VERSION}_x64-setup.exe.sig" ]; then
+            SIG=$(cat "temp/AI_Job_Hunter_Assistant_${VERSION}_x64-setup.exe.sig" | tr -d '\n')
+            echo '    "windows-x86_64-nsis": {' >> latest.json
+            echo "      \"signature\": \"$SIG\"," >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI_Job_Hunter_Assistant_${VERSION}_x64-setup.exe\"" >> latest.json
+            echo '    },' >> latest.json
+          fi
+
+          if [ -f "temp/AI_Job_Hunter_Assistant_${VERSION}_x64_en-US.msi.sig" ]; then
+            SIG=$(cat "temp/AI_Job_Hunter_Assistant_${VERSION}_x64_en-US.msi.sig" | tr -d '\n')
+            echo '    "windows-x86_64-msi": {' >> latest.json
+            echo "      \"signature\": \"$SIG\"," >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI_Job_Hunter_Assistant_${VERSION}_x64_en-US.msi\"" >> latest.json
+            echo '    },' >> latest.json
+          fi
+
+          # Add Linux signatures
+          if [ -f "temp/AI-Job-Hunter-Assistant-${VERSION}-x86_64.AppImage.sig" ]; then
+            SIG=$(cat "temp/AI-Job-Hunter-Assistant-${VERSION}-x86_64.AppImage.sig" | tr -d '\n')
+            echo '    "linux-x86_64-appimage": {' >> latest.json
+            echo "      \"signature\": \"$SIG\"," >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-x86_64.AppImage\"" >> latest.json
+            echo '    },' >> latest.json
+          fi
+
+          # Add macOS signatures
+          if [ -f "temp/AI-Job-Hunter-Assistant-${VERSION}-intel.app.tar.gz.sig" ]; then
+            SIG=$(cat "temp/AI-Job-Hunter-Assistant-${VERSION}-intel.app.tar.gz.sig" | tr -d '\n')
+            echo '    "darwin-x86_64": {' >> latest.json
+            echo "      \"signature\": \"$SIG\"," >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-intel.app.tar.gz\"" >> latest.json
+            echo '    },' >> latest.json
+          fi
+
+          if [ -f "temp/AI-Job-Hunter-Assistant-${VERSION}-apple-silicon.app.tar.gz.sig" ]; then
+            SIG=$(cat "temp/AI-Job-Hunter-Assistant-${VERSION}-apple-silicon.app.tar.gz.sig" | tr -d '\n')
+            echo '    "darwin-aarch64": {' >> latest.json
+            echo "      \"signature\": \"$SIG\"," >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-apple-silicon.app.tar.gz\"" >> latest.json
+            echo '    },' >> latest.json
+          fi
+
+          # Close JSON (remove trailing comma and close)
+          sed -i '$ s/,$//' latest.json
+          echo '  }' >> latest.json
+          echo '}' >> latest.json
+
+          cat latest.json
+          echo "::endgroup::"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📤 Upload latest.json to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.sync-version-files.outputs.version }}
+          files: latest.json
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
