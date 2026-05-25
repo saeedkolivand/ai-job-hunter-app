@@ -184,6 +184,7 @@ fn main() {
             commands::system::system_open_external,
             commands::system::system_set_performance_mode,
             commands::system::system_get_metrics,
+            commands::system::system_check_browser,
             // jobs
             commands::jobs::jobs_list,
             commands::jobs::jobs_get,

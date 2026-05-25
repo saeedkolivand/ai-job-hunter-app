@@ -4,6 +4,7 @@ import type { AutopilotCreate, AutopilotUpdate } from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
+import { useCheckBrowser } from './use-system';
 import { keys } from './query-client';
 
 export const useAutopilots = () => {
@@ -51,8 +52,17 @@ export const useRemoveAutopilot = () => {
 export const useRunAutopilot = () => {
   const api = useAppClient();
   const qc = useQueryClient();
+  const { data: browserCheck } = useCheckBrowser();
+
   return useMutation({
-    mutationFn: (id: string) => api.autopilot.run({ autopilotId: id }),
+    mutationFn: async (id: string) => {
+      if (!browserCheck?.detected) {
+        throw new Error(
+          'Chrome or Edge is required for autopilot job applications. Please install Chrome or Edge, or set the CHROME environment variable to point to your browser installation.'
+        );
+      }
+      return api.autopilot.run({ autopilotId: id });
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.autopilot.all }),
   });
 };

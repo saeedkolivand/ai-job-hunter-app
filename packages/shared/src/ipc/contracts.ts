@@ -53,6 +53,8 @@ export interface IpcContract {
     setPerformanceMode(mode: 'low-memory' | 'balanced' | 'performance'): Promise<void>;
 
     getMetrics(): Promise<AppMetrics>;
+
+    checkBrowser(): Promise<{ detected: boolean; path?: string }>;
   };
 
   jobs: {
@@ -408,6 +410,8 @@ export const IPC_CHANNELS = {
     setPerformanceMode: 'system:setPerformanceMode',
 
     getMetrics: 'system:getMetrics',
+
+    checkBrowser: 'system:checkBrowser',
   },
 
   jobs: {

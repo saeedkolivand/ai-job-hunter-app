@@ -5,11 +5,12 @@ import { transition } from '@/lib/motion';
 import { useOnboardingCompleted, usePreferencesStore } from '@/store/preferences-store';
 
 import { SpotlightTour } from './SpotlightTour';
+import { BrowserStep } from './steps/BrowserStep';
 import { OllamaStep } from './steps/OllamaStep';
 import { ResumeStep } from './steps/ResumeStep';
 import { WelcomeStep } from './steps/WelcomeStep';
 
-type Step = 'welcome' | 'resume' | 'ollama' | 'tour';
+type Step = 'welcome' | 'resume' | 'ollama' | 'browser' | 'tour';
 
 export function OnboardingWizard() {
   const onboardingCompleted = useOnboardingCompleted();
@@ -62,6 +63,14 @@ export function OnboardingWizard() {
             key="ollama"
             direction={direction}
             onBack={() => goBack('resume')}
+            onNext={() => goNext('browser')}
+          />
+        )}
+        {step === 'browser' && (
+          <BrowserStep
+            key="browser"
+            direction={direction}
+            onBack={() => goBack('ollama')}
             onNext={() => goNext('tour')}
           />
         )}
