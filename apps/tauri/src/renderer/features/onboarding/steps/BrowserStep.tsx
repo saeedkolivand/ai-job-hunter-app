@@ -1,12 +1,4 @@
-import {
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
-  ExternalLink,
-  Globe,
-  SkipForward,
-  X,
-} from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ExternalLink, Globe, SkipForward, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect } from 'react';
 
@@ -60,7 +52,7 @@ export function BrowserStep({ direction, onBack, onNext }: BrowserStepProps) {
       >
         <div className="flex flex-col items-center justify-center gap-4 py-12">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-brand border-t-transparent" />
-          <p className="text-sm text-foreground/70">Checking browser availability…</p>
+          <p className="text-sm text-foreground/70">{t('onboarding.browser.checking')}</p>
         </div>
       </motion.div>
     );
@@ -81,12 +73,16 @@ export function BrowserStep({ direction, onBack, onNext }: BrowserStepProps) {
             <CheckCircle2 className="h-10 w-10 text-green-400" />
           </div>
           <div className="text-center">
-            <h2 className="text-2xl font-semibold text-foreground">Browser Detected</h2>
+            <h2 className="text-2xl font-semibold text-foreground">
+              {t('onboarding.browser.detected')}
+            </h2>
             <p className="mt-2 text-sm text-foreground/70">
-              {browserPath ? `Found at: ${browserPath}` : 'Chrome or Edge is available'}
+              {browserPath
+                ? t('onboarding.browser.foundAt', { path: browserPath })
+                : t('onboarding.browser.available')}
             </p>
           </div>
-          <p className="text-sm text-foreground/50">Proceeding to next step…</p>
+          <p className="text-sm text-foreground/50">{t('onboarding.browser.proceeding')}</p>
         </div>
       </motion.div>
     );
@@ -107,13 +103,13 @@ export function BrowserStep({ direction, onBack, onNext }: BrowserStepProps) {
           className="flex items-center gap-2 text-sm text-foreground/50 transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back
+          {t('onboarding.back')}
         </button>
         <button
           onClick={onNext}
           className="flex items-center gap-2 text-sm text-foreground/50 transition-colors hover:text-foreground"
         >
-          Skip
+          {t('onboarding.skip')}
           <SkipForward className="h-4 w-4" />
         </button>
       </div>
@@ -122,21 +118,19 @@ export function BrowserStep({ direction, onBack, onNext }: BrowserStepProps) {
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-brand-soft">
           <Globe className="h-8 w-8 text-brand" />
         </div>
-        <h2 className="text-2xl font-semibold text-foreground">Browser Required</h2>
-        <p className="text-center text-sm text-foreground/70">
-          Chrome or Edge is needed for job board login and automated job applications.
-        </p>
+        <h2 className="text-2xl font-semibold text-foreground">{t('onboarding.browser.title')}</h2>
+        <p className="text-center text-sm text-foreground/70">{t('onboarding.browser.subtitle')}</p>
       </div>
 
       <div className="mb-8 rounded-xl bg-destructive/10 p-4">
         <div className="flex items-start gap-3">
           <X className="mt-0.5 h-5 w-5 flex-shrink-0 text-destructive" />
           <div className="flex-1">
-            <p className="text-sm font-medium text-destructive">No browser detected</p>
+            <p className="text-sm font-medium text-destructive">
+              {t('onboarding.browser.notDetected')}
+            </p>
             <p className="mt-1 text-xs text-foreground/70">
-              Without Chrome or Edge, the app will download a ~120 MB Chromium binary when you first
-              try to connect to a job board. Installing Chrome is recommended for better
-              performance.
+              {t('onboarding.browser.notDetectedDesc')}
             </p>
           </div>
         </div>
@@ -150,7 +144,7 @@ export function BrowserStep({ direction, onBack, onNext }: BrowserStepProps) {
           disabled={openExternal.isPending}
         >
           <ExternalLink className="mr-2 h-4 w-4" />
-          Download Chrome
+          {t('onboarding.browser.downloadChrome')}
         </Button>
         <Button
           onClick={openEdgeDownload}
@@ -159,17 +153,16 @@ export function BrowserStep({ direction, onBack, onNext }: BrowserStepProps) {
           disabled={openExternal.isPending}
         >
           <ExternalLink className="mr-2 h-4 w-4" />
-          Download Edge
+          {t('onboarding.browser.downloadEdge')}
         </Button>
         <Button onClick={onNext} className="w-full" variant="ghost">
           <SkipForward className="mr-2 h-4 w-4" />
-          Skip for now
+          {t('onboarding.browser.skip')}
         </Button>
       </div>
 
       <p className="mt-6 text-center text-xs text-foreground/50">
-        You can also set the <code className="rounded bg-foreground/10 px-1 py-0.5">CHROME</code>{' '}
-        environment variable to point to a custom browser installation.
+        {t('onboarding.browser.envVar')}
       </p>
     </motion.div>
   );
