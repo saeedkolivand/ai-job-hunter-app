@@ -1199,6 +1199,23 @@
       "skip": "Vorerst überspringen",
       "skipWarning": "KI-Funktionen sind ohne Modell nicht verfügbar"
     },
+    "browser": {
+      "title": "Browser erforderlich",
+      "subtitle": "Chrome oder Edge wird für die Anmeldung bei Jobbörsen und automatisierte Jobbewerbungen benötigt.",
+      "checking": "Prüfe Browser-Verfügbarkeit…",
+      "detected": "Browser erkannt",
+      "foundAt": "Gefunden unter: {{path}}",
+      "available": "Chrome oder Edge ist verfügbar",
+      "proceeding": "Gehe zum nächsten Schritt…",
+      "notDetected": "Kein Browser erkannt",
+      "notDetectedDesc": "Ohne Chrome oder Edge lädt die App beim ersten Verbindungsversuch mit einer Jobbörse eine ~120 MB Chromium-Binärdatei herunter. Die Installation von Chrome wird für bessere Leistung empfohlen.",
+      "downloadChrome": "Chrome herunterladen",
+      "downloadEdge": "Edge herunterladen",
+      "skip": "Vorerst überspringen",
+      "envVar": "Sie können auch die Umgebungsvariable CHROME festlegen, um auf eine benutzerdefinierte Browser-Installation zu verweisen.",
+      "back": "Zurück",
+      "next": "Funktionen ansehen"
+    },
     "tour": {
       "title": "Kurze Tour",
       "subtitle": "Hier ist, was Sie tun können",
