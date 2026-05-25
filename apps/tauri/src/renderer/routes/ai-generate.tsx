@@ -42,6 +42,7 @@ import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
 import { useAIModels, useExtractText } from '@/services';
 import { keys } from '@/services/query-client';
+import { useSaveAiGeneration } from '@/services/use-ai-generations';
 import { useAIModel, usePreferencesStore } from '@/store/preferences-store';
 import type { Model } from '@/types';
 
@@ -188,6 +189,9 @@ function AIGeneratePage() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    let finalResume = '';
+    let finalCover = '';
+
     try {
       if (target === 'resume' || target === 'both') {
         setActiveOut('resume');
@@ -199,6 +203,7 @@ function AIGeneratePage() {
           mode,
           aiModel.defaultModel,
           (tok) => {
+            finalResume += tok;
             setResumeOut((p) => p + tok);
             setStreamBuffer((p) => (p + tok).slice(-600));
           },
@@ -217,6 +222,7 @@ function AIGeneratePage() {
           mode,
           aiModel.defaultModel,
           (tok) => {
+            finalCover += tok;
             setCoverOut((p) => p + tok);
             setStreamBuffer((p) => (p + tok).slice(-600));
           },
@@ -229,6 +235,21 @@ function AIGeneratePage() {
       setStreamBuffer('');
       setStage('done');
       setActiveOut(target === 'cover' ? 'cover' : 'resume');
+
+      void saveAiGeneration.mutate({
+        candidateName: meta.candidateName,
+        jobTitle: meta.jobTitle,
+        companyName: meta.companyName,
+        resumeLanguage: meta.resumeLanguage,
+        jobAdLanguage: meta.jobAdLanguage,
+        targetLanguage: meta.targetLanguage,
+        mismatch: meta.mismatch,
+        topRequirements: meta.topRequirements,
+        mode,
+        resumeText: finalResume,
+        coverLetterText: finalCover,
+        jobAd,
+      });
     } catch (err) {
       stopStageRotation();
       setError(err instanceof Error ? err.message : t('aiGenerate.errors.generationFailed'));
@@ -292,6 +313,8 @@ function AIGeneratePage() {
       exportTXT(text, name);
     }
   };
+
+  const saveAiGeneration = useSaveAiGeneration();
 
   const isGenerating = stage === 'generating';
 

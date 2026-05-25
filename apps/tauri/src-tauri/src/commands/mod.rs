@@ -1,5 +1,6 @@
 // Tauri command implementations organized by domain
 
+pub mod ai_generations;
 pub mod system;
 pub mod ai;
 pub mod scrape;

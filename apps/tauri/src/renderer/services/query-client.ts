@@ -54,4 +54,5 @@ export const keys = {
   autopilot: { all: ['autopilot'] as const, detail: (id: string) => ['autopilot', id] as const },
   conversations: { detail: (id: string) => ['conversations', id] as const },
   apply: { catalog: ['apply', 'catalog'] as const },
+  aiGenerations: { all: ['aiGenerations'] as const },
 } as const;
