@@ -240,7 +240,7 @@ jobs:
         if: runner.os != 'Linux' || runner.os == 'Linux'
         shell: bash
         run: |
-          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}" > tauri.key
+          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}" | base64 -w 0 > tauri.key
 
       - name: 🔧 Add Intel Target (macOS only)
         if: runner.os == 'macOS'
