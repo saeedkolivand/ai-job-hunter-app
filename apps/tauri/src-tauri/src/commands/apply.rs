@@ -5,7 +5,6 @@ use serde_json::{json, Value};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio_util::sync::CancellationToken;
-use uuid::Uuid;
 
 #[tauri::command]
 pub async fn apply_start(app: AppHandle, req: Value) -> Value {

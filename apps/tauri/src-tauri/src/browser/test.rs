@@ -21,7 +21,7 @@ fn test_browser_controller_new() {
 fn test_browser_controller_is_open() {
     let opts = BrowserControllerOptions::default();
     let controller = BrowserController::new(opts);
-    assert_eq!(controller.is_open(), false);
+    assert!(!controller.is_open());
 }
 
 #[test]
