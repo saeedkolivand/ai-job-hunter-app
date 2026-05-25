@@ -399,45 +399,45 @@ jobs:
           echo "::endgroup::"
 
           # Add Windows signatures
-          if [ -f "temp/AI_Job_Hunter_Assistant_${VERSION}_x64-setup.exe.sig" ]; then
-            SIG=$(cat "temp/AI_Job_Hunter_Assistant_${VERSION}_x64-setup.exe.sig" | tr -d '\n')
+          if [ -f "temp/AI.Job.Hunter.Assistant_${VERSION}_x64-setup.exe.sig" ]; then
+            SIG=$(cat "temp/AI.Job.Hunter.Assistant_${VERSION}_x64-setup.exe.sig" | tr -d '\n')
             echo '    "windows-x86_64-nsis": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI_Job_Hunter_Assistant_${VERSION}_x64-setup.exe\"" >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI.Job.Hunter.Assistant_${VERSION}_x64-setup.exe\"" >> latest.json
             echo '    },' >> latest.json
           fi
 
-          if [ -f "temp/AI_Job_Hunter_Assistant_${VERSION}_x64_en-US.msi.sig" ]; then
-            SIG=$(cat "temp/AI_Job_Hunter_Assistant_${VERSION}_x64_en-US.msi.sig" | tr -d '\n')
+          if [ -f "temp/AI.Job.Hunter.Assistant_${VERSION}_x64_en-US.msi.sig" ]; then
+            SIG=$(cat "temp/AI.Job.Hunter.Assistant_${VERSION}_x64_en-US.msi.sig" | tr -d '\n')
             echo '    "windows-x86_64-msi": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI_Job_Hunter_Assistant_${VERSION}_x64_en-US.msi\"" >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI.Job.Hunter.Assistant_${VERSION}_x64_en-US.msi\"" >> latest.json
             echo '    },' >> latest.json
           fi
 
           # Add Linux signatures
-          if [ -f "temp/AI-Job-Hunter-Assistant-${VERSION}-x86_64.AppImage.sig" ]; then
-            SIG=$(cat "temp/AI-Job-Hunter-Assistant-${VERSION}-x86_64.AppImage.sig" | tr -d '\n')
+          if [ -f "temp/AI.Job.Hunter.Assistant_${VERSION}_amd64.AppImage.sig" ]; then
+            SIG=$(cat "temp/AI.Job.Hunter.Assistant_${VERSION}_amd64.AppImage.sig" | tr -d '\n')
             echo '    "linux-x86_64-appimage": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-x86_64.AppImage\"" >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI.Job.Hunter.Assistant_${VERSION}_amd64.AppImage\"" >> latest.json
             echo '    },' >> latest.json
           fi
 
           # Add macOS signatures
-          if [ -f "temp/AI-Job-Hunter-Assistant-${VERSION}-intel.app.tar.gz.sig" ]; then
-            SIG=$(cat "temp/AI-Job-Hunter-Assistant-${VERSION}-intel.app.tar.gz.sig" | tr -d '\n')
+          if [ -f "temp/AI.Job.Hunter.Assistant_${VERSION}_intel.app.tar.gz.sig" ]; then
+            SIG=$(cat "temp/AI.Job.Hunter.Assistant_${VERSION}_intel.app.tar.gz.sig" | tr -d '\n')
             echo '    "darwin-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-intel.app.tar.gz\"" >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI.Job.Hunter.Assistant_${VERSION}_intel.app.tar.gz\"" >> latest.json
             echo '    },' >> latest.json
           fi
 
-          if [ -f "temp/AI-Job-Hunter-Assistant-${VERSION}-apple-silicon.app.tar.gz.sig" ]; then
-            SIG=$(cat "temp/AI-Job-Hunter-Assistant-${VERSION}-apple-silicon.app.tar.gz.sig" | tr -d '\n')
+          if [ -f "temp/AI.Job.Hunter.Assistant_${VERSION}_apple-silicon.app.tar.gz.sig" ]; then
+            SIG=$(cat "temp/AI.Job.Hunter.Assistant_${VERSION}_apple-silicon.app.tar.gz.sig" | tr -d '\n')
             echo '    "darwin-aarch64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI-Job-Hunter-Assistant-${VERSION}-apple-silicon.app.tar.gz\"" >> latest.json
+            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI.Job.Hunter.Assistant_${VERSION}_apple-silicon.app.tar.gz\"" >> latest.json
             echo '    },' >> latest.json
           fi
 
