@@ -230,7 +230,7 @@ pub fn setup_colors(template: &Template) -> ColorPalette {
         date: rgb_to_color(template.date_color),
         emphasis: rgb_to_color(template.emphasis_color),
         rule: rgb_to_color(template.rule_color),
-        accent: rgb_to_color(template.accent_color),
+        _accent: rgb_to_color(template.accent_color),
     }
 }
 
