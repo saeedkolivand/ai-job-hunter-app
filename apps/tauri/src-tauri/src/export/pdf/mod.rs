@@ -216,7 +216,7 @@ fn generate_two_column_resume_pdf(
     let header_bottom_y = y - pt_to_mm(2.0);
 
     // Draw sidebar background
-    ops.extend(draw_sidebar_bg(&layout, tc.sidebar_bg_color, header_bottom_y, layout.page_height, layout.margin_in * 25.4));
+    ops.extend(draw_sidebar_bg(&layout, tc.sidebar_bg_color, header_bottom_y, layout.margin_in * 25.4));
 
     // Render main column (experience etc.)
     let main_layout = LayoutConfig {
@@ -328,8 +328,9 @@ fn generate_cover_letter_pdf(
         .join(" · ");
 
     // Render letterhead
+    let render_ctx = RenderCtx { template, layout: &layout, colors: &colors, fonts: &fonts };
     let (lh_ops, new_y) = render_letterhead(
-        template, &layout, &colors, &fonts,
+        &render_ctx,
         name_text,
         &contact_line,
         cl.header_style,
@@ -511,7 +512,8 @@ fn generate_cover_letter_pdf(
         maybe_break_before(&mut page_state, estimated_h.min(line_height * 2.0), min_tail);
 
         let (para_ops, new_y) = render_cover_letter_paragraph(
-            para_text, template, &layout, &colors, &fonts,
+            &render_ctx,
+            para_text,
             page_state.y, content_width, x,
         );
         page_state.current_ops.extend(para_ops);

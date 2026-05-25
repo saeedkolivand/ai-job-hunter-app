@@ -118,6 +118,14 @@ pub fn resolve_fonts(
     (&f.regular, &f.bold, f.italic.as_ref())
 }
 
+/// Bundles the four common render parameters so functions stay under the arg limit.
+pub struct RenderCtx<'a> {
+    pub template: &'a Template,
+    pub layout: &'a LayoutConfig,
+    pub colors: &'a ColorPalette,
+    pub fonts: &'a LoadedFontSet,
+}
+
 // ─── Page state (multi-page support) ─────────────────────────────────────────
 
 /// Tracks the current rendering position across multiple pages.
@@ -130,7 +138,6 @@ pub struct PageState {
     pub y: f32,
     /// Bottom margin in mm — content below this triggers a page break.
     pub bottom_margin: f32,
-    pub _page_height: f32,
     /// Y position at the top of a fresh page.
     pub top_y: f32,
 }
@@ -143,7 +150,6 @@ impl PageState {
             current_ops: Vec::new(),
             y: top_y,
             bottom_margin: layout.margin_in * 25.4,
-            _page_height: layout.page_height,
             top_y,
         }
     }
@@ -187,7 +193,6 @@ pub struct ColorPalette {
     pub date: Color,
     pub emphasis: Color,
     pub rule: Color,
-    pub _accent: Color,
 }
 
 /// Layout configuration
@@ -230,7 +235,6 @@ pub fn setup_colors(template: &Template) -> ColorPalette {
         date: rgb_to_color(template.date_color),
         emphasis: rgb_to_color(template.emphasis_color),
         rule: rgb_to_color(template.rule_color),
-        _accent: rgb_to_color(template.accent_color),
     }
 }
 
@@ -289,7 +293,7 @@ pub fn build_line(x1: f32, y1: f32, x2: f32, color: Color, thickness: f32) -> Ve
 }
 
 /// Draw the sidebar background rectangle from header_bottom_y to the bottom margin.
-pub fn draw_sidebar_bg(layout: &LayoutConfig, bg_color: (u8, u8, u8), header_bottom_y: f32, _page_height: f32, bottom_margin: f32) -> Vec<Op> {
+pub fn draw_sidebar_bg(layout: &LayoutConfig, bg_color: (u8, u8, u8), header_bottom_y: f32, bottom_margin: f32) -> Vec<Op> {
     let color = rgb_to_color(bg_color);
     let rect_x = layout.margin_left;
     let rect_y = bottom_margin;
@@ -414,22 +418,22 @@ pub fn wrap_segments(
 
 /// Render the name + contact + accent rule header — shared between resume and cover letter.
 /// When both documents use the same template the top 1.5" is pixel-identical.
-#[allow(clippy::too_many_arguments)]
 pub fn render_letterhead(
-    template: &Template,
-    layout: &LayoutConfig,
-    colors: &ColorPalette,
-    fonts: &LoadedFontSet,
+    ctx: &RenderCtx<'_>,
     name: &str,
     contact_line: &str,
     style: CoverLetterHeader,
     y: f32,
 ) -> (Vec<Op>, f32) {
-    let (_, name_bold, _) = resolve_fonts(fonts, template.fonts.name_family);
-    let (body_reg, _, _) = resolve_fonts(fonts, template.fonts.body_family);
+    let (_, name_bold, _) = resolve_fonts(ctx.fonts, ctx.template.fonts.name_family);
+    let (body_reg, _, _) = resolve_fonts(ctx.fonts, ctx.template.fonts.body_family);
 
     let mut ops = Vec::new();
     let mut current_y = y;
+
+    let template = ctx.template;
+    let layout = ctx.layout;
+    let colors = ctx.colors;
 
     match style {
         CoverLetterHeader::Compact => {
@@ -899,19 +903,18 @@ pub fn estimate_paragraph_height(
 
 /// Render a cover-letter paragraph with the template's paragraph_indent style.
 /// Returns (ops, new_y).
-#[allow(clippy::too_many_arguments)]
 pub fn render_cover_letter_paragraph(
+    ctx: &RenderCtx<'_>,
     text: &str,
-    template: &Template,
-    layout: &LayoutConfig,
-    colors: &ColorPalette,
-    fonts: &LoadedFontSet,
     y: f32,
     content_width: f32,
     x_offset: f32,
 ) -> (Vec<Op>, f32) {
     use crate::export::templates::ParagraphIndent;
-    let (reg_id, bold_id, _) = resolve_fonts(fonts, template.fonts.body_family);
+    let template = ctx.template;
+    let layout = ctx.layout;
+    let colors = ctx.colors;
+    let (reg_id, bold_id, _) = resolve_fonts(ctx.fonts, template.fonts.body_family);
     let segs = crate::export::parser::parse_inline_md(text);
 
     let mut ops = Vec::new();
@@ -954,21 +957,6 @@ pub fn render_cover_letter_paragraph(
     (ops, current_y)
 }
 
-/// Resolve cover-letter salutation respecting locale and honorifics.
-#[allow(dead_code)]
-pub fn resolve_salutation(
-    recipient_name: Option<&str>,
-    recipient_title: Option<&str>,
-    locale: &str,
-) -> String {
-    let honorific = recipient_title.map(|t| format!("{} ", t)).unwrap_or_default();
-    match (recipient_name, locale) {
-        (Some(name), "de") => format!("Sehr geehrte/r {}{},", honorific, name),
-        (Some(name), _) => format!("Dear {}{},", honorific, name),
-        (None, "de") => "Sehr geehrte Damen und Herren,".to_string(),
-        (None, _) => "Dear Hiring Manager,".to_string(),
-    }
-}
 
 #[cfg(test)]
 mod test;
