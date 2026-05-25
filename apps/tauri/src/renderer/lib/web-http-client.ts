@@ -101,6 +101,7 @@ export function createWebHttpClient({ baseUrl, token }: WebHttpClientOptions): A
       openExternal: (url) => cmd('system', 'openExternal', { url }),
       setPerformanceMode: (mode) => cmd('system', 'setPerformanceMode', { mode }),
       getMetrics: () => cmd('system', 'getMetrics'),
+      checkBrowser: () => cmd('system', 'checkBrowser'),
     },
 
     jobs: {

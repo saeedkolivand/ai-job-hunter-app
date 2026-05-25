@@ -31,19 +31,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "nsis",
-      "msi",
-      "dmg",
-      "app",
-      "deb",
-      "rpm",
-      "appimage"
-    ],
-    "icon": [
-      "icons/icon.ico",
-      "icons/icon.png"
-    ],
+    "targets": ["nsis", "msi", "dmg", "app", "deb", "rpm", "appimage"],
+    "icon": ["icons/icon.ico", "icons/icon.png"],
     "resources": []
   },
   "plugins": {

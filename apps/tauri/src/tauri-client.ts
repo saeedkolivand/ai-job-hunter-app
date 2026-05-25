@@ -46,6 +46,7 @@ export function createTauriInvokeClient(): AppClient {
       openExternal: (url) => invoke('system_open_external', { url }),
       setPerformanceMode: (mode) => invoke('system_set_performance_mode', { mode }),
       getMetrics: () => invoke('system_get_metrics'),
+      checkBrowser: () => invoke('system_check_browser'),
     },
 
     jobs: {
