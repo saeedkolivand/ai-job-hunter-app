@@ -102,13 +102,9 @@ pub fn system_get_platform() -> Value {
 
 #[tauri::command]
 pub fn system_open_devtools(app: AppHandle) {
-    // open_devtools uses private WebKit APIs on macOS — only available in dev builds.
-    #[cfg(debug_assertions)]
     if let Some(window) = app.get_webview_window("main") {
         window.open_devtools();
     }
-    #[cfg(not(debug_assertions))]
-    let _ = app;
 }
 
 #[tauri::command]
