@@ -64,6 +64,11 @@ import type { WebHttpClientOptions } from './utils.js';
 
 export function createWebHttpClient(opts: WebHttpClientOptions): AppClient {
   return {
+    aiGenerations: {
+      list: async () => [],
+      save: async () => ({ id: '', success: true }),
+      remove: async () => undefined,
+    } as AppClient['aiGenerations'],
     system: system(opts) as AppClient['system'],
     jobs: jobs(opts) as AppClient['jobs'],
     ai: ai(opts) as AppClient['ai'],

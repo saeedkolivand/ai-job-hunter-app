@@ -686,7 +686,27 @@
     "tabs": {
       "applied": "Applied",
       "viewed": "Viewed",
-      "bookmarked": "Bookmarked"
+      "bookmarked": "Bookmarked",
+      "generated": "Generated"
+    },
+    "generated": {
+      "noGenerationsYet": "No AI-generated documents yet",
+      "noGenerationsDesc": "Generate a tailored resume or cover letter to see it here.",
+      "resume": "Resume",
+      "coverLetter": "Cover Letter",
+      "mode": "Mode",
+      "requirements": "Top requirements",
+      "jobAd": "Job Ad",
+      "viewJobAd": "View job ad",
+      "copyResume": "Copy resume",
+      "copyCoverLetter": "Copy cover letter",
+      "copied": "Copied",
+      "delete": "Delete",
+      "noResume": "No resume generated",
+      "noCoverLetter": "No cover letter generated",
+      "export": "Export",
+      "exportResume": "Resume",
+      "exportCoverLetter": "Cover Letter"
     },
     "relativeTime": {
       "justNow": "Just now",

@@ -16,6 +16,7 @@
 
  */
 
+import { AI_GENERATIONS_CHANNELS, type AiGenerationsContract } from './aiGenerations.js';
 import { AI_CHANNELS, type AiContract } from './ai.js';
 import { APPLY_CHANNELS, type ApplyContract } from './apply.js';
 import { AUTOPILOT_CHANNELS, type AutopilotContract } from './autopilot.js';
@@ -41,6 +42,7 @@ import { UPDATER_CHANNELS, type UpdaterContract } from './updater.js';
 // Combine all namespace contracts into the original IpcContract interface
 
 export interface IpcContract {
+  aiGenerations: AiGenerationsContract;
   system: SystemContract;
   jobs: JobsContract;
   ai: AiContract;
@@ -67,6 +69,7 @@ export interface IpcContract {
 // Combine all channel constants into the original IPC_CHANNELS object
 
 export const IPC_CHANNELS = {
+  aiGenerations: AI_GENERATIONS_CHANNELS,
   system: SYSTEM_CHANNELS,
   jobs: JOBS_CHANNELS,
   ai: AI_CHANNELS,
@@ -97,6 +100,12 @@ export type IpcChannel =
 
 // Re-export individual namespace contracts for direct imports if needed
 
+export {
+  AI_GENERATIONS_CHANNELS,
+  type AiGenerationRecord,
+  type AiGenerationSaveRequest,
+  type AiGenerationsContract,
+} from './aiGenerations.js';
 export { AI_CHANNELS, type AiContract } from './ai.js';
 export { APPLY_CHANNELS, type ApplyContract } from './apply.js';
 export { AUTOPILOT_CHANNELS, type AutopilotContract } from './autopilot.js';

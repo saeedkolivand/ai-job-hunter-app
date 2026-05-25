@@ -14,6 +14,7 @@
 #![allow(clippy::double_ended_iterator_last)]
 #![allow(clippy::wrong_self_convention)]
 
+mod ai_generations;
 mod autopilot;
 mod autopilot_helpers;
 mod apply_helpers;
@@ -145,6 +146,10 @@ fn main() {
             match documents::DocumentStore::open(&data_dir) {
                 Ok(store) => { app.manage(store); }
                 Err(e) => eprintln!("[setup] document store failed to open (non-fatal): {e}"),
+            }
+            match ai_generations::AiGenerationStore::open(&data_dir) {
+                Ok(store) => { app.manage(store); }
+                Err(e) => eprintln!("[setup] ai generations store failed to open (non-fatal): {e}"),
             }
             match job_preferences::JobPreferencesStore::open(&data_dir) {
                 Ok(store) => { app.manage(store); }
@@ -288,6 +293,10 @@ fn main() {
             commands::autopilot::autopilot_run,
             commands::autopilot::autopilot_pause,
             commands::autopilot::autopilot_resume,
+            // ai generations
+            commands::ai_generations::ai_generations_list,
+            commands::ai_generations::ai_generations_save,
+            commands::ai_generations::ai_generations_remove,
             // export
             export::commands::documents_export_document,
             export::commands::documents_export_and_save,

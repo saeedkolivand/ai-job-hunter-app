@@ -46,8 +46,8 @@ export function OutputPanelGenerating({
           <motion.div
             className="h-full rounded-full bg-gradient-to-r from-brand to-primary"
             initial={{ width: '0%' }}
-            animate={{ width: '90%' }}
-            transition={transition.fakeProgressSlow}
+            animate={{ width: streamBuffer.length > 0 ? '90%' : '0%' }}
+            transition={streamBuffer.length > 0 ? transition.fakeProgressSlow : { duration: 0 }}
           />
         </div>
       </div>
