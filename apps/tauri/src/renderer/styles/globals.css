@@ -39,6 +39,15 @@ body[data-modal-open] .app-content {
   transition: filter 200ms ease;
 }
 
+/* ── Onboarding glass modal ─────────────────────────────────────────────────── */
+.onboarding-glass-modal {
+  background: linear-gradient(145deg, rgba(20, 14, 36, 0.97) 0%, rgba(12, 10, 24, 0.97) 100%);
+  box-shadow:
+    0 32px 80px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(168, 85, 247, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
 /* ── Low-memory mode ─────────────────────────────────────────────────────── */
 /* Reduces GPU-heavy effects when the user selects Low Memory performance mode. */
 html[data-performance-mode='low-memory'] {

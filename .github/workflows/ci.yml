@@ -40,6 +40,8 @@ jobs:
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: 📦 Setup pnpm
         uses: pnpm/action-setup@v4
@@ -85,6 +87,8 @@ jobs:
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: 📦 Setup pnpm
         uses: pnpm/action-setup@v4
@@ -160,6 +164,8 @@ jobs:
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: 📦 Setup pnpm
         uses: pnpm/action-setup@v4
@@ -217,6 +223,8 @@ jobs:
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: 📦 Setup pnpm
         uses: pnpm/action-setup@v4
@@ -239,24 +247,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: 🐧 Install Linux Dependencies
-        run: |
-          set -x
-          echo "::group::Updating package lists"
-          sudo apt-get update
-          echo "::endgroup::"
-          echo "::group::Installing system dependencies"
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
-          echo "::endgroup::"
-          set +x
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          version: latest
 
       - name: 💾 Restore Rust Cache
         uses: swatinem/rust-cache@v2
@@ -297,6 +291,7 @@ jobs:
             coverage/
             apps/tauri/src-tauri/target/
           retention-days: 7
+          compression-level: 9
 
       - name: 📝 Job Summary
         if: always()
@@ -344,6 +339,8 @@ jobs:
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: 📦 Setup pnpm
         uses: pnpm/action-setup@v4
@@ -366,24 +363,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: 🐧 Install Linux Dependencies
-        run: |
-          set -x
-          echo "::group::Updating package lists"
-          sudo apt-get update
-          echo "::endgroup::"
-          echo "::group::Installing system dependencies"
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
-          echo "::endgroup::"
-          set +x
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          version: latest
 
       - name: 💾 Restore Rust Cache
         uses: swatinem/rust-cache@v2
@@ -424,6 +407,7 @@ jobs:
             apps/tauri/src-tauri/target/
             node_modules/.cache/
           retention-days: 7
+          compression-level: 9
 
       - name: 📝 Job Summary
         if: always()
@@ -466,11 +450,12 @@ jobs:
     name: 🔬 Quality Checks
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    needs: dependencies
 
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: 🦀 Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -478,24 +463,10 @@ jobs:
           components: clippy
 
       - name: 🐧 Install Linux Dependencies
-        run: |
-          set -x
-          echo "::group::Updating package lists"
-          sudo apt-get update
-          echo "::endgroup::"
-          echo "::group::Installing system dependencies"
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
-          echo "::endgroup::"
-          set +x
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          version: latest
 
       - name: 💾 Restore Rust Cache
         uses: swatinem/rust-cache@v2

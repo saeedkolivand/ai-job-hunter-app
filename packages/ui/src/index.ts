@@ -42,8 +42,10 @@ export { MarkdownMessage } from './components/MarkdownMessage';
 export { StreamingText } from './components/StreamingText';
 
 // ── Composition Helpers ───────────────────────────────────────────────────
+export { FloatingIcon } from './components/FloatingIcon';
 export { OptionTile } from './components/OptionTile';
 export { SettingsSection } from './components/SettingsSection';
+export { StepDots } from './components/StepDots';
 
 // ── Hooks ─────────────────────────────────────────────────────────────────
 export { useFocusTrap } from './hooks/use-focus-trap';
