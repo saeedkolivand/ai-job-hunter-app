@@ -121,7 +121,7 @@ fn generate_cover_letter_docx(
         .right(inch_to_dxa(template.margin_in + 0.15));
 
     let colors = setup_colors(template);
-    let _font_name = docx_font_name(template.fonts.body_family);
+    let font_name = docx_font_name(template.fonts.body_family);
     let name_font = docx_font_name(template.fonts.name_family);
 
     let lines: Vec<&str> = text.lines().collect();
