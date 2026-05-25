@@ -13,7 +13,7 @@ export function Titlebar() {
   const togglePalette = useAppStore((s) => s.togglePalette);
   const onboardingCompleted = useOnboardingCompleted();
   const [WindowControls, setWindowControls] = useState<ComponentType | null>(null);
-  const [isMac, setIsMac] = useState(false);
+  const [isMac, setIsMac] = useState(true);
 
   useEffect(() => {
     onWindowControlsRegistered((c) => setWindowControls(() => c));
@@ -23,8 +23,7 @@ export function Titlebar() {
   return (
     <div
       className="app-drag relative z-[300] flex h-10 select-none items-center justify-between"
-      style={{ paddingLeft: isMac ? 80 : 16 }}
-      data-tauri-drag-region={!isMac}
+      data-tauri-drag-region
     >
       <div className="flex items-center gap-2 px-4 text-xs font-medium text-foreground/70">
         <Sparkles size={14} className="opacity-80" />
