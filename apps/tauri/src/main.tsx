@@ -17,7 +17,7 @@ import { PerformanceModeProvider } from '@/providers/PerformanceModeProvider';
 import { routeTree } from '@/routeTree.gen';
 import { queryClient } from '@/services/query-client';
 
-import { createTauriInvokeClient } from './tauri-client';
+import { createTauriInvokeClient } from './tauri-client/index.js';
 import { TauriWindowControls } from './TauriWindowControls';
 
 import '@/i18n';

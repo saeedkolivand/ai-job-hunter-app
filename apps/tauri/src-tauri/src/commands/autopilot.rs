@@ -1,4 +1,5 @@
 use crate::autopilot::{AutopilotStatus, AutopilotStore};
+use crate::autopilot_helpers::autopilot_scrape;
 use crate::scraping::{JobPosting, ScraperEngine};
 use serde_json::{json, Value};
 use std::sync::Mutex;
@@ -184,42 +185,6 @@ pub fn autopilot_resume(app: AppHandle, autopilot_id: String) -> Value {
 }
 
 // Helper functions
-
-pub async fn autopilot_scrape(
-    engine: &ScraperEngine,
-    target: &crate::autopilot::AutopilotTarget,
-    job_id: &str,
-    app: &AppHandle,
-) -> Result<Vec<JobPosting>, String> {
-    let input = crate::scraping::BoardSearchInput {
-        query: target.query.clone(),
-        location: target.location.clone(),
-        pages: target.pages,
-        date_filter: target.date_filter.clone(),
-        job_type: None,
-        work_type: target.work_type.clone(),
-        experience_level: None,
-        easy_apply: None,
-        actively_hiring: None,
-        verified: None,
-        sort_by: None,
-        locale: None,
-    };
-
-    let app_progress = app.clone();
-    let job_id_progress = job_id.to_string();
-    let on_progress = Box::new(move |p: f32| {
-        let _ = app_progress.emit(
-            "scrape.progress",
-            json!({ "jobId": job_id_progress, "progress": p }),
-        );
-    });
-
-    engine
-        .scrape_board(&target.board, input, job_id.to_string(), Some(on_progress), None)
-        .await
-        .map_err(|e| e.to_string())
-}
 
 pub async fn autopilot_rank(
     postings: Vec<JobPosting>,

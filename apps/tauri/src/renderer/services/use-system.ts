@@ -66,3 +66,13 @@ export const useSystemMetrics = () => {
     staleTime: 20_000,
   });
 };
+
+/** Check if Chrome/Edge is available for browser automation. */
+export const useCheckBrowser = () => {
+  const api = useAppClient();
+  return useQuery({
+    queryKey: keys.system.checkBrowser,
+    queryFn: () => api.system.checkBrowser(),
+    staleTime: Infinity,
+  });
+};

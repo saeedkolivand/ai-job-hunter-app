@@ -160,7 +160,7 @@ auto-save-list
 *.cert
 *.crt
 secrets/
-credentials/
+/credentials/
 *.mobileprovision
 
 # ── Database / local app data ─────────────────────────────────────────────────

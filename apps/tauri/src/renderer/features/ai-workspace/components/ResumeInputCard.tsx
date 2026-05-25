@@ -117,7 +117,13 @@ export function ResumeInputCard({
         bytes,
         title: lastUploadedFile.name,
       });
-      if (asDefault && result?.id) {
+      if (
+        asDefault &&
+        result &&
+        typeof result === 'object' &&
+        'id' in result &&
+        typeof result.id === 'string'
+      ) {
         await setDefaultDocument.mutateAsync(result.id);
       }
       notify(

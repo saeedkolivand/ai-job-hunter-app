@@ -1199,6 +1199,23 @@
       "skip": "Skip for now",
       "skipWarning": "AI features won't work without a model"
     },
+    "browser": {
+      "title": "Browser Required",
+      "subtitle": "Chrome or Edge is needed for job board login and automated job applications.",
+      "checking": "Checking browser availability…",
+      "detected": "Browser Detected",
+      "foundAt": "Found at: {{path}}",
+      "available": "Chrome or Edge is available",
+      "proceeding": "Proceeding to next step…",
+      "notDetected": "No browser detected",
+      "notDetectedDesc": "Without Chrome or Edge, the app will download a ~120 MB Chromium binary when you first try to connect to a job board. Installing Chrome is recommended for better performance.",
+      "downloadChrome": "Download Chrome",
+      "downloadEdge": "Download Edge",
+      "skip": "Skip for now",
+      "envVar": "You can also set the CHROME environment variable to point to a custom browser installation.",
+      "back": "Back",
+      "next": "See the features"
+    },
     "tour": {
       "title": "Quick tour",
       "subtitle": "Here's what you can do",
