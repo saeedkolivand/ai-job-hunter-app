@@ -30,7 +30,7 @@ export function OutputPanelDone({
   activeOut,
   meta,
   mode,
-  templateId,
+  templateId: _templateId,
   onActiveOutChange,
   onCopy,
   onExport,
