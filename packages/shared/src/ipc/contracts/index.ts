@@ -16,8 +16,8 @@
 
  */
 
-import { AI_GENERATIONS_CHANNELS, type AiGenerationsContract } from './aiGenerations.js';
 import { AI_CHANNELS, type AiContract } from './ai.js';
+import { AI_GENERATIONS_CHANNELS, type AiGenerationsContract } from './aiGenerations.js';
 import { APPLY_CHANNELS, type ApplyContract } from './apply.js';
 import { AUTOPILOT_CHANNELS, type AutopilotContract } from './autopilot.js';
 import { BOARDS_CHANNELS, type BoardsContract } from './boards.js';
@@ -100,13 +100,13 @@ export type IpcChannel =
 
 // Re-export individual namespace contracts for direct imports if needed
 
+export { AI_CHANNELS, type AiContract } from './ai.js';
 export {
   AI_GENERATIONS_CHANNELS,
   type AiGenerationRecord,
   type AiGenerationSaveRequest,
   type AiGenerationsContract,
 } from './aiGenerations.js';
-export { AI_CHANNELS, type AiContract } from './ai.js';
 export { APPLY_CHANNELS, type ApplyContract } from './apply.js';
 export { AUTOPILOT_CHANNELS, type AutopilotContract } from './autopilot.js';
 export { BOARDS_CHANNELS, type BoardsContract } from './boards.js';
