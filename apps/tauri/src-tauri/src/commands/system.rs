@@ -83,6 +83,15 @@ fn write_locale_file(app: &AppHandle, locale: &str) {
 }
 
 #[tauri::command]
+pub fn system_check_browser() -> Value {
+    let detected = crate::platform::detect_system_chrome();
+    json!({
+        "detected": detected.is_some(),
+        "path": detected.map(|p| p.to_string_lossy().to_string())
+    })
+}
+
+#[tauri::command]
 pub fn system_get_platform() -> Value {
     json!({
         "platform": std::env::consts::OS,
@@ -329,5 +338,15 @@ mod tests {
             // Just verify it returns a vector without panicking
             let _ = gpu_info;
         }
+    }
+
+    #[test]
+    fn test_system_check_browser() {
+        // Test that the function doesn't panic and returns valid JSON
+        let result = system_check_browser();
+        // Verify the result has the expected structure
+        assert!(result.is_object());
+        assert!(result.get("detected").is_some());
+        assert!(result.get("path").is_some());
     }
 }

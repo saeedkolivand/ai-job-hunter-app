@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAppClient } from '@/providers/AppClientProvider';
+import { useCheckBrowser } from './use-system';
 
 const KEYS = {
   linkedinStatus: ['boards', 'linkedin', 'status'] as const,
@@ -21,8 +22,17 @@ export const useLinkedInStatus = () => {
 export const useLinkedInConnect = () => {
   const api = useAppClient();
   const qc = useQueryClient();
+  const { data: browserCheck } = useCheckBrowser();
+
   return useMutation({
-    mutationFn: () => api.linkedin.connect(),
+    mutationFn: async () => {
+      if (!browserCheck?.detected) {
+        throw new Error(
+          'Chrome or Edge is required for LinkedIn login. Please install Chrome or Edge, or set the CHROME environment variable to point to your browser installation.'
+        );
+      }
+      return api.linkedin.connect();
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: KEYS.linkedinStatus }),
     onSettled: () => qc.invalidateQueries({ queryKey: KEYS.linkedinStatus }),
   });
@@ -56,8 +66,17 @@ export const useBoardStatus = (boardId: string) => {
 export const useBoardConnect = () => {
   const api = useAppClient();
   const qc = useQueryClient();
+  const { data: browserCheck } = useCheckBrowser();
+
   return useMutation({
-    mutationFn: (boardId: string) => api.boards.connect({ boardId }),
+    mutationFn: async (boardId: string) => {
+      if (!browserCheck?.detected) {
+        throw new Error(
+          'Chrome or Edge is required for job board login. Please install Chrome or Edge, or set the CHROME environment variable to point to your browser installation.'
+        );
+      }
+      return api.boards.connect({ boardId });
+    },
     onSuccess: (_data, boardId) => qc.invalidateQueries({ queryKey: KEYS.boardStatus(boardId) }),
   });
 };

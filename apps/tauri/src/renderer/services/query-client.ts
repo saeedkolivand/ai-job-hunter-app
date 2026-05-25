@@ -39,6 +39,7 @@ export const keys = {
     version: ['system', 'version'] as const,
     platform: ['system', 'platform'] as const,
     metrics: ['system', 'metrics'] as const,
+    checkBrowser: ['system', 'checkBrowser'] as const,
   },
   jobs: { all: ['jobs'] as const, detail: (id: string) => ['jobs', id] as const },
   ai: { models: ['ai', 'models'] as const },
