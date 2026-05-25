@@ -67,8 +67,6 @@ const MAIN_PROCESS_PACKAGES = [
   '@ajh/core/**',
   '@ajh/ai',
   '@ajh/ai/**',
-  '@ajh/data',
-  '@ajh/data/**',
   '@ajh/workers',
   '@ajh/workers/**',
 ];
@@ -215,7 +213,7 @@ export default tseslint.config(
             {
               group: MAIN_PROCESS_PACKAGES,
               message:
-                'Main-process packages (@ajh/core, @ajh/ai, @ajh/data, @ajh/workers) are not available in the renderer. Add an IPC method instead.',
+                'Main-process packages (@ajh/core, @ajh/ai, @ajh/workers) are not available in the renderer. Add an IPC method instead.',
             },
           ],
         },
@@ -360,11 +358,7 @@ export default tseslint.config(
   // only resolvable at runtime. Inline suppression is banned; this is the
   // approved exception point.
   {
-    files: [
-      'apps/desktop/src/main/updater.ts',
-      'apps/desktop/src/renderer/lib/generate-ai.ts',
-      'packages/data/src/files/pdf-adapter.ts',
-    ],
+    files: ['apps/desktop/src/main/updater.ts', 'apps/desktop/src/renderer/lib/generate-ai.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
     },

@@ -148,7 +148,7 @@ starts them on-demand, stops all on shutdown.
 
 **Status:** ✅ HTTP scrapers · ✅ browser-based scrapers
 
-**Where:** `packages/data/src/scraping/boards/`
+**Where:** `apps/tauri/src-tauri/src/scraping/boards/`
 
 ---
 
@@ -174,7 +174,7 @@ starts them on-demand, stops all on shutdown.
 
 **Status:** ✅
 
-**Where:** `packages/data/src/` → `DataRuntime`
+**Where:** `apps/tauri/src-tauri/src/` (Rust implementation)
 
 ---
 
@@ -184,8 +184,8 @@ starts them on-demand, stops all on shutdown.
 
 **Where:**
 
-- SQLite (NeDB): `packages/data/src/db/`
-- LanceDB: `packages/data/src/vector/lancedb.ts`
+- SQLite: `apps/tauri/src-tauri/src/db/`
+- LanceDB: `apps/tauri/src-tauri/src/vector/`
 
 ---
 

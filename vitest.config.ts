@@ -30,7 +30,6 @@ export default defineConfig({
       '@ajh/shared': resolve('./packages/shared/src/index.ts'),
       '@ajh/core': resolve('./packages/core/src/index.ts'),
       '@ajh/ai': resolve('./packages/ai/src/index.ts'),
-      '@ajh/data': resolve('./packages/data/src/index.ts'),
     },
   },
 });
