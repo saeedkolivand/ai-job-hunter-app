@@ -9,14 +9,22 @@ pub enum ExportFormat {
     Txt,
 }
 
-/// Template ID for styling
+/// Template ID for styling.
+/// Serde uses kebab-case so "editorial-serif", "swiss-minimal", etc. round-trip
+/// correctly. Single-word IDs (classic, modern, executive) are unaffected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum TemplateId {
     #[default]
     Classic,
     Modern,
     Executive,
+    EditorialSerif,
+    SwissMinimal,
+    TwoColumn,
+    MonoTechnical,
+    RefinedExecutive,
+    Academic,
 }
 
 /// Document type
@@ -25,6 +33,18 @@ pub enum TemplateId {
 pub enum DocumentType {
     Resume,
     CoverLetter,
+}
+
+/// Font family selector — shared between template config and PDF renderer.
+/// Defined here (types) to avoid a circular dependency between templates ↔ pdf_renderer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FontFamily {
+    Calibri,
+    Inter,
+    SourceSerif4,
+    Manrope,
+    JetBrainsMono,
+    PlayfairDisplay,
 }
 
 /// Metadata for generation
@@ -46,6 +66,10 @@ pub struct ExportRequest {
     pub document_type: DocumentType,
     pub template_id: TemplateId,
     pub meta: Option<GenerationMeta>,
+    /// Linearize two-column layouts for ATS parsers.
+    /// Defaults to false so existing frontends that omit it keep working.
+    #[serde(default)]
+    pub ats_mode: bool,
 }
 
 /// Export result (binary data)

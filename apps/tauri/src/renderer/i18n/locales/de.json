@@ -175,7 +175,8 @@
       "scrapeUrl": "URL-Scraping",
       "persistJob": "Interaktion gespeichert",
       "matchResume": "Lebenslauf-Match",
-      "applyJob": "Bewerbung"
+      "applyJob": "Bewerbung",
+      "autopilotRun": "Autopilot-Lauf"
     },
     "jobKindsShort": {
       "aiGenerate": "KI",
@@ -185,7 +186,8 @@
       "scrapeUrl": "Scrape",
       "persistJob": "Save",
       "matchResume": "Match",
-      "applyJob": "Apply"
+      "applyJob": "Apply",
+      "autopilotRun": "Autopilot"
     }
   },
   "settings": {
@@ -221,7 +223,17 @@
       "performance": {
         "label": "Leistung",
         "description": "Arbeitsspeicher, Animationen, Parallelität"
+      },
+      "developer": {
+        "label": "Entwickler",
+        "description": "Debug-Werkzeuge & Diagnose"
       }
+    },
+    "developer": {
+      "title": "Entwickler-Werkzeuge",
+      "debugMode": "Debug-Modus",
+      "debugModeHint": "Ausführliche Protokollierung und Diagnose-Overlays aktivieren",
+      "openDevtools": "DevTools-Konsole öffnen"
     },
     "profile": {
       "title": "Profil",
@@ -383,6 +395,7 @@
     "both": "Beides",
     "generating": "Generierung…",
     "selectModel": "Wählen Sie zuerst ein Modell",
+    "addApiKey": "API-Schlüssel in Einstellungen hinzufügen",
     "pasteResumeJob": "Lebenslauf & Stellenanzeige einfügen",
     "continue": "Weiter",
     "yourAICareerCopilot": "Ihr KI-Karriere-Copilot",
@@ -422,7 +435,22 @@
       "generationFailed": "Generierung fehlgeschlagen"
     },
     "localized": "Lokalisiert",
-    "resumePlaceholder": "Lebenslauftext hier einfügen…"
+    "resumePlaceholder": "Lebenslauftext hier einfügen…",
+    "atsMode": "ATS-sicherer Modus",
+    "atsModeHint": "Empfohlen für ATS-Bewerbungen — linearisiert das zweispaltige Layout",
+    "coverLetter": {
+      "closingPhrase": {
+        "sincerely": "Mit freundlichen Grüßen,",
+        "bestRegards": "Mit freundlichen Grüßen,",
+        "kindRegards": "Mit besten Grüßen,",
+        "regards": "Beste Grüße,",
+        "sincerelyYours": "Hochachtungsvoll,",
+        "best": "Viele Grüße,"
+      },
+      "salutationFallback": "Sehr geehrte Damen und Herren,",
+      "salutationWithName": "Sehr geehrte/r {{name}},",
+      "enclosures": "Anlagen:"
+    }
   },
   "autopilot": {
     "title": "Autopilot",

@@ -175,7 +175,8 @@
       "scrapeUrl": "URL scrape",
       "persistJob": "Interaction saved",
       "matchResume": "Resume match",
-      "applyJob": "Application"
+      "applyJob": "Application",
+      "autopilotRun": "Autopilot run"
     },
     "jobKindsShort": {
       "aiGenerate": "AI",
@@ -185,7 +186,8 @@
       "scrapeUrl": "Scrape",
       "persistJob": "Save",
       "matchResume": "Match",
-      "applyJob": "Apply"
+      "applyJob": "Apply",
+      "autopilotRun": "Autopilot"
     }
   },
   "settings": {
@@ -221,7 +223,17 @@
       "performance": {
         "label": "Performance",
         "description": "Memory, animations, concurrency"
+      },
+      "developer": {
+        "label": "Developer",
+        "description": "Debug tools & diagnostics"
       }
+    },
+    "developer": {
+      "title": "Developer Tools",
+      "debugMode": "Debug mode",
+      "debugModeHint": "Enable verbose logging and diagnostic overlays",
+      "openDevtools": "Open DevTools Console"
     },
     "profile": {
       "title": "Profile",
@@ -383,6 +395,7 @@
     "both": "Both",
     "generating": "Generating…",
     "selectModel": "Select a model first",
+    "addApiKey": "Add API key in Settings",
     "pasteResumeJob": "Paste resume & job ad",
     "continue": "Continue",
     "yourAICareerCopilot": "Your AI career copilot",
@@ -422,7 +435,22 @@
       "generationFailed": "Generation failed"
     },
     "localized": "Localized",
-    "resumePlaceholder": "Paste your resume text here…"
+    "resumePlaceholder": "Paste your resume text here…",
+    "atsMode": "ATS-safe mode",
+    "atsModeHint": "Recommended for ATS submissions — linearizes the two-column layout",
+    "coverLetter": {
+      "closingPhrase": {
+        "sincerely": "Sincerely,",
+        "bestRegards": "Best regards,",
+        "kindRegards": "Kind regards,",
+        "regards": "Regards,",
+        "sincerelyYours": "Sincerely yours,",
+        "best": "Best,"
+      },
+      "salutationFallback": "Dear Hiring Manager,",
+      "salutationWithName": "Dear {{name}},",
+      "enclosures": "Enclosures:"
+    }
   },
   "autopilot": {
     "title": "Autopilot",

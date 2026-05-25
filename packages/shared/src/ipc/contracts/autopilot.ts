@@ -17,6 +17,15 @@ export interface AutopilotContract {
   pause(req: { autopilotId: string }): Promise<void>;
 
   resume(req: { autopilotId: string }): Promise<void>;
+
+  onStep(handler: (event: AutopilotStepEvent) => void): () => void;
+}
+
+export interface AutopilotStepEvent {
+  jobId: string;
+  autopilotId: string;
+  step: string;
+  detail: string;
 }
 
 export const AUTOPILOT_CHANNELS = {

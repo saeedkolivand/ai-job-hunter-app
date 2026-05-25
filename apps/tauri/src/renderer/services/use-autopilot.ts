@@ -1,6 +1,7 @@
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { AutopilotCreate, AutopilotUpdate } from '@ajh/shared';
+import type { AutopilotCreate, AutopilotStepEvent, AutopilotUpdate } from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
@@ -83,4 +84,14 @@ export const useResumeAutopilot = () => {
     mutationFn: (id: string) => api.autopilot.resume({ autopilotId: id }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.autopilot.all }),
   });
+};
+
+export const useAutopilotStepEvents = (onStep?: (event: AutopilotStepEvent) => void) => {
+  const api = useAppClient();
+  useEffect(() => {
+    const off = api.autopilot.onStep((event: unknown) => {
+      onStep?.(event as AutopilotStepEvent);
+    });
+    return () => (off as unknown as () => void)?.();
+  }, [api, onStep]);
 };

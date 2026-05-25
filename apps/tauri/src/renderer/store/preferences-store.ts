@@ -40,6 +40,7 @@ const defaultPreferences: Preferences = {
   language: 'en',
   outputTone: 'professional',
   performanceMode: 'balanced',
+  debugMode: false,
   onboardingCompleted: false,
   lastUpdated: new Date().toISOString(),
 };
@@ -55,6 +56,7 @@ interface PreferencesActions {
   setOutputTone: (outputTone: Preferences['outputTone']) => void;
   setResume: (resume: Preferences['resume']) => void;
   setPerformanceMode: (performanceMode: Preferences['performanceMode']) => void;
+  setDebugMode: (enabled: boolean) => void;
   setOnboardingComplete: () => void;
   resetPreferences: () => void;
 }
@@ -140,6 +142,13 @@ export const usePreferencesStore = create<PreferencesStore>()(
           lastUpdated: new Date().toISOString(),
         })),
 
+      setDebugMode: (debugMode: boolean) =>
+        set((state) => ({
+          ...state,
+          debugMode,
+          lastUpdated: new Date().toISOString(),
+        })),
+
       setOnboardingComplete: () =>
         set((state) => ({
           ...state,
@@ -170,3 +179,4 @@ export const useOnboardingCompleted = () =>
   usePreferencesStore((state) => state.onboardingCompleted);
 export const useResume = () => usePreferencesStore((state) => state.resume);
 export const usePerformanceMode = () => usePreferencesStore((state) => state.performanceMode);
+export const useDebugMode = () => usePreferencesStore((state) => state.debugMode ?? false);
