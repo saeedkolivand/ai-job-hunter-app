@@ -14,8 +14,8 @@
  */
 import type { AppClient } from '@/lib/app-client';
 
-import { aiGenerations } from './namespaces/aiGenerations.js';
 import { ai } from './namespaces/ai.js';
+import { aiGenerations } from './namespaces/aiGenerations.js';
 import { apply } from './namespaces/apply.js';
 import { autopilot } from './namespaces/autopilot.js';
 import { boards } from './namespaces/boards.js';
