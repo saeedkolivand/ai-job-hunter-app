@@ -1,0 +1,120 @@
+/**
+
+ * Typed IPC contract — the single source of truth for renderer <-> main calls.
+
+ *
+
+ * Capability-based: each namespace is a distinct capability the preload exposes.
+
+ * Channels are namespaced; payloads are validated by Zod in the main handlers.
+
+ *
+
+ * This file re-exports all namespace contracts and combines them into the original
+
+ * IpcContract, IPC_CHANNELS, and IpcChannel types for backward compatibility.
+
+ */
+
+import { AI_CHANNELS, type AiContract } from './ai.js';
+import { APPLY_CHANNELS, type ApplyContract } from './apply.js';
+import { AUTOPILOT_CHANNELS, type AutopilotContract } from './autopilot.js';
+import { BOARDS_CHANNELS, type BoardsContract } from './boards.js';
+import { CONVERSATIONS_CHANNELS, type ConversationsContract } from './conversations.js';
+import { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js';
+import { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
+import { DOCUMENTS_CHANNELS, type DocumentsContract } from './documents.js';
+import { GEOCODE_CHANNELS, type GeocodeContract } from './geocode.js';
+import { JOB_PREFERENCES_CHANNELS, type JobPreferencesContract } from './jobPreferences.js';
+import { JOBS_CHANNELS, type JobsContract } from './jobs.js';
+import { LINKEDIN_CHANNELS, type LinkedinContract } from './linkedin.js';
+import { MATCH_CHANNELS, type MatchContract } from './match.js';
+import { PRIVACY_CHANNELS, type PrivacyContract } from './privacy.js';
+import { RESUME_CHANNELS, type ResumeContract } from './resume.js';
+import { SCRAPE_CHANNELS, type ScrapeContract } from './scrape.js';
+import { SEARCH_CHANNELS, type SearchContract } from './search.js';
+import { SHORTCUTS_CHANNELS, type ShortcutsContract } from './shortcuts.js';
+import { SUPPORT_CHANNELS, type SupportContract } from './support.js';
+import { SYSTEM_CHANNELS, type SystemContract } from './system.js';
+import { UPDATER_CHANNELS, type UpdaterContract } from './updater.js';
+
+// Combine all namespace contracts into the original IpcContract interface
+
+export interface IpcContract {
+  system: SystemContract;
+  jobs: JobsContract;
+  ai: AiContract;
+  documents: DocumentsContract;
+  jobPreferences: JobPreferencesContract;
+  search: SearchContract;
+  scrape: ScrapeContract;
+  match: MatchContract;
+  geocode: GeocodeContract;
+  credentials: CredentialsContract;
+  linkedin: LinkedinContract;
+  boards: BoardsContract;
+  privacy: PrivacyContract;
+  apply: ApplyContract;
+  resume: ResumeContract;
+  support: SupportContract;
+  conversations: ConversationsContract;
+  autopilot: AutopilotContract;
+  updater: UpdaterContract;
+  shortcuts: ShortcutsContract;
+  dialog: DialogContract;
+}
+
+// Combine all channel constants into the original IPC_CHANNELS object
+
+export const IPC_CHANNELS = {
+  system: SYSTEM_CHANNELS,
+  jobs: JOBS_CHANNELS,
+  ai: AI_CHANNELS,
+  documents: DOCUMENTS_CHANNELS,
+  jobPreferences: JOB_PREFERENCES_CHANNELS,
+  search: SEARCH_CHANNELS,
+  scrape: SCRAPE_CHANNELS,
+  match: MATCH_CHANNELS,
+  geocode: GEOCODE_CHANNELS,
+  credentials: CREDENTIALS_CHANNELS,
+  linkedin: LINKEDIN_CHANNELS,
+  boards: BOARDS_CHANNELS,
+  privacy: PRIVACY_CHANNELS,
+  apply: APPLY_CHANNELS,
+  resume: RESUME_CHANNELS,
+  support: SUPPORT_CHANNELS,
+  conversations: CONVERSATIONS_CHANNELS,
+  autopilot: AUTOPILOT_CHANNELS,
+  updater: UPDATER_CHANNELS,
+  shortcuts: SHORTCUTS_CHANNELS,
+  dialog: DIALOG_CHANNELS,
+} as const;
+
+// Union type of all channel strings
+
+export type IpcChannel =
+  (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS][keyof (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]];
+
+// Re-export individual namespace contracts for direct imports if needed
+
+export { AI_CHANNELS, type AiContract } from './ai.js';
+export { APPLY_CHANNELS, type ApplyContract } from './apply.js';
+export { AUTOPILOT_CHANNELS, type AutopilotContract } from './autopilot.js';
+export { BOARDS_CHANNELS, type BoardsContract } from './boards.js';
+export { CONVERSATIONS_CHANNELS, type ConversationsContract } from './conversations.js';
+export { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js';
+export { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
+export { DOCUMENTS_CHANNELS, type DocumentsContract } from './documents.js';
+export { GEOCODE_CHANNELS, type GeocodeContract } from './geocode.js';
+export { JOB_PREFERENCES_CHANNELS, type JobPreferencesContract } from './jobPreferences.js';
+export { JOBS_CHANNELS, type JobsContract } from './jobs.js';
+export { LINKEDIN_CHANNELS, type LinkedinContract } from './linkedin.js';
+export { MATCH_CHANNELS, type MatchContract } from './match.js';
+export { PRIVACY_CHANNELS, type PrivacyContract } from './privacy.js';
+export { RESUME_CHANNELS, type ResumeContract } from './resume.js';
+export { SCRAPE_CHANNELS, type ScrapeContract } from './scrape.js';
+export { SEARCH_CHANNELS, type SearchContract } from './search.js';
+export { SHORTCUTS_CHANNELS, type ShortcutsContract } from './shortcuts.js';
+export { SUPPORT_CHANNELS, type SupportContract } from './support.js';
+export { SYSTEM_CHANNELS, type SystemContract } from './system.js';
+export { UPDATER_CHANNELS, type UpdaterContract } from './updater.js';
