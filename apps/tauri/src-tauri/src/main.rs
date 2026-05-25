@@ -166,6 +166,20 @@ fn main() {
             app.set_menu(menu)?;
             app.on_menu_event(|app, event| on_menu_event(app, event.id().as_ref()));
 
+            // Platform-specific window decorations
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.set_decorations(false)?;
+                }
+            }
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.set_decorations(true)?;
+                }
+            }
+
             // Build system tray.
             if let Err(e) = build_tray(handle) {
                 eprintln!("[setup] tray build error (non-fatal): {e}");

@@ -12,6 +12,7 @@ import {
 } from '@ajh/shared';
 import { Button, useNotification } from '@ajh/ui';
 
+import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
 import { useJobEvents, usePullModel } from '@/services';
 
@@ -46,6 +47,7 @@ export function ModelSelectionPanel({
   deviceTier,
   recommendedModel,
 }: ModelSelectionPanelProps) {
+  const { t } = useTranslation();
   const notify = useNotification();
   const pullModel = usePullModel();
 
@@ -139,7 +141,7 @@ export function ModelSelectionPanel({
         prevTimeRef.current = 0;
         lastSpeedUpdateRef.current = 0;
         lastTimeUpdateRef.current = 0;
-        notify(`${selectedModel} downloaded successfully.`, 'success');
+        notify(t('onboarding.ai.downloaded', { model: selectedModel }), 'success');
       }
     } else if (event.type === 'job.completed' && event.jobId === pullJobId) {
       setPullProgress(100);
@@ -153,7 +155,7 @@ export function ModelSelectionPanel({
       prevTimeRef.current = 0;
       lastSpeedUpdateRef.current = 0;
       lastTimeUpdateRef.current = 0;
-      notify(`${selectedModel} downloaded successfully.`, 'success');
+      notify(t('onboarding.ai.downloaded', { model: selectedModel }), 'success');
     } else if (event.type === 'job.failed' && event.jobId === pullJobId) {
       setPullState('error');
       setPullJobId(null);
@@ -165,7 +167,7 @@ export function ModelSelectionPanel({
       prevTimeRef.current = 0;
       lastSpeedUpdateRef.current = 0;
       lastTimeUpdateRef.current = 0;
-      notify('Download failed.', 'error');
+      notify(t('onboarding.ai.downloadFailed'), 'error');
     }
   });
 
@@ -181,7 +183,7 @@ export function ModelSelectionPanel({
       {/* Ollama ready badge */}
       <div className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-2.5">
         <CheckCircle2 size={14} className="text-emerald-400" />
-        <span className="text-sm text-emerald-200/80">Ollama ready</span>
+        <span className="text-sm text-emerald-200/80">{t('onboarding.ai.readyBadge')}</span>
       </div>
 
       {/* Hardware info */}
@@ -189,7 +191,9 @@ export function ModelSelectionPanel({
         <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 cursor-help">
           <MemoryStick size={14} className="text-foreground/30" />
           <div className="flex-1">
-            <span className="text-xs text-foreground/40">System Performance</span>
+            <span className="text-xs text-foreground/40">
+              {t('onboarding.ai.systemPerformance')}
+            </span>
           </div>
           <span className={`text-xs font-medium ${deviceTier.color}`}>{deviceTier.label}</span>
         </div>
@@ -197,22 +201,24 @@ export function ModelSelectionPanel({
         <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-xl border border-white/[0.1] bg-black/95 p-4 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 shadow-2xl">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-foreground/50">RAM</span>
+              <span className="text-xs text-foreground/50">{t('onboarding.ai.ramLabel')}</span>
               <span className="text-xs font-medium text-foreground/90">
-                {totalRamGb} GB ({freeRamGb} GB free)
+                {totalRamGb} GB ({freeRamGb} GB {t('onboarding.ai.free')})
               </span>
             </div>
             {cpuCount && (
               <div className="flex items-center justify-between">
-                <span className="text-xs text-foreground/50">CPU</span>
-                <span className="text-xs font-medium text-foreground/90">{cpuCount} cores</span>
+                <span className="text-xs text-foreground/50">{t('onboarding.ai.cpuLabel')}</span>
+                <span className="text-xs font-medium text-foreground/90">
+                  {cpuCount} {t('onboarding.ai.cores')}
+                </span>
               </div>
             )}
             {hasGpu && (
               <div className="flex items-center justify-between">
-                <span className="text-xs text-foreground/50">VRAM</span>
+                <span className="text-xs text-foreground/50">{t('onboarding.ai.vramLabel')}</span>
                 <span className="text-xs font-medium text-foreground/90">
-                  {usedVramGb} / {totalVramGb} GB ({freeVramGb} GB free)
+                  {usedVramGb} / {totalVramGb} GB ({freeVramGb} GB {t('onboarding.ai.free')})
                 </span>
               </div>
             )}
@@ -223,7 +229,7 @@ export function ModelSelectionPanel({
       {/* Model list */}
       <div className="space-y-2">
         <p className="text-xs font-medium uppercase tracking-widest text-foreground/30">
-          Choose a model
+          {t('onboarding.ai.chooseModel')}
         </p>
         {MODEL_RECS.map((rec) => {
           const installed = installedModels.has(rec.name);
@@ -258,22 +264,22 @@ export function ModelSelectionPanel({
                     </span>
                     {isRec && (
                       <span className="rounded-full border border-brand/30 bg-brand/15 px-1.5 py-0.5 text-[10px] font-medium text-brand-soft">
-                        Recommended
+                        {t('onboarding.ai.recommended')}
                       </span>
                     )}
                     {installed && (
                       <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300">
-                        Installed
+                        {t('onboarding.ai.installed')}
                       </span>
                     )}
                     {recMightLagRam && (
                       <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
-                        May lag (RAM)
+                        {t('onboarding.ai.mayLagRam')}
                       </span>
                     )}
                     {recMightLagVram && (
                       <span className="rounded-full border border-orange-400/30 bg-orange-400/10 px-1.5 py-0.5 text-[10px] font-medium text-orange-300">
-                        May lag (VRAM)
+                        {t('onboarding.ai.mayLagVram')}
                       </span>
                     )}
                   </div>
@@ -302,7 +308,7 @@ export function ModelSelectionPanel({
                 className="space-y-2 overflow-hidden"
               >
                 {pullState === 'error' && (
-                  <p className="text-xs text-red-400">Download failed. Please try again.</p>
+                  <p className="text-xs text-red-400">{t('onboarding.ai.downloadFailed')}</p>
                 )}
                 <Button
                   variant="glass"
@@ -311,7 +317,7 @@ export function ModelSelectionPanel({
                   onClick={() => void handlePull()}
                 >
                   <Download size={13} />
-                  Download {selectedModel}
+                  {t('onboarding.ai.downloadModel', { model: selectedModel })}
                 </Button>
               </motion.div>
             ) : pullState === 'pulling' || pullState === 'done' ? (
@@ -331,8 +337,8 @@ export function ModelSelectionPanel({
                       <CheckCircle2 size={11} className="text-emerald-400" />
                     )}
                     {pullState === 'pulling'
-                      ? `Downloading ${selectedModel}…`
-                      : `${selectedModel} downloaded`}
+                      ? t('onboarding.ai.downloadingModel', { model: selectedModel })
+                      : t('onboarding.ai.modelDownloaded', { model: selectedModel })}
                   </span>
                   <div className="flex items-center gap-2">
                     {downloadedBytes > 0 && (
