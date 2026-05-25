@@ -110,10 +110,10 @@ pub fn load_all_fonts(doc: &mut PdfDocument) -> anyhow::Result<LoadedFontSet> {
 }
 
 /// Resolve the (regular, bold, italic_opt) font IDs for a given family.
-pub fn resolve_fonts<'a>(
-    set: &'a LoadedFontSet,
+pub fn resolve_fonts(
+    set: &LoadedFontSet,
     fam: FontFamily,
-) -> (&'a FontId, &'a FontId, Option<&'a FontId>) {
+) -> (&FontId, &FontId, Option<&FontId>) {
     let f = set.family(fam);
     (&f.regular, &f.bold, f.italic.as_ref())
 }
@@ -130,7 +130,7 @@ pub struct PageState {
     pub y: f32,
     /// Bottom margin in mm — content below this triggers a page break.
     pub bottom_margin: f32,
-    pub page_height: f32,
+    pub _page_height: f32,
     /// Y position at the top of a fresh page.
     pub top_y: f32,
 }
@@ -143,7 +143,7 @@ impl PageState {
             current_ops: Vec::new(),
             y: top_y,
             bottom_margin: layout.margin_in * 25.4,
-            page_height: layout.page_height,
+            _page_height: layout.page_height,
             top_y,
         }
     }
@@ -187,7 +187,7 @@ pub struct ColorPalette {
     pub date: Color,
     pub emphasis: Color,
     pub rule: Color,
-    pub accent: Color,
+    pub _accent: Color,
 }
 
 /// Layout configuration
@@ -289,7 +289,7 @@ pub fn build_line(x1: f32, y1: f32, x2: f32, color: Color, thickness: f32) -> Ve
 }
 
 /// Draw the sidebar background rectangle from header_bottom_y to the bottom margin.
-pub fn draw_sidebar_bg(layout: &LayoutConfig, bg_color: (u8, u8, u8), header_bottom_y: f32, page_height: f32, bottom_margin: f32) -> Vec<Op> {
+pub fn draw_sidebar_bg(layout: &LayoutConfig, bg_color: (u8, u8, u8), header_bottom_y: f32, _page_height: f32, bottom_margin: f32) -> Vec<Op> {
     let color = rgb_to_color(bg_color);
     let rect_x = layout.margin_left;
     let rect_y = bottom_margin;
@@ -424,7 +424,7 @@ pub fn render_letterhead(
     style: CoverLetterHeader,
     y: f32,
 ) -> (Vec<Op>, f32) {
-    let (name_reg, name_bold, _) = resolve_fonts(fonts, template.fonts.name_family);
+    let (_, name_bold, _) = resolve_fonts(fonts, template.fonts.name_family);
     let (body_reg, _, _) = resolve_fonts(fonts, template.fonts.body_family);
 
     let mut ops = Vec::new();
@@ -953,6 +953,7 @@ pub fn render_cover_letter_paragraph(
 }
 
 /// Resolve cover-letter salutation respecting locale and honorifics.
+#[allow(dead_code)]
 pub fn resolve_salutation(
     recipient_name: Option<&str>,
     recipient_title: Option<&str>,

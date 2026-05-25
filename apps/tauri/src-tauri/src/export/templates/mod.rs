@@ -47,6 +47,7 @@ pub enum CoverLetterHeader {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum DatePosition {
     TopRight,
     BelowHeader,

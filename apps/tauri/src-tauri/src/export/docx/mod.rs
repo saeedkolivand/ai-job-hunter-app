@@ -22,7 +22,7 @@ fn generate_resume_docx(text: &str, meta: Option<&GenerationMeta>, template: &Te
         .right(inch_to_dxa(template.margin_in));
 
     let colors = setup_colors(template);
-    let font_name = docx_font_name(template.fonts.body_family);
+    let _font_name = docx_font_name(template.fonts.body_family);
 
     let mut name_written = false;
     let mut previous_kind: Option<LineKind> = None;
@@ -121,7 +121,7 @@ fn generate_cover_letter_docx(
         .right(inch_to_dxa(template.margin_in + 0.15));
 
     let colors = setup_colors(template);
-    let font_name = docx_font_name(template.fonts.body_family);
+    let _font_name = docx_font_name(template.fonts.body_family);
     let name_font = docx_font_name(template.fonts.name_family);
 
     let lines: Vec<&str> = text.lines().collect();
@@ -136,7 +136,7 @@ fn generate_cover_letter_docx(
         }
 
         let clean = strip_md(trimmed);
-        let segments = super::parser::parse_inline_md(trimmed);
+        let _segments = super::parser::parse_inline_md(trimmed);
 
         let is_salutation = clean.starts_with("Dear") || clean.starts_with("Sehr geehrte");
         let is_signoff = clean.starts_with("Kind regards")
