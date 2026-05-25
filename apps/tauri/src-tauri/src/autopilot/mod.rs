@@ -205,6 +205,15 @@ impl AutopilotStore {
         self.save(map);
     }
 
+    pub fn stamp_last_run(&self, id: &str) {
+        let mut map = self.load();
+        if let Some(ap) = map.get_mut(id) {
+            ap.last_run_at = Some(now_ms());
+            ap.updated_at = now_ms();
+        }
+        self.save(map);
+    }
+
     // ── Persistence ───────────────────────────────────────────────────────────
 
     fn load(&self) -> HashMap<String, Autopilot> {

@@ -41,6 +41,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       setPerformanceMode: noop,
       getMetrics: noop,
       checkBrowser: async () => ({ detected: false }),
+      openDevtools: noop,
     },
 
     jobs: {
@@ -184,6 +185,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       run: noop,
       pause: noop,
       resume: noop,
+      onStep: () => () => {},
     },
 
     dialog: {

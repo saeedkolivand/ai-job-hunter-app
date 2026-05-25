@@ -18,6 +18,8 @@ export interface SystemContract {
   getMetrics(): Promise<AppMetrics>;
 
   checkBrowser(): Promise<{ detected: boolean; path?: string }>;
+
+  openDevtools(): Promise<void>;
 }
 
 export const SYSTEM_CHANNELS = {
@@ -30,4 +32,5 @@ export const SYSTEM_CHANNELS = {
   setPerformanceMode: 'system:setPerformanceMode',
   getMetrics: 'system:getMetrics',
   checkBrowser: 'system:checkBrowser',
+  openDevtools: 'system:openDevtools',
 } as const;

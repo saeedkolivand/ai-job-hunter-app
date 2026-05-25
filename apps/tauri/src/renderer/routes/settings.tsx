@@ -11,6 +11,7 @@ import {
   Lock,
   Shield,
   Sparkles,
+  Terminal,
   User,
   Wand2,
 } from 'lucide-react';
@@ -22,6 +23,7 @@ import { Button, GlassCard, IconBadge, Input, RefreshButton, SectionLabel } from
 
 import { PageTransition } from '@/components/layout/PageTransition';
 import { AccountsSettingsTab } from '@/features/settings/components/AccountsSettingsTab';
+import { DeveloperPreferences } from '@/features/settings/components/DeveloperPreferences';
 import { AISettingsTab } from '@/features/settings/components/AISettingsTab';
 import { JobLocationPreferences } from '@/features/settings/components/JobLocationPreferences';
 import { LanguageSelector } from '@/features/settings/components/LanguageSelector';
@@ -45,7 +47,15 @@ import {
 
 export const Route = createFileRoute('/settings')({ component: SettingsPage });
 
-type SectionId = 'general' | 'ai' | 'job' | 'resume' | 'accounts' | 'privacy' | 'performance';
+type SectionId =
+  | 'general'
+  | 'ai'
+  | 'job'
+  | 'resume'
+  | 'accounts'
+  | 'privacy'
+  | 'performance'
+  | 'developer';
 
 interface NavItem {
   id: SectionId;
@@ -116,6 +126,12 @@ function SettingsPage() {
           label: t('settings.sections.performance.label'),
           icon: Gauge,
           description: t('settings.sections.performance.description'),
+        },
+        {
+          id: 'developer',
+          label: t('settings.sections.developer.label'),
+          icon: Terminal,
+          description: t('settings.sections.developer.description'),
         },
       ],
     },
@@ -223,6 +239,7 @@ function SettingsPage() {
               {activeSection === 'accounts' && <AccountsSettingsTab />}
               {activeSection === 'privacy' && <PrivacySettingsTab />}
               {activeSection === 'performance' && <PerformancePreferences />}
+              {activeSection === 'developer' && <DeveloperPreferences />}
             </motion.div>
           </AnimatePresence>
         </div>

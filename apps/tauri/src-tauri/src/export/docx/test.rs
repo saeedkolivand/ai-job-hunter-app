@@ -9,6 +9,7 @@ fn test_generate_simple_resume() {
         document_type: DocumentType::Resume,
         template_id: TemplateId::Modern,
         meta: None,
+        ats_mode: false,
     };
 
     let result = generate_docx(&request);
@@ -59,6 +60,7 @@ fn test_generate_cover_letter() {
         document_type: DocumentType::CoverLetter,
         template_id: TemplateId::Classic,
         meta: None,
+        ats_mode: false,
     };
 
     let result = generate_docx(&request);
@@ -79,6 +81,7 @@ fn test_generate_resume_with_meta() {
             company_name: Some("Test Corp".to_string()),
             target_language: None,
         }),
+        ats_mode: false,
     };
 
     let result = generate_docx(&request);

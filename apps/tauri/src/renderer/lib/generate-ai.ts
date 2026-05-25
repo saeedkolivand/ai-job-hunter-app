@@ -526,27 +526,36 @@ export function parseDocument(text: string): ParsedLine[] {
 
 // ─── Template system ──────────────────────────────────────────────────────────
 
-export type TemplateId = 'classic' | 'modern' | 'executive';
+export type TemplateId =
+  | 'classic'
+  | 'modern'
+  | 'executive'
+  | 'editorial-serif'
+  | 'swiss-minimal'
+  | 'two-column'
+  | 'mono-technical'
+  | 'refined-executive'
+  | 'academic';
 
 interface DocTemplate {
   id: TemplateId;
   name: string;
   // Colors (hex, no #)
   nameColor: string;
-  sectionColor: string; // section header text
-  accentColor: string; // section header rule/border
+  sectionColor: string;
+  accentColor: string;
   bodyColor: string;
   dateColor: string;
-  emphasisColor: string; // bolded keyword color
-  ruleColor: string; // divider line
-  // Sizes (pt — converted to half-pt for docx: pt * 2)
+  emphasisColor: string;
+  ruleColor: string;
+  // Sizes (pt)
   namePt: number;
   sectionPt: number;
   bodyPt: number;
   // DOCX layout
   marginIn: number;
-  lineSpacingDocx: number; // 240=1.0, 276=1.15, 288=1.2
-  sectionSpacingBefore: number; // twips before section header
+  lineSpacingDocx: number;
+  sectionSpacingBefore: number;
   // Style flags
   nameCentered: boolean;
   sectionAllCaps: boolean;
@@ -618,6 +627,138 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
     nameCentered: true,
     sectionAllCaps: false,
     sectionStyle: 'ruled-bottom',
+  },
+
+  /** Editorial Serif — Source Serif 4 + Inter, deep indigo accent, NYT op-ed character */
+  'editorial-serif': {
+    id: 'editorial-serif',
+    name: 'Editorial Serif',
+    nameColor: '1A1A1A',
+    sectionColor: '2D2B55',
+    accentColor: '2D2B55',
+    bodyColor: '1A1A1A',
+    dateColor: '5A5A5A',
+    emphasisColor: '2D2B55',
+    ruleColor: '2D2B55',
+    namePt: 22,
+    sectionPt: 11,
+    bodyPt: 11,
+    marginIn: 1.0,
+    lineSpacingDocx: 276,
+    sectionSpacingBefore: 260,
+    nameCentered: false,
+    sectionAllCaps: true,
+    sectionStyle: 'ruled-bottom',
+  },
+
+  /** Swiss Minimal — Manrope, red accent, clean whitespace */
+  'swiss-minimal': {
+    id: 'swiss-minimal',
+    name: 'Swiss Minimal',
+    nameColor: '141414',
+    sectionColor: '141414',
+    accentColor: 'E63946',
+    bodyColor: '282828',
+    dateColor: '787878',
+    emphasisColor: '141414',
+    ruleColor: 'E63946',
+    namePt: 22,
+    sectionPt: 10.5,
+    bodyPt: 10.5,
+    marginIn: 1.15,
+    lineSpacingDocx: 299,
+    sectionSpacingBefore: 320,
+    nameCentered: false,
+    sectionAllCaps: false,
+    sectionStyle: 'bold-only',
+  },
+
+  /** Two Column — Inter, light sidebar tint */
+  'two-column': {
+    id: 'two-column',
+    name: 'Two Column',
+    nameColor: '141414',
+    sectionColor: '1E40AF',
+    accentColor: '1E40AF',
+    bodyColor: '1E1E1E',
+    dateColor: '646478',
+    emphasisColor: '1E40AF',
+    ruleColor: 'B4C8F0',
+    namePt: 22,
+    sectionPt: 10.5,
+    bodyPt: 10,
+    marginIn: 0.5,
+    lineSpacingDocx: 264,
+    sectionSpacingBefore: 200,
+    nameCentered: false,
+    sectionAllCaps: true,
+    sectionStyle: 'bold-only',
+  },
+
+  /** Mono Technical — JetBrains Mono headings, Inter body, cyan accent */
+  'mono-technical': {
+    id: 'mono-technical',
+    name: 'Mono Technical',
+    nameColor: '0A0A0A',
+    sectionColor: '0096B4',
+    accentColor: '00B4D8',
+    bodyColor: '1E1E1E',
+    dateColor: '647882',
+    emphasisColor: '0096B4',
+    ruleColor: '00B4D8',
+    namePt: 20,
+    sectionPt: 10.5,
+    bodyPt: 10.5,
+    marginIn: 1.0,
+    lineSpacingDocx: 276,
+    sectionSpacingBefore: 240,
+    nameCentered: false,
+    sectionAllCaps: true,
+    sectionStyle: 'ruled-bottom',
+  },
+
+  /** Refined Executive — Playfair Display name, warm gold accent */
+  'refined-executive': {
+    id: 'refined-executive',
+    name: 'Refined Executive',
+    nameColor: '141414',
+    sectionColor: '645032',
+    accentColor: '8B7355',
+    bodyColor: '282623',
+    dateColor: '78695F',
+    emphasisColor: '645032',
+    ruleColor: 'C8B9A0',
+    namePt: 26,
+    sectionPt: 11,
+    bodyPt: 10.5,
+    marginIn: 1.1,
+    lineSpacingDocx: 288,
+    sectionSpacingBefore: 300,
+    nameCentered: true,
+    sectionAllCaps: false,
+    sectionStyle: 'ruled-bottom',
+  },
+
+  /** Academic — Source Serif 4 throughout, forest green accent */
+  academic: {
+    id: 'academic',
+    name: 'Academic',
+    nameColor: '141E1E',
+    sectionColor: '1B4332',
+    accentColor: '1B4332',
+    bodyColor: '1E1E1E',
+    dateColor: '5A6E64',
+    emphasisColor: '1B4332',
+    ruleColor: '649678',
+    namePt: 20,
+    sectionPt: 11,
+    bodyPt: 10.5,
+    marginIn: 0.85,
+    lineSpacingDocx: 252,
+    sectionSpacingBefore: 240,
+    nameCentered: false,
+    sectionAllCaps: false,
+    sectionStyle: 'underline',
   },
 };
 
@@ -1045,10 +1186,10 @@ export async function exportDOCX(
   filename: string,
   type: 'resume' | 'cover-letter' = 'resume',
   meta?: GenerationMeta,
-  templateId: TemplateId = 'modern'
+  templateId: TemplateId = 'modern',
+  atsMode = false
 ): Promise<void> {
   try {
-    // Validation
     if (!text || text.trim().length === 0) {
       throw new Error('Cannot export empty document. Please generate content first.');
     }
@@ -1060,7 +1201,6 @@ export async function exportDOCX(
       templateId = 'modern';
     }
 
-    // Use Rust backend for export with file dialog
     const { getClient } = await import('@/lib/app-client');
     const api = getClient();
     const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
@@ -1068,7 +1208,8 @@ export async function exportDOCX(
       text: exportText,
       format: 'docx',
       documentType: type,
-      templateId: templateId as 'classic' | 'modern' | 'executive',
+      templateId,
+      atsMode,
       meta: meta
         ? {
             candidateName: meta.candidateName,
@@ -1092,10 +1233,10 @@ export async function exportPDF(
   filename: string,
   type: 'resume' | 'cover-letter' = 'resume',
   meta?: GenerationMeta,
-  templateId: TemplateId = 'modern'
+  templateId: TemplateId = 'modern',
+  atsMode = false
 ): Promise<void> {
   try {
-    // Validation
     if (!text || text.trim().length === 0) {
       throw new Error('Cannot export empty document. Please generate content first.');
     }
@@ -1107,7 +1248,6 @@ export async function exportPDF(
       templateId = 'modern';
     }
 
-    // Use Rust backend for export with file dialog
     const { getClient } = await import('@/lib/app-client');
     const api = getClient();
     const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
@@ -1115,7 +1255,8 @@ export async function exportPDF(
       text: exportText,
       format: 'pdf',
       documentType: type,
-      templateId: templateId as 'classic' | 'modern' | 'executive',
+      templateId,
+      atsMode,
       meta: meta
         ? {
             candidateName: meta.candidateName,

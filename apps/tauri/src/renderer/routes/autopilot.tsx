@@ -17,10 +17,16 @@ import {
   Zap,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useState } from 'react';
+import { useCallback, useState, useReducer } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
-import type { Autopilot, AutopilotAction, AutopilotSchedule, JobPreferences } from '@ajh/shared';
+import type {
+  Autopilot,
+  AutopilotAction,
+  AutopilotSchedule,
+  AutopilotStepEvent,
+  JobPreferences,
+} from '@ajh/shared';
 import { Button, GlassCard } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -30,8 +36,16 @@ import { StepSchedule } from '@/features/autopilot/components/wizard-steps/StepS
 import { StepTarget } from '@/features/autopilot/components/wizard-steps/StepTarget';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
+import {
+  autopilotRunMachine,
+  type AutopilotRunState,
+  RUN_STATE_LABEL,
+  stepToEvent,
+} from '@/lib/machines/autopilot-run.machine';
+import { transition as machineTransition } from '@/lib/machine';
 import { transition } from '@/lib/motion';
 import {
+  useAutopilotStepEvents,
   useAutopilots,
   useCreateAutopilot,
   useJobPreferences,
@@ -134,12 +148,28 @@ const _SCHEDULE_OPTIONS: { id: AutopilotSchedule; label: string; desc: string }[
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+interface StepLog {
+  step: string;
+  detail: string;
+  ts: number;
+}
+
+type RunStateMap = Record<string, AutopilotRunState>;
+type StepLogMap = Record<string, StepLog[]>;
+
 function AutopilotPage() {
   const { t } = useTranslation();
   const { data: autopilotList = [], isLoading: loading } = useAutopilots();
   const autopilots = autopilotList as Autopilot[];
   const [creating, setCreating] = useState(false);
-  const [runningId, setRunningId] = useState<string | null>(null);
+  const [runStates, setRunStates] = useReducer(
+    (prev: RunStateMap, patch: Partial<RunStateMap>) => ({ ...prev, ...patch }),
+    {} as RunStateMap
+  );
+  const [stepLogs, setStepLogs] = useReducer(
+    (prev: StepLogMap, patch: Partial<StepLogMap>) => ({ ...prev, ...patch }),
+    {} as StepLogMap
+  );
   const [error, setError] = useState<string | null>(null);
 
   const runAutopilot = useRunAutopilot();
@@ -147,14 +177,39 @@ function AutopilotPage() {
   const resumeAutopilot = useResumeAutopilot();
   const removeAutopilot = useRemoveAutopilot();
 
+  const handleStep = useCallback(
+    (event: AutopilotStepEvent) => {
+      const ev = stepToEvent(event.step);
+      if (ev) {
+        setRunStates({
+          [event.autopilotId]: machineTransition(
+            autopilotRunMachine,
+            runStates[event.autopilotId] ?? 'idle',
+            ev
+          ),
+        });
+      }
+      setStepLogs({
+        [event.autopilotId]: [
+          ...(stepLogs[event.autopilotId] ?? []).slice(-49),
+          { step: event.step, detail: event.detail, ts: Date.now() },
+        ],
+      });
+    },
+    [runStates, stepLogs]
+  );
+
+  useAutopilotStepEvents(handleStep);
+
   const handleRun = async (id: string) => {
-    setRunningId(id);
+    setRunStates({ [id]: 'scraping' });
+    setStepLogs({ [id]: [] });
     try {
       await runAutopilot.mutateAsync(id);
+      setRunStates({ [id]: 'done' });
     } catch (err) {
+      setRunStates({ [id]: 'error' });
       setError(err instanceof Error ? err.message : t('autopilot.wizard.runFailed'));
-    } finally {
-      setRunningId(null);
     }
   };
 
@@ -217,16 +272,20 @@ function AutopilotPage() {
             <EmptyState onNew={() => setCreating(true)} />
           ) : (
             <div className="space-y-3">
-              {autopilots.map((ap) => (
-                <AutopilotCard
-                  key={ap._id}
-                  autopilot={ap}
-                  running={runningId === ap._id}
-                  onRun={() => void handleRun(ap._id)}
-                  onTogglePause={() => void handleTogglePause(ap)}
-                  onDelete={() => void handleDelete(ap._id)}
-                />
-              ))}
+              {autopilots.map((ap) => {
+                const runState = runStates[ap._id] ?? 'idle';
+                return (
+                  <AutopilotCard
+                    key={ap._id}
+                    autopilot={ap}
+                    runState={runState}
+                    stepLogs={stepLogs[ap._id] ?? []}
+                    onRun={() => void handleRun(ap._id)}
+                    onTogglePause={() => void handleTogglePause(ap)}
+                    onDelete={() => void handleDelete(ap._id)}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
@@ -242,89 +301,130 @@ function AutopilotPage() {
 
 // ─── Autopilot card ───────────────────────────────────────────────────────────
 
+const STEP_ICON: Record<string, string> = {
+  scrape_start: '⟳',
+  scrape_done: '✓',
+  rank_done: '★',
+  apply_start: '→',
+  apply_done: '✓',
+  cancelled: '⊘',
+  complete: '✓',
+};
+
 function AutopilotCard({
   autopilot: ap,
-  running,
+  runState,
+  stepLogs,
   onRun,
   onTogglePause,
   onDelete,
 }: {
   autopilot: Autopilot;
-  running: boolean;
+  runState: AutopilotRunState;
+  stepLogs: StepLog[];
   onRun(): void;
   onTogglePause(): void;
   onDelete(): void;
 }) {
   const paused = ap.status === 'paused';
+  const running = runState === 'scraping' || runState === 'ranking' || runState === 'applying';
   const { t } = useTranslation();
   const lastRun = ap.lastRunAt
     ? new Date(ap.lastRunAt).toLocaleString()
     : t('autopilot.wizard.never');
 
   return (
-    <GlassCard className="flex items-center gap-4">
-      {/* Status dot */}
-      <div
-        className={cn(
-          'h-2 w-2 rounded-full shrink-0',
-          paused
-            ? 'bg-foreground/20'
-            : running
-              ? 'bg-amber-400 animate-pulse'
-              : 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]'
+    <GlassCard className="flex flex-col gap-3">
+      <div className="flex items-center gap-4">
+        {/* Status dot */}
+        <div
+          className={cn(
+            'h-2 w-2 rounded-full shrink-0',
+            paused
+              ? 'bg-foreground/20'
+              : running
+                ? 'bg-amber-400 animate-pulse'
+                : runState === 'error'
+                  ? 'bg-red-400'
+                  : 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]'
+          )}
+        />
+
+        {/* Info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-sm font-semibold text-foreground/85 truncate">{ap.name}</span>
+            <span className="text-[10px] text-foreground/30 font-mono bg-white/[0.04] px-1.5 py-0.5 rounded">
+              {ap.target.board}
+            </span>
+            <span className="text-[10px] text-foreground/30 bg-white/[0.04] px-1.5 py-0.5 rounded capitalize">
+              {ap.action.replace('_', ' ')}
+            </span>
+            <span className="text-[10px] text-foreground/30 bg-white/[0.04] px-1.5 py-0.5 rounded capitalize">
+              {ap.schedule.replace('_', ' ')}
+            </span>
+          </div>
+          <div className="flex items-center gap-4 text-[10px] text-foreground/35">
+            <span>"{ap.target.query}"</span>
+            {ap.target.location && <span>· {ap.target.location}</span>}
+            <span>
+              · {t('autopilot.wizard.lastRun')} {lastRun}
+            </span>
+            <span>
+              · {t('autopilot.wizard.found')} {ap.totalFound} · {t('autopilot.wizard.applied')}{' '}
+              {ap.totalApplied}
+            </span>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Button
+            onClick={onRun}
+            disabled={running}
+            className="flex items-center gap-1.5 rounded-lg bg-brand/10 px-2.5 py-1.5 text-[11px] font-medium text-brand-soft hover:bg-brand/20 transition-colors disabled:opacity-40 h-auto border-transparent"
+          >
+            {running ? <RotateCcw size={11} className="animate-spin" /> : <Play size={11} />}
+            {running ? RUN_STATE_LABEL[runState] : t('autopilot.wizard.run')}
+          </Button>
+          <Button
+            onClick={onTogglePause}
+            className="rounded-lg p-1.5 text-foreground/40 hover:bg-white/[0.06] hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
+          >
+            {paused ? <Play size={13} /> : <Pause size={13} />}
+          </Button>
+          <Button
+            onClick={onDelete}
+            className="rounded-lg p-1.5 text-foreground/30 hover:bg-red-400/10 hover:text-red-400/70 transition-colors h-auto bg-transparent border-transparent"
+          >
+            <Trash2 size={13} />
+          </Button>
+        </div>
+      </div>
+
+      {/* Live step log — only visible while running */}
+      <AnimatePresence>
+        {running && stepLogs.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="rounded-lg bg-white/[0.03] border border-white/[0.05] px-3 py-2 space-y-1 max-h-32 overflow-y-auto">
+              {stepLogs.map((log, i) => (
+                <div key={i} className="flex items-start gap-2 text-[10px] leading-relaxed">
+                  <span className="text-brand-soft/70 shrink-0 w-3 text-center">
+                    {STEP_ICON[log.step] ?? '·'}
+                  </span>
+                  <span className="text-foreground/50 font-mono">{log.detail}</span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
         )}
-      />
-
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="text-sm font-semibold text-foreground/85 truncate">{ap.name}</span>
-          <span className="text-[10px] text-foreground/30 font-mono bg-white/[0.04] px-1.5 py-0.5 rounded">
-            {ap.target.board}
-          </span>
-          <span className="text-[10px] text-foreground/30 bg-white/[0.04] px-1.5 py-0.5 rounded capitalize">
-            {ap.action.replace('_', ' ')}
-          </span>
-          <span className="text-[10px] text-foreground/30 bg-white/[0.04] px-1.5 py-0.5 rounded capitalize">
-            {ap.schedule.replace('_', ' ')}
-          </span>
-        </div>
-        <div className="flex items-center gap-4 text-[10px] text-foreground/35">
-          <span>"{ap.target.query}"</span>
-          {ap.target.location && <span>· {ap.target.location}</span>}
-          <span>
-            · {t('autopilot.wizard.lastRun')} {lastRun}
-          </span>
-          <span>
-            · {t('autopilot.wizard.found')} {ap.totalFound} · {t('autopilot.wizard.applied')}{' '}
-            {ap.totalApplied}
-          </span>
-        </div>
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center gap-1.5 shrink-0">
-        <Button
-          onClick={onRun}
-          disabled={running}
-          className="flex items-center gap-1.5 rounded-lg bg-brand/10 px-2.5 py-1.5 text-[11px] font-medium text-brand-soft hover:bg-brand/20 transition-colors disabled:opacity-40 h-auto border-transparent"
-        >
-          {running ? <RotateCcw size={11} className="animate-spin" /> : <Play size={11} />}
-          {running ? t('autopilot.wizard.running') : t('autopilot.wizard.run')}
-        </Button>
-        <Button
-          onClick={onTogglePause}
-          className="rounded-lg p-1.5 text-foreground/40 hover:bg-white/[0.06] hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
-        >
-          {paused ? <Play size={13} /> : <Pause size={13} />}
-        </Button>
-        <Button
-          onClick={onDelete}
-          className="rounded-lg p-1.5 text-foreground/30 hover:bg-red-400/10 hover:text-red-400/70 transition-colors h-auto bg-transparent border-transparent"
-        >
-          <Trash2 size={13} />
-        </Button>
-      </div>
+      </AnimatePresence>
     </GlassCard>
   );
 }

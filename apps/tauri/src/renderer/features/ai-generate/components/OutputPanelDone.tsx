@@ -15,7 +15,7 @@ interface OutputPanelDoneProps {
   activeOut: 'resume' | 'cover';
   meta: GenerationMeta | null;
   mode: string;
-  _templateId: TemplateId;
+  templateId: TemplateId;
   onActiveOutChange: (out: 'resume' | 'cover') => void;
   onCopy: () => void;
   onExport: (fmt: 'pdf' | 'docx' | 'txt') => Promise<void>;
@@ -30,7 +30,7 @@ export function OutputPanelDone({
   activeOut,
   meta,
   mode,
-  _templateId,
+  templateId,
   onActiveOutChange,
   onCopy,
   onExport,

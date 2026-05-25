@@ -14,5 +14,6 @@ export function autopilot(opts: WebHttpClientOptions) {
     pause: ({ autopilotId }: { autopilotId: string }) => cmd('autopilot', 'pause', { autopilotId }),
     resume: ({ autopilotId }: { autopilotId: string }) =>
       cmd('autopilot', 'resume', { autopilotId }),
+    onStep: (_handler: (event: unknown) => void) => () => {},
   };
 }

@@ -12,9 +12,11 @@ interface GenerationConfigProps {
   mode: GenerationMode;
   target: 'resume' | 'cover' | 'both';
   templateId: TemplateId;
+  atsMode: boolean;
   onModeChange: (mode: GenerationMode) => void;
   onTargetChange: (target: 'resume' | 'cover' | 'both') => void;
   onTemplateChange: (templateId: TemplateId) => void;
+  onAtsModeChange: (enabled: boolean) => void;
   onGenerate: () => void;
   isGenerating: boolean;
 }
@@ -24,9 +26,11 @@ export function GenerationConfig({
   mode,
   target,
   templateId,
+  atsMode,
   onModeChange,
   onTargetChange,
   onTemplateChange,
+  onAtsModeChange,
   onGenerate,
   isGenerating,
 }: GenerationConfigProps) {
@@ -117,6 +121,47 @@ export function GenerationConfig({
           ))}
         </div>
       </div>
+
+      {/* ATS safe mode — only for two-column template */}
+      {templateId === 'two-column' && (
+        <button
+          type="button"
+          onClick={() => onAtsModeChange(!atsMode)}
+          className={cn(
+            'w-full flex items-center justify-between rounded-lg border px-3 py-2.5 transition-all text-left',
+            atsMode
+              ? 'border-brand/35 bg-brand/8'
+              : 'border-white/[0.05] bg-transparent hover:border-white/[0.08]'
+          )}
+        >
+          <div>
+            <div
+              className={cn(
+                'text-[11px] font-medium',
+                atsMode ? 'text-foreground/90' : 'text-foreground/55'
+              )}
+            >
+              {t('aiGenerate.atsMode')}
+            </div>
+            <div className="text-[10px] text-foreground/35 mt-0.5">
+              {t('aiGenerate.atsModeHint')}
+            </div>
+          </div>
+          <div
+            className={cn(
+              'h-4 w-7 rounded-full transition-colors shrink-0 ml-3 relative',
+              atsMode ? 'bg-brand' : 'bg-white/10'
+            )}
+          >
+            <div
+              className={cn(
+                'absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform',
+                atsMode ? 'translate-x-3.5' : 'translate-x-0.5'
+              )}
+            />
+          </div>
+        </button>
+      )}
 
       <Button
         size="md"
