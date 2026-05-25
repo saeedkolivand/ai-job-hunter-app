@@ -390,8 +390,13 @@ jobs:
             "platforms": {
           EOF
 
-          # Download signatures from GitHub release
-          gh release download "v$VERSION" --dir temp/ --pattern "*.sig" || true
+          # Download all release assets to inspect
+          gh release download "v$VERSION" --dir temp/ || true
+
+          # Debug: list all downloaded files
+          echo "::group::All downloaded release files"
+          ls -la temp/ || echo "temp directory is empty"
+          echo "::endgroup::"
 
           # Add Windows signatures
           if [ -f "temp/AI_Job_Hunter_Assistant_${VERSION}_x64-setup.exe.sig" ]; then
