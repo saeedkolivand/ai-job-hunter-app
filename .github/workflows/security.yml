@@ -6,9 +6,12 @@ name: 🛡️ Security
 # Purpose: Automated security vulnerability scanning
 # Triggers: Weekly (Mondays at 3 AM UTC), manual workflow_dispatch
 # Jobs:
-#   - dependency-review: GitHub dependency review
 #   - npm-audit: npm/pnpm vulnerability scan
 #   - cargo-audit: Rust/Cargo vulnerability scan
+#
+# Note: Dependency-review runs in ci-pipeline.yml on pull_request, where
+#       the action can compare base vs head commits. It cannot run on
+#       schedule because the action requires a pull_request event context.
 # ──────────────────────────────────────────────────────────────────────
 
 on:
@@ -22,17 +25,6 @@ permissions:
   security-events: write
 
 jobs:
-  dependency-review:
-    name: 🔍 Dependency Review
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: 🔍 Dependency Review
-        uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
-
   npm-audit:
     name: 📦 npm Audit
     runs-on: ubuntu-latest
@@ -40,7 +32,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
@@ -50,7 +42,7 @@ jobs:
           version: 11.1.3
 
       - name: 🟢 Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -98,7 +90,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
 

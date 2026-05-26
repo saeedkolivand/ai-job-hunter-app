@@ -39,7 +39,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -49,7 +49,7 @@ jobs:
           version: 11.1.3
 
       - name: 🟢 Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -115,14 +115,14 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 1
           ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
       - name: 🟢 Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -177,7 +177,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: v${{ needs.sync-version-files.outputs.version }}
           fetch-depth: 1
@@ -188,13 +188,13 @@ jobs:
           version: 11.1.3
 
       - name: 🟢 Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .turbo
           key: ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}
@@ -282,19 +282,42 @@ jobs:
           echo "::error::Tauri build failed on ${{ matrix.platform }}. Please review the build output above."
           exit 1
 
-      - name: 🏷️ Rename macOS Artifacts
-        if: runner.os == 'macOS' && success()
+      - name: 🏷️ Normalize Artifact Names
+        if: success()
+        shell: bash
         run: |
-          echo "::group::Renaming macOS artifacts"
-          cd apps/tauri/src-tauri/target
-          # Rename Intel DMG
-          if [ -d "x86_64-apple-darwin/release/bundle/dmg" ]; then
-            mv x86_64-apple-darwin/release/bundle/dmg/*.dmg x86_64-apple-darwin/release/bundle/dmg/AI-Job-Hunter-Assistant-${{ needs.sync-version-files.outputs.version }}-intel.dmg || true
+          echo "::group::Normalizing artifact names (replacing spaces with dashes)"
+          # Tauri keeps spaces from productName in artifact filenames. Replace spaces
+          # with dashes so URLs in latest.json don't need encoding and the manifest
+          # generator can match deterministic names across all platforms.
+          if [ -d apps/tauri/src-tauri/target ]; then
+            find apps/tauri/src-tauri/target -type f -name '* *' -print0 | \
+              while IFS= read -r -d '' f; do
+                dir="$(dirname "$f")"
+                base="$(basename "$f")"
+                new="${base// /-}"
+                if [ "$base" != "$new" ]; then
+                  mv "$f" "$dir/$new"
+                  echo "Renamed: $base -> $new"
+                fi
+              done
           fi
-          # Rename ARM64 DMG
-          if [ -d "aarch64-apple-darwin/release/bundle/dmg" ]; then
-            mv aarch64-apple-darwin/release/bundle/dmg/*.dmg aarch64-apple-darwin/release/bundle/dmg/AI-Job-Hunter-Assistant-${{ needs.sync-version-files.outputs.version }}-apple-silicon.dmg || true
-          fi
+          echo "::endgroup::"
+
+      - name: 🏷️ Disambiguate macOS DMG Architecture
+        if: runner.os == 'macOS' && success()
+        shell: bash
+        run: |
+          echo "::group::Tagging macOS DMGs with architecture suffix"
+          shopt -s nullglob
+          for f in apps/tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg; do
+            mv "$f" "${f%.dmg}-intel.dmg"
+            echo "Renamed (intel): $(basename "$f")"
+          done
+          for f in apps/tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg; do
+            mv "$f" "${f%.dmg}-apple-silicon.dmg"
+            echo "Renamed (apple-silicon): $(basename "$f")"
+          done
           echo "::endgroup::"
 
       - name: Upload Release Assets
@@ -302,11 +325,13 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.sync-version-files.outputs.version }}
+          # Tauri only emits .sig files for NSIS, AppImage, and macOS .app.tar.gz
+          # bundles (the targets the auto-updater consumes). MSI/DEB/RPM never
+          # produce .sig artifacts so they're not listed.
           files: |
             apps/tauri/src-tauri/target/release/bundle/nsis/*.exe
             apps/tauri/src-tauri/target/release/bundle/nsis/*.sig
             apps/tauri/src-tauri/target/release/bundle/msi/*.msi
-            apps/tauri/src-tauri/target/release/bundle/msi/*.sig
             apps/tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
             apps/tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.tar.gz
             apps/tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.tar.gz.sig
@@ -316,7 +341,7 @@ jobs:
             apps/tauri/src-tauri/target/release/bundle/deb/*.deb
             apps/tauri/src-tauri/target/release/bundle/rpm/*.rpm
             apps/tauri/src-tauri/target/release/bundle/appimage/*.AppImage
-            apps/tauri/src-tauri/target/release/bundle/appimage/*.sig
+            apps/tauri/src-tauri/target/release/bundle/appimage/*.AppImage.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -325,11 +350,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-logs-${{ matrix.platform }}-${{ github.run_id }}
+          # Restrict to logs and bundler output to avoid uploading multi-GB
+          # compiled artifacts. The full target/ tree is too large for CI.
           path: |
-            apps/tauri/src-tauri/target/
-            apps/tauri/src-tauri/bundle/
+            apps/tauri/src-tauri/target/release/bundle/**
+            apps/tauri/src-tauri/target/**/*.log
+            apps/tauri/src-tauri/target/**/output
           retention-days: 7
           compression-level: 9
+          if-no-files-found: ignore
 
       - name: 📝 Job Summary
         if: always()
@@ -376,7 +405,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: v${{ needs.sync-version-files.outputs.version }}
           fetch-depth: 1
@@ -404,35 +433,46 @@ jobs:
           ls -la temp/ || echo "temp directory is empty"
           echo "::endgroup::"
 
-          # Add Windows signatures (NSIS is the primary installer)
-          if [ -f "temp/AI.Job.Hunter.Assistant_${VERSION}_x64-setup.exe.sig" ]; then
-            SIG=$(cat "temp/AI.Job.Hunter.Assistant_${VERSION}_x64-setup.exe.sig" | tr -d '\n')
+          # Filenames below match the normalized names produced by the
+          # "Normalize Artifact Names" step in the build job (spaces -> dashes).
+          BASE_URL="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION"
+
+          # Windows (NSIS is the primary updater target)
+          NSIS_SIG="temp/AI-Job-Hunter-Assistant_${VERSION}_x64-setup.exe.sig"
+          if [ -f "$NSIS_SIG" ]; then
+            SIG=$(tr -d '\n' < "$NSIS_SIG")
             echo '    "windows-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI.Job.Hunter.Assistant_${VERSION}_x64-setup.exe\"" >> latest.json
+            echo "      \"url\": \"${BASE_URL}/AI-Job-Hunter-Assistant_${VERSION}_x64-setup.exe\"" >> latest.json
             echo '    },' >> latest.json
+          else
+            echo "::warning::Windows NSIS signature not found at $NSIS_SIG"
           fi
 
-          # Add Linux signatures
-          if [ -f "temp/AI.Job.Hunter.Assistant_${VERSION}_amd64.AppImage.sig" ]; then
-            SIG=$(cat "temp/AI.Job.Hunter.Assistant_${VERSION}_amd64.AppImage.sig" | tr -d '\n')
+          # Linux (AppImage is the primary updater target)
+          APPIMAGE_SIG="temp/AI-Job-Hunter-Assistant_${VERSION}_amd64.AppImage.sig"
+          if [ -f "$APPIMAGE_SIG" ]; then
+            SIG=$(tr -d '\n' < "$APPIMAGE_SIG")
             echo '    "linux-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI.Job.Hunter.Assistant_${VERSION}_amd64.AppImage\"" >> latest.json
+            echo "      \"url\": \"${BASE_URL}/AI-Job-Hunter-Assistant_${VERSION}_amd64.AppImage\"" >> latest.json
             echo '    },' >> latest.json
+          else
+            echo "::warning::Linux AppImage signature not found at $APPIMAGE_SIG"
           fi
 
-          # Add macOS signatures (single .app.tar.gz for both architectures)
-          if [ -f "temp/AI.Job.Hunter.Assistant.app.tar.gz.sig" ]; then
-            SIG=$(cat "temp/AI.Job.Hunter.Assistant.app.tar.gz.sig" | tr -d '\n')
-            echo '    "darwin-x86_64": {' >> latest.json
-            echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI.Job.Hunter.Assistant.app.tar.gz\"" >> latest.json
-            echo '    },' >> latest.json
-            echo '    "darwin-aarch64": {' >> latest.json
-            echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI.Job.Hunter.Assistant.app.tar.gz\"" >> latest.json
-            echo '    },' >> latest.json
+          # macOS (single .app.tar.gz served for both architectures)
+          MAC_SIG="temp/AI-Job-Hunter-Assistant.app.tar.gz.sig"
+          if [ -f "$MAC_SIG" ]; then
+            SIG=$(tr -d '\n' < "$MAC_SIG")
+            for triple in darwin-x86_64 darwin-aarch64; do
+              echo "    \"$triple\": {" >> latest.json
+              echo "      \"signature\": \"$SIG\"," >> latest.json
+              echo "      \"url\": \"${BASE_URL}/AI-Job-Hunter-Assistant.app.tar.gz\"" >> latest.json
+              echo '    },' >> latest.json
+            done
+          else
+            echo "::warning::macOS app bundle signature not found at $MAC_SIG"
           fi
 
           # Close JSON (remove trailing comma and close)
