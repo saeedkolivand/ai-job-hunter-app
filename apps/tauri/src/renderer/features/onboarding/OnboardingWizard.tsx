@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { transition } from '@/lib/motion';
 import { useOnboardingCompleted, usePreferencesStore } from '@/store/preferences-store';
@@ -17,6 +17,15 @@ export function OnboardingWizard() {
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState(1);
   const [showTour, setShowTour] = useState(false);
+
+  // Reset wizard state when onboarding is restarted (e.g., after app reset)
+  useEffect(() => {
+    if (!onboardingCompleted) {
+      setStepIndex(0);
+      setDirection(1);
+      setShowTour(false);
+    }
+  }, [onboardingCompleted]);
 
   const currentStep = ONBOARDING_STEPS[stepIndex];
   const stepId = showTour ? 'tour' : (currentStep?.id ?? 'welcome');

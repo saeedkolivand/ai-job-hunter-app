@@ -19,8 +19,9 @@ export function Titlebar() {
       className="app-drag relative z-[300] flex h-10 select-none items-center justify-between"
       data-tauri-drag-region
     >
-      {/* Left spacer — mirrors the right side so the title stays centered */}
-      {isMac ? <div className="w-20" /> : <div className="w-4" />}
+      {/* Left spacer — mirrors the right side (window controls) so the title stays centered.
+          Mac: 80px traffic lights · Windows/Linux: 3 × 44px control buttons = 132px */}
+      {isMac ? <div className="w-20" /> : <div className="w-[132px]" />}
 
       <div className="flex items-center gap-2 text-xs font-medium text-foreground/70">
         <Sparkles size={14} className="opacity-80" />

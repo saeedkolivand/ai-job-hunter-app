@@ -28,6 +28,7 @@ concurrency:
 
 # ──────────────────────────────────────────────────────────────────────
 # Jobs
+# Note: Runs on all PRs to main for comprehensive validation
 # ──────────────────────────────────────────────────────────────────────
 jobs:
   dependencies:
@@ -78,6 +79,15 @@ jobs:
           pnpm build:packages
           echo "::endgroup::"
 
+      - name: 📦 Cache node_modules
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            apps/*/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
+
   lint-format:
     name: ✨ Lint & Format
     runs-on: ubuntu-latest
@@ -100,6 +110,15 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+
+      - name: 💾 Restore node_modules Cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            apps/*/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
 
       - name: 💾 Restore Turbo Cache
         uses: actions/cache@v5
@@ -129,17 +148,18 @@ jobs:
         run: |
           echo "## ✨ Lint & Format Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Check Results" >> $GITHUB_STEP_SUMMARY
-          echo "- **ESLint**: ${{ steps.eslint.outcome }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Prettier**: ${{ steps.format.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| ESLint | ${{ steps.eslint.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Prettier | ${{ steps.format.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
           echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
           echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
-          echo "- [View ESLint Rules](https://eslint.org/docs/latest/rules/)" >> $GITHUB_STEP_SUMMARY
-          echo "- [View Prettier Options](https://prettier.io/docs/en/options.html)" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Resources" >> $GITHUB_STEP_SUMMARY
+          echo "- [ESLint Rules](https://eslint.org/docs/latest/rules/)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Prettier Options](https://prettier.io/docs/en/options.html)" >> $GITHUB_STEP_SUMMARY
 
       - name: 🔍 Debug Environment on Failure
         if: failure()
@@ -178,6 +198,15 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: 💾 Restore node_modules Cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            apps/*/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
+
       - name: 💾 Restore Turbo Cache
         uses: actions/cache@v5
         with:
@@ -185,6 +214,7 @@ jobs:
           key: ${{ needs.dependencies.outputs.cache-key }}
 
       - name: 🔍 Run Type Check
+        id: typecheck
         run: pnpm typecheck
 
       - name: 📝 Job Summary
@@ -192,14 +222,15 @@ jobs:
         run: |
           echo "## 🔍 Type Check Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Check Results" >> $GITHUB_STEP_SUMMARY
-          echo "- **TypeScript**: ✅ Passed" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| TypeScript | ${{ steps.typecheck.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
           echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
           echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Resources" >> $GITHUB_STEP_SUMMARY
           echo "- [TypeScript Documentation](https://www.typescriptlang.org/docs/)" >> $GITHUB_STEP_SUMMARY
 
       - name: 🔍 Debug Environment on Failure
@@ -236,6 +267,15 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+
+      - name: 💾 Restore node_modules Cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            apps/*/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
 
       - name: 💾 Restore Turbo Cache
         uses: actions/cache@v5
@@ -296,26 +336,25 @@ jobs:
       - name: 📝 Job Summary
         if: always()
         run: |
-          echo "## 🧪 Test Job Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🧪 Test Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "- **JS Tests**: ${{ steps.js-tests.outcome == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Rust Tests**: ${{ steps.rust-tests.outcome == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Suite | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| JavaScript | ${{ steps.js-tests.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Rust | ${{ steps.rust-tests.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
           echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
           echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
           echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Platform**: Ubuntu Latest" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "${{ steps.js-tests.outcome }}" == "failure" ] || [ "${{ steps.rust-tests.outcome }}" == "failure" ]; then
             echo "### 📊 Artifacts" >> $GITHUB_STEP_SUMMARY
-            echo "Test results uploaded as artifact: \`test-results-${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "Test results uploaded: \`test-results-${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
-          echo "- [Vitest Documentation](https://vitest.dev/)" >> $GITHUB_STEP_SUMMARY
-          echo "- [Rust Testing Guide](https://doc.rust-lang.org/book/ch11-00-testing.html)" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Resources" >> $GITHUB_STEP_SUMMARY
+          echo "- [Vitest Docs](https://vitest.dev/) • [Rust Testing](https://doc.rust-lang.org/book/ch11-00-testing.html)" >> $GITHUB_STEP_SUMMARY
 
       - name: 🔍 Debug Environment on Failure
         if: failure()
@@ -352,6 +391,15 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+
+      - name: 💾 Restore node_modules Cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            apps/*/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
 
       - name: 💾 Restore Turbo Cache
         uses: actions/cache@v5
@@ -414,24 +462,23 @@ jobs:
         run: |
           echo "## 🏗️ Build Verification Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Build Results" >> $GITHUB_STEP_SUMMARY
-          echo "- **Cargo Check**: ${{ steps.cargo-check.outcome == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Production Build**: ${{ steps.prod-build.outcome == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Cargo Check | ${{ steps.cargo-check.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Production Build | ${{ steps.prod-build.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
           echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
           echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
           echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Platform**: Ubuntu Latest" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "${{ steps.cargo-check.outcome }}" == "failure" ] || [ "${{ steps.prod-build.outcome }}" == "failure" ]; then
             echo "### 📊 Artifacts" >> $GITHUB_STEP_SUMMARY
-            echo "Build artifacts uploaded as artifact: \`build-artifacts-${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "Build artifacts uploaded: \`build-artifacts-${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
-          echo "- [Tauri Documentation](https://tauri.app/v1/guides/)" >> $GITHUB_STEP_SUMMARY
-          echo "- [Rust Book](https://doc.rust-lang.org/book/)" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Resources" >> $GITHUB_STEP_SUMMARY
+          echo "- [Tauri Docs](https://tauri.app/v1/guides/) • [Rust Book](https://doc.rust-lang.org/book/)" >> $GITHUB_STEP_SUMMARY
 
       - name: 🔍 Debug Environment on Failure
         if: failure()
@@ -486,14 +533,14 @@ jobs:
         run: |
           echo "## 🔬 Quality Checks Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Lint Results" >> $GITHUB_STEP_SUMMARY
-          echo "- **Cargo Clippy**: ✅ Completed" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Cargo Clippy | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
           echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Platform**: Ubuntu Latest" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Resources" >> $GITHUB_STEP_SUMMARY
           echo "- [Clippy Lints](https://rust-lang.github.io/rust-clippy/master/)" >> $GITHUB_STEP_SUMMARY
 
       - name: 🔍 Debug Environment on Failure
