@@ -83,6 +83,16 @@ async function streamGenerate(
   let thinkAccum = '';
 
   return new Promise((resolve, reject) => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let poll: ReturnType<typeof setInterval> | null = null;
+    let abortListener: (() => void) | null = null;
+
+    const cleanup = () => {
+      if (timeoutId !== null) clearTimeout(timeoutId);
+      if (poll !== null) clearInterval(poll);
+      if (abortListener && signal) signal.removeEventListener('abort', abortListener);
+    };
+
     const off = api.ai.onStream((chunk: unknown) => {
       const c = chunk as { jobId: string; delta: string; done: boolean; thinking?: boolean };
       if (c.jobId !== jobId) return;
@@ -137,52 +147,52 @@ async function streamGenerate(
         }
       }
       if (c.done) {
-        // Flush any remaining non-thinking content
+        // Flush whatever remains — even if a think block never closed, discard it;
+        // flush any trailing non-think content so the buffer is complete.
         if (thinkAccum && !inThinkBlock) {
           buffer += thinkAccum;
           onToken(thinkAccum);
         }
         off();
+        cleanup();
         resolve(buffer);
       }
     });
 
     // Handle abort signal
-    let abortListener: (() => void) | null = null;
     if (signal) {
       abortListener = () => {
         off();
         void api.jobs.cancel(jobId);
+        cleanup();
         reject(new Error('Generation cancelled'));
       };
       signal.addEventListener('abort', abortListener);
     }
 
-    const timeoutId = setTimeout(
+    timeoutId = setTimeout(
       () => {
         off();
-        if (abortListener && signal) signal.removeEventListener('abort', abortListener);
+        cleanup();
         resolve(buffer);
       },
       5 * 60 * 1000
     );
 
-    const poll = setInterval(() => {
+    poll = setInterval(() => {
       void (async () => {
         const job = (await api.jobs.get(jobId).catch(() => null)) as {
           status: string;
         } | null;
         if (job?.status === 'failed' || job?.status === 'cancelled') {
-          clearInterval(poll);
-          clearTimeout(timeoutId);
           off();
-          if (abortListener && signal) signal.removeEventListener('abort', abortListener);
+          cleanup();
           reject(new Error(`Generation ${job.status}. Please try again.`));
         }
         if (job?.status === 'completed') {
-          clearInterval(poll);
-          clearTimeout(timeoutId);
-          if (abortListener && signal) signal.removeEventListener('abort', abortListener);
+          off();
+          cleanup();
+          resolve(buffer);
         }
       })();
     }, 3_000);
