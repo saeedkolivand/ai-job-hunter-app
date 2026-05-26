@@ -23,9 +23,10 @@ export function WelcomeStep({ onNext, direction, stepIndex, totalSteps }: Props)
   const setUserName = usePreferencesStore((s) => s.setUserName);
   const setLanguage = usePreferencesStore((s) => s.setLanguage);
   const storedName = usePreferencesStore((s) => s.userName);
+  const storedLanguage = usePreferencesStore((s) => s.language);
   const [name, setName] = useState(storedName ?? '');
   const inputRef = useRef<HTMLInputElement>(null);
-  const currentLang = i18n.language;
+  const currentLang = storedLanguage ?? i18n.language;
 
   const selectLanguage = (code: string) => {
     void i18n.changeLanguage(code);
@@ -40,6 +41,13 @@ export function WelcomeStep({ onNext, direction, stepIndex, totalSteps }: Props)
     const trimmed = name.trim();
     if (trimmed) setUserName(trimmed);
     onNext();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.stopPropagation();
+      handleNext();
+    }
   };
 
   return (
@@ -73,7 +81,7 @@ export function WelcomeStep({ onNext, direction, stepIndex, totalSteps }: Props)
           ref={inputRef}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleNext()}
+          onKeyDown={handleKeyDown}
           placeholder={t('onboarding.welcome.namePlaceholder')}
           className="w-full text-base"
         />

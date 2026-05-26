@@ -29,7 +29,12 @@ export function OnboardingStepWrapper({
   className = '',
 }: OnboardingStepWrapperProps) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && canAdvance && onNext) {
+    // Don't handle Enter if focused on an input/textarea
+    const activeElement = document.activeElement;
+    const isInputFocused =
+      activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
+
+    if (e.key === 'Enter' && canAdvance && onNext && !isInputFocused) {
       onNext();
     } else if (e.key === 'Escape' && onBack) {
       onBack();
