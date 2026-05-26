@@ -208,49 +208,6 @@ impl DocumentStore {
     }
 }
 
-// ── Text extraction ───────────────────────────────────────────────────────────
-
-pub fn extract_text(name: &str, bytes: &[u8]) -> Result<String, String> {
-    let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
-    match ext.as_str() {
-        "pdf" => extract_pdf(bytes),
-        "docx" => extract_docx(bytes),
-        "txt" | "md" | "markdown" => {
-            String::from_utf8(bytes.to_vec()).map_err(|e| e.to_string())
-        }
-        other => Err(format!("unsupported file type: .{other}")),
-    }
-}
-
-fn extract_pdf(bytes: &[u8]) -> Result<String, String> {
-    pdf_extract::extract_text_from_mem(bytes).map_err(|e| e.to_string())
-}
-
-fn extract_docx(bytes: &[u8]) -> Result<String, String> {
-    use std::io::Read;
-    let cursor = std::io::Cursor::new(bytes);
-    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| e.to_string())?;
-    let mut xml = String::new();
-    archive
-        .by_name("word/document.xml")
-        .map_err(|_| "invalid docx: missing word/document.xml".to_string())?
-        .read_to_string(&mut xml)
-        .map_err(|e| e.to_string())?;
-
-    // Strip XML tags with a simple state machine — avoids quick-xml API churn.
-    let mut text = String::new();
-    let mut in_tag = false;
-    for c in xml.chars() {
-        match c {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag && !c.is_control() => text.push(c),
-            _ => {}
-        }
-    }
-    Ok(text.split_whitespace().collect::<Vec<_>>().join(" "))
-}
-
 // ── Ollama embedding ──────────────────────────────────────────────────────────
 
 const EMBED_MODEL: &str = "nomic-embed-text";
