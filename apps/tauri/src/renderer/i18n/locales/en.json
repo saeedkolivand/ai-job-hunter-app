@@ -381,7 +381,8 @@
       "download": "Download {{version}}",
       "install": "Restart & install",
       "error": "Check failed",
-      "whatsNew": "What's new in"
+      "whatsNew": "What's new in",
+      "downloadFromGitHub": "Download from GitHub"
     }
   },
   "aiGenerate": {

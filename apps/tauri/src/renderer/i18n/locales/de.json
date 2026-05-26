@@ -381,7 +381,8 @@
       "download": "{{version}} herunterladen",
       "install": "Neu starten & installieren",
       "error": "Prüfung fehlgeschlagen",
-      "whatsNew": "Neu in"
+      "whatsNew": "Neu in",
+      "downloadFromGitHub": "Von GitHub herunterladen"
     }
   },
   "aiGenerate": {

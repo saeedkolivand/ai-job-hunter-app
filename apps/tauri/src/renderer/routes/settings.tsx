@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Cpu,
   Download,
+  ExternalLink,
   FileText,
   Gauge,
   Languages,
@@ -37,7 +38,7 @@ import { TechStackPreferences } from '@/features/settings/components/TechStackPr
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { transition, variants } from '@/lib/motion';
-import { useAppVersion } from '@/services';
+import { useAppVersion, useOpenExternal } from '@/services';
 import { useUpdater } from '@/services/use-updater';
 import {
   useOnboardingCompleted,
@@ -270,8 +271,11 @@ function UpdateSection() {
       : `v${versionRaw}`
     : '';
   const { status, check, download, install } = useUpdater();
+  const openExternal = useOpenExternal();
 
   const noRelease = status.state === 'error' && isNoReleaseError(status.message);
+  const GITHUB_RELEASES_URL =
+    'https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/latest';
 
   return (
     <GlassCard>
@@ -330,8 +334,19 @@ function UpdateSection() {
         </div>
       )}
       {status.state === 'error' && !noRelease && (
-        <div className="mt-3 text-xs text-red-400/70">
-          {t('settings.update.error')}: {status.message}
+        <div className="mt-3 space-y-2">
+          <div className="text-xs text-red-400/70">
+            {t('settings.update.error')}: {status.message}
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => openExternal.mutate(GITHUB_RELEASES_URL)}
+            className="gap-2 text-xs text-foreground/50 hover:text-foreground/80"
+          >
+            <ExternalLink size={12} />
+            {t('settings.update.downloadFromGitHub')}
+          </Button>
         </div>
       )}
 
