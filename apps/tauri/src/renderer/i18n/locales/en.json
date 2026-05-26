@@ -1251,7 +1251,7 @@
       "downloaded": "downloaded successfully",
       "pullError": "Download failed. Check your connection and try again.",
       "back": "Back",
-      "next": "See the features",
+      "next": "Continue",
       "skip": "Skip for now",
       "skipWarning": "AI features won't work without a model",
       "localTab": "Local (Ollama)",

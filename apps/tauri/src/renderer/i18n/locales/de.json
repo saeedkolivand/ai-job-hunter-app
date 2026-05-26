@@ -1251,7 +1251,7 @@
       "downloaded": "erfolgreich heruntergeladen",
       "pullError": "Download fehlgeschlagen. Verbindung prüfen und erneut versuchen.",
       "back": "Zurück",
-      "next": "Funktionen ansehen",
+      "next": "Weiter",
       "skip": "Vorerst überspringen",
       "skipWarning": "KI-Funktionen sind ohne Modell nicht verfügbar",
       "localTab": "Lokal (Ollama)",
