@@ -7,6 +7,11 @@ export interface LinkedinContract {
 
   /** Get current LinkedIn session status. */
   getStatus(): Promise<{ connected: boolean; accountEmail?: string; lastConnected?: number }>;
+
+  /** Fetch a LinkedIn profile URL and return extracted resume text. */
+  importProfileFromUrl(
+    url: string
+  ): Promise<{ text: string; name?: string; platform: string } | { error: string }>;
 }
 
 export const LINKEDIN_CHANNELS = {
