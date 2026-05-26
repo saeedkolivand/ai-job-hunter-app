@@ -6,6 +6,7 @@ allowBuilds:
   core-js: false
   esbuild: true
   lzma-native: true
+  tesseract.js: true
 minimumReleaseAgeExclude:
   - framer-motion@12.39.0
   - motion-dom@12.39.0

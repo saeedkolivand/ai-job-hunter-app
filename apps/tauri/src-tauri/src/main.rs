@@ -16,6 +16,7 @@
 
 mod ai_generations;
 mod autopilot;
+mod extraction;
 mod cover_letter;
 mod autopilot_helpers;
 mod autopilot_scheduler;
@@ -251,6 +252,8 @@ fn main() {
             commands::ai::ai_has_provider_key,
             commands::ai::ai_test_provider_key,
             commands::ai::ai_list_provider_models,
+            // resume extraction
+            extraction::extract_resume,
             // documents
             commands::documents::documents_list,
             commands::documents::documents_import,

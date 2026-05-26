@@ -26,6 +26,7 @@ const WINDOW_API_DIRECT =
 const RAW_BUTTON = 'JSXOpeningElement[name.name="button"]';
 const RAW_SELECT = 'JSXOpeningElement[name.name="select"]';
 const RAW_TEXTAREA = 'JSXOpeningElement[name.name="textarea"]';
+const RAW_INPUT = 'JSXOpeningElement[name.name="input"]';
 
 // ── Forbidden deep UI import paths (all resolve to @ajh/ui exports) ──────────
 // UpdateBanner is intentionally omitted — it is app-specific and lives only
@@ -35,24 +36,31 @@ const DEEP_UI_IMPORTS = [
   '@/components/ui/Button',
   '@/components/ui/CardSkeleton',
   '@/components/ui/ConfirmModal',
+  '@/components/ui/Dropdown',
   '@/components/ui/EmptyState',
   '@/components/ui/ErrorBoundary',
   '@/components/ui/ErrorState',
+  '@/components/ui/FloatingIcon',
   '@/components/ui/GlassCard',
   '@/components/ui/GlassOverlay',
   '@/components/ui/IconBadge',
   '@/components/ui/IconText',
   '@/components/ui/Input',
   '@/components/ui/LoadingSkeleton',
+  '@/components/ui/LocationInput',
   '@/components/ui/MarkdownMessage',
   '@/components/ui/ModalShell',
+  '@/components/ui/Notification',
   '@/components/ui/OptionTile',
+  '@/components/ui/RefreshButton',
   '@/components/ui/RowSkeleton',
   '@/components/ui/SectionHeader',
   '@/components/ui/SectionLabel',
   '@/components/ui/SelectDropdown',
   '@/components/ui/SettingsSection',
   '@/components/ui/Skeleton',
+  '@/components/ui/SourceBadge',
+  '@/components/ui/StepDots',
   '@/components/ui/StreamingText',
   '@/components/ui/TextArea',
   '@/components/ui/Toast',
@@ -284,6 +292,11 @@ export default tseslint.config(
           selector: RAW_TEXTAREA,
           message: "Use <TextArea> from '@ajh/ui' instead of raw <textarea>.",
         },
+        {
+          selector: RAW_INPUT,
+          message:
+            "Use <Input> from '@ajh/ui' instead of raw <input>. Exceptions: type='range|file|checkbox|radio|hidden' are allowed.",
+        },
       ],
     },
   },
@@ -315,6 +328,41 @@ export default tseslint.config(
     files: ['apps/desktop/src/renderer/services/**/*.ts'],
     rules: {
       'no-restricted-syntax': 'off',
+    },
+  },
+
+  // ── React Query boundary — only services can use React Query directly ───────
+  {
+    files: [
+      'apps/desktop/src/renderer/features/**/*.tsx',
+      'apps/desktop/src/renderer/routes/**/*.tsx',
+      'apps/desktop/src/renderer/components/**/*.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          ...I18N_IMPORT_RESTRICTION,
+          patterns: [
+            {
+              group: MAIN_PROCESS_PACKAGES,
+              message:
+                'Main-process packages are not available in the renderer. Add an IPC method instead.',
+            },
+            {
+              group: DEEP_UI_IMPORTS,
+              message:
+                "Import from '@ajh/ui' directly instead of deep component paths. Example: import { Button } from '@ajh/ui'. The only exception is UpdateBanner: import { UpdateBanner } from '@/components/ui/UpdateBanner'.",
+            },
+            {
+              name: '@tanstack/react-query',
+              importNames: ['useQuery', 'useMutation', 'useQueryClient', 'QueryClient'],
+              message:
+                "Don't use React Query hooks directly in UI components. Use service hooks from '@/services/' instead (e.g. useDocuments, useJobs). This enforces the Ports & Adapters boundary.",
+            },
+          ],
+        },
+      ],
     },
   },
 
@@ -361,6 +409,30 @@ export default tseslint.config(
     files: ['apps/desktop/src/main/updater.ts', 'apps/desktop/src/renderer/lib/generate-ai.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+
+  // ── @ajh/shared package boundary — no React or Node dependencies ───────────
+  {
+    files: ['packages/shared/**/*.ts', 'packages/shared/**/*.tsx'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['react', 'react-dom', '@tanstack/react-query'],
+              message:
+                '@ajh/shared must not have React dependencies. It is for IPC contracts, types, and Zod schemas only.',
+            },
+            {
+              group: ['fs', 'path', 'os', 'crypto', 'node:*'],
+              message:
+                '@ajh/shared must not have Node.js dependencies. It is for IPC contracts, types, and Zod schemas only.',
+            },
+          ],
+        },
+      ],
     },
   }
 );

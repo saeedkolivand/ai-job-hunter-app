@@ -24,12 +24,8 @@ import { Button, TextArea, useNotification } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
-import {
-  useDocuments,
-  useImportDocument,
-  useProfileImport,
-  useSetDefaultDocument,
-} from '@/services';
+import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
+import { useDocuments, useProfileImport, useSetDefaultDocument } from '@/services';
 
 const ACCEPT = '.pdf,.docx,.txt,.md,.markdown';
 const MAX_BYTES = 25 * 1024 * 1024;
@@ -91,7 +87,7 @@ export function ResumeInputCard({
   const { data: rawDocsUnknown = [] } = useDocuments();
   const rawDocs = rawDocsUnknown as unknown as RawDoc[];
   const docs = rawDocs.map(normalise);
-  const importDocument = useImportDocument();
+  const { importFile } = useImportWithOcr();
   const setDefaultDocument = useSetDefaultDocument();
   const profileImport = useProfileImport();
 
@@ -143,12 +139,7 @@ export function ResumeInputCard({
     if (!lastUploadedFile) return;
     setSaving(true);
     try {
-      const bytes = new Uint8Array(await lastUploadedFile.arrayBuffer());
-      const result = await importDocument.mutateAsync({
-        name: lastUploadedFile.name,
-        bytes,
-        title: lastUploadedFile.name,
-      });
+      const result = await importFile(lastUploadedFile);
       if (
         asDefault &&
         result &&

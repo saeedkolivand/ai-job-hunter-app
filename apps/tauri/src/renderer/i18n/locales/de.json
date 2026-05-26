@@ -358,6 +358,7 @@
       "orClick": "oder klicken zum Durchsuchen",
       "fileTypes": "PDF, DOC, DOCX",
       "uploading": "Wird hochgeladen und analysiert...",
+      "scanning": "Wird mit OCR gescannt…",
       "setAsDefault": "Als Standard festlegen",
       "uploaded": "Lebenslauf erfolgreich hochgeladen",
       "indexed": "Indiziert",

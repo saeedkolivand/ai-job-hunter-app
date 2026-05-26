@@ -43,6 +43,7 @@ chromiumoxide = { version = "0.9", features = ["fetcher", "zip8"] }
 futures = "0.3"
 regex = "1"
 anyhow = "1"
+thiserror = "2"
 chrono = "0.4"
 feed-rs = "2"
 urlencoding = "2"
@@ -68,6 +69,13 @@ zip = "8"
 docx-rs = "0.4.19"
 printpdf = "0.9.1"
 unicode-segmentation = "1.10"
+lopdf = "0.34"
+
+# OCR — optional; requires native Tesseract libraries at build time.
+leptess = { version = "0.14", optional = true }
+
+[features]
+ocr = ["leptess"]
 
 [target.'cfg(windows)'.dependencies]
 wmi = "0.18"
