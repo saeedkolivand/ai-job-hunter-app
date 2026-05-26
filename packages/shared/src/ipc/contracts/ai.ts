@@ -24,6 +24,9 @@ export interface AiContract {
   /** Check whether a provider API key is stored (does not return the key). */
   hasProviderKey(req: { provider: string }): Promise<{ has: boolean }>;
 
+  /** Test whether a stored provider API key is valid by making a lightweight API call. */
+  testProviderKey(req: { provider: string }): Promise<{ success: boolean; error?: string }>;
+
   /** Fetch available models from a cloud provider using its stored API key. */
   listProviderModels(req: { provider: string }): Promise<Array<{ name: string }>>;
 }
