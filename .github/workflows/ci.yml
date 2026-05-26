@@ -28,6 +28,7 @@ concurrency:
 
 # ──────────────────────────────────────────────────────────────────────
 # Jobs
+# Note: Runs on all PRs to main for comprehensive validation
 # ──────────────────────────────────────────────────────────────────────
 jobs:
   dependencies:
