@@ -5,5 +5,6 @@ export function privacy(opts: WebHttpClientOptions) {
   return {
     signOutAll: () => cmd('privacy', 'signOutAll'),
     clearInteractions: () => cmd('privacy', 'clearInteractions'),
+    resetApp: () => cmd('privacy', 'resetApp'),
   };
 }
