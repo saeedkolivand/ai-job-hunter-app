@@ -24,7 +24,7 @@ import { useTranslation } from '@/lib/i18n';
 import { transition, variants } from '@/lib/motion';
 import { useAICapability } from '@/providers/CapabilityProvider';
 import { useAppVersion } from '@/services/use-system';
-import { useAIModel, useUserName } from '@/store/preferences-store';
+import { useAIModel, useAiProviderConfig, useUserName } from '@/store/preferences-store';
 
 const NAV_ITEMS = [
   { to: ROUTES.DASHBOARD, label: 'nav.dashboard', icon: LayoutDashboard, tourId: 'dashboard' },
@@ -45,6 +45,7 @@ export function Sidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const userName = useUserName();
   const aiModel = useAIModel();
+  const providerConfig = useAiProviderConfig();
   const ai = useAICapability(); // from CapabilityProvider — no duplicate polling
   const { data: version = 'v0.1.0' } = useAppVersion();
   const appVersion = version.startsWith('v') ? version : `v${version}`;
@@ -53,6 +54,13 @@ export function Sidebar() {
   const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const aiStatus = !ai ? 'checking' : ai.ready ? 'ready' : 'offline';
+
+  // Get current model name from active provider
+  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+  const currentModel =
+    activeProvider === 'ollama'
+      ? aiModel?.defaultModel
+      : providerConfig?.providers?.[activeProvider]?.model;
 
   const showVersion = () => {
     setVersionTooltip(true);
@@ -152,11 +160,13 @@ export function Sidebar() {
               />
               <span className="truncate text-[10px] text-foreground/45">
                 {aiStatus === 'ready'
-                  ? aiModel?.defaultModel
-                    ? aiModel.defaultModel.split(':')[0]
-                    : 'Ollama ready'
+                  ? currentModel
+                    ? currentModel.length > 30
+                      ? `${currentModel.slice(0, 28)}…`
+                      : currentModel
+                    : 'AI ready'
                   : aiStatus === 'offline'
-                    ? 'Ollama offline'
+                    ? 'AI offline'
                     : 'Checking…'}
               </span>
             </div>
