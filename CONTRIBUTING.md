@@ -1,6 +1,144 @@
-# Contributing to AI Job Hunter
+# Contributing — AI Job Hunter
 
-Thank you for your interest in contributing. This document covers everything you need to get started.
+Thank you for contributing. This document covers everything you need to ship a change consistently.
+
+---
+
+## Workflow
+
+### 1. Never push to `main`
+
+All work goes through pull requests. `main` is protected.
+
+```bash
+# Always branch from an up-to-date main
+git fetch origin
+git checkout main && git pull origin main
+git checkout -b feat/your-feature-name
+```
+
+### 2. Branch naming
+
+| Type     | Format                  | Example                    |
+| -------- | ----------------------- | -------------------------- |
+| Feature  | `feat/<short-name>`     | `feat/autopilot-scheduler` |
+| Bug fix  | `fix/<short-name>`      | `fix/pdf-export-crash`     |
+| Chore    | `chore/<short-name>`    | `chore/update-tauri`       |
+| Docs     | `docs/<short-name>`     | `docs/api-reference`       |
+| Refactor | `refactor/<short-name>` | `refactor/search-service`  |
+
+### 3. Commit messages (Conventional Commits)
+
+Format: `<type>(<scope>): <subject>`
+
+```
+feat(ai): add extended thinking support for Anthropic provider
+fix(scrape): handle captcha timeout on LinkedIn board
+chore(deps): update Tauri to 2.12
+docs(api): document search namespace
+refactor(jobs): extract job-tracker state machine
+```
+
+**Types and their version impact:**
+
+| Type                                           | Triggers release |
+| ---------------------------------------------- | ---------------- |
+| `feat:`                                        | minor bump       |
+| `fix:`, `perf:`                                | patch bump       |
+| `BREAKING CHANGE` footer                       | major bump       |
+| `refactor:`, `docs:`, `chore:`, `ci:`, `test:` | no release       |
+
+Commits must pass `commitlint` (enforced by Husky). Invalid messages are rejected at commit time.
+
+### 4. Before pushing
+
+```bash
+pnpm lint:fix     # auto-fix lint issues
+pnpm typecheck    # verify no TypeScript errors
+pnpm test         # run the test suite
+```
+
+### 5. Open a PR
+
+```bash
+git push -u origin feat/your-feature-name
+gh pr create --title "feat(ai): add extended thinking support" --body "..."
+```
+
+PR checklist:
+
+- [ ] `pnpm typecheck` passes
+- [ ] `pnpm lint:strict` passes (no warnings)
+- [ ] Tests added or updated
+- [ ] Docs updated if adding/changing an IPC contract
+
+---
+
+## Code Style
+
+### TypeScript
+
+- `strict: true` — no implicit `any`, no `@ts-ignore`
+- `import type` for all pure type imports (auto-fixed by `lint:fix`)
+- Import groups (blank line between each): `node:*` → external → `@ajh/*` → `@/*` → relative
+- No `// eslint-disable` — fix the issue or add a scoped override to `eslint.config.mjs` with a reason comment
+
+### React
+
+- Feature components live in `features/<name>/components/`
+- Shared components go in `packages/ui`
+- Chrome components go in `components/layout/`
+- No cross-feature imports
+- No `window.api.*` in feature or route files — use service hooks
+- No raw `<button>`, `<select>`, `<textarea>` — use `@ajh/ui` primitives
+
+### Styling
+
+- `text-brand`, `bg-brand`, `border-brand` — never hardcoded hex colors
+- No inline `{ duration, ease }` animation objects — use `transition.*` from `@/lib/motion`
+
+### i18n
+
+- `import { useTranslation } from "@/lib/i18n"` — never from `react-i18next` directly
+
+---
+
+## Adding a New IPC Capability
+
+Follow the 5-step checklist in [docs/PATTERNS.md](docs/PATTERNS.md#1-ipc-pattern-renderer--rust):
+
+1. Contract in `packages/shared/src/ipc/contracts/`
+2. Rust command in `apps/tauri/src-tauri/src/commands/`
+3. Tauri client wiring in `apps/tauri/src/tauri-client.ts`
+4. Service hook in `apps/tauri/src/renderer/services/`
+5. Query keys in `services/query-client.ts`
+
+Then document the new namespace in [docs/API.md](docs/API.md).
+
+---
+
+## Testing
+
+```bash
+pnpm test           # run all tests
+pnpm test:watch     # watch mode
+```
+
+Use `createMockClient()` from `@/lib/mock-client` for React component tests. Never mock the database — use real in-memory SQLite for data layer tests.
+
+---
+
+## Release Process
+
+Releases are fully automated. **Do not manually bump versions or tag.**
+
+1. Merge PR to `main`
+2. semantic-release analyzes commits
+3. If release-worthy (`feat:`, `fix:`, `perf:`), it bumps versions, writes changelog, creates GitHub Release, and CI builds platform installers
+
+---
+
+## Original contributing notes below
 
 ---
 
