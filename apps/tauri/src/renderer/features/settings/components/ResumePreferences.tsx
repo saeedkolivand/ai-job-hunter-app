@@ -6,10 +6,10 @@ import type { DocumentRecord } from '@ajh/shared';
 import { Button, GlassCard, useNotification } from '@ajh/ui';
 
 import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
+import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
-import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
 import { useDocuments, useRemoveDocument, useSetDefaultDocument } from '@/services';
 
 export function ResumePreferences() {
