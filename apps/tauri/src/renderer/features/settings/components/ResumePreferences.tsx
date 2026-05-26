@@ -6,15 +6,11 @@ import type { DocumentRecord } from '@ajh/shared';
 import { Button, GlassCard, useNotification } from '@ajh/ui';
 
 import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
+import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
-import {
-  useDocuments,
-  useImportDocument,
-  useRemoveDocument,
-  useSetDefaultDocument,
-} from '@/services';
+import { useDocuments, useRemoveDocument, useSetDefaultDocument } from '@/services';
 
 export function ResumePreferences() {
   const { t } = useTranslation();
@@ -39,7 +35,7 @@ export function ResumePreferences() {
           ? 'docx'
           : 'txt')) as DocumentRecord['source'],
   }));
-  const importDocument = useImportDocument();
+  const { importFile, isPending: uploading, isOcr } = useImportWithOcr();
   const removeDocument = useRemoveDocument();
   const setDefaultDocument = useSetDefaultDocument();
 
@@ -49,8 +45,7 @@ export function ResumePreferences() {
   const handleFileUpload = async (file: File) => {
     if (!file) return;
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      await importDocument.mutateAsync({ name: file.name, bytes, title: file.name });
+      await importFile(file);
       if (fileInputRef.current) fileInputRef.current.value = '';
       notify(t('settings.resume.uploaded'), 'success');
     } catch (err) {
@@ -105,8 +100,6 @@ export function ResumePreferences() {
     notify(t('settings.resume.downloaded'), 'success');
   };
 
-  const uploading = importDocument.isPending;
-
   const _formatFileSize = (bytes?: number) => {
     if (!bytes) return '';
     if (bytes < 1024) return bytes + ' B';
@@ -146,7 +139,9 @@ export function ResumePreferences() {
         {uploading ? (
           <div className="flex flex-col items-center gap-3">
             <Loader2 size={28} className="animate-spin text-brand-soft/60" />
-            <div className="text-sm text-foreground/50">{t('settings.resume.uploading')}</div>
+            <div className="text-sm text-foreground/50">
+              {isOcr ? t('settings.resume.scanning') : t('settings.resume.uploading')}
+            </div>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-3">
