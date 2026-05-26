@@ -69,6 +69,11 @@ impl AiGenerationStore {
         Ok(Self { conn: Mutex::new(conn) })
     }
 
+    pub fn clear_all(&self) {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM ai_generations", []).ok();
+    }
+
     pub fn list(&self) -> Vec<AiGenerationRecord> {
         let conn = self.conn.lock().unwrap();
         conn.prepare(

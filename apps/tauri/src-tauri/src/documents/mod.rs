@@ -79,6 +79,11 @@ impl DocumentStore {
         Ok(Self { conn: Mutex::new(conn) })
     }
 
+    pub fn clear_all(&self) {
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch("DELETE FROM vectors; DELETE FROM documents;").ok();
+    }
+
     pub fn list(&self) -> Vec<DocumentRecord> {
         let conn = self.conn.lock().unwrap();
         conn.prepare(

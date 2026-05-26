@@ -280,21 +280,27 @@ export function PrivacySettingsTab() {
         onClick={() => setConfirm({ open: true, action: 'clearInteractions' })}
       />
 
-      {/* Reset App */}
-      <ActionCard
-        icon={RotateCcw}
-        iconBg="bg-rose-700"
-        iconColor="text-white"
-        glowColor="rgba(190,18,60,0.18)"
-        title={t('settings.privacy.resetApp')}
-        description={t('settings.privacy.resetAppDescription')}
-        buttonLabel={t('settings.privacy.reset')}
-        buttonBorder="border-rose-600/50"
-        buttonText="text-rose-400"
-        buttonGlow="0 0 16px rgba(190,18,60,0.15)"
-        loading={!!busy.resetApp}
-        onClick={() => setConfirm({ open: true, action: 'resetApp' })}
-      />
+      {/* ── Danger Zone ─────────────────────────────────────────────── */}
+      <div className="mt-2 rounded-xl border border-rose-700/40 bg-rose-950/20 p-3">
+        <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-rose-500/80">
+          <RotateCcw size={10} />
+          {t('settings.privacy.dangerZone')}
+        </div>
+        <ActionCard
+          icon={RotateCcw}
+          iconBg="bg-rose-700"
+          iconColor="text-white"
+          glowColor="rgba(190,18,60,0.18)"
+          title={t('settings.privacy.resetApp')}
+          description={t('settings.privacy.resetAppDescription')}
+          buttonLabel={t('settings.privacy.reset')}
+          buttonBorder="border-rose-600/50"
+          buttonText="text-rose-400"
+          buttonGlow="0 0 16px rgba(190,18,60,0.15)"
+          loading={!!busy.resetApp}
+          onClick={() => setConfirm({ open: true, action: 'resetApp' })}
+        />
+      </div>
 
       <ConfirmModal
         open={confirm.open}

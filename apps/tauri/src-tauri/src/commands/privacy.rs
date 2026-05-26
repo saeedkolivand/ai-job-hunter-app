@@ -1,6 +1,11 @@
-use serde_json::{json, Value};
 use std::sync::Mutex;
+
+use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
+
+use crate::ai_generations::AiGenerationStore;
+use crate::conversations::ConversationDb;
+use crate::documents::DocumentStore;
 use crate::postings::{InteractionStore, PostingsCache};
 
 #[tauri::command]
@@ -33,9 +38,25 @@ pub fn privacy_sign_out_all(app: AppHandle) -> Value {
     json!({ "success": true })
 }
 
-/// Full factory reset: sign out all boards, clear all cached postings and interactions.
+/// Full factory reset: sign out all boards and wipe every persistent store.
 /// The frontend is responsible for resetting persisted preferences (localStorage).
 #[tauri::command]
 pub fn privacy_reset_app(app: AppHandle) -> Value {
-    privacy_clear_data(app)
+    let data_dir = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+
+    // Sign out all board sessions
+    for board_id in &["linkedin", "indeed", "xing", "glassdoor"] {
+        crate::scraping::board_login::disconnect(&data_dir, board_id);
+    }
+
+    // Clear in-memory + JSON-backed stores
+    app.state::<Mutex<PostingsCache>>().lock().unwrap().clear_all();
+    app.state::<Mutex<InteractionStore>>().lock().unwrap().clear_all();
+
+    // Clear SQLite databases
+    app.state::<DocumentStore>().clear_all();
+    app.state::<AiGenerationStore>().clear_all();
+    app.state::<ConversationDb>().clear_all();
+
+    json!({ "success": true })
 }
