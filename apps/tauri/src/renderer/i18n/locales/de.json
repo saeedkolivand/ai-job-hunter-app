@@ -438,7 +438,7 @@
     "resumePlaceholder": "Lebenslauftext hier einfügen…",
     "atsMode": "ATS-sicherer Modus",
     "atsModeHint": "Empfohlen für ATS-Bewerbungen — linearisiert das zweispaltige Layout",
-    "coverLetter": {
+    "coverLetterStrings": {
       "closingPhrase": {
         "sincerely": "Mit freundlichen Grüßen,",
         "bestRegards": "Mit freundlichen Grüßen,",

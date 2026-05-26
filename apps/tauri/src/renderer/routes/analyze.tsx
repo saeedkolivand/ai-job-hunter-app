@@ -30,6 +30,7 @@ import { AnalysisSectionAnalysis } from '@/features/analyze/components/AnalysisS
 import { AnalysisSkills } from '@/features/analyze/components/AnalysisSkills';
 import { AnalysisStrengths } from '@/features/analyze/components/AnalysisStrengths';
 import { AnalysisVerdict } from '@/features/analyze/components/AnalysisVerdict';
+import { ThinkingBubble } from '@/features/ai-generate/components/ThinkingBubble';
 import { CustomDropdown } from '@/features/settings/components/CustomDropdown';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
@@ -56,6 +57,7 @@ function Analyze() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState('');
+  const [thinkingBuffer, setThinkingBuffer] = useState('');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<'resume' | 'jobAd' | null>(null);
   const [runId, setRunId] = useState(0);
@@ -131,6 +133,7 @@ function Analyze() {
     setError(null);
     setResult(null);
     setStream('');
+    setThinkingBuffer('');
 
     // Create new abort controller for this run
     const controller = new AbortController();
@@ -144,6 +147,7 @@ function Analyze() {
         locale: i18n.language,
         meta: { targetLocale: i18n.language, outputTone: outputTone ?? 'professional' },
         onToken: (tok) => setStream((p) => (p + tok).slice(-2000)),
+        onThinking: (tok) => setThinkingBuffer((p) => p + tok),
         signal: controller.signal,
       });
       setResult(analysis);
@@ -324,7 +328,7 @@ function Analyze() {
                 className="flex flex-1 flex-col overflow-hidden"
               >
                 <div className="flex-1 overflow-y-auto px-8 py-8">
-                  <AnalysisProgress running stream={stream} t={t} />
+                  <AnalysisProgress running stream={stream} thinking={thinkingBuffer} t={t} />
                 </div>
               </motion.div>
             )}
@@ -460,10 +464,12 @@ const ESTIMATED_MS = 50_000;
 function AnalysisProgress({
   running,
   stream,
+  thinking,
   t,
 }: {
   running: boolean;
   stream: string;
+  thinking?: string;
   t: (key: string) => string;
 }) {
   const PROGRESS_MESSAGES = [
@@ -568,6 +574,9 @@ function AnalysisProgress({
           <span>{Math.round(progress)}%</span>
         </div>
       </div>
+
+      {/* Thinking output */}
+      {thinking && <ThinkingBubble thinking={thinking} done={stream.length > 0} />}
 
       {/* Live stream output */}
       <div className="rounded-lg border border-white/[0.05] bg-black/20 px-4 py-3 h-28 overflow-hidden relative">

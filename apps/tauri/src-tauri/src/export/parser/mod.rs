@@ -3,6 +3,65 @@ use std::sync::LazyLock;
 
 use super::types::{LineKind, ParsedDocument, ParsedLine, TextSegment};
 
+/// Replace Unicode characters that embedded PDF fonts cannot render with safe
+/// ASCII or Latin-1 equivalents. Applied before any text hits the PDF renderer.
+pub fn normalize_unicode(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        let replacement: &str = match ch {
+            // Dashes / hyphens
+            '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' => "-",   // hyphen / non-breaking hyphen / figure dash / en-dash
+            '\u{2014}' | '\u{2015}' => " - ",                            // em-dash / horizontal bar
+            '\u{2212}' => "-",                                            // minus sign
+            // Quotes
+            '\u{201C}' | '\u{201D}' | '\u{201E}' | '\u{201F}' => "\"",  // double quotes
+            '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}' => "'",   // single quotes / apostrophes
+            '\u{2032}' => "'",                                            // prime
+            '\u{2033}' => "\"",                                           // double prime
+            // Spaces / invisible chars
+            '\u{00A0}' | '\u{202F}' | '\u{2007}' | '\u{2008}' => " ",   // non-breaking / narrow no-break / figure / punctuation space
+            '\u{200B}' | '\u{200C}' | '\u{200D}' | '\u{FEFF}' => "",    // zero-width spaces / BOM
+            '\u{00AD}' => "-",                                            // soft hyphen
+            // Ellipsis
+            '\u{2026}' => "...",
+            // Bullets / symbols
+            '\u{2022}' | '\u{2023}' | '\u{2043}' | '\u{204C}' | '\u{204D}' => "-", // bullet variants
+            '\u{25E6}' | '\u{2219}' | '\u{22C5}' => "-",                 // white bullet / bullet operator / dot operator
+            // Arrows
+            '\u{2192}' => "->",
+            '\u{2190}' => "<-",
+            '\u{2194}' => "<->",
+            '\u{21D2}' => "=>",
+            '\u{2191}' => "^",
+            '\u{2193}' => "v",
+            // Trademark / legal
+            '\u{2122}' => "(TM)",
+            '\u{00AE}' => "(R)",
+            '\u{00A9}' => "(c)",
+            // Multiplication / fractions
+            '\u{00D7}' => "x",
+            '\u{00F7}' => "/",
+            '\u{00BD}' => "1/2",
+            '\u{00BC}' => "1/4",
+            '\u{00BE}' => "3/4",
+            // Superscripts
+            '\u{00B2}' => "2",
+            '\u{00B3}' => "3",
+            '\u{00B9}' => "1",
+            // Other
+            '\u{2116}' => "No.",
+            '\u{2020}' | '\u{2021}' => "*",                               // daggers
+            '\u{00B7}' => ".",                                             // middle dot
+            _ => {
+                out.push(ch);
+                continue;
+            }
+        };
+        out.push_str(replacement);
+    }
+    out
+}
+
 // Lazy-initialized regexes for performance
 static DATE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|19\d{2}|20\d{2})[\s\S]{0,30}?(?:Present|Current|Now|Heute|Ongoing|Actuel|20\d{2}|19\d{2})\b").unwrap()

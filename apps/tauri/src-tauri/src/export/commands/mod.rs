@@ -9,11 +9,15 @@ use super::{
 
 /// Tauri command to export resume or cover letter
 #[command]
-pub async fn documents_export_document(request: ExportRequest) -> Result<ExportResult, String> {
+pub async fn documents_export_document(mut request: ExportRequest) -> Result<ExportResult, String> {
     // Validate input
     if request.text.trim().is_empty() {
         return Err("Cannot export empty document. Please generate content first.".to_string());
     }
+
+    // Normalize Unicode before any rendering so unsupported glyphs don't appear
+    // as replacement boxes in PDF/DOCX output.
+    request.text = super::parser::normalize_unicode(&request.text);
 
     // Generate based on format
     let (data, mime_type, extension) = match request.format {
