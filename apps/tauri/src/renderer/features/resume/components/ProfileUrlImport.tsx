@@ -1,4 +1,4 @@
-import { Link, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button, Input, useNotification } from '@ajh/ui';
@@ -10,8 +10,6 @@ interface Props {
   onImported?: (name: string) => void;
 }
 
-const LINKEDIN_PLACEHOLDER = 'https://www.linkedin.com/in/your-profile/';
-
 export function ProfileUrlImport({ onImported }: Props) {
   const { t } = useTranslation();
   const notify = useNotification();
@@ -20,8 +18,8 @@ export function ProfileUrlImport({ onImported }: Props) {
   const profileImport = useProfileImport();
   const importDocument = useImportDocument();
 
-  const isLinkedIn = url.toLowerCase().includes('linkedin.com/in/');
-  const canImport = isLinkedIn && !profileImport.isPending && !importDocument.isPending;
+  const hasUrl = url.trim().length > 0;
+  const canImport = hasUrl && !profileImport.isPending && !importDocument.isPending;
   const loading = profileImport.isPending || importDocument.isPending;
 
   const handleImport = async () => {
@@ -36,7 +34,9 @@ export function ProfileUrlImport({ onImported }: Props) {
 
       const encoder = new TextEncoder();
       const bytes = encoder.encode(result.text);
-      const name = result.name ? `${result.name} (LinkedIn).txt` : 'LinkedIn Profile.txt';
+      const name = result.name
+        ? `${result.name} (${result.platform}).txt`
+        : `${result.platform} Profile.txt`;
 
       await importDocument.mutateAsync({ name, bytes: new Uint8Array(bytes), title: name });
       setUrl('');
@@ -54,7 +54,7 @@ export function ProfileUrlImport({ onImported }: Props) {
         <Input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder={LINKEDIN_PLACEHOLDER}
+          placeholder={t('resumeInput.profileUrlPlaceholder')}
           disabled={loading}
           onKeyDown={(e) => e.key === 'Enter' && canImport && void handleImport()}
           className="flex-1 text-sm"
@@ -66,13 +66,10 @@ export function ProfileUrlImport({ onImported }: Props) {
           disabled={!canImport}
           className="shrink-0 gap-1.5"
         >
-          {loading ? <Loader2 size={13} className="animate-spin" /> : <Link size={13} />}
+          {loading && <Loader2 size={13} className="animate-spin" />}
           {t('resume.profileImport.import')}
         </Button>
       </div>
-      {url && !isLinkedIn && (
-        <p className="text-xs text-amber-400/70">{t('resume.profileImport.linkedInOnly')}</p>
-      )}
     </div>
   );
 }
