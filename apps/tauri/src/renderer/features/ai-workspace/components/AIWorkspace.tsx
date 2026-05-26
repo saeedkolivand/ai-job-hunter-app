@@ -2,10 +2,10 @@ import { Check, Copy, Send, Sparkles, Upload, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
-import { buildWorkspaceSystemPrompt } from '@ajh/prompts';
 import type { AiStreamChunk, JobEvent } from '@ajh/shared';
 import { Button, Input, MarkdownMessage } from '@ajh/ui';
 
+import { ModelSelector, useSelectedModel } from '@/components/ui/ModelSelector';
 import i18n from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
@@ -18,7 +18,6 @@ import {
   useGetOrCreateConversation,
   useJobEvents,
 } from '@/services';
-import { ModelSelector, useSelectedModel } from '@/components/ui/ModelSelector';
 
 const ACCEPTED_EXTS = ['pdf', 'docx', 'txt', 'md', 'markdown'] as const;
 const ACCEPT_ATTR = '.pdf,.docx,.txt,.md,.markdown';
@@ -39,7 +38,7 @@ export function AIWorkspace() {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
-  const [resumeText, setResumeText] = useState<string>('');
+  const [_resumeText, setResumeText] = useState<string>('');
   const [resumeFileName, setResumeFileName] = useState<string>('');
   const [uploading, setUploading] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
