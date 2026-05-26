@@ -54,6 +54,7 @@
     "errorBody": "Analysis failed. Please try again.",
     "reAnalyse": "Re-analyse",
     "selectModel": "Select a model first",
+    "addApiKey": "Add API key in Settings",
     "pasteContent": "Paste resume & job ad",
     "idleTitle": "Resume Analyser",
     "idleSubtitle": "Paste your resume and a job ad to get a full AI analysis",

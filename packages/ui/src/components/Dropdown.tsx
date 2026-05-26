@@ -12,6 +12,8 @@ export interface DropdownOption {
   label: string;
   /** Secondary text shown on the right (e.g. model size) */
   meta?: string;
+  /** Section header for grouping options */
+  section?: string;
 }
 
 export interface DropdownProps {
@@ -51,6 +53,17 @@ export function Dropdown({
     return options.filter((o) => o.label.toLowerCase().includes(q));
   }, [options, query]);
 
+  // Group options by section
+  const grouped = useMemo(() => {
+    const groups: Record<string, DropdownOption[]> = {};
+    filtered.forEach((opt) => {
+      const section = opt.section || 'default';
+      if (!groups[section]) groups[section] = [];
+      groups[section].push(opt);
+    });
+    return groups;
+  }, [filtered]);
+
   useEffect(() => {
     if (open && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
@@ -83,14 +96,19 @@ export function Dropdown({
         disabled={disabled}
         onClick={() => !disabled && setOpen((o) => !o)}
         className={cn(
-          'glass-graphite glass-highlight flex h-9 w-full items-center justify-between gap-2 rounded-xl px-3 text-xs transition-all duration-150',
+          'glass-graphite glass-highlight flex h-9 w-full min-w-[200px] max-w-[400px] items-center justify-between gap-2 rounded-xl px-3 text-xs transition-all duration-150',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50',
           open ? 'border-brand/35' : 'hover:bg-white/[0.02]'
         )}
       >
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
           {icon && <span className="shrink-0 text-foreground/40">{icon}</span>}
-          <span className={cn('truncate', selected ? 'text-foreground/90' : 'text-foreground/35')}>
+          <span
+            className={cn(
+              'truncate text-left',
+              selected ? 'text-foreground/90' : 'text-foreground/35'
+            )}
+          >
             {selected?.label ?? placeholder}
           </span>
         </div>
@@ -122,8 +140,8 @@ export function Dropdown({
               className="glass-elevated overflow-hidden rounded-xl shadow-2xl"
             >
               {showSearch && (
-                <div className="border-b border-white/[0.06] px-2 py-2">
-                  <div className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-2.5 py-1.5">
+                <div className="border-b border-white/[0.06] px-3 py-2.5">
+                  <div className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2">
                     <Search size={11} className="shrink-0 text-foreground/30" />
                     <input
                       ref={searchRef}
@@ -136,36 +154,45 @@ export function Dropdown({
                 </div>
               )}
 
-              <div className="max-h-56 space-y-0.5 overflow-y-auto px-1 py-1">
+              <div className="max-h-72 space-y-0.5 overflow-y-auto px-2 py-2">
                 {filtered.length === 0 ? (
                   <div className="px-3 py-4 text-center text-xs text-foreground/35">No results</div>
                 ) : (
-                  filtered.map((opt) => {
-                    const isSelected = opt.value === value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => {
-                          onChange(opt.value);
-                          setOpen(false);
-                        }}
-                        className={cn(
-                          'flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs transition-colors',
-                          isSelected
-                            ? 'bg-brand/15 text-brand-soft'
-                            : 'text-foreground/70 hover:bg-white/[0.05] hover:text-foreground/90'
-                        )}
-                      >
-                        <span className="truncate">{opt.label}</span>
-                        {opt.meta && (
-                          <span className="ml-2 shrink-0 text-[10px] text-foreground/35">
-                            {opt.meta}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })
+                  Object.entries(grouped).map(([section, opts]) => (
+                    <div key={section}>
+                      {section !== 'default' && (
+                        <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-foreground/35">
+                          {section}
+                        </div>
+                      )}
+                      {opts.map((opt) => {
+                        const isSelected = opt.value === value;
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => {
+                              onChange(opt.value);
+                              setOpen(false);
+                            }}
+                            className={cn(
+                              'flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-xs transition-colors',
+                              isSelected
+                                ? 'bg-brand/15 text-brand-soft'
+                                : 'text-foreground/70 hover:bg-white/[0.05] hover:text-foreground/90'
+                            )}
+                          >
+                            <span className="truncate text-left">{opt.label}</span>
+                            {opt.meta && (
+                              <span className="ml-2 shrink-0 text-[10px] text-foreground/35">
+                                {opt.meta}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))
                 )}
               </div>
             </motion.div>

@@ -1,4 +1,4 @@
-import { Bot, CheckCircle2, Eye, EyeOff, Key, Loader2 } from 'lucide-react';
+import { Bot, CheckCircle2, Eye, EyeOff, Key, Loader2, RefreshCw } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState } from 'react';
 
@@ -6,7 +6,12 @@ import { Button, Input, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
-import { useHasProviderKey, useOpenExternal, useSetProviderKey } from '@/services';
+import {
+  useHasProviderKey,
+  useOpenExternal,
+  useSetProviderKey,
+  useTestProviderKey,
+} from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
 import { usePreferencesStore } from '@/store/preferences-store';
 
@@ -69,11 +74,13 @@ export function CloudProviderPanel({
   const notify = useNotification();
   const openExternal = useOpenExternal();
   const setProviderKey = useSetProviderKey();
+  const testProviderKey = useTestProviderKey();
   const setAiProviderConfig = usePreferencesStore((s) => s.setAiProviderConfig);
 
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
 
   const cloudMeta = CLOUD_PROVIDERS.find((p) => p.id === selectedProvider) ?? CLOUD_PROVIDERS[0];
   const { data: hasKeyData } = useHasProviderKey(selectedProvider);
@@ -94,6 +101,23 @@ export function CloudProviderPanel({
       notify(err instanceof Error ? err.message : 'Failed to save key.', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestKey = async () => {
+    if (!hasKey) return;
+    setTesting(true);
+    try {
+      const result = await testProviderKey.mutateAsync({ provider: selectedProvider });
+      if (result.success) {
+        notify(`${cloudMeta?.label ?? selectedProvider} API key is valid!`, 'success');
+      } else {
+        notify(`API key test failed: ${result.error ?? 'Unknown error'}`, 'error');
+      }
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to test key.', 'error');
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -135,9 +159,27 @@ export function CloudProviderPanel({
 
       {/* API key input */}
       {hasKey ? (
-        <div className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-2.5">
-          <Key size={13} className="text-emerald-400" />
-          <span className="text-sm text-emerald-300/80">{t('onboarding.ai.apiKeyStored')}</span>
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            <Key size={13} className="text-emerald-400" />
+            <span className="text-sm text-emerald-300/80">{t('onboarding.ai.apiKeyStored')}</span>
+          </div>
+          <Button
+            variant="glass"
+            size="sm"
+            disabled={testing}
+            onClick={() => void handleTestKey()}
+            className="h-auto px-2 py-1 text-xs"
+          >
+            {testing ? (
+              <Loader2 size={11} className="animate-spin" />
+            ) : (
+              <>
+                <RefreshCw size={11} className="mr-1" />
+                Test
+              </>
+            )}
+          </Button>
         </div>
       ) : (
         <div className="space-y-2">

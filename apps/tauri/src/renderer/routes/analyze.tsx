@@ -4,20 +4,19 @@ import {
   CheckCircle2,
   ChevronDown,
   RefreshCw,
-  RotateCcw,
   ScanSearch,
   Sparkles,
   Upload,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 
 import type { DocumentRecord } from '@ajh/shared';
 import { Button, TextArea } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
+import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { ThinkingBubble } from '@/features/ai-generate/components/ThinkingBubble';
 import { ResumeInputCard } from '@/features/ai-workspace/components/ResumeInputCard';
 import { AnalysisATSRisks } from '@/features/analyze/components/AnalysisATSRisks';
@@ -31,15 +30,12 @@ import { AnalysisSectionAnalysis } from '@/features/analyze/components/AnalysisS
 import { AnalysisSkills } from '@/features/analyze/components/AnalysisSkills';
 import { AnalysisStrengths } from '@/features/analyze/components/AnalysisStrengths';
 import { AnalysisVerdict } from '@/features/analyze/components/AnalysisVerdict';
-import { CustomDropdown } from '@/features/settings/components/CustomDropdown';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
 import { type AnalysisResult, runAnalysis } from '@/lib/resume-ai';
-import { useAIModels, useDocuments, useExtractText } from '@/services';
-import { keys } from '@/services/query-client';
-import { useAIModel, useOutputTone, usePreferencesStore } from '@/store/preferences-store';
-import type { Model } from '@/types';
+import { useDocuments, useExtractText } from '@/services';
+import { useOutputTone } from '@/store/preferences-store';
 
 export const Route = createFileRoute('/analyze')({ component: Analyze });
 
@@ -62,12 +58,9 @@ function Analyze() {
   const [uploading, setUploading] = useState<'resume' | 'jobAd' | null>(null);
   const [runId, setRunId] = useState(0);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const { data: modelList = [], isFetching: loadingModels } = useAIModels();
-  const models = modelList as Model[];
-  const qc = useQueryClient();
-  const aiModel = useAIModel();
+  const selectedModel = useSelectedModel();
+  const { canUse: canUseAI, reason: aiReason } = useCanUseAI();
   const outputTone = useOutputTone();
-  const setAIModel = usePreferencesStore((s) => s.setAIModel);
   const extractTextMutation = useExtractText();
   const { data: documentsRaw = [] } = useDocuments();
 
@@ -121,10 +114,10 @@ function Analyze() {
     }
   };
 
-  const canRun = useMemo(
-    () => resume.trim().length > 50 && jobAd.trim().length > 50 && !!aiModel?.defaultModel,
-    [resume, jobAd, aiModel?.defaultModel]
-  );
+  const canRun = useMemo(() => {
+    const hasContent = resume.trim().length > 50 && jobAd.trim().length > 50;
+    return hasContent && canUseAI;
+  }, [resume, jobAd, canUseAI]);
 
   const run = async () => {
     if (!canRun) return;
@@ -143,7 +136,7 @@ function Analyze() {
       const analysis = await runAnalysis({
         resume,
         jobAd,
-        model: aiModel?.defaultModel ?? '',
+        model: selectedModel,
         locale: i18n.language,
         meta: { targetLocale: i18n.language, outputTone: outputTone ?? 'professional' },
         onToken: (tok) => setStream((p) => (p + tok).slice(-2000)),
@@ -197,7 +190,7 @@ function Analyze() {
                   onClick={reset}
                   className="flex items-center gap-1 text-[11px] text-foreground/40 hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
                 >
-                  <RotateCcw size={11} /> {t('analyze.reset')}
+                  <RefreshCw size={11} /> {t('analyze.reset')}
                 </Button>
               )}
             </div>
@@ -205,23 +198,8 @@ function Analyze() {
           </div>
 
           {/* Model selector */}
-          <div className="px-6 pb-4 flex items-center gap-2">
-            <Button
-              onClick={() => void qc.invalidateQueries({ queryKey: keys.ai.models })}
-              disabled={loadingModels}
-              className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.04] text-foreground/40 hover:text-foreground/70 transition-colors disabled:opacity-40 border-transparent p-0"
-            >
-              <RefreshCw size={11} className={loadingModels ? 'animate-spin' : ''} />
-            </Button>
-            <div className="flex-1">
-              <CustomDropdown
-                models={models}
-                selectedModel={aiModel?.defaultModel ?? ''}
-                onSelectModel={(n) =>
-                  setAIModel({ defaultModel: n, temperature: 0.1, maxTokens: 3000 })
-                }
-              />
-            </div>
+          <div className="px-6 pb-4">
+            <ModelSelector />
           </div>
 
           {/* Inputs */}
@@ -273,8 +251,10 @@ function Analyze() {
                 ? t('analyze.running')
                 : stage === 'done'
                   ? t('analyze.reAnalyse')
-                  : !aiModel?.defaultModel
-                    ? t('analyze.selectModel')
+                  : !canUseAI
+                    ? aiReason === 'addApiKey'
+                      ? t('analyze.addApiKey')
+                      : t('analyze.selectModel')
                     : !canRun
                       ? t('analyze.pasteContent')
                       : t('analyze.run')}
