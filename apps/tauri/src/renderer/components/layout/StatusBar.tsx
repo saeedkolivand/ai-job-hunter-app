@@ -2,21 +2,29 @@ import { Cpu, Database, Sparkles } from 'lucide-react';
 
 import { useTranslation } from '@/lib/i18n';
 import { useCapabilities } from '@/providers/CapabilityProvider';
-import { useAIModel } from '@/store/preferences-store';
+import { useAIModel, useAiProviderConfig } from '@/store/preferences-store';
 
 export function StatusBar() {
   const { t } = useTranslation();
   const { ai, data, workers } = useCapabilities();
   const aiModel = useAIModel();
+  const providerConfig = useAiProviderConfig();
+
+  // Get current model name from active provider
+  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+  const currentModel =
+    activeProvider === 'ollama'
+      ? aiModel?.defaultModel
+      : providerConfig?.providers?.[activeProvider]?.model;
 
   const statusColor = () => {
     if (!ai.ready) return 'text-red-400';
-    if (aiModel?.defaultModel) return 'text-emerald-400';
+    if (currentModel) return 'text-emerald-400';
     return 'text-amber-400/80';
   };
 
   const statusText = () => {
-    if (aiModel?.defaultModel) return aiModel.defaultModel;
+    if (currentModel) return currentModel;
     if (!ai.ready) return t('status.ollamaOffline');
     return t('status.ready');
   };
