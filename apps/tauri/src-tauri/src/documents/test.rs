@@ -207,19 +207,19 @@ fn test_all_vectors() {
 
 #[test]
 fn test_extract_text_plain() {
-    let text = extract_text("test.txt", b"Hello, World!").unwrap();
-    assert_eq!(text, "Hello, World!");
+    let result = crate::extraction::route("test.txt", b"Hello, World!").unwrap();
+    assert_eq!(result.text, "Hello, World!");
 }
 
 #[test]
 fn test_extract_text_markdown() {
-    let text = extract_text("test.md", b"# Heading\nContent").unwrap();
-    assert_eq!(text, "# Heading\nContent");
+    let result = crate::extraction::route("test.md", b"# Heading\nContent").unwrap();
+    assert_eq!(result.text, "# Heading\nContent");
 }
 
 #[test]
 fn test_extract_text_unsupported() {
-    let result = extract_text("test.xyz", b"content");
+    let result = crate::extraction::route("test.xyz", b"content");
     assert!(result.is_err());
 }
 
