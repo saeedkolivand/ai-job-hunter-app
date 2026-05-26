@@ -30,6 +30,7 @@ interface RunAnalysisOptions {
   locale?: string;
   meta?: PromptMeta;
   onToken?: (token: string) => void;
+  onThinking?: (token: string) => void;
   onJobId?: (jobId: string) => void;
   signal?: AbortSignal;
 }
@@ -46,6 +47,7 @@ export async function runAnalysis({
   locale = 'en',
   meta = {},
   onToken,
+  onThinking,
   onJobId,
   signal,
 }: RunAnalysisOptions): Promise<AnalysisResult> {
@@ -84,11 +86,15 @@ export async function runAnalysis({
   const full = await new Promise<string>((resolve, reject) => {
     let buffer = '';
     const off = api.ai.onStream((chunk: unknown) => {
-      const c = chunk as { jobId: string; delta: string; done: boolean };
+      const c = chunk as { jobId: string; delta: string; done: boolean; thinking?: boolean };
       if (c.jobId !== jobId) return;
       if (c.delta) {
-        buffer += c.delta;
-        onToken?.(c.delta);
+        if (c.thinking) {
+          onThinking?.(c.delta);
+        } else {
+          buffer += c.delta;
+          onToken?.(c.delta);
+        }
       }
       if (c.done) {
         off();

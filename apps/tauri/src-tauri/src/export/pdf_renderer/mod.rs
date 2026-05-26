@@ -515,7 +515,7 @@ pub fn render_letterhead(
                 colors.rule.clone(),
                 rule_thickness,
             ));
-            current_y -= pt_to_mm(5.0);
+            current_y -= pt_to_mm(14.0);
         }
     }
 
@@ -729,14 +729,14 @@ pub fn render_section_header(
                 layout.margin_left,
                 y_after_header,
                 layout.page_width - layout.margin_right,
-                colors.section.clone(),
+                colors.rule.clone(),
                 thickness,
             ));
         }
         SectionStyle::BoldOnly => {}
     }
 
-    let new_y = y_after_header - pt_to_mm(4.0);
+    let new_y = y_after_header - pt_to_mm(10.0);
     (ops, new_y)
 }
 

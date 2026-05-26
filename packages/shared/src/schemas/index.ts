@@ -24,6 +24,7 @@ export const AiGenerateRequestSchema = z.object({
   messages: z.array(AiMessageSchema).min(1),
   locale: LocaleSchema,
   temperature: z.number().min(0).max(2).optional(),
+  maxTokens: z.number().min(1).max(32768).optional(),
   stream: z.boolean().optional(),
 });
 

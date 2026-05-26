@@ -119,6 +119,7 @@ function AIGeneratePage() {
 
   // Streaming preview
   const [streamBuffer, setStreamBuffer] = useState('');
+  const [thinkingBuffer, setThinkingBuffer] = useState('');
   const stageIdxRef = useRef(0);
   const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -202,6 +203,7 @@ function AIGeneratePage() {
     setResumeOut('');
     setCoverOut('');
     setStreamBuffer('');
+    setThinkingBuffer('');
     setStage('generating');
     startStageRotation();
 
@@ -216,6 +218,7 @@ function AIGeneratePage() {
       if (target === 'resume' || target === 'both') {
         setActiveOut('resume');
         setStreamBuffer('');
+        setThinkingBuffer('');
         await generateResume(
           resume,
           jobAd,
@@ -228,13 +231,15 @@ function AIGeneratePage() {
             setStreamBuffer((p) => (p + tok).slice(-600));
           },
           undefined,
-          controller.signal
+          controller.signal,
+          (tok) => setThinkingBuffer((p) => p + tok)
         );
       }
 
       if (target === 'cover' || target === 'both') {
         setActiveOut('cover');
         setStreamBuffer('');
+        setThinkingBuffer('');
         await generateCoverLetter(
           resume,
           jobAd,
@@ -247,14 +252,18 @@ function AIGeneratePage() {
             setStreamBuffer((p) => (p + tok).slice(-600));
           },
           undefined,
-          controller.signal
+          controller.signal,
+          (tok) => setThinkingBuffer((p) => p + tok)
         );
       }
 
       stopStageRotation();
       setStreamBuffer('');
       setStage('done');
-      setActiveOut(target === 'cover' ? 'cover' : 'resume');
+      // Pick the first tab that actually has content so the textarea is never blank
+      const doneActiveOut =
+        target === 'cover' ? 'cover' : finalResume ? 'resume' : finalCover ? 'cover' : 'resume';
+      setActiveOut(doneActiveOut);
 
       void saveAiGeneration.mutate({
         candidateName: meta.candidateName,
@@ -296,6 +305,7 @@ function AIGeneratePage() {
   };
 
   const copyOutput = async () => {
+    if (isGenerating) return;
     const text = activeOut === 'resume' ? resumeOut : coverOut;
     await navigator.clipboard.writeText(text);
     setCopied(true);
@@ -306,6 +316,7 @@ function AIGeneratePage() {
 
   // ── Export ──
   const doExport = async (fmt: 'pdf' | 'docx' | 'txt') => {
+    if (isGenerating) return;
     const text = currentOutput;
     if (!text) return;
     const type = activeOut === 'resume' ? 'resume' : 'cover-letter';
@@ -481,7 +492,7 @@ function AIGeneratePage() {
         <div className="flex flex-1 flex-col overflow-hidden">
           <AnimatePresence mode="wait">
             {/* Idle state */}
-            {stage === 'idle' && <OutputPanelIdle />}
+            {(stage === 'idle' || stage === 'configuring') && <OutputPanelIdle />}
 
             {/* Extracting */}
             {stage === 'extracting' && <OutputPanelExtracting stageLabel={stageLabel} />}
@@ -492,6 +503,7 @@ function AIGeneratePage() {
                 stageLabel={stageLabel}
                 streamBuffer={streamBuffer}
                 activeOut={activeOut}
+                thinkingBuffer={thinkingBuffer}
               />
             )}
 
@@ -511,12 +523,9 @@ function AIGeneratePage() {
                   if (activeOut === 'resume') setResumeOut(value);
                   else setCoverOut(value);
                 }}
-                onRegenerate={() => {
-                  setStage('configuring');
-                  setResumeOut('');
-                  setCoverOut('');
-                }}
+                onRegenerate={() => void handleGenerate()}
                 copied={copied}
+                isGenerating={isGenerating}
               />
             )}
           </AnimatePresence>
