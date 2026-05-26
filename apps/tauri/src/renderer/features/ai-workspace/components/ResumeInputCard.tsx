@@ -9,10 +9,12 @@ import {
   ChevronDown,
   ChevronUp,
   FileText,
+  Link,
   Loader2,
   Save,
   Sparkles,
   Upload,
+  X,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -21,7 +23,12 @@ import { Button, TextArea, useNotification } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
-import { useDocuments, useImportDocument, useSetDefaultDocument } from '@/services';
+import {
+  useDocuments,
+  useImportDocument,
+  useProfileImport,
+  useSetDefaultDocument,
+} from '@/services';
 
 const ACCEPT = '.pdf,.docx,.txt,.md,.markdown';
 const MAX_BYTES = 25 * 1024 * 1024;
@@ -74,12 +81,16 @@ export function ResumeInputCard({
   const [showSaved, setShowSaved] = useState(false);
   const [lastUploadedFile, setLastUploadedFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [profileUrl, setProfileUrl] = useState('');
+  const urlInputRef = useRef<HTMLInputElement>(null);
 
   const { data: rawDocsUnknown = [] } = useDocuments();
   const rawDocs = rawDocsUnknown as unknown as RawDoc[];
   const docs = rawDocs.map(normalise);
   const importDocument = useImportDocument();
   const setDefaultDocument = useSetDefaultDocument();
+  const profileImport = useProfileImport();
 
   const hasSaved = docs.length > 0;
   const defaultDoc = docs.find((d) => d.isDefault) ?? docs[0];
@@ -145,6 +156,30 @@ export function ResumeInputCard({
     }
     setLastUploadedFile(file);
     await onUpload(file);
+  };
+
+  const handleProfileUrlSubmit = async () => {
+    const url = profileUrl.trim();
+    if (!url) return;
+    try {
+      const result = await profileImport.mutateAsync(url);
+      if ('error' in result) {
+        notify(result.error, 'error');
+        return;
+      }
+      onChange(result.text);
+      setProfileUrl('');
+      setShowUrlInput(false);
+      notify(t('resumeInput.profileImported'), 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : t('resumeInput.profileImportFailed'), 'error');
+    }
+  };
+
+  const toggleUrlInput = () => {
+    setShowUrlInput((v) => !v);
+    setProfileUrl('');
+    setTimeout(() => urlInputRef.current?.focus(), 50);
   };
 
   return (
@@ -229,6 +264,22 @@ export function ResumeInputCard({
             </>
           )}
 
+          {/* Profile URL import button */}
+          {!disabled && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleUrlInput}
+              className={cn(
+                'h-6 w-6 p-0 hover:text-foreground/70',
+                showUrlInput ? 'text-brand-soft' : 'text-foreground/40'
+              )}
+              title={t('resumeInput.pasteProfileUrl')}
+            >
+              <Link size={11} />
+            </Button>
+          )}
+
           {/* Collapse toggle */}
           <Button
             variant="ghost"
@@ -240,6 +291,54 @@ export function ResumeInputCard({
           </Button>
         </div>
       </div>
+
+      {/* Profile URL input panel */}
+      {showUrlInput && !disabled && (
+        <div className="flex items-center gap-2 border-t border-white/[0.05] px-3 py-2">
+          <input
+            ref={urlInputRef}
+            type="url"
+            value={profileUrl}
+            onChange={(e) => setProfileUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleProfileUrlSubmit();
+              if (e.key === 'Escape') {
+                setShowUrlInput(false);
+                setProfileUrl('');
+              }
+            }}
+            placeholder={t('resumeInput.profileUrlPlaceholder')}
+            disabled={profileImport.isPending}
+            className="flex-1 bg-transparent text-xs text-foreground/80 placeholder:text-foreground/30 outline-none disabled:opacity-50"
+          />
+          {profileImport.isPending ? (
+            <Loader2 size={11} className="shrink-0 animate-spin text-foreground/40" />
+          ) : (
+            <>
+              <Button
+                variant="glass"
+                size="sm"
+                onClick={() => void handleProfileUrlSubmit()}
+                disabled={!profileUrl.trim()}
+                className="h-6 px-2 text-[11px] gap-1"
+              >
+                {t('resumeInput.profileUrlImport')}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowUrlInput(false);
+                  setProfileUrl('');
+                }}
+                className="h-6 w-6 p-0 text-foreground/30 hover:text-foreground/60"
+              >
+                <X size={11} />
+              </Button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Text area */}
       {expanded && (

@@ -1356,15 +1356,19 @@
     "saveFailed": "Speichern fehlgeschlagen",
     "saving": "Speichere…",
     "tooLarge": "Datei überschreitet 25 MB",
-    "selectedSaved": "{{name}} geladen"
+    "selectedSaved": "{{name}} geladen",
+    "pasteProfileUrl": "Aus Profil-URL importieren",
+    "profileUrlPlaceholder": "Profil-URL einfügen…",
+    "profileUrlImport": "Importieren",
+    "profileImported": "Profil importiert",
+    "profileImportFailed": "Import fehlgeschlagen"
   },
   "resume": {
     "profileImport": {
-      "description": "Oder direkt aus deiner LinkedIn-Profil-URL importieren",
+      "description": "Oder direkt aus einer Profil-URL importieren",
       "import": "Importieren",
       "success": "Profil von {{name}} als Lebenslauf importiert",
-      "failed": "Profilimport fehlgeschlagen",
-      "linkedInOnly": "Nur LinkedIn-Profil-URLs werden unterstützt"
+      "failed": "Profilimport fehlgeschlagen"
     }
   }
 }

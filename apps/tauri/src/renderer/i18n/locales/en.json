@@ -1363,15 +1363,19 @@
     "saveFailed": "Save failed",
     "saving": "Saving…",
     "tooLarge": "File exceeds 25 MB limit",
-    "selectedSaved": "{{name}} loaded"
+    "selectedSaved": "{{name}} loaded",
+    "pasteProfileUrl": "Import from profile URL",
+    "profileUrlPlaceholder": "Paste a profile URL…",
+    "profileUrlImport": "Import",
+    "profileImported": "Profile imported",
+    "profileImportFailed": "Import failed"
   },
   "resume": {
     "profileImport": {
-      "description": "Or import directly from your LinkedIn profile URL",
+      "description": "Or import directly from a profile URL",
       "import": "Import",
       "success": "{{name}}'s profile imported as resume",
-      "failed": "Profile import failed",
-      "linkedInOnly": "Only LinkedIn profile URLs are supported"
+      "failed": "Profile import failed"
     }
   }
 }
