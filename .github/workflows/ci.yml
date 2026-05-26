@@ -19,7 +19,7 @@ on:
       - main
 
   push:
-    branches-ignore:
+    branches:
       - main
 
 concurrency:
