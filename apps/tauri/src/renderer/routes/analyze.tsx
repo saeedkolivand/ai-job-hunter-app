@@ -564,19 +564,6 @@ function AnalysisProgress({
           <pre className="font-mono text-[10px] leading-relaxed text-foreground/30 whitespace-pre-wrap break-all">
             {stream.slice(-800)}
           </pre>
-        ) : thinking ? (
-          <div className="flex h-full items-center justify-center gap-2">
-            <span className="text-[10px] text-violet-400/50">Model is reasoning…</span>
-            <span className="flex gap-0.5">
-              {[0, 150, 300].map((delay) => (
-                <span
-                  key={delay}
-                  className="h-1 w-1 animate-pulse rounded-full bg-violet-400/40"
-                  style={{ animationDelay: `${delay}ms` }}
-                />
-              ))}
-            </span>
-          </div>
         ) : (
           <div className="space-y-2 pt-1">
             {[1, 0.7, 0.85, 0.5].map((w, i) => (

@@ -55,6 +55,16 @@ type Stage =
   | 'generating' // streaming
   | 'done';
 
+const GENERATION_STAGES = [
+  'aiGenerate.stages.analyzing',
+  'aiGenerate.stages.extracting',
+  'aiGenerate.stages.mapping',
+  'aiGenerate.stages.optimizing',
+  'aiGenerate.stages.rewriting',
+  'aiGenerate.stages.adapting',
+  'aiGenerate.stages.finalizing',
+];
+
 function AIGeneratePage() {
   const { t } = useTranslation();
   // Inputs
@@ -86,13 +96,9 @@ function AIGeneratePage() {
   // Streaming preview
   const [streamBuffer, setStreamBuffer] = useState('');
   const [thinkingBuffer, setThinkingBuffer] = useState('');
+  const stageIdxRef = useRef(0);
+  const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
-
-  // Validation state — shown in OutputPanelDone while leakage check runs
-  const [validationStage, setValidationStage] = useState<'idle' | 'validating' | 'improving'>(
-    'idle'
-  );
-  const [coverGenerating, setCoverGenerating] = useState(false);
 
   // Copy state
   const [copied, setCopied] = useState(false);
@@ -131,6 +137,22 @@ function AIGeneratePage() {
   const canProceed = resume.trim().length > 50 && jobAd.trim().length > 50;
   const canGenerate = canProceed && canUseAI;
 
+  const startStageRotation = () => {
+    stageIdxRef.current = 0;
+    setStageLabel(t(GENERATION_STAGES[0] ?? ''));
+    stageTimerRef.current = setInterval(() => {
+      stageIdxRef.current = (stageIdxRef.current + 1) % GENERATION_STAGES.length;
+      setStageLabel(t(GENERATION_STAGES[stageIdxRef.current] ?? ''));
+    }, 2800);
+  };
+
+  const stopStageRotation = () => {
+    if (stageTimerRef.current) {
+      clearInterval(stageTimerRef.current);
+      stageTimerRef.current = null;
+    }
+  };
+
   // Step 1 — pre-process
   const handleAnalyze = async () => {
     if (!canGenerate) return;
@@ -155,10 +177,10 @@ function AIGeneratePage() {
     setCoverOut('');
     setStreamBuffer('');
     setThinkingBuffer('');
-    setValidationStage('idle');
-    setCoverGenerating(false);
     setStage('generating');
+    startStageRotation();
 
+    // Create abort controller for this generation
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
@@ -170,10 +192,6 @@ function AIGeneratePage() {
         setActiveOut('resume');
         setStreamBuffer('');
         setThinkingBuffer('');
-        setStageLabel(t('aiGenerate.generatingResume'));
-
-        let resumeStageSwitched = false;
-
         await generateResume(
           resume,
           jobAd,
@@ -181,43 +199,20 @@ function AIGeneratePage() {
           mode,
           selectedModel,
           (tok) => {
+            finalResume += tok;
             setResumeOut((p) => p + tok);
             setStreamBuffer((p) => (p + tok).slice(-600));
           },
           undefined,
           controller.signal,
-          (tok) => setThinkingBuffer((p) => p + tok),
-          (draft) => {
-            finalResume = draft;
-            setResumeOut(draft);
-            if (!resumeStageSwitched) {
-              resumeStageSwitched = true;
-              setStage('done');
-              setActiveOut('resume');
-              setStreamBuffer('');
-            }
-            setValidationStage('validating');
-          },
-          () => {
-            finalResume = '';
-            setResumeOut('');
-            setStreamBuffer('');
-            setThinkingBuffer('');
-            setValidationStage('improving');
-          }
+          (tok) => setThinkingBuffer((p) => p + tok)
         );
-        setValidationStage('idle');
       }
 
       if (target === 'cover' || target === 'both') {
-        setCoverGenerating(true);
         setActiveOut('cover');
         setStreamBuffer('');
         setThinkingBuffer('');
-        setStageLabel(t('aiGenerate.generatingCoverLetter'));
-
-        let coverStageSwitched = false;
-
         await generateCoverLetter(
           resume,
           jobAd,
@@ -225,38 +220,23 @@ function AIGeneratePage() {
           mode,
           selectedModel,
           (tok) => {
+            finalCover += tok;
             setCoverOut((p) => p + tok);
             setStreamBuffer((p) => (p + tok).slice(-600));
           },
           undefined,
           controller.signal,
-          (tok) => setThinkingBuffer((p) => p + tok),
-          (draft) => {
-            finalCover = draft;
-            setCoverOut(draft);
-            if (!coverStageSwitched) {
-              coverStageSwitched = true;
-              setCoverGenerating(false);
-              setStage('done');
-              setActiveOut('cover');
-              setStreamBuffer('');
-            }
-            setValidationStage('validating');
-          },
-          () => {
-            finalCover = '';
-            setCoverOut('');
-            setStreamBuffer('');
-            setThinkingBuffer('');
-            setValidationStage('improving');
-          }
+          (tok) => setThinkingBuffer((p) => p + tok)
         );
-        setCoverGenerating(false);
-        setValidationStage('idle');
       }
 
-      // Fallback: ensure done stage if onDraft never fired (e.g. leakage disabled)
+      stopStageRotation();
+      setStreamBuffer('');
       setStage('done');
+      // Pick the first tab that actually has content so the textarea is never blank
+      const doneActiveOut =
+        target === 'cover' ? 'cover' : finalResume ? 'resume' : finalCover ? 'cover' : 'resume';
+      setActiveOut(doneActiveOut);
 
       void saveAiGeneration.mutate({
         candidateName: meta.candidateName,
@@ -273,10 +253,9 @@ function AIGeneratePage() {
         jobAd,
       });
     } catch (err) {
+      stopStageRotation();
       setError(err instanceof Error ? err.message : t('aiGenerate.errors.generationFailed'));
       setStage('configuring');
-      setValidationStage('idle');
-      setCoverGenerating(false);
     } finally {
       abortControllerRef.current = null;
     }
@@ -287,6 +266,7 @@ function AIGeneratePage() {
     if (abortControllerRef.current && stage === 'generating') {
       abortControllerRef.current.abort();
     }
+    stopStageRotation();
     setStage('idle');
     setMeta(null);
     setError(null);
@@ -340,7 +320,7 @@ function AIGeneratePage() {
 
   const saveAiGeneration = useSaveAiGeneration();
 
-  const isGenerating = stage === 'generating' || coverGenerating || validationStage !== 'idle';
+  const isGenerating = stage === 'generating';
 
   return (
     <PageTransition className="h-full overflow-hidden">
@@ -465,7 +445,6 @@ function AIGeneratePage() {
                 streamBuffer={streamBuffer}
                 activeOut={activeOut}
                 thinkingBuffer={thinkingBuffer}
-                wordCount={streamBuffer.trim() ? streamBuffer.trim().split(/\s+/).length : 0}
               />
             )}
 
@@ -488,8 +467,6 @@ function AIGeneratePage() {
                 onRegenerate={() => void handleGenerate()}
                 copied={copied}
                 isGenerating={isGenerating}
-                validationStage={validationStage}
-                coverGenerating={coverGenerating}
               />
             )}
           </AnimatePresence>

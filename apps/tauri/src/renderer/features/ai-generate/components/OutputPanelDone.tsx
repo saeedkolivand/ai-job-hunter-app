@@ -1,13 +1,4 @@
-import {
-  Check,
-  Copy,
-  Download,
-  FileText,
-  Loader2,
-  RotateCcw,
-  ShieldCheck,
-  Sparkles,
-} from 'lucide-react';
+import { Check, Copy, Download, FileText, Loader2, RotateCcw } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 
@@ -32,8 +23,6 @@ interface OutputPanelDoneProps {
   onRegenerate: () => void;
   copied: boolean;
   isGenerating?: boolean;
-  validationStage?: 'idle' | 'validating' | 'improving';
-  coverGenerating?: boolean;
 }
 
 export function OutputPanelDone({
@@ -50,8 +39,6 @@ export function OutputPanelDone({
   onRegenerate,
   copied,
   isGenerating = false,
-  validationStage = 'idle',
-  coverGenerating = false,
 }: OutputPanelDoneProps) {
   const { t } = useTranslation();
 
@@ -77,22 +64,19 @@ export function OutputPanelDone({
           {(
             [
               ...(resumeOut ? [{ id: 'resume' as const, label: t('aiGenerate.resume') }] : []),
-              ...(coverOut || coverGenerating
-                ? [{ id: 'cover' as const, label: t('aiGenerate.coverLetter') }]
-                : []),
+              ...(coverOut ? [{ id: 'cover' as const, label: t('aiGenerate.coverLetter') }] : []),
             ] as { id: 'resume' | 'cover'; label: string }[]
           ).map(({ id, label }) => (
             <Button
               key={id}
               onClick={() => onActiveOutChange(id)}
               className={cn(
-                'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all h-auto',
+                'rounded-lg px-3 py-1.5 text-xs font-medium transition-all h-auto',
                 activeOut === id
                   ? 'bg-brand/15 text-brand-soft'
                   : 'text-foreground/45 hover:text-foreground/70'
               )}
             >
-              {id === 'cover' && coverGenerating && <Loader2 size={10} className="animate-spin" />}
               {label}
             </Button>
           ))}
@@ -131,51 +115,18 @@ export function OutputPanelDone({
         />
       </div>
 
-      {/* Footer: validation status or regenerate option */}
+      {/* Re-generate option */}
       <div className="shrink-0 border-t border-white/[0.05] px-6 py-3 flex items-center justify-between">
         <span className="text-[10px] text-foreground/30">
           {MODES[mode as keyof typeof MODES].label} · {meta?.targetLanguage?.toUpperCase() ?? 'EN'}
           {meta?.mismatch && ` · ${t('aiGenerate.localized')}`}
         </span>
-        <AnimatePresence mode="wait">
-          {validationStage !== 'idle' ? (
-            <motion.div
-              key="validating"
-              initial={{ opacity: 0, x: 8 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 8 }}
-              transition={transition.fast}
-              className="flex items-center gap-1.5 text-[10px] text-foreground/35"
-            >
-              {validationStage === 'validating' ? (
-                <>
-                  <ShieldCheck size={10} className="text-violet-400/50" />
-                  Checking for fabricated content…
-                </>
-              ) : (
-                <>
-                  <Sparkles size={10} className="text-amber-400/50 animate-pulse" />
-                  Improving accuracy…
-                </>
-              )}
-            </motion.div>
-          ) : (
-            <motion.div
-              key="regen"
-              initial={{ opacity: 0, x: 8 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 8 }}
-              transition={transition.fast}
-            >
-              <Button
-                onClick={onRegenerate}
-                className="flex items-center gap-1.5 text-[11px] text-foreground/40 hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
-              >
-                <RotateCcw size={11} /> {t('aiGenerate.regenerate')}
-              </Button>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <Button
+          onClick={onRegenerate}
+          className="flex items-center gap-1.5 text-[11px] text-foreground/40 hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
+        >
+          <RotateCcw size={11} /> {t('aiGenerate.regenerate')}
+        </Button>
       </div>
     </motion.div>
   );
