@@ -96,6 +96,7 @@ async function streamGenerate(
     const off = api.ai.onStream((chunk: unknown) => {
       const c = chunk as { jobId: string; delta: string; done: boolean; thinking?: boolean };
       if (c.jobId !== jobId) return;
+
       if (c.delta) {
         if (c.thinking) {
           // Anthropic-style separate thinking flag
@@ -116,7 +117,6 @@ async function streamGenerate(
                 inThinkBlock = false;
                 remaining = remaining.slice(closeIdx + 8);
               } else {
-                // Still inside think block — forward to thinking handler, keep nothing
                 onThinking?.(remaining);
                 remaining = '';
               }
@@ -127,7 +127,6 @@ async function streamGenerate(
                 inThinkBlock = true;
                 remaining = remaining.slice(openIdx + 7);
               } else {
-                // No open tag — but it might be a partial tag at the end, hold back 7 chars
                 const holdBack = 7;
                 if (remaining.length > holdBack) {
                   out += remaining.slice(0, remaining.length - holdBack);
@@ -147,11 +146,26 @@ async function streamGenerate(
         }
       }
       if (c.done) {
-        // Flush whatever remains — even if a think block never closed, discard it;
-        // flush any trailing non-think content so the buffer is complete.
-        if (thinkAccum && !inThinkBlock) {
-          buffer += thinkAccum;
-          onToken(thinkAccum);
+        console.debug(
+          `[stream:${jobId}] DONE — chunks=${chunkCount} bufferLen=${buffer.length} inThinkBlock=${inThinkBlock} thinkAccumLen=${thinkAccum.length}`
+        );
+        if (thinkAccum) {
+          if (!inThinkBlock) {
+            // Trailing non-think content that wasn't flushed
+            buffer += thinkAccum;
+            onToken(thinkAccum);
+          } else if (buffer.length === 0) {
+            // Model wrapped everything in <think> without closing the tag.
+            // Strip think markers and use as actual output.
+            const rescued = thinkAccum.replace(/<\/?think>/g, '').trim();
+            if (rescued) {
+              console.debug(
+                `[stream:${jobId}] rescued ${rescued.length} chars from unclosed think block`
+              );
+              buffer = rescued;
+              onToken(rescued);
+            }
+          }
         }
         off();
         cleanup();

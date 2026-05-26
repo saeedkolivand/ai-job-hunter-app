@@ -121,6 +121,8 @@ async fn stream_ollama_chat(
     }
 
     let mut line_buf = String::new();
+    let mut last_content_at = std::time::Instant::now();
+    let mut received_any_content = false;
 
     loop {
         // Check if job was cancelled before reading next chunk
@@ -159,18 +161,42 @@ async fn stream_ollama_chat(
                         .and_then(|d| d.as_bool())
                         .unwrap_or(false);
 
-                    let _ = app.emit(
-                        "ai:stream",
-                        json!({ "jobId": job_id, "delta": delta, "done": done }),
-                    );
-
                     if done {
+                        let _ = app.emit(
+                            "ai:stream",
+                            json!({ "jobId": job_id, "delta": delta, "done": true }),
+                        );
                         app.state::<Mutex<JobTracker>>()
                             .lock()
                             .unwrap()
                             .complete(job_id, json!({ "done": true }));
                         return Ok(());
                     }
+
+                    // Skip emitting empty keep-alive chunks
+                    if delta.is_empty() {
+                        // Stall guard: if content was received but now only empty chunks
+                        // for >30s, Ollama is stuck — break and emit done below.
+                        if received_any_content && last_content_at.elapsed().as_secs() > 30 {
+                            eprintln!("[ai:stream] stall detected for job {job_id} — forcing done");
+                            break;
+                        }
+                        continue;
+                    }
+
+                    received_any_content = true;
+                    last_content_at = std::time::Instant::now();
+
+                    let _ = app.emit(
+                        "ai:stream",
+                        json!({ "jobId": job_id, "delta": delta, "done": false }),
+                    );
+                }
+
+                // Check stall outside inner loop too (handles case where inner loop exited early)
+                if received_any_content && last_content_at.elapsed().as_secs() > 30 {
+                    eprintln!("[ai:stream] stall detected (outer) for job {job_id} — forcing done");
+                    break;
                 }
             }
             Ok(None) => break,
