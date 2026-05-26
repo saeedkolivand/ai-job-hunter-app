@@ -121,6 +121,7 @@ async fn stream_ollama_chat(
     }
 
     let mut line_buf = String::new();
+    let mut last_content_at = std::time::Instant::now();
     let mut received_any_content = false;
 
     loop {
@@ -132,8 +133,11 @@ async fn stream_ollama_chat(
             }
         }
 
-        // After receiving content, use a 30s idle timeout per chunk so we detect
-        // when Ollama stops sending without closing the connection.
+        // Two-layer stall detection:
+        // 1. tokio timeout fires when Ollama stops sending chunks entirely (connection idle)
+        // 2. elapsed check fires when Ollama keeps sending empty keep-alive chunks but
+        //    no real content tokens have arrived for >30s — the timeout above never fires
+        //    in that case because each empty chunk resets it.
         let chunk_timeout = if received_any_content {
             std::time::Duration::from_secs(30)
         } else {
@@ -144,7 +148,7 @@ async fn stream_ollama_chat(
 
         match chunk_result {
             Err(_) => {
-                // Idle timeout expired — force stream completion
+                // Connection went idle for the full timeout — force completion
                 break;
             }
             Ok(Err(e)) => return Err(format!("Stream error: {e}")),
@@ -187,17 +191,30 @@ async fn stream_ollama_chat(
                         return Ok(());
                     }
 
-                    // Skip empty keep-alive chunks
                     if delta.is_empty() {
+                        // Keep-alive chunk — check elapsed time since last real content
+                        if received_any_content
+                            && last_content_at.elapsed() > std::time::Duration::from_secs(30)
+                        {
+                            break;
+                        }
                         continue;
                     }
 
                     received_any_content = true;
+                    last_content_at = std::time::Instant::now();
 
                     let _ = app.emit(
                         "ai:stream",
                         json!({ "jobId": job_id, "delta": delta, "done": false }),
                     );
+                }
+
+                // Also check after inner loop (handles break from stall guard above)
+                if received_any_content
+                    && last_content_at.elapsed() > std::time::Duration::from_secs(30)
+                {
+                    break;
                 }
             }
         }
