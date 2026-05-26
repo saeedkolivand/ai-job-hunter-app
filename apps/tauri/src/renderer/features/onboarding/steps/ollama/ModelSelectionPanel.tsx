@@ -29,6 +29,7 @@ interface ModelSelectionPanelProps {
   cpuCount?: number;
   deviceTier: { label: string; color: string };
   recommendedModel: { name: string };
+  onDownloadComplete?: () => void;
 }
 
 type PullState = 'idle' | 'pulling' | 'done' | 'error';
@@ -46,6 +47,7 @@ export function ModelSelectionPanel({
   cpuCount,
   deviceTier,
   recommendedModel,
+  onDownloadComplete,
 }: ModelSelectionPanelProps) {
   const { t } = useTranslation();
   const notify = useNotification();
@@ -142,6 +144,7 @@ export function ModelSelectionPanel({
         lastSpeedUpdateRef.current = 0;
         lastTimeUpdateRef.current = 0;
         notify(t('onboarding.ai.downloaded', { model: selectedModel }), 'success');
+        onDownloadComplete?.();
       }
     } else if (event.type === 'job.completed' && event.jobId === pullJobId) {
       setPullProgress(100);
@@ -156,6 +159,7 @@ export function ModelSelectionPanel({
       lastSpeedUpdateRef.current = 0;
       lastTimeUpdateRef.current = 0;
       notify(t('onboarding.ai.downloaded', { model: selectedModel }), 'success');
+      onDownloadComplete?.();
     } else if (event.type === 'job.failed' && event.jobId === pullJobId) {
       setPullState('error');
       setPullJobId(null);

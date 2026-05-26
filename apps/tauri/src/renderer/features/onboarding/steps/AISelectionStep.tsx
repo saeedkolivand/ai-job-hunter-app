@@ -179,6 +179,7 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
               cpuCount={cpuCount}
               deviceTier={deviceTier}
               recommendedModel={recommended}
+              onDownloadComplete={handleRecheck}
             />
           )}
         </AnimatePresence>

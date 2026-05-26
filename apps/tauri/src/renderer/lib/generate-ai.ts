@@ -17,12 +17,14 @@
 import {
   buildCoverLetterPrompt,
   buildCoverLetterSystemPrompt,
+  buildLeakageValidatorPrompt,
   buildMetadataPrompt,
   buildResumePrompt,
   buildResumeSystemPrompt,
   extractPlainText,
   type GenerationMeta,
   type GenerationMode,
+  parseLeakageResult,
   validateMetadata,
 } from '@ajh/prompts/generate';
 import { detectLanguages } from '@ajh/shared/language-detection';
@@ -187,6 +189,24 @@ async function streamGenerate(
   });
 }
 
+// ─── Leakage validation ───────────────────────────────────────────────────────
+
+async function runLeakageCheck(
+  resume: string,
+  jobAd: string,
+  generated: string,
+  model: string,
+  locale: string
+) {
+  const { system, user } = buildLeakageValidatorPrompt(resume, jobAd, generated);
+  try {
+    const raw = await streamGenerate(model, system, user, () => {}, 0.0, locale);
+    return parseLeakageResult(raw);
+  } catch {
+    return null;
+  }
+}
+
 // ─── Generation steps ─────────────────────────────────────────────────────────
 
 export async function extractMetadata(
@@ -243,8 +263,19 @@ export async function generateResume(
 ): Promise<string> {
   const system = buildResumeSystemPrompt(mode);
   const user = buildResumePrompt(resume, jobAd, meta, mode);
-  const raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal, onThinking);
-  return extractPlainText(raw);
+  let raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal, onThinking);
+  let result = extractPlainText(raw);
+
+  const { enableLeakageCheck } = usePreferencesStore.getState();
+  if (enableLeakageCheck ?? true) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const check = await runLeakageCheck(resume, jobAd, result, model, locale);
+      if (!check || check.verdict === 'PASS') break;
+      raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal, onThinking);
+      result = extractPlainText(raw);
+    }
+  }
+  return result;
 }
 
 export async function generateCoverLetter(
@@ -260,8 +291,19 @@ export async function generateCoverLetter(
 ): Promise<string> {
   const system = buildCoverLetterSystemPrompt(mode);
   const user = buildCoverLetterPrompt(resume, jobAd, meta, mode);
-  const raw = await streamGenerate(model, system, user, onToken, 0.4, locale, signal, onThinking);
-  return extractPlainText(raw);
+  let raw = await streamGenerate(model, system, user, onToken, 0.4, locale, signal, onThinking);
+  let result = extractPlainText(raw);
+
+  const { enableLeakageCheck } = usePreferencesStore.getState();
+  if (enableLeakageCheck ?? true) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const check = await runLeakageCheck(resume, jobAd, result, model, locale);
+      if (!check || check.verdict === 'PASS') break;
+      raw = await streamGenerate(model, system, user, onToken, 0.4, locale, signal, onThinking);
+      result = extractPlainText(raw);
+    }
+  }
+  return result;
 }
 
 // ─── Filename ─────────────────────────────────────────────────────────────────
