@@ -188,7 +188,7 @@ export function ResumeInputCard({
   return (
     <div
       className={cn(
-        'glass-graphite glass-highlight rounded-xl overflow-hidden transition-colors',
+        'glass-graphite glass-highlight rounded-xl transition-colors',
         value && 'border-brand/20'
       )}
     >
