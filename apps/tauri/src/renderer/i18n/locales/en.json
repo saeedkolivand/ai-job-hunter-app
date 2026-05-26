@@ -1368,7 +1368,8 @@
     "profileUrlPlaceholder": "Paste a profile URL…",
     "profileUrlImport": "Import",
     "profileImported": "Profile imported",
-    "profileImportFailed": "Import failed"
+    "profileImportFailed": "Import failed",
+    "profileUrlUnsupported": "Only LinkedIn profile URLs are supported right now"
   },
   "resume": {
     "profileImport": {

@@ -1361,7 +1361,8 @@
     "profileUrlPlaceholder": "Profil-URL einfügen…",
     "profileUrlImport": "Importieren",
     "profileImported": "Profil importiert",
-    "profileImportFailed": "Import fehlgeschlagen"
+    "profileImportFailed": "Import fehlgeschlagen",
+    "profileUrlUnsupported": "Derzeit werden nur LinkedIn-Profil-URLs unterstützt"
   },
   "resume": {
     "profileImport": {

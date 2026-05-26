@@ -18,8 +18,8 @@ export function ProfileUrlImport({ onImported }: Props) {
   const profileImport = useProfileImport();
   const importDocument = useImportDocument();
 
-  const hasUrl = url.trim().length > 0;
-  const canImport = hasUrl && !profileImport.isPending && !importDocument.isPending;
+  const isValidUrl = url.toLowerCase().includes('linkedin.com/in/');
+  const canImport = isValidUrl && !profileImport.isPending && !importDocument.isPending;
   const loading = profileImport.isPending || importDocument.isPending;
 
   const handleImport = async () => {
@@ -70,6 +70,9 @@ export function ProfileUrlImport({ onImported }: Props) {
           {t('resume.profileImport.import')}
         </Button>
       </div>
+      {url && !isValidUrl && (
+        <p className="text-[11px] text-amber-400/70">{t('resumeInput.profileUrlUnsupported')}</p>
+      )}
     </div>
   );
 }

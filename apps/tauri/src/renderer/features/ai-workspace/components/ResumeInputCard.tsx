@@ -158,9 +158,12 @@ export function ResumeInputCard({
     await onUpload(file);
   };
 
+  const isSupportedProfileUrl = (u: string) => u.toLowerCase().includes('linkedin.com/in/');
+  const profileUrlValid = isSupportedProfileUrl(profileUrl);
+
   const handleProfileUrlSubmit = async () => {
     const url = profileUrl.trim();
-    if (!url) return;
+    if (!url || !profileUrlValid) return;
     try {
       const result = await profileImport.mutateAsync(url);
       if ('error' in result) {
@@ -294,48 +297,55 @@ export function ResumeInputCard({
 
       {/* Profile URL input panel */}
       {showUrlInput && !disabled && (
-        <div className="flex items-center gap-2 border-t border-white/[0.05] px-3 py-2">
-          <input
-            ref={urlInputRef}
-            type="url"
-            value={profileUrl}
-            onChange={(e) => setProfileUrl(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void handleProfileUrlSubmit();
-              if (e.key === 'Escape') {
-                setShowUrlInput(false);
-                setProfileUrl('');
-              }
-            }}
-            placeholder={t('resumeInput.profileUrlPlaceholder')}
-            disabled={profileImport.isPending}
-            className="flex-1 bg-transparent text-xs text-foreground/80 placeholder:text-foreground/30 outline-none disabled:opacity-50"
-          />
-          {profileImport.isPending ? (
-            <Loader2 size={11} className="shrink-0 animate-spin text-foreground/40" />
-          ) : (
-            <>
-              <Button
-                variant="glass"
-                size="sm"
-                onClick={() => void handleProfileUrlSubmit()}
-                disabled={!profileUrl.trim()}
-                className="h-6 px-2 text-[11px] gap-1"
-              >
-                {t('resumeInput.profileUrlImport')}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
+        <div className="flex flex-col border-t border-white/[0.05]">
+          <div className="flex items-center gap-2 px-3 py-2">
+            <input
+              ref={urlInputRef}
+              type="url"
+              value={profileUrl}
+              onChange={(e) => setProfileUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleProfileUrlSubmit();
+                if (e.key === 'Escape') {
                   setShowUrlInput(false);
                   setProfileUrl('');
-                }}
-                className="h-6 w-6 p-0 text-foreground/30 hover:text-foreground/60"
-              >
-                <X size={11} />
-              </Button>
-            </>
+                }
+              }}
+              placeholder={t('resumeInput.profileUrlPlaceholder')}
+              disabled={profileImport.isPending}
+              className="flex-1 bg-transparent text-xs text-foreground/80 placeholder:text-foreground/30 outline-none disabled:opacity-50"
+            />
+            {profileImport.isPending ? (
+              <Loader2 size={11} className="shrink-0 animate-spin text-foreground/40" />
+            ) : (
+              <>
+                <Button
+                  variant="glass"
+                  size="sm"
+                  onClick={() => void handleProfileUrlSubmit()}
+                  disabled={!profileUrlValid}
+                  className="h-6 px-2 text-[11px] gap-1"
+                >
+                  {t('resumeInput.profileUrlImport')}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowUrlInput(false);
+                    setProfileUrl('');
+                  }}
+                  className="h-6 w-6 p-0 text-foreground/30 hover:text-foreground/60"
+                >
+                  <X size={11} />
+                </Button>
+              </>
+            )}
+          </div>
+          {profileUrl && !profileUrlValid && (
+            <p className="px-3 pb-2 text-[10px] text-amber-400/70">
+              {t('resumeInput.profileUrlUnsupported')}
+            </p>
           )}
         </div>
       )}
