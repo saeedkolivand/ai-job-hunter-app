@@ -816,7 +816,7 @@ function PostingRow({
     try {
       await navigator.clipboard.writeText(posting.url);
       notify(t('jobs.copyLink'), 'success');
-    } catch (err) {
+    } catch {
       notify('Failed to copy link', 'error');
     }
   };
