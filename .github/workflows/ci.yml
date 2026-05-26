@@ -4,7 +4,7 @@ name: 🚀 CI Pipeline
 # Continuous Integration Pipeline
 # ──────────────────────────────────────────────────────────────────────
 # Purpose: Validate code quality, type safety, and test coverage on every PR
-# Triggers: pull_request to main, push to any branch except main
+# Triggers: pull_request to main, push to main
 # Jobs:
 #   - lint-format: ESLint and Prettier validation
 #   - type-check: TypeScript type checking
