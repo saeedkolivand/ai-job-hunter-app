@@ -121,21 +121,35 @@ async fn stream_ollama_chat(
     }
 
     let mut line_buf = String::new();
-    let mut last_content_at = std::time::Instant::now();
     let mut received_any_content = false;
 
     loop {
         // Check if job was cancelled before reading next chunk
         if let Some(job) = app.state::<Mutex<JobTracker>>().lock().unwrap().get(job_id) {
             if job.status == crate::jobs::JobStatus::Cancelled {
-                // Force close the connection aggressively
                 let _ = response.error_for_status_ref();
                 return Err("Job cancelled".to_string());
             }
         }
 
-        match response.chunk().await {
-            Ok(Some(bytes)) => {
+        // After receiving content, use a 30s idle timeout per chunk so we detect
+        // when Ollama stops sending without closing the connection.
+        let chunk_timeout = if received_any_content {
+            std::time::Duration::from_secs(30)
+        } else {
+            std::time::Duration::from_secs(300)
+        };
+
+        let chunk_result = tokio::time::timeout(chunk_timeout, response.chunk()).await;
+
+        match chunk_result {
+            Err(_) => {
+                // Idle timeout expired — force stream completion
+                break;
+            }
+            Ok(Err(e)) => return Err(format!("Stream error: {e}")),
+            Ok(Ok(None)) => break,
+            Ok(Ok(Some(bytes))) => {
                 line_buf.push_str(&String::from_utf8_lossy(&bytes));
 
                 while let Some(nl) = line_buf.find('\n') {
@@ -173,34 +187,19 @@ async fn stream_ollama_chat(
                         return Ok(());
                     }
 
-                    // Skip emitting empty keep-alive chunks
+                    // Skip empty keep-alive chunks
                     if delta.is_empty() {
-                        // Stall guard: if content was received but now only empty chunks
-                        // for >30s, Ollama is stuck — break and emit done below.
-                        if received_any_content && last_content_at.elapsed().as_secs() > 30 {
-                            eprintln!("[ai:stream] stall detected for job {job_id} — forcing done");
-                            break;
-                        }
                         continue;
                     }
 
                     received_any_content = true;
-                    last_content_at = std::time::Instant::now();
 
                     let _ = app.emit(
                         "ai:stream",
                         json!({ "jobId": job_id, "delta": delta, "done": false }),
                     );
                 }
-
-                // Check stall outside inner loop too (handles case where inner loop exited early)
-                if received_any_content && last_content_at.elapsed().as_secs() > 30 {
-                    eprintln!("[ai:stream] stall detected (outer) for job {job_id} — forcing done");
-                    break;
-                }
             }
-            Ok(None) => break,
-            Err(e) => return Err(format!("Stream error: {e}")),
         }
     }
 
