@@ -56,7 +56,7 @@ pub fn start(app: AppHandle) {
         .inner()
         .clone();
 
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(TICK_INTERVAL_SECS));
         interval.tick().await; // consume the immediate first tick
 
@@ -85,7 +85,7 @@ async fn tick(app: &AppHandle, store: &Arc<Mutex<AutopilotStore>>) {
 
         let app_clone = app.clone();
         let ap_id = ap.id.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             crate::commands::autopilot::autopilot_run(app_clone, ap_id).await;
         });
     }

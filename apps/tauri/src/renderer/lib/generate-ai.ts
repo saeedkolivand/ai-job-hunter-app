@@ -50,10 +50,12 @@ async function streamGenerate(
   onToken: (tok: string) => void,
   temperature = 0.3,
   locale = 'en',
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onThinking?: (tok: string) => void
 ): Promise<string> {
   const api = getClient();
-  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
+  const storeState = usePreferencesStore.getState();
+  const providerConfig = storeState.aiProviderConfig;
   const activeProvider = providerConfig?.activeProvider ?? 'ollama';
   const providerSettings = providerConfig?.providers?.[activeProvider];
   const activeModel = providerSettings?.model || model;
@@ -75,11 +77,15 @@ async function streamGenerate(
 
   return new Promise((resolve, reject) => {
     const off = api.ai.onStream((chunk: unknown) => {
-      const c = chunk as { jobId: string; delta: string; done: boolean };
+      const c = chunk as { jobId: string; delta: string; done: boolean; thinking?: boolean };
       if (c.jobId !== jobId) return;
       if (c.delta) {
-        buffer += c.delta;
-        onToken(c.delta);
+        if (c.thinking) {
+          onThinking?.(c.delta);
+        } else {
+          buffer += c.delta;
+          onToken(c.delta);
+        }
       }
       if (c.done) {
         off();
@@ -180,11 +186,12 @@ export async function generateResume(
   model: string,
   onToken: (tok: string) => void,
   locale = 'en',
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onThinking?: (tok: string) => void
 ): Promise<string> {
   const system = buildResumeSystemPrompt(mode);
   const user = buildResumePrompt(resume, jobAd, meta, mode);
-  const raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal);
+  const raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal, onThinking);
   return extractPlainText(raw);
 }
 
@@ -196,11 +203,12 @@ export async function generateCoverLetter(
   model: string,
   onToken: (tok: string) => void,
   locale = 'en',
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onThinking?: (tok: string) => void
 ): Promise<string> {
   const system = buildCoverLetterSystemPrompt(mode);
   const user = buildCoverLetterPrompt(resume, jobAd, meta, mode);
-  const raw = await streamGenerate(model, system, user, onToken, 0.4, locale, signal);
+  const raw = await streamGenerate(model, system, user, onToken, 0.4, locale, signal, onThinking);
   return extractPlainText(raw);
 }
 

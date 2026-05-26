@@ -4,16 +4,20 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
 
+import { ThinkingBubble } from './ThinkingBubble';
+
 interface OutputPanelGeneratingProps {
   stageLabel: string;
   streamBuffer: string;
   activeOut: 'resume' | 'cover';
+  thinkingBuffer?: string;
 }
 
 export function OutputPanelGenerating({
   stageLabel,
   streamBuffer,
   activeOut,
+  thinkingBuffer = '',
 }: OutputPanelGeneratingProps) {
   const { t } = useTranslation();
 
@@ -54,6 +58,7 @@ export function OutputPanelGenerating({
 
       {/* Streaming preview */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
+        <ThinkingBubble thinking={thinkingBuffer} done={streamBuffer.length > 0} />
         <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/25 mb-3">
           {activeOut === 'resume'
             ? t('aiGenerate.generatingResume')

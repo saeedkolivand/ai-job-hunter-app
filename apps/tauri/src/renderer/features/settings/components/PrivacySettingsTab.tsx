@@ -1,13 +1,19 @@
-import { Download, LogOut, Trash2, Upload } from 'lucide-react';
+import { Download, LogOut, RotateCcw, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button, ConfirmModal, useNotification } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
-import { useClearInteractions, useExportData, useImportData, useSignOutAll } from '@/services';
+import {
+  useClearInteractions,
+  useExportData,
+  useImportData,
+  useResetApp,
+  useSignOutAll,
+} from '@/services';
 
-type ConfirmAction = 'signOut' | 'clearInteractions';
+type ConfirmAction = 'signOut' | 'clearInteractions' | 'resetApp';
 
 interface ActionCardProps {
   icon: React.ElementType;
@@ -105,10 +111,12 @@ export function PrivacySettingsTab() {
   const clearInteractions = useClearInteractions();
   const exportData = useExportData();
   const importData = useImportData();
+  const resetApp = useResetApp();
 
   const busy: Partial<Record<ConfirmAction | 'export' | 'import', boolean>> = {
     signOut: signOutAll.isPending,
     clearInteractions: clearInteractions.isPending,
+    resetApp: resetApp.isPending,
     export: exportData.isPending,
     import: importData.isPending,
   };
@@ -128,6 +136,17 @@ export function PrivacySettingsTab() {
     try {
       await clearInteractions.mutateAsync();
       notify(t('settings.privacy.historyClearedSuccess'), 'success');
+    } catch {
+      notify(t('settings.privacy.somethingWentWrong'), 'error');
+    }
+  };
+
+  const handleResetApp = async () => {
+    setConfirm((c) => ({ ...c, open: false }));
+    try {
+      await resetApp.mutateAsync();
+      // resetPreferences() is called inside useResetApp onSuccess,
+      // which sets onboardingCompleted: false — the wizard re-mounts at welcome step
     } catch {
       notify(t('settings.privacy.somethingWentWrong'), 'error');
     }
@@ -183,6 +202,12 @@ export function PrivacySettingsTab() {
       title: t('settings.privacy.clearHistoryConfirmTitle'),
       description: t('settings.privacy.clearHistoryConfirmDescription'),
       confirmText: t('settings.privacy.clearHistoryConfirm'),
+      variant: 'danger',
+    },
+    resetApp: {
+      title: t('settings.privacy.resetAppConfirmTitle'),
+      description: t('settings.privacy.resetAppConfirmDescription'),
+      confirmText: t('settings.privacy.resetAppConfirm'),
       variant: 'danger',
     },
   };
@@ -255,12 +280,35 @@ export function PrivacySettingsTab() {
         onClick={() => setConfirm({ open: true, action: 'clearInteractions' })}
       />
 
+      {/* ── Danger Zone ─────────────────────────────────────────────── */}
+      <div className="mt-2 rounded-xl border border-rose-700/40 bg-rose-950/20 p-3">
+        <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-rose-500/80">
+          <RotateCcw size={10} />
+          {t('settings.privacy.dangerZone')}
+        </div>
+        <ActionCard
+          icon={RotateCcw}
+          iconBg="bg-rose-700"
+          iconColor="text-white"
+          glowColor="rgba(190,18,60,0.18)"
+          title={t('settings.privacy.resetApp')}
+          description={t('settings.privacy.resetAppDescription')}
+          buttonLabel={t('settings.privacy.reset')}
+          buttonBorder="border-rose-600/50"
+          buttonText="text-rose-400"
+          buttonGlow="0 0 16px rgba(190,18,60,0.15)"
+          loading={!!busy.resetApp}
+          onClick={() => setConfirm({ open: true, action: 'resetApp' })}
+        />
+      </div>
+
       <ConfirmModal
         open={confirm.open}
         onClose={() => setConfirm({ ...confirm, open: false })}
         onConfirm={() => {
           if (confirm.action === 'signOut') void handleSignOut();
-          else void handleClearInteractions();
+          else if (confirm.action === 'clearInteractions') void handleClearInteractions();
+          else void handleResetApp();
         }}
         title={cfg.title}
         description={cfg.description}

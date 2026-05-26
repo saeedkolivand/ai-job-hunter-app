@@ -67,6 +67,8 @@ export interface AiStreamChunk {
   jobId: string;
   delta: string;
   done: boolean;
+  /** Present only when the provider emits a reasoning/thinking block (e.g. Anthropic extended thinking). */
+  thinking?: boolean;
 }
 
 export interface DocumentRecord {

@@ -86,14 +86,22 @@ async fn stream_ollama_chat(
         .to_string();
     let messages = req.get("messages").cloned().unwrap_or(json!([]));
     let temperature = req.get("temperature").and_then(|v| v.as_f64());
+    let max_tokens = req.get("maxTokens").and_then(|v| v.as_u64());
 
     let mut body = json!({
         "model": model,
         "messages": messages,
         "stream": true,
     });
+    let mut options = serde_json::Map::new();
     if let Some(t) = temperature {
-        body["options"] = json!({ "temperature": t });
+        options.insert("temperature".to_string(), json!(t));
+    }
+    if let Some(mt) = max_tokens {
+        options.insert("num_predict".to_string(), json!(mt));
+    }
+    if !options.is_empty() {
+        body["options"] = Value::Object(options);
     }
 
     let mut response = reqwest::Client::builder()
@@ -287,13 +295,17 @@ async fn stream_openai_chat(
         .to_string();
     let messages = req.get("messages").cloned().unwrap_or(json!([]));
     let temperature = req.get("temperature").and_then(|v| v.as_f64()).unwrap_or(0.7);
+    let max_tokens = req.get("maxTokens").and_then(|v| v.as_u64());
 
-    let body = json!({
+    let mut body = json!({
         "model": model,
         "messages": messages,
         "stream": true,
         "temperature": temperature,
     });
+    if let Some(mt) = max_tokens {
+        body["max_tokens"] = json!(mt);
+    }
 
     let mut response = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
@@ -382,6 +394,7 @@ async fn stream_anthropic_chat(
         .unwrap_or("claude-sonnet-4-6")
         .to_string();
     let temperature = req.get("temperature").and_then(|v| v.as_f64()).unwrap_or(0.7);
+    let max_tokens = req.get("maxTokens").and_then(|v| v.as_u64()).unwrap_or(4096);
 
     let messages_raw = req.get("messages").and_then(|m| m.as_array()).cloned().unwrap_or_default();
     let system_content: String = messages_raw
@@ -396,13 +409,21 @@ async fn stream_anthropic_chat(
         .cloned()
         .collect();
 
+    // Enable extended thinking for balanced effort and above (max_tokens >= 2048).
+    // Thinking requires temperature=1; budget is half the output quota.
+    let thinking_budget = if max_tokens >= 2048 { max_tokens / 2 } else { 0 };
+    let actual_max_tokens = max_tokens + thinking_budget;
+
     let mut body = json!({
         "model": model,
         "messages": messages,
-        "max_tokens": 4096,
+        "max_tokens": actual_max_tokens,
         "stream": true,
-        "temperature": temperature,
+        "temperature": if thinking_budget > 0 { 1.0 } else { temperature },
     });
+    if thinking_budget > 0 {
+        body["thinking"] = json!({ "type": "enabled", "budget_tokens": thinking_budget });
+    }
     if !system_content.is_empty() {
         body["system"] = json!(system_content);
     }
@@ -466,14 +487,41 @@ async fn stream_anthropic_chat(
                         Err(_) => continue,
                     };
 
-                    let delta = event
-                        .get("delta")
-                        .and_then(|d| d.get("text"))
+                    let delta_obj = event.get("delta");
+                    let delta_type = delta_obj
+                        .and_then(|d| d.get("type"))
                         .and_then(|t| t.as_str())
                         .unwrap_or("");
 
-                    if !delta.is_empty() {
-                        let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": delta, "done": false }));
+                    match delta_type {
+                        "thinking_delta" => {
+                            let thinking = delta_obj
+                                .and_then(|d| d.get("thinking"))
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("");
+                            if !thinking.is_empty() {
+                                let _ = app.emit("ai:stream", json!({
+                                    "jobId": job_id,
+                                    "delta": thinking,
+                                    "done": false,
+                                    "thinking": true,
+                                }));
+                            }
+                        }
+                        "text_delta" => {
+                            let text = delta_obj
+                                .and_then(|d| d.get("text"))
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("");
+                            if !text.is_empty() {
+                                let _ = app.emit("ai:stream", json!({
+                                    "jobId": job_id,
+                                    "delta": text,
+                                    "done": false,
+                                }));
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -499,6 +547,7 @@ async fn stream_gemini_chat(
         .unwrap_or("gemini-2.0-flash")
         .to_string();
     let temperature = req.get("temperature").and_then(|v| v.as_f64()).unwrap_or(0.7);
+    let max_tokens = req.get("maxTokens").and_then(|v| v.as_u64());
 
     let messages_raw = req.get("messages").and_then(|m| m.as_array()).cloned().unwrap_or_default();
 
@@ -523,9 +572,13 @@ async fn stream_gemini_chat(
         })
         .collect();
 
+    let mut generation_config = json!({ "temperature": temperature });
+    if let Some(mt) = max_tokens {
+        generation_config["maxOutputTokens"] = json!(mt);
+    }
     let mut body = json!({
         "contents": contents,
-        "generationConfig": { "temperature": temperature },
+        "generationConfig": generation_config,
     });
     if !system_text.is_empty() {
         body["systemInstruction"] = json!({ "parts": [{ "text": system_text }] });
