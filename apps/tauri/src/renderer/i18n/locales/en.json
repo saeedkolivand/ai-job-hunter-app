@@ -358,6 +358,7 @@
       "orClick": "or click to browse",
       "fileTypes": "PDF, DOC, DOCX",
       "uploading": "Uploading and analyzing...",
+      "scanning": "Scanning with OCR…",
       "setAsDefault": "Set as default",
       "uploaded": "Resume uploaded successfully",
       "indexed": "Indexed",

@@ -8,7 +8,8 @@ import { Button, FloatingIcon, useNotification } from '@ajh/ui';
 import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
-import { useDocuments, useImportDocument } from '@/services';
+import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
+import { useDocuments } from '@/services';
 import { usePreferencesStore } from '@/store/preferences-store';
 
 import { OnboardingStepWrapper } from '../components/OnboardingStepWrapper';
@@ -29,16 +30,14 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
 
   const { data: documentsRaw = [] } = useDocuments();
   const documents = documentsRaw as DocumentRecord[];
-  const importDocument = useImportDocument();
+  const { importFile, isPending: uploading, isOcr } = useImportWithOcr();
   const setResume = usePreferencesStore((s) => s.setResume);
 
-  const uploading = importDocument.isPending;
   const hasResume = documents.length > 0;
 
   const handleFileUpload = async (file: File) => {
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      await importDocument.mutateAsync({ name: file.name, bytes, title: file.name });
+      await importFile(file);
       const first = (documentsRaw as (DocumentRecord & { _id?: string })[]).find(Boolean);
       const id = first?._id ?? first?.id;
       if (id) setResume({ defaultId: String(id), autoIndex: true, autoParse: true });
@@ -113,7 +112,9 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
         {uploading ? (
           <div className="flex flex-col items-center gap-3">
             <Loader2 size={26} className="animate-spin text-brand-soft/60" />
-            <p className="text-sm text-foreground/50">{t('onboarding.resume.uploading')}</p>
+            <p className="text-sm text-foreground/50">
+              {isOcr ? t('settings.resume.scanning') : t('onboarding.resume.uploading')}
+            </p>
           </div>
         ) : hasResume ? (
           <div className="flex flex-col items-center gap-3">
