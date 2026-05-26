@@ -55,16 +55,6 @@ type Stage =
   | 'generating' // streaming
   | 'done';
 
-const GENERATION_STAGES = [
-  'aiGenerate.stages.analyzing',
-  'aiGenerate.stages.extracting',
-  'aiGenerate.stages.mapping',
-  'aiGenerate.stages.optimizing',
-  'aiGenerate.stages.rewriting',
-  'aiGenerate.stages.adapting',
-  'aiGenerate.stages.finalizing',
-];
-
 function AIGeneratePage() {
   const { t } = useTranslation();
   // Inputs
@@ -96,8 +86,6 @@ function AIGeneratePage() {
   // Streaming preview
   const [streamBuffer, setStreamBuffer] = useState('');
   const [thinkingBuffer, setThinkingBuffer] = useState('');
-  const stageIdxRef = useRef(0);
-  const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Copy state
@@ -137,22 +125,6 @@ function AIGeneratePage() {
   const canProceed = resume.trim().length > 50 && jobAd.trim().length > 50;
   const canGenerate = canProceed && canUseAI;
 
-  const startStageRotation = () => {
-    stageIdxRef.current = 0;
-    setStageLabel(t(GENERATION_STAGES[0] ?? ''));
-    stageTimerRef.current = setInterval(() => {
-      stageIdxRef.current = (stageIdxRef.current + 1) % GENERATION_STAGES.length;
-      setStageLabel(t(GENERATION_STAGES[stageIdxRef.current] ?? ''));
-    }, 2800);
-  };
-
-  const stopStageRotation = () => {
-    if (stageTimerRef.current) {
-      clearInterval(stageTimerRef.current);
-      stageTimerRef.current = null;
-    }
-  };
-
   // Step 1 — pre-process
   const handleAnalyze = async () => {
     if (!canGenerate) return;
@@ -178,7 +150,6 @@ function AIGeneratePage() {
     setStreamBuffer('');
     setThinkingBuffer('');
     setStage('generating');
-    startStageRotation();
 
     // Create abort controller for this generation
     const controller = new AbortController();
@@ -192,6 +163,7 @@ function AIGeneratePage() {
         setActiveOut('resume');
         setStreamBuffer('');
         setThinkingBuffer('');
+        setStageLabel(t('aiGenerate.generatingResume'));
         await generateResume(
           resume,
           jobAd,
@@ -213,6 +185,7 @@ function AIGeneratePage() {
         setActiveOut('cover');
         setStreamBuffer('');
         setThinkingBuffer('');
+        setStageLabel(t('aiGenerate.generatingCoverLetter'));
         await generateCoverLetter(
           resume,
           jobAd,
@@ -230,7 +203,6 @@ function AIGeneratePage() {
         );
       }
 
-      stopStageRotation();
       setStreamBuffer('');
       setStage('done');
       // Pick the first tab that actually has content so the textarea is never blank
@@ -253,7 +225,6 @@ function AIGeneratePage() {
         jobAd,
       });
     } catch (err) {
-      stopStageRotation();
       setError(err instanceof Error ? err.message : t('aiGenerate.errors.generationFailed'));
       setStage('configuring');
     } finally {
@@ -266,7 +237,6 @@ function AIGeneratePage() {
     if (abortControllerRef.current && stage === 'generating') {
       abortControllerRef.current.abort();
     }
-    stopStageRotation();
     setStage('idle');
     setMeta(null);
     setError(null);
@@ -445,6 +415,7 @@ function AIGeneratePage() {
                 streamBuffer={streamBuffer}
                 activeOut={activeOut}
                 thinkingBuffer={thinkingBuffer}
+                wordCount={streamBuffer.trim() ? streamBuffer.trim().split(/\s+/).length : 0}
               />
             )}
 
