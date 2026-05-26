@@ -4,20 +4,19 @@ import {
   CheckCircle2,
   ChevronDown,
   RefreshCw,
-  RotateCcw,
   ScanSearch,
   Sparkles,
   Upload,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 
 import type { DocumentRecord } from '@ajh/shared';
 import { Button, TextArea } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
+import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { ThinkingBubble } from '@/features/ai-generate/components/ThinkingBubble';
 import { ResumeInputCard } from '@/features/ai-workspace/components/ResumeInputCard';
 import { AnalysisATSRisks } from '@/features/analyze/components/AnalysisATSRisks';
@@ -36,7 +35,6 @@ import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
 import { type AnalysisResult, runAnalysis } from '@/lib/resume-ai';
 import { useDocuments, useExtractText } from '@/services';
-import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { useOutputTone } from '@/store/preferences-store';
 
 export const Route = createFileRoute('/analyze')({ component: Analyze });
@@ -60,7 +58,6 @@ function Analyze() {
   const [uploading, setUploading] = useState<'resume' | 'jobAd' | null>(null);
   const [runId, setRunId] = useState(0);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const qc = useQueryClient();
   const selectedModel = useSelectedModel();
   const { canUse: canUseAI, reason: aiReason } = useCanUseAI();
   const outputTone = useOutputTone();
@@ -193,7 +190,7 @@ function Analyze() {
                   onClick={reset}
                   className="flex items-center gap-1 text-[11px] text-foreground/40 hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
                 >
-                  <RotateCcw size={11} /> {t('analyze.reset')}
+                  <RefreshCw size={11} /> {t('analyze.reset')}
                 </Button>
               )}
             </div>

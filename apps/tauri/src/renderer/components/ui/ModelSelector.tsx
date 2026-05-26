@@ -1,9 +1,8 @@
-import { Cpu, RefreshCw } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
+import { Cpu } from 'lucide-react';
 
-import { Button, Dropdown } from '@ajh/ui';
+import { Dropdown } from '@ajh/ui';
+
 import { useAIModels, useHasProviderKey, useListProviderModels } from '@/services';
-import { keys } from '@/services/query-client';
 import { useAIModel, useAiProviderConfig, usePreferencesStore } from '@/store/preferences-store';
 import type { Model } from '@/types';
 
@@ -11,7 +10,6 @@ interface ModelSelectorProps {
   className?: string;
 }
 
-const PROVIDERS = ['ollama', 'openai', 'anthropic', 'gemini', 'openai-compatible'] as const;
 const PROVIDER_LABELS: Record<string, string> = {
   ollama: 'Ollama (Local)',
   openai: 'OpenAI',
@@ -21,8 +19,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 };
 
 export function ModelSelector({ className }: ModelSelectorProps) {
-  const qc = useQueryClient();
-  const { data: modelList = [], isFetching: loadingOllama } = useAIModels();
+  const { data: modelList = [] } = useAIModels();
   const ollamaModels = modelList as Model[];
   const aiModel = useAIModel();
   const setAIModel = usePreferencesStore((s) => s.setAIModel);
@@ -54,13 +51,6 @@ export function ModelSelector({ className }: ModelSelectorProps) {
     'openai-compatible',
     providerStatus['openai-compatible']
   );
-
-  const loadingAny =
-    loadingOllama ||
-    openaiModels.isFetching ||
-    anthropicModels.isFetching ||
-    geminiModels.isFetching ||
-    compatModels.isFetching;
 
   // Build grouped options with sections
   const options = [
@@ -114,12 +104,19 @@ export function ModelSelector({ className }: ModelSelectorProps) {
       setAIModel({ defaultModel: model, temperature: 0.7, maxTokens: 2000 });
       setActiveProvider({ activeProvider: 'ollama', providers: providerConfig?.providers ?? {} });
     } else {
-      setProviderSettings(provider as any, { model });
+      setProviderSettings(provider as 'openai' | 'anthropic' | 'gemini' | 'openai-compatible', {
+        model,
+      });
       setActiveProvider({
-        activeProvider: provider as any,
+        activeProvider: provider as 'openai' | 'anthropic' | 'gemini' | 'openai-compatible',
         providers: {
           ...providerConfig?.providers,
-          [provider]: { ...(providerConfig?.providers?.[provider as any] ?? {}), model },
+          [provider]: {
+            ...(providerConfig?.providers?.[
+              provider as 'openai' | 'anthropic' | 'gemini' | 'openai-compatible'
+            ] ?? {}),
+            model,
+          },
         },
       });
     }
@@ -128,13 +125,6 @@ export function ModelSelector({ className }: ModelSelectorProps) {
   return (
     <div className={className}>
       <div className="flex items-center gap-2">
-        <Button
-          onClick={() => void qc.invalidateQueries({ queryKey: keys.ai.models })}
-          disabled={loadingAny}
-          className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04] text-foreground/40 hover:text-foreground/70 transition-colors disabled:opacity-40 border-transparent p-0 shrink-0"
-        >
-          <RefreshCw size={12} className={loadingAny ? 'animate-spin' : ''} />
-        </Button>
         <div className="flex-1 min-w-0 w-full">
           <Dropdown
             options={options}

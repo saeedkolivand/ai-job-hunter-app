@@ -5,13 +5,11 @@ import {
   Check,
   ChevronDown,
   RefreshCw,
-  RotateCcw,
   Upload,
   Wand2,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 
 import { Button, TextArea } from '@ajh/ui';
@@ -78,7 +76,6 @@ function AIGeneratePage() {
   // Config
   const [mode, setMode] = useState<GenerationMode>('ats');
   const [target, setTarget] = useState<GenTarget>('both');
-  const qc = useQueryClient();
   const selectedModel = useSelectedModel();
   const { canUse: canUseAI, reason: aiReason } = useCanUseAI();
   const extractTextMutation = useExtractText();
@@ -346,7 +343,7 @@ function AIGeneratePage() {
                   onClick={reset}
                   className="flex items-center gap-1 text-[11px] text-foreground/40 hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
                 >
-                  <RotateCcw size={11} /> {t('aiGenerate.regenerate')}
+                  <RefreshCw size={11} /> {t('aiGenerate.regenerate')}
                 </Button>
               )}
             </div>
