@@ -31,11 +31,18 @@ pub async fn documents_import(app: AppHandle, req: Value) -> Value {
         }
     };
 
-    // Extract text from the document
-    let text = match crate::documents::extract_text(&name, &bytes) {
-        Ok(t) => t,
+    // Extract text using the extraction module (PDF links, DOCX hyperlinks, confidence).
+    let extraction = match crate::extraction::route(&name, &bytes) {
+        Ok(r) => r,
+        Err(crate::extraction::types::ExtractionError::ScannedPdfWithoutOcr) => {
+            return json!({ "error": "scanned_pdf", "message": "PDF appears to be scanned. Please upload a text-based PDF or DOCX." });
+        }
         Err(e) => return json!({ "error": format!("text extraction failed: {e}") }),
     };
+    for w in &extraction.warnings {
+        tracing::warn!(warning = %w, file = %name, "extraction warning");
+    }
+    let text = extraction.text;
 
     let store = app.state::<crate::documents::DocumentStore>();
     let doc_id = crate::documents::make_doc_id();

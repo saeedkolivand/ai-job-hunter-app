@@ -1,0 +1,25 @@
+Jane Doe
+jane.doe@example.com | +31 6 12345678 | linkedin.com/in/janedoe
+
+Summary
+Experienced software engineer with 8 years building distributed systems in Rust and Go.
+
+Experience
+Senior Software Engineer — Acme Corp, Amsterdam (2020–2025)
+- Led migration of monolith to microservices, reducing p99 latency by 40%.
+- Mentored team of 5 engineers; introduced weekly architecture reviews.
+
+Software Engineer — Startup B.V., Rotterdam (2017–2020)
+- Built real-time data pipeline processing 50k events/sec using Kafka and Rust.
+
+Education
+BSc Computer Science — University of Amsterdam (2013–2017)
+
+Skills
+Rust, Go, TypeScript, Python, PostgreSQL, Kafka, Docker, Kubernetes
+
+Languages
+English (fluent), Dutch (intermediate), German (basic)
+
+Certifications
+AWS Solutions Architect — Associate (2022)
