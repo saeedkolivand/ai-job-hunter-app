@@ -1,6 +1,7 @@
 // Tauri command implementations organized by domain
 
 pub mod ai_generations;
+pub mod cover_letter;
 pub mod system;
 pub mod ai;
 pub mod scrape;
