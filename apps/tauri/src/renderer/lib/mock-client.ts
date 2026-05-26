@@ -120,6 +120,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       connect: noop,
       disconnect: noop,
       getStatus: async () => ({ connected: false }),
+      importProfileFromUrl: async () => ({ error: 'not available in mock' }),
     },
 
     boards: {

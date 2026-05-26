@@ -19,3 +19,4 @@ pub mod privacy;
 pub mod support;
 pub mod dialog;
 pub mod job_preferences;
+pub mod profile_import;

@@ -31,6 +31,7 @@ mod job_preferences;
 mod jobs;
 mod platform;
 mod postings;
+mod profile_import;
 mod scraping;
 mod updater;
 
@@ -330,6 +331,8 @@ fn main() {
             commands::ai_generations::ai_generations_remove,
             // cover letter pipeline
             commands::cover_letter::generate_cover_letter,
+            // profile import
+            commands::profile_import::profile_import_from_url,
             // export
             export::commands::documents_export_document,
             export::commands::documents_export_and_save,

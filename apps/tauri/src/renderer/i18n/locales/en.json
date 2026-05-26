@@ -1364,5 +1364,14 @@
     "saving": "Saving…",
     "tooLarge": "File exceeds 25 MB limit",
     "selectedSaved": "{{name}} loaded"
+  },
+  "resume": {
+    "profileImport": {
+      "description": "Or import directly from your LinkedIn profile URL",
+      "import": "Import",
+      "success": "{{name}}'s profile imported as resume",
+      "failed": "Profile import failed",
+      "linkedInOnly": "Only LinkedIn profile URLs are supported"
+    }
   }
 }

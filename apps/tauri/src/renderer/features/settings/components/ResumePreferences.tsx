@@ -14,6 +14,7 @@ import {
   useRemoveDocument,
   useSetDefaultDocument,
 } from '@/services';
+import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
 
 export function ResumePreferences() {
   const { t } = useTranslation();
@@ -169,6 +170,11 @@ export function ResumePreferences() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* LinkedIn / profile URL import */}
+      <div className="mb-5">
+        <ProfileUrlImport />
       </div>
 
       {/* Document list */}
