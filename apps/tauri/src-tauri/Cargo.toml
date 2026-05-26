@@ -71,11 +71,6 @@ printpdf = "0.9.1"
 unicode-segmentation = "1.10"
 lopdf = "0.34"
 
-# OCR — optional; requires native Tesseract libraries at build time.
-leptess = { version = "0.14", optional = true }
-
-[features]
-ocr = ["leptess"]
 
 [target.'cfg(windows)'.dependencies]
 wmi = "0.18"

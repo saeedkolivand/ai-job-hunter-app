@@ -116,7 +116,7 @@ fn parse_paragraph(xml: &str, rels: &HashMap<String, String>, links: &mut Vec<Li
             // Find the closing tag and handle the whole hyperlink block.
             if let Some(close_pos) = rest.find("</w:hyperlink>") {
                 let block = &rest[..close_pos + "</w:hyperlink>".len()];
-                let r_id = attr_value(&rest["<w:hyperlink ".len()..], "r:id");
+                let r_id = attr_value(rest.strip_prefix("<w:hyperlink ").unwrap_or(rest), "r:id");
                 let anchor = collect_run_text(block);
                 if let Some(id) = r_id {
                     if let Some(url) = rels.get(&id) {

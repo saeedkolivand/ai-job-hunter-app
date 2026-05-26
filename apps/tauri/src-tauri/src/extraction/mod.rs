@@ -1,13 +1,8 @@
-pub mod cleanup;
 pub mod confidence;
 pub mod docx;
-pub mod image;
 pub mod pdf;
 pub mod plain;
 pub mod types;
-
-#[cfg(feature = "ocr")]
-pub mod pdf_ocr;
 
 use std::path::Path;
 
@@ -66,7 +61,6 @@ pub fn route(path: &str, bytes: &[u8]) -> Result<ExtractedResume, ExtractionErro
 fn route_pdf(bytes: &[u8]) -> Result<ExtractedResume, ExtractionError> {
     let result = pdf::extract(bytes)?;
 
-    // Fall back to OCR when direct extraction yields too little text.
     let word_count = result.text.split_whitespace().count();
     if word_count >= 30 && result.text.len() >= 200 {
         return Ok(result);
@@ -75,45 +69,26 @@ fn route_pdf(bytes: &[u8]) -> Result<ExtractedResume, ExtractionError> {
     warn!(
         word_count,
         chars = result.text.len(),
-        "PDF direct extraction yielded sparse text — attempting OCR fallback"
+        "PDF direct extraction yielded sparse text"
     );
 
-    #[cfg(feature = "ocr")]
-    {
-        return pdf_ocr::extract(bytes);
+    if word_count == 0 {
+        return Err(ExtractionError::ScannedPdfWithoutOcr);
     }
 
-    #[cfg(not(feature = "ocr"))]
-    {
-        if word_count == 0 {
-            return Err(ExtractionError::ScannedPdfWithoutOcr);
-        }
-        // Sparse but non-empty — return what we have with a warning.
-        let mut out = result;
-        out.warnings.push(
-            "Extracted text is sparse. The PDF may contain scanned pages. \
-             Enable OCR support for better results."
-                .to_string(),
-        );
-        out.source_format = SourceFormat::PdfScanned;
-        return Ok(out);
-    }
+    let mut out = result;
+    out.warnings.push(
+        "Extracted text is sparse. The PDF may contain scanned pages."
+            .to_string(),
+    );
+    out.source_format = SourceFormat::PdfScanned;
+    Ok(out)
 }
 
-fn route_image(bytes: &[u8]) -> Result<ExtractedResume, ExtractionError> {
-    #[cfg(feature = "ocr")]
-    {
-        return image::extract(bytes);
-    }
-
-    #[cfg(not(feature = "ocr"))]
-    {
-        let _ = bytes;
-        Err(ExtractionError::OcrError(
-            "OCR is not enabled in this build. Rebuild with --features ocr to process images."
-                .to_string(),
-        ))
-    }
+fn route_image(_bytes: &[u8]) -> Result<ExtractedResume, ExtractionError> {
+    Err(ExtractionError::OcrError(
+        "Image extraction is not supported in this build.".to_string(),
+    ))
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -378,8 +353,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "ocr"))]
-    fn image_without_ocr_returns_ocr_error() {
+    fn image_returns_ocr_error() {
         assert!(matches!(
             route("photo.png", b"\x89PNG fake"),
             Err(ExtractionError::OcrError(_))
