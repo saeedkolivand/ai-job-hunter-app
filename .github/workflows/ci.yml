@@ -13,7 +13,7 @@ name: 🚀 CI Pipeline
 #   - quality-checks: Rust clippy linting
 # ──────────────────────────────────────────────────────────────────────
 
-'on':
+on:
   pull_request:
     branches:
       - main
