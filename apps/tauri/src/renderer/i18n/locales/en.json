@@ -608,6 +608,7 @@
     "searchPlaceholder": "Search by title, company, location…",
     "empty": "No postings yet. Start a scrape to populate this board.",
     "open": "Open",
+    "copyLink": "Copy link",
     "apply": "Apply",
     "applyNotSupported": "Apply not supported for this board",
     "scrapeJobs": "Scrape Jobs",

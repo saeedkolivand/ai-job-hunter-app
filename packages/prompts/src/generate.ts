@@ -490,6 +490,7 @@ Start immediately with the candidate header:`;
 
 export function extractPlainText(raw: string): string {
   return raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, '') // strip local model thinking blocks
     .replace(/^#{1,6}\s/gm, '')
     .replace(/\*\*\*(.+?)\*\*\*/g, '**$1**') // triple → double (preserve bold)
     .replace(/\*([^*]+)\*/g, '$1') // single italic → plain
