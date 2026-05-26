@@ -3,7 +3,18 @@
  * Lets users: (1) pick a saved resume, (2) upload a new file, (3) paste text.
  * When a new file is uploaded it shows Save / Set-as-default actions.
  */
-import { Check, FileText, Link, Loader2, Save, Sparkles, Upload, X } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Link,
+  Loader2,
+  Save,
+  Sparkles,
+  Upload,
+  X,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { DocumentRecord } from '@ajh/shared';
