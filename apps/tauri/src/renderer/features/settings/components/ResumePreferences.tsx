@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import type { DocumentRecord } from '@ajh/shared';
 import { Button, GlassCard, useNotification } from '@ajh/ui';
 
+import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
@@ -169,6 +170,11 @@ export function ResumePreferences() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* LinkedIn / profile URL import */}
+      <div className="mb-5">
+        <ProfileUrlImport />
       </div>
 
       {/* Document list */}

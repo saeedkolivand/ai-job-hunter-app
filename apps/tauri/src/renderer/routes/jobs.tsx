@@ -4,6 +4,7 @@ import {
   Building2,
   CheckCircle2,
   CircleCheck,
+  Copy,
   ExternalLink,
   Eye,
   Info,
@@ -774,6 +775,7 @@ function PostingRow({
   formatRelativeTime: (timestamp?: number) => string;
 }) {
   const { t } = useTranslation();
+  const notify = useNotification();
   const canApply = APPLIABLE.has(posting.source);
   const openExternalMutation = useOpenExternal();
   const persistJobMutation = usePersistJob();
@@ -808,6 +810,15 @@ function PostingRow({
   const handleOpen = () => {
     void trackInteraction('opened');
     void openExternalMutation.mutateAsync(posting.url);
+  };
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(posting.url);
+      notify(t('jobs.copyLink'), 'success');
+    } catch {
+      notify('Failed to copy link', 'error');
+    }
   };
 
   const handleApply = () => {
@@ -886,6 +897,13 @@ function PostingRow({
           >
             <ExternalLink size={10} /> {t('jobs.open')}
           </a>
+          <button
+            onClick={handleCopyLink}
+            className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] text-foreground/70 hover:text-foreground hover:bg-white/10 transition-all duration-200"
+            title={t('jobs.copyLink')}
+          >
+            <Copy size={10} />
+          </button>
           <Button
             size="sm"
             variant={canApply ? 'glass' : 'ghost'}

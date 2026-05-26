@@ -32,17 +32,35 @@ function RootLayout() {
     };
   }, []);
 
-  // Allow standard keyboard shortcuts (Cmd+A, Cmd+C, Cmd+V, etc.) on Mac
+  // WebView2 on Windows does not natively wire Ctrl+A (select-all) in text
+  // fields, and after a programmatic select() it also fails to delete the
+  // full selection on Backspace/Delete. Both are patched here.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const isMac = navigator.userAgent.includes('Mac');
-      if (!isMac) return;
+      const el = document.activeElement;
+      if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return;
 
-      // Allow these standard shortcuts to pass through
-      const allowedShortcuts = ['a', 'c', 'v', 'x', 'z', 'f'];
-      if ((e.metaKey || e.ctrlKey) && allowedShortcuts.includes(e.key.toLowerCase())) {
-        // Don't prevent default - let the browser handle it
+      // Ctrl/Cmd+A → select all
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        el.select();
         return;
+      }
+
+      // Backspace/Delete when everything is selected → clear via native setter
+      // so React's onChange fires correctly.
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        const { selectionStart, selectionEnd, value } = el;
+        if (selectionStart === 0 && selectionEnd === value.length && value.length > 0) {
+          e.preventDefault();
+          const proto =
+            el instanceof HTMLInputElement
+              ? HTMLInputElement.prototype
+              : HTMLTextAreaElement.prototype;
+          const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+          setter?.call(el, '');
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown, true);

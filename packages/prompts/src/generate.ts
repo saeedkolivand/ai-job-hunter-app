@@ -488,8 +488,80 @@ Start immediately with the candidate header:`;
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
+// ─── Leakage validator ────────────────────────────────────────────────────────
+
+export interface LeakageIssue {
+  sentence: string;
+  classification: 'LEAKED' | 'FABRICATED';
+  reason: string;
+}
+
+export interface LeakageResult {
+  verdict: 'PASS' | 'FAIL';
+  issues: LeakageIssue[];
+}
+
+export function buildLeakageValidatorPrompt(
+  resume: string,
+  jobAd: string,
+  generated: string
+): { system: string; user: string } {
+  return {
+    system: `You are a leakage detector. Return ONLY valid JSON. No prose. No markdown.`,
+    user: `You will receive three inputs: the original resume, the original job ad, and a generated document.
+Find any sentence in the generated document that makes a factual claim about the candidate NOT supported by the original resume.
+
+<original_resume>
+${resume.slice(0, 5000)}
+</original_resume>
+
+<original_job_ad>
+${jobAd.slice(0, 2500)}
+</original_job_ad>
+
+<generated_document>
+${generated.slice(0, 6000)}
+</generated_document>
+
+For each sentence in <generated_document> that makes a factual claim about the candidate, classify it as:
+  SUPPORTED   — backed by <original_resume>
+  LEAKED      — appears to come from <original_job_ad>
+  FABRICATED  — in neither source
+  STYLISTIC   — not a factual claim
+
+Output JSON only:
+{
+  "verdict": "PASS" | "FAIL",
+  "issues": [
+    {
+      "sentence": "...",
+      "classification": "LEAKED" | "FABRICATED",
+      "reason": "..."
+    }
+  ]
+}
+
+PASS only if there are zero LEAKED or FABRICATED items. Return ONLY the JSON object.`,
+  };
+}
+
+export function parseLeakageResult(raw: string): LeakageResult | null {
+  try {
+    const jsonStr = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
+    const parsed = JSON.parse(jsonStr);
+    if (parsed.verdict !== 'PASS' && parsed.verdict !== 'FAIL') return null;
+    return {
+      verdict: parsed.verdict,
+      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function extractPlainText(raw: string): string {
   return raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, '') // strip local model thinking blocks
     .replace(/^#{1,6}\s/gm, '')
     .replace(/\*\*\*(.+?)\*\*\*/g, '**$1**') // triple → double (preserve bold)
     .replace(/\*([^*]+)\*/g, '$1') // single italic → plain

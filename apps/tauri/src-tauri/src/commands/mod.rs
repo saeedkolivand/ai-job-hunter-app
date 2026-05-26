@@ -1,6 +1,7 @@
 // Tauri command implementations organized by domain
 
 pub mod ai_generations;
+pub mod cover_letter;
 pub mod system;
 pub mod ai;
 pub mod scrape;
@@ -18,3 +19,4 @@ pub mod privacy;
 pub mod support;
 pub mod dialog;
 pub mod job_preferences;
+pub mod profile_import;
