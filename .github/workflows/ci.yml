@@ -17,20 +17,10 @@ on:
   pull_request:
     branches:
       - main
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.vscode/**'
-      - '.idea/**'
 
   push:
     branches-ignore:
       - main
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.vscode/**'
-      - '.idea/**'
 
 concurrency:
   group: ci-${{ github.ref }}
