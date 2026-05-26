@@ -32,17 +32,16 @@ function RootLayout() {
     };
   }, []);
 
-  // Allow standard keyboard shortcuts (Cmd+A, Cmd+C, Cmd+V, etc.) on Mac
+  // Ensure Ctrl/Cmd+A selects all text in focused inputs and textareas.
+  // WebView2 on Windows does not wire this natively; adding it here fixes
+  // the pattern where Ctrl+A then Delete/Backspace fails to clear text.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const isMac = navigator.userAgent.includes('Mac');
-      if (!isMac) return;
-
-      // Allow these standard shortcuts to pass through
-      const allowedShortcuts = ['a', 'c', 'v', 'x', 'z', 'f'];
-      if ((e.metaKey || e.ctrlKey) && allowedShortcuts.includes(e.key.toLowerCase())) {
-        // Don't prevent default - let the browser handle it
-        return;
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'a') return;
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+        e.preventDefault();
+        el.select();
       }
     };
     window.addEventListener('keydown', handleKeyDown, true);
