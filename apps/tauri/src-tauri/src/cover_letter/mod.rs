@@ -92,6 +92,8 @@ fn build_user_prompt(
 
 // ── LLM provider factory ──────────────────────────────────────────────────────
 
+type ProviderPair = (Box<dyn LlmProvider>, Box<dyn LlmProvider>);
+
 /// Resolve the provider name and build the concrete `LlmProvider`.
 /// API keys are read directly from the OS keychain via `CredentialStore` —
 /// they never travel through the frontend.
@@ -100,7 +102,7 @@ fn resolve_provider(
     provider_hint: Option<&str>,
     model: Option<&str>,
     base_url: Option<&str>,
-) -> Result<(Box<dyn LlmProvider>, Box<dyn LlmProvider>), String> {
+) -> Result<ProviderPair, String> {
     let get_key = |name: &str| -> Option<String> {
         app.state::<Mutex<crate::credentials::CredentialStore>>()
             .lock()
