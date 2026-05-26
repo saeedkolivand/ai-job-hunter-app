@@ -10,6 +10,8 @@ import { useTranslation } from '@/lib/i18n';
 import { useDocuments, useImportDocument } from '@/services';
 import { usePreferencesStore } from '@/store/preferences-store';
 
+import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
+
 import { OnboardingStepWrapper } from '../components/OnboardingStepWrapper';
 
 interface Props {
@@ -137,6 +139,16 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
             <p className="text-xs text-foreground/35">PDF, DOC, DOCX, TXT · max 50 MB</p>
           </div>
         )}
+      </motion.div>
+
+      {/* LinkedIn import */}
+      <motion.div
+        initial={{ y: 10, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.15 }}
+        className="mb-5"
+      >
+        <ProfileUrlImport />
       </motion.div>
 
       {/* Footer */}

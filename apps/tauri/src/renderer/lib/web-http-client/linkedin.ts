@@ -6,5 +6,6 @@ export function linkedin(opts: WebHttpClientOptions) {
     connect: () => cmd('linkedin', 'connect'),
     disconnect: () => cmd('linkedin', 'disconnect'),
     getStatus: () => cmd('linkedin', 'getStatus'),
+    importProfileFromUrl: (url: string) => cmd('linkedin', 'importProfileFromUrl', { url }),
   };
 }
