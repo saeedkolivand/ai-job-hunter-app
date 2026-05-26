@@ -121,10 +121,16 @@ jobs:
           fetch-depth: 1
           ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
-      - name: 🟢 Setup Node.js
+      - name: � Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - name: � Setup Node.js
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: pnpm
 
       - name: 🔖 Sync Version Files
         env:
@@ -409,6 +415,17 @@ jobs:
         with:
           ref: v${{ needs.sync-version-files.outputs.version }}
           fetch-depth: 1
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
 
       - name: 🏷️ Generate latest.json
         run: |

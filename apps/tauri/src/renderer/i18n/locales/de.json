@@ -54,6 +54,7 @@
     "errorBody": "Analyse fehlgeschlagen. Bitte erneut versuchen.",
     "reAnalyse": "Erneut analysieren",
     "selectModel": "Bitte zuerst ein Modell auswählen",
+    "addApiKey": "API-Schlüssel in Einstellungen hinzufügen",
     "pasteContent": "Lebenslauf & Stellenanzeige einfügen",
     "idleTitle": "Lebenslauf-Analysator",
     "idleSubtitle": "Lebenslauf und Stellenanzeige einfügen für eine vollständige KI-Analyse",

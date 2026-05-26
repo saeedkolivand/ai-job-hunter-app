@@ -2,7 +2,6 @@ export { AccountRow } from './components/AccountRow';
 export { AccountsSettingsTab } from './components/AccountsSettingsTab';
 export { AISettingsTab } from './components/AISettingsTab';
 export { BoardSessionRow } from './components/BoardSessionRow';
-export { CustomDropdown } from './components/CustomDropdown';
 export { JobLocationPreferences } from './components/JobLocationPreferences';
 export { LanguageSelector } from './components/LanguageSelector';
 export { LinkedInSessionRow } from './components/LinkedInSessionRow';

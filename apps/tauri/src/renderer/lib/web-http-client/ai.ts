@@ -12,6 +12,7 @@ export function ai(opts: WebHttpClientOptions) {
     setProviderKey: (req: unknown) => cmd('ai', 'setProviderKey', req),
     removeProviderKey: (req: unknown) => cmd('ai', 'removeProviderKey', req),
     hasProviderKey: (req: unknown) => cmd('ai', 'hasProviderKey', req),
+    testProviderKey: (req: unknown) => cmd('ai', 'testProviderKey', req),
     listProviderModels: (req: unknown) => cmd('ai', 'listProviderModels', req),
   };
 }

@@ -1,27 +1,23 @@
 import { Check, Copy, Send, Sparkles, Upload, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 
-import { buildWorkspaceSystemPrompt } from '@ajh/prompts';
 import type { AiStreamChunk, JobEvent } from '@ajh/shared';
-import { Button, Input, MarkdownMessage, RefreshButton, SelectDropdown } from '@ajh/ui';
+import { Button, Input, MarkdownMessage } from '@ajh/ui';
 
+import { ModelSelector, useSelectedModel } from '@/components/ui/ModelSelector';
 import i18n from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
 import {
-  useAIModels,
   useAIStream,
   useExtractText,
   useGenerateAI,
+  useGenerateConfig,
   useGetOrCreateConversation,
   useJobEvents,
 } from '@/services';
-import { keys } from '@/services/query-client';
-import { useAIModel, usePreferencesStore } from '@/store/preferences-store';
-import type { Model } from '@/types';
 
 const ACCEPTED_EXTS = ['pdf', 'docx', 'txt', 'md', 'markdown'] as const;
 const ACCEPT_ATTR = '.pdf,.docx,.txt,.md,.markdown';
@@ -42,18 +38,15 @@ export function AIWorkspace() {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
-  const [resumeText, setResumeText] = useState<string>('');
+  const [_resumeText, setResumeText] = useState<string>('');
   const [resumeFileName, setResumeFileName] = useState<string>('');
   const [uploading, setUploading] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const activeJobRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const aiModel = useAIModel();
-  const { data: modelList = [], isFetching: loadingModels } = useAIModels();
-  const models = modelList as Model[];
-  const qc = useQueryClient();
-  const setAIModel = usePreferencesStore((s) => s.setAIModel);
+  const selectedModel = useSelectedModel();
+  const generateConfig = useGenerateConfig();
 
   const getOrCreateConversation = useGetOrCreateConversation();
   const extractText = useExtractText();
@@ -170,11 +163,8 @@ export function AIWorkspace() {
     try {
       const locale = (['en', 'de'].includes(i18n.language) ? i18n.language : 'en') as 'en' | 'de';
 
-      const systemPrompt = buildWorkspaceSystemPrompt({
-        locale,
-        resumeText: resumeText || undefined,
-        modelName: aiModel?.defaultModel,
-      });
+      // Temporarily disable system prompt for testing
+      const systemPrompt = 'You are a helpful AI assistant.';
 
       const history = [...messages, userMsg]
         .filter((m) => m.content)
@@ -186,9 +176,12 @@ export function AIWorkspace() {
       ];
 
       const res = (await generateAI.mutateAsync({
-        model: aiModel?.defaultModel ?? '',
+        model: selectedModel,
         messages: contextMessages,
         locale,
+        ...(generateConfig.provider !== 'ollama'
+          ? { provider: generateConfig.provider, baseUrl: generateConfig.baseUrl }
+          : {}),
       })) as { jobId: string };
 
       activeJobRef.current = res.jobId;
@@ -211,30 +204,7 @@ export function AIWorkspace() {
       {/* Header with model selector */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
         <h2 className="text-sm font-medium text-foreground/70">{t('ai.title')}</h2>
-        <div className="flex items-center gap-2">
-          <RefreshButton
-            onRefresh={() => qc.invalidateQueries({ queryKey: keys.ai.models })}
-            disabled={loadingModels}
-            size={11}
-            className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-foreground/60 hover:bg-white/[0.05] hover:text-foreground/80 transition-colors disabled:opacity-40"
-            title="Refresh models"
-          />
-          <div className="w-48">
-            <SelectDropdown
-              options={models.map((m) => ({ value: m.name, label: m.name }))}
-              value={aiModel?.defaultModel ?? ''}
-              onChange={(value) => {
-                setAIModel({
-                  defaultModel: value,
-                  temperature: 0.7,
-                  maxTokens: 2000,
-                });
-              }}
-              placeholder="Select model"
-              icon={<Sparkles size={11} className="text-brand-soft" />}
-            />
-          </div>
-        </div>
+        <ModelSelector className="flex items-center gap-2" />
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-8 py-6">
@@ -244,7 +214,7 @@ export function AIWorkspace() {
               <Sparkles size={22} className="text-brand-soft" />
             </div>
             <h2 className="text-gradient text-2xl font-semibold tracking-tight">{t('nav.ai')}</h2>
-            <p className="mt-2 max-w-sm text-sm text-foreground/50">{t('ai.placeholder')}</p>
+            {/* <p className="mt-2 max-w-sm text-sm text-foreground/50">{t('ai.placeholder')}</p> */}
             <div className="mt-6 grid grid-cols-2 gap-2 max-w-lg">
               {[
                 { q: 'How do I search for jobs on LinkedIn?', icon: '🔍' },

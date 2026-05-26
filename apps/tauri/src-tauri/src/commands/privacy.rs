@@ -5,6 +5,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::ai_generations::AiGenerationStore;
 use crate::conversations::ConversationDb;
+use crate::credentials::CredentialStore;
 use crate::documents::DocumentStore;
 use crate::postings::{InteractionStore, PostingsCache};
 
@@ -57,6 +58,13 @@ pub fn privacy_reset_app(app: AppHandle) -> Value {
     app.state::<DocumentStore>().clear_all();
     app.state::<AiGenerationStore>().clear_all();
     app.state::<ConversationDb>().clear_all();
+
+    // Clear all AI provider API keys from keychain
+    let store = app.state::<Mutex<CredentialStore>>();
+    let guard = store.lock().unwrap();
+    for provider in &["openai", "anthropic", "gemini", "openai-compatible"] {
+        let _ = guard.remove(&format!("ai:{provider}"));
+    }
 
     json!({ "success": true })
 }

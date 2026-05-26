@@ -49,6 +49,13 @@ export const useListProviderModels = (provider: string, enabled = true) => {
   });
 };
 
+export const useTestProviderKey = () => {
+  const api = useAppClient();
+  return useMutation({
+    mutationFn: ({ provider }: { provider: string }) => api.ai.testProviderKey({ provider }),
+  });
+};
+
 /** Returns the provider/model/baseUrl to inject into every ai_generate call. */
 export const useGenerateConfig = () => {
   const config = useAiProviderConfig();
