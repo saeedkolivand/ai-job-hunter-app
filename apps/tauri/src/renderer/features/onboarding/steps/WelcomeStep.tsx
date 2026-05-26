@@ -39,7 +39,8 @@ export function WelcomeStep({ onNext, direction, stepIndex, totalSteps }: Props)
 
   const handleNext = () => {
     const trimmed = name.trim();
-    if (trimmed) setUserName(trimmed);
+    if (!trimmed) return;
+    setUserName(trimmed);
     onNext();
   };
 
@@ -120,7 +121,13 @@ export function WelcomeStep({ onNext, direction, stepIndex, totalSteps }: Props)
         </div>
       </div>
 
-      <Button variant="default" size="lg" className="w-full justify-center" onClick={handleNext}>
+      <Button
+        variant="default"
+        size="lg"
+        className="w-full justify-center"
+        onClick={handleNext}
+        disabled={name.trim().length === 0}
+      >
         {t('onboarding.welcome.next')}
         <ArrowRight size={15} />
       </Button>
