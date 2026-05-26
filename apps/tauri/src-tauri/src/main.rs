@@ -16,6 +16,7 @@
 
 mod ai_generations;
 mod autopilot;
+mod cover_letter;
 mod autopilot_helpers;
 mod autopilot_scheduler;
 mod apply_helpers;
@@ -30,6 +31,7 @@ mod job_preferences;
 mod jobs;
 mod platform;
 mod postings;
+mod profile_import;
 mod scraping;
 mod updater;
 
@@ -133,6 +135,14 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 fn main() {
+    // Structured logging: respects RUST_LOG env var (e.g. RUST_LOG=ajh_tauri=debug).
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
+        )
+        .init();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -175,6 +185,10 @@ fn main() {
                 app.manage(db);
             } else {
                 eprintln!("[setup] conversation db failed to open (non-fatal)");
+            }
+            match cover_letter::cache::CompanyBriefCache::open(&data_dir) {
+                Ok(cache) => { app.manage(cache); }
+                Err(e) => eprintln!("[setup] company brief cache failed to open (non-fatal): {e}"),
             }
 
             // Build and set the application menu.
@@ -315,6 +329,10 @@ fn main() {
             commands::ai_generations::ai_generations_list,
             commands::ai_generations::ai_generations_save,
             commands::ai_generations::ai_generations_remove,
+            // cover letter pipeline
+            commands::cover_letter::generate_cover_letter,
+            // profile import
+            commands::profile_import::profile_import_from_url,
             // export
             export::commands::documents_export_document,
             export::commands::documents_export_and_save,

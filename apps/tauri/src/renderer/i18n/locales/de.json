@@ -608,6 +608,7 @@
     "searchPlaceholder": "Nach Titel, Unternehmen, Ort suchen…",
     "empty": "Noch keine Anzeigen. Starten Sie einen Scrape, um dieses Board zu füllen.",
     "open": "Öffnen",
+    "copyLink": "Link kopieren",
     "apply": "Bewerben",
     "applyNotSupported": "Bewerbung für dieses Board nicht unterstützt",
     "scrapeJobs": "Jobs scrapen",
@@ -1355,6 +1356,20 @@
     "saveFailed": "Speichern fehlgeschlagen",
     "saving": "Speichere…",
     "tooLarge": "Datei überschreitet 25 MB",
-    "selectedSaved": "{{name}} geladen"
+    "selectedSaved": "{{name}} geladen",
+    "pasteProfileUrl": "Aus Profil-URL importieren",
+    "profileUrlPlaceholder": "Profil-URL einfügen…",
+    "profileUrlImport": "Importieren",
+    "profileImported": "Profil importiert",
+    "profileImportFailed": "Import fehlgeschlagen",
+    "profileUrlUnsupported": "Derzeit werden nur LinkedIn-Profil-URLs unterstützt"
+  },
+  "resume": {
+    "profileImport": {
+      "description": "Oder direkt aus einer Profil-URL importieren",
+      "import": "Importieren",
+      "success": "Profil von {{name}} als Lebenslauf importiert",
+      "failed": "Profilimport fehlgeschlagen"
+    }
   }
 }

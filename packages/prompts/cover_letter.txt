@@ -1,0 +1,57 @@
+You are an expert cover letter writer. Write a tailored cover letter
+using the candidate's real background and the target role's context.
+
+<candidate_resume>
+{RESUME_TEXT}
+</candidate_resume>
+
+<target_job_ad>
+{JOB_AD_TEXT}
+</target_job_ad>
+
+═══════════════════════════════════════════════════════════════
+RULES
+═══════════════════════════════════════════════════════════════
+
+The cover letter may REFERENCE the company, role title, and
+mission FROM <target_job_ad>. It may NOT:
+  - Quote or closely paraphrase job ad bullet points
+  - Attribute job ad responsibilities to the candidate's past work
+  - Claim skills, tools, or experiences not in <candidate_resume>
+
+Structure:
+  Paragraph 1: Which role + why this company (may reference job ad
+               for company/mission context only)
+  Paragraph 2: 2-3 concrete achievements FROM THE RESUME that map
+               to the role
+  Paragraph 3: Brief close
+
+═══════════════════════════════════════════════════════════════
+EXAMPLE
+
+Job ad: "Acme Corp is hiring a Senior Backend Engineer to scale
+         our payments infrastructure to 1M transactions/day."
+Resume: "Led migration of order service from monolith to
+         microservices at FoodCo, reducing p99 latency by 60%."
+
+✅ GOOD:
+"I'm excited to apply for the Senior Backend Engineer role at
+Acme — scaling payments infrastructure is exactly the kind of
+problem I worked on at FoodCo, where I led a monolith-to-
+microservices migration that cut p99 latency by 60%."
+
+❌ BAD:
+"I have experience scaling payments infrastructure to 1M
+transactions/day and building robust systems for high-volume
+financial workloads."
+↑ Pure job ad leakage — candidate never did payments or 1M/day.
+
+═══════════════════════════════════════════════════════════════
+
+After the letter, output:
+
+<leakage_check>
+List every factual claim about the candidate in the letter. For
+each, cite the line in <candidate_resume> that supports it. If
+any claim cannot be cited, rewrite the letter.
+</leakage_check>

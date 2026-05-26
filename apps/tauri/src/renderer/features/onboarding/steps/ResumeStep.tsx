@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import type { DocumentRecord } from '@ajh/shared';
 import { Button, FloatingIcon, useNotification } from '@ajh/ui';
 
+import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { useDocuments, useImportDocument } from '@/services';
@@ -137,6 +138,16 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
             <p className="text-xs text-foreground/35">PDF, DOC, DOCX, TXT · max 50 MB</p>
           </div>
         )}
+      </motion.div>
+
+      {/* LinkedIn import */}
+      <motion.div
+        initial={{ y: 10, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.15 }}
+        className="mb-5"
+      >
+        <ProfileUrlImport />
       </motion.div>
 
       {/* Footer */}

@@ -9,19 +9,27 @@ import {
   ChevronDown,
   ChevronUp,
   FileText,
+  Link,
   Loader2,
   Save,
   Sparkles,
   Upload,
+  X,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { DocumentRecord } from '@ajh/shared';
 import { Button, TextArea, useNotification } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
-import { useDocuments, useImportDocument, useSetDefaultDocument } from '@/services';
+import {
+  useDocuments,
+  useImportDocument,
+  useProfileImport,
+  useSetDefaultDocument,
+} from '@/services';
 
 const ACCEPT = '.pdf,.docx,.txt,.md,.markdown';
 const MAX_BYTES = 25 * 1024 * 1024;
@@ -70,19 +78,43 @@ export function ResumeInputCard({
   const notify = useNotification();
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const savedBtnRef = useRef<HTMLButtonElement>(null);
   const [expanded, setExpanded] = useState(true);
   const [showSaved, setShowSaved] = useState(false);
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   const [lastUploadedFile, setLastUploadedFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [profileUrl, setProfileUrl] = useState('');
+  const urlInputRef = useRef<HTMLInputElement>(null);
 
   const { data: rawDocsUnknown = [] } = useDocuments();
   const rawDocs = rawDocsUnknown as unknown as RawDoc[];
   const docs = rawDocs.map(normalise);
   const importDocument = useImportDocument();
   const setDefaultDocument = useSetDefaultDocument();
+  const profileImport = useProfileImport();
 
   const hasSaved = docs.length > 0;
   const defaultDoc = docs.find((d) => d.isDefault) ?? docs[0];
+
+  // Close saved-menu on outside click
+  useEffect(() => {
+    if (!showSaved) return;
+    const handler = (e: MouseEvent) => {
+      if (savedBtnRef.current?.contains(e.target as Node)) return;
+      setShowSaved(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showSaved]);
+
+  const openSavedMenu = () => {
+    if (!savedBtnRef.current) return;
+    const rect = savedBtnRef.current.getBoundingClientRect();
+    setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setShowSaved((v) => !v);
+  };
 
   // Auto-fill from default resume on first load (only if textarea is still empty)
   useEffect(() => {
@@ -147,10 +179,37 @@ export function ResumeInputCard({
     await onUpload(file);
   };
 
+  const isSupportedProfileUrl = (u: string) => u.toLowerCase().includes('linkedin.com/in/');
+  const profileUrlValid = isSupportedProfileUrl(profileUrl);
+
+  const handleProfileUrlSubmit = async () => {
+    const url = profileUrl.trim();
+    if (!url || !profileUrlValid) return;
+    try {
+      const result = await profileImport.mutateAsync(url);
+      if ('error' in result) {
+        notify(result.error, 'error');
+        return;
+      }
+      onChange(result.text);
+      setProfileUrl('');
+      setShowUrlInput(false);
+      notify(t('resumeInput.profileImported'), 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : t('resumeInput.profileImportFailed'), 'error');
+    }
+  };
+
+  const toggleUrlInput = () => {
+    setShowUrlInput((v) => !v);
+    setProfileUrl('');
+    setTimeout(() => urlInputRef.current?.focus(), 50);
+  };
+
   return (
     <div
       className={cn(
-        'glass-graphite glass-highlight rounded-xl overflow-hidden transition-colors',
+        'glass-graphite glass-highlight rounded-xl transition-colors',
         value && 'border-brand/20'
       )}
     >
@@ -164,11 +223,12 @@ export function ResumeInputCard({
         <div className="flex items-center gap-1.5">
           {/* Pick saved */}
           {hasSaved && !disabled && (
-            <div className="relative">
+            <>
               <Button
+                ref={savedBtnRef}
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowSaved((v) => !v)}
+                onClick={openSavedMenu}
                 className="gap-1 text-[10px] text-foreground/45 hover:text-foreground/70 h-6 px-2"
               >
                 <BookmarkCheck size={11} />
@@ -178,29 +238,39 @@ export function ResumeInputCard({
                 {showSaved ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
               </Button>
 
-              {showSaved && (
-                <div className="absolute right-0 top-full z-50 mt-1 min-w-[200px] rounded-xl glass-elevated shadow-2xl overflow-hidden">
-                  <div className="px-2 py-1.5 space-y-0.5 max-h-48 overflow-y-auto">
-                    {docs.map((doc) => (
-                      <button
-                        key={doc.id}
-                        onClick={() => handleSelectSaved(doc)}
-                        className={cn(
-                          'flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors',
-                          doc.isDefault
-                            ? 'bg-brand/15 text-brand-soft'
-                            : 'text-foreground/65 hover:bg-white/[0.05] hover:text-foreground/90'
-                        )}
-                      >
-                        <FileText size={11} className="shrink-0" />
-                        <span className="truncate flex-1">{doc.title}</span>
-                        {doc.isDefault && <Sparkles size={9} />}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+              {showSaved &&
+                createPortal(
+                  <div
+                    style={{
+                      position: 'fixed',
+                      top: menuPos.top,
+                      right: menuPos.right,
+                      zIndex: 9999,
+                    }}
+                    className="min-w-[200px] rounded-xl glass-elevated shadow-2xl overflow-hidden"
+                  >
+                    <div className="px-2 py-1.5 space-y-0.5 max-h-48 overflow-y-auto">
+                      {docs.map((doc) => (
+                        <button
+                          key={doc.id}
+                          onClick={() => void handleSelectSaved(doc)}
+                          className={cn(
+                            'flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors',
+                            doc.isDefault
+                              ? 'bg-brand/15 text-brand-soft'
+                              : 'text-foreground/65 hover:bg-white/[0.05] hover:text-foreground/90'
+                          )}
+                        >
+                          <FileText size={11} className="shrink-0" />
+                          <span className="truncate flex-1">{doc.title}</span>
+                          {doc.isDefault && <Sparkles size={9} />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>,
+                  document.body
+                )}
+            </>
           )}
 
           {/* Upload button */}
@@ -229,6 +299,22 @@ export function ResumeInputCard({
             </>
           )}
 
+          {/* Profile URL import button */}
+          {!disabled && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleUrlInput}
+              className={cn(
+                'h-6 w-6 p-0 hover:text-foreground/70',
+                showUrlInput ? 'text-brand-soft' : 'text-foreground/40'
+              )}
+              title={t('resumeInput.pasteProfileUrl')}
+            >
+              <Link size={11} />
+            </Button>
+          )}
+
           {/* Collapse toggle */}
           <Button
             variant="ghost"
@@ -240,6 +326,61 @@ export function ResumeInputCard({
           </Button>
         </div>
       </div>
+
+      {/* Profile URL input panel */}
+      {showUrlInput && !disabled && (
+        <div className="flex flex-col border-t border-white/[0.05]">
+          <div className="flex items-center gap-2 px-3 py-2">
+            <input
+              ref={urlInputRef}
+              type="url"
+              value={profileUrl}
+              onChange={(e) => setProfileUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleProfileUrlSubmit();
+                if (e.key === 'Escape') {
+                  setShowUrlInput(false);
+                  setProfileUrl('');
+                }
+              }}
+              placeholder={t('resumeInput.profileUrlPlaceholder')}
+              disabled={profileImport.isPending}
+              className="flex-1 bg-transparent text-xs text-foreground/80 placeholder:text-foreground/30 outline-none disabled:opacity-50"
+            />
+            {profileImport.isPending ? (
+              <Loader2 size={11} className="shrink-0 animate-spin text-foreground/40" />
+            ) : (
+              <>
+                <Button
+                  variant="glass"
+                  size="sm"
+                  onClick={() => void handleProfileUrlSubmit()}
+                  disabled={!profileUrlValid}
+                  className="h-6 px-2 text-[11px] gap-1"
+                >
+                  {t('resumeInput.profileUrlImport')}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowUrlInput(false);
+                    setProfileUrl('');
+                  }}
+                  className="h-6 w-6 p-0 text-foreground/30 hover:text-foreground/60"
+                >
+                  <X size={11} />
+                </Button>
+              </>
+            )}
+          </div>
+          {profileUrl && !profileUrlValid && (
+            <p className="px-3 pb-2 text-[10px] text-amber-400/70">
+              {t('resumeInput.profileUrlUnsupported')}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Text area */}
       {expanded && (

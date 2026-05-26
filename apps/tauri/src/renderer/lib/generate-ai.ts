@@ -17,12 +17,14 @@
 import {
   buildCoverLetterPrompt,
   buildCoverLetterSystemPrompt,
+  buildLeakageValidatorPrompt,
   buildMetadataPrompt,
   buildResumePrompt,
   buildResumeSystemPrompt,
   extractPlainText,
   type GenerationMeta,
   type GenerationMode,
+  parseLeakageResult,
   validateMetadata,
 } from '@ajh/prompts/generate';
 import { detectLanguages } from '@ajh/shared/language-detection';
@@ -75,19 +77,71 @@ async function streamGenerate(
   const jobId = res.jobId;
   let buffer = '';
 
+  // Tracks whether we're inside an inline <think>...</think> block emitted
+  // token-by-token by local reasoning models (DeepSeek, Qwen, etc.)
+  let inThinkBlock = false;
+  let thinkAccum = '';
+
   return new Promise((resolve, reject) => {
     const off = api.ai.onStream((chunk: unknown) => {
       const c = chunk as { jobId: string; delta: string; done: boolean; thinking?: boolean };
       if (c.jobId !== jobId) return;
       if (c.delta) {
         if (c.thinking) {
+          // Anthropic-style separate thinking flag
           onThinking?.(c.delta);
         } else {
-          buffer += c.delta;
-          onToken(c.delta);
+          // Accumulate to detect inline <think> tags from local models
+          thinkAccum += c.delta;
+
+          // Flush any complete non-thinking content from the accumulator
+          let out = '';
+          let remaining = thinkAccum;
+
+          while (remaining.length > 0) {
+            if (inThinkBlock) {
+              const closeIdx = remaining.indexOf('</think>');
+              if (closeIdx !== -1) {
+                onThinking?.(remaining.slice(0, closeIdx));
+                inThinkBlock = false;
+                remaining = remaining.slice(closeIdx + 8);
+              } else {
+                // Still inside think block — forward to thinking handler, keep nothing
+                onThinking?.(remaining);
+                remaining = '';
+              }
+            } else {
+              const openIdx = remaining.indexOf('<think>');
+              if (openIdx !== -1) {
+                out += remaining.slice(0, openIdx);
+                inThinkBlock = true;
+                remaining = remaining.slice(openIdx + 7);
+              } else {
+                // No open tag — but it might be a partial tag at the end, hold back 7 chars
+                const holdBack = 7;
+                if (remaining.length > holdBack) {
+                  out += remaining.slice(0, remaining.length - holdBack);
+                  remaining = remaining.slice(remaining.length - holdBack);
+                }
+                break;
+              }
+            }
+          }
+
+          thinkAccum = remaining;
+
+          if (out) {
+            buffer += out;
+            onToken(out);
+          }
         }
       }
       if (c.done) {
+        // Flush any remaining non-thinking content
+        if (thinkAccum && !inThinkBlock) {
+          buffer += thinkAccum;
+          onToken(thinkAccum);
+        }
         off();
         resolve(buffer);
       }
@@ -133,6 +187,24 @@ async function streamGenerate(
       })();
     }, 3_000);
   });
+}
+
+// ─── Leakage validation ───────────────────────────────────────────────────────
+
+async function runLeakageCheck(
+  resume: string,
+  jobAd: string,
+  generated: string,
+  model: string,
+  locale: string
+) {
+  const { system, user } = buildLeakageValidatorPrompt(resume, jobAd, generated);
+  try {
+    const raw = await streamGenerate(model, system, user, () => {}, 0.0, locale);
+    return parseLeakageResult(raw);
+  } catch {
+    return null;
+  }
 }
 
 // ─── Generation steps ─────────────────────────────────────────────────────────
@@ -191,8 +263,19 @@ export async function generateResume(
 ): Promise<string> {
   const system = buildResumeSystemPrompt(mode);
   const user = buildResumePrompt(resume, jobAd, meta, mode);
-  const raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal, onThinking);
-  return extractPlainText(raw);
+  let raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal, onThinking);
+  let result = extractPlainText(raw);
+
+  const { enableLeakageCheck } = usePreferencesStore.getState();
+  if (enableLeakageCheck ?? true) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const check = await runLeakageCheck(resume, jobAd, result, model, locale);
+      if (!check || check.verdict === 'PASS') break;
+      raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal, onThinking);
+      result = extractPlainText(raw);
+    }
+  }
+  return result;
 }
 
 export async function generateCoverLetter(
@@ -208,8 +291,19 @@ export async function generateCoverLetter(
 ): Promise<string> {
   const system = buildCoverLetterSystemPrompt(mode);
   const user = buildCoverLetterPrompt(resume, jobAd, meta, mode);
-  const raw = await streamGenerate(model, system, user, onToken, 0.4, locale, signal, onThinking);
-  return extractPlainText(raw);
+  let raw = await streamGenerate(model, system, user, onToken, 0.4, locale, signal, onThinking);
+  let result = extractPlainText(raw);
+
+  const { enableLeakageCheck } = usePreferencesStore.getState();
+  if (enableLeakageCheck ?? true) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const check = await runLeakageCheck(resume, jobAd, result, model, locale);
+      if (!check || check.verdict === 'PASS') break;
+      raw = await streamGenerate(model, system, user, onToken, 0.4, locale, signal, onThinking);
+      result = extractPlainText(raw);
+    }
+  }
+  return result;
 }
 
 // ─── Filename ─────────────────────────────────────────────────────────────────

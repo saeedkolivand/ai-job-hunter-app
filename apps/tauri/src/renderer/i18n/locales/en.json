@@ -608,6 +608,7 @@
     "searchPlaceholder": "Search by title, company, location…",
     "empty": "No postings yet. Start a scrape to populate this board.",
     "open": "Open",
+    "copyLink": "Copy link",
     "apply": "Apply",
     "applyNotSupported": "Apply not supported for this board",
     "scrapeJobs": "Scrape Jobs",
@@ -1362,6 +1363,20 @@
     "saveFailed": "Save failed",
     "saving": "Saving…",
     "tooLarge": "File exceeds 25 MB limit",
-    "selectedSaved": "{{name}} loaded"
+    "selectedSaved": "{{name}} loaded",
+    "pasteProfileUrl": "Import from profile URL",
+    "profileUrlPlaceholder": "Paste a profile URL…",
+    "profileUrlImport": "Import",
+    "profileImported": "Profile imported",
+    "profileImportFailed": "Import failed",
+    "profileUrlUnsupported": "Only LinkedIn profile URLs are supported right now"
+  },
+  "resume": {
+    "profileImport": {
+      "description": "Or import directly from a profile URL",
+      "import": "Import",
+      "success": "{{name}}'s profile imported as resume",
+      "failed": "Profile import failed"
+    }
   }
 }

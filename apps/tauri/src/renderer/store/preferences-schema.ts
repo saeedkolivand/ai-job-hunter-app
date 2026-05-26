@@ -68,6 +68,9 @@ export const PreferencesSchema = z.object({
   // Developer / debug
   debugMode: z.boolean().default(false),
 
+  // Generation quality
+  enableLeakageCheck: z.boolean().default(true),
+
   // Onboarding
   onboardingCompleted: z.boolean().default(false),
 
