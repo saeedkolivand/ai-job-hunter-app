@@ -147,7 +147,7 @@ async function streamGenerate(
       }
       if (c.done) {
         console.debug(
-          `[stream:${jobId}] DONE — chunks=${chunkCount} bufferLen=${buffer.length} inThinkBlock=${inThinkBlock} thinkAccumLen=${thinkAccum.length}`
+          `[stream:${jobId}] DONE — bufferLen=${buffer.length} inThinkBlock=${inThinkBlock} thinkAccumLen=${thinkAccum.length}`
         );
         if (thinkAccum) {
           if (!inThinkBlock) {
@@ -283,20 +283,25 @@ export async function generateResume(
   onToken: (tok: string) => void,
   locale = 'en',
   signal?: AbortSignal,
-  onThinking?: (tok: string) => void
+  onThinking?: (tok: string) => void,
+  onDraft?: (text: string) => void,
+  onImproving?: () => void
 ): Promise<string> {
   const system = buildResumeSystemPrompt(mode);
   const user = buildResumePrompt(resume, jobAd, meta, mode);
   let raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal, onThinking);
   let result = extractPlainText(raw);
+  onDraft?.(result);
 
   const { enableLeakageCheck } = usePreferencesStore.getState();
   if (enableLeakageCheck ?? true) {
     for (let attempt = 0; attempt < 2; attempt++) {
       const check = await runLeakageCheck(resume, jobAd, result, model, locale);
       if (!check || check.verdict === 'PASS') break;
+      onImproving?.();
       raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal, onThinking);
       result = extractPlainText(raw);
+      onDraft?.(result);
     }
   }
   return result;
@@ -311,20 +316,25 @@ export async function generateCoverLetter(
   onToken: (tok: string) => void,
   locale = 'en',
   signal?: AbortSignal,
-  onThinking?: (tok: string) => void
+  onThinking?: (tok: string) => void,
+  onDraft?: (text: string) => void,
+  onImproving?: () => void
 ): Promise<string> {
   const system = buildCoverLetterSystemPrompt(mode);
   const user = buildCoverLetterPrompt(resume, jobAd, meta, mode);
   let raw = await streamGenerate(model, system, user, onToken, 0.4, locale, signal, onThinking);
   let result = extractPlainText(raw);
+  onDraft?.(result);
 
   const { enableLeakageCheck } = usePreferencesStore.getState();
   if (enableLeakageCheck ?? true) {
     for (let attempt = 0; attempt < 2; attempt++) {
       const check = await runLeakageCheck(resume, jobAd, result, model, locale);
       if (!check || check.verdict === 'PASS') break;
+      onImproving?.();
       raw = await streamGenerate(model, system, user, onToken, 0.4, locale, signal, onThinking);
       result = extractPlainText(raw);
+      onDraft?.(result);
     }
   }
   return result;
