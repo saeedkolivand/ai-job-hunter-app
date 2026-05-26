@@ -1,6 +1,6 @@
 import { Check, Copy, Download, FileText, Loader2, RotateCcw } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Button, TextArea } from '@ajh/ui';
 
@@ -22,6 +22,7 @@ interface OutputPanelDoneProps {
   onOutputChange: (value: string) => void;
   onRegenerate: () => void;
   copied: boolean;
+  isGenerating?: boolean;
 }
 
 export function OutputPanelDone({
@@ -37,8 +38,15 @@ export function OutputPanelDone({
   onOutputChange,
   onRegenerate,
   copied,
+  isGenerating = false,
 }: OutputPanelDoneProps) {
   const { t } = useTranslation();
+
+  // If the active tab has no content but the other does, switch automatically
+  useEffect(() => {
+    if (activeOut === 'resume' && !resumeOut && coverOut) onActiveOutChange('cover');
+    if (activeOut === 'cover' && !coverOut && resumeOut) onActiveOutChange('resume');
+  }, [activeOut, resumeOut, coverOut, onActiveOutChange]);
 
   const currentOutput = activeOut === 'resume' ? resumeOut : coverOut;
   const currentMeta = meta;
@@ -76,12 +84,13 @@ export function OutputPanelDone({
         <div className="flex items-center gap-2">
           <Button
             onClick={onCopy}
-            className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-[11px] text-foreground/55 hover:text-foreground transition-colors h-auto"
+            disabled={isGenerating}
+            className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-[11px] text-foreground/55 hover:text-foreground transition-colors h-auto disabled:opacity-30 disabled:pointer-events-none"
           >
             {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
             {copied ? t('aiGenerate.copied') : t('aiGenerate.copy')}
           </Button>
-          <ExportMenu onExport={onExport} t={t} />
+          <ExportMenu onExport={onExport} t={t} disabled={isGenerating} />
         </div>
       </div>
 
@@ -128,14 +137,17 @@ export function OutputPanelDone({
 function ExportMenu({
   onExport,
   t,
+  disabled = false,
 }: {
   onExport: (fmt: 'pdf' | 'docx' | 'txt') => Promise<void>;
   t: (key: string, params?: Record<string, unknown>) => string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
 
   const handle = async (fmt: 'pdf' | 'docx' | 'txt') => {
+    if (disabled) return;
     setLoading(fmt);
     setOpen(false);
     try {
@@ -148,8 +160,9 @@ function ExportMenu({
   return (
     <div className="relative">
       <Button
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 rounded-lg bg-brand/15 px-2.5 py-1.5 text-[11px] font-medium text-brand-soft hover:bg-brand/20 transition-colors h-auto"
+        onClick={() => !disabled && setOpen((o) => !o)}
+        disabled={disabled}
+        className="flex items-center gap-1.5 rounded-lg bg-brand/15 px-2.5 py-1.5 text-[11px] font-medium text-brand-soft hover:bg-brand/20 transition-colors h-auto disabled:opacity-30 disabled:pointer-events-none"
       >
         {loading ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
         {t('aiGenerate.export')}

@@ -31,6 +31,11 @@ impl ConversationDb {
         ")?;
         Ok(Self(Mutex::new(conn)))
     }
+
+    pub fn clear_all(&self) {
+        let conn = self.0.lock().unwrap();
+        conn.execute_batch("DELETE FROM messages; DELETE FROM conversations;").ok();
+    }
 }
 
 fn now_ms() -> i64 {

@@ -292,6 +292,13 @@
       "clearHistoryConfirmTitle": "Interaktionsverlauf löschen",
       "clearHistoryConfirmDescription": "Dadurch werden alle Ihre beworbenen, angesehenen und gespeicherten Job-Datensätze dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "clearHistoryConfirm": "Verlauf löschen",
+      "dangerZone": "Gefahrenzone",
+      "resetApp": "App zurücksetzen",
+      "resetAppDescription": "Alle Daten und Einstellungen löschen. Kehrt zum Willkommensbildschirm zurück.",
+      "reset": "Zurücksetzen",
+      "resetAppConfirmTitle": "App auf Werkseinstellungen zurücksetzen",
+      "resetAppConfirmDescription": "Dadurch werden Sie von allen Konten abgemeldet, alle gespeicherten Daten und der Job-Verlauf gelöscht sowie alle Einstellungen zurückgesetzt. Sie werden zum Willkommensbildschirm weitergeleitet. Dies kann nicht rückgängig gemacht werden.",
+      "resetAppConfirm": "Alles zurücksetzen",
       "somethingWentWrong": "Etwas ist schiefgelaufen.",
       "signedOutSuccess": "Von allen Konten abgemeldet. Neuverbindung über Einstellungen → Konten.",
       "historyClearedSuccess": "Interaktionsverlauf gelöscht.",
@@ -438,7 +445,7 @@
     "resumePlaceholder": "Lebenslauftext hier einfügen…",
     "atsMode": "ATS-sicherer Modus",
     "atsModeHint": "Empfohlen für ATS-Bewerbungen — linearisiert das zweispaltige Layout",
-    "coverLetter": {
+    "coverLetterStrings": {
       "closingPhrase": {
         "sincerely": "Mit freundlichen Grüßen,",
         "bestRegards": "Mit freundlichen Grüßen,",

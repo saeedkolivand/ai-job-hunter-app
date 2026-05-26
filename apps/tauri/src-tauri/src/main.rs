@@ -285,6 +285,8 @@ fn main() {
             // privacy
             commands::privacy::privacy_clear_data,
             commands::privacy::privacy_clear_interactions,
+            commands::privacy::privacy_sign_out_all,
+            commands::privacy::privacy_reset_app,
             // apply
             commands::apply::apply_start,
             commands::apply::apply_catalog,
