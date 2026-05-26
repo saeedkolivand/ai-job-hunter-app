@@ -22,9 +22,9 @@ import { createPortal } from 'react-dom';
 import type { DocumentRecord } from '@ajh/shared';
 import { Button, TextArea, useNotification } from '@ajh/ui';
 
+import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
-import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
 import { useDocuments, useProfileImport, useSetDefaultDocument } from '@/services';
 
 const ACCEPT = '.pdf,.docx,.txt,.md,.markdown';
