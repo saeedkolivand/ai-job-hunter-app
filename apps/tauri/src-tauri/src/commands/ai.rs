@@ -221,6 +221,89 @@ pub fn ai_has_provider_key(app: AppHandle, provider: String) -> Value {
 }
 
 #[tauri::command]
+pub async fn ai_test_provider_key(app: AppHandle, provider: String) -> Value {
+    let api_key = match get_provider_key(&app, &provider) {
+        Some(k) => k,
+        None => return json!({ "success": false, "error": "No API key found" }),
+    };
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => return json!({ "success": false, "error": format!("Failed to create client: {}", e) }),
+    };
+
+    let result = match provider.as_str() {
+        "openai" | "openai-compatible" => {
+            let resp = client
+                .get("https://api.openai.com/v1/models")
+                .bearer_auth(&api_key)
+                .send()
+                .await;
+            match resp {
+                Ok(r) => {
+                    if r.status().is_success() {
+                        json!({ "success": true })
+                    } else {
+                        let status = r.status();
+                        json!({ "success": false, "error": format!("API returned status: {}", status) })
+                    }
+                }
+                Err(e) => json!({ "success": false, "error": format!("Request failed: {}", e) }),
+            }
+        }
+        "anthropic" => {
+            let resp = client
+                .post("https://api.anthropic.com/v1/messages")
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", "2023-06-01")
+                .header("content-type", "application/json")
+                .json(&serde_json::json!({
+                    "model": "claude-3-haiku-20240307",
+                    "max_tokens": 1,
+                    "messages": [{"role": "user", "content": "test"}]
+                }))
+                .send()
+                .await;
+            match resp {
+                Ok(r) => {
+                    if r.status().is_success() || r.status() == 400 {
+                        // 400 is OK - it means key is valid but request was malformed (we sent minimal data)
+                        json!({ "success": true })
+                    } else {
+                        let status = r.status();
+                        json!({ "success": false, "error": format!("API returned status: {}", status) })
+                    }
+                }
+                Err(e) => json!({ "success": false, "error": format!("Request failed: {}", e) }),
+            }
+        }
+        "gemini" => {
+            let resp = client
+                .get(format!("https://generativelanguage.googleapis.com/v1/models?key={}", api_key))
+                .send()
+                .await;
+            match resp {
+                Ok(r) => {
+                    if r.status().is_success() {
+                        json!({ "success": true })
+                    } else {
+                        let status = r.status();
+                        json!({ "success": false, "error": format!("API returned status: {}", status) })
+                    }
+                }
+                Err(e) => json!({ "success": false, "error": format!("Request failed: {}", e) }),
+            }
+        }
+        _ => json!({ "success": false, "error": "Unknown provider" }),
+    };
+
+    result
+}
+
+#[tauri::command]
 pub async fn ai_list_provider_models(app: AppHandle, provider: String) -> Value {
     let api_key = match get_provider_key(&app, &provider) {
         Some(k) => k,
@@ -260,23 +343,50 @@ pub async fn ai_list_provider_models(app: AppHandle, provider: String) -> Value 
                     }
                 }
             }
-            json!([
-                { "name": "gpt-4o" }, { "name": "gpt-4o-mini" },
-                { "name": "gpt-4-turbo" }, { "name": "gpt-3.5-turbo" },
-                { "name": "o1" }, { "name": "o1-mini" }
-            ])
+            json!([])
         }
-        "anthropic" => json!([
-            { "name": "claude-opus-4-7" },
-            { "name": "claude-sonnet-4-6" },
-            { "name": "claude-haiku-4-5-20251001" }
-        ]),
-        "gemini" => json!([
-            { "name": "gemini-2.0-flash" },
-            { "name": "gemini-1.5-pro" },
-            { "name": "gemini-1.5-flash" },
-            { "name": "gemini-1.0-pro" }
-        ]),
+        "anthropic" => {
+            let resp = client
+                .get("https://api.anthropic.com/v1/models")
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", "2023-06-01")
+                .send()
+                .await;
+            if let Ok(r) = resp {
+                if let Ok(body) = r.json::<serde_json::Value>().await {
+                    if let Some(data) = body.get("data").and_then(|d| d.as_array()) {
+                        let models: Vec<Value> = data
+                            .iter()
+                            .filter_map(|m| m.get("id").and_then(|id| id.as_str()))
+                            .filter(|id| id.starts_with("claude-"))
+                            .map(|id| json!({ "name": id }))
+                            .collect();
+                        return json!(models);
+                    }
+                }
+            }
+            json!([])
+        }
+        "gemini" => {
+            let resp = client
+                .get(format!("https://generativelanguage.googleapis.com/v1/models?key={}", api_key))
+                .send()
+                .await;
+            if let Ok(r) = resp {
+                if let Ok(body) = r.json::<serde_json::Value>().await {
+                    if let Some(models) = body.get("models").and_then(|d| d.as_array()) {
+                        let filtered: Vec<Value> = models
+                            .iter()
+                            .filter_map(|m| m.get("name").and_then(|id| id.as_str()))
+                            .filter(|id| id.starts_with("models/"))
+                            .map(|id| json!({ "name": id.strip_prefix("models/").unwrap_or(id) }))
+                            .collect();
+                        return json!(filtered);
+                    }
+                }
+            }
+            json!([])
+        }
         _ => json!([]),
     }
 }
