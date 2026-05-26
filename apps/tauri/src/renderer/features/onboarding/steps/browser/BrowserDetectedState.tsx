@@ -122,7 +122,7 @@ export function BrowserDetectedState({ browserPath, onBack, onNext }: BrowserDet
           <ArrowLeft size={14} /> {t('onboarding.back')}
         </Button>
         <Button onClick={onNext} className="px-8">
-          {t('onboarding.continue')}
+          {t('onboarding.browser.next')}
           <ArrowRight size={15} className="ml-2" />
         </Button>
       </div>
