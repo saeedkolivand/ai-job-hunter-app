@@ -62,6 +62,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       setProviderKey: noop,
       removeProviderKey: noop,
       hasProviderKey: async () => ({ has: false }),
+      testProviderKey: async () => ({ success: true }),
       listProviderModels: emptyList,
     },
 

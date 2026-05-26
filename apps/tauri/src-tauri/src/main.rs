@@ -235,6 +235,7 @@ fn main() {
             commands::ai::ai_set_provider_key,
             commands::ai::ai_remove_provider_key,
             commands::ai::ai_has_provider_key,
+            commands::ai::ai_test_provider_key,
             commands::ai::ai_list_provider_models,
             // documents
             commands::documents::documents_list,

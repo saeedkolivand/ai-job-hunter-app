@@ -15,7 +15,7 @@ import { motion } from 'motion/react';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { Button, GlassCard, Input, useNotification } from '@ajh/ui';
+import { Button, Dropdown, GlassCard, Input, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
@@ -30,13 +30,12 @@ import {
   useSetProviderKey,
   useSystemHealth,
   useSystemResources,
+  useTestProviderKey,
 } from '@/services';
 import { keys } from '@/services/query-client';
 import type { AiProvider } from '@/store/preferences-schema';
 import { useAIModel, useAiProviderConfig, usePreferencesStore } from '@/store/preferences-store';
 import type { Model } from '@/types';
-
-import { CustomDropdown } from './CustomDropdown';
 
 // ─── Provider metadata ────────────────────────────────────────────────────────
 
@@ -143,12 +142,14 @@ export function AISettingsTab() {
 
   const setProviderKey = useSetProviderKey();
   const removeProviderKey = useRemoveProviderKey();
+  const testProviderKey = useTestProviderKey();
 
   // Which provider row is expanded for editing
   const [expanded, setExpanded] = useState<AiProvider | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [savingKey, setSavingKey] = useState<AiProvider | null>(null);
+  const [testingKey, setTestingKey] = useState<AiProvider | null>(null);
   const [baseUrlInput, setBaseUrlInput] = useState(
     providerConfig?.providers?.['openai-compatible']?.baseUrl ?? ''
   );
@@ -203,6 +204,23 @@ export function AISettingsTab() {
       notify(err instanceof Error ? err.message : 'Failed to save key.', 'error');
     } finally {
       setSavingKey(null);
+    }
+  };
+
+  const handleTestKey = async (provider: AiProvider) => {
+    const meta = PROVIDERS[provider];
+    setTestingKey(provider);
+    try {
+      const result = await testProviderKey.mutateAsync({ provider });
+      if (result.success) {
+        notify(`${meta.label} API key is valid!`, 'success');
+      } else {
+        notify(`API key test failed: ${result.error ?? 'Unknown error'}`, 'error');
+      }
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to test key.', 'error');
+    } finally {
+      setTestingKey(null);
     }
   };
 
@@ -323,9 +341,24 @@ export function AISettingsTab() {
                       </span>
                     )
                   ) : connected ? (
-                    <span className="flex items-center gap-1 text-[10px] text-emerald-400/80">
-                      <Key size={10} /> Connected
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="flex items-center gap-1 text-[10px] text-emerald-400/80">
+                        <Key size={10} /> Connected
+                      </span>
+                      <Button
+                        variant="glass"
+                        size="sm"
+                        disabled={testingKey === p}
+                        onClick={() => void handleTestKey(p)}
+                        className="h-auto px-1.5 py-0.5 text-[10px]"
+                      >
+                        {testingKey === p ? (
+                          <Loader2 size={9} className="animate-spin" />
+                        ) : (
+                          <RefreshCw size={9} />
+                        )}
+                      </Button>
+                    </div>
                   ) : (
                     <span className="text-[10px] text-foreground/30">Not connected</span>
                   )}
@@ -396,10 +429,11 @@ export function AISettingsTab() {
                               ))}
                           </div>
                         ) : (
-                          <CustomDropdown
-                            models={ollamaModels}
-                            selectedModel={providerModel || aiModel?.defaultModel || ''}
-                            onSelectModel={(m) => handleSelectModel('ollama', m)}
+                          <Dropdown
+                            options={ollamaModels.map((m) => ({ value: m.name, label: m.name }))}
+                            value={providerModel || aiModel?.defaultModel || ''}
+                            onChange={(m) => handleSelectModel('ollama', m)}
+                            placeholder="Select a model…"
                           />
                         )}
                         {connected && (
@@ -543,14 +577,18 @@ export function AISettingsTab() {
                             <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
                               {t('settings.aiModel.title')}
                             </div>
-                            <CustomDropdown
-                              models={
+                            <Dropdown
+                              options={
                                 expandedModels.length > 0
-                                  ? expandedModels
-                                  : (PROVIDERS[p]?.models ?? []).map((n) => ({ name: n }))
+                                  ? expandedModels.map((m) => ({ value: m.name, label: m.name }))
+                                  : (PROVIDERS[p]?.models ?? []).map((n) => ({
+                                      value: n,
+                                      label: n,
+                                    }))
                               }
-                              selectedModel={providerModel}
-                              onSelectModel={(m) => handleSelectModel(p, m)}
+                              value={providerModel}
+                              onChange={(m) => handleSelectModel(p, m)}
+                              placeholder="Select a model…"
                             />
                           </div>
                         )}

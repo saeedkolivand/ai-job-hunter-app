@@ -17,6 +17,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { Button, TextArea } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
+import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { GenerationConfig } from '@/features/ai-generate/components/GenerationConfig';
 import { GenerationMetadata } from '@/features/ai-generate/components/GenerationMetadata';
 import { OutputPanelDone } from '@/features/ai-generate/components/OutputPanelDone';
@@ -24,7 +25,6 @@ import { OutputPanelExtracting } from '@/features/ai-generate/components/OutputP
 import { OutputPanelGenerating } from '@/features/ai-generate/components/OutputPanelGenerating';
 import { OutputPanelIdle } from '@/features/ai-generate/components/OutputPanelIdle';
 import { ResumeInputCard } from '@/features/ai-workspace/components/ResumeInputCard';
-import { CustomDropdown } from '@/features/settings/components/CustomDropdown';
 import { cn } from '@/lib/cn';
 import {
   buildFilename,
@@ -40,11 +40,8 @@ import {
 } from '@/lib/generate-ai';
 import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
-import { useAIModels, useExtractText, useHasProviderKey, useListProviderModels } from '@/services';
-import { keys } from '@/services/query-client';
+import { useExtractText } from '@/services';
 import { useSaveAiGeneration } from '@/services/use-ai-generations';
-import { useAIModel, useAiProviderConfig, usePreferencesStore } from '@/store/preferences-store';
-import type { Model } from '@/types';
 
 export const Route = createFileRoute('/ai-generate')({ component: AIGeneratePage });
 
@@ -81,27 +78,9 @@ function AIGeneratePage() {
   // Config
   const [mode, setMode] = useState<GenerationMode>('ats');
   const [target, setTarget] = useState<GenTarget>('both');
-  const { data: modelList = [], isFetching: loadingOllama } = useAIModels();
-  const ollamaModels = modelList as Model[];
   const qc = useQueryClient();
-  const aiModel = useAIModel();
-  const setAIModel = usePreferencesStore((s) => s.setAIModel);
-  const setProviderSettings = usePreferencesStore((s) => s.setProviderSettings);
-  const providerConfig = useAiProviderConfig();
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
-  const isCloudProvider = activeProvider !== 'ollama';
-  const { data: cloudModelsRaw = [], isFetching: loadingCloud } = useListProviderModels(
-    activeProvider,
-    isCloudProvider
-  );
-  const cloudModels = cloudModelsRaw as Array<{ name: string }>;
-  const providerKeyQuery = useHasProviderKey(activeProvider);
-  const providerConnected = isCloudProvider ? (providerKeyQuery.data?.has ?? false) : true;
-  const activeProviderModel = providerConfig?.providers?.[activeProvider]?.model ?? '';
-  // Unified model list, selected value and loading state for the dropdown
-  const models = isCloudProvider ? cloudModels : ollamaModels;
-  const loadingModels = isCloudProvider ? loadingCloud : loadingOllama;
-  const selectedModel = isCloudProvider ? activeProviderModel : (aiModel?.defaultModel ?? '');
+  const selectedModel = useSelectedModel();
+  const { canUse: canUseAI, reason: aiReason } = useCanUseAI();
   const extractTextMutation = useExtractText();
 
   // Stage
@@ -159,10 +138,7 @@ function AIGeneratePage() {
   };
 
   const canProceed = resume.trim().length > 50 && jobAd.trim().length > 50;
-  const hasActiveModel = isCloudProvider
-    ? providerConnected && !!activeProviderModel
-    : !!aiModel?.defaultModel;
-  const canGenerate = canProceed && hasActiveModel;
+  const canGenerate = canProceed && canUseAI;
 
   const startStageRotation = () => {
     stageIdxRef.current = 0;
@@ -187,7 +163,7 @@ function AIGeneratePage() {
     setStage('extracting');
     setStageLabel(t('aiGenerate.analyzingDocuments'));
     try {
-      const detected = await extractMetadata(resume, jobAd, aiModel?.defaultModel ?? '');
+      const detected = await extractMetadata(resume, jobAd, selectedModel);
       setMeta(detected);
       setStage('configuring');
     } catch (err) {
@@ -198,7 +174,7 @@ function AIGeneratePage() {
 
   // Step 2 — generate
   const handleGenerate = async () => {
-    if (!meta || !aiModel?.defaultModel) return;
+    if (!meta || !selectedModel) return;
     setError(null);
     setResumeOut('');
     setCoverOut('');
@@ -224,7 +200,7 @@ function AIGeneratePage() {
           jobAd,
           meta,
           mode,
-          aiModel.defaultModel,
+          selectedModel,
           (tok) => {
             finalResume += tok;
             setResumeOut((p) => p + tok);
@@ -245,7 +221,7 @@ function AIGeneratePage() {
           jobAd,
           meta,
           mode,
-          aiModel.defaultModel,
+          selectedModel,
           (tok) => {
             finalCover += tok;
             setCoverOut((p) => p + tok);
@@ -378,40 +354,8 @@ function AIGeneratePage() {
           </div>
 
           {/* Model selector */}
-          <div className="px-6 pb-4 space-y-1.5">
-            {isCloudProvider && (
-              <div className="flex items-center gap-1.5 text-[10px]">
-                <span className={providerConnected ? 'text-emerald-400/80' : 'text-amber-400/60'}>
-                  {providerConnected ? '● ' : '○ '}
-                  {activeProvider.charAt(0).toUpperCase() + activeProvider.slice(1)}
-                </span>
-                {!providerConnected && (
-                  <span className="text-foreground/35">— add API key in Settings</span>
-                )}
-              </div>
-            )}
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={() => void qc.invalidateQueries({ queryKey: keys.ai.models })}
-                disabled={loadingModels}
-                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.04] text-foreground/40 hover:text-foreground/70 transition-colors disabled:opacity-40 border-transparent p-0"
-              >
-                <RefreshCw size={11} className={loadingModels ? 'animate-spin' : ''} />
-              </Button>
-              <div className="flex-1">
-                <CustomDropdown
-                  models={models}
-                  selectedModel={selectedModel}
-                  onSelectModel={(n) => {
-                    if (isCloudProvider) {
-                      setProviderSettings(activeProvider, { model: n });
-                    } else {
-                      setAIModel({ defaultModel: n, temperature: 0.25, maxTokens: 3000 });
-                    }
-                  }}
-                />
-              </div>
-            </div>
+          <div className="px-6 pb-4">
+            <ModelSelector />
           </div>
 
           <div className="px-6 space-y-3 pb-4">
@@ -476,8 +420,8 @@ function AIGeneratePage() {
                 className="w-full justify-center transition-all duration-150 ease-out"
               >
                 <ArrowRight size={14} />
-                {!hasActiveModel
-                  ? isCloudProvider && !providerConnected
+                {!canUseAI
+                  ? aiReason === 'addApiKey'
                     ? t('aiGenerate.addApiKey')
                     : t('aiGenerate.selectModel')
                   : !canProceed

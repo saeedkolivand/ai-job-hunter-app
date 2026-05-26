@@ -19,6 +19,8 @@ export const ai = {
     invoke('ai_remove_provider_key', { provider }),
   hasProviderKey: ({ provider }: { provider: string }) =>
     invoke('ai_has_provider_key', { provider }),
+  testProviderKey: ({ provider }: { provider: string }) =>
+    invoke('ai_test_provider_key', { provider }),
   listProviderModels: ({ provider }: { provider: string }) =>
     invoke('ai_list_provider_models', { provider }),
 };
