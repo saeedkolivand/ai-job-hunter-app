@@ -608,6 +608,7 @@
     "searchPlaceholder": "Nach Titel, Unternehmen, Ort suchen…",
     "empty": "Noch keine Anzeigen. Starten Sie einen Scrape, um dieses Board zu füllen.",
     "open": "Öffnen",
+    "copyLink": "Link kopieren",
     "apply": "Bewerben",
     "applyNotSupported": "Bewerbung für dieses Board nicht unterstützt",
     "scrapeJobs": "Jobs scrapen",
