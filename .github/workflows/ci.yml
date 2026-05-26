@@ -62,7 +62,7 @@ jobs:
         run: echo "value=${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}" >> $GITHUB_OUTPUT
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: .turbo
           key: ${{ steps.cache-key.outputs.value }}
@@ -82,7 +82,7 @@ jobs:
           echo "::endgroup::"
 
       - name: 📦 Cache node_modules
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v4
         with:
           path: |
             node_modules
@@ -114,7 +114,7 @@ jobs:
           cache: pnpm
 
       - name: 💾 Restore node_modules Cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v4
         with:
           path: |
             node_modules
@@ -123,7 +123,7 @@ jobs:
           key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -201,7 +201,7 @@ jobs:
           cache: pnpm
 
       - name: 💾 Restore node_modules Cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v4
         with:
           path: |
             node_modules
@@ -210,7 +210,7 @@ jobs:
           key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -271,7 +271,7 @@ jobs:
           cache: pnpm
 
       - name: 💾 Restore node_modules Cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v4
         with:
           path: |
             node_modules
@@ -280,7 +280,7 @@ jobs:
           key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -395,7 +395,7 @@ jobs:
           cache: pnpm
 
       - name: 💾 Restore node_modules Cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v4
         with:
           path: |
             node_modules
@@ -404,7 +404,7 @@ jobs:
           key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
