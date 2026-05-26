@@ -1,244 +1,335 @@
-# Development Guide — AI Job Hunter
+# Development Setup — AI Job Hunter
+
+This guide gets you from zero to a running dev environment.
 
 ---
 
 ## Prerequisites
 
-| Tool    | Version   | Install                                                   |
-| ------- | --------- | --------------------------------------------------------- |
-| Node.js | ≥ 20.11.0 | [nodejs.org](https://nodejs.org)                          |
-| pnpm    | ≥ 11      | `npm install -g pnpm`                                     |
-| Rust    | stable    | [rustup.rs](https://rustup.rs)                            |
-| Ollama  | Latest    | [ollama.ai](https://ollama.ai) — required for AI features |
-| Git     | Any       | With commit hook support                                  |
+| Tool          | Version       | Install                            |
+| ------------- | ------------- | ---------------------------------- |
+| Node.js       | 20.11.0+      | [nodejs.org](https://nodejs.org)   |
+| pnpm          | 11+           | `npm install -g pnpm`              |
+| Rust (stable) | latest stable | [rustup.rs](https://rustup.rs)     |
+| Ollama        | latest        | [ollama.com](https://ollama.com)   |
+| Git           | any           | [git-scm.com](https://git-scm.com) |
+
+### Windows-specific
+
+Install the Visual C++ Build Tools (required for Rust compilation):
+
+```powershell
+winget install Microsoft.VisualStudio.2022.BuildTools
+```
+
+Or install via the [VS Build Tools installer](https://visualstudio.microsoft.com/visual-cpp-build-tools/).
+
+Also install WebView2 (usually pre-installed on Windows 11):
+
+```powershell
+winget install Microsoft.EdgeWebView2Runtime
+```
 
 ---
 
-## First-Time Setup
+## Clone and Install
 
 ```bash
-# 1. Clone
 git clone https://github.com/saeedkolivand/ai-job-hunter-assistant-app.git
 cd ai-job-hunter-assistant-app
 
-# 2. Install dependencies (also installs git hooks via husky)
+# Install all workspace dependencies
 pnpm install
-
-# 3. Pull an Ollama model
-ollama pull llama3.2
 ```
+
+This installs dependencies for all packages and apps via pnpm workspaces.
 
 ---
 
-## Daily Commands
+## Start Ollama
 
-### Development
+Ollama must be running before you start the app (for AI features):
 
 ```bash
-# Start the Tauri app in dev mode (hot reload on renderer changes)
+# Pull a model (first time only — choose one)
+ollama pull mistral          # fast, good for most tasks
+ollama pull llama3.2         # better quality
+ollama pull neural-chat      # optimized for conversation
+
+# Verify it's running
+ollama list
+curl http://127.0.0.1:11434/api/tags
+```
+
+On Windows, Ollama runs as a background service after installation. On macOS/Linux, run `ollama serve` in a separate terminal.
+
+---
+
+## Run the App
+
+```bash
 pnpm dev
-
-# Start only the renderer (Vite dev server, no Tauri shell)
-pnpm --filter @ajh/tauri dev:renderer
 ```
 
-### Build
+This command (via Turbo) will:
+
+1. Build all packages in dependency order
+2. Start Vite dev server for the renderer (with HMR)
+3. Launch the Tauri desktop window
+
+The first build takes ~2 minutes (Rust compilation). Subsequent starts are fast (~5–10s).
+
+### Frontend-only mode
+
+If you're working only on the React UI:
 
 ```bash
-# Build all packages then the Tauri app
-pnpm build
-
-# Build only the packages (Tauri must already have packages built)
-pnpm build:packages
+pnpm dev:frontend
 ```
 
-### Type checking
+This starts the Vite dev server without Tauri. The app runs in your browser at `http://localhost:1420`. IPC calls use the mock client (`createMockClient()`), so all features work with simulated data.
+
+---
+
+## Project Scripts
 
 ```bash
-# Type-check the entire monorepo
-pnpm typecheck
+# Development
+pnpm dev              # Full Tauri app (default)
+pnpm dev:frontend     # Browser-only (mock IPC)
 
-# Type-check one package
-pnpm --filter @ajh/tauri typecheck
-pnpm --filter @ajh/shared typecheck
-```
+# Building
+pnpm build            # Build all packages (Turbo)
+pnpm build:packages   # Build packages only (skip Tauri binary)
 
-### Linting
+# Code quality
+pnpm typecheck        # tsc --noEmit across all packages
+pnpm lint             # ESLint across monorepo
+pnpm lint:fix         # ESLint auto-fix (runs on commit via husky)
+pnpm lint:strict      # --max-warnings 0 (CI mode)
+pnpm format           # Prettier format all files
 
-```bash
-# Lint all packages
-pnpm lint
+# Testing
+pnpm test             # Run Vitest in all packages
+pnpm test:watch       # Watch mode
 
-# Lint with auto-fix
-pnpm lint --fix
-```
-
-### Tests
-
-```bash
-# Run all package tests
-pnpm -r test
-
-# Run tests for one package
-pnpm --filter @ajh/data test
-
-# Watch mode
-pnpm --filter @ajh/data test -- --watch
-```
-
-### Storybook (UI package)
-
-```bash
-pnpm --filter @ajh/ui storybook
+# Cleanup
+pnpm clean            # Remove dist/, .turbo/, node_modules/
 ```
 
 ---
 
-## Monorepo Scripts
+## Workspace Structure
 
-All scripts are defined at the root `package.json` and delegate to packages via `pnpm -r` (recursive) or `--filter`.
+```
+apps/
+  tauri/
+    src-tauri/          ← Rust code (Cargo.toml, commands, DB, scrapers)
+    src/
+      tauri-client.ts   ← Tauri invoke/listen wiring
+      renderer/         ← React app (routes, features, services, stores)
+  scraper-runtime/      ← Node.js HTTP sidecar
 
-| Script           | What it does                      |
-| ---------------- | --------------------------------- |
-| `pnpm dev`       | Start Tauri app + Vite dev server |
-| `pnpm build`     | Build all packages then Tauri     |
-| `pnpm typecheck` | Type-check all packages           |
-| `pnpm lint`      | ESLint across all packages        |
-| `pnpm -r test`   | Run Vitest in all packages        |
+packages/
+  shared/               ← IPC contracts + Zod schemas + shared types
+  ui/                   ← @ajh/ui component library
+  core/                 ← EventBus, JobQueue, Scheduler
+  ai/                   ← Ollama client + AI runtime
+  data/                 ← SQLite + LanceDB + scrapers + matchers
+  prompts/              ← AI prompt templates
+  workers/              ← Web Worker threads (OCR, embed, chunk)
+```
 
 ---
 
-## Package Builds
+## Working on Packages
 
-Packages must be built before the Tauri app can import them. The root `pnpm build` handles ordering automatically. If you change a package during development, rebuild it:
+### Modifying the UI library (`packages/ui`)
 
 ```bash
-pnpm --filter @ajh/shared build   # most common — after changing IPC contracts
-pnpm --filter @ajh/prompts build  # after changing prompt templates
-pnpm --filter @ajh/ui build       # after changing design tokens
+cd packages/ui
+pnpm build        # rebuild the package
+# or start watcher:
+pnpm dev          # watch mode (if configured)
 ```
 
-In dev mode (`pnpm dev`), Vite watches `packages/` so most changes are picked up automatically.
+The renderer imports `@ajh/ui` via the workspace symlink. After rebuilding, Vite HMR picks up changes automatically.
 
----
+### Modifying IPC contracts (`packages/shared`)
 
-## Environment & Configuration
+1. Edit `packages/shared/src/ipc/contracts/<namespace>.ts`
+2. Run `pnpm typecheck` to verify no breakage
+3. Update the Rust command handler in `apps/tauri/src-tauri/src/commands/`
+4. Update `apps/tauri/src/tauri-client.ts`
+5. Update the service hook in `apps/tauri/src/renderer/services/`
 
-The app is fully local — no `.env` file is required for basic development.
+### Modifying Rust code (`apps/tauri/src-tauri`)
 
-| Setting                                  | Location                                           |
-| ---------------------------------------- | -------------------------------------------------- |
-| User preferences (language, model, etc.) | `localStorage` key `ai-job-hunter-preferences`     |
-| Ollama endpoint                          | Hardcoded to `http://localhost:11434` in `@ajh/ai` |
-| App data (DB, vector store)              | Tauri `appData` directory                          |
-| Encrypted credentials                    | OS keychain via keyring crate                      |
-
-**App data paths:**
-
-| OS      | Path                                                        |
-| ------- | ----------------------------------------------------------- |
-| Windows | `%APPDATA%\ai-job-hunter-assistant-app`                     |
-| macOS   | `~/Library/Application Support/ai-job-hunter-assistant-app` |
-| Linux   | `~/.config/ai-job-hunter-assistant-app`                     |
-
----
-
-## Git Hooks (Husky)
-
-Hooks run automatically on commit and push:
-
-| Hook         | Runs                                                |
-| ------------ | --------------------------------------------------- |
-| `pre-commit` | `lint-staged` — Prettier + ESLint on staged files   |
-| `commit-msg` | `commitlint` — enforces Conventional Commits format |
-| `pre-push`   | `pnpm lint` + `pnpm -r test`                        |
-
-### Commit format
-
-```
-type(scope): lowercase description
-
-feat(ui): add dark mode toggle
-fix(ipc): handle missing payload in listInteractions
-docs(arch): update architecture for onboarding wizard
-chore(deps): upgrade tauri to latest
-```
-
-Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `style`, `perf`, `ci`.  
-Subject must be **all lowercase** (commitlint enforces `subject-case`).
-
----
-
-## Debugging
-
-### Renderer (DevTools)
-
-In dev mode, DevTools open automatically. Press `Ctrl+Shift+I` / `Cmd+Option+I` to toggle.
-
-### Tauri / Rust side
-
-Logs go to stdout via pino — structured JSON by default, pretty-printed in dev.
-
-### IPC tracing
-
-The Tauri command layer logs every invocation at `debug` level. Set `LOG_LEVEL=debug` to see all IPC traffic.
-
-### Resetting app state
+Tauri compiles Rust automatically during `pnpm dev`. For manual compilation:
 
 ```bash
-# Clear localStorage (renderer state + preferences)
-# Open DevTools → Application → Local Storage → clear
-
-# Clear app data (DB, vector store, credentials)
-# Windows: rm -rf %APPDATA%\ai-job-hunter-assistant-app
-# macOS:   rm -rf ~/Library/Application\ Support/ai-job-hunter-assistant-app
+cd apps/tauri/src-tauri
+cargo build         # debug build
+cargo check         # fast type check only
+cargo clippy        # lint
 ```
-
-**Re-trigger the onboarding wizard:**  
-Settings → General → "Replay wizard"  
-Or in DevTools console: `localStorage.setItem('ai-job-hunter-preferences', JSON.stringify({state:{onboardingCompleted:false}}))`
 
 ---
 
-## Adding Dependencies
+## Adding a New Route
 
-Always add to the right package, not the root:
+TanStack Router uses file-based routing in `apps/tauri/src/renderer/routes/`:
+
+1. Create the route file: `routes/my-page.tsx`
+2. Export a default component
+
+```typescript
+// routes/my-page.tsx
+import { createFileRoute } from "@tanstack/react-router";
+import { PageShell } from "@/components/layout/PageShell";
+
+export const Route = createFileRoute("/my-page")({
+  component: MyPage,
+});
+
+function MyPage() {
+  return (
+    <PageShell title="My Page">
+      {/* content */}
+    </PageShell>
+  );
+}
+```
+
+3. Add navigation link in `components/layout/Sidebar.tsx`
+4. Add i18n key in `public/locales/en/translation.json`
+
+---
+
+## Adding a New Feature
+
+1. Create `renderer/features/my-feature/` directory
+2. Add `components/`, `hooks/` subdirectories as needed
+3. Export the top-level component from `index.tsx`
+4. Import from the route file only via the index export
+
+Never import internal feature components from outside the feature directory.
+
+---
+
+## Environment and Config
+
+No `.env` files are needed. The app uses:
+
+- **OS keychain** for secrets (API keys, board credentials)
+- **SQLite** (local file) for all application data
+- **Tauri conf** (`apps/tauri/src-tauri/tauri.conf.json`) for app metadata
+
+If you need to override the Ollama host (e.g. remote Ollama):
+
+```
+Settings → AI → Ollama Host → http://your-host:11434
+```
+
+---
+
+## Database
+
+The SQLite database is stored in the OS app data directory:
+
+- **Windows**: `%APPDATA%\ai-job-hunter\app.db`
+- **macOS**: `~/Library/Application Support/ai-job-hunter/app.db`
+- **Linux**: `~/.local/share/ai-job-hunter/app.db`
+
+LanceDB vector store is in the same directory under `vectors/`.
+
+To reset the database during development, delete `app.db` and `vectors/` and restart the app.
+
+---
+
+## Commit Hooks
+
+Husky runs on `git commit`:
+
+1. `lint-staged` — ESLint + Prettier on staged files
+2. `commitlint` — validates commit message format
+
+If a commit is rejected, check the terminal output for the specific lint error. Never use `--no-verify`.
+
+---
+
+## Common Issues
+
+### "cargo: command not found"
+
+Rust is not installed or not in PATH. Run:
 
 ```bash
-# Renderer-only dependency
-pnpm --filter @ajh/tauri add some-package
-
-# Shared across packages
-pnpm add -w some-package          # workspace root
-
-# Dev tool (linters, build tools)
-pnpm add -wD some-dev-tool
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env  # or restart terminal
 ```
 
-Never add Node.js-only packages to `packages/ui`, `packages/shared`, or `packages/prompts` — they run in browser/renderer context too.
+### "VCRUNTIME140.dll not found" (Windows)
+
+Install Visual C++ Redistributables:
+
+```powershell
+winget install Microsoft.VCRedist.2015+.x64
+```
+
+### "Ollama connection refused"
+
+Ollama is not running. Start it:
+
+```bash
+ollama serve
+# or on Windows: check system tray for Ollama icon
+```
+
+### "pnpm: command not found"
+
+```bash
+npm install -g pnpm
+```
+
+### Build fails with TypeScript errors
+
+```bash
+pnpm clean && pnpm install && pnpm build
+```
+
+### Tauri build fails (Windows)
+
+Ensure WebView2 is installed and run from a terminal with admin privileges if needed. Check `apps/tauri/src-tauri/` for any Rust-specific issues with `cargo check`.
 
 ---
 
-## CI
+## IDE Setup
 
-GitHub Actions runs on every push and PR:
+### VS Code (Recommended)
 
-| Job                | Command                                 | Runs on           |
-| ------------------ | --------------------------------------- | ----------------- |
-| Lint               | `pnpm lint:strict` (zero warnings)      | push + PR         |
-| Format             | `pnpm format:check`                     | push + PR         |
-| Typecheck          | `pnpm typecheck`                        | push + PR         |
-| Tests              | `pnpm test:coverage` + `pnpm -r test`   | push + PR         |
-| Build verification | `pnpm build` + dist output check        | push + PR         |
-| Storybook          | `pnpm --filter @ajh/ui build-storybook` | push to main only |
+Install extensions:
 
-The pre-push hook runs `pnpm lint` + `pnpm -r test` locally.
-TypeScript type-checking and full build verification run only in CI.
+- **rust-analyzer** — Rust language support
+- **Tailwind CSS IntelliSense** — class autocomplete
+- **ESLint** — inline lint feedback
+- **Prettier** — format on save
 
----
+Workspace settings (`.vscode/settings.json`):
 
-## Release
+```json
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "[rust]": {
+    "editor.defaultFormatter": "rust-lang.rust-analyzer"
+  },
+  "typescript.tsdk": "node_modules/typescript/lib"
+}
+```
 
-See `docs/RELEASE.md` for the full release pipeline.
+### JetBrains (WebStorm / RustRover)
 
-**Short version:** push a `feat:` or `fix:` commit to `main` and the release happens automatically — semantic-release creates the GitHub Release and the build workflow attaches Windows, Linux, and macOS Tauri installers.
+- Enable ESLint in `Preferences → Languages → JavaScript → Code Quality Tools → ESLint`
+- Enable Prettier as formatter on save
+- Use RustRover or IntelliJ + Rust plugin for `src-tauri/`
