@@ -1,274 +1,250 @@
-# AI Job Hunter — Desktop
+# AI Job Hunter
 
-A local-first, AI-native desktop application for intelligent job hunting, semantic resume matching, and multilingual document understanding.
+> Your local-first, AI-native desktop assistant for intelligent job searching, resume generation, and automated applications — run it fully offline with Ollama, or plug in your own OpenAI, Anthropic, or Gemini key.
 
-> **Tauri desktop application. No backend. No server. Everything runs locally.**
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue)](https://www.typescriptlang.org/)
+[![Tauri](https://img.shields.io/badge/Tauri-2.x-purple)](https://tauri.app)
 
-## Features
+---
 
-- **AI-Powered Job Generation**: Generate tailored cover letters, emails, and responses using local LLMs
-- **Semantic Resume Matching**: ATS scoring combined with semantic vector similarity for better job matching
-- **Multi-Board Scraping**: Scrape job postings from multiple job boards automatically
-- **Document Understanding**: Extract and analyze resumes, job descriptions, and cover letters (PDF, DOCX, TXT, MD)
-- **Multilingual Support**: Process and generate content in multiple languages
-- **Local AI Inference**: All AI processing runs locally via Ollama - no API keys, no cloud dependency
-- **Vector Search**: Semantic search through job postings and documents using LanceDB
-- **Credential Management**: Securely store job board credentials (encrypted OS keychain)
-- **Job Application Automation**: Apply to jobs automatically with configurable workflows
+## What It Does
 
-## Quick Start
+AI Job Hunter is a desktop application built with Tauri that brings the full power of AI-driven job hunting to your local machine. It scrapes 18+ job boards, semantically matches postings to your resume, generates tailored cover letters and resumes using your AI provider of choice, and can autonomously apply to jobs on your behalf — all while keeping your data and credentials stored locally on your device.
 
-Get the app running in 3 simple steps:
+### AI Provider Flexibility
 
-### 1. Install Prerequisites
+Choose how you want to run the AI — you can switch providers at any time in Settings → AI:
 
-- **Node.js** 20.11.0+ [Download](https://nodejs.org/)
-- **pnpm** 9.0.0+ (if not installed, run: `npm install -g pnpm`)
-- **Rust** stable [Install via rustup](https://rustup.rs)
-- **Ollama** [Download](https://ollama.com) - Required for AI features
+| Provider              | Models                                           | Notes                                        |
+| --------------------- | ------------------------------------------------ | -------------------------------------------- |
+| **Ollama** (local)    | mistral, llama3.2, neural-chat, any Ollama model | No API key needed; fully offline             |
+| **OpenAI**            | GPT-4o, GPT-4 Turbo, GPT-3.5 Turbo               | Requires API key                             |
+| **Anthropic**         | Claude 3.5 Sonnet, Claude 3 Opus                 | Requires API key; supports extended thinking |
+| **Google Gemini**     | Gemini 1.5 Pro, Gemini 1.5 Flash                 | Requires API key                             |
+| **OpenAI-compatible** | Any (LM Studio, remote Ollama, etc.)             | Custom base URL                              |
 
-### 2. Install Dependencies
+API keys are stored encrypted in the OS keychain — never in plain text or config files.
 
-```bash
-# Clone the repository
-git clone https://github.com/saeedkolivand/ai-job-hunter-assistant-app.git
-cd ai-job-hunter-assistant-app
+### Why It Exists
 
-# Install dependencies
-pnpm install
-```
+Modern job searching is repetitive, time-consuming, and emotionally draining. AI Job Hunter automates the mechanical parts — scraping, matching, writing — so you can focus on the interviews that matter. All application data (jobs, resumes, interactions) stays in a local SQLite database on your machine; the only outbound calls are to the AI provider you explicitly configure.
 
-### 3. Start Ollama and Run the App
+---
 
-```bash
-# In one terminal, start Ollama
-ollama serve
+## Key Features
 
-# In another terminal, pull a model (first time only)
-ollama pull llama3.2
+- **Multi-board scraping** — LinkedIn, Indeed, StepStone, Xing, Greenhouse, Lever, Workday, and 11 more boards in one pass
+- **AI resume & cover letter generation** — Streaming generation with 9 professional templates, DOCX/PDF export, ATS-safe formatting
+- **Semantic job matching** — Hybrid vector + keyword search powered by LanceDB; scores each posting against your resume
+- **Resume analysis** — ATS scoring, skill gap detection, language mismatch warnings, and improvement recommendations
+- **Autopilot** — Define a workflow (board, schedule, resume, message) and let the app apply to jobs automatically
+- **Document processing** — Import PDF, DOCX, TXT, images (OCR via Tesseract); extract and chunk for embedding
+- **Multi-provider AI** — Ollama (local), OpenAI, Anthropic (extended thinking), Gemini, LM Studio
+- **Multilingual** — UI and generation in 11 languages: en, de, fr, es, it, tr, pt, ru, zh, ja, ko
+- **Privacy-first** — Credentials in OS keychain; all data in local SQLite/LanceDB; zero telemetry
 
-# Run the app
-pnpm dev
-```
+---
 
 ## Tech Stack
 
-### Core
+| Layer               | Technology                              |
+| ------------------- | --------------------------------------- |
+| Desktop shell       | Tauri 2.x (Rust)                        |
+| UI framework        | React 19, TypeScript 6                  |
+| Routing             | TanStack Router 1.x (file-based)        |
+| Server state        | TanStack Query 5.x                      |
+| Client state        | Zustand 5                               |
+| Styling             | TailwindCSS v4 + CSS custom properties  |
+| Animations          | motion/react (Framer Motion)            |
+| Build system        | Vite 8 + Turbo (monorepo)               |
+| Package manager     | pnpm 11 (workspaces)                    |
+| Local AI            | Ollama 0.6                              |
+| Relational DB       | SQLite via better-sqlite3 + Drizzle ORM |
+| Vector DB           | LanceDB                                 |
+| Scraping            | Playwright + Cheerio                    |
+| File processing     | pdfjs-dist, mammoth, Tesseract.js       |
+| Document generation | docx 9, jsPDF 4                         |
+| Validation          | Zod 4                                   |
+| Logging             | Pino 10                                 |
 
-- **Tauri** 2.x - Desktop application framework (Rust)
-- **React** 19.2.6 - UI framework
-- **TypeScript** 6.0.3 - Type safety
-- **Vite** 8.0.13 - Fast build tool
-- **pnpm** 11.1.2 - Package manager (workspace)
+---
 
-### UI
+## Installation
 
-- **TailwindCSS** v4 - Styling
-- **shadcn/ui** - Component library
-- **motion/react** - Animations
-- **Lucide** - Icons
-- **TanStack Router** - File-based routing
-- **TanStack Query** - Server state management
-- **Zustand** - Client state management
-- **Zod** - Schema validation
+### Prerequisites
 
-### AI & Data
+| Requirement    | Version | Notes                                           |
+| -------------- | ------- | ----------------------------------------------- |
+| Node.js        | 20+     | LTS recommended                                 |
+| pnpm           | 11+     | `npm install -g pnpm`                           |
+| Rust toolchain | stable  | `rustup install stable`                         |
+| Ollama         | latest  | [ollama.com](https://ollama.com) — for local AI |
 
-- **Ollama** - Local LLM inference
-- **LanceDB** - Vector database
-- **SQLite** (better-sqlite3) - Relational database
-- **Drizzle ORM** - Database ORM
+### Clone and install
 
-### File Processing
-
-- **pdfjs-dist** - PDF parsing
-- **mammoth** - DOCX parsing
-- **tesseract.js** - OCR
-
-### Scraping
-
-- **Playwright** - Browser automation
-- **cheerio** - HTML parsing
-- **undici** - HTTP client
-
-### Infrastructure
-
-- **Pino** - Logging
-- **Vitest** - Unit testing
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Renderer Process                         │
-│  React UI + TanStack Router + Zustand + TanStack Query          │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │
-                    Tauri Invoke / Listen
-                           │
-┌──────────────────────────▼──────────────────────────────────────┐
-│                      Tauri Core (Rust)                           │
-│  Lifecycle • Windows • Menus • IPC Commands • Tray • Updater    │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │
-┌──────────────────────────▼──────────────────────────────────────┐
-│                    Scraper Runtime Sidecar                        │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
-│  │  Event Bus   │  │ Job Queue    │  │  Task Scheduler      │  │
-│  └──────────────┘  └──────────────┘  └──────────────────────┘  │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│              Runtime Manager                                  │  │
-│  └──────────────────────┬───────────────────────────────────┘  │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │
-              ┌────────────┴────────────┐
-              ▼                         ▼
-        ┌────────────┐          ┌────────────┐
-        │ AI Runtime │          │Data Runtime│
-        │  Ollama    │          │  SQLite    │
-        │  Embeddings│          │  LanceDB   │
-        │  Chat      │          │  Scraping  │
-        └────────────┘          │  Matching  │
-                                └────────────┘
+```bash
+git clone https://github.com/saeedkolivand/ai-job-hunter-assistant-app.git
+cd ai-job-hunter-assistant-app
+pnpm install
 ```
 
-**Design Philosophy**: The Tauri core is intentionally thin — it handles lifecycle, IPC routing, and orchestration only. All heavy work (AI, OCR, scraping, embeddings, indexing) goes through the sidecar's job system into specialized runtimes and worker pools.
+### Pull an AI model
 
-## Workspace Structure
+```bash
+ollama pull mistral
+# or for better quality:
+ollama pull llama3.2
+```
+
+### Start in development mode
+
+```bash
+pnpm dev
+```
+
+This launches the full Tauri desktop app with hot-module reloading on the React side.
+
+---
+
+## Usage Examples
+
+### Generate a cover letter
+
+```
+1. Open the app → AI Generate
+2. Paste your resume text, or upload a PDF/DOCX/TXT file
+3. Paste the job ad text, or upload a job description file
+4. Click Continue → app detects languages, role, company, top requirements
+5. Choose a template and style, then click Generate → watch streaming output
+6. Export as DOCX, PDF, or TXT
+```
+
+### Scrape job boards
+
+```
+1. Navigate to Jobs → Scrape
+2. Select boards (e.g. LinkedIn + Greenhouse)
+3. Enter search query, location, date filter
+4. Start scrape → results stream into the jobs table
+```
+
+### Semantic search
+
+```typescript
+// Via IPC service hook
+const { data } = useSearch({
+  query: 'senior TypeScript engineer remote',
+  collection: 'jobs',
+  topK: 20,
+  semanticWeight: 0.7,
+});
+```
+
+### Set up Autopilot
+
+```
+1. Navigate to Autopilot → New Workflow
+2. Step 1 – Target: board + salary + remote preference
+3. Step 2 – Schedule: daily at 09:00
+4. Step 3 – Action: attach resume, custom message
+5. Save & Enable
+```
+
+---
+
+## Configuration
+
+The app uses the OS keychain for secrets — no `.env` files needed. API keys and credentials are stored via Settings → AI and encrypted using Tauri's keychain plugin.
+
+| Setting          | Location            | Description                          |
+| ---------------- | ------------------- | ------------------------------------ |
+| AI provider      | Settings → AI       | Ollama / OpenAI / Anthropic / Gemini |
+| API keys         | Settings → AI       | Stored in OS keychain                |
+| Performance mode | Settings → General  | Low / Balanced / Performance         |
+| Language         | Settings → General  | UI and generation locale             |
+| Browser          | Settings → Scraping | Path to system browser               |
+
+---
+
+## Project Structure
 
 ```
 ai-job-hunter-assistant-app/
 ├── apps/
-│   ├── tauri/                # Tauri application
-│   │   ├── src-tauri/        # Rust core (commands, menu, tray, updater)
-│   │   └── src/
-│   │       ├── tauri-client.ts   # AppClient over Tauri invoke/listen
-│   │       └── renderer/         # React UI (routes, components, stores)
-│   └── scraper-runtime/      # Node.js HTTP sidecar
+│   ├── tauri/                    # Main desktop app
+│   │   ├── src-tauri/            # Rust core (commands, scraping, DB)
+│   │   └── src/renderer/         # React frontend
+│   │       ├── features/         # Feature-scoped components
+│   │       ├── routes/           # TanStack Router pages
+│   │       ├── services/         # React Query IPC hooks
+│   │       ├── lib/              # Utilities (motion, i18n, machine)
+│   │       ├── store/            # Zustand stores
+│   │       └── providers/        # React context providers
+│   └── scraper-runtime/          # Node.js HTTP sidecar
 ├── packages/
-│   ├── shared/              # Shared types, IPC contracts, Zod schemas
-│   ├── core/                # Event Bus, Job Queue, Scheduler, Runtime Manager
-│   ├── ai/                  # Ollama runtime (chat, embeddings, model lifecycle)
-│   ├── data/                # Data runtime (SQLite, LanceDB, scraping, matching)
-│   └── workers/             # Worker thread pool (OCR, embeddings, chunking)
-├── package.json             # Root package.json (workspace scripts)
-├── pnpm-workspace.yaml      # pnpm workspace configuration
-└── tsconfig.base.json       # Base TypeScript configuration
+│   ├── shared/                   # IPC contracts, Zod schemas, shared types
+│   ├── ui/                       # @ajh/ui — React component library
+│   ├── core/                     # EventBus, JobQueue, Logger, RuntimeManager
+│   ├── ai/                       # Ollama client + AI runtime
+│   ├── data/                     # DB, matching, file processing
+│   ├── prompts/                  # AI prompt templates
+│   └── workers/                  # Web Workers (OCR, embeddings, chunking)
+├── docs/                         # All project documentation
+├── turbo.json                    # Turbo build configuration
+├── pnpm-workspace.yaml           # pnpm workspaces
+└── package.json                  # Root scripts
 ```
 
-## Prerequisites
+---
 
-- **Node.js**: 20.11.0+ (required by engines)
-- **pnpm**: 9.0.0+ (required by engines)
-- **Rust**: stable (required for Tauri)
-- **Ollama**: Download from [ollama.com](https://ollama.com)
-  - Start Ollama: `ollama serve`
-  - Pull a model: `ollama pull llama3.2` or `ollama pull mistral`
-
-## Running the Application
-
-### Development Mode
+## Scripts
 
 ```bash
-pnpm dev
+pnpm dev              # Start Tauri dev app (full stack)
+pnpm dev:frontend     # Frontend-only Vite dev server
+pnpm build            # Build all packages (Turbo)
+pnpm build:packages   # Build packages only (excludes Tauri)
+pnpm package          # Package desktop installers
+pnpm typecheck        # TypeScript check across monorepo
+pnpm test             # Run Vitest suite
+pnpm lint             # ESLint across monorepo
+pnpm lint:fix         # ESLint auto-fix
+pnpm lint:strict      # Lint with --max-warnings 0 (CI mode)
+pnpm format           # Prettier format
+pnpm clean            # Clean build artifacts
 ```
 
-This launches the Tauri app with hot module replacement (HMR) for the renderer.
+---
 
-### Building for Production
+## Contributing
 
-```bash
-pnpm build          # Build all packages
-pnpm package       # Create platform-specific installers
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for branching strategy, commit conventions, code style, and PR guidelines.
 
-Installers are created in `apps/tauri/src-tauri/target/release/bundle/`:
+Quick rules:
 
-- **Windows**: NSIS installer / MSI
-- **macOS**: DMG and APP
-- **Linux**: AppImage and DEB
+- All changes go through PRs — never push directly to `main`
+- Use Conventional Commits (`feat:`, `fix:`, `chore:`, etc.)
+- Run `pnpm lint:fix && pnpm typecheck` before pushing
+- ESLint errors block commits — no `// eslint-disable` suppressions
 
-## Ollama Setup
+---
 
-### Windows (Native)
+## Documentation
 
-1. Install Ollama from [ollama.com](https://ollama.com)
-2. Ollama runs as a Windows service automatically
-3. Pull a model: `ollama pull llama3.2`
-4. The app auto-detects Ollama at `http://127.0.0.1:11434`
+| Document                                                   | Description                                        |
+| ---------------------------------------------------------- | -------------------------------------------------- |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)               | System design, data flow, Mermaid diagrams         |
+| [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)             | Tokens, components, motion, theming                |
+| [docs/PATTERNS.md](docs/PATTERNS.md)                       | IPC, state machines, AI streaming, search patterns |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)                 | Full local dev environment setup                   |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)                   | Building and releasing installers                  |
+| [docs/API.md](docs/API.md)                                 | All 21 IPC namespaces documented                   |
+| [docs/ARCHITECTURE_STATUS.md](docs/ARCHITECTURE_STATUS.md) | Implementation status tracker                      |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                         | Code style, branching, PR process                  |
 
-### Linux/Mac
-
-```bash
-# Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Start Ollama
-ollama serve
-
-# Pull a model
-ollama pull llama3.2
-
-# Run the app
-pnpm dev
-```
-
-## Development
-
-```bash
-pnpm dev          # Development mode with HMR
-pnpm build        # Build all packages
-pnpm typecheck    # TypeScript type checking across workspace
-pnpm lint         # Lint all packages
-pnpm test         # Run unit tests
-pnpm clean        # Clean build artifacts and node_modules
-```
-
-## Project Status
-
-**Implemented**:
-
-- ✅ Workspace structure and build system
-- ✅ Core infrastructure (Event Bus, Job Queue, Scheduler, Runtime Manager)
-- ✅ IPC layer with typed contracts
-- ✅ AI runtime with Ollama integration
-- ✅ Data runtime with SQLite and LanceDB
-- ✅ Basic UI structure with routing
-- ✅ Ollama model detection and host configuration
-- ✅ Tauri shell — menu, tray, file dialogs, clipboard, auto-updater
-
-**In Progress**:
-
-- 🚧 Scraping implementations for job boards
-- 🚧 Resume matching engine
-- 🚧 Document processing pipeline
-- 🚧 AI generation features
-- 🚧 Job application automation
-
-## Troubleshooting
-
-### "No models available" in AI Settings
-
-- Verify Ollama is running: `ollama list`
-- Check browser console (F12) for `[Ollama]` log messages
-- Ensure Ollama is listening on port 11434
-
-### Build Errors
-
-```bash
-# Clean everything and reinstall
-pnpm clean
-pnpm install
-pnpm build
-```
-
-### IPC Errors
-
-- Verify Tauri commands are registered in `apps/tauri/src-tauri/src/commands.rs`
-- Check that `apps/tauri/src/tauri-client.ts` wires the invoke call correctly
+---
 
 ## License
 
-UNLICENSED
-
-<!-- Workflow test commit -->
+MIT — see [LICENSE](LICENSE) for details.
