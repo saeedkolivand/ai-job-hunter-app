@@ -1,173 +1,426 @@
-# Patterns & Best Practices — AI Job Hunter
+# Patterns — AI Job Hunter
 
-All patterns below are ESLint-enforced and block commits on violation.
+This document describes the recurring architectural and implementation patterns used throughout the codebase. Understanding these patterns is essential for contributing consistently.
 
 ---
 
-## 1. Ports & Adapters — service hooks only
+## 1. IPC Pattern: Renderer → Rust
 
-Renderer calls `window.api.*` only through service hooks in `@/services`. Never call it directly in components or routes.
+Every renderer ↔ Rust interaction follows a strict layered pattern.
 
-```ts
-// ❌  import { useDocuments } from '@/services';  →  ✅
-const { data, isLoading } = useDocuments();
+### The Four Layers
+
+```
+React Component
+    ↓
+Service Hook (React Query)       apps/tauri/src/renderer/services/
+    ↓
+AppClient method                 apps/tauri/src/renderer/lib/app-client.ts
+    ↓
+IPC Contract                     packages/shared/src/ipc/contracts/
+    ↓
+Tauri Invoke / Listen            Tauri bridge
+    ↓
+Rust Command Handler             apps/tauri/src-tauri/src/commands/
+```
+
+### Adding a New IPC Capability
+
+Follow this checklist in order:
+
+**1. Define the contract** (`packages/shared/src/ipc/contracts/myfeature.ts`):
+
+```typescript
+export interface MyFeatureContract {
+  getData(id: string): Promise<MyData>;
+  onUpdate(handler: (data: MyData) => void): Unsubscribe;
+}
+```
+
+**2. Implement the Rust command** (`apps/tauri/src-tauri/src/commands/`):
+
+```rust
+#[tauri::command]
+pub async fn my_feature_get_data(id: String, state: State<'_, AppState>) -> Result<MyData, String> {
+    state.my_feature.get_data(&id).await.map_err(|e| e.to_string())
+}
+```
+
+**3. Wire the invoke call** (`apps/tauri/src/tauri-client.ts`):
+
+```typescript
+myFeature: {
+  getData: (id) => invoke("my_feature_get_data", { id }),
+  onUpdate: (handler) => listen("my_feature:update", (e) => handler(e.payload)),
+}
+```
+
+**4. Create the service hook** (`apps/tauri/src/renderer/services/use-my-feature.ts`):
+
+```typescript
+export function useMyData(id: string) {
+  return useQuery({
+    queryKey: queryKeys.myFeature.data(id),
+    queryFn: () => appClient.myFeature.getData(id),
+  });
+}
+```
+
+**5. Add query keys** (`services/query-client.ts`):
+
+```typescript
+myFeature: {
+  data: (id: string) => ["myFeature", "data", id] as const,
+}
 ```
 
 ---
 
-## 2. i18n — always import through the adapter
+## 2. React Query Service Hook Pattern
 
-```ts
-import { useTranslation } from '@/lib/i18n'; // ✅
-// Never: import { useTranslation } from 'react-i18next'
+All server state (anything from IPC) goes through React Query. Never `useState + useEffect` for remote data.
+
+### Query Hook
+
+```typescript
+// services/use-jobs.ts
+export function useJobs(filters?: JobFilters) {
+  const client = useAppClient();
+  return useQuery({
+    queryKey: queryKeys.jobs.list(filters),
+    queryFn: () => client.jobs.list(filters),
+    staleTime: 5 * 60 * 1000,
+  });
+}
 ```
 
-Language resolution: persisted preference → system locale → `'en'` fallback.
+### Mutation Hook
 
-For interpolation with options: `(t as (k: string, o: Record<string, unknown>) => string)('key', { value })`.
+```typescript
+export function useDeleteJob() {
+  const client = useAppClient();
+  const queryClient = useQueryClient();
 
----
-
-## 3. Motion — tokens, never inline objects
-
-```ts
-import { transition, variants } from '@/lib/motion';
-<motion.div transition={transition.normal} {...variants.fadeSlideUp}>
+  return useMutation({
+    mutationFn: (id: string) => client.jobs.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.jobs.lists() });
+    },
+  });
+}
 ```
 
-| Token                | Use                       |
-| -------------------- | ------------------------- |
-| `transition.fast`    | Hover, micro interactions |
-| `transition.normal`  | Component mounts          |
-| `transition.relaxed` | Panels, drawers           |
-| `transition.modal`   | Modals                    |
-| `transition.spring`  | Nav pill, drag            |
-| `transition.overlay` | Backdrop fade             |
+### Streaming / Subscription Hook
 
-Use `<AnimatePresence mode="wait">` when swapping mutually exclusive views.
+```typescript
+export function useAiStream(generationId: string | null) {
+  const client = useAppClient();
+  const [delta, setDelta] = useState('');
 
----
+  useEffect(() => {
+    if (!generationId) return;
+    const unsub = client.ai.onStream((chunk) => {
+      if (chunk.id === generationId) {
+        setDelta((prev) => prev + chunk.delta);
+      }
+    });
+    return unsub;
+  }, [generationId, client]);
 
-## 4. Brand colors — tokens only
-
-```ts
-// ✅  text-brand  text-brand-soft  bg-brand  border-brand  ring-brand
-// ❌  text-[#c084fc]  bg-[#a855f7]/15
+  return delta;
+}
 ```
 
-CSS vars: `var(--color-brand)`, `var(--color-brand-soft)`.
-
 ---
 
-## 5. UI primitives — always from `@ajh/ui`
+## 3. State Machine Pattern
 
-| Need             | Component                                        |
-| ---------------- | ------------------------------------------------ |
-| Button           | `Button`                                         |
-| Input / Textarea | `Input` / `TextArea`                             |
-| Dropdown         | `SelectDropdown`                                 |
-| Modal / Confirm  | `ModalShell` / `ConfirmModal`                    |
-| Empty / Error    | `EmptyState` / `ErrorState`                      |
-| Skeletons        | `RowSkeleton` / `CardSkeleton`                   |
-| Card / Settings  | `GlassCard` / `SettingsSection`                  |
-| Tile / Stream    | `OptionTile` / `StreamingText`                   |
-| Page wrapper     | `PageShell` from `@/components/layout/PageShell` |
+Flows with 3+ states use the minimal state machine from `lib/machine.ts`.
 
-All from `@ajh/ui` (not `@/components/ui/*`). No raw `<button>`, `<select>`, `<textarea>`.
-Exception: `<input type="range|file|checkbox|radio|hidden">`.
+### Defining a Machine
 
----
+```typescript
+// lib/machines/generation-machine.ts
+import { defineMachine } from '@/lib/machine';
 
-## 6. Data fetching — React Query via service hooks
+export type GenerationState =
+  | 'idle'
+  | 'configuring'
+  | 'generating'
+  | 'extracting'
+  | 'done'
+  | 'error';
+export type GenerationEvent = 'start' | 'generate' | 'extract' | 'complete' | 'fail' | 'reset';
 
-No `useState + useEffect` for remote data. Every IPC call has a service hook.
-
-```ts
-import { useDocuments, useImportDocument } from '@/services';
-const { data, isLoading } = useDocuments();
-const importDoc = useImportDocument();
-importDoc.mutate(req); // cache auto-invalidated on success
+export const generationMachine = defineMachine<GenerationState, GenerationEvent>({
+  initial: 'idle',
+  transitions: {
+    idle: { start: 'configuring' },
+    configuring: { generate: 'generating', reset: 'idle' },
+    generating: { extract: 'extracting', fail: 'error', reset: 'idle' },
+    extracting: { complete: 'done', fail: 'error' },
+    done: { reset: 'idle' },
+    error: { reset: 'idle' },
+  },
+  busyStates: ['generating', 'extracting'],
+  errorStates: ['error'],
+});
 ```
 
-Query keys are defined in `services/query-client.ts`. Never hardcode key strings in components.
+### Using a Machine in a Component
 
----
+```typescript
+import { useMachine } from "@/hooks/use-machine";
+import { generationMachine } from "@/lib/machines/generation-machine";
 
-## 7. State machines for complex flows
+function GenerationPanel() {
+  const [state, send] = useMachine(generationMachine);
 
-3+ states with guards or error recovery → use a state machine.
-
-```ts
-import { useMachine } from '@/hooks/use-machine';
-import { aiGenerateMachine } from '@/lib/machines/ai-generate.machine';
-const [state, send, { busy, error }] = useMachine(aiGenerateMachine, 'idle');
+  return (
+    <>
+      {state === "idle" && <Button onClick={() => send("start")}>Configure</Button>}
+      {state === "generating" && <StreamingText text={delta} />}
+      {state === "error" && <ErrorState retry={() => send("reset")} />}
+    </>
+  );
+}
 ```
 
-Existing: `ai-generate.machine.ts`, `autopilot-wizard.machine.ts`. Add new machines to `lib/machines/`.
+**Rule**: Use a machine whenever you have 3+ distinct UI states that transition in a defined order.
 
 ---
 
-## 8. File placement
+## 4. AI Streaming Pattern
 
-```
-features/X/components/   ← owned by ONE route
-components/layout/       ← Sidebar, Titlebar, PageShell
-services/                ← all IPC + React Query hooks
-lib/machines/            ← state machines
-```
+Streaming generation uses Tauri's event system rather than a promise.
 
-Used by one feature → `features/*/components/`. Used by 2+ → `packages/ui`. Chrome → `components/layout/`.
-Features must not import from each other's internal directories.
+### Frontend Flow
 
----
+```typescript
+// 1. Start generation (returns a generationId immediately)
+const { generationId } = await client.ai.generate(req);
 
-## 9. Package boundaries
-
-| Package            | Restriction                                                      |
-| ------------------ | ---------------------------------------------------------------- |
-| `packages/shared`  | No React, no Node APIs                                           |
-| `packages/ui`      | No Zustand, no IPC, no routing                                   |
-| `packages/prompts` | No UI, no `window`                                               |
-| Renderer           | Never import `@ajh/core`, `@ajh/ai`, `@ajh/data`, `@ajh/workers` |
-
----
-
-## 10. New IPC capability — 5-step checklist
-
-1. `packages/shared/src/ipc/contracts.ts` — add signature
-2. `packages/shared/src/schemas/index.ts` — add Zod schema
-3. `apps/tauri/src-tauri/src/commands.rs` — implement Tauri command
-4. `apps/tauri/src/tauri-client.ts` — wire invoke call
-5. `apps/tauri/src/renderer/services/` — create React Query hook
-
----
-
-## 11. Zustand conventions
-
-```ts
-// Selector — subscribe to only what you need
-const userName = usePreferencesStore((s) => s.userName);
-
-// Named selector exports for common slices
-export const useUserName = () => usePreferencesStore((s) => s.userName);
-
-// Direct state write for one-off resets
-usePreferencesStore.setState((s) => ({ ...s, onboardingCompleted: false }));
+// 2. Subscribe to stream events
+const unsub = client.ai.onStream((chunk) => {
+  if (chunk.id !== generationId) return;
+  if (chunk.done) {
+    unsub();
+    send('extract'); // state machine transition
+  } else {
+    appendDelta(chunk.delta);
+    if (chunk.thinking) {
+      appendThinking(chunk.thinking);
+    }
+  }
+});
 ```
 
-Persistence key: `'ai-job-hunter-preferences'`. Always add a migration when bumping store version.
+### StreamChunk Type
+
+```typescript
+interface StreamChunk {
+  id: string; // generationId
+  delta: string; // text fragment
+  done: boolean; // final chunk marker
+  thinking?: string; // Anthropic extended thinking block
+}
+```
+
+### ThinkingBubble Component
+
+When `chunk.thinking` is present (Anthropic only), render it in a collapsible `ThinkingBubble` component before the main output.
 
 ---
 
-## 12. TypeScript
+## 5. Document Import Pattern
 
-- `strict: true` everywhere
-- No `any` — use `unknown` then narrow
-- Non-null `!` only when guaranteed by a prior guard
-- `as const` on literal arrays/objects used for type inference
+Document processing is a pipeline of async stages, each emitting progress events.
+
+```mermaid
+graph LR
+    A[File Path] --> B[Format Detection]
+    B --> C{Format}
+    C -->|PDF| D[pdfjs extract]
+    C -->|DOCX| E[mammoth extract]
+    C -->|TXT/MD| F[read as-is]
+    C -->|Image| G[Tesseract OCR]
+    D & E & F & G --> H[Store in SQLite]
+    H --> I[Chunk text]
+    I --> J[Embed chunks via Ollama]
+    J --> K[Upsert to LanceDB]
+    K --> L[DocumentRecord]
+```
 
 ---
 
-## 13. Comments
+## 6. Hybrid Search Pattern
 
-Write no comments by default. Only add one when the **why** is non-obvious: a hidden constraint, a workaround for a specific bug, or a non-obvious invariant. Never comment what the code does.
+Search combines vector similarity (semantic) with SQL filters (keyword/metadata):
+
+```typescript
+// packages/shared/src/ipc/contracts/search.ts
+interface HybridSearchRequest {
+  query: string;
+  collection: 'jobs' | 'resumes' | 'skills' | 'conversations';
+  topK: number; // 1–200
+  semanticWeight: number; // 0 = pure keyword, 1 = pure semantic
+  filters?: Record<string, unknown>; // SQL WHERE conditions
+}
+```
+
+**Implementation order:**
+
+1. Embed the query via Ollama
+2. Run ANN search in LanceDB (returns top-K × 2 candidates)
+3. Apply SQL filters to narrow candidates
+4. Re-rank using `semanticWeight × semanticScore + (1 - semanticWeight) × keywordScore`
+5. Return top-K results
+
+---
+
+## 7. AppClient / Mock Pattern
+
+`AppClient` is the renderer's only gateway to the Tauri process. It is injected via React context:
+
+```typescript
+// providers/AppClientProvider.tsx
+const client = createTauriInvokeClient(); // or createMockClient() in tests
+<AppClientContext.Provider value={client}>{children}</AppClientContext.Provider>
+```
+
+In tests:
+
+```typescript
+import { createMockClient } from "@/lib/mock-client";
+
+renderWithProviders(<MyComponent />, {
+  client: createMockClient({
+    jobs: { list: async () => mockJobs },
+  }),
+});
+```
+
+---
+
+## 8. Feature Isolation Pattern
+
+Features in `renderer/features/` are fully isolated:
+
+```
+features/
+  ai-generate/
+    components/        # private to this feature
+    hooks/             # private hooks
+    index.tsx          # single public export
+  jobs/
+    components/
+    hooks/
+    index.tsx
+```
+
+**Rules:**
+
+- Never import from `features/foo` inside `features/bar`
+- Export only the top-level component from `index.tsx`
+- Internal components stay private
+
+---
+
+## 9. i18n Pattern
+
+Never import `react-i18next` directly — use the wrapper:
+
+```typescript
+// ✅ correct
+import { useTranslation } from '@/lib/i18n';
+
+// ❌ wrong — ESLint error
+import { useTranslation } from 'react-i18next';
+```
+
+The wrapper ensures consistent namespace resolution and enables future provider swaps.
+
+Translation keys follow dot notation by feature:
+
+```json
+{
+  "jobs.emptyState.title": "No jobs found",
+  "aiGenerate.config.language": "Output language",
+  "autopilot.status.running": "Running workflow…"
+}
+```
+
+---
+
+## 10. Credential Storage Pattern
+
+Never store API keys or passwords in localStorage, SQLite, or env vars. Always use the keychain:
+
+```typescript
+// Store
+await client.credentials.set({ board: 'linkedin', username: 'user@email.com', password: '...' });
+
+// Check
+const has = await client.credentials.hasCredential('linkedin');
+
+// Remove
+await client.credentials.remove('linkedin');
+```
+
+The Tauri keychain plugin encrypts secrets using the OS credential store (Windows Credential Manager, macOS Keychain, libsecret on Linux).
+
+---
+
+## 11. Performance Mode Pattern
+
+Some operations (batch embedding, OCR) can be expensive. The app has three performance modes that gate parallelism:
+
+```typescript
+type PerformanceMode = 'low' | 'balanced' | 'performance';
+```
+
+| Mode          | Worker threads | Model unload delay | Batch size |
+| ------------- | -------------- | ------------------ | ---------- |
+| `low`         | 1              | 30s                | 4          |
+| `balanced`    | 2              | 2min               | 16         |
+| `performance` | 4              | 10min              | 64         |
+
+Access the current mode via `usePerformanceMode()` from `providers/PerformanceModeProvider`.
+
+---
+
+## 12. Error Boundary Pattern
+
+Wrap every route and major feature in an `ErrorBoundary`:
+
+```typescript
+import { ErrorBoundary } from "@ajh/ui";
+
+// In route file:
+export default function JobsRoute() {
+  return (
+    <ErrorBoundary fallback={<ErrorState title="Jobs failed to load" />}>
+      <PageShell title="Jobs">
+        <JobsFeature />
+      </PageShell>
+    </ErrorBoundary>
+  );
+}
+```
+
+Never swallow errors silently. If caught by boundary, log via the Pino logger and surface a recovery action.
+
+---
+
+## Anti-Patterns to Avoid
+
+| Anti-Pattern                                     | Correct Approach                                                      |
+| ------------------------------------------------ | --------------------------------------------------------------------- |
+| `useState + useEffect` for IPC data              | React Query service hook                                              |
+| `window.__TAURI_INVOKE__` directly               | `useAppClient()` service hook                                         |
+| `import { useTranslation } from "react-i18next"` | `import { useTranslation } from "@/lib/i18n"`                         |
+| Cross-feature imports                            | Only import from `@ajh/ui`, `services/`, `lib/`                       |
+| `// eslint-disable` comment                      | Fix the underlying issue or add a scoped `eslint.config.mjs` override |
+| Inline `{ duration: 0.2, ease: "easeOut" }`      | `transition.fast` from `@/lib/motion`                                 |
+| Hardcoded colors in className                    | `text-brand`, `bg-brand`, etc.                                        |
+| Storing credentials in SQLite                    | OS keychain via `client.credentials`                                  |
