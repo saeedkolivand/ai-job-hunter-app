@@ -79,15 +79,16 @@ jobs:
         run: |
           echo "## 📦 Release Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Release Details" >> $GITHUB_STEP_SUMMARY
-          echo "- **Published**: ${{ steps.semantic.outputs.new_release_published == 'true' && '✅ Yes' || '❌ No' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version**: ${{ steps.semantic.outputs.new_release_version || 'N/A' }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Published | ${{ steps.semantic.outputs.new_release_published == 'true' && '✅ Yes' || '❌ No' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`${{ steps.semantic.outputs.new_release_version || 'N/A' }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
           echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
           echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Resources" >> $GITHUB_STEP_SUMMARY
           echo "- [Semantic Release Docs](https://semantic-release.gitbook.io/semantic-release/)" >> $GITHUB_STEP_SUMMARY
 
       - name: 🔍 Debug Environment on Failure
@@ -230,6 +231,11 @@ jobs:
           node scripts/sync-tauri-version.cjs ${{ needs.sync-version-files.outputs.version }}
           echo "::endgroup::"
 
+          echo "::group::Verifying public key"
+          echo "Public key configured in tauri.conf.json:"
+          cat apps/tauri/src-tauri/tauri.conf.json | grep -A 1 '"pubkey"'
+          echo "::endgroup::"
+
       - name: 🔨 Build Workspace
         run: |
           echo "::group::Building workspace packages"
@@ -331,23 +337,23 @@ jobs:
         run: |
           echo "## 🏗️ Tauri Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Build Details" >> $GITHUB_STEP_SUMMARY
-          echo "- **Platform**: ${{ matrix.platform }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Build Status**: ${{ steps.tauri-build.outcome == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version**: v${{ needs.sync-version-files.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | \`${{ matrix.platform }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ steps.tauri-build.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`v${{ needs.sync-version-files.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
           echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
           echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
           echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Runner OS**: ${{ runner.os }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "${{ steps.tauri-build.outcome }}" == "failure" ]; then
             echo "### 📊 Artifacts" >> $GITHUB_STEP_SUMMARY
-            echo "Build logs uploaded as artifact: \`build-logs-${{ matrix.platform }}-${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "Build logs uploaded: \`build-logs-${{ matrix.platform }}-${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 Helpful Links" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Resources" >> $GITHUB_STEP_SUMMARY
           echo "- [Tauri Build Guide](https://tauri.app/v1/guides/building/)" >> $GITHUB_STEP_SUMMARY
 
       - name: 🔍 Debug Environment on Failure
@@ -398,27 +404,19 @@ jobs:
           ls -la temp/ || echo "temp directory is empty"
           echo "::endgroup::"
 
-          # Add Windows signatures
+          # Add Windows signatures (NSIS is the primary installer)
           if [ -f "temp/AI.Job.Hunter.Assistant_${VERSION}_x64-setup.exe.sig" ]; then
             SIG=$(cat "temp/AI.Job.Hunter.Assistant_${VERSION}_x64-setup.exe.sig" | tr -d '\n')
-            echo '    "windows-x86_64-nsis": {' >> latest.json
+            echo '    "windows-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
             echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI.Job.Hunter.Assistant_${VERSION}_x64-setup.exe\"" >> latest.json
-            echo '    },' >> latest.json
-          fi
-
-          if [ -f "temp/AI.Job.Hunter.Assistant_${VERSION}_x64_en-US.msi.sig" ]; then
-            SIG=$(cat "temp/AI.Job.Hunter.Assistant_${VERSION}_x64_en-US.msi.sig" | tr -d '\n')
-            echo '    "windows-x86_64-msi": {' >> latest.json
-            echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI.Job.Hunter.Assistant_${VERSION}_x64_en-US.msi\"" >> latest.json
             echo '    },' >> latest.json
           fi
 
           # Add Linux signatures
           if [ -f "temp/AI.Job.Hunter.Assistant_${VERSION}_amd64.AppImage.sig" ]; then
             SIG=$(cat "temp/AI.Job.Hunter.Assistant_${VERSION}_amd64.AppImage.sig" | tr -d '\n')
-            echo '    "linux-x86_64-appimage": {' >> latest.json
+            echo '    "linux-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
             echo "      \"url\": \"https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION/AI.Job.Hunter.Assistant_${VERSION}_amd64.AppImage\"" >> latest.json
             echo '    },' >> latest.json
