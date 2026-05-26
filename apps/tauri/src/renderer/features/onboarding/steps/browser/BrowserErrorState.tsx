@@ -39,7 +39,7 @@ export function BrowserErrorState({ onBack, onNext }: BrowserErrorStateProps) {
           <ArrowLeft size={14} /> {t('onboarding.back')}
         </Button>
         <Button onClick={onNext} className="px-6">
-          {t('onboarding.continue')}
+          {t('onboarding.browser.next')}
         </Button>
       </div>
     </div>
