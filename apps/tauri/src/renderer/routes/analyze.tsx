@@ -1,5 +1,3 @@
-import { useQueryClient } from '@tanstack/react-query';
-import { createFileRoute } from '@tanstack/react-router';
 import {
   AlertCircle,
   Briefcase,
@@ -13,11 +11,14 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { createFileRoute } from '@tanstack/react-router';
 
 import type { DocumentRecord } from '@ajh/shared';
 import { Button, TextArea } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
+import { ThinkingBubble } from '@/features/ai-generate/components/ThinkingBubble';
 import { ResumeInputCard } from '@/features/ai-workspace/components/ResumeInputCard';
 import { AnalysisATSRisks } from '@/features/analyze/components/AnalysisATSRisks';
 import { AnalysisLanguageMismatch } from '@/features/analyze/components/AnalysisLanguageMismatch';
@@ -30,7 +31,6 @@ import { AnalysisSectionAnalysis } from '@/features/analyze/components/AnalysisS
 import { AnalysisSkills } from '@/features/analyze/components/AnalysisSkills';
 import { AnalysisStrengths } from '@/features/analyze/components/AnalysisStrengths';
 import { AnalysisVerdict } from '@/features/analyze/components/AnalysisVerdict';
-import { ThinkingBubble } from '@/features/ai-generate/components/ThinkingBubble';
 import { CustomDropdown } from '@/features/settings/components/CustomDropdown';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
