@@ -292,6 +292,7 @@
       "clearHistoryConfirmTitle": "Clear Interaction History",
       "clearHistoryConfirmDescription": "This permanently deletes all your applied, viewed, and bookmarked job records. This cannot be undone.",
       "clearHistoryConfirm": "Clear History",
+      "dangerZone": "Danger Zone",
       "resetApp": "Reset App",
       "resetAppDescription": "Wipe all data and preferences. Returns to the welcome screen.",
       "reset": "Reset",

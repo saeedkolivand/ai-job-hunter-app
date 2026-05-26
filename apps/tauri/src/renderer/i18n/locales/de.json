@@ -292,6 +292,7 @@
       "clearHistoryConfirmTitle": "Interaktionsverlauf löschen",
       "clearHistoryConfirmDescription": "Dadurch werden alle Ihre beworbenen, angesehenen und gespeicherten Job-Datensätze dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "clearHistoryConfirm": "Verlauf löschen",
+      "dangerZone": "Gefahrenzone",
       "resetApp": "App zurücksetzen",
       "resetAppDescription": "Alle Daten und Einstellungen löschen. Kehrt zum Willkommensbildschirm zurück.",
       "reset": "Zurücksetzen",
