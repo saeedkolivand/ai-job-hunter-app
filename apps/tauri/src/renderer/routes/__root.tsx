@@ -32,16 +32,35 @@ function RootLayout() {
     };
   }, []);
 
-  // Ensure Ctrl/Cmd+A selects all text in focused inputs and textareas.
-  // WebView2 on Windows does not wire this natively; adding it here fixes
-  // the pattern where Ctrl+A then Delete/Backspace fails to clear text.
+  // WebView2 on Windows does not natively wire Ctrl+A (select-all) in text
+  // fields, and after a programmatic select() it also fails to delete the
+  // full selection on Backspace/Delete. Both are patched here.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'a') return;
       const el = document.activeElement;
-      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return;
+
+      // Ctrl/Cmd+A → select all
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
         e.preventDefault();
         el.select();
+        return;
+      }
+
+      // Backspace/Delete when everything is selected → clear via native setter
+      // so React's onChange fires correctly.
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        const { selectionStart, selectionEnd, value } = el;
+        if (selectionStart === 0 && selectionEnd === value.length && value.length > 0) {
+          e.preventDefault();
+          const proto =
+            el instanceof HTMLInputElement
+              ? HTMLInputElement.prototype
+              : HTMLTextAreaElement.prototype;
+          const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+          setter?.call(el, '');
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown, true);
