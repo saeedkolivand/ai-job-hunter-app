@@ -3,23 +3,11 @@
  * Lets users: (1) pick a saved resume, (2) upload a new file, (3) paste text.
  * When a new file is uploaded it shows Save / Set-as-default actions.
  */
-import {
-  BookmarkCheck,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  FileText,
-  Link,
-  Loader2,
-  Save,
-  Sparkles,
-  Upload,
-  X,
-} from 'lucide-react';
+import { Check, FileText, Link, Loader2, Save, Sparkles, Upload, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { DocumentRecord } from '@ajh/shared';
-import { Button, TextArea, useNotification } from '@ajh/ui';
+import { Button, Dropdown, TextArea, useNotification } from '@ajh/ui';
 
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
@@ -78,7 +66,6 @@ export function ResumeInputCard({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [expanded, setExpanded] = useState(true);
-  const [showSaved, setShowSaved] = useState(false);
   const [lastUploadedFile, setLastUploadedFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
@@ -112,7 +99,6 @@ export function ResumeInputCard({
     }
     // Set as default in backend
     await setDefaultDocument.mutateAsync(doc.id);
-    setShowSaved(false);
     setLastUploadedFile(null);
     notify(t('resumeInput.selectedSaved', { name: doc.title }), 'success');
   };
@@ -200,45 +186,17 @@ export function ResumeInputCard({
           {value && <Check size={11} className="text-emerald-400" />}
         </div>
         <div className="flex items-center gap-1.5">
-          {/* Pick saved */}
+          {/* Pick saved — portal-based Dropdown from @ajh/ui */}
           {hasSaved && !disabled && (
-            <div className="relative">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowSaved((v) => !v)}
-                className="gap-1 text-[10px] text-foreground/45 hover:text-foreground/70 h-6 px-2"
-              >
-                <BookmarkCheck size={11} />
-                {defaultDoc
-                  ? defaultDoc.title.slice(0, 18) + (defaultDoc.title.length > 18 ? '…' : '')
-                  : t('resumeInput.saved')}
-                {showSaved ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-              </Button>
-
-              {showSaved && (
-                <div className="absolute right-0 top-full z-50 mt-1 min-w-[200px] rounded-xl glass-elevated shadow-2xl overflow-hidden">
-                  <div className="px-2 py-1.5 space-y-0.5 max-h-48 overflow-y-auto">
-                    {docs.map((doc) => (
-                      <button
-                        key={doc.id}
-                        onClick={() => handleSelectSaved(doc)}
-                        className={cn(
-                          'flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors',
-                          doc.isDefault
-                            ? 'bg-brand/15 text-brand-soft'
-                            : 'text-foreground/65 hover:bg-white/[0.05] hover:text-foreground/90'
-                        )}
-                      >
-                        <FileText size={11} className="shrink-0" />
-                        <span className="truncate flex-1">{doc.title}</span>
-                        {doc.isDefault && <Sparkles size={9} />}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            <Dropdown
+              options={docs.map((d) => ({ value: d.id, label: d.title }))}
+              value={defaultDoc?.id ?? ''}
+              onChange={(id) => {
+                const doc = docs.find((d) => d.id === id);
+                if (doc) void handleSelectSaved(doc);
+              }}
+              placeholder={t('resumeInput.saved')}
+            />
           )}
 
           {/* Upload button */}
