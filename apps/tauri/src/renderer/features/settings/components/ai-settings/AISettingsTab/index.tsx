@@ -23,9 +23,9 @@ import type { AiProvider } from '@/store/preferences-schema';
 import { useAIModel, useAiProviderConfig, usePreferencesStore } from '@/store/preferences-store';
 import type { Model } from '@/types';
 
-import { ActiveProviderSwitcher } from './ActiveProviderSwitcher';
-import { PROVIDER_ORDER, PROVIDERS } from './provider-meta';
-import { ProviderRow } from './ProviderRow';
+import { ActiveProviderSwitcher } from '../ActiveProviderSwitcher';
+import { PROVIDER_ORDER, PROVIDERS } from '../provider-meta';
+import { ProviderRow } from '../ProviderRow';
 
 // ─── Component ────────────────────────────────────────────────────────────────
 

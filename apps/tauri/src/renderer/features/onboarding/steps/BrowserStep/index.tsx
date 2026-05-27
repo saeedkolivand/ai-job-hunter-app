@@ -1,11 +1,11 @@
 import { useTranslation } from '@/lib/i18n';
 import { useCheckBrowser } from '@/services';
 
-import { OnboardingStepWrapper } from '../components/OnboardingStepWrapper';
-import { BrowserDetectedState } from './browser/BrowserDetectedState';
-import { BrowserErrorState } from './browser/BrowserErrorState';
-import { BrowserLoadingState } from './browser/BrowserLoadingState';
-import { BrowserNotDetectedState } from './browser/BrowserNotDetectedState';
+import { OnboardingStepWrapper } from '../../components/OnboardingStepWrapper';
+import { BrowserDetectedState } from '../browser/BrowserDetectedState';
+import { BrowserErrorState } from '../browser/BrowserErrorState';
+import { BrowserLoadingState } from '../browser/BrowserLoadingState';
+import { BrowserNotDetectedState } from '../browser/BrowserNotDetectedState';
 
 interface BrowserStepProps {
   direction: number;

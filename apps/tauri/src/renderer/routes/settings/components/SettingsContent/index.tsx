@@ -15,7 +15,7 @@ import { SalaryPreferences } from '@/features/settings/components/preferences/Sa
 import { TechStackPreferences } from '@/features/settings/components/preferences/TechStackPreferences';
 import { PrivacySettingsTab } from '@/features/settings/components/privacy/PrivacySettingsTab';
 
-import type { NavItem, SectionId } from '../constants';
+import type { NavItem, SectionId } from '../../constants';
 
 interface Props {
   activeSection: SectionId;

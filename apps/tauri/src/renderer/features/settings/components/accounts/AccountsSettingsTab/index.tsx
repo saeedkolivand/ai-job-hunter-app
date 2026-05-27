@@ -4,7 +4,7 @@ import { AUTH_BOARDS } from '@/constants/auth';
 import { useTranslation } from '@/lib/i18n';
 import { useCredentialsAvailable } from '@/services';
 
-import { BoardSessionRow } from './BoardSessionRow';
+import { BoardSessionRow } from '../BoardSessionRow';
 
 export function AccountsSettingsTab() {
   const { t } = useTranslation();

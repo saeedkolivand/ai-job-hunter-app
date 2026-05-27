@@ -8,7 +8,7 @@ import { JobPipelineOverview } from '@/features/dashboard/components/JobPipeline
 import { useTranslation } from '@/lib/i18n';
 import { useUserName } from '@/store/preferences-store';
 
-import { QUICK_ACTIONS } from '../constants';
+import { QUICK_ACTIONS } from '../../constants';
 
 function Dashboard() {
   const { t } = useTranslation();

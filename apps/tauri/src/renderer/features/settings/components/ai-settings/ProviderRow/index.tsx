@@ -5,9 +5,9 @@ import { Button } from '@ajh/ui';
 import type { AiProvider } from '@/store/preferences-schema';
 import type { Model } from '@/types';
 
-import { CloudProviderConfig } from './CloudProviderConfig';
-import { OllamaConfig } from './OllamaConfig';
-import type { ProviderMeta } from './provider-meta';
+import { CloudProviderConfig } from '../CloudProviderConfig';
+import { OllamaConfig } from '../OllamaConfig';
+import type { ProviderMeta } from '../provider-meta';
 
 interface Props {
   provider: AiProvider;

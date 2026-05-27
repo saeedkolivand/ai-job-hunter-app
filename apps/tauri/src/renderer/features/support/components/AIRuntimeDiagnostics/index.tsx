@@ -1,7 +1,7 @@
 import { useTranslation } from '@/lib/i18n';
 
-import { DiagnosticItem } from './DiagnosticItem';
-import { IssueCard } from './IssueCard';
+import { DiagnosticItem } from '../DiagnosticItem';
+import { IssueCard } from '../IssueCard';
 
 export function AIRuntimeDiagnostics() {
   const { t } = useTranslation();

@@ -15,7 +15,7 @@ import { ResumeInputCard } from '@/features/ai-workspace/components/ResumeInputC
 import { useTranslation } from '@/lib/i18n';
 import type { PromptQuality } from '@/store/preferences-schema';
 
-import type { Stage } from '../constants';
+import type { Stage } from '../../constants';
 
 interface Props {
   resume: string;

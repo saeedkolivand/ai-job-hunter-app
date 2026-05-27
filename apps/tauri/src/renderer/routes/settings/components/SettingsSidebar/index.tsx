@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 
 import { cn, transition } from '@ajh/ui';
 
-import type { NavGroup, SectionId } from '../constants';
+import type { NavGroup, SectionId } from '../../constants';
 
 interface Props {
   navGroups: NavGroup[];

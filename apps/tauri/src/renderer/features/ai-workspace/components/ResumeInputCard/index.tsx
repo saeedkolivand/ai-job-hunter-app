@@ -22,10 +22,10 @@ import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
 import { useTranslation } from '@/lib/i18n';
 import { useDocuments, useProfileImport, useSetDefaultDocument } from '@/services';
 
-import { ProfileUrlInput } from './ProfileUrlInput';
-import { SaveActions } from './SaveActions';
-import { SavedResumeMenu } from './SavedResumeMenu';
-import { UploadZone } from './UploadZone';
+import { ProfileUrlInput } from '../ProfileUrlInput';
+import { SaveActions } from '../SaveActions';
+import { SavedResumeMenu } from '../SavedResumeMenu';
+import { UploadZone } from '../UploadZone';
 
 const ACCEPT = '.pdf,.docx,.txt,.md,.markdown';
 const MAX_BYTES = 25 * 1024 * 1024;

@@ -5,7 +5,7 @@ import { transition } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 
-import { ThinkingBubble } from './ThinkingBubble';
+import { ThinkingBubble } from '../ThinkingBubble';
 
 interface OutputPanelGeneratingProps {
   stageLabel: string;

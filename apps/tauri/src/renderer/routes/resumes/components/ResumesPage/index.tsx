@@ -14,7 +14,7 @@ import { useAiGenerations } from '@/services/use-ai-generations';
 import { useInteractions } from '@/services/use-postings';
 import { useSessionStore } from '@/store/session-store';
 
-import { type Interaction, type Tab, TAB_CONFIG } from '../constants';
+import { type Interaction, type Tab, TAB_CONFIG } from '../../constants';
 
 function ResumesPage() {
   const { t } = useTranslation();

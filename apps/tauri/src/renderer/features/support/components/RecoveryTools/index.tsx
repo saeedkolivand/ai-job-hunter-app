@@ -12,7 +12,7 @@ import {
   useUnloadAllModels,
 } from '@/services';
 
-import { RecoveryAction } from './RecoveryAction';
+import { RecoveryAction } from '../RecoveryAction';
 
 export function RecoveryTools() {
   const { t } = useTranslation();

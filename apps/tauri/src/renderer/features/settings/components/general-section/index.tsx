@@ -2,7 +2,7 @@ import { Languages, User, Wand2 } from 'lucide-react';
 
 import { Button, GlassCard, IconBadge, Input, SectionLabel } from '@ajh/ui';
 
-import { LanguageSelector } from '@/features/settings/components/LanguageSelector';
+import { LanguageSelector } from '@/features/settings/components/shared/LanguageSelector';
 import { UpdateSection } from '@/features/settings/components/update-section';
 import { useTranslation } from '@/lib/i18n';
 import { useOnboardingCompleted, usePreferencesStore } from '@/store/preferences-store';

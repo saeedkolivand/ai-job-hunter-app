@@ -4,11 +4,11 @@ import { ModelSelector, useSelectedModel } from '@/components/ui/ModelSelector';
 import { useTranslation } from '@/lib/i18n';
 import { useGenerateConfig } from '@/services';
 
-import { useChat } from '../hooks/useChat';
-import { ChatInput } from './ChatInput';
-import { MessageList } from './MessageList';
-import { QuickSuggestions } from './QuickSuggestions';
-import { ResumeUploadBar } from './ResumeUploadBar';
+import { useChat } from '../../hooks/useChat';
+import { ChatInput } from '../ChatInput';
+import { MessageList } from '../MessageList';
+import { QuickSuggestions } from '../QuickSuggestions';
+import { ResumeUploadBar } from '../ResumeUploadBar';
 
 export function AIWorkspace() {
   const { t } = useTranslation();

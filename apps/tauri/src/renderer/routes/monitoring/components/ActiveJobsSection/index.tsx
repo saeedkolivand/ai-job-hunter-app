@@ -3,8 +3,8 @@ import { AnimatePresence } from 'motion/react';
 
 import { GlassCard } from '@ajh/ui';
 
-import type { JobRecord } from '../types';
-import { ActiveJobRow } from './ActiveJobRow';
+import type { JobRecord } from '../../types';
+import { ActiveJobRow } from '../ActiveJobRow';
 
 interface Props {
   activeJobs: JobRecord[];

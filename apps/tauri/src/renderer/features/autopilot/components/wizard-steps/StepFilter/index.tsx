@@ -3,8 +3,8 @@ import { Input, TextArea } from '@ajh/ui';
 import type { Prefilled, SetFn, WizardState } from '@/features/autopilot/types';
 import { useTranslation } from '@/lib/i18n';
 
-import { PrefilledBadge } from './PrefilledBadge';
-import { WizardField } from './WizardField';
+import { PrefilledBadge } from '../PrefilledBadge';
+import { WizardField } from '../WizardField';
 
 const inputCls =
   'w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-foreground/80 placeholder:text-foreground/25 outline-none focus:border-brand/40 transition-colors';

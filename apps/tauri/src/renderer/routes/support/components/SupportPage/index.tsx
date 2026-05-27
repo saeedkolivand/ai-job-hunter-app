@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { useTranslation } from '@/lib/i18n';
 
-import { getSupportSections } from '../support-data';
+import { getSupportSections } from '../../support-data';
 
 export function SupportPage() {
   const { t } = useTranslation();

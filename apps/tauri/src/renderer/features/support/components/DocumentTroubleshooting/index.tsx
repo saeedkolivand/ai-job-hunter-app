@@ -1,8 +1,8 @@
 import { useTranslation } from '@/lib/i18n';
 
-import { DiagnosticItem } from './DiagnosticItem';
-import { DocumentIssueCard } from './DocumentIssueCard';
-import { IssueCard } from './IssueCard';
+import { DiagnosticItem } from '../DiagnosticItem';
+import { DocumentIssueCard } from '../DocumentIssueCard';
+import { IssueCard } from '../IssueCard';
 
 export function DocumentTroubleshooting() {
   const { t } = useTranslation();
