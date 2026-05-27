@@ -1309,7 +1309,6 @@ export async function exportDOCX(
       templateId = 'modern';
     }
 
-    const { getClient } = await import('@/lib/app-client');
     const api = getClient();
     const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
     const _filePath = await api.documents.exportAndSave({
@@ -1356,7 +1355,6 @@ export async function exportPDF(
       templateId = 'modern';
     }
 
-    const { getClient } = await import('@/lib/app-client');
     const api = getClient();
     const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
     const _filePath = await api.documents.exportAndSave({
