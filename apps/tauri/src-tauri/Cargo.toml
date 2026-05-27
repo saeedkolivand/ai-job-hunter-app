@@ -72,7 +72,6 @@ pdf-extract = "0.10"
 zip = "8"
 docx-rs = "0.4.19"
 printpdf = "0.9.1"
-unicode-segmentation = "1.10"
 lopdf = "0.40"
 
 

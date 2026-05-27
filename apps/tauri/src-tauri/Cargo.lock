@@ -104,7 +104,6 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
- "unicode-segmentation",
  "urlencoding",
  "uuid",
  "windows-native-keyring-store",
