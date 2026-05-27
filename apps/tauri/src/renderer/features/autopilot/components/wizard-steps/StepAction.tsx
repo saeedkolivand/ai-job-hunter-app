@@ -1,7 +1,7 @@
 import { BookOpen, Check, Send, ShieldAlert, Zap } from 'lucide-react';
 
 import type { AutopilotAction } from '@ajh/shared';
-import { Button, TextArea } from '@ajh/ui';
+import { Button, cn, TextArea } from '@ajh/ui';
 
 import type { SetFn, WizardState } from '@/features/autopilot/types';
 import { useTranslation } from '@/lib/i18n';
