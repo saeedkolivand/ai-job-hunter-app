@@ -55,6 +55,7 @@ import {
   usePostings,
   useScrapeBoard,
 } from '@/services';
+import { useSessionStore } from '@/store/session-store';
 
 export const Route = createFileRoute('/jobs')({ component: Jobs });
 
@@ -125,8 +126,10 @@ function Jobs() {
   const cancelJob = useCancelJob();
   const clearPostings = useClearPostings();
 
-  const [filter, setFilter] = useState('');
-  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'company'>('newest');
+  const { jobs, setJobs } = useSessionStore();
+  const { filter, sortBy } = jobs;
+  const setFilter = (v: string) => setJobs({ filter: v });
+  const setSortBy = (v: 'newest' | 'oldest' | 'company') => setJobs({ sortBy: v });
   const [active, setActive] = useState<Posting | null>(null);
   const [showScrapeForm, setShowScrapeForm] = useState(false);
   const [scrapeForm, setScrapeForm] = useState({

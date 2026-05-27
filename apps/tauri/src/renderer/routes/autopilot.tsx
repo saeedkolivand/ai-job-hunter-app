@@ -17,7 +17,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useCallback, useReducer, useState } from 'react';
+import { useCallback, useEffect, useReducer, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
 import type {
@@ -34,6 +34,7 @@ import { StepAction } from '@/features/autopilot/components/wizard-steps/StepAct
 import { StepFilter } from '@/features/autopilot/components/wizard-steps/StepFilter';
 import { StepSchedule } from '@/features/autopilot/components/wizard-steps/StepSchedule';
 import { StepTarget } from '@/features/autopilot/components/wizard-steps/StepTarget';
+import type { SetFn, WizardState } from '@/features/autopilot/types';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { transition as machineTransition } from '@/lib/machine';
@@ -54,32 +55,11 @@ import {
   useResumeAutopilot,
   useRunAutopilot,
 } from '@/services';
+import { useSessionStore } from '@/store/session-store';
 
 export const Route = createFileRoute('/autopilot')({ component: AutopilotPage });
 
-// ─── Wizard state ─────────────────────────────────────────────────────────────
-
-export interface WizardState {
-  name: string;
-  // Step 1 — Target
-  board: string;
-  query: string;
-  location: string;
-  workType: 'remote' | 'hybrid' | 'on-site' | 'any';
-  pages: number;
-  dateFilter: string;
-  // Step 2 — Filter
-  minMatchScore: number;
-  keywords: string;
-  excludeKeywords: string;
-  resumeText: string;
-  // Step 3 — Action
-  action: AutopilotAction;
-  coverLetter: string;
-  autoSubmit: boolean;
-  // Step 4 — Schedule
-  schedule: AutopilotSchedule;
-}
+// ─── Wizard defaults ──────────────────────────────────────────────────────────
 
 function buildDefaults(jobPrefs?: JobPreferences): WizardState {
   const validWorkType = ['remote', 'hybrid', 'on-site', 'any'] as const;
@@ -105,9 +85,6 @@ function buildDefaults(jobPrefs?: JobPreferences): WizardState {
 }
 
 const STEPS = ['Target', 'Filter', 'Action', 'Schedule'] as const;
-
-export type SetFn = <K extends keyof WizardState>(k: K, v: WizardState[K]) => void;
-export type Prefilled = { location: boolean; keywords: boolean };
 
 const _ACTION_OPTIONS: {
   id: AutopilotAction;
@@ -161,7 +138,10 @@ function AutopilotPage() {
   const { t } = useTranslation();
   const { data: autopilotList = [], isLoading: loading } = useAutopilots();
   const autopilots = autopilotList as Autopilot[];
-  const [creating, setCreating] = useState(false);
+  const { autopilot, setAutopilot, resetAutopilotWizard } = useSessionStore();
+  const { creating } = autopilot;
+  const setCreating = (v: boolean) => setAutopilot({ creating: v });
+  const resetWizard = resetAutopilotWizard;
   const [runStates, setRunStates] = useReducer(
     (prev: RunStateMap, patch: Partial<RunStateMap>): RunStateMap =>
       ({ ...prev, ...patch }) as RunStateMap,
@@ -225,7 +205,7 @@ function AutopilotPage() {
   };
 
   const handleCreated = (_ap: Autopilot) => {
-    setCreating(false);
+    resetWizard();
   };
 
   return (
@@ -295,7 +275,7 @@ function AutopilotPage() {
 
       {/* Creation wizard overlay */}
       <AnimatePresence>
-        {creating && <CreationWizard onDone={handleCreated} onCancel={() => setCreating(false)} />}
+        {creating && <CreationWizard onDone={handleCreated} onCancel={resetWizard} />}
       </AnimatePresence>
     </PageTransition>
   );
@@ -476,20 +456,33 @@ function CreationWizard({ onDone, onCancel }: { onDone(ap: Autopilot): void; onC
   const { t } = useTranslation();
   const { data: jobPrefs } = useJobPreferences();
 
-  const [step, setStep] = useState(0);
-  const [form, setForm] = useState<WizardState>(() => buildDefaults(jobPrefs));
+  const { autopilot, setAutopilot } = useSessionStore();
+  const { wizardStep: step, wizardForm } = autopilot;
+  const setStep = (v: number) => setAutopilot({ wizardStep: v });
+  const setWizardForm = useCallback(
+    (v: WizardState) => setAutopilot({ wizardForm: v }),
+    [setAutopilot]
+  );
+  const form = wizardForm ?? buildDefaults(jobPrefs as JobPreferences | undefined);
   const [error, setError] = useState<string | null>(null);
   const createAutopilot = useCreateAutopilot();
   const saving = createAutopilot.isPending;
 
+  // Initialize form in the store on first open (when wizardForm is null)
+  useEffect(() => {
+    if (!wizardForm) {
+      setWizardForm(buildDefaults(jobPrefs as JobPreferences | undefined));
+    }
+  }, [wizardForm, jobPrefs, setWizardForm]);
+
   // Track which fields were pre-filled so we can show a hint
   const prefilledFields = {
     location: !!jobPrefs?.location,
-    keywords: (jobPrefs?.techStack?.length ?? 0) > 0,
+    keywords: ((jobPrefs as JobPreferences | undefined)?.techStack?.length ?? 0) > 0,
   };
 
   const set: SetFn = <K extends keyof WizardState>(k: K, v: WizardState[K]) =>
-    setForm((p) => ({ ...p, [k]: v }));
+    setWizardForm({ ...form, [k]: v });
 
   const canNext = () => {
     if (step === 0)
@@ -722,7 +715,7 @@ function CreationWizard({ onDone, onCancel }: { onDone(ap: Autopilot): void; onC
         {/* Wizard footer */}
         <div className="flex items-center justify-between border-t border-white/[0.1] px-6 py-4">
           <Button
-            onClick={() => (step > 0 ? setStep((s) => s - 1) : onCancel())}
+            onClick={() => (step > 0 ? setStep(step - 1) : onCancel())}
             className="flex items-center gap-1.5 text-xs text-foreground/40 hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
           >
             <ChevronLeft size={13} />{' '}
@@ -733,7 +726,7 @@ function CreationWizard({ onDone, onCancel }: { onDone(ap: Autopilot): void; onC
               variant="glass"
               size="sm"
               disabled={!canNext()}
-              onClick={() => setStep((s) => s + 1)}
+              onClick={() => setStep(step + 1)}
               className="transition-all duration-150 ease-out"
             >
               {t('autopilot.wizard.next')} <ChevronRight size={13} />

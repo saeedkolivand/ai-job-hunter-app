@@ -1,7 +1,7 @@
 import { Input, TextArea } from '@ajh/ui';
 
+import type { Prefilled, SetFn, WizardState } from '@/features/autopilot/types';
 import { useTranslation } from '@/lib/i18n';
-import type { Prefilled, SetFn, WizardState } from '@/routes/autopilot';
 
 import { PrefilledBadge } from './PrefilledBadge';
 import { WizardField } from './WizardField';
