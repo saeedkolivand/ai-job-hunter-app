@@ -69,7 +69,7 @@ impl BrowserController {
         });
 
         self.browser = Some(browser.clone());
-        eprintln!("[browser] chromium launched");
+        log::info!("[browser] chromium launched");
         Ok(browser)
     }
 
@@ -99,7 +99,7 @@ impl BrowserController {
             // Arc::try_unwrap to get the original Browser back
             if let Ok(mut browser) = Arc::try_unwrap(browser) {
                 browser.close().await?;
-                eprintln!("[browser] chromium closed");
+                log::warn!("[browser] chromium closed");
             }
         }
         Ok(())

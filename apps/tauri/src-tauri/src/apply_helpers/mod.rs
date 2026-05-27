@@ -34,9 +34,8 @@ pub fn setup_apply_job(
     engine: std::sync::Arc<ScraperEngine>,
 ) -> (String, CancellationToken) {
     let job_id = Uuid::new_v4().to_string();
-    app.state::<std::sync::Mutex<crate::jobs::JobTracker>>()
+    app.state::<parking_lot::Mutex<crate::jobs::JobTracker>>()
         .lock()
-        .unwrap()
         .start(&job_id, "apply.start");
 
     let cancel_token = CancellationToken::new();

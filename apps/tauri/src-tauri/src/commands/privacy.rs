@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
@@ -15,8 +15,8 @@ pub fn privacy_clear_data(app: AppHandle) -> Value {
     for board_id in &["linkedin", "indeed", "xing", "glassdoor"] {
         crate::scraping::board_login::disconnect(&data_dir, board_id);
     }
-    app.state::<Mutex<PostingsCache>>().lock().unwrap().clear_all();
-    app.state::<Mutex<InteractionStore>>().lock().unwrap().clear_all();
+    app.state::<Mutex<PostingsCache>>().lock().clear_all();
+    app.state::<Mutex<InteractionStore>>().lock().clear_all();
     json!({ "success": true })
 }
 
@@ -24,7 +24,6 @@ pub fn privacy_clear_data(app: AppHandle) -> Value {
 pub fn privacy_clear_interactions(app: AppHandle) -> Value {
     app.state::<Mutex<InteractionStore>>()
         .lock()
-        .unwrap()
         .clear_all();
     json!({ "success": true })
 }
@@ -51,8 +50,8 @@ pub fn privacy_reset_app(app: AppHandle) -> Value {
     }
 
     // Clear in-memory + JSON-backed stores
-    app.state::<Mutex<PostingsCache>>().lock().unwrap().clear_all();
-    app.state::<Mutex<InteractionStore>>().lock().unwrap().clear_all();
+    app.state::<Mutex<PostingsCache>>().lock().clear_all();
+    app.state::<Mutex<InteractionStore>>().lock().clear_all();
 
     // Clear SQLite databases
     app.state::<DocumentStore>().clear_all();
@@ -61,7 +60,7 @@ pub fn privacy_reset_app(app: AppHandle) -> Value {
 
     // Clear all AI provider API keys from keychain
     let store = app.state::<Mutex<CredentialStore>>();
-    let guard = store.lock().unwrap();
+    let guard = store.lock();
     for provider in &["openai", "anthropic", "gemini", "openai-compatible"] {
         let _ = guard.remove(&format!("ai:{provider}"));
     }

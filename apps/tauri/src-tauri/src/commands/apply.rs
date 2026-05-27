@@ -2,7 +2,7 @@ use crate::applying::types::{ApplyContext, ApplyStep};
 use crate::apply_helpers::{decode_resume_to_temp, setup_apply_job};
 use crate::scraping::ScraperEngine;
 use serde_json::{json, Value};
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio_util::sync::CancellationToken;
 
@@ -44,7 +44,7 @@ pub async fn apply_start(app: AppHandle, req: Value) -> Value {
     let tracker = app.state::<Mutex<crate::jobs::JobTracker>>();
     match result {
         Ok(r) => {
-            if let Ok(mut g) = tracker.lock() {
+            { let mut g = tracker.lock();
                 g.complete(
                     &job_id,
                     json!({
@@ -66,7 +66,7 @@ pub async fn apply_start(app: AppHandle, req: Value) -> Value {
             })
         }
         Err(e) => {
-            if let Ok(mut g) = tracker.lock() {
+            { let mut g = tracker.lock();
                 g.fail(&job_id, e.to_string());
             }
             json!({ "jobId": job_id, "error": e.to_string() })

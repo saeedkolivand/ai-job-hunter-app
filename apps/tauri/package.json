@@ -21,7 +21,6 @@
     "@tanstack/react-router": "^1.170.4",
     "@tauri-apps/api": "^2.11.0",
     "clsx": "^2.1.1",
-    "docx": "^9.6.1",
     "i18next": "^26.2.0",
     "i18next-browser-languagedetector": "^8.2.1",
     "jspdf": "^4.2.1",

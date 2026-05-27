@@ -3,7 +3,7 @@ pub mod leakage;
 pub mod llm;
 pub mod research;
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager};
@@ -106,7 +106,6 @@ fn resolve_provider(
     let get_key = |name: &str| -> Option<String> {
         app.state::<Mutex<crate::credentials::CredentialStore>>()
             .lock()
-            .unwrap()
             .get_decrypted(&format!("ai:{name}"))
             .map(|(_, k)| k)
     };
@@ -196,7 +195,6 @@ pub async fn run_pipeline(
     let brave_key = app
         .state::<Mutex<crate::credentials::CredentialStore>>()
         .lock()
-        .unwrap()
         .get_decrypted("ai:brave")
         .map(|(_, k)| k);
 
