@@ -1,6 +1,6 @@
-# AI Job Hunter — Interview Preparation Guide
+# AI Job Hunter — Design Decisions
 
-This document is a technical companion for explaining this project in job interviews. It covers every major architectural decision, the reasoning behind it, and how to talk about it clearly whether the interviewer is a frontend engineer, a tech lead, or a CTO.
+This document covers every major architectural decision in the project — the reasoning behind technology choices, patterns used, and the trade-offs considered. It is a reference for contributors, reviewers, and anyone who wants to understand the _why_ behind the codebase.
 
 ---
 

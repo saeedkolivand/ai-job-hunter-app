@@ -232,17 +232,17 @@ Quick rules:
 
 ## Documentation
 
-| Document                                                   | Description                                         |
-| ---------------------------------------------------------- | --------------------------------------------------- |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)               | System design, data flow, Mermaid diagrams          |
-| [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)             | Tokens, components, motion, theming                 |
-| [docs/PATTERNS.md](docs/PATTERNS.md)                       | IPC, state machines, AI streaming, search patterns  |
-| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)                 | Full local dev environment setup                    |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)                   | Building and releasing installers                   |
-| [docs/API.md](docs/API.md)                                 | All 21 IPC namespaces documented                    |
-| [docs/ARCHITECTURE_STATUS.md](docs/ARCHITECTURE_STATUS.md) | Implementation status tracker                       |
-| [docs/INTERVIEW_PREP.md](docs/INTERVIEW_PREP.md)           | Architecture decisions, patterns, interview Q&amp;A |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                         | Code style, branching, PR process                   |
+| Document                                                   | Description                                            |
+| ---------------------------------------------------------- | ------------------------------------------------------ |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)               | System design, data flow, Mermaid diagrams             |
+| [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)             | Tokens, components, motion, theming                    |
+| [docs/PATTERNS.md](docs/PATTERNS.md)                       | IPC, state machines, AI streaming, search patterns     |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)                 | Full local dev environment setup                       |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)                   | Building and releasing installers                      |
+| [docs/API.md](docs/API.md)                                 | All 21 IPC namespaces documented                       |
+| [docs/ARCHITECTURE_STATUS.md](docs/ARCHITECTURE_STATUS.md) | Implementation status tracker                          |
+| [docs/DESIGN_DECISIONS.md](docs/DESIGN_DECISIONS.md)       | Architecture decisions, patterns, and design rationale |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                         | Code style, branching, PR process                      |
 
 ---
 
