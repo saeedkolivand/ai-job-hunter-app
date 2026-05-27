@@ -1,9 +1,8 @@
 import { AlertTriangle, FileCheck, FileText, Sparkles, Zap } from 'lucide-react';
 import { motion } from 'motion/react';
 
-import { Button } from '@ajh/ui';
+import { Button, cn } from '@ajh/ui';
 
-import { cn } from '@ajh/ui';
 import { type GenerationMode, MODES, type TemplateId, TEMPLATES } from '@/lib/generate-ai';
 import { useTranslation } from '@/lib/i18n';
 import type { PromptQuality } from '@/store/preferences-schema';

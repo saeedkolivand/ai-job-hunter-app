@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
 import type { DocumentRecord } from '@ajh/shared';
-import { Button } from '@ajh/ui';
+import { Button, cn } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
 import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
@@ -30,7 +30,6 @@ import { AnalysisSkills } from '@/features/analyze/components/AnalysisSkills';
 import { AnalysisStrengths } from '@/features/analyze/components/AnalysisStrengths';
 import { AnalysisVerdict } from '@/features/analyze/components/AnalysisVerdict';
 import { CollapsibleInput } from '@/features/analyze/components/CollapsibleInput';
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 import { type AnalysisResult, runAnalysis } from '@/lib/resume-ai';
 import { useDocuments, useExtractText } from '@/services';

@@ -1,8 +1,7 @@
 import { Sparkles } from 'lucide-react';
 
-import { GlassCard } from '@ajh/ui';
+import { cn, GlassCard } from '@ajh/ui';
 
-import { cn } from '@ajh/ui';
 import { type AnalysisResult, verdictGradient } from '@/lib/resume-ai';
 
 interface AnalysisVerdictProps {

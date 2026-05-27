@@ -1,11 +1,10 @@
 import { ArrowRight, Check, Wand2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { Button, FloatingIcon, Input } from '@ajh/ui';
+import { Button, cn, FloatingIcon, Input } from '@ajh/ui';
 
 import { LOCALES } from '@/constants/locales';
 import i18n from '@/i18n';
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 import { usePreferencesStore } from '@/store/preferences-store';
 

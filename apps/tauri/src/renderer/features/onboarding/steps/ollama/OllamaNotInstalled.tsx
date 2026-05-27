@@ -1,9 +1,8 @@
 import { ExternalLink, Loader2, WifiOff } from 'lucide-react';
 import { motion } from 'motion/react';
 
-import { Button } from '@ajh/ui';
+import { Button, transition } from '@ajh/ui';
 
-import { transition } from '@ajh/ui';
 import { useOpenExternal } from '@/services';
 
 interface OllamaNotInstalledProps {

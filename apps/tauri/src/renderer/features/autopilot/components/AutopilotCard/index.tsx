@@ -2,7 +2,7 @@ import { Pause, Play, RotateCcw, Trash2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
 import type { Autopilot } from '@ajh/shared';
-import { Button, GlassCard, cn } from '@ajh/ui';
+import { Button, cn, GlassCard } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { type AutopilotRunState, RUN_STATE_LABEL } from '@/lib/machines/autopilot-run.machine';

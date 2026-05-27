@@ -2,7 +2,7 @@ import { AlertCircle, CheckCircle2, Send, ShieldAlert, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useRef, useState } from 'react';
 
-import { Button, GlassCard, TextArea, cn } from '@ajh/ui';
+import { Button, cn, GlassCard, TextArea } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { useApplyJob, useCancelJob, useJobEvents } from '@/services';

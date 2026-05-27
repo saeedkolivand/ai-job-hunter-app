@@ -1,9 +1,8 @@
 import { DollarSign } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, GlassCard } from '@ajh/ui';
+import { Button, cn, GlassCard } from '@ajh/ui';
 
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 import { useJobPreferences, useSetJobPreferences } from '@/services';
 

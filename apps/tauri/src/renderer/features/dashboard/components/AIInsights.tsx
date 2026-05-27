@@ -1,8 +1,7 @@
 import { AlertTriangle, CheckCircle, Lightbulb, type LucideIcon, TrendingUp } from 'lucide-react';
 
-import { GlassCard, SectionLabel } from '@ajh/ui';
+import { cn, GlassCard, SectionLabel } from '@ajh/ui';
 
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 
 interface Insight {

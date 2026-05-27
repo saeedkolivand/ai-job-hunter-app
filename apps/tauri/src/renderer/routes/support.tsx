@@ -3,13 +3,11 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
-import { Button } from '@ajh/ui';
+import { Button, cn, transition } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@ajh/ui';
 
 export const Route = createFileRoute('/support')({ component: SupportPage });
 

@@ -15,10 +15,9 @@ import { motion } from 'motion/react';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { Button, Dropdown, GlassCard, Input, useNotification } from '@ajh/ui';
+import { Button, Dropdown, GlassCard, Input, transition, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@ajh/ui';
 import { useAppClient } from '@/providers/AppClientProvider';
 import {
   useAIModels,

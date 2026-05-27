@@ -1,9 +1,8 @@
 import { Bug, Terminal } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 
-import { Button, GlassCard, SectionLabel } from '@ajh/ui';
+import { Button, cn, GlassCard, SectionLabel } from '@ajh/ui';
 
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { useDebugMode, usePreferencesStore } from '@/store/preferences-store';

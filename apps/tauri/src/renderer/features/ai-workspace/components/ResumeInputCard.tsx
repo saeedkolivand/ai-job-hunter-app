@@ -21,10 +21,9 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import type { DocumentRecord } from '@ajh/shared';
-import { Button, TextArea, useNotification } from '@ajh/ui';
+import { Button, cn, TextArea, useNotification } from '@ajh/ui';
 
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 import { useDocuments, useProfileImport, useSetDefaultDocument } from '@/services';
 

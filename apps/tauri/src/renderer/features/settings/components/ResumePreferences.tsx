@@ -3,13 +3,11 @@ import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 
 import type { DocumentRecord } from '@ajh/shared';
-import { Button, GlassCard, useNotification } from '@ajh/ui';
+import { Button, cn, GlassCard, transition, useNotification } from '@ajh/ui';
 
 import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@ajh/ui';
 import { useDocuments, useRemoveDocument, useSetDefaultDocument } from '@/services';
 
 export function ResumePreferences() {

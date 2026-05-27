@@ -4,15 +4,13 @@ import { useMemo } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
-import { Button, CardSkeleton, EmptyState, Input } from '@ajh/ui';
+import { Button, CardSkeleton, cn, EmptyState, Input, stagger, transition } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { GenerationCard } from '@/features/resumes/components/GenerationCard';
 import { InteractionRow } from '@/features/resumes/components/InteractionRow';
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
-import { stagger, transition } from '@ajh/ui';
 import { useAiGenerations } from '@/services/use-ai-generations';
 import { useInteractions } from '@/services/use-postings';
 import { useSessionStore } from '@/store/session-store';

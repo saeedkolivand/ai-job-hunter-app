@@ -3,11 +3,9 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { Button, GlassCard, Input } from '@ajh/ui';
+import { Button, cn, GlassCard, Input, transition } from '@ajh/ui';
 
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@ajh/ui';
 import { useJobPreferences, useSetJobPreferences } from '@/services';
 
 const COMMON_TECH = [

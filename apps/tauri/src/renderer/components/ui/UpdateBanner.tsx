@@ -2,10 +2,9 @@ import { Download, Loader2, Sparkles, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 
-import { Button, RefreshButton } from '@ajh/ui';
+import { Button, RefreshButton, transition } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@ajh/ui';
 import { useUpdater } from '@/services/use-updater';
 
 export function UpdateBanner() {
