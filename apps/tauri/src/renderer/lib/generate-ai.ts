@@ -22,6 +22,8 @@ import {
   buildResumePrompt,
   buildResumeSystemPrompt,
   extractPlainText,
+  getLinkMap,
+  injectLinksIntoGeneratedText,
   type GenerationMeta,
   type GenerationMode,
   validateMetadata,
@@ -276,7 +278,7 @@ export async function generateResume(
   const system = buildResumeSystemPrompt(mode, tier);
   const user = buildResumePrompt(resume, jobAd, meta, mode, tier);
   const raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal, onThinking);
-  return extractPlainText(raw);
+  return injectLinksIntoGeneratedText(extractPlainText(raw), getLinkMap(resume));
 }
 
 export async function generateCoverLetter(
@@ -309,7 +311,7 @@ export async function generateCoverLetter(
     signal,
     onThinking
   );
-  return extractPlainText(raw);
+  return injectLinksIntoGeneratedText(extractPlainText(raw), getLinkMap(resume));
 }
 
 // ─── Filename ─────────────────────────────────────────────────────────────────
