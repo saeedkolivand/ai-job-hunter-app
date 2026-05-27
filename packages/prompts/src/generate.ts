@@ -112,21 +112,211 @@ Example:
   GOOD:  Built scalable **React** and **TypeScript** frontend applications integrated with **REST APIs**`;
 }
 
+// ─── Link extraction helper ───────────────────────────────────────────────────
+
+// Known social/portfolio domains that belong in a resume contact line.
+const PROFILE_DOMAINS = [
+  'linkedin.com',
+  'github.com',
+  'gitlab.com',
+  'twitter.com',
+  'x.com',
+  'behance.net',
+  'dribbble.com',
+  'medium.com',
+  'stackoverflow.com',
+  'dev.to',
+  'codepen.io',
+  'youtube.com',
+  'youtu.be',
+  'notion.so',
+  'figma.com',
+  'npmjs.com',
+  'crates.io',
+  'solo.to',
+  'bio.link',
+  'linktr.ee',
+  'bento.me',
+];
+
+function isProfileUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+    return PROFILE_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Derive a friendly label from a URL — mirrors the Rust url_label() in links.rs.
+ * Used when a PDF annotation stores the raw URL as its anchor text instead of a label.
+ */
+function urlToFriendlyLabel(url: string): string {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+    if (host.startsWith('linkedin.com')) return 'LinkedIn';
+    if (host.startsWith('github.com')) return 'GitHub';
+    if (host.startsWith('gitlab.com')) return 'GitLab';
+    if (host.startsWith('twitter.com') || host.startsWith('x.com')) return 'Twitter';
+    if (host.startsWith('behance.net')) return 'Behance';
+    if (host.startsWith('dribbble.com')) return 'Dribbble';
+    if (host.startsWith('medium.com')) return 'Medium';
+    if (host.startsWith('stackoverflow.com')) return 'Stack Overflow';
+    if (host.startsWith('dev.to')) return 'Dev.to';
+    if (host.startsWith('codepen.io')) return 'CodePen';
+    if (host.startsWith('youtube.com') || host.startsWith('youtu.be')) return 'YouTube';
+    if (host.startsWith('notion.so')) return 'Notion';
+    if (host.startsWith('figma.com')) return 'Figma';
+    if (host.startsWith('npmjs.com')) return 'npm';
+    if (host.startsWith('crates.io')) return 'crates.io';
+    // Unknown: use bare domain without TLD as fallback label
+    return host.split('.')[0] ?? host;
+  } catch {
+    return url;
+  }
+}
+
+interface ParsedResumeLinks {
+  /** Compact block to inject before <candidate_resume> */
+  block: string;
+  /** Clean email address extracted from mailto annotation, or empty string */
+  cleanEmail: string;
+}
+
+/**
+ * Build a label→url map for all profile links in the extracted reference block.
+ * Used for post-processing: replacing plain labels with [label](url) markdown.
+ */
+export function getLinkMap(resume: string): Record<string, string> {
+  const sep = resume.lastIndexOf('\n---\n');
+  if (sep === -1) return {};
+  const block = resume.slice(sep + 5);
+  const map: Record<string, string> = {};
+  for (const l of block.split('\n')) {
+    if (!l.startsWith('- [')) continue;
+    const m = l.match(/^- \[([^\]]+)\]\(([^)]+)\)$/);
+    if (!m) continue;
+    const anchor = m[1] ?? '';
+    const url = m[2];
+    if (!anchor || !url || url.startsWith('mailto:') || !isProfileUrl(url)) continue;
+    // Normalise: PDFs often store the raw URL as the anchor text instead of a label.
+    // Derive a friendly label (e.g. "LinkedIn") so injection matches what the AI writes.
+    const label = /^https?:\/\//i.test(anchor) ? urlToFriendlyLabel(anchor) : anchor;
+    map[label] = url;
+  }
+  return map;
+}
+
+/**
+ * Post-process AI-generated resume/cover-letter text.
+ * Scans the first 6 lines for the contact line (contains |) and replaces
+ * known profile labels (e.g. "LinkedIn") with [LinkedIn](https://...) so the
+ * Rust renderer can attach the hyperlink without displaying the full URL.
+ */
+export function injectLinksIntoGeneratedText(
+  text: string,
+  linkMap: Record<string, string>
+): string {
+  if (!Object.keys(linkMap).length) return text;
+  const lines = text.split('\n');
+  for (let i = 0; i < Math.min(lines.length, 6); i++) {
+    const line = lines[i] ?? '';
+    if (!line.includes('|')) continue;
+    if (/^(PROFESSIONAL|WORK|EDUCATION|SKILLS|SUMMARY)/i.test(line.trim())) continue;
+    let newLine = line;
+    for (const [label, url] of Object.entries(linkMap)) {
+      // Match the label at word boundaries; skip if already inside a markdown link [...]
+      const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      newLine = newLine.replace(new RegExp(`(?<!\\[)\\b${esc}\\b`, 'gi'), `[${label}](${url})`);
+    }
+    if (i < lines.length) lines[i] = newLine;
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Parse the markdown reference block appended by the Rust PDF/DOCX extractor.
+ * Returns a prompt injection block telling the AI to write short labels
+ * (LinkedIn, GitHub) — not full URLs. Actual hyperlinks are injected
+ * post-generation by injectLinksIntoGeneratedText().
+ */
+export function parseLinksFromResume(resume: string): ParsedResumeLinks {
+  const sep = resume.lastIndexOf('\n---\n');
+  if (sep === -1) return { block: '', cleanEmail: '' };
+  const block = resume.slice(sep + 5);
+  const lines = block.split('\n').filter((l) => l.startsWith('- ['));
+
+  let cleanEmail = '';
+  const labelEntries: string[] = [];
+
+  for (const l of lines) {
+    const m = l.match(/^- \[([^\]]+)\]\(([^)]+)\)$/);
+    if (!m) continue;
+    const anchor = m[1] ?? '';
+    const url = m[2];
+    if (!url) continue;
+    if (url.startsWith('mailto:')) {
+      cleanEmail = url.slice('mailto:'.length);
+      continue;
+    }
+    if (!isProfileUrl(url)) continue;
+    labelEntries.push(anchor);
+  }
+
+  if (!labelEntries.length && !cleanEmail) return { block: '', cleanEmail: '' };
+
+  const parts: string[] = [];
+  if (cleanEmail) {
+    parts.push(`CANDIDATE EMAIL (use this exact address, no spaces): ${cleanEmail}`);
+  }
+  if (labelEntries.length) {
+    parts.push(
+      `CANDIDATE PROFILE LINKS — write ONLY these short labels in the contact line (NOT the full URL):\n` +
+        labelEntries.join(', ') +
+        `\nExample: Haarlem, Netherlands | milanbehnam97@gmail.com | +31... | LinkedIn | GitHub`
+    );
+  }
+
+  return { block: parts.join('\n\n'), cleanEmail };
+}
+
+/**
+ * Strip the link reference block from resume text before sending to the AI
+ * so the body text budget is not wasted on the reference list.
+ */
+function stripLinkBlock(resume: string): string {
+  const sep = resume.lastIndexOf('\n---\n');
+  return sep === -1 ? resume : resume.slice(0, sep);
+}
+
 // ─── Metadata extraction prompt ──────────────────────────────────────────────
 
 export function buildMetadataPrompt(
   resume: string,
-  jobAd: string
+  jobAd: string,
+  tier: 'large' | 'medium' | 'small' = 'large'
 ): { system: string; user: string } {
+  // One-shot example appended for small models — dramatically improves JSON compliance
+  const oneShot =
+    tier === 'small'
+      ? `\nExample output:\n{"candidateName":"Jane Smith","jobTitle":"Senior Frontend Engineer","companyName":"Acme Corp","resumeLanguage":"en","jobAdLanguage":"en","topRequirements":["React","TypeScript","GraphQL"],"candidateSeniority":"senior"}\n`
+      : '';
+
+  const { block: linksBlock } = parseLinksFromResume(resume);
+  const resumeBody = stripLinkBlock(resume);
+
   return {
     system: `You are a document parser. Extract structured data from resumes and job ads. Return ONLY valid JSON. No prose. No markdown.`,
     user: `Extract from the resume and job ad below.
+${linksBlock ? `\n${linksBlock}\n` : ''}
+<candidate_resume>
+${resumeBody.slice(0, 3000)}
+</candidate_resume>
 
-### RESUME ###
-${resume.slice(0, 3000)}
-
-### JOB AD ###
+<job_ad>
 ${jobAd.slice(0, 2000)}
+</job_ad>
 
 Return this exact JSON (no other text):
 {
@@ -138,15 +328,47 @@ Return this exact JSON (no other text):
   "topRequirements": ["up to 12 exact technology names and skills from the job ad that should be bolded — prefer specific names like React, TypeScript, AWS, Kubernetes over generic terms like communication or teamwork"],
   "candidateSeniority": "junior|mid|senior|lead|executive"
 }
-
+${oneShot}
 Return ONLY the JSON object.`,
   };
 }
 
 // ─── Resume system prompt ─────────────────────────────────────────────────────
 
-export function buildResumeSystemPrompt(mode: GenerationMode): string {
+export function buildResumeSystemPrompt(
+  mode: GenerationMode,
+  tier: 'large' | 'medium' | 'small' = 'large'
+): string {
   const modeInstr = MODES[mode].toneInstruction;
+
+  if (tier === 'small') {
+    const emphasisNote = `Wrap important job-ad keywords in **double asterisks** when they appear naturally (e.g. **React**, **TypeScript**). Max 2–3 bolded terms per bullet.`;
+    return `You are an expert resume writer. Rewrite the candidate's resume for the target job.
+
+NEVER BREAK THESE RULES:
+1. NEVER invent skills, technologies, employers, dates, or achievements not in the original resume
+2. NEVER copy phrases from the job ad as if the candidate wrote them
+3. ONLY add keywords from the job ad when they embed naturally into EXISTING true statements
+4. Every bullet: Action Verb + What + Technology + Measurable Result (if number exists in original)
+5. Every skill, job title, company, date, and achievement MUST come from the original resume
+
+REQUIRED SECTION HEADERS (exact spelling):
+Professional Summary · Work Experience · Education · Skills
+Optional: Certifications · Projects
+
+DATE FORMAT: "January 2021 – March 2023" or "Jan 2021 – Mar 2023" — consistent throughout.
+
+${emphasisNote}
+
+MODE: ${MODES[mode].label}
+${modeInstr}
+
+OUTPUT: Plain text. Standard section headers. Bullets start with •. No markdown except **bold**. Output ONLY the resume.
+
+FINAL CHECK — read your output and confirm:
+✓ No skill appears that is not in the original resume
+✓ No phrase was copied from the job ad verbatim`;
+  }
 
   return `You are an expert Resume Writer with deep knowledge of ATS systems, recruiter behavior, and modern hiring practices.
 
@@ -281,7 +503,7 @@ Your goal: Achieve 85%+ keyword match while maintaining natural, readable prose.
 OUTPUT FORMAT:
 Plain text with **double asterisks** for keyword emphasis (renderer converts to real bold).
 Standard section headers, "•" for bullets.
-No markdown other than **bold**. No explanations. Output ONLY the resume.`;
+No markdown other than **bold**. No explanations. Output ONLY the resume. Do NOT wrap it in XML tags.`;
 }
 
 // ─── Resume user prompt ───────────────────────────────────────────────────────
@@ -290,19 +512,26 @@ export function buildResumePrompt(
   resume: string,
   jobAd: string,
   meta: GenerationMeta,
-  _mode: GenerationMode
+  _mode: GenerationMode,
+  _tier: 'large' | 'medium' | 'small' = 'large'
 ): string {
   const langNote = meta.mismatch
     ? `IMPORTANT: The resume is in ${meta.resumeLanguage} but the job ad is in ${meta.jobAdLanguage}. Rewrite entirely in ${meta.targetLanguage} using job market terminology native to that market.`
     : `Write in ${meta.targetLanguage}.`;
 
   const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? []);
+  const { block: linksBlock } = parseLinksFromResume(resume);
+  const resumeBody = stripLinkBlock(resume);
 
-  return `### ORIGINAL RESUME ###
-${resume.slice(0, 5000)}
+  return `${linksBlock ? `${linksBlock}\n\n` : ''}<candidate_resume>
+${resumeBody.slice(0, 5000)}
+</candidate_resume>
 
-### TARGET JOB ADVERTISEMENT ###
+<job_ad>
 ${jobAd.slice(0, 2500)}
+</job_ad>
+
+Every skill, job title, company, date, achievement, and responsibility in your output MUST come from <candidate_resume>.
 
 ### CONTEXT ###
 Candidate: ${meta.candidateName || 'Unknown'}
@@ -310,6 +539,14 @@ Target Role: ${meta.jobTitle || 'Unknown'}
 Company: ${meta.companyName || 'Unknown'}
 ${langNote}
 ${emphasisBlock}
+
+EXAMPLE — MISSING SKILLS (follow this exactly):
+
+Resume mentions: Python, PostgreSQL, AWS
+Job ad requires: Python, Kubernetes, GCP
+
+✅ CORRECT: Emphasize Python and cloud experience (AWS). Do NOT mention Kubernetes or GCP.
+❌ WRONG: "Familiar with container orchestration and cloud platforms including GCP." — Candidate never claimed this.
 
 ### REWRITING INSTRUCTIONS (internal — do NOT output any of this) ###
 
@@ -356,7 +593,8 @@ Use this exact structure:
 
 Line 1: Full name (plain text only — no #, no ALL_CAPS, no markdown)
 Line 2: Job title (plain text)
-Line 3: City, Country | email | phone | LinkedIn
+Line 3: City, Country | email | phone | LinkedIn | GitHub
+Use the short label names from CANDIDATE PROFILE LINKS (e.g. "LinkedIn", "GitHub"). Do NOT write full URLs on this line.
 (blank line)
 PROFESSIONAL SUMMARY
 (summary paragraph)
@@ -376,8 +614,28 @@ Start the resume now:`;
 
 // ─── Cover letter system prompt ───────────────────────────────────────────────
 
-export function buildCoverLetterSystemPrompt(mode: GenerationMode): string {
+export function buildCoverLetterSystemPrompt(
+  mode: GenerationMode,
+  tier: 'large' | 'medium' | 'small' = 'large'
+): string {
   const modeInstr = MODES[mode].toneInstruction;
+
+  if (tier === 'small') {
+    return `You are a cover letter writer. Write a focused, specific cover letter.
+
+Rules:
+1. Total body: 200–300 words
+2. Structure: 4 paragraphs — Hook (specific value for this role) → Evidence (1–2 real achievements from resume) → Fit (why this company/role) → Close (confident, not desperate)
+3. Bold max 4–6 job-ad keywords using **double asterisks** where they appear naturally
+4. NEVER copy phrases from the job ad verbatim as if the candidate did that work
+5. NEVER claim skills or experience not in the resume
+6. First sentence must NOT start with "I am excited to apply" or "I am writing to"
+
+MODE: ${MODES[mode].label}
+${modeInstr}
+
+OUTPUT: Complete cover letter with header, salutation, 4 paragraphs, sign-off. Use **bold** for keywords. Output the letter only.`;
+  }
 
   return `You are a cover letter specialist who writes letters that get read — not filtered out.
 
@@ -398,7 +656,8 @@ WHAT MAKES COVER LETTERS WORK:
 
 COMPLETE STRUCTURE:
 [Candidate Name]
-[Email] | [Phone if in resume] | [City if in resume]
+[City if in resume] | [Email] | [Phone if in resume] | LinkedIn | GitHub
+Use the short label names from CANDIDATE PROFILE LINKS (e.g. "LinkedIn", "GitHub"). Do NOT write full URLs on this line.
 [Date]
 
 [Company Name]
@@ -437,7 +696,8 @@ export function buildCoverLetterPrompt(
   resume: string,
   jobAd: string,
   meta: GenerationMeta,
-  _mode: GenerationMode
+  _mode: GenerationMode,
+  _tier: 'large' | 'medium' | 'small' = 'large'
 ): string {
   const today = new Date().toLocaleDateString('en-GB', {
     day: 'numeric',
@@ -450,12 +710,30 @@ export function buildCoverLetterPrompt(
     : `Write in ${meta.targetLanguage}.`;
 
   const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? []);
+  const { block: linksBlock } = parseLinksFromResume(resume);
+  const resumeBody = stripLinkBlock(resume);
 
-  return `### CANDIDATE RESUME ###
-${resume.slice(0, 4000)}
+  return `${linksBlock ? `${linksBlock}\n\n` : ''}<candidate_resume>
+${resumeBody.slice(0, 4000)}
+</candidate_resume>
 
-### JOB ADVERTISEMENT ###
+<job_ad>
 ${jobAd.slice(0, 2500)}
+</job_ad>
+
+Every factual claim about the candidate MUST be traceable to a line in <candidate_resume>. Never claim skills or experience from <job_ad> alone.
+
+EXAMPLE — CORRECT vs INCORRECT:
+
+Job ad: "Acme Corp is hiring a Senior Backend Engineer to scale our payments infrastructure to 1M transactions/day."
+Resume: "Led migration of order service from monolith to microservices at FoodCo, reducing p99 latency by 60%."
+
+✅ CORRECT:
+"I'm applying for the Senior Backend Engineer role at Acme — scaling payments infrastructure is exactly the kind of problem I worked on at FoodCo, where I led a monolith-to-microservices migration that cut p99 latency by 60%."
+
+❌ WRONG:
+"I have experience scaling payments infrastructure to 1M transactions/day and building robust systems for high-volume financial workloads."
+(Pure job ad leakage — candidate never did payments or 1M/day.)
 
 ### CONTEXT ###
 Candidate: ${meta.candidateName || 'Unknown'}
@@ -482,21 +760,28 @@ Verify before writing:
 
 ### COMPLETE COVER LETTER ###
 
-Now output ONLY the cover letter below. Do not output analysis, explanations, or process steps.
+Output ONLY the cover letter. Do NOT wrap it in XML tags. Do NOT add any commentary before or after.
 Start immediately with the candidate header:`;
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 export function extractPlainText(raw: string): string {
-  return raw
-    .replace(/<think>[\s\S]*?<\/think>/gi, '') // strip local model thinking blocks
-    .replace(/^#{1,6}\s/gm, '')
-    .replace(/\*\*\*(.+?)\*\*\*/g, '**$1**') // triple → double (preserve bold)
-    .replace(/\*([^*]+)\*/g, '$1') // single italic → plain
-    .replace(/`(.+?)`/g, '$1')
-    .replace(/```[\s\S]*?```/g, '')
-    .trim();
+  return (
+    raw
+      .replace(/<think>[\s\S]*?<\/think>/gi, '') // local model thinking blocks
+      .replace(/<leakage_check>[\s\S]*?<\/leakage_check>/gi, '') // legacy self-check block
+      // Strip any XML wrapper tags the model might echo from the prompt
+      .replace(/<\/?candidate_resume>/gi, '')
+      .replace(/<\/?job_ad>/gi, '')
+      .replace(/<\/?leakage_check>/gi, '') // stray unclosed tags
+      .replace(/^#{1,6}\s/gm, '')
+      .replace(/\*\*\*(.+?)\*\*\*/g, '**$1**') // triple → double (preserve bold)
+      .replace(/\*([^*]+)\*/g, '$1') // single italic → plain
+      .replace(/`(.+?)`/g, '$1')
+      .replace(/```[\s\S]*?```/g, '')
+      .trim()
+  );
 }
 
 export function validateMetadata(raw: string): GenerationMeta | null {

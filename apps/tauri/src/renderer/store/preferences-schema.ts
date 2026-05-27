@@ -3,6 +3,12 @@ import { z } from 'zod';
 // Performance modes
 export const PerformanceModeSchema = z.enum(['low-memory', 'balanced', 'performance']);
 
+// Prompt quality — controls which prompt variant is sent to the model
+// auto    = detect from model tier (default, safe for all providers)
+// full    = always use full multi-perspective prompts regardless of model
+// compact = always use compact prompts (small-model optimised, fastest)
+export const PromptQualitySchema = z.enum(['auto', 'full', 'compact']);
+
 // Output tone options
 export const OutputToneSchema = z.enum(['professional', 'casual', 'formal', 'creative']);
 
@@ -65,6 +71,9 @@ export const PreferencesSchema = z.object({
   // Performance Preferences
   performanceMode: PerformanceModeSchema.default('balanced'),
 
+  // Prompt quality — which prompt variant to send to the AI model
+  promptQuality: PromptQualitySchema.default('auto'),
+
   // Developer / debug
   debugMode: z.boolean().default(false),
 
@@ -77,6 +86,7 @@ export const PreferencesSchema = z.object({
 
 export type Preferences = z.infer<typeof PreferencesSchema>;
 export type PerformanceMode = z.infer<typeof PerformanceModeSchema>;
+export type PromptQuality = z.infer<typeof PromptQualitySchema>;
 export type OutputTone = z.infer<typeof OutputToneSchema>;
 export type AIModelPreference = z.infer<typeof AIModelPreferenceSchema>;
 export type ResumePreference = z.infer<typeof ResumePreferenceSchema>;

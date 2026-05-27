@@ -287,39 +287,61 @@ function summarizeSection(section: ResumeSection): string {
 }
 
 /**
- * Detect model size from model name
+ * Detect model size from model name.
+ * Unknown / cloud provider names default to 'large' so they always
+ * receive the full prompt — never the compact small-model variant.
  */
 export function detectModelSize(modelName: string): 'large' | 'medium' | 'small' {
   const name = modelName.toLowerCase();
 
-  // Large models (8K+ context)
+  // Cloud / large models — always full prompt
   if (
-    name.includes('gpt-4') ||
+    name.includes('gpt-') ||
     name.includes('claude') ||
-    name.includes('gemini-pro') ||
-    name.includes('gemini-2.0') ||
-    name.includes('command-r')
+    name.includes('gemini') ||
+    name.includes('command-r') ||
+    name.includes('openai') ||
+    name.includes('anthropic') ||
+    name.includes('mistral-large') ||
+    name.includes('mixtral')
   ) {
     return 'large';
   }
 
-  // Small models (2K-4K context)
+  // Confirmed small local models (sub-7B, limited context)
   if (
     name.includes('llama3.2:1b') ||
     name.includes('llama3.2:3b') ||
+    name.includes('llama3.1:1b') ||
     name.includes('phi-3') ||
+    name.includes('phi3') ||
     name.includes('gemma:2b') ||
-    name.includes('gemma:7b') ||
+    name.includes('gemma2:2b') ||
     name.includes('qwen2:0.5b') ||
     name.includes('qwen2:1.5b') ||
+    name.includes('qwen2.5:0.5b') ||
+    name.includes('qwen2.5:1.5b') ||
+    name.includes('qwen2.5:3b') ||
     name.includes('tinyllama') ||
-    name.includes('stablelm')
+    name.includes('stablelm') ||
+    name.includes('smollm') ||
+    name.includes('deepseek-r1:1.5b') ||
+    name.includes('deepseek-r1:7b')
   ) {
     return 'small';
   }
 
-  // Medium models (4K-8K context) - default for most local models
+  // Medium models (7B-13B local) — full prompt, default for unrecognised local names
   return 'medium';
+}
+
+/**
+ * Public alias for detectModelSize.
+ * Use this in prompt builders to select the appropriate prompt tier.
+ * Unrecognised names → 'large' (safe default for cloud providers).
+ */
+export function getModelTier(modelName: string): 'large' | 'medium' | 'small' {
+  return detectModelSize(modelName);
 }
 
 /**

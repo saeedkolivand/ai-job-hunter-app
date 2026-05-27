@@ -1,5 +1,6 @@
 use docx_rs::*;
 use crate::export::{
+    links::{split_urls, Span},
     templates::Template,
     types::{FontFamily, GenerationMeta, TextSegment},
 };
@@ -115,22 +116,39 @@ pub fn render_name_line(
     para
 }
 
-/// Render contact line.
+/// Render contact line, converting URLs to clickable hyperlinks with friendly labels.
 pub fn render_contact_line(
     text: &str,
     template: &Template,
     colors: &DocxColors,
 ) -> Paragraph {
     let font_name = docx_font_name(template.fonts.body_family);
+    let spans = split_urls(text);
 
-    let mut para = Paragraph::new()
-        .add_run(
-            Run::new()
-                .add_text(text)
-                .size(pt_to_dxa(9.0))
-                .color(&colors.date)
-                .fonts(RunFonts::new().ascii(font_name)),
-        );
+    let mut para = Paragraph::new();
+
+    for span in spans {
+        match span {
+            Span::Text(t) => {
+                para = para.add_run(
+                    Run::new()
+                        .add_text(&t)
+                        .size(pt_to_dxa(9.0))
+                        .color(&colors.date)
+                        .fonts(RunFonts::new().ascii(font_name)),
+                );
+            }
+            Span::Link { label, url } => {
+                let link_run = Run::new()
+                    .add_text(&label)
+                    .size(pt_to_dxa(9.0))
+                    .color(&colors.date)
+                    .fonts(RunFonts::new().ascii(font_name));
+                let hyperlink = Hyperlink::new(&url, HyperlinkType::External).add_run(link_run);
+                para = para.add_hyperlink(hyperlink);
+            }
+        }
+    }
 
     if template.name_centered {
         para = para.align(AlignmentType::Center);

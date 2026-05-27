@@ -1,9 +1,6 @@
 /**
- * Embeddings worker — batches calls into Ollama from a worker thread, so
+ * Embeddings worker — batches Ollama embed calls off the main thread so
  * the main process stays responsive during large indexing jobs.
- *
- * Stub forwards to a no-op until the AI runtime is wired through an IPC-style
- * channel (workers don't share JS state with the main thread).
  */
 import { parentPort } from 'node:worker_threads';
 
@@ -22,8 +19,10 @@ interface Output {
 
 port.on('message', async (msg: { id: string; payload: Input }) => {
   try {
-    // TODO: dynamic-import @ajh/ai inside worker once compiled output is wired.
-    const result: Output = { vectors: msg.payload.texts.map(() => []), dim: 0 };
+    const { OllamaClient, embedBatch } = await import('@ajh/ai');
+    const client = new OllamaClient({ host: msg.payload.host });
+    const vectors = await embedBatch(client, msg.payload.model, msg.payload.texts);
+    const result: Output = { vectors, dim: vectors[0]?.length ?? 0 };
     port.postMessage({ id: msg.id, ok: true, result });
   } catch (err) {
     port.postMessage({

@@ -9,6 +9,7 @@
 
 import {
   estimateTokens,
+  getModelTier,
   getResumeStats,
   getStrategyForModel,
   truncateResume,
@@ -65,7 +66,31 @@ export interface AnalysisResult {
   finalVerdict: string;
 }
 
-// ─── JSON schema string for the LLM ─────────────────────────────────────────
+// ─── JSON schema strings ──────────────────────────────────────────────────────
+
+// Compact schema for small local models — omits rewrites (hallucination-prone),
+// caps list lengths, keeps full sectionAnalysis structure so the UI still works.
+const SCHEMA_COMPACT = `{
+  "detectedLanguages": { "resume": "string", "jobAd": "string", "mismatch": boolean },
+  "scores": { "ats": 0-100, "jobMatch": 0-100, "languageAlignment": 0-100, "readability": 0-100, "keywordCoverage": 0-100 },
+  "summary": { "strengths": ["string (max 3)"], "weaknesses": ["string (max 3)"], "overallAssessment": "string" },
+  "missingKeywords": ["string (max 8)"],
+  "matchedSkills": ["string (max 8)"],
+  "missingSkills": ["string (max 5)"],
+  "recommendations": [{ "priority": "high|medium|low", "text": "string", "category": "keyword|skill|format|language|experience" }],
+  "sectionAnalysis": {
+    "summary":    { "score": 0-100, "feedback": "string" },
+    "experience": { "score": 0-100, "feedback": "string" },
+    "skills":     { "score": 0-100, "feedback": "string" },
+    "education":  { "score": 0-100, "feedback": "string" },
+    "formatting": { "score": 0-100, "feedback": "string" }
+  },
+  "rewrites": [],
+  "languageRecommendations": ["string (max 2)"],
+  "atsRisks": [{ "severity": "high|medium|low", "issue": "string", "fix": "string" }],
+  "recruiterPerspective": "string",
+  "finalVerdict": "string"
+}`;
 
 const SCHEMA = `{
   "detectedLanguages": { "resume": "string", "jobAd": "string", "mismatch": boolean },
@@ -89,9 +114,40 @@ const SCHEMA = `{
   "finalVerdict": "string"
 }`;
 
+// ─── Compact system prompt (small local models only) ─────────────────────────
+
+function buildSystemPromptCompact(): string {
+  return `You are a resume reviewer. Analyze how well the resume matches the job ad.
+
+Rules:
+1. Output ONLY valid JSON. No prose outside the JSON.
+2. Score each dimension 0–100 based strictly on what you can verify in the documents.
+3. Do not invent or assume skills not explicitly stated in the resume.
+4. Only list a keyword as missing if it explicitly appears in the job ad.
+
+Scoring guide:
+- ats: ATS parse-safety — single-column layout, standard section headers (Professional Summary / Work Experience / Education / Skills), no tables or graphics, keyword density from job ad
+- jobMatch: How directly the candidate's past roles and experience match the job requirements
+- languageAlignment: Same language and market conventions as the job ad (100 = exact match, 0 = completely different)
+- readability: Bullet point clarity, strong action verbs, quantified achievements
+- keywordCoverage: Percentage of required technologies and skills from the job ad found in the resume
+
+Score bands: 90+ exceptional · 75–89 strong · 60–74 moderate · 45–59 weak · <45 poor
+
+CRITICAL scoring rules (never break):
+- Missing 5+ required keywords → ats and keywordCoverage must be below 65
+- Any ATS-breaking format issue (tables, multi-column) → ats must be below 60
+- Wrong seniority level → jobMatch must be below 70
+- Language mismatch → languageAlignment must be below 50
+
+OUTPUT: Return ONLY the JSON object matching the schema. No markdown. No code blocks. No prose.`;
+}
+
 // ─── System prompt ───────────────────────────────────────────────────────────
 
-export function buildSystemPrompt(): string {
+export function buildSystemPrompt(tier: 'large' | 'medium' | 'small' = 'large'): string {
+  if (tier === 'small') return buildSystemPromptCompact();
+
   return `You are a senior hiring expert with three simultaneous perspectives:
 
 PERSPECTIVE 1 — ATS ENGINE (CRITICAL - 40% weight)
@@ -366,7 +422,16 @@ export interface PromptMeta {
   modelName?: string; // For model-aware context management
 }
 
-export function buildAnalysisPrompt(resume: string, jobAd: string, meta: PromptMeta = {}): string {
+export function buildAnalysisPrompt(
+  resume: string,
+  jobAd: string,
+  meta: PromptMeta = {},
+  tier?: 'large' | 'medium' | 'small'
+): string {
+  // Resolve tier from explicit arg, meta.modelName, or default to large
+  const resolvedTier = tier ?? (meta.modelName ? getModelTier(meta.modelName) : 'large');
+  const isSmall = resolvedTier === 'small';
+
   const toneNote = meta.outputTone ? `Write all feedback text in a ${meta.outputTone} tone.` : '';
   const langNote =
     meta.targetLocale && meta.targetLocale !== 'en'
@@ -382,10 +447,10 @@ export function buildAnalysisPrompt(resume: string, jobAd: string, meta: PromptM
 - Job ad language: ${meta.jobAdLanguage}
 - Language mismatch: ${meta.resumeLanguage !== meta.jobAdLanguage}
 
-Use these pre-detected languages for your analysis. DO NOT perform your own language detection in STEP 1.`
+Use these pre-detected languages for your analysis. DO NOT perform your own language detection.`
       : '';
 
-  // Smart truncation for large resumes AND small models
+  // Smart truncation based on model tier
   const resumeTokens = estimateTokens(resume);
   const stats = getResumeStats(resume);
 
@@ -406,7 +471,38 @@ Use these pre-detected languages for your analysis. DO NOT perform your own lang
     r = resume;
   }
 
-  const j = jobAd.slice(0, 3000);
+  const j = jobAd.slice(0, isSmall ? 1500 : 3000);
+
+  // Compact prompt for small models — fewer steps, simpler instructions
+  if (isSmall) {
+    return `<candidate_resume>
+${r}
+</candidate_resume>
+
+<job_ad>
+${j}
+</job_ad>
+${langDetectionNote}
+
+${toneNote}
+${langNote}
+
+Analyze how well the resume matches the job ad. Think step by step before writing the JSON.
+
+Steps:
+1. Extract the top 10 required skills/technologies from the job ad
+2. Check each one against the resume — matched or missing?
+3. Check ATS format: standard section headers, single column, no tables
+4. Check achievement quality: action verbs, quantified results
+5. Score each dimension 0–100 using the rules in your instructions
+6. Write 3 specific recommendations ordered by impact
+7. Write an honest recruiter reaction in 2 sentences
+
+Return EXACTLY this JSON and nothing else:
+${SCHEMA_COMPACT}
+
+Return ONLY the JSON.`;
+  }
 
   return `### RESUME TEXT ###
 ${r}

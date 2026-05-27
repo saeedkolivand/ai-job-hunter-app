@@ -1,6 +1,6 @@
 /**
- * OCR worker — runs tesseract.js off the main thread.
- * Stub: returns the input path with an empty `text` field until wired.
+ * OCR worker — runs tesseract.js off the main thread so the main process
+ * stays responsive during image recognition.
  */
 import { parentPort } from 'node:worker_threads';
 
@@ -19,13 +19,16 @@ interface Output {
 
 port.on('message', async (msg: { id: string; payload: Input }) => {
   try {
-    // TODO: integrate tesseract.js. Loaded lazily to keep worker startup cheap.
-    // const { createWorker } = await import('tesseract.js');
-    // const worker = await createWorker(msg.payload.lang ?? 'eng');
-    // const { data } = await worker.recognize(msg.payload.path);
-    // await worker.terminate();
-    const result: Output = { text: '', confidence: 0, lang: msg.payload.lang ?? 'eng' };
-    port.postMessage({ id: msg.id, ok: true, result });
+    const { createWorker } = await import('tesseract.js');
+    const lang = msg.payload.lang ?? 'eng';
+    const worker = await createWorker(lang);
+    try {
+      const { data } = await worker.recognize(msg.payload.path);
+      const result: Output = { text: data.text, confidence: data.confidence, lang };
+      port.postMessage({ id: msg.id, ok: true, result });
+    } finally {
+      await worker.terminate();
+    }
   } catch (err) {
     port.postMessage({
       id: msg.id,

@@ -1,15 +1,25 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-import type { AiProvider, PerProviderSettings, Preferences } from './preferences-schema';
+import type {
+  AiProvider,
+  PerProviderSettings,
+  Preferences,
+  PromptQuality,
+} from './preferences-schema';
 
 // Migration function to handle version updates
-const STORE_VERSION = 2;
+const STORE_VERSION = 3;
 
 const migratePreferences = (state: Record<string, unknown>, version: number): Preferences => {
   // v0 → v1: baseline
   if (version < 1) {
     state = { ...state, version: 1, lastUpdated: new Date().toISOString() };
+  }
+
+  // v2 → v3: add promptQuality default
+  if (version < 3) {
+    state = { ...state, promptQuality: 'auto', version: 3, lastUpdated: new Date().toISOString() };
   }
 
   // v1 → v2: flatten { provider, model, baseUrl } → { activeProvider, providers: { … } }
@@ -40,6 +50,7 @@ const defaultPreferences: Preferences = {
   language: 'en',
   outputTone: 'professional',
   performanceMode: 'balanced',
+  promptQuality: 'auto',
   debugMode: false,
   onboardingCompleted: false,
   lastUpdated: new Date().toISOString(),
@@ -56,6 +67,7 @@ interface PreferencesActions {
   setOutputTone: (outputTone: Preferences['outputTone']) => void;
   setResume: (resume: Preferences['resume']) => void;
   setPerformanceMode: (performanceMode: Preferences['performanceMode']) => void;
+  setPromptQuality: (promptQuality: PromptQuality) => void;
   setDebugMode: (enabled: boolean) => void;
   setOnboardingComplete: () => void;
   resetPreferences: () => void;
@@ -142,6 +154,13 @@ export const usePreferencesStore = create<PreferencesStore>()(
           lastUpdated: new Date().toISOString(),
         })),
 
+      setPromptQuality: (promptQuality: PromptQuality) =>
+        set((state) => ({
+          ...state,
+          promptQuality,
+          lastUpdated: new Date().toISOString(),
+        })),
+
       setDebugMode: (debugMode: boolean) =>
         set((state) => ({
           ...state,
@@ -179,4 +198,5 @@ export const useOnboardingCompleted = () =>
   usePreferencesStore((state) => state.onboardingCompleted);
 export const useResume = () => usePreferencesStore((state) => state.resume);
 export const usePerformanceMode = () => usePreferencesStore((state) => state.performanceMode);
+export const usePromptQuality = () => usePreferencesStore((state) => state.promptQuality ?? 'auto');
 export const useDebugMode = () => usePreferencesStore((state) => state.debugMode ?? false);

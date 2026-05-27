@@ -489,21 +489,20 @@ pub fn render_letterhead(
             current_y -= pt_to_mm(template.name_pt) * 1.2;
 
             if !contact_line.is_empty() {
+                let font_size = 9.0_f32;
+                let char_w = pt_to_mm(font_size) * 0.52;
+                let visible_contact = crate::export::links::display_text(contact_line);
                 let contact_x = if template.name_centered {
-                    layout.page_width / 2.0 - (contact_line.len() as f32 * pt_to_mm(9.0) * 0.3)
+                    layout.page_width / 2.0 - (visible_contact.len() as f32 * char_w * 0.5)
                 } else {
                     layout.margin_left
                 };
-                let contact_pos = Point { x: Mm(contact_x).into(), y: Mm(current_y).into() };
-                ops.extend([
-                    Op::StartTextSection,
-                    Op::SetFillColor { col: colors.date.clone() },
-                    Op::SetTextCursor { pos: contact_pos },
-                    Op::SetFont { font: PdfFontHandle::External(body_reg.clone()), size: Pt(9.0) },
-                    Op::ShowText { items: vec![TextItem::Text(contact_line.to_string())] },
-                    Op::EndTextSection,
-                ]);
-                current_y -= pt_to_mm(9.0) * 1.2;
+                render_contact_text_with_links(contact_line, ContactSpanCtx {
+                    x_start: contact_x, y: current_y, font_size,
+                    page_height: layout.page_height, reg_id: body_reg,
+                    fill_color: colors.date.clone(),
+                }, &mut ops);
+                current_y -= pt_to_mm(font_size) * 1.2;
             }
 
             // Hairline rule — thickness from template (e.g. 0.25 pt for Editorial Serif)
@@ -648,7 +647,78 @@ pub fn render_name_line(
     (ops, new_y)
 }
 
+/// Render contact text as a single text op (PDF handles glyph spacing) and append
+/// clickable link annotations using approximate char-width positions.
+///
+/// Splitting into per-span ops with a manual cursor causes visible gaps because the
+/// `char_w` estimate is too wide for narrow glyphs like `|` and space.  Emitting one
+struct ContactSpanCtx<'a> {
+    x_start: f32,
+    y: f32,
+    font_size: f32,
+    page_height: f32,
+    reg_id: &'a FontId,
+    fill_color: Color,
+}
+
+/// `ShowText` lets the PDF engine position every glyph correctly; annotations are
+/// slightly approximate but reliably overlap the link label.
+fn render_contact_text_with_links(text: &str, ctx: ContactSpanCtx<'_>, ops: &mut Vec<Op>) {
+    let ContactSpanCtx { x_start, y, font_size, page_height, reg_id, fill_color } = ctx;
+    use crate::export::links::{display_text, split_urls, Span};
+    let char_w = pt_to_mm(font_size) * 0.52;
+    let display = display_text(text);
+
+    // One text section for the whole line — PDF handles proportional glyph spacing.
+    let text_pos = Point { x: Mm(x_start).into(), y: Mm(y).into() };
+    ops.extend([
+        Op::StartTextSection,
+        Op::SetFillColor { col: fill_color },
+        Op::SetTextCursor { pos: text_pos },
+        Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(font_size) },
+        Op::ShowText { items: vec![TextItem::Text(display.into_owned())] },
+        Op::EndTextSection,
+    ]);
+
+    // Annotation rects: scan spans in the original (markdown) text, track display
+    // character offset to approximate the x position of each link label.
+    let page_h_pt = page_height * 2.834_645_7;
+    let rect_y_bottom = page_h_pt - (y * 2.834_645_7);
+    let rect_y_top = rect_y_bottom + font_size * 1.1;
+    let mut display_chars = 0usize;
+
+    for span in split_urls(text) {
+        match span {
+            Span::Text(t) => display_chars += t.len(),
+            Span::Link { label, url } => {
+                let x_left = (x_start + display_chars as f32 * char_w) * 2.834_645_7;
+                let x_right = x_left + label.len() as f32 * char_w * 2.834_645_7;
+                let rect = Rect {
+                    x: Pt(x_left),
+                    y: Pt(rect_y_bottom),
+                    width: Pt(x_right - x_left),
+                    height: Pt(rect_y_top - rect_y_bottom),
+                    mode: None,
+                    winding_order: None,
+                };
+                ops.push(Op::LinkAnnotation {
+                    link: LinkAnnotation::new(
+                        rect,
+                        Actions::Uri(url),
+                        Some(BorderArray::Solid([0.0, 0.0, 0.0])),
+                        Some(ColorArray::Transparent),
+                        None,
+                    ),
+                });
+                display_chars += label.len();
+            }
+        }
+    }
+}
+
 /// Render contact line with separator rule.
+/// The full line is emitted as one text op so PDF glyph spacing is correct.
+/// Link labels get invisible clickable annotation rects.
 pub fn render_contact_line(
     text: &str,
     template: &Template,
@@ -658,24 +728,23 @@ pub fn render_contact_line(
     y: f32,
 ) -> (Vec<Op>, f32) {
     let (reg_id, _, _) = resolve_fonts(fonts, template.fonts.body_family);
+    let font_size = 9.0_f32;
+    let char_w = pt_to_mm(font_size) * 0.52;
 
-    let x = if template.name_centered {
-        layout.page_width / 2.0 - (text.len() as f32 * pt_to_mm(9.0) * 0.3)
+    let visible = crate::export::links::display_text(text);
+    let x_start = if template.name_centered {
+        layout.page_width / 2.0 - (visible.len() as f32 * char_w * 0.5)
     } else {
         layout.margin_left
     };
 
-    let text_pos = Point { x: Mm(x).into(), y: Mm(y).into() };
-    let mut ops = vec![
-        Op::StartTextSection,
-        Op::SetFillColor { col: colors.date.clone() },
-        Op::SetTextCursor { pos: text_pos },
-        Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(9.0) },
-        Op::ShowText { items: vec![TextItem::Text(text.to_string())] },
-        Op::EndTextSection,
-    ];
+    let mut ops = Vec::new();
+    render_contact_text_with_links(text, ContactSpanCtx {
+        x_start, y, font_size, page_height: layout.page_height,
+        reg_id, fill_color: colors.date.clone(),
+    }, &mut ops);
 
-    let y_after_text = y - pt_to_mm(9.0) * 1.2;
+    let y_after_text = y - pt_to_mm(font_size) * 1.2;
     let rule_thickness = if template.rule_thickness > 0.0 { template.rule_thickness } else { 0.5 };
     ops.extend(build_line(
         layout.margin_left,
