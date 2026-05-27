@@ -93,10 +93,7 @@ function AIGeneratePage() {
     t
   );
 
-  const { stageIdxRef, stageTimerRef, startStageRotation, stopStageRotation } = useStageRotation(
-    setStageLabel,
-    t
-  );
+  const { startStageRotation, stopStageRotation } = useStageRotation(setStageLabel, t);
 
   const saveAiGeneration = useSaveAiGeneration();
 
