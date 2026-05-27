@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
-import { useTranslation } from '@/lib/i18n';
+
 import { type AnalysisResult, runAnalysis } from '@/lib/resume-ai';
 import { useOutputTone, usePromptQuality } from '@/store/preferences-store';
+
 import type { Stage } from '../constants';
 
 export function useAnalysisRun(
@@ -9,7 +10,7 @@ export function useAnalysisRun(
   jobAd: string,
   selectedModel: string,
   canUseAI: boolean,
-  i18n: any,
+  i18n: { language: string },
   setStage: (v: Stage) => void,
   setResult: (v: AnalysisResult | null) => void,
   t: (key: string) => string

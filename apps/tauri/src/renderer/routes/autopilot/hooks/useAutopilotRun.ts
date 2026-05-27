@@ -1,12 +1,10 @@
 import { useCallback, useReducer, useState } from 'react';
+
+import type { Autopilot, AutopilotStepEvent } from '@ajh/shared';
+
 import { useTranslation } from '@/lib/i18n';
 import { transition as machineTransition } from '@/lib/machine';
-import {
-  autopilotRunMachine,
-  type AutopilotRunState,
-  stepToEvent,
-} from '@/lib/machines/autopilot-run.machine';
-import type { AutopilotStepEvent } from '@ajh/shared';
+import { autopilotRunMachine, stepToEvent } from '@/lib/machines/autopilot-run.machine';
 import {
   useAutopilotStepEvents,
   usePauseAutopilot,
@@ -14,9 +12,8 @@ import {
   useResumeAutopilot,
   useRunAutopilot,
 } from '@/services';
-import type { Autopilot } from '@ajh/shared';
 
-import type { RunStateMap, StepLogMap, StepLog } from '../constants';
+import type { RunStateMap, StepLogMap } from '../constants';
 
 export function useAutopilotRun() {
   const { t } = useTranslation();

@@ -4,16 +4,16 @@ import { IconBadge, transition, variants } from '@ajh/ui';
 
 import { AccountsSettingsTab } from '@/features/settings/components/accounts/AccountsSettingsTab';
 import { AISettingsTab } from '@/features/settings/components/ai-settings/AISettingsTab';
-import { DeveloperPreferences } from '@/features/settings/components/preferences/DeveloperPreferences';
 import { GeneralSection } from '@/features/settings/components/general-section';
+import { DeveloperPreferences } from '@/features/settings/components/preferences/DeveloperPreferences';
 import { JobLocationPreferences } from '@/features/settings/components/preferences/JobLocationPreferences';
 import { OutputTonePreferences } from '@/features/settings/components/preferences/OutputTonePreferences';
 import { PerformancePreferences } from '@/features/settings/components/preferences/PerformancePreferences';
-import { PrivacySettingsTab } from '@/features/settings/components/privacy/PrivacySettingsTab';
 import { RemotePreferences } from '@/features/settings/components/preferences/RemotePreferences';
 import { ResumePreferences } from '@/features/settings/components/preferences/ResumePreferences';
 import { SalaryPreferences } from '@/features/settings/components/preferences/SalaryPreferences';
 import { TechStackPreferences } from '@/features/settings/components/preferences/TechStackPreferences';
+import { PrivacySettingsTab } from '@/features/settings/components/privacy/PrivacySettingsTab';
 
 import type { NavItem, SectionId } from '../constants';
 

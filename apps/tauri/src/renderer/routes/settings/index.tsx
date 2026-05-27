@@ -6,9 +6,9 @@ import { useTranslation } from '@/lib/i18n';
 import { usePreferencesStore, useUserName } from '@/store/preferences-store';
 import { useSessionStore } from '@/store/session-store';
 
-import { NAV_GROUPS, type SectionId, type NavItem, type NavGroup } from './constants';
-import { SettingsSidebar } from './components/SettingsSidebar';
 import { SettingsContent } from './components/SettingsContent';
+import { SettingsSidebar } from './components/SettingsSidebar';
+import { NAV_GROUPS, type NavGroup, type NavItem, type SectionId } from './constants';
 
 export const Route = createFileRoute('/settings')({ component: SettingsPage });
 

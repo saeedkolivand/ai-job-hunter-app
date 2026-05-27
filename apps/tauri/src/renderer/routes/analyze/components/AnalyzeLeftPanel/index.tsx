@@ -14,9 +14,8 @@ import { ModelSelector } from '@/components/ui/ModelSelector';
 import { ResumeInputCard } from '@/features/ai-workspace/components/ResumeInputCard';
 import { useTranslation } from '@/lib/i18n';
 import type { PromptQuality } from '@/store/preferences-schema';
-import { usePreferencesStore } from '@/store/preferences-store';
 
-import { ACCEPTED_EXTS, MAX_BYTES, type Stage } from '../constants';
+import type { Stage } from '../constants';
 
 interface Props {
   resume: string;

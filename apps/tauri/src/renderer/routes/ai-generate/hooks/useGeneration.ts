@@ -1,15 +1,22 @@
-import type { GenerationMode } from '@/lib/generate-ai';
-import { extractMetadata, generateCoverLetter, generateResume } from '@/lib/generate-ai';
+import {
+  extractMetadata,
+  generateCoverLetter,
+  generateResume,
+  type GenerationMeta,
+  type GenerationMode,
+} from '@/lib/generate-ai';
+
+type AIGenerateStage = 'idle' | 'extracting' | 'configuring' | 'generating' | 'done';
 
 export function useGeneration(
   resume: string,
   jobAd: string,
-  meta: any,
+  meta: GenerationMeta | null,
   mode: GenerationMode,
   target: 'resume' | 'cover' | 'both',
   selectedModel: string,
-  setStage: (stage: any) => void,
-  setMeta: (meta: any) => void,
+  setStage: (stage: AIGenerateStage) => void,
+  setMeta: (meta: GenerationMeta | null) => void,
   setResumeOut: (out: string | ((p: string) => string)) => void,
   setCoverOut: (out: string | ((p: string) => string)) => void,
   setActiveOut: (out: 'resume' | 'cover') => void,
@@ -23,7 +30,7 @@ export function useGeneration(
   startStageRotation: () => void,
   stopStageRotation: () => void,
   abortControllerRef: React.MutableRefObject<AbortController | null>,
-  saveAiGeneration: any,
+  saveAiGeneration: { mutate: (data: Record<string, unknown>) => void },
   t: (key: string) => string,
   setStageLabel: (label: string) => void
 ) {
