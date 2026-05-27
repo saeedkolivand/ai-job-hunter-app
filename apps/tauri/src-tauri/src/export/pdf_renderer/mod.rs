@@ -670,8 +670,6 @@ pub fn render_contact_line(
         layout.margin_left
     };
 
-    let link_color = Color::Rgb(Rgb::new(0.145, 0.388, 0.922, None)); // #2563EB
-
     let spans = split_urls(text);
     let mut ops = Vec::new();
     let mut cursor_x = x_start;
@@ -696,7 +694,7 @@ pub fn render_contact_line(
                 let pos = Point { x: Mm(cursor_x).into(), y: Mm(y).into() };
                 ops.extend([
                     Op::StartTextSection,
-                    Op::SetFillColor { col: link_color.clone() },
+                    Op::SetFillColor { col: colors.date.clone() },
                     Op::SetTextCursor { pos },
                     Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(font_size) },
                     Op::ShowText { items: vec![TextItem::Text(label.clone())] },

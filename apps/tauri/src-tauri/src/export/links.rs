@@ -5,6 +5,10 @@ static FULL_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"https?://[^\s|·•,<>"']+"#).unwrap()
 });
 
+static EMAIL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}").unwrap()
+});
+
 /// A span of text in a contact line — either plain text or a hyperlink.
 #[derive(Debug, Clone)]
 pub enum Span {
@@ -43,21 +47,49 @@ pub fn url_label(url: &str) -> String {
     domain.to_string()
 }
 
-/// Split a line of text into spans of plain text and hyperlinks.
+/// Split a line of text into spans of plain text, hyperlinks, and email links.
+/// URLs → Span::Link with friendly label; emails → Span::Link with mailto: href.
 pub fn split_urls(text: &str) -> Vec<Span> {
-    let mut spans = Vec::new();
-    let mut last = 0;
+    // Collect all matches (URLs and emails) sorted by start position.
+    struct Match { start: usize, end: usize, label: String, url: String }
+
+    let mut matches: Vec<Match> = Vec::new();
 
     for m in FULL_URL_RE.find_iter(text) {
-        if m.start() > last {
-            spans.push(Span::Text(text[last..m.start()].to_string()));
-        }
         let url = m.as_str().trim_end_matches(['.', ',', ')']);
-        spans.push(Span::Link {
+        matches.push(Match {
+            start: m.start(),
+            end: m.start() + url.len(),
             label: url_label(url),
             url: url.to_string(),
         });
-        last = m.start() + url.len();
+    }
+
+    for m in EMAIL_RE.find_iter(text) {
+        let email = m.as_str();
+        // Skip if this range overlaps an already-captured URL match
+        let overlaps = matches.iter().any(|u| m.start() < u.end && m.end() > u.start);
+        if !overlaps {
+            matches.push(Match {
+                start: m.start(),
+                end: m.end(),
+                label: email.to_string(),
+                url: format!("mailto:{email}"),
+            });
+        }
+    }
+
+    matches.sort_by_key(|m| m.start);
+
+    let mut spans = Vec::new();
+    let mut last = 0;
+
+    for m in &matches {
+        if m.start > last {
+            spans.push(Span::Text(text[last..m.start].to_string()));
+        }
+        spans.push(Span::Link { label: m.label.clone(), url: m.url.clone() });
+        last = m.end;
     }
 
     if last < text.len() {

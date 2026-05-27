@@ -142,8 +142,7 @@ pub fn render_contact_line(
                 let link_run = Run::new()
                     .add_text(&label)
                     .size(pt_to_dxa(9.0))
-                    // Standard hyperlink blue — distinguishable in any template
-                    .color("2563EB")
+                    .color(&colors.date)
                     .fonts(RunFonts::new().ascii(font_name));
                 let hyperlink = Hyperlink::new(&url, HyperlinkType::External).add_run(link_run);
                 para = para.add_hyperlink(hyperlink);
