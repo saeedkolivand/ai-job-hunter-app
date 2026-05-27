@@ -12,11 +12,9 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 
-import { Button } from '@ajh/ui';
+import { Button, cn, transition } from '@ajh/ui';
 
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@ajh/ui';
 
 interface TourItem {
   tourId: string;

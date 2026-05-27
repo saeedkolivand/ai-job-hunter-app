@@ -1,9 +1,7 @@
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, useNotification } from '@ajh/ui';
-
-import { cn } from '@ajh/ui';
+import { Button, cn, useNotification } from '@ajh/ui';
 
 interface RecoveryActionProps {
   title: string;

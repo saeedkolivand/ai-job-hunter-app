@@ -1,9 +1,7 @@
 import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button } from '@ajh/ui';
-
-import { cn } from '@ajh/ui';
+import { Button, cn } from '@ajh/ui';
 
 interface DocumentIssueCardProps {
   filename: string;

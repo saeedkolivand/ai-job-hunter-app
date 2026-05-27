@@ -13,7 +13,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
-import { IconBadge, cn, transition, variants } from '@ajh/ui';
+import { cn, IconBadge, transition, variants } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
 import { AccountsSettingsTab } from '@/features/settings/components/AccountsSettingsTab';

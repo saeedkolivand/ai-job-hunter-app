@@ -10,10 +10,9 @@ import {
   formatTimeRemaining,
   MODEL_RECS,
 } from '@ajh/shared';
-import { Button, useNotification } from '@ajh/ui';
+import { Button, transition, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@ajh/ui';
 import { useJobEvents, usePullModel } from '@/services';
 
 interface ModelSelectionPanelProps {

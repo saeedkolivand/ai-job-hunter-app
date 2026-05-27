@@ -1,8 +1,7 @@
 import { ArrowRight, ShieldAlert } from 'lucide-react';
 
-import { GlassCard } from '@ajh/ui';
+import { cn, GlassCard } from '@ajh/ui';
 
-import { cn } from '@ajh/ui';
 import type { AnalysisResult } from '@/lib/resume-ai';
 
 interface AnalysisATSRisksProps {

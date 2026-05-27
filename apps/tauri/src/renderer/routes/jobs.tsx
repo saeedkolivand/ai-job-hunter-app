@@ -4,7 +4,15 @@ import { useMemo, useRef, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
 import type { DATE_FILTER_OPTIONS, JobInteraction } from '@ajh/shared';
-import { Button, GlassCard, Input, SelectDropdown, useNotification } from '@ajh/ui';
+import {
+  Button,
+  GlassCard,
+  Input,
+  SelectDropdown,
+  staggeredItem,
+  transition,
+  useNotification,
+} from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -12,7 +20,6 @@ import { ApplyDrawer } from '@/features/jobs/components/ApplyDrawer';
 import { PostingRow } from '@/features/jobs/components/PostingRow';
 import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
 import { useTranslation } from '@/lib/i18n';
-import { staggeredItem, transition } from '@ajh/ui';
 import { useAppClient } from '@/providers/AppClientProvider';
 import {
   useBoardConnect,

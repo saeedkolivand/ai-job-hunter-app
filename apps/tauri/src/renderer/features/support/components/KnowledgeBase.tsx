@@ -1,9 +1,8 @@
 import { Search } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, EmptyState, Input } from '@ajh/ui';
+import { Button, cn, EmptyState, Input } from '@ajh/ui';
 
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 
 import { KBArticleCard } from './KBArticleCard';

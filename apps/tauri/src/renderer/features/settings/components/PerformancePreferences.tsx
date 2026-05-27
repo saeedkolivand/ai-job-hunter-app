@@ -1,10 +1,8 @@
 import { Cpu, Gauge, type LucideIcon, Zap } from 'lucide-react';
 import { motion } from 'motion/react';
 
-import { GlassCard, SectionLabel } from '@ajh/ui';
+import { cn, GlassCard, SectionLabel, transition } from '@ajh/ui';
 
-import { cn } from '@ajh/ui';
-import { transition } from '@ajh/ui';
 import type { PerformanceMode } from '@/store/preferences-schema';
 import { usePerformanceMode, usePreferencesStore } from '@/store/preferences-store';
 

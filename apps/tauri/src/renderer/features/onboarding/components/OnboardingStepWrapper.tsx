@@ -1,9 +1,7 @@
 import { motion } from 'motion/react';
 import { useEffect } from 'react';
 
-import { StepDots } from '@ajh/ui';
-
-import { transition } from '@ajh/ui';
+import { StepDots, transition } from '@ajh/ui';
 
 interface OnboardingStepWrapperProps {
   children: React.ReactNode;

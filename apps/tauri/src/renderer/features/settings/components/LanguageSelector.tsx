@@ -1,9 +1,10 @@
 import { Check } from 'lucide-react';
 import { motion } from 'motion/react';
 
+import { cn } from '@ajh/ui';
+
 import { LOCALES } from '@/constants/locales';
 import i18n from '@/i18n';
-import { cn } from '@ajh/ui';
 import { usePreferencesStore } from '@/store/preferences-store';
 
 export function LanguageSelector() {

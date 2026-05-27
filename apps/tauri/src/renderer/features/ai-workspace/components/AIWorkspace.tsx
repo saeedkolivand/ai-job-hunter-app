@@ -3,13 +3,11 @@ import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { AiStreamChunk, JobEvent } from '@ajh/shared';
-import { Button, Input, MarkdownMessage } from '@ajh/ui';
+import { Button, cn, Input, MarkdownMessage, transition } from '@ajh/ui';
 
 import { ModelSelector, useSelectedModel } from '@/components/ui/ModelSelector';
 import i18n from '@/i18n';
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@ajh/ui';
 import {
   useAIStream,
   useExtractText,

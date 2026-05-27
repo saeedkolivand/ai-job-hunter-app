@@ -1,8 +1,7 @@
 import { Activity, CheckCircle, Cpu, Database, Loader2, RefreshCw, XCircle } from 'lucide-react';
 
-import { Button, GlassCard } from '@ajh/ui';
+import { Button, cn, GlassCard } from '@ajh/ui';
 
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 import { useSystemHealth, useSystemMetrics } from '@/services';
 import { invalidateHealth } from '@/services/use-system';

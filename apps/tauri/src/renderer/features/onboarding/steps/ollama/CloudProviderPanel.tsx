@@ -2,10 +2,9 @@ import { Bot, CheckCircle2, Eye, EyeOff, Key, Loader2, RefreshCw } from 'lucide-
 import { motion } from 'motion/react';
 import { useState } from 'react';
 
-import { Button, Input, useNotification } from '@ajh/ui';
+import { Button, Input, transition, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@ajh/ui';
 import {
   useHasProviderKey,
   useOpenExternal,

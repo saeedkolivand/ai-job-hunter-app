@@ -3,11 +3,10 @@ import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 
 import type { DocumentRecord } from '@ajh/shared';
-import { Button, FloatingIcon, useNotification } from '@ajh/ui';
+import { Button, cn, FloatingIcon, useNotification } from '@ajh/ui';
 
 import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 import { useDocuments } from '@/services';
 import { usePreferencesStore } from '@/store/preferences-store';

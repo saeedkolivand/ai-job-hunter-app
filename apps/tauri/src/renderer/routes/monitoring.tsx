@@ -3,13 +3,11 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
-import { Button, GlassCard } from '@ajh/ui';
+import { Button, cn, GlassCard, transition } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@ajh/ui';
 import { fetchJob, useAppVersion, useJobEvents, useJobQueue, useSystemHealth } from '@/services';
 
 export const Route = createFileRoute('/monitoring')({ component: MonitoringPage });

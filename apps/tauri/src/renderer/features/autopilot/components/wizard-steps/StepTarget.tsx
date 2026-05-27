@@ -1,8 +1,7 @@
 import { BOARD_IDS } from '@ajh/shared';
-import { Button, Input, LocationInput, SelectDropdown } from '@ajh/ui';
+import { Button, cn, Input, LocationInput, SelectDropdown } from '@ajh/ui';
 
 import type { Prefilled, SetFn, WizardState } from '@/features/autopilot/types';
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 import { useAppClient } from '@/providers/AppClientProvider';
 

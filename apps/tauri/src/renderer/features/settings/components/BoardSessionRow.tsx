@@ -1,9 +1,8 @@
 import { Check, Link as LinkIcon, LogOut } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, ConfirmModal, useNotification } from '@ajh/ui';
+import { Button, cn, ConfirmModal, useNotification } from '@ajh/ui';
 
-import { cn } from '@ajh/ui';
 import {
   useBoardConnect,
   useBoardDisconnect,

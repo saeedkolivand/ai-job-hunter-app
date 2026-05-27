@@ -1,9 +1,8 @@
 import { Download, LogOut, RotateCcw, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, ConfirmModal, useNotification } from '@ajh/ui';
+import { Button, cn, ConfirmModal, useNotification } from '@ajh/ui';
 
-import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 import {
   useClearInteractions,
