@@ -54,7 +54,7 @@ arc-swap = "1.7"
 uuid = { version = "1", features = ["v4"] }
 
 base64 = "0.22"
-scraper = "0.26"
+scraper = "0.27"
 flate2 = "1.0"
 
 # OS-native secret storage: DPAPI (Windows), Keychain (macOS), libsecret (Linux).
@@ -63,13 +63,13 @@ keyring = { version = "3", features = ["windows-native", "apple-native", "sync-s
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 
 # Cross-platform dependencies
-rusqlite = { version = "0.39", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 pdf-extract = "0.10"
 zip = "8"
 docx-rs = "0.4.19"
 printpdf = "0.9.1"
 unicode-segmentation = "1.10"
-lopdf = "0.34"
+lopdf = "0.40"
 
 
 [target.'cfg(windows)'.dependencies]
