@@ -1,7 +1,7 @@
 /// Job preferences store (SQLite-backed).
 /// Stores user's job search preferences: location, tech stack, seniority, salary, remote.
 use std::path::PathBuf;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -65,7 +65,7 @@ impl JobPreferencesStore {
     }
 
     pub fn get(&self) -> JobPreferences {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.query_row(
             "SELECT location, remote, seniority, salary_min, salary_max, tech_stack
              FROM job_preferences WHERE id = 1",
@@ -95,7 +95,7 @@ impl JobPreferencesStore {
     }
 
     pub fn set(&self, prefs: &JobPreferences) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let tech_stack_json = prefs.tech_stack.as_ref()
             .and_then(|ts| serde_json::to_string(ts).ok());
         

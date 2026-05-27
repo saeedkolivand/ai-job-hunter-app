@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
@@ -70,12 +70,12 @@ impl AiGenerationStore {
     }
 
     pub fn clear_all(&self) {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute("DELETE FROM ai_generations", []).ok();
     }
 
     pub fn list(&self) -> Vec<AiGenerationRecord> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.prepare(
             "SELECT id, created_at, candidate_name, job_title, company_name,
                     resume_language, job_ad_language, target_language, mismatch,
@@ -111,7 +111,7 @@ impl AiGenerationStore {
 
     pub fn insert(&self, rec: &AiGenerationRecord) -> Result<(), String> {
         let top_req_json = serde_json::to_string(&rec.top_requirements).unwrap_or_default();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO ai_generations
              (id, created_at, candidate_name, job_title, company_name,
@@ -140,7 +140,7 @@ impl AiGenerationStore {
     }
 
     pub fn remove(&self, id: &str) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute("DELETE FROM ai_generations WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
         Ok(())

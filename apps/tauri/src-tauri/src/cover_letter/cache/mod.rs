@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
@@ -30,7 +30,7 @@ impl CompanyBriefCache {
 
     /// Returns a cached brief if one exists and is younger than 7 days.
     pub fn get(&self, company: &str) -> Option<String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let cutoff = now_secs() - TTL_SECS;
         conn.query_row(
             "SELECT brief FROM company_briefs WHERE company = ?1 AND created_at > ?2",
@@ -41,7 +41,7 @@ impl CompanyBriefCache {
     }
 
     pub fn set(&self, company: &str, brief: &str) {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let _ = conn.execute(
             "INSERT OR REPLACE INTO company_briefs (company, brief, created_at) VALUES (?1, ?2, ?3)",
             params![company, brief, now_secs()],

@@ -15,7 +15,7 @@
 /// looked up by scrapers/appliers via `get_decrypted(board_id)`.
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use keyring_core::Entry;
@@ -146,7 +146,7 @@ impl CredentialStore {
     // ── Meta persistence ──────────────────────────────────────────────────────
 
     fn load_meta(&self) -> HashMap<String, CredentialMeta> {
-        let mut guard = self.cache.lock().unwrap();
+        let mut guard = self.cache.lock();
         if let Some(ref c) = guard.0 {
             return c.clone();
         }
@@ -162,7 +162,7 @@ impl CredentialStore {
         if let Ok(json) = serde_json::to_string_pretty(&meta) {
             std::fs::write(&self.meta_file, json).ok();
         }
-        self.cache.lock().unwrap().0 = Some(meta);
+        self.cache.lock().0 = Some(meta);
     }
 }
 

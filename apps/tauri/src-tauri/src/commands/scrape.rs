@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 use crate::postings::{InteractionRecord, InteractionStore, PostingsCache};
 use crate::scraping::{BoardSearchInput, ScraperEngine};
@@ -33,7 +33,6 @@ pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
     let job_id = uuid_v4();
     app.state::<Mutex<crate::jobs::JobTracker>>()
         .lock()
-        .unwrap()
         .start(&job_id, "scrape.board");
 
     let engine = app.state::<std::sync::Arc<ScraperEngine>>().inner().clone();
@@ -60,7 +59,7 @@ pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
             json!({ "jobId": job_id_progress, "progress": p }),
         );
         if let Some(tracker) = app_progress.try_state::<Mutex<crate::jobs::JobTracker>>() {
-            if let Ok(mut g) = tracker.lock() {
+            { let mut g = tracker.lock();
                 g.update_progress(&job_id_progress, p as f64);
             }
         }
@@ -70,7 +69,7 @@ pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
     let job_id_item = job_id.clone();
     let on_item = Box::new(move |item: crate::scraping::JobPosting| {
         if let Some(cache) = app_item.try_state::<Mutex<PostingsCache>>() {
-            if let Ok(mut guard) = cache.lock() {
+            { let mut guard = cache.lock();
                 if let Ok(item_json) = serde_json::to_value(&item) {
                     guard.add(item_json);
                 }
@@ -93,7 +92,7 @@ pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
         let tracker = app_clone.state::<Mutex<crate::jobs::JobTracker>>();
         match &result {
             Ok(results) => {
-                if let Ok(mut g) = tracker.lock() {
+                { let mut g = tracker.lock();
                     g.complete(&job_id_clone, json!({ "count": results.len() }));
                 }
                 let _ = app_clone.emit(
@@ -102,7 +101,7 @@ pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
                 );
             }
             Err(e) => {
-                if let Ok(mut g) = tracker.lock() {
+                { let mut g = tracker.lock();
                     g.fail(&job_id_clone, e.to_string());
                 }
                 let _ = app_clone.emit(
@@ -128,7 +127,6 @@ pub async fn scrape_url(app: AppHandle, req: Value) -> Value {
     let job_id = uuid_v4();
     app.state::<Mutex<crate::jobs::JobTracker>>()
         .lock()
-        .unwrap()
         .start(&job_id, "scrape.url");
 
     let app_clone = app.clone();
@@ -140,7 +138,7 @@ pub async fn scrape_url(app: AppHandle, req: Value) -> Value {
         match result {
             Ok(Some(posting)) => {
                 if let Some(cache) = app_clone.try_state::<Mutex<PostingsCache>>() {
-                    if let Ok(mut guard) = cache.lock() {
+                    { let mut guard = cache.lock();
                         if let Ok(item_json) = serde_json::to_value(&posting) {
                             guard.add(item_json);
                         }
@@ -152,7 +150,7 @@ pub async fn scrape_url(app: AppHandle, req: Value) -> Value {
                     json!({ "type": "job.stream", "jobId": job_id_clone, "data": posting, "ts": now_ms() })
                 );
 
-                if let Ok(mut g) = tracker.lock() {
+                { let mut g = tracker.lock();
                     g.complete(&job_id_clone, json!({ "ok": true }));
                 }
                 let _ = app_clone.emit(
@@ -161,7 +159,7 @@ pub async fn scrape_url(app: AppHandle, req: Value) -> Value {
                 );
             }
             Ok(None) => {
-                if let Ok(mut g) = tracker.lock() {
+                { let mut g = tracker.lock();
                     g.fail(&job_id_clone, "no scraper matched this URL".to_string());
                 }
                 let _ = app_clone.emit(
@@ -170,7 +168,7 @@ pub async fn scrape_url(app: AppHandle, req: Value) -> Value {
                 );
             }
             Err(e) => {
-                if let Ok(mut g) = tracker.lock() {
+                { let mut g = tracker.lock();
                     g.fail(&job_id_clone, e.to_string());
                 }
                 let _ = app_clone.emit(
@@ -226,7 +224,6 @@ pub fn scrape_persist_job(app: AppHandle, req: Value) -> Value {
         };
         app.state::<Mutex<InteractionStore>>()
             .lock()
-            .unwrap()
             .upsert(record);
     }
     json!({ "success": true })
@@ -235,7 +232,7 @@ pub fn scrape_persist_job(app: AppHandle, req: Value) -> Value {
 #[tauri::command]
 pub fn scrape_list_postings(app: AppHandle) -> Value {
     let cache = app.state::<Mutex<PostingsCache>>();
-    let guard = cache.lock().unwrap();
+    let guard = cache.lock();
     json!(guard.get_all())
 }
 
@@ -243,7 +240,6 @@ pub fn scrape_list_postings(app: AppHandle) -> Value {
 pub fn scrape_clear_postings(app: AppHandle) -> Value {
     app.state::<Mutex<PostingsCache>>()
         .lock()
-        .unwrap()
         .clear_all();
     json!(null)
 }
@@ -256,7 +252,7 @@ pub fn scrape_list_interactions(app: AppHandle, filter: Option<Value>) -> Value 
         .and_then(|v| v.as_str())
         .map(String::from);
     let binding = app.state::<Mutex<InteractionStore>>();
-    let mut store = binding.lock().unwrap();
+    let mut store = binding.lock();
     json!(store.list(filter_type.as_deref()))
 }
 
@@ -267,7 +263,7 @@ pub async fn scrape_export_data(app: AppHandle) -> Value {
 
     let interactions = {
         let binding = app.state::<Mutex<InteractionStore>>();
-        let mut store = binding.lock().unwrap();
+        let mut store = binding.lock();
         store.export_all()
     };
 
@@ -342,7 +338,6 @@ pub async fn scrape_import_data(app: AppHandle) -> Value {
     let imported = app
         .state::<Mutex<InteractionStore>>()
         .lock()
-        .unwrap()
         .import_bundle(interactions);
 
     json!({ "success": true, "imported": imported })

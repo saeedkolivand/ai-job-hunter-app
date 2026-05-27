@@ -50,6 +50,7 @@ urlencoding = "2"
 rand = "0.10"
 async-trait = "0.1"
 arc-swap = "1.7"
+parking_lot = "0.12"
 
 uuid = { version = "1", features = ["v4"] }
 

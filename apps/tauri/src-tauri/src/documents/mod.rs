@@ -7,7 +7,7 @@
 /// Ollama is called for embeddings via reqwest; gracefully degrades when
 /// Ollama is not running.
 use std::path::PathBuf;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
@@ -80,12 +80,12 @@ impl DocumentStore {
     }
 
     pub fn clear_all(&self) {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute_batch("DELETE FROM vectors; DELETE FROM documents;").ok();
     }
 
     pub fn list(&self) -> Vec<DocumentRecord> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.prepare(
             "SELECT id, title, name, locale, text, pages, created_at, indexed, is_default
              FROM documents ORDER BY created_at DESC",
@@ -112,7 +112,7 @@ impl DocumentStore {
     }
 
     pub fn insert(&self, rec: &DocumentRecord) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         // If this is the first document, automatically set it as default
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM documents", [], |row| row.get(0))
@@ -139,14 +139,14 @@ impl DocumentStore {
     }
 
     pub fn set_indexed(&self, id: &str) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute("UPDATE documents SET indexed = 1 WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
         Ok(())
     }
 
     pub fn remove(&self, id: &str) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute("DELETE FROM documents WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
         conn.execute("DELETE FROM vectors WHERE doc_id = ?1", params![id])
@@ -155,7 +155,7 @@ impl DocumentStore {
     }
 
     pub fn set_default(&self, id: &str) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         // Clear all defaults, then set the new one
         conn.execute("UPDATE documents SET is_default = 0", [])
             .map_err(|e| e.to_string())?;
@@ -166,7 +166,7 @@ impl DocumentStore {
 
     pub fn upsert_vector(&self, doc_id: &str, vector: &[f64]) -> Result<(), String> {
         let json = serde_json::to_string(vector).map_err(|e| e.to_string())?;
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO vectors (doc_id, vector) VALUES (?1, ?2)
              ON CONFLICT(doc_id) DO UPDATE SET vector = excluded.vector",
@@ -177,7 +177,7 @@ impl DocumentStore {
     }
 
     pub fn get_vector(&self, doc_id: &str) -> Option<Vec<f64>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.query_row(
             "SELECT vector FROM vectors WHERE doc_id = ?1",
             params![doc_id],
@@ -188,7 +188,7 @@ impl DocumentStore {
     }
 
     pub fn all_vectors(&self) -> Vec<(String, Vec<f64>)> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.prepare("SELECT doc_id, vector FROM vectors")
             .ok()
             .and_then(|mut stmt| {

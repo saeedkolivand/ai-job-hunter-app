@@ -1,6 +1,6 @@
 use rusqlite::{Connection, Result, params};
 use serde_json::{json, Value};
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use tauri::{AppHandle, Manager};
 
 pub struct ConversationDb(pub Mutex<Connection>);
@@ -33,7 +33,7 @@ impl ConversationDb {
     }
 
     pub fn clear_all(&self) {
-        let conn = self.0.lock().unwrap();
+        let conn = self.0.lock();
         conn.execute_batch("DELETE FROM messages; DELETE FROM conversations;").ok();
     }
 }
@@ -47,7 +47,7 @@ fn now_ms() -> i64 {
 
 pub fn get_or_create(app: &AppHandle) -> Value {
     let db = app.state::<ConversationDb>();
-    let conn = db.0.lock().unwrap();
+    let conn = db.0.lock();
     let id = "default";
     let exists: bool = conn
         .query_row(
@@ -79,7 +79,7 @@ pub fn get_or_create(app: &AppHandle) -> Value {
 
 pub fn load_messages(app: &AppHandle, conversation_id: &str) -> Value {
     let db = app.state::<ConversationDb>();
-    let conn = db.0.lock().unwrap();
+    let conn = db.0.lock();
     let mut stmt = match conn.prepare(
         "SELECT id, role, content, created_at FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC"
     ) {
@@ -108,7 +108,7 @@ pub fn save_message(app: &AppHandle, req: &Value) -> Value {
     let content = req.get("content").and_then(|v| v.as_str()).unwrap_or("");
 
     let db = app.state::<ConversationDb>();
-    let conn = db.0.lock().unwrap();
+    let conn = db.0.lock();
     let id = uuid::Uuid::new_v4().to_string();
     let ts = now_ms();
 
