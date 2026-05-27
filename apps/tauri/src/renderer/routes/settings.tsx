@@ -13,7 +13,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
-import { IconBadge } from '@ajh/ui';
+import { IconBadge, cn, transition, variants } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
 import { AccountsSettingsTab } from '@/features/settings/components/AccountsSettingsTab';
@@ -28,9 +28,7 @@ import { RemotePreferences } from '@/features/settings/components/RemotePreferen
 import { ResumePreferences } from '@/features/settings/components/ResumePreferences';
 import { SalaryPreferences } from '@/features/settings/components/SalaryPreferences';
 import { TechStackPreferences } from '@/features/settings/components/TechStackPreferences';
-import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
-import { transition, variants } from '@/lib/motion';
 import { usePreferencesStore, useUserName } from '@/store/preferences-store';
 import { useSessionStore } from '@/store/session-store';
 

@@ -11,11 +11,9 @@ import {
 import { motion } from 'motion/react';
 import { useState } from 'react';
 
-import { Button, SourceBadge, useNotification } from '@ajh/ui';
+import { Button, SourceBadge, cn, transition, useNotification } from '@ajh/ui';
 
-import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@/lib/motion';
 import { useOpenExternal, usePersistJob } from '@/services';
 
 interface Posting {

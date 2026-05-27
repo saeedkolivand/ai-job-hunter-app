@@ -7,9 +7,9 @@ import { Button } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@/lib/motion';
+import { transition } from '@ajh/ui';
 
 export const Route = createFileRoute('/support')({ component: SupportPage });
 

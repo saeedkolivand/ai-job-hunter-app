@@ -1,7 +1,7 @@
 import { motion } from 'motion/react';
 
-import { cn } from '@/lib/cn';
-import { transition } from '@/lib/motion';
+import { cn } from '@ajh/ui';
+import { transition } from '@ajh/ui';
 import { type AnalysisResult, scoreLabel, verdictGradient } from '@/lib/resume-ai';
 
 interface AnalysisScoresProps {

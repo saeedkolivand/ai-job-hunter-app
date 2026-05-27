@@ -3,7 +3,7 @@ import { useState } from 'react';
 
 import { Button } from '@ajh/ui';
 
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 
 interface DocumentIssueCardProps {
   filename: string;

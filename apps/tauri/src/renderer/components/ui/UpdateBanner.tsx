@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { Button, RefreshButton } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@/lib/motion';
+import { transition } from '@ajh/ui';
 import { useUpdater } from '@/services/use-updater';
 
 export function UpdateBanner() {

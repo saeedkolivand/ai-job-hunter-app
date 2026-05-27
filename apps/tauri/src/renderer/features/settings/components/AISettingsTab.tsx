@@ -18,7 +18,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Button, Dropdown, GlassCard, Input, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@/lib/motion';
+import { transition } from '@ajh/ui';
 import { useAppClient } from '@/providers/AppClientProvider';
 import {
   useAIModels,

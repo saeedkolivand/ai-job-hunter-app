@@ -7,9 +7,9 @@ import { Button, Input, MarkdownMessage } from '@ajh/ui';
 
 import { ModelSelector, useSelectedModel } from '@/components/ui/ModelSelector';
 import i18n from '@/i18n';
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@/lib/motion';
+import { transition } from '@ajh/ui';
 import {
   useAIStream,
   useExtractText,

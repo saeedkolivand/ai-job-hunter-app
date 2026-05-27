@@ -3,16 +3,15 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useState } from 'react';
 
 import type { Autopilot, JobPreferences } from '@ajh/shared';
-import { Button } from '@ajh/ui';
+import { Button, cn } from '@ajh/ui';
 
 import { StepAction } from '@/features/autopilot/components/wizard-steps/StepAction';
 import { StepFilter } from '@/features/autopilot/components/wizard-steps/StepFilter';
 import { StepSchedule } from '@/features/autopilot/components/wizard-steps/StepSchedule';
 import { StepTarget } from '@/features/autopilot/components/wizard-steps/StepTarget';
 import type { SetFn, WizardState } from '@/features/autopilot/types';
-import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@/lib/motion';
+import { transition } from '@ajh/ui';
 import { useCreateAutopilot, useJobPreferences } from '@/services';
 import { useSessionStore } from '@/store/session-store';
 

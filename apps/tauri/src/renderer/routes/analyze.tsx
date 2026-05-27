@@ -30,7 +30,7 @@ import { AnalysisSkills } from '@/features/analyze/components/AnalysisSkills';
 import { AnalysisStrengths } from '@/features/analyze/components/AnalysisStrengths';
 import { AnalysisVerdict } from '@/features/analyze/components/AnalysisVerdict';
 import { CollapsibleInput } from '@/features/analyze/components/CollapsibleInput';
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 import { type AnalysisResult, runAnalysis } from '@/lib/resume-ai';
 import { useDocuments, useExtractText } from '@/services';

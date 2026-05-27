@@ -2,7 +2,7 @@ import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 
 import { Button } from '@ajh/ui';
 
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 
 interface DiagnosticItemProps {
   name: string;

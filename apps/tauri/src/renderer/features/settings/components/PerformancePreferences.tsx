@@ -3,8 +3,8 @@ import { motion } from 'motion/react';
 
 import { GlassCard, SectionLabel } from '@ajh/ui';
 
-import { cn } from '@/lib/cn';
-import { transition } from '@/lib/motion';
+import { cn } from '@ajh/ui';
+import { transition } from '@ajh/ui';
 import type { PerformanceMode } from '@/store/preferences-schema';
 import { usePerformanceMode, usePreferencesStore } from '@/store/preferences-store';
 

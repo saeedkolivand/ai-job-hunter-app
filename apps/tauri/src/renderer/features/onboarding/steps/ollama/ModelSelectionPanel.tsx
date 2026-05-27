@@ -13,7 +13,7 @@ import {
 import { Button, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@/lib/motion';
+import { transition } from '@ajh/ui';
 import { useJobEvents, usePullModel } from '@/services';
 
 interface ModelSelectionPanelProps {

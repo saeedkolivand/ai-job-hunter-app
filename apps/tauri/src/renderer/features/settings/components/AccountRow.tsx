@@ -4,9 +4,9 @@ import { useState } from 'react';
 
 import { Button, Input, useNotification } from '@ajh/ui';
 
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
-import { transition, variants } from '@/lib/motion';
+import { transition, variants } from '@ajh/ui';
 import { useRemoveCredential, useSetCredential } from '@/services';
 import type { CredEntry } from '@/types';
 
