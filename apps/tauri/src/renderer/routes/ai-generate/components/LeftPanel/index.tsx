@@ -6,16 +6,17 @@ import { ModelSelector } from '@/components/ui/ModelSelector';
 import { GenerationConfig } from '@/features/ai-generate/components/GenerationConfig';
 import { GenerationMetadata } from '@/features/ai-generate/components/GenerationMetadata';
 import { ResumeInputCard } from '@/features/ai-workspace/components/ResumeInputCard';
+import type { GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate-ai';
 import { useTranslation } from '@/lib/i18n';
 
 interface Props {
   resume: string;
   jobAd: string;
   stage: string;
-  meta: any;
-  mode: any;
+  meta: GenerationMeta | null;
+  mode: GenerationMode;
   target: 'resume' | 'cover' | 'both';
-  templateId: any;
+  templateId: TemplateId;
   atsMode: boolean;
   uploading: 'resume' | 'jobAd' | null;
   uploadError: string | null;
@@ -25,9 +26,9 @@ interface Props {
   canProceed: boolean;
   setResume: (v: string) => void;
   setJobAd: (v: string) => void;
-  setMode: (v: any) => void;
+  setMode: (v: GenerationMode) => void;
   setTarget: (v: 'resume' | 'cover' | 'both') => void;
-  setTemplateId: (v: any) => void;
+  setTemplateId: (v: TemplateId) => void;
   setAtsMode: (v: boolean) => void;
   onUpload: (target: 'resume' | 'jobAd', file: File) => Promise<void>;
   onReset: () => void;

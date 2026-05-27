@@ -1,6 +1,8 @@
 import { useCallback } from 'react';
-import { useSessionStore } from '@/store/session-store';
+
 import type { AnalysisResult } from '@/lib/resume-ai';
+import { useSessionStore } from '@/store/session-store';
+
 import type { Stage } from '../constants';
 
 export function useAnalyzeState() {

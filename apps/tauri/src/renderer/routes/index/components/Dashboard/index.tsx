@@ -1,4 +1,4 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router';
+import { useRouter } from '@tanstack/react-router';
 
 import { ActionTile } from '@ajh/ui';
 

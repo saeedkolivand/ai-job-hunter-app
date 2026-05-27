@@ -1,4 +1,4 @@
-import { Bookmark, Eye, RefreshCw, Search, Send, Wand2 } from 'lucide-react';
+import { RefreshCw, Search, Wand2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useMemo } from 'react';
 
@@ -14,7 +14,7 @@ import { useAiGenerations } from '@/services/use-ai-generations';
 import { useInteractions } from '@/services/use-postings';
 import { useSessionStore } from '@/store/session-store';
 
-import { TAB_CONFIG, type Tab, type Interaction } from '../constants';
+import { type Interaction, type Tab, TAB_CONFIG } from '../constants';
 
 function ResumesPage() {
   const { t } = useTranslation();

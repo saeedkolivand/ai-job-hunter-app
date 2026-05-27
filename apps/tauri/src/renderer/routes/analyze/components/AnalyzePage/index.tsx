@@ -5,11 +5,12 @@ import { useEffect, useMemo, useState } from 'react';
 import type { DocumentRecord } from '@ajh/shared';
 
 import { PageTransition } from '@/components/layout/PageTransition';
-import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
-import { AnalysisProgress } from '@/features/analyze/components/AnalysisProgress';
+import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
+import { AnalysisATSRisks } from '@/features/analyze/components/AnalysisATSRisks';
 import { AnalysisLanguageMismatch } from '@/features/analyze/components/AnalysisLanguageMismatch';
 import { AnalysisLanguageRecommendations } from '@/features/analyze/components/AnalysisLanguageRecommendations';
 import { AnalysisMissingSkills } from '@/features/analyze/components/AnalysisMissingSkills';
+import { AnalysisProgress } from '@/features/analyze/components/AnalysisProgress';
 import { AnalysisRecommendations } from '@/features/analyze/components/AnalysisRecommendations';
 import { AnalysisRewrites } from '@/features/analyze/components/AnalysisRewrites';
 import { AnalysisScores } from '@/features/analyze/components/AnalysisScores';
@@ -17,16 +18,14 @@ import { AnalysisSectionAnalysis } from '@/features/analyze/components/AnalysisS
 import { AnalysisSkills } from '@/features/analyze/components/AnalysisSkills';
 import { AnalysisStrengths } from '@/features/analyze/components/AnalysisStrengths';
 import { AnalysisVerdict } from '@/features/analyze/components/AnalysisVerdict';
-import { AnalysisATSRisks } from '@/features/analyze/components/AnalysisATSRisks';
 import { useTranslation } from '@/lib/i18n';
-import { type AnalysisResult } from '@/lib/resume-ai';
+import type { AnalysisResult } from '@/lib/resume-ai';
 import { useDocuments, useExtractText } from '@/services';
-import type { PromptQuality } from '@/store/preferences-schema';
 import { usePreferencesStore, usePromptQuality } from '@/store/preferences-store';
 
-import { ACCEPTED_EXTS, MAX_BYTES, type Stage } from '../constants';
-import { useAnalyzeState } from '../hooks/useAnalyzeState';
+import { ACCEPTED_EXTS, MAX_BYTES } from '../constants';
 import { useAnalysisRun } from '../hooks/useAnalysisRun';
+import { useAnalyzeState } from '../hooks/useAnalyzeState';
 import { AnalyzeLeftPanel } from './AnalyzeLeftPanel';
 
 function AnalyzePage() {

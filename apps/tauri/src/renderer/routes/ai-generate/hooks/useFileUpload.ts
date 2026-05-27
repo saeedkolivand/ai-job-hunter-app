@@ -5,7 +5,9 @@ export function useFileUpload(
   setUploading: (uploading: 'resume' | 'jobAd' | null) => void,
   setResume: (text: string) => void,
   setJobAd: (text: string) => void,
-  extractTextMutation: any,
+  extractTextMutation: {
+    mutateAsync: (args: { name: string; bytes: Uint8Array }) => Promise<unknown>;
+  },
   t: (key: string, params?: Record<string, unknown>) => string
 ) {
   const handleUpload = async (target: 'resume' | 'jobAd', file: File) => {
