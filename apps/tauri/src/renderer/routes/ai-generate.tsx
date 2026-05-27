@@ -224,20 +224,20 @@ function AIGeneratePage() {
         setActiveOut('resume');
         setStreamBuffer('');
         setThinkingBuffer('');
-        await generateResume(
+        finalResume = await generateResume(
           resume,
           jobAd,
           meta,
           mode,
           selectedModel,
           onTok(setStreamBuffer, (t) => {
-            finalResume += t;
             setResumeOut((p) => p + t);
           }),
           undefined,
           controller.signal,
           onThink
         );
+        setResumeOut(finalResume);
       }
 
       if (target === 'cover' || target === 'both') {
@@ -248,20 +248,20 @@ function AIGeneratePage() {
         tokenStartRef.current = null;
         setTokenCount(0);
         setGenStep({ current: 2, total: 2, label: 'Cover Letter' });
-        await generateCoverLetter(
+        finalCover = await generateCoverLetter(
           resume,
           jobAd,
           meta,
           mode,
           selectedModel,
           onTok(setStreamBuffer, (t) => {
-            finalCover += t;
             setCoverOut((p) => p + t);
           }),
           undefined,
           controller.signal,
           onThink
         );
+        setCoverOut(finalCover);
       }
 
       stopStageRotation();
