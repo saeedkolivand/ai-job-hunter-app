@@ -497,10 +497,11 @@ pub fn render_letterhead(
                 } else {
                     layout.margin_left
                 };
-                render_contact_text_with_links(
-                    contact_line, contact_x, current_y, font_size,
-                    layout.page_height, body_reg, colors.date.clone(), &mut ops,
-                );
+                render_contact_text_with_links(contact_line, ContactSpanCtx {
+                    x_start: contact_x, y: current_y, font_size,
+                    page_height: layout.page_height, reg_id: body_reg,
+                    fill_color: colors.date.clone(),
+                }, &mut ops);
                 current_y -= pt_to_mm(font_size) * 1.2;
             }
 
@@ -651,18 +652,19 @@ pub fn render_name_line(
 ///
 /// Splitting into per-span ops with a manual cursor causes visible gaps because the
 /// `char_w` estimate is too wide for narrow glyphs like `|` and space.  Emitting one
-/// `ShowText` lets the PDF engine position every glyph correctly; annotations are
-/// slightly approximate but reliably overlap the link label.
-fn render_contact_text_with_links(
-    text: &str,
+struct ContactSpanCtx<'a> {
     x_start: f32,
     y: f32,
     font_size: f32,
     page_height: f32,
-    reg_id: &FontId,
+    reg_id: &'a FontId,
     fill_color: Color,
-    ops: &mut Vec<Op>,
-) {
+}
+
+/// `ShowText` lets the PDF engine position every glyph correctly; annotations are
+/// slightly approximate but reliably overlap the link label.
+fn render_contact_text_with_links(text: &str, ctx: ContactSpanCtx<'_>, ops: &mut Vec<Op>) {
+    let ContactSpanCtx { x_start, y, font_size, page_height, reg_id, fill_color } = ctx;
     use crate::export::links::{display_text, split_urls, Span};
     let char_w = pt_to_mm(font_size) * 0.52;
     let display = display_text(text);
@@ -737,7 +739,10 @@ pub fn render_contact_line(
     };
 
     let mut ops = Vec::new();
-    render_contact_text_with_links(text, x_start, y, font_size, layout.page_height, reg_id, colors.date.clone(), &mut ops);
+    render_contact_text_with_links(text, ContactSpanCtx {
+        x_start, y, font_size, page_height: layout.page_height,
+        reg_id, fill_color: colors.date.clone(),
+    }, &mut ops);
 
     let y_after_text = y - pt_to_mm(font_size) * 1.2;
     let rule_thickness = if template.rule_thickness > 0.0 { template.rule_thickness } else { 0.5 };
