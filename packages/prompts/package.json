@@ -17,6 +17,10 @@
     "./analyze": {
       "types": "./src/analyze.ts",
       "default": "./dist/analyze.js"
+    },
+    "./context-manager": {
+      "types": "./src/context-manager.ts",
+      "default": "./dist/context-manager.js"
     }
   },
   "scripts": {

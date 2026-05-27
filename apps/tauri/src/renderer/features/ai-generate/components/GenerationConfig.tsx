@@ -1,4 +1,4 @@
-import { FileCheck, FileText, Sparkles } from 'lucide-react';
+import { AlertTriangle, FileCheck, FileText, Sparkles, Zap } from 'lucide-react';
 import { motion } from 'motion/react';
 
 import { Button } from '@ajh/ui';
@@ -6,6 +6,8 @@ import { Button } from '@ajh/ui';
 import { cn } from '@/lib/cn';
 import { type GenerationMode, MODES, type TemplateId, TEMPLATES } from '@/lib/generate-ai';
 import { useTranslation } from '@/lib/i18n';
+import type { PromptQuality } from '@/store/preferences-schema';
+import { usePreferencesStore, usePromptQuality } from '@/store/preferences-store';
 
 interface GenerationConfigProps {
   stage: string;
@@ -21,6 +23,12 @@ interface GenerationConfigProps {
   isGenerating: boolean;
 }
 
+const QUALITY_OPTIONS: { id: PromptQuality; label: string; hint: string }[] = [
+  { id: 'full', label: 'Full', hint: 'All recommendations, detailed rewrites' },
+  { id: 'auto', label: 'Auto', hint: 'Detects model capability automatically' },
+  { id: 'compact', label: 'Fast', hint: 'Optimized for small / local models' },
+];
+
 export function GenerationConfig({
   stage,
   mode,
@@ -35,6 +43,8 @@ export function GenerationConfig({
   isGenerating,
 }: GenerationConfigProps) {
   const { t } = useTranslation();
+  const promptQuality = usePromptQuality();
+  const setPromptQuality = usePreferencesStore((s) => s.setPromptQuality);
 
   if (stage !== 'configuring' && stage !== 'done') return null;
 
@@ -97,6 +107,46 @@ export function GenerationConfig({
             )
           )}
         </div>
+      </div>
+
+      {/* Prompt quality */}
+      <div>
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/30">
+          Prompt Quality
+        </div>
+        <div className="grid grid-cols-3 gap-1.5">
+          {QUALITY_OPTIONS.map(({ id, label }) => (
+            <Button
+              key={id}
+              onClick={() => setPromptQuality(id)}
+              className={cn(
+                'flex flex-col items-center gap-1 rounded-lg border py-2.5 text-[11px] font-medium transition-all h-auto',
+                promptQuality === id
+                  ? 'border-brand/40 bg-brand/10 text-brand-soft'
+                  : 'border-white/[0.06] bg-white/[0.02] text-foreground/45 hover:border-white/10 hover:text-foreground/70'
+              )}
+            >
+              {id === 'compact' && <Zap size={12} />}
+              {label}
+            </Button>
+          ))}
+        </div>
+        {promptQuality === 'compact' && (
+          <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+            <Zap size={12} className="text-amber-400 mt-0.5 shrink-0" />
+            <p className="text-[10px] text-amber-400/80 leading-relaxed">
+              Fast mode — rewrites and detailed suggestions are reduced for speed.
+            </p>
+          </div>
+        )}
+        {promptQuality === 'full' && (
+          <div className="mt-2 flex items-start gap-2 rounded-lg border border-orange-500/20 bg-orange-500/5 px-3 py-2">
+            <AlertTriangle size={12} className="text-orange-400 mt-0.5 shrink-0" />
+            <p className="text-[10px] text-orange-400/80 leading-relaxed">
+              Full mode on a small model may produce incomplete or noisy output.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Template */}
