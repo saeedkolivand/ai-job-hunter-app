@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use tauri::{AppHandle, Manager};
 use crate::jobs::JobTracker;
 use crate::scraping::ScraperEngine;
@@ -7,14 +7,14 @@ use crate::scraping::ScraperEngine;
 #[tauri::command]
 pub fn jobs_list(app: AppHandle) -> Value {
     let tracker = app.state::<Mutex<JobTracker>>();
-    let guard = tracker.lock().unwrap();
+    let guard = tracker.lock();
     json!(guard.list())
 }
 
 #[tauri::command]
 pub fn jobs_get(app: AppHandle, job_id: String) -> Value {
     let tracker = app.state::<Mutex<JobTracker>>();
-    let guard = tracker.lock().unwrap();
+    let guard = tracker.lock();
     json!(guard.get(&job_id))
 }
 
@@ -25,7 +25,6 @@ pub async fn jobs_cancel(app: AppHandle, job_id: String) -> Value {
 
     app.state::<Mutex<JobTracker>>()
         .lock()
-        .unwrap()
         .cancel(&job_id);
     json!({ "success": true })
 }
@@ -33,7 +32,7 @@ pub async fn jobs_cancel(app: AppHandle, job_id: String) -> Value {
 #[tauri::command]
 pub fn jobs_retry(app: AppHandle, job_id: String) -> Value {
     let tracker = app.state::<Mutex<JobTracker>>();
-    let guard = tracker.lock().unwrap();
+    let guard = tracker.lock();
     match guard.get(&job_id) {
         Some(rec) => json!({
             "success": true,

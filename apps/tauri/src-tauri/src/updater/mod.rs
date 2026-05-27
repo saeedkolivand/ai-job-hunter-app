@@ -19,7 +19,8 @@
 ///
 /// The Update object is stored across commands so the download URL and signature
 /// are never re-fetched, avoiding race conditions and unnecessary network calls.
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
@@ -66,7 +67,7 @@ pub async fn updater_check(app: AppHandle) -> Value {
             let notes = update.body.clone();
             {
                 let state = app.state::<Mutex<UpdaterState>>();
-                let mut guard = state.lock().unwrap();
+                let mut guard = state.lock();
                 guard.pending_version = Some(version.clone());
                 guard.pending_update = Some(Arc::new(update));
                 guard.downloaded_bytes = None;
@@ -105,7 +106,7 @@ pub async fn updater_check(app: AppHandle) -> Value {
 pub async fn updater_download(app: AppHandle) -> Value {
     let (update, version) = {
         let state = app.state::<Mutex<UpdaterState>>();
-        let guard = state.lock().unwrap();
+        let guard = state.lock();
         match (guard.pending_update.clone(), guard.pending_version.clone()) {
             (Some(u), Some(v)) => (u, v),
             _ => return json!({ "error": "no pending update — call updater_check first" }),
@@ -136,7 +137,7 @@ pub async fn updater_download(app: AppHandle) -> Value {
     match bytes {
         Ok(b) => {
             let state = app.state::<Mutex<UpdaterState>>();
-            state.lock().unwrap().downloaded_bytes = Some(b);
+            state.lock().downloaded_bytes = Some(b);
             emit_status(&app, json!({ "state": "downloaded", "version": version }));
             json!({ "downloaded": true })
         }
@@ -163,7 +164,7 @@ pub async fn updater_download(app: AppHandle) -> Value {
 pub async fn updater_install(app: AppHandle) -> Value {
     let (update, bytes) = {
         let state = app.state::<Mutex<UpdaterState>>();
-        let mut guard = state.lock().unwrap();
+        let mut guard = state.lock();
         match (guard.pending_update.clone(), guard.downloaded_bytes.take()) {
             (Some(u), Some(b)) => (u, b),
             (None, _) => return json!({ "error": "no pending update — call updater_check first" }),
@@ -207,7 +208,7 @@ async fn silent_check(app: &AppHandle) {
             let notes = update.body.clone();
             {
                 let state = app.state::<Mutex<UpdaterState>>();
-                let mut guard = state.lock().unwrap();
+                let mut guard = state.lock();
                 guard.pending_version = Some(version.clone());
                 guard.pending_update = Some(Arc::new(update));
                 guard.downloaded_bytes = None;

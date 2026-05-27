@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 use crate::credentials::CredentialStore;
 use crate::jobs::JobTracker;
@@ -25,7 +25,6 @@ pub async fn ai_generate(app: AppHandle, req: Value) -> Value {
     let job_id = uuid_v4();
     app.state::<Mutex<JobTracker>>()
         .lock()
-        .unwrap()
         .start(&job_id, "ai.generate");
 
     let job_id_clone = job_id.clone();
@@ -65,7 +64,6 @@ pub async fn ai_generate(app: AppHandle, req: Value) -> Value {
             app_clone
                 .state::<Mutex<JobTracker>>()
                 .lock()
-                .unwrap()
                 .fail(&job_id_clone, e);
         }
     });
@@ -124,7 +122,7 @@ async fn stream_ollama_chat(
 
     loop {
         // Check if job was cancelled before reading next chunk
-        if let Some(job) = app.state::<Mutex<JobTracker>>().lock().unwrap().get(job_id) {
+        if let Some(job) = app.state::<Mutex<JobTracker>>().lock().get(job_id) {
             if job.status == crate::jobs::JobStatus::Cancelled {
                 // Force close the connection aggressively
                 let _ = response.error_for_status_ref();
@@ -167,7 +165,6 @@ async fn stream_ollama_chat(
                     if done {
                         app.state::<Mutex<JobTracker>>()
                             .lock()
-                            .unwrap()
                             .complete(job_id, json!({ "done": true }));
                         return Ok(());
                     }
@@ -181,7 +178,6 @@ async fn stream_ollama_chat(
     let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
     app.state::<Mutex<JobTracker>>()
         .lock()
-        .unwrap()
         .complete(job_id, json!({ "done": true }));
 
     Ok(())
@@ -189,7 +185,7 @@ async fn stream_ollama_chat(
 
 fn get_provider_key(app: &AppHandle, provider: &str) -> Option<String> {
     let store = app.state::<Mutex<CredentialStore>>();
-    let guard = store.lock().unwrap();
+    let guard = store.lock();
     guard
         .get_decrypted(&format!("ai:{provider}"))
         .map(|(_, password)| password)
@@ -198,7 +194,7 @@ fn get_provider_key(app: &AppHandle, provider: &str) -> Option<String> {
 #[tauri::command]
 pub fn ai_set_provider_key(app: AppHandle, provider: String, api_key: String) -> Value {
     let store = app.state::<Mutex<CredentialStore>>();
-    let guard = store.lock().unwrap();
+    let guard = store.lock();
     match guard.set(&format!("ai:{provider}"), "apikey", &api_key) {
         Ok(()) => json!({ "success": true }),
         Err(e) => json!({ "success": false, "error": e }),
@@ -208,7 +204,7 @@ pub fn ai_set_provider_key(app: AppHandle, provider: String, api_key: String) ->
 #[tauri::command]
 pub fn ai_remove_provider_key(app: AppHandle, provider: String) -> Value {
     let store = app.state::<Mutex<CredentialStore>>();
-    let guard = store.lock().unwrap();
+    let guard = store.lock();
     match guard.remove(&format!("ai:{provider}")) {
         Ok(()) => json!({ "success": true }),
         Err(e) => json!({ "success": false, "error": e }),
@@ -438,7 +434,7 @@ async fn stream_openai_chat(
 
     loop {
         // Check if job was cancelled before reading next chunk
-        if let Some(job) = app.state::<Mutex<JobTracker>>().lock().unwrap().get(job_id) {
+        if let Some(job) = app.state::<Mutex<JobTracker>>().lock().get(job_id) {
             if job.status == crate::jobs::JobStatus::Cancelled {
                 drop(response);
                 return Err("Job cancelled".to_string());
@@ -460,7 +456,7 @@ async fn stream_openai_chat(
 
                     if data == "[DONE]" {
                         let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
-                        app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
+                        app.state::<Mutex<JobTracker>>().lock().complete(job_id, json!({ "done": true }));
                         return Ok(());
                     }
 
@@ -488,7 +484,7 @@ async fn stream_openai_chat(
     }
 
     let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
-    app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
+    app.state::<Mutex<JobTracker>>().lock().complete(job_id, json!({ "done": true }));
     Ok(())
 }
 
@@ -561,7 +557,7 @@ async fn stream_anthropic_chat(
 
     loop {
         // Check if job was cancelled before reading next chunk
-        if let Some(job) = app.state::<Mutex<JobTracker>>().lock().unwrap().get(job_id) {
+        if let Some(job) = app.state::<Mutex<JobTracker>>().lock().get(job_id) {
             if job.status == crate::jobs::JobStatus::Cancelled {
                 drop(response);
                 return Err("Job cancelled".to_string());
@@ -588,7 +584,7 @@ async fn stream_anthropic_chat(
 
                     if last_event == "message_stop" || data.contains("\"type\":\"message_stop\"") {
                         let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
-                        app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
+                        app.state::<Mutex<JobTracker>>().lock().complete(job_id, json!({ "done": true }));
                         return Ok(());
                     }
 
@@ -641,7 +637,7 @@ async fn stream_anthropic_chat(
     }
 
     let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
-    app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
+    app.state::<Mutex<JobTracker>>().lock().complete(job_id, json!({ "done": true }));
     Ok(())
 }
 
@@ -722,7 +718,7 @@ async fn stream_gemini_chat(
 
     loop {
         // Check if job was cancelled before reading next chunk
-        if let Some(job) = app.state::<Mutex<JobTracker>>().lock().unwrap().get(job_id) {
+        if let Some(job) = app.state::<Mutex<JobTracker>>().lock().get(job_id) {
             if job.status == crate::jobs::JobStatus::Cancelled {
                 drop(response);
                 return Err("Job cancelled".to_string());
@@ -767,7 +763,7 @@ async fn stream_gemini_chat(
     }
 
     let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
-    app.state::<Mutex<JobTracker>>().lock().unwrap().complete(job_id, json!({ "done": true }));
+    app.state::<Mutex<JobTracker>>().lock().complete(job_id, json!({ "done": true }));
     Ok(())
 }
 
@@ -816,7 +812,6 @@ pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
     let job_id = uuid_v4();
     app.state::<Mutex<JobTracker>>()
         .lock()
-        .unwrap()
         .start(&job_id, "ai.pull_model");
 
     let job_id_clone = job_id.clone();
@@ -829,14 +824,12 @@ pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
                 app_clone
                     .state::<Mutex<JobTracker>>()
                     .lock()
-                    .unwrap()
                     .complete(&job_id_clone, json!({ "model": model, "done": true }));
             }
             Err(e) => {
                 app_clone
                     .state::<Mutex<JobTracker>>()
                     .lock()
-                    .unwrap()
                     .fail(&job_id_clone, e);
             }
         }

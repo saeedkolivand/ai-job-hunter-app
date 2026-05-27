@@ -67,6 +67,7 @@ dependencies = [
  "keyring-core",
  "lopdf 0.40.0",
  "mockall",
+ "parking_lot",
  "pdf-extract",
  "printpdf",
  "proptest",

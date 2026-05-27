@@ -8,7 +8,7 @@
 /// (`#[serde(rename_all = "camelCase")]`).
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -217,7 +217,7 @@ impl AutopilotStore {
     // ── Persistence ───────────────────────────────────────────────────────────
 
     fn load(&self) -> HashMap<String, Autopilot> {
-        let mut guard = self.cache.lock().unwrap();
+        let mut guard = self.cache.lock();
         if let Some(ref c) = *guard {
             return c.clone();
         }
@@ -241,7 +241,7 @@ impl AutopilotStore {
         if let Ok(json) = serde_json::to_string_pretty(&list) {
             std::fs::write(&self.data_file, json).ok();
         }
-        *self.cache.lock().unwrap() = Some(map);
+        *self.cache.lock() = Some(map);
     }
 }
 

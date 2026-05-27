@@ -36,7 +36,7 @@ mod profile_import;
 mod scraping;
 mod updater;
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
