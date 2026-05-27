@@ -22,10 +22,10 @@ import {
   buildResumePrompt,
   buildResumeSystemPrompt,
   extractPlainText,
-  getLinkMap,
-  injectLinksIntoGeneratedText,
   type GenerationMeta,
   type GenerationMode,
+  getLinkMap,
+  injectLinksIntoGeneratedText,
   validateMetadata,
 } from '@ajh/prompts/generate';
 import { detectLanguages } from '@ajh/shared/language-detection';
