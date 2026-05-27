@@ -58,7 +58,8 @@ scraper = "0.27"
 flate2 = "1.0"
 
 # OS-native secret storage: DPAPI (Windows), Keychain (macOS), libsecret (Linux).
-keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service"] }
+# keyring v4 split into keyring-core (Entry API) + platform store crates.
+keyring-core = "1"
 
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 
@@ -74,8 +75,13 @@ lopdf = "0.40"
 
 [target.'cfg(windows)'.dependencies]
 wmi = "0.18"
+windows-native-keyring-store = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust", "vendored"] }
 
 [dev-dependencies]
 mockall = "0.14"
