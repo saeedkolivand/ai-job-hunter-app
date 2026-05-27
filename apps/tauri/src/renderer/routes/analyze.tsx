@@ -9,7 +9,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
 import type { DocumentRecord } from '@ajh/shared';
@@ -36,6 +36,7 @@ import { transition } from '@/lib/motion';
 import { type AnalysisResult, runAnalysis } from '@/lib/resume-ai';
 import { useDocuments, useExtractText } from '@/services';
 import { useOutputTone } from '@/store/preferences-store';
+import { useSessionStore } from '@/store/session-store';
 
 export const Route = createFileRoute('/analyze')({ component: Analyze });
 
@@ -47,10 +48,16 @@ type Stage = 'idle' | 'running' | 'done';
 
 function Analyze() {
   const { t, i18n } = useTranslation();
-  const [resume, setResume] = useState('');
-  const [jobAd, setJobAd] = useState('');
-  const [stage, setStage] = useState<Stage>('idle');
-  const [result, setResult] = useState<AnalysisResult | null>(null);
+
+  // Persistent state (survives navigation)
+  const { analyze, setAnalyze } = useSessionStore();
+  const { resume, jobAd, stage, result } = analyze;
+  const setResume = useCallback((v: string) => setAnalyze({ resume: v }), [setAnalyze]);
+  const setJobAd = (v: string) => setAnalyze({ jobAd: v });
+  const setStage = (v: Stage) => setAnalyze({ stage: v });
+  const setResult = (v: AnalysisResult | null) => setAnalyze({ result: v });
+
+  // Transient state (resets each run)
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState('');
   const [thinkingBuffer, setThinkingBuffer] = useState('');
@@ -64,24 +71,14 @@ function Analyze() {
   const extractTextMutation = useExtractText();
   const { data: documentsRaw = [] } = useDocuments();
 
-  // Auto-fill default resume on mount
+  // Auto-fill default resume on mount (only when the field is empty)
   useEffect(() => {
-    if (resume) return; // Don't override if user already has content
+    if (resume) return;
     const docs = documentsRaw as Array<DocumentRecord & { _id?: string; text?: string }>;
     const defaultDoc = docs.find((d) => d.isDefault) ?? docs[0];
     const text = defaultDoc?.text?.trim();
     if (text) setResume(text);
-  }, [documentsRaw, resume]);
-
-  // Reset state when component unmounts (route change)
-  useEffect(() => {
-    return () => {
-      setStage('idle');
-      setResult(null);
-      setError(null);
-      setStream('');
-    };
-  }, []);
+  }, [documentsRaw, resume, setResume]);
 
   const handleUpload = async (target: 'resume' | 'jobAd', file: File) => {
     setUploadError(null);

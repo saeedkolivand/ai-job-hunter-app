@@ -3,9 +3,9 @@ import { BookOpen, Check, Send, ShieldAlert, Zap } from 'lucide-react';
 import type { AutopilotAction } from '@ajh/shared';
 import { Button, TextArea } from '@ajh/ui';
 
+import type { SetFn, WizardState } from '@/features/autopilot/types';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
-import type { SetFn, WizardState } from '@/routes/autopilot';
 
 import { WizardField } from './WizardField';
 

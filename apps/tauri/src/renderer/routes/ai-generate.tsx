@@ -32,7 +32,6 @@ import {
   extractMetadata,
   generateCoverLetter,
   generateResume,
-  type GenerationMeta,
   type GenerationMode,
   type TemplateId,
 } from '@/lib/generate-ai';
@@ -40,6 +39,7 @@ import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
 import { useExtractText } from '@/services';
 import { useSaveAiGeneration } from '@/services/use-ai-generations';
+import { useSessionStore } from '@/store/session-store';
 
 export const Route = createFileRoute('/ai-generate')({ component: AIGeneratePage });
 
@@ -48,12 +48,6 @@ const ACCEPT_ATTR = '.pdf,.docx,.txt,.md,.markdown';
 const MAX_BYTES = 25 * 1024 * 1024;
 
 type GenTarget = 'resume' | 'cover' | 'both';
-type Stage =
-  | 'idle'
-  | 'extracting' // detecting metadata
-  | 'configuring' // show detected info, pick mode
-  | 'generating' // streaming
-  | 'done';
 
 const GENERATION_STAGES = [
   'aiGenerate.stages.analyzing',
@@ -67,41 +61,53 @@ const GENERATION_STAGES = [
 
 function AIGeneratePage() {
   const { t } = useTranslation();
-  // Inputs
-  const [resume, setResume] = useState('');
-  const [jobAd, setJobAd] = useState('');
+
+  // Persistent state (survives navigation)
+  const { aiGenerate, setAIGenerate, resetAIGenerate } = useSessionStore();
+  const {
+    resume,
+    jobAd,
+    stage,
+    meta,
+    mode,
+    target,
+    templateId,
+    atsMode,
+    resumeOut,
+    coverOut,
+    activeOut,
+  } = aiGenerate;
+
+  const setResume = (v: string) => setAIGenerate({ resume: v });
+  const setJobAd = (v: string) => setAIGenerate({ jobAd: v });
+  const setStage = (v: typeof stage) => setAIGenerate({ stage: v });
+  const setMeta = (v: typeof meta) => setAIGenerate({ meta: v });
+  const setMode = (v: GenerationMode) => setAIGenerate({ mode: v });
+  const setTarget = (v: GenTarget) => setAIGenerate({ target: v });
+  const setTemplateId = (v: TemplateId) => setAIGenerate({ templateId: v });
+  const setAtsMode = (v: boolean) => setAIGenerate({ atsMode: v });
+  const setResumeOut = (v: string | ((p: string) => string)) =>
+    setAIGenerate({ resumeOut: typeof v === 'function' ? v(resumeOut) : v });
+  const setCoverOut = (v: string | ((p: string) => string)) =>
+    setAIGenerate({ coverOut: typeof v === 'function' ? v(coverOut) : v });
+  const setActiveOut = (v: 'resume' | 'cover') => setAIGenerate({ activeOut: v });
+
+  // Transient state (resets each run)
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<'resume' | 'jobAd' | null>(null);
+  const [stageLabel, setStageLabel] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [streamBuffer, setStreamBuffer] = useState('');
+  const [thinkingBuffer, setThinkingBuffer] = useState('');
+  const [copied, setCopied] = useState(false);
 
-  // Config
-  const [mode, setMode] = useState<GenerationMode>('ats');
-  const [target, setTarget] = useState<GenTarget>('both');
   const selectedModel = useSelectedModel();
   const { canUse: canUseAI, reason: aiReason } = useCanUseAI();
   const extractTextMutation = useExtractText();
 
-  // Stage
-  const [stage, setStage] = useState<Stage>('idle');
-  const [meta, setMeta] = useState<GenerationMeta | null>(null);
-  const [stageLabel, setStageLabel] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  // Outputs
-  const [resumeOut, setResumeOut] = useState('');
-  const [coverOut, setCoverOut] = useState('');
-  const [activeOut, setActiveOut] = useState<'resume' | 'cover'>('resume');
-  const [templateId, setTemplateId] = useState<TemplateId>('modern');
-  const [atsMode, setAtsMode] = useState(false);
-
-  // Streaming preview
-  const [streamBuffer, setStreamBuffer] = useState('');
-  const [thinkingBuffer, setThinkingBuffer] = useState('');
   const stageIdxRef = useRef(0);
   const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
-
-  // Copy state
-  const [copied, setCopied] = useState(false);
 
   const handleUpload = async (target: 'resume' | 'jobAd', file: File) => {
     setUploadError(null);
@@ -262,19 +268,14 @@ function AIGeneratePage() {
   };
 
   const reset = () => {
-    // Abort running generation if exists
     if (abortControllerRef.current && stage === 'generating') {
       abortControllerRef.current.abort();
     }
     stopStageRotation();
-    setStage('idle');
-    setMeta(null);
     setError(null);
-    setResumeOut('');
-    setCoverOut('');
     setStreamBuffer('');
-    setResume('');
-    setJobAd('');
+    setThinkingBuffer('');
+    resetAIGenerate();
   };
 
   const copyOutput = async () => {
