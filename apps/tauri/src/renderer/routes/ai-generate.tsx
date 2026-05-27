@@ -3,11 +3,10 @@ import { AnimatePresence } from 'motion/react';
 import { useRef, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
-import { Button } from '@ajh/ui';
+import { Button, CollapsibleFileInput } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
 import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
-import { FileInput } from '@/features/ai-generate/components/FileInput';
 import { GenerationConfig } from '@/features/ai-generate/components/GenerationConfig';
 import { GenerationMetadata } from '@/features/ai-generate/components/GenerationMetadata';
 import { OutputPanelDone } from '@/features/ai-generate/components/OutputPanelDone';
@@ -385,15 +384,19 @@ function AIGeneratePage() {
             />
 
             {/* Job ad input */}
-            <FileInput
+            <CollapsibleFileInput
               label={t('aiGenerate.jobAdLabel')}
               icon={Briefcase}
               value={jobAd}
               onChange={setJobAd}
               uploading={uploading === 'jobAd'}
-              onUpload={(f) => void handleUpload('jobAd', f)}
+              onUpload={(f: File) => void handleUpload('jobAd', f)}
+              accept=".pdf,.docx,.txt,.md,.markdown"
+              placeholder={t('aiGenerate.placeholder').replace('…', '')}
               disabled={stage !== 'idle'}
-              t={t}
+              uploadText={t('aiGenerate.upload')}
+              textareaHeight={140}
+              showCheckmark
             />
 
             {uploadError && (
