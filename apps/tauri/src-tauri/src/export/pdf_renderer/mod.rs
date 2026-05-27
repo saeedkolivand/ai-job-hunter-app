@@ -1,7 +1,6 @@
 use anyhow::Context;
 use printpdf::*;
 use crate::export::{
-    links::{split_urls, Span},
     templates::{CoverLetterHeader, SectionStyle, Template},
     types::{FontFamily, GenerationMeta, TextSegment},
 };
@@ -490,21 +489,19 @@ pub fn render_letterhead(
             current_y -= pt_to_mm(template.name_pt) * 1.2;
 
             if !contact_line.is_empty() {
+                let font_size = 9.0_f32;
+                let char_w = pt_to_mm(font_size) * 0.52;
+                let visible_contact = crate::export::links::display_text(contact_line);
                 let contact_x = if template.name_centered {
-                    layout.page_width / 2.0 - (contact_line.len() as f32 * pt_to_mm(9.0) * 0.3)
+                    layout.page_width / 2.0 - (visible_contact.len() as f32 * char_w * 0.5)
                 } else {
                     layout.margin_left
                 };
-                let contact_pos = Point { x: Mm(contact_x).into(), y: Mm(current_y).into() };
-                ops.extend([
-                    Op::StartTextSection,
-                    Op::SetFillColor { col: colors.date.clone() },
-                    Op::SetTextCursor { pos: contact_pos },
-                    Op::SetFont { font: PdfFontHandle::External(body_reg.clone()), size: Pt(9.0) },
-                    Op::ShowText { items: vec![TextItem::Text(contact_line.to_string())] },
-                    Op::EndTextSection,
-                ]);
-                current_y -= pt_to_mm(9.0) * 1.2;
+                render_contact_text_with_links(
+                    contact_line, contact_x, current_y, font_size,
+                    layout.page_height, body_reg, colors.date.clone(), &mut ops,
+                );
+                current_y -= pt_to_mm(font_size) * 1.2;
             }
 
             // Hairline rule — thickness from template (e.g. 0.25 pt for Editorial Serif)
@@ -649,8 +646,77 @@ pub fn render_name_line(
     (ops, new_y)
 }
 
+/// Render contact text as a single text op (PDF handles glyph spacing) and append
+/// clickable link annotations using approximate char-width positions.
+///
+/// Splitting into per-span ops with a manual cursor causes visible gaps because the
+/// `char_w` estimate is too wide for narrow glyphs like `|` and space.  Emitting one
+/// `ShowText` lets the PDF engine position every glyph correctly; annotations are
+/// slightly approximate but reliably overlap the link label.
+fn render_contact_text_with_links(
+    text: &str,
+    x_start: f32,
+    y: f32,
+    font_size: f32,
+    page_height: f32,
+    reg_id: &FontId,
+    fill_color: Color,
+    ops: &mut Vec<Op>,
+) {
+    use crate::export::links::{display_text, split_urls, Span};
+    let char_w = pt_to_mm(font_size) * 0.52;
+    let display = display_text(text);
+
+    // One text section for the whole line — PDF handles proportional glyph spacing.
+    let text_pos = Point { x: Mm(x_start).into(), y: Mm(y).into() };
+    ops.extend([
+        Op::StartTextSection,
+        Op::SetFillColor { col: fill_color },
+        Op::SetTextCursor { pos: text_pos },
+        Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(font_size) },
+        Op::ShowText { items: vec![TextItem::Text(display.into_owned())] },
+        Op::EndTextSection,
+    ]);
+
+    // Annotation rects: scan spans in the original (markdown) text, track display
+    // character offset to approximate the x position of each link label.
+    let page_h_pt = page_height * 2.834_645_7;
+    let rect_y_bottom = page_h_pt - (y * 2.834_645_7);
+    let rect_y_top = rect_y_bottom + font_size * 1.1;
+    let mut display_chars = 0usize;
+
+    for span in split_urls(text) {
+        match span {
+            Span::Text(t) => display_chars += t.len(),
+            Span::Link { label, url } => {
+                let x_left = (x_start + display_chars as f32 * char_w) * 2.834_645_7;
+                let x_right = x_left + label.len() as f32 * char_w * 2.834_645_7;
+                let rect = Rect {
+                    x: Pt(x_left),
+                    y: Pt(rect_y_bottom),
+                    width: Pt(x_right - x_left),
+                    height: Pt(rect_y_top - rect_y_bottom),
+                    mode: None,
+                    winding_order: None,
+                };
+                ops.push(Op::LinkAnnotation {
+                    link: LinkAnnotation::new(
+                        rect,
+                        Actions::Uri(url),
+                        Some(BorderArray::Solid([0.0, 0.0, 0.0])),
+                        Some(ColorArray::Transparent),
+                        None,
+                    ),
+                });
+                display_chars += label.len();
+            }
+        }
+    }
+}
+
 /// Render contact line with separator rule.
-/// URLs are rendered in hyperlink blue and annotated with clickable link rectangles.
+/// The full line is emitted as one text op so PDF glyph spacing is correct.
+/// Link labels get invisible clickable annotation rects.
 pub fn render_contact_line(
     text: &str,
     template: &Template,
@@ -661,73 +727,17 @@ pub fn render_contact_line(
 ) -> (Vec<Op>, f32) {
     let (reg_id, _, _) = resolve_fonts(fonts, template.fonts.body_family);
     let font_size = 9.0_f32;
-    // Approximate character width for this font size
     let char_w = pt_to_mm(font_size) * 0.52;
 
+    let visible = crate::export::links::display_text(text);
     let x_start = if template.name_centered {
-        layout.page_width / 2.0 - (text.len() as f32 * char_w * 0.5)
+        layout.page_width / 2.0 - (visible.len() as f32 * char_w * 0.5)
     } else {
         layout.margin_left
     };
 
-    let spans = split_urls(text);
     let mut ops = Vec::new();
-    let mut cursor_x = x_start;
-
-    for span in &spans {
-        match span {
-            Span::Text(t) => {
-                if t.is_empty() { continue; }
-                let pos = Point { x: Mm(cursor_x).into(), y: Mm(y).into() };
-                ops.extend([
-                    Op::StartTextSection,
-                    Op::SetFillColor { col: colors.date.clone() },
-                    Op::SetTextCursor { pos },
-                    Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(font_size) },
-                    Op::ShowText { items: vec![TextItem::Text(t.clone())] },
-                    Op::EndTextSection,
-                ]);
-                cursor_x += t.len() as f32 * char_w;
-            }
-            Span::Link { label, url } => {
-                let link_w = label.len() as f32 * char_w;
-                let pos = Point { x: Mm(cursor_x).into(), y: Mm(y).into() };
-                ops.extend([
-                    Op::StartTextSection,
-                    Op::SetFillColor { col: colors.date.clone() },
-                    Op::SetTextCursor { pos },
-                    Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(font_size) },
-                    Op::ShowText { items: vec![TextItem::Text(label.clone())] },
-                    Op::EndTextSection,
-                ]);
-                // Annotation rect in PDF points (bottom-left origin)
-                // PDF y=0 is bottom; our y is mm from top of page
-                let page_h_pt = layout.page_height * 2.834_645_7;
-                let rect_y_bottom = page_h_pt - (y * 2.834_645_7);
-                let rect_y_top = rect_y_bottom + font_size * 1.1;
-                let rect_x_left = cursor_x * 2.834_645_7;
-                let rect_x_right = rect_x_left + link_w * 2.834_645_7;
-                let rect = Rect {
-                    x: Pt(rect_x_left),
-                    y: Pt(rect_y_bottom),
-                    width: Pt(rect_x_right - rect_x_left),
-                    height: Pt(rect_y_top - rect_y_bottom),
-                    mode: None,
-                    winding_order: None,
-                };
-                ops.push(Op::LinkAnnotation {
-                    link: LinkAnnotation::new(
-                        rect,
-                        Actions::Uri(url.clone()),
-                        Some(BorderArray::Solid([0.0, 0.0, 0.0])),
-                        Some(ColorArray::Transparent),
-                        None,
-                    ),
-                });
-                cursor_x += link_w;
-            }
-        }
-    }
+    render_contact_text_with_links(text, x_start, y, font_size, layout.page_height, reg_id, colors.date.clone(), &mut ops);
 
     let y_after_text = y - pt_to_mm(font_size) * 1.2;
     let rule_thickness = if template.rule_thickness > 0.0 { template.rule_thickness } else { 0.5 };
