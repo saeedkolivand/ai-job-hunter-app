@@ -100,6 +100,12 @@ function AIGeneratePage() {
   const [streamBuffer, setStreamBuffer] = useState('');
   const [thinkingBuffer, setThinkingBuffer] = useState('');
   const [copied, setCopied] = useState(false);
+  const [modelLoading, setModelLoading] = useState(false);
+  const [tokenCount, setTokenCount] = useState(0);
+  const tokenStartRef = useRef<number | null>(null);
+  const [genStep, setGenStep] = useState<{ current: number; total: number; label: string } | null>(
+    null
+  );
 
   const selectedModel = useSelectedModel();
   const { canUse: canUseAI, reason: aiReason } = useCanUseAI();
@@ -183,6 +189,11 @@ function AIGeneratePage() {
     setCoverOut('');
     setStreamBuffer('');
     setThinkingBuffer('');
+    setModelLoading(true);
+    setTokenCount(0);
+    tokenStartRef.current = null;
+    const total = target === 'both' ? 2 : 1;
+    setGenStep({ current: 1, total, label: target === 'cover' ? 'Cover Letter' : 'Resume' });
     setStage('generating');
     startStageRotation();
 
@@ -192,6 +203,21 @@ function AIGeneratePage() {
 
     let finalResume = '';
     let finalCover = '';
+
+    const onTok =
+      (setter: (fn: (p: string) => string) => void, accumulate: (t: string) => void) =>
+      (tok: string) => {
+        if (!tokenStartRef.current) tokenStartRef.current = Date.now();
+        setModelLoading(false);
+        setTokenCount((c) => c + 1);
+        accumulate(tok);
+        setter((p) => (p + tok).slice(-600));
+      };
+
+    const onThink = (tok: string) => {
+      setModelLoading(false);
+      setThinkingBuffer((p) => p + tok);
+    };
 
     try {
       if (target === 'resume' || target === 'both') {
@@ -204,14 +230,13 @@ function AIGeneratePage() {
           meta,
           mode,
           selectedModel,
-          (tok) => {
-            finalResume += tok;
-            setResumeOut((p) => p + tok);
-            setStreamBuffer((p) => (p + tok).slice(-600));
-          },
+          onTok(setStreamBuffer, (t) => {
+            finalResume += t;
+            setResumeOut((p) => p + t);
+          }),
           undefined,
           controller.signal,
-          (tok) => setThinkingBuffer((p) => p + tok)
+          onThink
         );
       }
 
@@ -219,20 +244,23 @@ function AIGeneratePage() {
         setActiveOut('cover');
         setStreamBuffer('');
         setThinkingBuffer('');
+        setModelLoading(true);
+        tokenStartRef.current = null;
+        setTokenCount(0);
+        setGenStep({ current: 2, total: 2, label: 'Cover Letter' });
         await generateCoverLetter(
           resume,
           jobAd,
           meta,
           mode,
           selectedModel,
-          (tok) => {
-            finalCover += tok;
-            setCoverOut((p) => p + tok);
-            setStreamBuffer((p) => (p + tok).slice(-600));
-          },
+          onTok(setStreamBuffer, (t) => {
+            finalCover += t;
+            setCoverOut((p) => p + t);
+          }),
           undefined,
           controller.signal,
-          (tok) => setThinkingBuffer((p) => p + tok)
+          onThink
         );
       }
 
@@ -446,6 +474,10 @@ function AIGeneratePage() {
                 streamBuffer={streamBuffer}
                 activeOut={activeOut}
                 thinkingBuffer={thinkingBuffer}
+                modelLoading={modelLoading}
+                genStep={genStep}
+                tokenCount={tokenCount}
+                tokenStartMs={tokenStartRef.current}
               />
             )}
 

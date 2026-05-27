@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  AlertTriangle,
   Briefcase,
   CheckCircle2,
   ChevronDown,
@@ -7,6 +8,7 @@ import {
   ScanSearch,
   Sparkles,
   Upload,
+  Zap,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -35,7 +37,8 @@ import { useTranslation } from '@/lib/i18n';
 import { transition } from '@/lib/motion';
 import { type AnalysisResult, runAnalysis } from '@/lib/resume-ai';
 import { useDocuments, useExtractText } from '@/services';
-import { useOutputTone } from '@/store/preferences-store';
+import type { PromptQuality } from '@/store/preferences-schema';
+import { useOutputTone, usePreferencesStore, usePromptQuality } from '@/store/preferences-store';
 import { useSessionStore } from '@/store/session-store';
 
 export const Route = createFileRoute('/analyze')({ component: Analyze });
@@ -64,10 +67,15 @@ function Analyze() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<'resume' | 'jobAd' | null>(null);
   const [runId, setRunId] = useState(0);
+  const [modelLoading, setModelLoading] = useState(false);
+  const [tokenCount, setTokenCount] = useState(0);
+  const tokenStartRef = useRef<number | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const selectedModel = useSelectedModel();
   const { canUse: canUseAI, reason: aiReason } = useCanUseAI();
   const outputTone = useOutputTone();
+  const promptQuality = usePromptQuality();
+  const setPromptQuality = usePreferencesStore((s) => s.setPromptQuality);
   const extractTextMutation = useExtractText();
   const { data: documentsRaw = [] } = useDocuments();
 
@@ -124,6 +132,9 @@ function Analyze() {
     setResult(null);
     setStream('');
     setThinkingBuffer('');
+    setModelLoading(true);
+    setTokenCount(0);
+    tokenStartRef.current = null;
 
     // Create new abort controller for this run
     const controller = new AbortController();
@@ -136,8 +147,18 @@ function Analyze() {
         model: selectedModel,
         locale: i18n.language,
         meta: { targetLocale: i18n.language, outputTone: outputTone ?? 'professional' },
-        onToken: (tok) => setStream((p) => (p + tok).slice(-2000)),
-        onThinking: (tok) => setThinkingBuffer((p) => p + tok),
+        onToken: (tok) => {
+          if (!tokenStartRef.current) {
+            tokenStartRef.current = Date.now();
+          }
+          setModelLoading(false);
+          setTokenCount((c) => c + 1);
+          setStream((p) => (p + tok).slice(-2000));
+        },
+        onThinking: (tok) => {
+          setModelLoading(false);
+          setThinkingBuffer((p) => p + tok);
+        },
         signal: controller.signal,
       });
       setResult(analysis);
@@ -197,6 +218,53 @@ function Analyze() {
           {/* Model selector */}
           <div className="px-6 pb-4">
             <ModelSelector />
+          </div>
+
+          {/* Prompt quality selector */}
+          <div className="px-6 pb-4">
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/30">
+              Prompt Quality
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(
+                [
+                  { id: 'full' as PromptQuality, label: 'Full' },
+                  { id: 'auto' as PromptQuality, label: 'Auto' },
+                  { id: 'compact' as PromptQuality, label: 'Fast' },
+                ] as const
+              ).map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setPromptQuality(id)}
+                  className={cn(
+                    'flex items-center justify-center gap-1 rounded-lg border py-1.5 text-[11px] font-medium transition-all',
+                    promptQuality === id
+                      ? 'border-brand/40 bg-brand/10 text-brand-soft'
+                      : 'border-white/[0.06] bg-white/[0.02] text-foreground/45 hover:border-white/10 hover:text-foreground/70'
+                  )}
+                >
+                  {id === 'compact' && <Zap size={11} />}
+                  {label}
+                </button>
+              ))}
+            </div>
+            {promptQuality === 'compact' && (
+              <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+                <Zap size={11} className="text-amber-400 mt-0.5 shrink-0" />
+                <p className="text-[10px] text-amber-400/80 leading-relaxed">
+                  Fast mode — rewrites and detailed suggestions are reduced for speed.
+                </p>
+              </div>
+            )}
+            {promptQuality === 'full' && (
+              <div className="mt-2 flex items-start gap-2 rounded-lg border border-orange-500/20 bg-orange-500/5 px-3 py-2">
+                <AlertTriangle size={11} className="text-orange-400 mt-0.5 shrink-0" />
+                <p className="text-[10px] text-orange-400/80 leading-relaxed">
+                  Full mode on a small model may produce incomplete or noisy output.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Inputs */}
@@ -305,7 +373,15 @@ function Analyze() {
                 className="flex flex-1 flex-col overflow-hidden"
               >
                 <div className="flex-1 overflow-y-auto px-8 py-8">
-                  <AnalysisProgress running stream={stream} thinking={thinkingBuffer} t={t} />
+                  <AnalysisProgress
+                    running
+                    stream={stream}
+                    thinking={thinkingBuffer}
+                    modelLoading={modelLoading}
+                    tokenCount={tokenCount}
+                    tokenStartMs={tokenStartRef.current}
+                    t={t}
+                  />
                 </div>
               </motion.div>
             )}
@@ -442,11 +518,17 @@ function AnalysisProgress({
   running,
   stream,
   thinking,
+  modelLoading,
+  tokenCount,
+  tokenStartMs,
   t,
 }: {
   running: boolean;
   stream: string;
   thinking?: string;
+  modelLoading?: boolean;
+  tokenCount?: number;
+  tokenStartMs?: number | null;
   t: (key: string) => string;
 }) {
   const PROGRESS_MESSAGES = [
@@ -555,6 +637,14 @@ function AnalysisProgress({
       {/* Thinking output */}
       {thinking && <ThinkingBubble thinking={thinking} done={stream.length > 0} />}
 
+      {/* Model loading indicator */}
+      {modelLoading && (
+        <div className="flex items-center gap-2 text-[10px] text-foreground/40">
+          <span className="h-1.5 w-1.5 animate-spin rounded-full border border-brand border-t-transparent" />
+          Loading model into memory...
+        </div>
+      )}
+
       {/* Live stream output */}
       <div className="rounded-lg border border-white/[0.05] bg-black/20 px-4 py-3 h-28 overflow-hidden relative">
         {stream ? (
@@ -575,6 +665,19 @@ function AnalysisProgress({
         {/* Fade out top so it looks like it's scrolling in from below */}
         <div className="absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-black/20 to-transparent pointer-events-none" />
       </div>
+
+      {/* Token throughput */}
+      {tokenCount != null &&
+        tokenCount > 0 &&
+        (() => {
+          const elapsed = tokenStartMs ? (Date.now() - tokenStartMs) / 1000 : 0;
+          const tokPerSec = elapsed > 2 ? Math.round(tokenCount / elapsed) : null;
+          return (
+            <div className="text-[10px] text-foreground/25 text-right">
+              {tokenCount.toLocaleString()} tokens{tokPerSec ? ` · ~${tokPerSec} tok/s` : ''}
+            </div>
+          );
+        })()}
     </div>
   );
 }
