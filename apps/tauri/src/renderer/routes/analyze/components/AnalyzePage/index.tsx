@@ -98,8 +98,6 @@ function AnalyzePage() {
     tokenStartRef,
     run,
     reset,
-    outputTone,
-    promptQuality: hookPromptQuality,
   } = useAnalysisRun(resume, jobAd, selectedModel, canUseAI, i18n, setStage, setResult, t);
 
   const handleReset = async () => {

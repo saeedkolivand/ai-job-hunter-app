@@ -58,7 +58,6 @@ function Jobs() {
 
   const {
     scraping,
-    scrapeJobId,
     scrapeOutcome,
     livePostings,
     setLivePostings,
