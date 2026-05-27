@@ -74,7 +74,7 @@ impl LinkedInScraper {
 
         let data_dir = resolve_data_dir();
         if board_login::session_is_stale(&data_dir, "linkedin") {
-            eprintln!("[linkedin] session is stale — falling back to guest mode");
+            log::warn!("[linkedin] session is stale — falling back to guest mode");
             return None;
         }
         let cookies = board_login::load_cookies(&data_dir, "linkedin");

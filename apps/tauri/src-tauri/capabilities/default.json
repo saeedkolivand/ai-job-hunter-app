@@ -12,6 +12,7 @@
     "opener:default",
     "dialog:default",
     "updater:default",
-    "clipboard-manager:default"
+    "clipboard-manager:default",
+    "log:default"
   ]
 }
