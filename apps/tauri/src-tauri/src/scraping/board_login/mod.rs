@@ -201,7 +201,7 @@ where
     if connected {
         on_status("Login successful, exporting cookies…");
         if let Err(e) = export_cookies(&page, app_data_dir, board_id).await {
-            eprintln!("[board_login] failed to export cookies for {board_id}: {e}");
+            log::warn!("[board_login] failed to export cookies for {board_id}: {e}");
         }
     } else {
         on_status("Login cancelled or timed out");
