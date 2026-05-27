@@ -1,21 +1,13 @@
-import {
-  AlertCircle,
-  ArrowRight,
-  Briefcase,
-  Check,
-  ChevronDown,
-  RefreshCw,
-  Upload,
-  Wand2,
-} from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AlertCircle, ArrowRight, Briefcase, RefreshCw, Wand2 } from 'lucide-react';
+import { AnimatePresence } from 'motion/react';
 import { useRef, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
-import { Button, TextArea } from '@ajh/ui';
+import { Button } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
 import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
+import { FileInput } from '@/features/ai-generate/components/FileInput';
 import { GenerationConfig } from '@/features/ai-generate/components/GenerationConfig';
 import { GenerationMetadata } from '@/features/ai-generate/components/GenerationMetadata';
 import { OutputPanelDone } from '@/features/ai-generate/components/OutputPanelDone';
@@ -23,7 +15,6 @@ import { OutputPanelExtracting } from '@/features/ai-generate/components/OutputP
 import { OutputPanelGenerating } from '@/features/ai-generate/components/OutputPanelGenerating';
 import { OutputPanelIdle } from '@/features/ai-generate/components/OutputPanelIdle';
 import { ResumeInputCard } from '@/features/ai-workspace/components/ResumeInputCard';
-import { cn } from '@/lib/cn';
 import {
   buildFilename,
   exportDOCX,
@@ -36,7 +27,6 @@ import {
   type TemplateId,
 } from '@/lib/generate-ai';
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@/lib/motion';
 import { useExtractText } from '@/services';
 import { useSaveAiGeneration } from '@/services/use-ai-generations';
 import { useSessionStore } from '@/store/session-store';
@@ -44,7 +34,6 @@ import { useSessionStore } from '@/store/session-store';
 export const Route = createFileRoute('/ai-generate')({ component: AIGeneratePage });
 
 const ACCEPTED_EXTS = ['pdf', 'docx', 'txt', 'md', 'markdown'] as const;
-const ACCEPT_ATTR = '.pdf,.docx,.txt,.md,.markdown';
 const MAX_BYTES = 25 * 1024 * 1024;
 
 type GenTarget = 'resume' | 'cover' | 'both';
@@ -516,111 +505,3 @@ function AIGeneratePage() {
     </PageTransition>
   );
 }
-
-// ─── File input card ──────────────────────────────────────────────────────────
-
-interface FileInputProps {
-  label: string;
-  icon: React.ElementType;
-  value: string;
-  onChange: (v: string) => void;
-  uploading: boolean;
-  onUpload: (file: File) => void;
-  disabled?: boolean;
-  t: (key: string) => string;
-}
-
-function FileInput({
-  label,
-  icon: Icon,
-  value,
-  onChange,
-  uploading,
-  onUpload,
-  disabled,
-  t,
-}: FileInputProps) {
-  const ref = useRef<HTMLInputElement>(null);
-  const [expanded, setExpanded] = useState(true);
-
-  return (
-    <div
-      className={cn(
-        'glass-graphite glass-highlight rounded-xl overflow-hidden transition-colors',
-        value ? 'border-brand/20' : ''
-      )}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2.5">
-        <div className="flex items-center gap-2">
-          <Icon size={13} className={value ? 'text-brand-soft' : 'text-foreground/30'} />
-          <span className="text-xs font-medium text-foreground/70">{label}</span>
-          {value && <Check size={11} className="text-emerald-400" />}
-        </div>
-        <div className="flex items-center gap-2">
-          {!disabled && (
-            <>
-              <input
-                ref={ref}
-                type="file"
-                accept={ACCEPT_ATTR}
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) onUpload(f);
-                  e.target.value = '';
-                }}
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => ref.current?.click()}
-                disabled={uploading || disabled}
-                className="flex items-center gap-1 rounded-md bg-white/[0.04] px-2 py-1 text-[10px] text-foreground/50 hover:text-foreground/80 transition-colors h-auto"
-              >
-                <Upload size={10} className={uploading ? 'animate-pulse' : ''} />
-                {uploading ? '…' : t('aiGenerate.upload')}
-              </Button>
-            </>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setExpanded((e) => !e)}
-            className="text-foreground/30 hover:text-foreground/60 transition-colors h-auto p-1"
-          >
-            <ChevronDown
-              size={13}
-              className={cn('transition-transform', expanded && 'rotate-180')}
-            />
-          </Button>
-        </div>
-      </div>
-
-      {/* Textarea */}
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0 }}
-            animate={{ height: 'auto' }}
-            exit={{ height: 0 }}
-            transition={transition.normal}
-            className="overflow-hidden"
-          >
-            <TextArea
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              disabled={disabled}
-              placeholder={t('aiGenerate.placeholder').replace('…', '')}
-              className="w-full bg-transparent px-3 py-2.5 text-xs text-foreground/75 placeholder:text-foreground/35 font-mono leading-relaxed disabled:opacity-40"
-              style={{ height: '140px' }}
-              spellCheck={false}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-// ─── File input card ──────────────────────────────────────────────────────────
