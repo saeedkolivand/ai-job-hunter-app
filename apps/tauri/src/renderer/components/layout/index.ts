@@ -1,6 +1,6 @@
-export { PageHeader } from './PageHeader';
-export { PageShell } from './PageShell';
-export { PageTransition } from './PageTransition';
-export { Sidebar } from './Sidebar';
-export { StatusBar } from './StatusBar';
-export { Titlebar } from './Titlebar';
+export { PageHeader } from './PageHeader/index';
+export { PageShell } from './PageShell/index';
+export { PageTransition } from './PageTransition/index';
+export { Sidebar } from './Sidebar/index';
+export { StatusBar } from './StatusBar/index';
+export { Titlebar } from './Titlebar/index';
