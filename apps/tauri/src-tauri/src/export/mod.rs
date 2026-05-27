@@ -10,6 +10,7 @@
  * - commands.rs: Tauri commands for frontend integration
  */
 
+pub mod links;
 pub mod parser;
 pub mod docx;
 pub mod docx_renderer;

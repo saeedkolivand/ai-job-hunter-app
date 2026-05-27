@@ -1,6 +1,7 @@
 use anyhow::Context;
 use printpdf::*;
 use crate::export::{
+    links::{split_urls, Span},
     templates::{CoverLetterHeader, SectionStyle, Template},
     types::{FontFamily, GenerationMeta, TextSegment},
 };
@@ -649,6 +650,7 @@ pub fn render_name_line(
 }
 
 /// Render contact line with separator rule.
+/// URLs are rendered in hyperlink blue and annotated with clickable link rectangles.
 pub fn render_contact_line(
     text: &str,
     template: &Template,
@@ -658,24 +660,78 @@ pub fn render_contact_line(
     y: f32,
 ) -> (Vec<Op>, f32) {
     let (reg_id, _, _) = resolve_fonts(fonts, template.fonts.body_family);
+    let font_size = 9.0_f32;
+    // Approximate character width for this font size
+    let char_w = pt_to_mm(font_size) * 0.52;
 
-    let x = if template.name_centered {
-        layout.page_width / 2.0 - (text.len() as f32 * pt_to_mm(9.0) * 0.3)
+    let x_start = if template.name_centered {
+        layout.page_width / 2.0 - (text.len() as f32 * char_w * 0.5)
     } else {
         layout.margin_left
     };
 
-    let text_pos = Point { x: Mm(x).into(), y: Mm(y).into() };
-    let mut ops = vec![
-        Op::StartTextSection,
-        Op::SetFillColor { col: colors.date.clone() },
-        Op::SetTextCursor { pos: text_pos },
-        Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(9.0) },
-        Op::ShowText { items: vec![TextItem::Text(text.to_string())] },
-        Op::EndTextSection,
-    ];
+    let link_color = Color::Rgb(Rgb::new(0.145, 0.388, 0.922, None)); // #2563EB
 
-    let y_after_text = y - pt_to_mm(9.0) * 1.2;
+    let spans = split_urls(text);
+    let mut ops = Vec::new();
+    let mut cursor_x = x_start;
+
+    for span in &spans {
+        match span {
+            Span::Text(t) => {
+                if t.is_empty() { continue; }
+                let pos = Point { x: Mm(cursor_x).into(), y: Mm(y).into() };
+                ops.extend([
+                    Op::StartTextSection,
+                    Op::SetFillColor { col: colors.date.clone() },
+                    Op::SetTextCursor { pos },
+                    Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(font_size) },
+                    Op::ShowText { items: vec![TextItem::Text(t.clone())] },
+                    Op::EndTextSection,
+                ]);
+                cursor_x += t.len() as f32 * char_w;
+            }
+            Span::Link { label, url } => {
+                let link_w = label.len() as f32 * char_w;
+                let pos = Point { x: Mm(cursor_x).into(), y: Mm(y).into() };
+                ops.extend([
+                    Op::StartTextSection,
+                    Op::SetFillColor { col: link_color.clone() },
+                    Op::SetTextCursor { pos },
+                    Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(font_size) },
+                    Op::ShowText { items: vec![TextItem::Text(label.clone())] },
+                    Op::EndTextSection,
+                ]);
+                // Annotation rect in PDF points (bottom-left origin)
+                // PDF y=0 is bottom; our y is mm from top of page
+                let page_h_pt = layout.page_height * 2.834_645_7;
+                let rect_y_bottom = page_h_pt - (y * 2.834_645_7);
+                let rect_y_top = rect_y_bottom + font_size * 1.1;
+                let rect_x_left = cursor_x * 2.834_645_7;
+                let rect_x_right = rect_x_left + link_w * 2.834_645_7;
+                let rect = Rect {
+                    x: Pt(rect_x_left),
+                    y: Pt(rect_y_bottom),
+                    width: Pt(rect_x_right - rect_x_left),
+                    height: Pt(rect_y_top - rect_y_bottom),
+                    mode: None,
+                    winding_order: None,
+                };
+                ops.push(Op::LinkAnnotation {
+                    link: LinkAnnotation::new(
+                        rect,
+                        Actions::Uri(url.clone()),
+                        Some(BorderArray::Solid([0.0, 0.0, 0.0])),
+                        Some(ColorArray::Transparent),
+                        None,
+                    ),
+                });
+                cursor_x += link_w;
+            }
+        }
+    }
+
+    let y_after_text = y - pt_to_mm(font_size) * 1.2;
     let rule_thickness = if template.rule_thickness > 0.0 { template.rule_thickness } else { 0.5 };
     ops.extend(build_line(
         layout.margin_left,
