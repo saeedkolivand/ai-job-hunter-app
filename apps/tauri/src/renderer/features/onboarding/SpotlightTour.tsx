@@ -14,9 +14,9 @@ import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 
 import { Button } from '@ajh/ui';
 
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@/lib/motion';
+import { transition } from '@ajh/ui';
 
 interface TourItem {
   tourId: string;

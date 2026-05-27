@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import { Button, GlassCard, Input } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@/lib/motion';
+import { transition } from '@ajh/ui';
 import { useJobPreferences, useSetJobPreferences } from '@/services';
 
 const COMMON_LOCATIONS = [

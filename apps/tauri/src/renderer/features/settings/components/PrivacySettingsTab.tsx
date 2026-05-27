@@ -3,7 +3,7 @@ import { useState } from 'react';
 
 import { Button, ConfirmModal, useNotification } from '@ajh/ui';
 
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 import {
   useClearInteractions,

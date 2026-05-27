@@ -12,7 +12,7 @@ import { ApplyDrawer } from '@/features/jobs/components/ApplyDrawer';
 import { PostingRow } from '@/features/jobs/components/PostingRow';
 import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
 import { useTranslation } from '@/lib/i18n';
-import { staggeredItem, transition } from '@/lib/motion';
+import { staggeredItem, transition } from '@ajh/ui';
 import { useAppClient } from '@/providers/AppClientProvider';
 import {
   useBoardConnect,

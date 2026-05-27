@@ -4,7 +4,7 @@ import type { AutopilotAction } from '@ajh/shared';
 import { Button, TextArea } from '@ajh/ui';
 
 import type { SetFn, WizardState } from '@/features/autopilot/types';
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 
 import { WizardField } from './WizardField';

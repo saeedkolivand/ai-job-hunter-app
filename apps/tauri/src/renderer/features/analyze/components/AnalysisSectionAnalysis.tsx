@@ -2,7 +2,7 @@ import { FileText } from 'lucide-react';
 
 import { GlassCard } from '@ajh/ui';
 
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 import { type AnalysisResult, scoreLabel } from '@/lib/resume-ai';
 
 interface AnalysisSectionAnalysisProps {

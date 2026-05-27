@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { Button, Input, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@/lib/motion';
+import { transition } from '@ajh/ui';
 import {
   useHasProviderKey,
   useOpenExternal,

@@ -2,7 +2,7 @@ import { BOARD_IDS } from '@ajh/shared';
 import { Button, Input, LocationInput, SelectDropdown } from '@ajh/ui';
 
 import type { Prefilled, SetFn, WizardState } from '@/features/autopilot/types';
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 import { useAppClient } from '@/providers/AppClientProvider';
 

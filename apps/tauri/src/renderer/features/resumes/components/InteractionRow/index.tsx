@@ -1,8 +1,7 @@
 import { Building2, Clock, ExternalLink, MapPin } from 'lucide-react';
 
-import { Button } from '@ajh/ui';
+import { Button, cn } from '@ajh/ui';
 
-import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { useOpenExternal } from '@/services/use-system';
 

@@ -24,7 +24,7 @@ import type { DocumentRecord } from '@ajh/shared';
 import { Button, TextArea, useNotification } from '@ajh/ui';
 
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 import { useDocuments, useProfileImport, useSetDefaultDocument } from '@/services';
 

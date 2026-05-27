@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
 import { ThinkingBubble } from '@/features/ai-generate/components/ThinkingBubble';
-import { transition } from '@/lib/motion';
+import { transition } from '@ajh/ui';
 
 interface AnalysisProgressProps {
   running: boolean;

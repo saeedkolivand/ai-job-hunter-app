@@ -18,10 +18,10 @@ import { useRef, useState } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 
 import { ROUTES } from '@/constants/routes';
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 import { getTimeGreeting } from '@/lib/greeting';
 import { useTranslation } from '@/lib/i18n';
-import { transition, variants } from '@/lib/motion';
+import { transition, variants } from '@ajh/ui';
 import { useAICapability } from '@/providers/CapabilityProvider';
 import { useAppVersion } from '@/services/use-system';
 import { useAIModel, useAiProviderConfig, useUserName } from '@/store/preferences-store';

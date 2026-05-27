@@ -13,9 +13,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
-import { Button } from '@ajh/ui';
+import { Button, cn, transition } from '@ajh/ui';
 
-import { cn } from '@/lib/cn';
 import {
   buildFilename,
   exportDOCX,
@@ -24,7 +23,6 @@ import {
   type TemplateId,
 } from '@/lib/generate-ai';
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@/lib/motion';
 import { useRemoveAiGeneration } from '@/services/use-ai-generations';
 
 const EXPORT_FORMATS = ['pdf', 'docx', 'txt'] as const;

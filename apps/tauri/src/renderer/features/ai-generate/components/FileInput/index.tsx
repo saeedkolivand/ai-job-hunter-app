@@ -2,10 +2,7 @@ import { Check, ChevronDown, Upload } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useRef, useState } from 'react';
 
-import { Button, TextArea } from '@ajh/ui';
-
-import { cn } from '@/lib/cn';
-import { transition } from '@/lib/motion';
+import { Button, TextArea, cn, transition } from '@ajh/ui';
 
 const ACCEPT_ATTR = '.pdf,.docx,.txt,.md,.markdown';
 

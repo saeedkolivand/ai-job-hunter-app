@@ -1,6 +1,6 @@
 import { motion } from 'motion/react';
 
-import { transition, variants } from '@/lib/motion';
+import { transition, variants } from '@ajh/ui';
 
 interface PageTransitionProps {
   children: React.ReactNode;

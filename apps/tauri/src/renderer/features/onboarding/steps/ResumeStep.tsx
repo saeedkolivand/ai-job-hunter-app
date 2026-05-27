@@ -7,7 +7,7 @@ import { Button, FloatingIcon, useNotification } from '@ajh/ui';
 
 import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 import { useDocuments } from '@/services';
 import { usePreferencesStore } from '@/store/preferences-store';

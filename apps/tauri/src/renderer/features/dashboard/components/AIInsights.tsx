@@ -2,7 +2,7 @@ import { AlertTriangle, CheckCircle, Lightbulb, type LucideIcon, TrendingUp } fr
 
 import { GlassCard, SectionLabel } from '@ajh/ui';
 
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 
 interface Insight {

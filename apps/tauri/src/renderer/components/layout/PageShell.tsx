@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 
 import { PageHeader } from './PageHeader';
 import { PageTransition } from './PageTransition';

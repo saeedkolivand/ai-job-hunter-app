@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react';
 
 import { Button, TextArea } from '@ajh/ui';
 
-import { cn } from '@/lib/cn';
+import { cn } from '@ajh/ui';
 import { buildFilename, type GenerationMeta, MODES, type TemplateId } from '@/lib/generate-ai';
 import { useTranslation } from '@/lib/i18n';
-import { transition } from '@/lib/motion';
+import { transition } from '@ajh/ui';
 
 interface OutputPanelDoneProps {
   resumeOut: string;
