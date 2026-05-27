@@ -39,6 +39,7 @@ import { stagger, transition } from '@/lib/motion';
 import { useAiGenerations, useRemoveAiGeneration } from '@/services/use-ai-generations';
 import { useInteractions } from '@/services/use-postings';
 import { useOpenExternal } from '@/services/use-system';
+import { useSessionStore } from '@/store/session-store';
 
 export const Route = createFileRoute('/resumes')({ component: Resumes });
 
@@ -100,8 +101,10 @@ function formatRelative(ts: number, t: ReturnType<typeof useTranslation>['t']): 
 
 function Resumes() {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<Tab>('applied');
-  const [filter, setFilter] = useState('');
+  const { resumes, setResumes } = useSessionStore();
+  const { tab, filter } = resumes;
+  const setTab = (v: Tab) => setResumes({ tab: v });
+  const setFilter = (v: string) => setResumes({ filter: v });
 
   const isGeneratedTab = tab === 'generated';
 

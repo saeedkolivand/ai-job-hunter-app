@@ -3,9 +3,9 @@ import { Check, Clock } from 'lucide-react';
 import type { AutopilotSchedule } from '@ajh/shared';
 import { Button } from '@ajh/ui';
 
+import type { SetFn, WizardState } from '@/features/autopilot/types';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
-import type { SetFn, WizardState } from '@/routes/autopilot';
 
 interface StepScheduleProps {
   form: WizardState;
