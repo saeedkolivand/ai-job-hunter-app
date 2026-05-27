@@ -1,33 +1,26 @@
 import {
   Briefcase,
-  CheckCircle2,
   ChevronRight,
   Cpu,
-  Download,
-  ExternalLink,
   FileText,
   Gauge,
   Languages,
-  Loader2,
   Lock,
   Shield,
-  Sparkles,
   Terminal,
-  User,
-  Wand2,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
-import { Button, GlassCard, IconBadge, Input, RefreshButton, SectionLabel } from '@ajh/ui';
+import { IconBadge } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
 import { AccountsSettingsTab } from '@/features/settings/components/AccountsSettingsTab';
 import { AISettingsTab } from '@/features/settings/components/AISettingsTab';
 import { DeveloperPreferences } from '@/features/settings/components/DeveloperPreferences';
+import { GeneralSection } from '@/features/settings/components/GeneralSection';
 import { JobLocationPreferences } from '@/features/settings/components/JobLocationPreferences';
-import { LanguageSelector } from '@/features/settings/components/LanguageSelector';
 import { OutputTonePreferences } from '@/features/settings/components/OutputTonePreferences';
 import { PerformancePreferences } from '@/features/settings/components/PerformancePreferences';
 import { PrivacySettingsTab } from '@/features/settings/components/PrivacySettingsTab';
@@ -38,13 +31,7 @@ import { TechStackPreferences } from '@/features/settings/components/TechStackPr
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { transition, variants } from '@/lib/motion';
-import { useAppVersion, useOpenExternal } from '@/services';
-import { useUpdater } from '@/services/use-updater';
-import {
-  useOnboardingCompleted,
-  usePreferencesStore,
-  useUserName,
-} from '@/store/preferences-store';
+import { usePreferencesStore, useUserName } from '@/store/preferences-store';
 import { useSessionStore } from '@/store/session-store';
 
 export const Route = createFileRoute('/settings')({ component: SettingsPage });
@@ -249,208 +236,5 @@ function SettingsPage() {
         </div>
       </div>
     </PageTransition>
-  );
-}
-
-const NO_RELEASE_PATTERNS = [
-  'valid release json',
-  'release json',
-  'failed to fetch',
-  'network',
-  '404',
-];
-
-function isNoReleaseError(msg: string) {
-  const lower = msg.toLowerCase();
-  return NO_RELEASE_PATTERNS.some((p) => lower.includes(p));
-}
-
-function UpdateSection() {
-  const { t } = useTranslation();
-  const { data: versionRaw = '' } = useAppVersion();
-  const version = versionRaw
-    ? String(versionRaw).startsWith('v')
-      ? String(versionRaw)
-      : `v${versionRaw}`
-    : '';
-  const { status, check, download, install } = useUpdater();
-  const openExternal = useOpenExternal();
-
-  const noRelease = status.state === 'error' && isNoReleaseError(status.message);
-  const GITHUB_RELEASES_URL =
-    'https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/latest';
-
-  return (
-    <GlassCard>
-      <div className="mb-4 flex items-center gap-2">
-        <IconBadge icon={Sparkles} size="sm" />
-        <SectionLabel>{t('settings.update.title')}</SectionLabel>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs text-foreground/50">{t('settings.update.currentVersion')}</p>
-          <p className="mt-0.5 font-mono text-sm text-foreground/80">{version || '—'}</p>
-        </div>
-
-        {status.state === 'idle' || status.state === 'not-available' || status.state === 'error' ? (
-          <RefreshButton onRefresh={check} variant="glass" size={12} className="shrink-0 gap-2">
-            {t('settings.update.checkNow')}
-          </RefreshButton>
-        ) : status.state === 'checking' ? (
-          <div className="flex items-center gap-2 text-xs text-foreground/40">
-            <Loader2 size={13} className="animate-spin" />
-            {t('settings.update.checking')}
-          </div>
-        ) : status.state === 'available' ? (
-          <Button
-            variant="glass"
-            size="sm"
-            onClick={() => void download()}
-            className="gap-2 ring-1 ring-brand/20"
-          >
-            <Download size={12} />
-            {t('settings.update.download', { version: status.version })}
-          </Button>
-        ) : status.state === 'downloading' ? (
-          <div className="flex items-center gap-2 text-xs text-foreground/40">
-            <Loader2 size={13} className="animate-spin" />
-            {status.percent}%
-          </div>
-        ) : status.state === 'downloaded' ? (
-          <RefreshButton
-            onRefresh={install}
-            variant="glass"
-            size={12}
-            className="gap-2 ring-1 ring-brand/20"
-          >
-            {t('settings.update.install')}
-          </RefreshButton>
-        ) : null}
-      </div>
-
-      {/* Status messages */}
-      {(status.state === 'not-available' || noRelease) && (
-        <div className="mt-3 flex items-center gap-2 text-xs text-emerald-400/70">
-          <CheckCircle2 size={12} />
-          {t('settings.update.upToDate')}
-        </div>
-      )}
-      {status.state === 'error' && !noRelease && (
-        <div className="mt-3 space-y-2">
-          <div className="text-xs text-red-400/70">
-            {t('settings.update.error')}: {status.message}
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => openExternal.mutate(GITHUB_RELEASES_URL)}
-            className="gap-2 text-xs text-foreground/50 hover:text-foreground/80"
-          >
-            <ExternalLink size={12} />
-            {t('settings.update.downloadFromGitHub')}
-          </Button>
-        </div>
-      )}
-
-      {/* Changelog */}
-      {(status.state === 'available' ||
-        status.state === 'downloading' ||
-        status.state === 'downloaded') &&
-        'releaseNotes' in status &&
-        status.releaseNotes && (
-          <div className="mt-4 space-y-1.5">
-            <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-foreground/30">
-              {t('settings.update.whatsNew')} {'version' in status ? status.version : ''}
-            </div>
-            <div className="max-h-36 overflow-y-auto rounded-lg border border-white/[0.05] bg-white/[0.02] p-3 text-xs text-foreground/50 leading-relaxed whitespace-pre-wrap">
-              {status.releaseNotes}
-            </div>
-          </div>
-        )}
-    </GlassCard>
-  );
-}
-
-function GeneralSection({
-  localName,
-  setLocalName,
-  setUserName,
-  userName,
-}: {
-  localName: string;
-  setLocalName: (v: string) => void;
-  setUserName: (v: string) => void;
-  userName: string | undefined;
-}) {
-  const { t } = useTranslation();
-  const onboardingCompleted = useOnboardingCompleted();
-  const replayWizard = () =>
-    usePreferencesStore.setState((s) => ({ ...s, onboardingCompleted: false }));
-
-  return (
-    <>
-      <GlassCard>
-        <div className="mb-4 flex items-center gap-2">
-          <IconBadge icon={User} size="sm" />
-          <SectionLabel>{t('settings.profile.title')}</SectionLabel>
-        </div>
-        <div className="space-y-3">
-          <label className="block">
-            <div className="mb-1.5 text-[11px] font-medium text-foreground/50">
-              {t('settings.profile.displayName')}
-            </div>
-            <div className="flex gap-2">
-              <Input
-                value={localName}
-                onChange={(e) => setLocalName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && localName !== (userName || '')) setUserName(localName);
-                }}
-                placeholder={t('settings.profile.placeholder')}
-                className="flex-1"
-              />
-              <Button
-                variant="glass"
-                size="sm"
-                onClick={() => setUserName(localName)}
-                disabled={localName === (userName || '')}
-              >
-                {t('settings.profile.save')}
-              </Button>
-            </div>
-          </label>
-        </div>
-      </GlassCard>
-
-      <GlassCard>
-        <div className="mb-4 flex items-center gap-2">
-          <IconBadge icon={Languages} size="sm" />
-          <SectionLabel>{t('settings.language.title')}</SectionLabel>
-        </div>
-        <LanguageSelector />
-      </GlassCard>
-
-      <GlassCard>
-        <div className="mb-4 flex items-center gap-2">
-          <IconBadge icon={Wand2} size="sm" />
-          <SectionLabel>{t('settings.onboarding.title')}</SectionLabel>
-        </div>
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-foreground/45">{t('settings.onboarding.description')}</p>
-          <Button
-            variant="glass"
-            size="sm"
-            onClick={replayWizard}
-            disabled={!onboardingCompleted}
-            className="ml-4 shrink-0"
-          >
-            {t('settings.onboarding.replay')}
-          </Button>
-        </div>
-      </GlassCard>
-
-      <UpdateSection />
-    </>
   );
 }
