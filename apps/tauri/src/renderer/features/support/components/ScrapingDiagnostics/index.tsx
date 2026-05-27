@@ -1,8 +1,8 @@
 import { useTranslation } from '@/lib/i18n';
 
-import { DiagnosticItem } from './DiagnosticItem';
-import { IssueCard } from './IssueCard';
-import { ProviderCard } from './ProviderCard';
+import { DiagnosticItem } from '../DiagnosticItem';
+import { IssueCard } from '../IssueCard';
+import { ProviderCard } from '../ProviderCard';
 
 export function ScrapingDiagnostics() {
   const { t } = useTranslation();

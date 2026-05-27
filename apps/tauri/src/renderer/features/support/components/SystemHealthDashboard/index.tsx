@@ -1,6 +1,6 @@
 import { useTranslation } from '@/lib/i18n';
 
-import { HealthCard } from './HealthCard';
+import { HealthCard } from '../HealthCard';
 
 export function SystemHealthDashboard() {
   const { t } = useTranslation();

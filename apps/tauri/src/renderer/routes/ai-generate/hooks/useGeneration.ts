@@ -1,3 +1,5 @@
+import type { AiGenerationSaveRequest } from '@ajh/shared/ipc';
+
 import {
   extractMetadata,
   generateCoverLetter,
@@ -20,8 +22,8 @@ export function useGeneration(
   setResumeOut: (out: string | ((p: string) => string)) => void,
   setCoverOut: (out: string | ((p: string) => string)) => void,
   setActiveOut: (out: 'resume' | 'cover') => void,
-  setStreamBuffer: (buf: string) => void,
-  setThinkingBuffer: (buf: string) => void,
+  setStreamBuffer: (buf: string | ((prev: string) => string)) => void,
+  setThinkingBuffer: (buf: string | ((prev: string) => string)) => void,
   setModelLoading: (loading: boolean) => void,
   setTokenCount: (count: number | ((c: number) => number)) => void,
   setGenStep: (step: { current: number; total: number; label: string } | null) => void,
@@ -30,7 +32,7 @@ export function useGeneration(
   startStageRotation: () => void,
   stopStageRotation: () => void,
   abortControllerRef: React.MutableRefObject<AbortController | null>,
-  saveAiGeneration: { mutate: (data: Record<string, unknown>) => void },
+  saveAiGeneration: { mutate: (data: AiGenerationSaveRequest) => void },
   t: (key: string) => string,
   setStageLabel: (label: string) => void
 ) {

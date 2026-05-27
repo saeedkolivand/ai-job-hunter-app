@@ -6,7 +6,7 @@ import { Button, cn, TextArea } from '@ajh/ui';
 import type { SetFn, WizardState } from '@/features/autopilot/types';
 import { useTranslation } from '@/lib/i18n';
 
-import { WizardField } from './WizardField';
+import { WizardField } from '../WizardField';
 
 interface StepActionProps {
   form: WizardState;

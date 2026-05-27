@@ -11,12 +11,12 @@ import { keys, queryClient } from '@/services/query-client';
 import type { AiProvider } from '@/store/preferences-schema';
 import { useAIModel, usePreferencesStore } from '@/store/preferences-store';
 
-import { OnboardingStepWrapper } from '../components/OnboardingStepWrapper';
-import { CloudProviderPanel } from './ollama/CloudProviderPanel';
-import { ModelSelectionPanel } from './ollama/ModelSelectionPanel';
-import { OllamaCheckingState } from './ollama/OllamaCheckingState';
-import { OllamaNotInstalled } from './ollama/OllamaNotInstalled';
-import { TabSwitcher } from './ollama/TabSwitcher';
+import { OnboardingStepWrapper } from '../../components/OnboardingStepWrapper';
+import { CloudProviderPanel } from '../ollama/CloudProviderPanel';
+import { ModelSelectionPanel } from '../ollama/ModelSelectionPanel';
+import { OllamaCheckingState } from '../ollama/OllamaCheckingState';
+import { OllamaNotInstalled } from '../ollama/OllamaNotInstalled';
+import { TabSwitcher } from '../ollama/TabSwitcher';
 
 const CLOUD_DEFAULT_MODELS: Record<string, string> = {
   openai: 'gpt-4o',

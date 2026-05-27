@@ -5,7 +5,7 @@ import { Button, cn, MarkdownMessage, transition } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 
-import type { Msg } from '../hooks/useChat';
+import type { Msg } from '../../hooks/useChat';
 
 export function MessageList({
   messages,

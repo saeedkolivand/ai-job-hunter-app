@@ -2,8 +2,8 @@ import { AnimatePresence } from 'motion/react';
 
 import { Button, GlassCard } from '@ajh/ui';
 
-import type { ActivityItem } from '../types';
-import { ActivityRow } from './ActivityRow';
+import type { ActivityItem } from '../../types';
+import { ActivityRow } from '../ActivityRow';
 
 interface Props {
   activity: ActivityItem[];

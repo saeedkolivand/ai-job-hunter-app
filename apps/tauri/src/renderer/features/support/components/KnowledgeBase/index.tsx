@@ -5,7 +5,7 @@ import { Button, cn, EmptyState, Input } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 
-import { KBArticleCard } from './KBArticleCard';
+import { KBArticleCard } from '../KBArticleCard';
 
 const CATEGORIES = [
   { id: 'all', nameKey: 'support.knowledgeBase.all' },

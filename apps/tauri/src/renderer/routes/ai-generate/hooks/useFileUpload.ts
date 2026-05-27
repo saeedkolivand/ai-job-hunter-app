@@ -6,7 +6,7 @@ export function useFileUpload(
   setResume: (text: string) => void,
   setJobAd: (text: string) => void,
   extractTextMutation: {
-    mutateAsync: (args: { name: string; bytes: Uint8Array }) => Promise<unknown>;
+    mutateAsync: (args: { name: string; bytes: Uint8Array<ArrayBuffer> }) => Promise<unknown>;
   },
   t: (key: string, params?: Record<string, unknown>) => string
 ) {

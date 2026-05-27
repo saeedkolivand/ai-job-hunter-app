@@ -12,7 +12,7 @@ import { useTranslation } from '@/lib/i18n';
 import { useAutopilots } from '@/services';
 import { useSessionStore } from '@/store/session-store';
 
-import { useAutopilotRun } from '../hooks/useAutopilotRun';
+import { useAutopilotRun } from '../../hooks/useAutopilotRun';
 
 function AutopilotPage() {
   const { t } = useTranslation();

@@ -11,7 +11,7 @@ import { useTranslation } from '@/lib/i18n';
 import { useDocuments } from '@/services';
 import { usePreferencesStore } from '@/store/preferences-store';
 
-import { OnboardingStepWrapper } from '../components/OnboardingStepWrapper';
+import { OnboardingStepWrapper } from '../../components/OnboardingStepWrapper';
 
 interface Props {
   onBack: () => void;

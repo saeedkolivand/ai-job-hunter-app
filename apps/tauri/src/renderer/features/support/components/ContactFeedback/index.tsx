@@ -11,7 +11,7 @@ import {
   useExportDiagnostics,
 } from '@/services';
 
-import { DiagnosticExportItem } from './DiagnosticExportItem';
+import { DiagnosticExportItem } from '../DiagnosticExportItem';
 
 const FEEDBACK_TYPES = [
   'bugReport',

@@ -23,10 +23,10 @@ import type { AnalysisResult } from '@/lib/resume-ai';
 import { useDocuments, useExtractText } from '@/services';
 import { usePreferencesStore, usePromptQuality } from '@/store/preferences-store';
 
-import { ACCEPTED_EXTS, MAX_BYTES } from '../constants';
-import { useAnalysisRun } from '../hooks/useAnalysisRun';
-import { useAnalyzeState } from '../hooks/useAnalyzeState';
-import { AnalyzeLeftPanel } from './AnalyzeLeftPanel';
+import { ACCEPTED_EXTS, MAX_BYTES } from '../../constants';
+import { useAnalysisRun } from '../../hooks/useAnalysisRun';
+import { useAnalyzeState } from '../../hooks/useAnalyzeState';
+import { AnalyzeLeftPanel } from '../AnalyzeLeftPanel';
 
 function AnalyzePage() {
   const { t, i18n } = useTranslation();

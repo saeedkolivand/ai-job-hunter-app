@@ -3,8 +3,8 @@ import { motion } from 'motion/react';
 
 import { cn, transition } from '@ajh/ui';
 
-import { useAgo } from '../hooks/useAgo';
-import type { ActivityItem } from '../types';
+import { useAgo } from '../../hooks/useAgo';
+import type { ActivityItem } from '../../types';
 
 interface Props {
   a: ActivityItem;

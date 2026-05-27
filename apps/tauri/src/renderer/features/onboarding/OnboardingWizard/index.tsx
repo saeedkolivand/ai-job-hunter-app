@@ -5,12 +5,12 @@ import { transition } from '@ajh/ui';
 
 import { useOnboardingCompleted, usePreferencesStore } from '@/store/preferences-store';
 
-import { SpotlightTour } from './SpotlightTour';
-import { AISelectionStep } from './steps/AISelectionStep';
-import { BrowserStep } from './steps/BrowserStep';
-import { ResumeStep } from './steps/ResumeStep';
-import { WelcomeStep } from './steps/WelcomeStep';
-import { ONBOARDING_STEPS, TOTAL_STEPS } from './steps-config';
+import { SpotlightTour } from '../SpotlightTour';
+import { AISelectionStep } from '../steps/AISelectionStep';
+import { BrowserStep } from '../steps/BrowserStep';
+import { ResumeStep } from '../steps/ResumeStep';
+import { WelcomeStep } from '../steps/WelcomeStep';
+import { ONBOARDING_STEPS, TOTAL_STEPS } from '../steps-config';
 
 export function OnboardingWizard() {
   const onboardingCompleted = useOnboardingCompleted();

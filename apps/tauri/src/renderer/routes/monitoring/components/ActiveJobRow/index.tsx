@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 
 import { cn, transition } from '@ajh/ui';
 
-import type { JobRecord } from './types';
+import type { JobRecord } from '../../types';
 
 const KIND_SHORT: Record<string, string> = {
   'ai.generate': 'AI',

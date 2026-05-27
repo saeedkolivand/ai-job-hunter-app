@@ -8,7 +8,7 @@ import i18n from '@/i18n';
 import { useTranslation } from '@/lib/i18n';
 import { usePreferencesStore } from '@/store/preferences-store';
 
-import { OnboardingStepWrapper } from '../components/OnboardingStepWrapper';
+import { OnboardingStepWrapper } from '../../components/OnboardingStepWrapper';
 
 interface Props {
   onNext: () => void;
