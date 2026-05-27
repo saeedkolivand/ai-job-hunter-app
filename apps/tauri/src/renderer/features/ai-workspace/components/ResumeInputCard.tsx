@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  ClipboardPaste,
   FileText,
   Link,
   Loader2,
@@ -76,6 +77,8 @@ export function ResumeInputCard({
 
   const savedBtnRef = useRef<HTMLButtonElement>(null);
   const [expanded, setExpanded] = useState(true);
+  const [inputMode, setInputMode] = useState<'upload' | 'paste'>('upload');
+  const [dragging, setDragging] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   const [lastUploadedFile, setLastUploadedFile] = useState<File | null>(null);
@@ -264,31 +267,18 @@ export function ResumeInputCard({
             </>
           )}
 
-          {/* Upload button */}
-          {!disabled && (
-            <>
-              <input
-                ref={fileRef}
-                type="file"
-                accept={ACCEPT}
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void handleFileChange(f);
-                  e.target.value = '';
-                }}
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-                className="h-6 w-6 p-0 text-foreground/40 hover:text-foreground/70"
-              >
-                {uploading ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
-              </Button>
-            </>
-          )}
+          {/* Hidden file input — triggered by drop zone and saved-select */}
+          <input
+            ref={fileRef}
+            type="file"
+            accept={ACCEPT}
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void handleFileChange(f);
+              e.target.value = '';
+            }}
+          />
 
           {/* Profile URL import button */}
           {!disabled && (
@@ -373,16 +363,113 @@ export function ResumeInputCard({
         </div>
       )}
 
-      {/* Text area */}
-      {expanded && (
+      {/* Mode switcher + content */}
+      {expanded && !disabled && (
+        <div className="px-3 pb-3 space-y-2">
+          {/* Segmented control */}
+          <div className="flex items-center gap-1 rounded-lg bg-white/[0.04] p-0.5 w-fit">
+            <button
+              onClick={() => setInputMode('upload')}
+              className={cn(
+                'flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-medium transition-all',
+                inputMode === 'upload'
+                  ? 'bg-white/[0.08] text-foreground/90 shadow-sm'
+                  : 'text-foreground/40 hover:text-foreground/60'
+              )}
+            >
+              <Upload size={10} />
+              {t('resumeInput.modeUpload')}
+            </button>
+            <button
+              onClick={() => setInputMode('paste')}
+              className={cn(
+                'flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-medium transition-all',
+                inputMode === 'paste'
+                  ? 'bg-white/[0.08] text-foreground/90 shadow-sm'
+                  : 'text-foreground/40 hover:text-foreground/60'
+              )}
+            >
+              <ClipboardPaste size={10} />
+              {t('resumeInput.modePaste')}
+            </button>
+          </div>
+
+          {/* Upload zone */}
+          {inputMode === 'upload' && (
+            <div
+              onClick={() => fileRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                const f = e.dataTransfer.files[0];
+                if (f) void handleFileChange(f);
+              }}
+              className={cn(
+                'flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-6 cursor-pointer transition-colors select-none',
+                dragging
+                  ? 'border-brand/50 bg-brand/5'
+                  : lastUploadedFile && value
+                    ? 'border-emerald-500/30 bg-emerald-500/5'
+                    : 'border-white/[0.08] hover:border-white/[0.15] hover:bg-white/[0.02]'
+              )}
+            >
+              {uploading ? (
+                <>
+                  <Loader2 size={20} className="animate-spin text-foreground/30" />
+                  <span className="text-[11px] text-foreground/40">
+                    {t('resumeInput.extracting')}
+                  </span>
+                </>
+              ) : lastUploadedFile && value ? (
+                <>
+                  <Check size={18} className="text-emerald-400" />
+                  <span className="text-[11px] text-foreground/70 text-center">
+                    {lastUploadedFile.name}
+                  </span>
+                  <span className="text-[10px] text-foreground/35">
+                    {t('resumeInput.uploadedClickToReplace')}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Upload size={20} className="text-foreground/20" />
+                  <div className="text-center space-y-0.5">
+                    <p className="text-[11px] text-foreground/60">{t('resumeInput.dropOrClick')}</p>
+                    <p className="text-[10px] text-foreground/30">PDF, DOCX, TXT — max 25 MB</p>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Paste / edit text area */}
+          {inputMode === 'paste' && (
+            <TextArea
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder={placeholder ?? t('resumeInput.placeholder')}
+              rows={6}
+              className="w-full resize-none bg-transparent text-xs text-foreground/80 placeholder:text-foreground/20"
+            />
+          )}
+        </div>
+      )}
+
+      {/* Read-only textarea when card is disabled */}
+      {expanded && disabled && (
         <div className="px-3 pb-3">
           <TextArea
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder ?? t('resumeInput.placeholder')}
-            disabled={disabled}
+            disabled
             rows={6}
-            className="w-full resize-none bg-transparent text-xs text-foreground/80 placeholder:text-foreground/20 disabled:opacity-50"
+            className="w-full resize-none bg-transparent text-xs text-foreground/80 placeholder:text-foreground/20 opacity-50"
           />
         </div>
       )}

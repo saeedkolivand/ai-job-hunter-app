@@ -1363,7 +1363,12 @@
     "profileUrlImport": "Importieren",
     "profileImported": "Profil importiert",
     "profileImportFailed": "Import fehlgeschlagen",
-    "profileUrlUnsupported": "Derzeit werden nur LinkedIn-Profil-URLs unterstützt"
+    "profileUrlUnsupported": "Derzeit werden nur LinkedIn-Profil-URLs unterstützt",
+    "modeUpload": "Hochladen",
+    "modePaste": "Text einfügen",
+    "dropOrClick": "Lebenslauf hier ablegen oder klicken",
+    "extracting": "Text wird extrahiert…",
+    "uploadedClickToReplace": "Klicken zum Ersetzen"
   },
   "resume": {
     "profileImport": {

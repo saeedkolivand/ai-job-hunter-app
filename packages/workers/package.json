@@ -18,7 +18,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@ajh/core": "workspace:*"
+    "@ajh/ai": "workspace:*",
+    "@ajh/core": "workspace:*",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^25.9.0",

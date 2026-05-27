@@ -14,6 +14,7 @@
  *   The user never sees literal asterisks.
  */
 
+import { getModelTier } from '@ajh/prompts/context-manager';
 import {
   buildCoverLetterPrompt,
   buildCoverLetterSystemPrompt,
@@ -23,6 +24,8 @@ import {
   extractPlainText,
   type GenerationMeta,
   type GenerationMode,
+  getLinkMap,
+  injectLinksIntoGeneratedText,
   validateMetadata,
 } from '@ajh/prompts/generate';
 import { detectLanguages } from '@ajh/shared/language-detection';
@@ -30,6 +33,17 @@ import { detectLanguages } from '@ajh/shared/language-detection';
 import { usePreferencesStore } from '@/store/preferences-store';
 
 import { getClient } from './app-client';
+
+type ModelTier = 'large' | 'medium' | 'small';
+
+function effectiveTier(model: string, provider: string): ModelTier {
+  const { promptQuality } = usePreferencesStore.getState();
+  // Cloud providers always get the full prompt
+  if (provider !== 'ollama') return 'large';
+  if (promptQuality === 'full') return 'large';
+  if (promptQuality === 'compact') return 'small';
+  return getModelTier(model);
+}
 
 export type { GenerationMeta, GenerationMode };
 export { MODES } from '@ajh/prompts/generate';
@@ -208,7 +222,12 @@ export async function extractMetadata(
   // Detect languages client-side
   const clientSideDetection = detectLanguages(resume, jobAd);
 
-  const { system, user } = buildMetadataPrompt(resume, jobAd);
+  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
+  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+  const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
+  const tier = effectiveTier(activeModel, activeProvider);
+
+  const { system, user } = buildMetadataPrompt(resume, jobAd, tier);
   try {
     const raw = await streamGenerate(model, system, user, () => {}, 0.1, locale);
     const meta = validateMetadata(raw);
@@ -251,10 +270,15 @@ export async function generateResume(
   signal?: AbortSignal,
   onThinking?: (tok: string) => void
 ): Promise<string> {
-  const system = buildResumeSystemPrompt(mode);
-  const user = buildResumePrompt(resume, jobAd, meta, mode);
+  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
+  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+  const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
+  const tier = effectiveTier(activeModel, activeProvider);
+
+  const system = buildResumeSystemPrompt(mode, tier);
+  const user = buildResumePrompt(resume, jobAd, meta, mode, tier);
   const raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal, onThinking);
-  return extractPlainText(raw);
+  return injectLinksIntoGeneratedText(extractPlainText(raw), getLinkMap(resume));
 }
 
 export async function generateCoverLetter(
@@ -268,10 +292,26 @@ export async function generateCoverLetter(
   signal?: AbortSignal,
   onThinking?: (tok: string) => void
 ): Promise<string> {
-  const system = buildCoverLetterSystemPrompt(mode);
-  const user = buildCoverLetterPrompt(resume, jobAd, meta, mode);
-  const raw = await streamGenerate(model, system, user, onToken, 0.4, locale, signal, onThinking);
-  return extractPlainText(raw);
+  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
+  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+  const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
+  const tier = effectiveTier(activeModel, activeProvider);
+
+  const system = buildCoverLetterSystemPrompt(mode, tier);
+  const user = buildCoverLetterPrompt(resume, jobAd, meta, mode, tier);
+  // Lower temperature for small models to reduce hallucination noise
+  const temperature = tier === 'small' ? 0.3 : 0.4;
+  const raw = await streamGenerate(
+    model,
+    system,
+    user,
+    onToken,
+    temperature,
+    locale,
+    signal,
+    onThinking
+  );
+  return injectLinksIntoGeneratedText(extractPlainText(raw), getLinkMap(resume));
 }
 
 // ─── Filename ─────────────────────────────────────────────────────────────────
@@ -1271,7 +1311,6 @@ export async function exportDOCX(
       templateId = 'modern';
     }
 
-    const { getClient } = await import('@/lib/app-client');
     const api = getClient();
     const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
     const _filePath = await api.documents.exportAndSave({
@@ -1318,7 +1357,6 @@ export async function exportPDF(
       templateId = 'modern';
     }
 
-    const { getClient } = await import('@/lib/app-client');
     const api = getClient();
     const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
     const _filePath = await api.documents.exportAndSave({

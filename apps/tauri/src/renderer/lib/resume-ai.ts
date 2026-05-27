@@ -17,9 +17,24 @@ import {
   type PromptMeta,
   validateAndRepair,
 } from '@ajh/prompts/analyze';
+import { getModelTier } from '@ajh/prompts/context-manager';
 import { detectLanguages } from '@ajh/shared/language-detection';
 
+import { usePreferencesStore } from '@/store/preferences-store';
+
 import { getClient } from './app-client';
+
+type ModelTier = 'large' | 'medium' | 'small';
+
+function effectiveTier(model: string): ModelTier {
+  const { promptQuality, aiProviderConfig } = usePreferencesStore.getState();
+  const provider = aiProviderConfig?.activeProvider ?? 'ollama';
+  // Cloud providers always get the full prompt
+  if (provider !== 'ollama') return 'large';
+  if (promptQuality === 'full') return 'large';
+  if (promptQuality === 'compact') return 'small';
+  return getModelTier(model);
+}
 
 export type { AnalysisResult };
 
@@ -54,13 +69,19 @@ export async function runAnalysis({
   // Detect languages client-side for accurate mismatch detection
   const clientSideDetection = detectLanguages(resume, jobAd);
 
-  const systemPrompt = buildSystemPrompt();
+  const tier = effectiveTier(model);
+  const systemPrompt = buildSystemPrompt(tier);
   // Pass detected languages to LLM so it uses correct info during analysis
-  const userPrompt = buildAnalysisPrompt(resume, jobAd, {
-    ...meta,
-    resumeLanguage: clientSideDetection.resumeName,
-    jobAdLanguage: clientSideDetection.jobAdName,
-  });
+  const userPrompt = buildAnalysisPrompt(
+    resume,
+    jobAd,
+    {
+      ...meta,
+      resumeLanguage: clientSideDetection.resumeName,
+      jobAdLanguage: clientSideDetection.jobAdName,
+    },
+    tier
+  );
 
   // Enqueue the generation job
   const validLocales = ['en', 'de', 'fr', 'es', 'it', 'tr', 'pt', 'ru', 'zh', 'ja', 'ko'] as const;
