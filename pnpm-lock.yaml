@@ -316,9 +316,15 @@ importers:
 
   packages/workers:
     dependencies:
+      '@ajh/ai':
+        specifier: workspace:*
+        version: link:../ai
       '@ajh/core':
         specifier: workspace:*
         version: link:../core
+      tesseract.js:
+        specifier: ^7.0.0
+        version: 7.0.0
     devDependencies:
       '@types/node':
         specifier: ^25.9.0
