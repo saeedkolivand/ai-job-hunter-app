@@ -112,6 +112,40 @@ Example:
   GOOD:  Built scalable **React** and **TypeScript** frontend applications integrated with **REST APIs**`;
 }
 
+// ─── Link extraction helper ───────────────────────────────────────────────────
+
+/**
+ * Parse the markdown reference block appended by the Rust PDF/DOCX extractor.
+ * Format: "\n---\n- [anchor](url)\n- [anchor](url)\n..."
+ * Returns a compact string for injection into prompts, or empty string if none.
+ */
+export function parseLinksFromResume(resume: string): string {
+  const sep = resume.lastIndexOf('\n---\n');
+  if (sep === -1) return '';
+  const block = resume.slice(sep + 5); // skip "\n---\n"
+  const lines = block.split('\n').filter((l) => l.startsWith('- ['));
+  if (!lines.length) return '';
+
+  const entries = lines
+    .map((l) => {
+      const m = l.match(/^- \[([^\]]+)\]\(([^)]+)\)$/);
+      return m ? `${m[1]}: ${m[2]}` : null;
+    })
+    .filter((x): x is string => x !== null);
+
+  if (!entries.length) return '';
+  return `CANDIDATE PROFILE LINKS (copy these URLs verbatim into the contact line):\n${entries.join('\n')}`;
+}
+
+/**
+ * Strip the link reference block from resume text before sending to the AI
+ * so the body text budget is not wasted on the reference list.
+ */
+function stripLinkBlock(resume: string): string {
+  const sep = resume.lastIndexOf('\n---\n');
+  return sep === -1 ? resume : resume.slice(0, sep);
+}
+
 // ─── Metadata extraction prompt ──────────────────────────────────────────────
 
 export function buildMetadataPrompt(
@@ -125,12 +159,15 @@ export function buildMetadataPrompt(
       ? `\nExample output:\n{"candidateName":"Jane Smith","jobTitle":"Senior Frontend Engineer","companyName":"Acme Corp","resumeLanguage":"en","jobAdLanguage":"en","topRequirements":["React","TypeScript","GraphQL"],"candidateSeniority":"senior"}\n`
       : '';
 
+  const linksBlock = parseLinksFromResume(resume);
+  const resumeBody = stripLinkBlock(resume);
+
   return {
     system: `You are a document parser. Extract structured data from resumes and job ads. Return ONLY valid JSON. No prose. No markdown.`,
     user: `Extract from the resume and job ad below.
-
+${linksBlock ? `\n${linksBlock}\n` : ''}
 <candidate_resume>
-${resume.slice(0, 3000)}
+${resumeBody.slice(0, 3000)}
 </candidate_resume>
 
 <job_ad>
@@ -339,9 +376,11 @@ export function buildResumePrompt(
     : `Write in ${meta.targetLanguage}.`;
 
   const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? []);
+  const linksBlock = parseLinksFromResume(resume);
+  const resumeBody = stripLinkBlock(resume);
 
-  return `<candidate_resume>
-${resume.slice(0, 5000)}
+  return `${linksBlock ? `${linksBlock}\n\n` : ''}<candidate_resume>
+${resumeBody.slice(0, 5000)}
 </candidate_resume>
 
 <job_ad>
@@ -410,7 +449,7 @@ Use this exact structure:
 
 Line 1: Full name (plain text only — no #, no ALL_CAPS, no markdown)
 Line 2: Job title (plain text)
-Line 3: City, Country | email | phone | LinkedIn
+Line 3: City, Country | email | phone | full URL (e.g. https://linkedin.com/in/username) — use exact URLs from CANDIDATE PROFILE LINKS above
 (blank line)
 PROFESSIONAL SUMMARY
 (summary paragraph)
@@ -472,7 +511,7 @@ WHAT MAKES COVER LETTERS WORK:
 
 COMPLETE STRUCTURE:
 [Candidate Name]
-[Email] | [Phone if in resume] | [City if in resume]
+[City if in resume] | [full URLs from CANDIDATE PROFILE LINKS, e.g. https://linkedin.com/in/...] | [Email] | [Phone if in resume]
 [Date]
 
 [Company Name]
@@ -525,9 +564,11 @@ export function buildCoverLetterPrompt(
     : `Write in ${meta.targetLanguage}.`;
 
   const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? []);
+  const linksBlock = parseLinksFromResume(resume);
+  const resumeBody = stripLinkBlock(resume);
 
-  return `<candidate_resume>
-${resume.slice(0, 4000)}
+  return `${linksBlock ? `${linksBlock}\n\n` : ''}<candidate_resume>
+${resumeBody.slice(0, 4000)}
 </candidate_resume>
 
 <job_ad>
