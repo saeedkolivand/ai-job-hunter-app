@@ -322,7 +322,7 @@ Your goal: Achieve 85%+ keyword match while maintaining natural, readable prose.
 OUTPUT FORMAT:
 Plain text with **double asterisks** for keyword emphasis (renderer converts to real bold).
 Standard section headers, "•" for bullets.
-No markdown other than **bold**. No explanations. Output ONLY the resume.`;
+No markdown other than **bold**. No explanations. Output ONLY the resume. Do NOT wrap it in XML tags.`;
 }
 
 // ─── Resume user prompt ───────────────────────────────────────────────────────
@@ -573,28 +573,28 @@ Verify before writing:
 
 ### COMPLETE COVER LETTER ###
 
-Now output the cover letter, then immediately after add a self-check block:
-
-<leakage_check>
-List each factual claim about the candidate in the letter. For each, cite the line in the resume that supports it.
-If any claim cannot be cited, rewrite the letter to remove it.
-</leakage_check>
-
+Output ONLY the cover letter. Do NOT wrap it in XML tags. Do NOT add any commentary before or after.
 Start immediately with the candidate header:`;
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 export function extractPlainText(raw: string): string {
-  return raw
-    .replace(/<think>[\s\S]*?<\/think>/gi, '') // strip local model thinking blocks
-    .replace(/<leakage_check>[\s\S]*?<\/leakage_check>/gi, '') // strip self-check block
-    .replace(/^#{1,6}\s/gm, '')
-    .replace(/\*\*\*(.+?)\*\*\*/g, '**$1**') // triple → double (preserve bold)
-    .replace(/\*([^*]+)\*/g, '$1') // single italic → plain
-    .replace(/`(.+?)`/g, '$1')
-    .replace(/```[\s\S]*?```/g, '')
-    .trim();
+  return (
+    raw
+      .replace(/<think>[\s\S]*?<\/think>/gi, '') // local model thinking blocks
+      .replace(/<leakage_check>[\s\S]*?<\/leakage_check>/gi, '') // legacy self-check block
+      // Strip any XML wrapper tags the model might echo from the prompt
+      .replace(/<\/?candidate_resume>/gi, '')
+      .replace(/<\/?job_ad>/gi, '')
+      .replace(/<\/?leakage_check>/gi, '') // stray unclosed tags
+      .replace(/^#{1,6}\s/gm, '')
+      .replace(/\*\*\*(.+?)\*\*\*/g, '**$1**') // triple → double (preserve bold)
+      .replace(/\*([^*]+)\*/g, '$1') // single italic → plain
+      .replace(/`(.+?)`/g, '$1')
+      .replace(/```[\s\S]*?```/g, '')
+      .trim()
+  );
 }
 
 export function validateMetadata(raw: string): GenerationMeta | null {
