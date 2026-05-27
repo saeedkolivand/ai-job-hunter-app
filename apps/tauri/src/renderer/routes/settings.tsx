@@ -45,6 +45,7 @@ import {
   usePreferencesStore,
   useUserName,
 } from '@/store/preferences-store';
+import { useSessionStore } from '@/store/session-store';
 
 export const Route = createFileRoute('/settings')({ component: SettingsPage });
 
@@ -72,7 +73,9 @@ interface NavGroup {
 
 function SettingsPage() {
   const { t } = useTranslation();
-  const [activeSection, setActiveSection] = useState<SectionId>('general');
+  const { settings, setSettings } = useSessionStore();
+  const activeSection = settings.activeSection as SectionId;
+  const setActiveSection = (v: SectionId) => setSettings({ activeSection: v });
   const userName = useUserName();
   const setUserName = usePreferencesStore((s) => s.setUserName);
   const [localName, setLocalName] = useState(userName || '');
