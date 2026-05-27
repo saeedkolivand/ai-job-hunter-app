@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
-import { transition } from '@ajh/ui';
+import { ProgressBar, transition } from '@ajh/ui';
 
 import { ThinkingBubble } from '@/features/ai-generate/components/ThinkingBubble';
 
@@ -117,18 +117,7 @@ export function AnalysisProgress({
       </div>
 
       {/* Progress bar */}
-      <div className="space-y-1.5">
-        <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-          <motion.div
-            className="h-full rounded-full bg-gradient-to-r from-violet-700 via-brand to-brand-soft"
-            animate={{ width: `${progress}%` }}
-            transition={transition.progress}
-          />
-        </div>
-        <div className="flex justify-end text-[10px] text-foreground/20">
-          <span>{Math.round(progress)}%</span>
-        </div>
-      </div>
+      <ProgressBar value={progress} height={6} showLabel />
 
       {/* Thinking output */}
       {thinking && <ThinkingBubble thinking={thinking} done={stream.length > 0} />}
