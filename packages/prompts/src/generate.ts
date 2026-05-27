@@ -148,34 +148,59 @@ function isProfileUrl(url: string): boolean {
   }
 }
 
+interface ParsedResumeLinks {
+  /** Compact block to inject before <candidate_resume> */
+  block: string;
+  /** Clean email address extracted from mailto annotation, or empty string */
+  cleanEmail: string;
+}
+
 /**
  * Parse the markdown reference block appended by the Rust PDF/DOCX extractor.
- * Only returns social/portfolio profile links — filters out body links like
- * company websites (rabobank.com, rango.exchange, etc.) that live in job entries.
+ * Returns profile URLs (filtered to social/portfolio domains) and a clean email
+ * address extracted from the mailto annotation — both used to override garbled
+ * text that pdf_extract produces when PDFs use character spacing.
  */
-export function parseLinksFromResume(resume: string): string {
+export function parseLinksFromResume(resume: string): ParsedResumeLinks {
   const sep = resume.lastIndexOf('\n---\n');
-  if (sep === -1) return '';
+  if (sep === -1) return { block: '', cleanEmail: '' };
   const block = resume.slice(sep + 5);
   const lines = block.split('\n').filter((l) => l.startsWith('- ['));
-  if (!lines.length) return '';
 
-  const entries = lines
-    .map((l) => {
-      const m = l.match(/^- \[([^\]]+)\]\(([^)]+)\)$/);
-      if (!m) return null;
-      const anchor = m[1];
-      const url = m[2];
-      // Skip mailto links — email comes from resume text directly
-      if (!url || url.startsWith('mailto:')) return null;
-      // Skip non-profile domains (company body links)
-      if (!isProfileUrl(url)) return null;
-      return `${anchor}: ${url}`;
-    })
-    .filter((x): x is string => x !== null);
+  let cleanEmail = '';
+  const profileEntries: string[] = [];
 
-  if (!entries.length) return '';
-  return `CANDIDATE PROFILE LINKS — write these FULL URLs (starting with https://) verbatim in the contact line. NEVER write just a label like "LinkedIn" or "GitHub" — always write the complete https:// URL:\n${entries.join('\n')}`;
+  for (const l of lines) {
+    const m = l.match(/^- \[([^\]]+)\]\(([^)]+)\)$/);
+    if (!m) continue;
+    const anchor = m[1];
+    const url = m[2];
+    if (!url) continue;
+
+    if (url.startsWith('mailto:')) {
+      // Extract clean email — the annotation URL is always unspaced
+      cleanEmail = url.slice('mailto:'.length);
+      continue;
+    }
+    if (!isProfileUrl(url)) continue;
+    profileEntries.push(`${anchor}: ${url}`);
+  }
+
+  if (!profileEntries.length && !cleanEmail) return { block: '', cleanEmail: '' };
+
+  const lines2: string[] = [];
+  if (cleanEmail) {
+    lines2.push(`CANDIDATE EMAIL (use this exact address, no spaces): ${cleanEmail}`);
+  }
+  if (profileEntries.length) {
+    lines2.push(
+      `CANDIDATE PROFILE LINKS — copy these FULL https:// URLs verbatim into the contact line.\n` +
+        `NEVER write a label like "LinkedIn" or "GitHub". If the original resume shows labels, replace them with the full URL.\n` +
+        profileEntries.join('\n')
+    );
+  }
+
+  return { block: lines2.join('\n\n'), cleanEmail };
 }
 
 /**
@@ -200,7 +225,7 @@ export function buildMetadataPrompt(
       ? `\nExample output:\n{"candidateName":"Jane Smith","jobTitle":"Senior Frontend Engineer","companyName":"Acme Corp","resumeLanguage":"en","jobAdLanguage":"en","topRequirements":["React","TypeScript","GraphQL"],"candidateSeniority":"senior"}\n`
       : '';
 
-  const linksBlock = parseLinksFromResume(resume);
+  const { block: linksBlock } = parseLinksFromResume(resume);
   const resumeBody = stripLinkBlock(resume);
 
   return {
@@ -417,7 +442,7 @@ export function buildResumePrompt(
     : `Write in ${meta.targetLanguage}.`;
 
   const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? []);
-  const linksBlock = parseLinksFromResume(resume);
+  const { block: linksBlock } = parseLinksFromResume(resume);
   const resumeBody = stripLinkBlock(resume);
 
   return `${linksBlock ? `${linksBlock}\n\n` : ''}<candidate_resume>
@@ -607,7 +632,7 @@ export function buildCoverLetterPrompt(
     : `Write in ${meta.targetLanguage}.`;
 
   const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? []);
-  const linksBlock = parseLinksFromResume(resume);
+  const { block: linksBlock } = parseLinksFromResume(resume);
   const resumeBody = stripLinkBlock(resume);
 
   return `${linksBlock ? `${linksBlock}\n\n` : ''}<candidate_resume>
