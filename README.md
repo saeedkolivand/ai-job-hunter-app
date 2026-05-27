@@ -48,25 +48,25 @@ Modern job searching is repetitive, time-consuming, and emotionally draining. AI
 
 ## Tech Stack
 
-| Layer               | Technology                              |
-| ------------------- | --------------------------------------- |
-| Desktop shell       | Tauri 2.x (Rust)                        |
-| UI framework        | React 19, TypeScript 6                  |
-| Routing             | TanStack Router 1.x (file-based)        |
-| Server state        | TanStack Query 5.x                      |
-| Client state        | Zustand 5                               |
-| Styling             | TailwindCSS v4 + CSS custom properties  |
-| Animations          | motion/react (Framer Motion)            |
-| Build system        | Vite 8 + Turbo (monorepo)               |
-| Package manager     | pnpm 11 (workspaces)                    |
-| Local AI            | Ollama 0.6                              |
-| Relational DB       | SQLite via better-sqlite3 + Drizzle ORM |
-| Vector DB           | LanceDB                                 |
-| Scraping            | Playwright + Cheerio                    |
-| File processing     | pdfjs-dist, mammoth, Tesseract.js       |
-| Document generation | docx 9, jsPDF 4                         |
-| Validation          | Zod 4                                   |
-| Logging             | Pino 10                                 |
+| Layer               | Technology                                 |
+| ------------------- | ------------------------------------------ |
+| Desktop shell       | Tauri 2.x (Rust)                           |
+| UI framework        | React 19, TypeScript 6                     |
+| Routing             | TanStack Router 1.x (file-based)           |
+| Server state        | TanStack Query 5.x                         |
+| Client state        | Zustand 5                                  |
+| Styling             | TailwindCSS v4 + CSS custom properties     |
+| Animations          | motion/react (Framer Motion)               |
+| Build system        | Vite 8 + Turbo (monorepo)                  |
+| Package manager     | pnpm 11 (workspaces)                       |
+| Local AI            | Ollama 0.6                                 |
+| Relational DB       | SQLite via better-sqlite3 + Drizzle ORM    |
+| Vector DB           | LanceDB                                    |
+| Scraping            | Playwright + Cheerio                       |
+| File processing     | pdfjs-dist, mammoth, Tesseract.js          |
+| Document generation | docx-rs + printpdf (Rust) · jsPDF (client) |
+| Validation          | Zod 4                                      |
+| Logging             | Pino 10                                    |
 
 ---
 
@@ -232,16 +232,17 @@ Quick rules:
 
 ## Documentation
 
-| Document                                                   | Description                                        |
-| ---------------------------------------------------------- | -------------------------------------------------- |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)               | System design, data flow, Mermaid diagrams         |
-| [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)             | Tokens, components, motion, theming                |
-| [docs/PATTERNS.md](docs/PATTERNS.md)                       | IPC, state machines, AI streaming, search patterns |
-| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)                 | Full local dev environment setup                   |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)                   | Building and releasing installers                  |
-| [docs/API.md](docs/API.md)                                 | All 21 IPC namespaces documented                   |
-| [docs/ARCHITECTURE_STATUS.md](docs/ARCHITECTURE_STATUS.md) | Implementation status tracker                      |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                         | Code style, branching, PR process                  |
+| Document                                                   | Description                                            |
+| ---------------------------------------------------------- | ------------------------------------------------------ |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)               | System design, data flow, Mermaid diagrams             |
+| [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)             | Tokens, components, motion, theming                    |
+| [docs/PATTERNS.md](docs/PATTERNS.md)                       | IPC, state machines, AI streaming, search patterns     |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)                 | Full local dev environment setup                       |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)                   | Building and releasing installers                      |
+| [docs/API.md](docs/API.md)                                 | All 21 IPC namespaces documented                       |
+| [docs/ARCHITECTURE_STATUS.md](docs/ARCHITECTURE_STATUS.md) | Implementation status tracker                          |
+| [docs/DESIGN_DECISIONS.md](docs/DESIGN_DECISIONS.md)       | Architecture decisions, patterns, and design rationale |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                         | Code style, branching, PR process                      |
 
 ---
 

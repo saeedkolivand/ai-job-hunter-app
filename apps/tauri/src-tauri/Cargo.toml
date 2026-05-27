@@ -24,6 +24,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-clipboard-manager = "2"
+tauri-plugin-log = "2"
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -32,6 +33,7 @@ serde_json = "1"
 # rustls-tls is added for the cover_letter pipeline (API calls use rustls client).
 reqwest = { version = "0.13", features = ["json", "native-tls", "rustls", "rustls-native-certs", "cookies", "query", "http2"], default-features = false }
 
+log = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
@@ -50,32 +52,38 @@ urlencoding = "2"
 rand = "0.10"
 async-trait = "0.1"
 arc-swap = "1.7"
+parking_lot = "0.12"
 
 uuid = { version = "1", features = ["v4"] }
 
 base64 = "0.22"
-scraper = "0.26"
+scraper = "0.27"
 flate2 = "1.0"
 
 # OS-native secret storage: DPAPI (Windows), Keychain (macOS), libsecret (Linux).
-keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service"] }
+# keyring v4 split into keyring-core (Entry API) + platform store crates.
+keyring-core = "1"
 
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 
 # Cross-platform dependencies
-rusqlite = { version = "0.39", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 pdf-extract = "0.10"
 zip = "8"
 docx-rs = "0.4.19"
 printpdf = "0.9.1"
-unicode-segmentation = "1.10"
-lopdf = "0.34"
+lopdf = "0.40"
 
 
 [target.'cfg(windows)'.dependencies]
 wmi = "0.18"
+windows-native-keyring-store = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust", "vendored"] }
 
 [dev-dependencies]
 mockall = "0.14"

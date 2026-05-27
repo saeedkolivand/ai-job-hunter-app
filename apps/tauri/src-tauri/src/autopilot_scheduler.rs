@@ -10,7 +10,8 @@
 ///   hourly      — run if last_run_at is > 60 min ago (or never ran)
 ///   twice_daily — run if last_run_at is > 12 h ago (or never ran)
 ///   daily       — run if last_run_at is > 24 h ago (or never ran)
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
@@ -68,10 +69,7 @@ pub fn start(app: AppHandle) {
 }
 
 fn collect_due(store: &Arc<Mutex<AutopilotStore>>) -> Vec<Autopilot> {
-    match store.lock() {
-        Ok(g) => g.list().into_iter().filter(is_due).collect(),
-        Err(_) => vec![],
-    }
+    store.lock().list().into_iter().filter(is_due).collect()
 }
 
 async fn tick(app: &AppHandle, store: &Arc<Mutex<AutopilotStore>>) {
@@ -79,9 +77,7 @@ async fn tick(app: &AppHandle, store: &Arc<Mutex<AutopilotStore>>) {
 
     for ap in due {
         // Stamp lastRunAt immediately so a slow run doesn't trigger twice.
-        if let Ok(g) = store.lock() {
-            g.stamp_last_run(&ap.id);
-        }
+        store.lock().stamp_last_run(&ap.id);
 
         let app_clone = app.clone();
         let ap_id = ap.id.clone();

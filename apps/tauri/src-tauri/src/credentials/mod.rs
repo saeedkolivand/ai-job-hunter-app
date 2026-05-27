@@ -15,13 +15,41 @@
 /// looked up by scrapers/appliers via `get_decrypted(board_id)`.
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use keyring::Entry;
+use keyring_core::Entry;
 use serde::{Deserialize, Serialize};
 
 const SERVICE: &str = "com.ajh.tauri";
+
+/// Initialise the OS-native keyring backend. Must be called once before any
+/// `Entry` operations. Panics if the platform store cannot be opened.
+pub fn init_keyring() {
+    use std::collections::HashMap;
+    let cfg = HashMap::new();
+    #[cfg(target_os = "windows")]
+    {
+        use windows_native_keyring_store::Store;
+        keyring_core::set_default_store(
+            Store::new_with_configuration(&cfg).expect("Windows Credential Manager unavailable"),
+        );
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use apple_native_keyring_store::keychain::Store;
+        keyring_core::set_default_store(
+            Store::new_with_configuration(&cfg).expect("macOS Keychain unavailable"),
+        );
+    }
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    {
+        use dbus_secret_service_keyring_store::Store;
+        keyring_core::set_default_store(
+            Store::new_with_configuration(&cfg).expect("Secret Service unavailable"),
+        );
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CredentialMeta {
@@ -118,7 +146,7 @@ impl CredentialStore {
     // ── Meta persistence ──────────────────────────────────────────────────────
 
     fn load_meta(&self) -> HashMap<String, CredentialMeta> {
-        let mut guard = self.cache.lock().unwrap();
+        let mut guard = self.cache.lock();
         if let Some(ref c) = guard.0 {
             return c.clone();
         }
@@ -134,7 +162,7 @@ impl CredentialStore {
         if let Ok(json) = serde_json::to_string_pretty(&meta) {
             std::fs::write(&self.meta_file, json).ok();
         }
-        self.cache.lock().unwrap().0 = Some(meta);
+        self.cache.lock().0 = Some(meta);
     }
 }
 

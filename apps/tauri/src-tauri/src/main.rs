@@ -36,7 +36,7 @@ mod profile_import;
 mod scraping;
 mod updater;
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -144,7 +144,16 @@ fn main() {
         )
         .init();
 
+    credentials::init_keyring();
+
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .max_file_size(5_000_000)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(3))
+                .level(log::LevelFilter::Warn)
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -167,15 +176,15 @@ fn main() {
             app.manage(Mutex::new(CredentialStore::new(&data_dir)));
             match documents::DocumentStore::open(&data_dir) {
                 Ok(store) => { app.manage(store); }
-                Err(e) => eprintln!("[setup] document store failed to open (non-fatal): {e}"),
+                Err(e) => log::warn!("[setup] document store failed to open (non-fatal): {e}"),
             }
             match ai_generations::AiGenerationStore::open(&data_dir) {
                 Ok(store) => { app.manage(store); }
-                Err(e) => eprintln!("[setup] ai generations store failed to open (non-fatal): {e}"),
+                Err(e) => log::warn!("[setup] ai generations store failed to open (non-fatal): {e}"),
             }
             match job_preferences::JobPreferencesStore::open(&data_dir) {
                 Ok(store) => { app.manage(store); }
-                Err(e) => eprintln!("[setup] job preferences store failed to open (non-fatal): {e}"),
+                Err(e) => log::warn!("[setup] job preferences store failed to open (non-fatal): {e}"),
             }
             app.manage(Mutex::new(JobTracker::default()));
             app.manage(Mutex::new(PostingsCache::default()));
@@ -185,11 +194,11 @@ fn main() {
             if let Ok(db) = conversations::ConversationDb::open(handle) {
                 app.manage(db);
             } else {
-                eprintln!("[setup] conversation db failed to open (non-fatal)");
+                log::warn!("[setup] conversation db failed to open (non-fatal)");
             }
             match cover_letter::cache::CompanyBriefCache::open(&data_dir) {
                 Ok(cache) => { app.manage(cache); }
-                Err(e) => eprintln!("[setup] company brief cache failed to open (non-fatal): {e}"),
+                Err(e) => log::warn!("[setup] company brief cache failed to open (non-fatal): {e}"),
             }
 
             // Build and set the application menu.
@@ -213,7 +222,7 @@ fn main() {
 
             // Build system tray.
             if let Err(e) = build_tray(handle) {
-                eprintln!("[setup] tray build error (non-fatal): {e}");
+                log::warn!("[setup] tray build error (non-fatal): {e}");
             }
 
             // Schedule background update checks (10 s after launch, then every 4 h).
