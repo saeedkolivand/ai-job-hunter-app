@@ -144,6 +144,8 @@ fn main() {
         )
         .init();
 
+    credentials::init_keyring();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
