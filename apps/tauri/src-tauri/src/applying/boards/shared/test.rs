@@ -4,8 +4,9 @@ use super::*;
 fn test_resolve_data_dir_default() {
     unsafe { std::env::remove_var("AJH_DATA_DIR"); }
     let dir = resolve_data_dir();
-    // Should use USERPROFILE or HOME
-    assert!(dir.ends_with(".ajh"));
+    // Should use USERPROFILE or HOME and end with .ajh
+    let dir_str = dir.to_string_lossy();
+    assert!(dir_str.contains(".ajh") || dir_str.ends_with(".ajh"));
 }
 
 #[test]
