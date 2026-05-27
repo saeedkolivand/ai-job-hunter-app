@@ -114,27 +114,68 @@ Example:
 
 // ─── Link extraction helper ───────────────────────────────────────────────────
 
+// Known social/portfolio domains that belong in a resume contact line.
+const PROFILE_DOMAINS = [
+  'linkedin.com',
+  'github.com',
+  'gitlab.com',
+  'twitter.com',
+  'x.com',
+  'behance.net',
+  'dribbble.com',
+  'medium.com',
+  'stackoverflow.com',
+  'dev.to',
+  'codepen.io',
+  'youtube.com',
+  'youtu.be',
+  'notion.so',
+  'figma.com',
+  'npmjs.com',
+  'crates.io',
+  'solo.to',
+  'bio.link',
+  'linktr.ee',
+  'bento.me',
+];
+
+function isProfileUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+    return PROFILE_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Parse the markdown reference block appended by the Rust PDF/DOCX extractor.
- * Format: "\n---\n- [anchor](url)\n- [anchor](url)\n..."
- * Returns a compact string for injection into prompts, or empty string if none.
+ * Only returns social/portfolio profile links — filters out body links like
+ * company websites (rabobank.com, rango.exchange, etc.) that live in job entries.
  */
 export function parseLinksFromResume(resume: string): string {
   const sep = resume.lastIndexOf('\n---\n');
   if (sep === -1) return '';
-  const block = resume.slice(sep + 5); // skip "\n---\n"
+  const block = resume.slice(sep + 5);
   const lines = block.split('\n').filter((l) => l.startsWith('- ['));
   if (!lines.length) return '';
 
   const entries = lines
     .map((l) => {
       const m = l.match(/^- \[([^\]]+)\]\(([^)]+)\)$/);
-      return m ? `${m[1]}: ${m[2]}` : null;
+      if (!m) return null;
+      const anchor = m[1];
+      const url = m[2];
+      // Skip mailto links — email comes from resume text directly
+      if (!url || url.startsWith('mailto:')) return null;
+      // Skip non-profile domains (company body links)
+      if (!isProfileUrl(url)) return null;
+      return `${anchor}: ${url}`;
     })
     .filter((x): x is string => x !== null);
 
   if (!entries.length) return '';
-  return `CANDIDATE PROFILE LINKS (copy these URLs verbatim into the contact line):\n${entries.join('\n')}`;
+  return `CANDIDATE PROFILE LINKS — write these FULL URLs (starting with https://) verbatim in the contact line. NEVER write just a label like "LinkedIn" or "GitHub" — always write the complete https:// URL:\n${entries.join('\n')}`;
 }
 
 /**
@@ -449,7 +490,8 @@ Use this exact structure:
 
 Line 1: Full name (plain text only — no #, no ALL_CAPS, no markdown)
 Line 2: Job title (plain text)
-Line 3: City, Country | email | phone | full URL (e.g. https://linkedin.com/in/username) — use exact URLs from CANDIDATE PROFILE LINKS above
+Line 3: City, Country | email | phone | https://linkedin.com/in/username | https://github.com/username
+CRITICAL: Line 3 MUST contain the full https:// URL copied from CANDIDATE PROFILE LINKS — NEVER write a label like "LinkedIn" or "GitHub". Omit any profile URL that is not in CANDIDATE PROFILE LINKS.
 (blank line)
 PROFESSIONAL SUMMARY
 (summary paragraph)
@@ -511,7 +553,8 @@ WHAT MAKES COVER LETTERS WORK:
 
 COMPLETE STRUCTURE:
 [Candidate Name]
-[City if in resume] | [full URLs from CANDIDATE PROFILE LINKS, e.g. https://linkedin.com/in/...] | [Email] | [Phone if in resume]
+[City if in resume] | [Email] | [Phone if in resume] | https://linkedin.com/in/username | https://github.com/username
+CRITICAL: Write only the https:// URLs copied from CANDIDATE PROFILE LINKS (max 2 profile URLs). NEVER write labels like "LinkedIn". Omit any URL not in CANDIDATE PROFILE LINKS.
 [Date]
 
 [Company Name]
