@@ -48,25 +48,25 @@ Modern job searching is repetitive, time-consuming, and emotionally draining. AI
 
 ## Tech Stack
 
-| Layer               | Technology                              |
-| ------------------- | --------------------------------------- |
-| Desktop shell       | Tauri 2.x (Rust)                        |
-| UI framework        | React 19, TypeScript 6                  |
-| Routing             | TanStack Router 1.x (file-based)        |
-| Server state        | TanStack Query 5.x                      |
-| Client state        | Zustand 5                               |
-| Styling             | TailwindCSS v4 + CSS custom properties  |
-| Animations          | motion/react (Framer Motion)            |
-| Build system        | Vite 8 + Turbo (monorepo)               |
-| Package manager     | pnpm 11 (workspaces)                    |
-| Local AI            | Ollama 0.6                              |
-| Relational DB       | SQLite via better-sqlite3 + Drizzle ORM |
-| Vector DB           | LanceDB                                 |
-| Scraping            | Playwright + Cheerio                    |
-| File processing     | pdfjs-dist, mammoth, Tesseract.js       |
-| Document generation | docx-rs + printpdf (Rust native)        |
-| Validation          | Zod 4                                   |
-| Logging             | Pino 10                                 |
+| Layer               | Technology                                 |
+| ------------------- | ------------------------------------------ |
+| Desktop shell       | Tauri 2.x (Rust)                           |
+| UI framework        | React 19, TypeScript 6                     |
+| Routing             | TanStack Router 1.x (file-based)           |
+| Server state        | TanStack Query 5.x                         |
+| Client state        | Zustand 5                                  |
+| Styling             | TailwindCSS v4 + CSS custom properties     |
+| Animations          | motion/react (Framer Motion)               |
+| Build system        | Vite 8 + Turbo (monorepo)                  |
+| Package manager     | pnpm 11 (workspaces)                       |
+| Local AI            | Ollama 0.6                                 |
+| Relational DB       | SQLite via better-sqlite3 + Drizzle ORM    |
+| Vector DB           | LanceDB                                    |
+| Scraping            | Playwright + Cheerio                       |
+| File processing     | pdfjs-dist, mammoth, Tesseract.js          |
+| Document generation | docx-rs + printpdf (Rust) · jsPDF (client) |
+| Validation          | Zod 4                                      |
+| Logging             | Pino 10                                    |
 
 ---
 
