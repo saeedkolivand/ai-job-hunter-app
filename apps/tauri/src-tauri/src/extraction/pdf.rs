@@ -61,10 +61,9 @@ fn extract_links(bytes: &[u8]) -> Vec<Link> {
 }
 
 fn is_link_annotation(dict: &Dictionary) -> bool {
-    // as_name_str returns Result<&str>
     dict.get(b"Subtype")
-        .and_then(|v| v.as_name_str())
-        .map(|s| s == "Link")
+        .and_then(|v| v.as_name())
+        .map(|s| s == b"Link")
         .unwrap_or(false)
 }
 
