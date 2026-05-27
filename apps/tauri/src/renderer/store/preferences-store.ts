@@ -41,7 +41,6 @@ const defaultPreferences: Preferences = {
   outputTone: 'professional',
   performanceMode: 'balanced',
   debugMode: false,
-  enableLeakageCheck: true,
   onboardingCompleted: false,
   lastUpdated: new Date().toISOString(),
 };
