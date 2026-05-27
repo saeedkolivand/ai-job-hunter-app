@@ -1,6 +1,6 @@
 import type { TextareaHTMLAttributes } from 'react';
 
-import { cn } from '../lib/cn';
+import { cn } from '../../lib/cn';
 
 export interface TextAreaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   variant?: 'default' | 'glass';
