@@ -156,10 +156,61 @@ interface ParsedResumeLinks {
 }
 
 /**
+ * Build a label→url map for all profile links in the extracted reference block.
+ * Used for post-processing: replacing plain labels with [label](url) markdown.
+ */
+export function getLinkMap(resume: string): Record<string, string> {
+  const sep = resume.lastIndexOf('\n---\n');
+  if (sep === -1) return {};
+  const block = resume.slice(sep + 5);
+  const map: Record<string, string> = {};
+  for (const l of block.split('\n')) {
+    if (!l.startsWith('- [')) continue;
+    const m = l.match(/^- \[([^\]]+)\]\(([^)]+)\)$/);
+    if (!m) continue;
+    const anchor = m[1] ?? '';
+    const url = m[2];
+    if (!anchor || !url || url.startsWith('mailto:') || !isProfileUrl(url)) continue;
+    map[anchor] = url;
+  }
+  return map;
+}
+
+/**
+ * Post-process AI-generated resume/cover-letter text.
+ * Scans the first 6 lines for the contact line (contains |) and replaces
+ * known profile labels (e.g. "LinkedIn") with [LinkedIn](https://...) so the
+ * Rust renderer can attach the hyperlink without displaying the full URL.
+ */
+export function injectLinksIntoGeneratedText(
+  text: string,
+  linkMap: Record<string, string>
+): string {
+  if (!Object.keys(linkMap).length) return text;
+  const lines = text.split('\n');
+  for (let i = 0; i < Math.min(lines.length, 6); i++) {
+    const line = lines[i] ?? '';
+    if (!line.includes('|')) continue;
+    if (/^(PROFESSIONAL|WORK|EDUCATION|SKILLS|SUMMARY)/i.test(line.trim())) continue;
+    let newLine = line;
+    for (const [label, url] of Object.entries(linkMap)) {
+      // Match the label when surrounded by pipe separators, spaces, or line edges
+      const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      newLine = newLine.replace(
+        new RegExp(`((?<=\\|\\s*)|(?<=^\\s*))${esc}((?=\\s*\\|)|(?=\\s*$))`, 'g'),
+        `[${label}](${url})`
+      );
+    }
+    if (i < lines.length) lines[i] = newLine;
+  }
+  return lines.join('\n');
+}
+
+/**
  * Parse the markdown reference block appended by the Rust PDF/DOCX extractor.
- * Returns profile URLs (filtered to social/portfolio domains) and a clean email
- * address extracted from the mailto annotation — both used to override garbled
- * text that pdf_extract produces when PDFs use character spacing.
+ * Returns a prompt injection block telling the AI to write short labels
+ * (LinkedIn, GitHub) — not full URLs. Actual hyperlinks are injected
+ * post-generation by injectLinksIntoGeneratedText().
  */
 export function parseLinksFromResume(resume: string): ParsedResumeLinks {
   const sep = resume.lastIndexOf('\n---\n');
@@ -168,39 +219,37 @@ export function parseLinksFromResume(resume: string): ParsedResumeLinks {
   const lines = block.split('\n').filter((l) => l.startsWith('- ['));
 
   let cleanEmail = '';
-  const profileEntries: string[] = [];
+  const labelEntries: string[] = [];
 
   for (const l of lines) {
     const m = l.match(/^- \[([^\]]+)\]\(([^)]+)\)$/);
     if (!m) continue;
-    const anchor = m[1];
+    const anchor = m[1] ?? '';
     const url = m[2];
     if (!url) continue;
-
     if (url.startsWith('mailto:')) {
-      // Extract clean email — the annotation URL is always unspaced
       cleanEmail = url.slice('mailto:'.length);
       continue;
     }
     if (!isProfileUrl(url)) continue;
-    profileEntries.push(`${anchor}: ${url}`);
+    labelEntries.push(anchor);
   }
 
-  if (!profileEntries.length && !cleanEmail) return { block: '', cleanEmail: '' };
+  if (!labelEntries.length && !cleanEmail) return { block: '', cleanEmail: '' };
 
-  const lines2: string[] = [];
+  const parts: string[] = [];
   if (cleanEmail) {
-    lines2.push(`CANDIDATE EMAIL (use this exact address, no spaces): ${cleanEmail}`);
+    parts.push(`CANDIDATE EMAIL (use this exact address, no spaces): ${cleanEmail}`);
   }
-  if (profileEntries.length) {
-    lines2.push(
-      `CANDIDATE PROFILE LINKS — copy these FULL https:// URLs verbatim into the contact line.\n` +
-        `NEVER write a label like "LinkedIn" or "GitHub". If the original resume shows labels, replace them with the full URL.\n` +
-        profileEntries.join('\n')
+  if (labelEntries.length) {
+    parts.push(
+      `CANDIDATE PROFILE LINKS — write ONLY these short labels in the contact line (NOT the full URL):\n` +
+        labelEntries.join(', ') +
+        `\nExample: Haarlem, Netherlands | milanbehnam97@gmail.com | +31... | LinkedIn | GitHub`
     );
   }
 
-  return { block: lines2.join('\n\n'), cleanEmail };
+  return { block: parts.join('\n\n'), cleanEmail };
 }
 
 /**
@@ -515,8 +564,8 @@ Use this exact structure:
 
 Line 1: Full name (plain text only — no #, no ALL_CAPS, no markdown)
 Line 2: Job title (plain text)
-Line 3: City, Country | email | phone | https://linkedin.com/in/username | https://github.com/username
-CRITICAL: Line 3 MUST contain the full https:// URL copied from CANDIDATE PROFILE LINKS — NEVER write a label like "LinkedIn" or "GitHub". Omit any profile URL that is not in CANDIDATE PROFILE LINKS.
+Line 3: City, Country | email | phone | LinkedIn | GitHub
+Use the short label names from CANDIDATE PROFILE LINKS (e.g. "LinkedIn", "GitHub"). Do NOT write full URLs on this line.
 (blank line)
 PROFESSIONAL SUMMARY
 (summary paragraph)
@@ -578,8 +627,8 @@ WHAT MAKES COVER LETTERS WORK:
 
 COMPLETE STRUCTURE:
 [Candidate Name]
-[City if in resume] | [Email] | [Phone if in resume] | https://linkedin.com/in/username | https://github.com/username
-CRITICAL: Write only the https:// URLs copied from CANDIDATE PROFILE LINKS (max 2 profile URLs). NEVER write labels like "LinkedIn". Omit any URL not in CANDIDATE PROFILE LINKS.
+[City if in resume] | [Email] | [Phone if in resume] | LinkedIn | GitHub
+Use the short label names from CANDIDATE PROFILE LINKS (e.g. "LinkedIn", "GitHub"). Do NOT write full URLs on this line.
 [Date]
 
 [Company Name]

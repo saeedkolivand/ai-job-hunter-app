@@ -9,6 +9,12 @@ static EMAIL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}").unwrap()
 });
 
+/// Matches post-processed markdown links: [LinkedIn](https://...) injected by
+/// injectLinksIntoGeneratedText() so the label is displayed but the URL is clickable.
+static MD_LINK_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\[([^\]]+)\]\((https?://[^)]+)\)").unwrap()
+});
+
 /// A span of text in a contact line — either plain text or a hyperlink.
 #[derive(Debug, Clone)]
 pub enum Span {
@@ -55,19 +61,35 @@ pub fn split_urls(text: &str) -> Vec<Span> {
 
     let mut matches: Vec<Match> = Vec::new();
 
+    // Markdown links [label](url) — injected by post-processing; take priority
+    for cap in MD_LINK_RE.captures_iter(text) {
+        let full = cap.get(0).unwrap();
+        let label = cap[1].to_string();
+        let url = cap[2].to_string();
+        matches.push(Match {
+            start: full.start(),
+            end: full.end(),
+            label,
+            url,
+        });
+    }
+
     for m in FULL_URL_RE.find_iter(text) {
         let url = m.as_str().trim_end_matches(['.', ',', ')']);
-        matches.push(Match {
-            start: m.start(),
-            end: m.start() + url.len(),
-            label: url_label(url),
-            url: url.to_string(),
-        });
+        let overlaps = matches.iter().any(|u| m.start() < u.end && m.end() > u.start);
+        if !overlaps {
+            matches.push(Match {
+                start: m.start(),
+                end: m.start() + url.len(),
+                label: url_label(url),
+                url: url.to_string(),
+            });
+        }
     }
 
     for m in EMAIL_RE.find_iter(text) {
         let email = m.as_str();
-        // Skip if this range overlaps an already-captured URL match
+        // Skip if this range overlaps an already-captured match
         let overlaps = matches.iter().any(|u| m.start() < u.end && m.end() > u.start);
         if !overlaps {
             matches.push(Match {
