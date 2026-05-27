@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
 import type { DocumentRecord } from '@ajh/shared';
-import { Button, cn } from '@ajh/ui';
+import { Button, cn, CollapsibleFileInput } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
 import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
@@ -29,7 +29,6 @@ import { AnalysisSectionAnalysis } from '@/features/analyze/components/AnalysisS
 import { AnalysisSkills } from '@/features/analyze/components/AnalysisSkills';
 import { AnalysisStrengths } from '@/features/analyze/components/AnalysisStrengths';
 import { AnalysisVerdict } from '@/features/analyze/components/AnalysisVerdict';
-import { CollapsibleInput } from '@/features/analyze/components/CollapsibleInput';
 import { useTranslation } from '@/lib/i18n';
 import { type AnalysisResult, runAnalysis } from '@/lib/resume-ai';
 import { useDocuments, useExtractText } from '@/services';
@@ -272,16 +271,19 @@ function Analyze() {
               disabled={stage === 'running'}
               placeholder={t('analyze.resumePlaceholder')}
             />
-            <CollapsibleInput
+            <CollapsibleFileInput
               label={t('analyze.jobAd')}
               icon={Briefcase}
               value={jobAd}
               onChange={setJobAd}
               uploading={uploading === 'jobAd'}
               onUpload={(f) => void handleUpload('jobAd', f)}
+              accept=".pdf,.docx,.txt,.md,.markdown"
               placeholder={t('analyze.jobAdPlaceholder')}
               disabled={stage === 'running'}
-              t={t}
+              uploadText={t('analyze.uploadButton')}
+              textareaHeight={140}
+              showCheckmark
             />
             {uploadError && (
               <div className="flex items-center gap-2 rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs text-amber-200/80">
