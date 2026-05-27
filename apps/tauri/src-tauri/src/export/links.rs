@@ -53,6 +53,12 @@ pub fn url_label(url: &str) -> String {
     domain.to_string()
 }
 
+/// Return the visible-only text — strips `[label](url)` → `label`.
+/// Used for centering/width calculations so hidden URL bytes don't skew the estimate.
+pub fn display_text(text: &str) -> std::borrow::Cow<'_, str> {
+    MD_LINK_RE.replace_all(text, "$1")
+}
+
 /// Split a line of text into spans of plain text, hyperlinks, and email links.
 /// URLs → Span::Link with friendly label; emails → Span::Link with mailto: href.
 pub fn split_urls(text: &str) -> Vec<Span> {

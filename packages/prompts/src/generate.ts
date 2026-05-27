@@ -148,6 +148,35 @@ function isProfileUrl(url: string): boolean {
   }
 }
 
+/**
+ * Derive a friendly label from a URL — mirrors the Rust url_label() in links.rs.
+ * Used when a PDF annotation stores the raw URL as its anchor text instead of a label.
+ */
+function urlToFriendlyLabel(url: string): string {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+    if (host.startsWith('linkedin.com')) return 'LinkedIn';
+    if (host.startsWith('github.com')) return 'GitHub';
+    if (host.startsWith('gitlab.com')) return 'GitLab';
+    if (host.startsWith('twitter.com') || host.startsWith('x.com')) return 'Twitter';
+    if (host.startsWith('behance.net')) return 'Behance';
+    if (host.startsWith('dribbble.com')) return 'Dribbble';
+    if (host.startsWith('medium.com')) return 'Medium';
+    if (host.startsWith('stackoverflow.com')) return 'Stack Overflow';
+    if (host.startsWith('dev.to')) return 'Dev.to';
+    if (host.startsWith('codepen.io')) return 'CodePen';
+    if (host.startsWith('youtube.com') || host.startsWith('youtu.be')) return 'YouTube';
+    if (host.startsWith('notion.so')) return 'Notion';
+    if (host.startsWith('figma.com')) return 'Figma';
+    if (host.startsWith('npmjs.com')) return 'npm';
+    if (host.startsWith('crates.io')) return 'crates.io';
+    // Unknown: use bare domain without TLD as fallback label
+    return host.split('.')[0] ?? host;
+  } catch {
+    return url;
+  }
+}
+
 interface ParsedResumeLinks {
   /** Compact block to inject before <candidate_resume> */
   block: string;
@@ -171,7 +200,10 @@ export function getLinkMap(resume: string): Record<string, string> {
     const anchor = m[1] ?? '';
     const url = m[2];
     if (!anchor || !url || url.startsWith('mailto:') || !isProfileUrl(url)) continue;
-    map[anchor] = url;
+    // Normalise: PDFs often store the raw URL as the anchor text instead of a label.
+    // Derive a friendly label (e.g. "LinkedIn") so injection matches what the AI writes.
+    const label = /^https?:\/\//i.test(anchor) ? urlToFriendlyLabel(anchor) : anchor;
+    map[label] = url;
   }
   return map;
 }
@@ -194,12 +226,9 @@ export function injectLinksIntoGeneratedText(
     if (/^(PROFESSIONAL|WORK|EDUCATION|SKILLS|SUMMARY)/i.test(line.trim())) continue;
     let newLine = line;
     for (const [label, url] of Object.entries(linkMap)) {
-      // Match the label when surrounded by pipe separators, spaces, or line edges
+      // Match the label at word boundaries; skip if already inside a markdown link [...]
       const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      newLine = newLine.replace(
-        new RegExp(`((?<=\\|\\s*)|(?<=^\\s*))${esc}((?=\\s*\\|)|(?=\\s*$))`, 'g'),
-        `[${label}](${url})`
-      );
+      newLine = newLine.replace(new RegExp(`(?<!\\[)\\b${esc}\\b`, 'gi'), `[${label}](${url})`);
     }
     if (i < lines.length) lines[i] = newLine;
   }
