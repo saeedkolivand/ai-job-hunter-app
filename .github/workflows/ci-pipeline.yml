@@ -4,7 +4,7 @@ name: 🚀 CI Pipeline
 # Continuous Integration Pipeline
 # ──────────────────────────────────────────────────────────────────────
 # Purpose: Validate code quality, type safety, and test coverage on every PR
-# Triggers: pull_request to main, push to main
+# Triggers: pull_request to main only (push to main intentionally excluded — release.yml handles that)
 # Jobs:
 #   - dependencies: Install deps + build shared packages (cache producer)
 #   - dependency-review: GitHub dependency review (PRs only)
@@ -17,10 +17,6 @@ name: 🚀 CI Pipeline
 
 on:
   pull_request:
-    branches:
-      - main
-
-  push:
     branches:
       - main
 
