@@ -20,6 +20,9 @@ export interface SystemContract {
   checkBrowser(): Promise<{ detected: boolean; path?: string }>;
 
   openDevtools(): Promise<void>;
+
+  /** Returns the IPC protocol version string from the Tauri shell. */
+  getProtocolVersion(): Promise<string>;
 }
 
 export const SYSTEM_CHANNELS = {
@@ -33,4 +36,5 @@ export const SYSTEM_CHANNELS = {
   getMetrics: 'system:getMetrics',
   checkBrowser: 'system:checkBrowser',
   openDevtools: 'system:openDevtools',
+  getProtocolVersion: 'system:getProtocolVersion',
 } as const;

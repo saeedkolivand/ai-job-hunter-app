@@ -67,6 +67,8 @@ export interface AiStreamChunk {
   jobId: string;
   delta: string;
   done: boolean;
+  /** Structured error frame — present instead of delta when the provider fails mid-stream. */
+  error?: { code: string; message: string };
   /** Present only when the provider emits a reasoning/thinking block (e.g. Anthropic extended thinking). */
   thinking?: boolean;
 }
