@@ -23,7 +23,7 @@ const router = createRouter({
 });
 
 // Ensure the app starts at the dashboard
-void router.navigate({ to: '/', replace: true });
+void router.navigate({ to: '/index', replace: true });
 
 declare module '@tanstack/react-router' {
   interface Register {

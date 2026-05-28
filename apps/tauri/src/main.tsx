@@ -33,7 +33,7 @@ const router = createRouter({
   defaultPreloadStaleTime: 0,
 });
 
-void router.navigate({ to: '/', replace: true });
+void router.navigate({ to: '/index', replace: true });
 
 declare module '@tanstack/react-router' {
   interface Register {

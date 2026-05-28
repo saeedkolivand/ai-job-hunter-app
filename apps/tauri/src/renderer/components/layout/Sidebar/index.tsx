@@ -72,7 +72,7 @@ export function Sidebar() {
     <aside className="glass-surface m-3 mr-0 flex w-60 flex-col rounded-2xl p-3">
       <nav className="flex flex-col gap-1">
         {NAV_ITEMS.map(({ to, label, icon: Icon, tourId }) => {
-          const active = pathname === to || (to !== '/' && pathname.startsWith(to + '/'));
+          const active = pathname === to || pathname.startsWith(to);
           return (
             <div key={to} className="relative" data-tour-id={tourId}>
               {active && (

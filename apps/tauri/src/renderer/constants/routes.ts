@@ -1,5 +1,5 @@
 export const ROUTES = {
-  DASHBOARD: '/',
+  DASHBOARD: '/index',
   ANALYZE: '/analyze',
   GENERATE: '/ai-generate',
   JOBS: '/jobs',

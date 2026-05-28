@@ -73,8 +73,8 @@ function RootLayout() {
       const known = (router.routesByPath as unknown as Record<string, unknown>)[
         toLocation.pathname
       ];
-      if (toLocation.pathname !== '/' && !known) {
-        void router.navigate({ to: '/', replace: true });
+      if (toLocation.pathname !== '/index' && !known) {
+        void router.navigate({ to: '/index', replace: true });
       }
     });
   }, [router]);
