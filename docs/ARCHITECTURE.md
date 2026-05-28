@@ -68,20 +68,22 @@ The Tauri app is split into two processes:
 
 **Rust core (`src-tauri/`)** — thin orchestration layer:
 
-| Module            | Responsibility                                                       |
-| ----------------- | -------------------------------------------------------------------- |
-| `commands/`       | IPC endpoint handlers; routes invocations to the appropriate runtime |
-| `scraping/`       | 18 board-specific Playwright scrapers                                |
-| `documents/`      | Document import, OCR dispatch, SQLite storage                        |
-| `jobs/`           | Job tracker state machine (queued → running → done/failed)           |
-| `credentials/`    | OS keychain CRUD via Tauri keychain plugin                           |
-| `conversations/`  | Chat history persistence                                             |
-| `autopilot/`      | Workflow engine + step scheduler                                     |
-| `apply_helpers/`  | Form-filling logic for auto-apply                                    |
-| `ai_generations/` | Metadata tracking for generated documents                            |
-| `export/`         | DOCX/PDF rendering using docx + jsPDF                                |
-| `updater/`        | Auto-update state (check, download, install)                         |
-| `browser/`        | System browser detection and launch                                  |
+| Module             | Responsibility                                                          |
+| ------------------ | ----------------------------------------------------------------------- |
+| `commands/`        | IPC endpoint handlers; routes invocations to the appropriate runtime    |
+| `scraping/`        | 18 board-specific Playwright scrapers                                   |
+| `documents/`       | Document import, OCR dispatch, SQLite storage                           |
+| `jobs/`            | Job tracker state machine (queued → running → done/failed)              |
+| `credentials/`     | OS keychain CRUD via Tauri keychain plugin                              |
+| `conversations/`   | Chat history persistence                                                |
+| `autopilot/`       | Workflow engine + step scheduler                                        |
+| `apply_helpers/`   | Form-filling logic for auto-apply                                       |
+| `ai_generations/`  | Metadata tracking for generated documents                               |
+| `export/`          | DOCX/PDF rendering using docx + jsPDF                                   |
+| `updater/`         | Auto-update state (check, download, install)                            |
+| `browser/`         | System browser detection and launch                                     |
+| `data_store.rs`    | `DataStore` trait (export/import) implemented by every persistent store |
+| `commands/data.rs` | Full backup/restore — one versioned bundle across all stores            |
 
 **React renderer (`src/renderer/`)** — feature-scoped UI:
 
@@ -388,6 +390,10 @@ The renderer uses a `features/` directory where each feature owns its components
 ### 7. Minimal State Machine Library
 
 Rather than XState, the app uses a micro state machine implementation (`lib/machine.ts`, ~80 lines) with a `useMachine` hook. This keeps bundle size minimal and the mental model simple for flows with ≤ 10 states.
+
+### 8. Uniform Data Layer + Backup/Restore
+
+Every persistent store (documents, AI generations, job preferences, autopilots, conversations, interactions) is store-per-domain and implements a single `DataStore` trait (`data_store.rs`): `export() -> Value` and `import(&Value)` with REPLACE semantics. `commands/data.rs` assembles one versioned bundle (`{ version, exportedAt, stores }`) for backup and restores it on import. Secrets (OS-keychain credentials), ephemeral caches, and the transient job log are intentionally excluded. **Cloud sync is deferred** — there is no remote backend; this bundle and trait are the substrate a future sync feature would build on.
 
 ---
 
