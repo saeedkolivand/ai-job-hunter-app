@@ -3,12 +3,12 @@ import {
   FileCheck,
   FileText,
   Gauge,
+  type LucideIcon,
   SlidersHorizontal,
   Sparkles,
   Zap,
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import type React from 'react';
 
 import { Button, cn } from '@ajh/ui';
 
@@ -31,7 +31,7 @@ interface GenerationConfigProps {
   isGenerating: boolean;
 }
 
-const QUALITY_OPTIONS: { id: PromptQuality; label: string; icon: React.ElementType }[] = [
+const QUALITY_OPTIONS: { id: PromptQuality; label: string; icon: LucideIcon }[] = [
   { id: 'full', label: 'Full', icon: SlidersHorizontal },
   { id: 'auto', label: 'Auto', icon: Gauge },
   { id: 'compact', label: 'Fast', icon: Zap },
