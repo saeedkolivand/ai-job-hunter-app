@@ -16,6 +16,7 @@
 
 mod ai_generations;
 mod autopilot;
+mod db;
 mod extraction;
 mod cover_letter;
 mod autopilot_helpers;
@@ -178,7 +179,7 @@ fn main() {
                 Ok(store) => { app.manage(store); }
                 Err(e) => log::warn!("[setup] job preferences store failed to open (non-fatal): {e}"),
             }
-            app.manage(Mutex::new(JobTracker::default()));
+            app.manage(Mutex::new(JobTracker::open(&data_dir)));
             app.manage(Mutex::new(PostingsCache::default()));
             app.manage(Mutex::new(InteractionStore::new(&data_dir)));
             app.manage(Mutex::new(UpdaterState::default()));
@@ -237,6 +238,7 @@ fn main() {
             commands::system::system_get_metrics,
             commands::system::system_check_browser,
             commands::system::system_open_devtools,
+            commands::system::system_get_protocol_version,
             // jobs
             commands::jobs::jobs_list,
             commands::jobs::jobs_get,

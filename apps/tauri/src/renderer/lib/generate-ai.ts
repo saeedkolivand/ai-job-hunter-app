@@ -106,8 +106,20 @@ async function streamGenerate(
     };
 
     const off = api.ai.onStream((chunk: unknown) => {
-      const c = chunk as { jobId: string; delta: string; done: boolean; thinking?: boolean };
+      const c = chunk as {
+        jobId: string;
+        delta: string;
+        done: boolean;
+        error?: { code: string; message: string };
+        thinking?: boolean;
+      };
       if (c.jobId !== jobId) return;
+      if (c.error) {
+        off();
+        cleanup();
+        reject(new Error(c.error.message));
+        return;
+      }
       if (c.delta) {
         if (c.thinking) {
           // Anthropic-style separate thinking flag
