@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use serde_json::{json, Value};
 use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
@@ -13,14 +14,38 @@ fn uuid_v4() -> String {
     format!("job-{t:x}")
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+pub struct AiGenerateRequest {
+    pub model: String,
+    pub messages: Vec<AiMessage>,
+    pub locale: Option<String>,
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<u64>,
+    pub stream: Option<bool>,
+    pub provider: Option<String>,
+    pub base_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiEmbedRequest {
+    pub text: String,
+    pub model: Option<String>,
+}
+
 /// Stream an AI generation from Ollama.
 #[tauri::command]
-pub async fn ai_generate(app: AppHandle, req: Value) -> Value {
-    let provider = req
-        .get("provider")
-        .and_then(|v| v.as_str())
-        .unwrap_or("ollama")
-        .to_string();
+pub async fn ai_generate(app: AppHandle, req: AiGenerateRequest) -> Value {
+    let provider = req.provider.as_deref().unwrap_or("ollama").to_string();
 
     let job_id = uuid_v4();
     app.state::<Mutex<JobTracker>>()
@@ -34,25 +59,21 @@ pub async fn ai_generate(app: AppHandle, req: Value) -> Value {
         let result = match provider.as_str() {
             "openai" | "openai-compatible" => {
                 let api_key = get_provider_key(&app_clone, &provider).unwrap_or_default();
-                let base_url = req
-                    .get("baseUrl")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("https://api.openai.com/v1")
-                    .to_string();
-                stream_openai_chat(&app_clone, &base_url, &api_key, &job_id_clone, req).await
+                let base_url = req.base_url.as_deref().unwrap_or("https://api.openai.com/v1").to_string();
+                stream_openai_chat(&app_clone, &base_url, &api_key, &job_id_clone, &req).await
             }
             "anthropic" => {
                 let api_key = get_provider_key(&app_clone, "anthropic").unwrap_or_default();
-                stream_anthropic_chat(&app_clone, &api_key, &job_id_clone, req).await
+                stream_anthropic_chat(&app_clone, &api_key, &job_id_clone, &req).await
             }
             "gemini" => {
                 let api_key = get_provider_key(&app_clone, "gemini").unwrap_or_default();
-                stream_gemini_chat(&app_clone, &api_key, &job_id_clone, req).await
+                stream_gemini_chat(&app_clone, &api_key, &job_id_clone, &req).await
             }
             _ => {
                 let base = std::env::var("OLLAMA_HOST")
                     .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
-                stream_ollama_chat(&app_clone, &base, &job_id_clone, req).await
+                stream_ollama_chat(&app_clone, &base, &job_id_clone, &req).await
             }
         };
 
@@ -75,27 +96,20 @@ async fn stream_ollama_chat(
     app: &AppHandle,
     base: &str,
     job_id: &str,
-    req: Value,
+    req: &AiGenerateRequest,
 ) -> Result<(), String> {
-    let model = req
-        .get("model")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let messages = req.get("messages").cloned().unwrap_or(json!([]));
-    let temperature = req.get("temperature").and_then(|v| v.as_f64());
-    let max_tokens = req.get("maxTokens").and_then(|v| v.as_u64());
+    let messages = serde_json::to_value(&req.messages.iter().map(|m| json!({ "role": m.role, "content": m.content })).collect::<Vec<_>>()).unwrap_or(json!([]));
 
     let mut body = json!({
-        "model": model,
+        "model": req.model,
         "messages": messages,
         "stream": true,
     });
     let mut options = serde_json::Map::new();
-    if let Some(t) = temperature {
+    if let Some(t) = req.temperature {
         options.insert("temperature".to_string(), json!(t));
     }
-    if let Some(mt) = max_tokens {
+    if let Some(mt) = req.max_tokens {
         options.insert("num_predict".to_string(), json!(mt));
     }
     if !options.is_empty() {
@@ -392,24 +406,18 @@ async fn stream_openai_chat(
     base_url: &str,
     api_key: &str,
     job_id: &str,
-    req: Value,
+    req: &AiGenerateRequest,
 ) -> Result<(), String> {
-    let model = req
-        .get("model")
-        .and_then(|v| v.as_str())
-        .unwrap_or("gpt-4o")
-        .to_string();
-    let messages = req.get("messages").cloned().unwrap_or(json!([]));
-    let temperature = req.get("temperature").and_then(|v| v.as_f64()).unwrap_or(0.7);
-    let max_tokens = req.get("maxTokens").and_then(|v| v.as_u64());
+    let messages = req.messages.iter().map(|m| json!({ "role": m.role, "content": m.content })).collect::<Vec<_>>();
+    let temperature = req.temperature.unwrap_or(0.7);
 
     let mut body = json!({
-        "model": model,
+        "model": req.model,
         "messages": messages,
         "stream": true,
         "temperature": temperature,
     });
-    if let Some(mt) = max_tokens {
+    if let Some(mt) = req.max_tokens {
         body["max_tokens"] = json!(mt);
     }
 
@@ -492,27 +500,19 @@ async fn stream_anthropic_chat(
     app: &AppHandle,
     api_key: &str,
     job_id: &str,
-    req: Value,
+    req: &AiGenerateRequest,
 ) -> Result<(), String> {
-    let model = req
-        .get("model")
-        .and_then(|v| v.as_str())
-        .unwrap_or("claude-sonnet-4-6")
-        .to_string();
-    let temperature = req.get("temperature").and_then(|v| v.as_f64()).unwrap_or(0.7);
-    let max_tokens = req.get("maxTokens").and_then(|v| v.as_u64()).unwrap_or(4096);
+    let temperature = req.temperature.unwrap_or(0.7);
+    let max_tokens = req.max_tokens.unwrap_or(4096);
 
-    let messages_raw = req.get("messages").and_then(|m| m.as_array()).cloned().unwrap_or_default();
-    let system_content: String = messages_raw
-        .iter()
-        .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("system"))
-        .filter_map(|m| m.get("content").and_then(|c| c.as_str()))
+    let system_content: String = req.messages.iter()
+        .filter(|m| m.role == "system")
+        .map(|m| m.content.as_str())
         .collect::<Vec<_>>()
         .join("\n");
-    let messages: Vec<Value> = messages_raw
-        .iter()
-        .filter(|m| m.get("role").and_then(|r| r.as_str()) != Some("system"))
-        .cloned()
+    let messages: Vec<Value> = req.messages.iter()
+        .filter(|m| m.role != "system")
+        .map(|m| json!({ "role": m.role, "content": m.content }))
         .collect();
 
     // Enable extended thinking for balanced effort and above (max_tokens >= 2048).
@@ -521,7 +521,7 @@ async fn stream_anthropic_chat(
     let actual_max_tokens = max_tokens + thinking_budget;
 
     let mut body = json!({
-        "model": model,
+        "model": req.model,
         "messages": messages,
         "max_tokens": actual_max_tokens,
         "stream": true,
@@ -645,41 +645,26 @@ async fn stream_gemini_chat(
     app: &AppHandle,
     api_key: &str,
     job_id: &str,
-    req: Value,
+    req: &AiGenerateRequest,
 ) -> Result<(), String> {
-    let model = req
-        .get("model")
-        .and_then(|v| v.as_str())
-        .unwrap_or("gemini-2.0-flash")
-        .to_string();
-    let temperature = req.get("temperature").and_then(|v| v.as_f64()).unwrap_or(0.7);
-    let max_tokens = req.get("maxTokens").and_then(|v| v.as_u64());
+    let temperature = req.temperature.unwrap_or(0.7);
 
-    let messages_raw = req.get("messages").and_then(|m| m.as_array()).cloned().unwrap_or_default();
-
-    let system_text: String = messages_raw
-        .iter()
-        .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("system"))
-        .filter_map(|m| m.get("content").and_then(|c| c.as_str()))
+    let system_text: String = req.messages.iter()
+        .filter(|m| m.role == "system")
+        .map(|m| m.content.as_str())
         .collect::<Vec<_>>()
         .join("\n");
 
-    let contents: Vec<Value> = messages_raw
-        .iter()
-        .filter(|m| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+    let contents: Vec<Value> = req.messages.iter()
+        .filter(|m| m.role != "system")
         .map(|m| {
-            let role = if m.get("role").and_then(|r| r.as_str()) == Some("assistant") {
-                "model"
-            } else {
-                "user"
-            };
-            let text = m.get("content").and_then(|c| c.as_str()).unwrap_or("");
-            json!({ "role": role, "parts": [{ "text": text }] })
+            let role = if m.role == "assistant" { "model" } else { "user" };
+            json!({ "role": role, "parts": [{ "text": m.content }] })
         })
         .collect();
 
     let mut generation_config = json!({ "temperature": temperature });
-    if let Some(mt) = max_tokens {
+    if let Some(mt) = req.max_tokens {
         generation_config["maxOutputTokens"] = json!(mt);
     }
     let mut body = json!({
@@ -692,7 +677,7 @@ async fn stream_gemini_chat(
 
     let url = format!(
         "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?key={}",
-        model, api_key
+        req.model, api_key
     );
 
     let mut response = reqwest::Client::builder()
@@ -898,17 +883,12 @@ pub fn ai_unload_model(_model: String) -> Value {
 }
 
 #[tauri::command]
-pub async fn ai_embed(req: Value) -> Value {
+pub async fn ai_embed(req: AiEmbedRequest) -> Value {
     let base = std::env::var("OLLAMA_HOST")
         .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
 
-    let text = req.get("text").and_then(|v| v.as_str()).unwrap_or("");
-    let model = req
-        .get("model")
-        .and_then(|v| v.as_str())
-        .unwrap_or("nomic-embed-text");
-
-    let body = json!({ "model": model, "prompt": text });
+    let model = req.model.as_deref().unwrap_or("nomic-embed-text");
+    let body = json!({ "model": model, "prompt": req.text });
 
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))

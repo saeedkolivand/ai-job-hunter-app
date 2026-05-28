@@ -1,8 +1,53 @@
+use serde::Deserialize;
 use serde_json::{json, Value};
 use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 use crate::postings::{InteractionRecord, InteractionStore, PostingsCache};
 use crate::scraping::{BoardSearchInput, ScraperEngine};
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapeBoardRequest {
+    pub board: String,
+    pub query: String,
+    pub location: Option<String>,
+    #[serde(default = "default_pages")]
+    pub pages: u32,
+    pub date_filter: Option<String>,
+    pub locale: Option<String>,
+}
+
+fn default_pages() -> u32 { 1 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapeUrlRequest {
+    pub url: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobObject {
+    pub id: Option<String>,
+    pub title: Option<String>,
+    pub company: Option<String>,
+    pub url: Option<String>,
+    pub source: Option<String>,
+    pub location: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapePersistJobRequest {
+    pub job: JobObject,
+    pub interaction_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapeListFilter {
+    pub interaction_type: Option<String>,
+}
 
 fn now_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -22,14 +67,7 @@ fn uuid_v4() -> String {
 }
 
 #[tauri::command]
-pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
-    let board = req.get("board").and_then(|b| b.as_str()).unwrap_or("").to_string();
-    let query = req.get("query").and_then(|q| q.as_str()).unwrap_or("").to_string();
-    let location = req.get("location").and_then(|l| l.as_str()).map(|s| s.to_string());
-    let pages = req.get("pages").and_then(|p| p.as_u64()).unwrap_or(1) as u32;
-    let date_filter = req.get("dateFilter").and_then(|d| d.as_str()).map(|s| s.to_string());
-    let locale = req.get("locale").and_then(|l| l.as_str()).map(|s| s.to_string());
-
+pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
     let job_id = uuid_v4();
     app.state::<Mutex<crate::jobs::JobTracker>>()
         .lock()
@@ -37,10 +75,10 @@ pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
 
     let engine = app.state::<std::sync::Arc<ScraperEngine>>().inner().clone();
     let input = BoardSearchInput {
-        query: query.clone(),
-        location: location.clone(),
-        pages,
-        date_filter: date_filter.clone(),
+        query: req.query.clone(),
+        location: req.location.clone(),
+        pages: req.pages,
+        date_filter: req.date_filter.clone(),
         job_type: None,
         work_type: None,
         experience_level: None,
@@ -48,8 +86,9 @@ pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
         actively_hiring: None,
         verified: None,
         sort_by: None,
-        locale: locale.clone(),
+        locale: req.locale.clone(),
     };
+    let board = req.board.clone();
 
     let app_progress = app.clone();
     let job_id_progress = job_id.clone();
@@ -118,8 +157,8 @@ pub async fn scrape_board(app: AppHandle, req: Value) -> Value {
 }
 
 #[tauri::command]
-pub async fn scrape_url(app: AppHandle, req: Value) -> Value {
-    let url = req.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string();
+pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
+    let url = req.url;
     if url.is_empty() {
         return json!({ "error": "url is required" });
     }
@@ -183,49 +222,20 @@ pub async fn scrape_url(app: AppHandle, req: Value) -> Value {
 }
 
 #[tauri::command]
-pub fn scrape_persist_job(app: AppHandle, req: Value) -> Value {
-    if let (Some(job_obj), Some(interaction_type)) = (
-        req.get("job"),
-        req.get("interactionType").and_then(|v| v.as_str()),
-    ) {
-        let record = InteractionRecord {
-            job_id: job_obj
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            interaction_type: interaction_type.to_string(),
-            timestamp: now_ms(),
-            title: job_obj
-                .get("title")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            company: job_obj
-                .get("company")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            url: job_obj
-                .get("url")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            source: job_obj
-                .get("source")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            location: job_obj
-                .get("location")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-        };
-        app.state::<Mutex<InteractionStore>>()
-            .lock()
-            .upsert(record);
-    }
+pub fn scrape_persist_job(app: AppHandle, req: ScrapePersistJobRequest) -> Value {
+    let record = InteractionRecord {
+        job_id: req.job.id.unwrap_or_default(),
+        interaction_type: req.interaction_type,
+        timestamp: now_ms(),
+        title: req.job.title.unwrap_or_default(),
+        company: req.job.company.unwrap_or_default(),
+        url: req.job.url.unwrap_or_default(),
+        source: req.job.source.unwrap_or_default(),
+        location: req.job.location.unwrap_or_default(),
+    };
+    app.state::<Mutex<InteractionStore>>()
+        .lock()
+        .upsert(record);
     json!({ "success": true })
 }
 
@@ -245,12 +255,8 @@ pub fn scrape_clear_postings(app: AppHandle) -> Value {
 }
 
 #[tauri::command]
-pub fn scrape_list_interactions(app: AppHandle, filter: Option<Value>) -> Value {
-    let filter_type = filter
-        .as_ref()
-        .and_then(|f| f.get("interactionType"))
-        .and_then(|v| v.as_str())
-        .map(String::from);
+pub fn scrape_list_interactions(app: AppHandle, filter: Option<ScrapeListFilter>) -> Value {
+    let filter_type = filter.and_then(|f| f.interaction_type);
     let binding = app.state::<Mutex<InteractionStore>>();
     let mut store = binding.lock();
     json!(store.list(filter_type.as_deref()))
