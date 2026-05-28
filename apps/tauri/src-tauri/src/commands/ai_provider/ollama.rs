@@ -24,13 +24,6 @@ pub fn host() -> String {
     std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_HOST.to_string())
 }
 
-fn build_client(timeout_secs: u64) -> Option<reqwest::Client> {
-    reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(timeout_secs))
-        .build()
-        .ok()
-}
-
 // ── Provider impl ───────────────────────────────────────────────────────────────
 
 pub struct OllamaClient;
@@ -87,8 +80,13 @@ impl AiProvider for OllamaClient {
             body["options"] = json!({ "temperature": t });
         }
 
-        let client = build_client(300).ok_or_else(|| "Failed to build Ollama client".to_string())?;
-        let resp = match client.post(&endpoint).json(&body).send().await {
+        let resp = match crate::net::http::shared()
+            .post(&endpoint)
+            .timeout(std::time::Duration::from_secs(300))
+            .json(&body)
+            .send()
+            .await
+        {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
@@ -157,10 +155,12 @@ pub async fn list_tag_models(client: &reqwest::Client) -> Vec<Value> {
 
 /// `(reachable, first_model_name)` for the system health probe.
 pub async fn reachable_model() -> (bool, Option<String>) {
-    let Some(client) = build_client(3) else {
-        return (false, None);
-    };
-    match client.get(format!("{}/api/tags", host())).send().await {
+    match crate::net::http::shared()
+        .get(format!("{}/api/tags", host()))
+        .timeout(std::time::Duration::from_secs(3))
+        .send()
+        .await
+    {
         Ok(r) if r.status().is_success() => {
             let body: Value = r.json().await.unwrap_or_default();
             let model = body
@@ -179,12 +179,12 @@ pub async fn reachable_model() -> (bool, Option<String>) {
 /// Embed `text` with a specific Ollama embedding model. Returns a clear error
 /// (not `None`) so callers can surface why embedding failed.
 pub async fn embed_with(model: &str, text: &str) -> Result<Vec<f64>, String> {
-    let client = build_client(15).ok_or_else(|| "Failed to build Ollama client".to_string())?;
     // Char-boundary-safe truncation (avoids panics on multi-byte input).
     let truncated: String = text.chars().take(8000).collect();
     let body = json!({ "model": model, "prompt": truncated });
-    let resp = client
+    let resp = crate::net::http::shared()
         .post(format!("{}/api/embeddings", host()))
+        .timeout(std::time::Duration::from_secs(15))
         .json(&body)
         .send()
         .await
@@ -204,11 +204,9 @@ pub async fn embed_with(model: &str, text: &str) -> Result<Vec<f64>, String> {
 
 /// Stream a model pull, emitting `jobs:event` progress. Returns when complete.
 pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> Result<(), String> {
-    let mut response = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3600))
-        .build()
-        .map_err(|e| e.to_string())?
+    let mut response = crate::net::http::shared()
         .post(format!("{}/api/pull", host()))
+        .timeout(std::time::Duration::from_secs(3600))
         .json(&json!({ "model": model, "stream": true }))
         .send()
         .await
@@ -278,11 +276,9 @@ async fn stream_chat(
         body["options"] = Value::Object(options);
     }
 
-    let response = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(300))
-        .build()
-        .map_err(|e| e.to_string())?
+    let response = crate::net::http::shared()
         .post(&endpoint)
+        .timeout(std::time::Duration::from_secs(300))
         .json(&body)
         .send()
         .await;
