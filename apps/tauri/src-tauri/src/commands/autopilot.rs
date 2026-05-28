@@ -75,6 +75,11 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     let target = autopilot.target.clone();
     let filter = autopilot.filter.clone();
 
+    let span = crate::observability::Span::begin(
+        "autopilot",
+        format!("run={autopilot_id} board={}", target.board),
+    );
+
     let job_id = uuid_v4();
     app.state::<Mutex<crate::jobs::JobTracker>>()
         .lock()
@@ -99,6 +104,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         Err(e) => {
             engine.unregister_token(&job_id).await;
             app.state::<Mutex<crate::jobs::JobTracker>>().lock().fail(&job_id, e.to_string());
+            span.end(false);
             return json!({ "error": e, "jobId": job_id });
         }
     };
@@ -194,6 +200,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
 
     emit_step(&app, &job_id, "complete", &format!("Found {total_found}, applied to {applied}"));
 
+    span.end_with(&format!("found={total_found} applied={applied}"), true);
     json!({ "jobId": job_id, "found": total_found, "applied": applied })
 }
 
