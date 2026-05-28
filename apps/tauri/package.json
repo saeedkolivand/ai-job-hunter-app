@@ -18,7 +18,7 @@
     "@ajh/shared": "workspace:*",
     "@ajh/ui": "workspace:*",
     "@tanstack/react-query": "^5.100.14",
-    "@tanstack/react-router": "^1.170.4",
+    "@tanstack/react-router": "^1.170.8",
     "@tauri-apps/api": "^2.11.0",
     "clsx": "^2.1.1",
     "i18next": "^26.2.0",
