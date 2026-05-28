@@ -53,11 +53,10 @@ impl Enricher for CompanyResearch {
             }
         };
 
-        let http = match reqwest::Client::builder()
-            .use_rustls_tls()
-            .timeout(Duration::from_secs(10))
-            .build()
-        {
+        let http = match crate::net::http::build_client(crate::net::http::ClientConfig {
+            timeout: Some(Duration::from_secs(10)),
+            ..Default::default()
+        }) {
             Ok(c) => c,
             Err(e) => {
                 tracing::error!("research: http client build failed: {e}");

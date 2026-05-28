@@ -68,18 +68,9 @@ pub async fn import(url: &str) -> Result<ProfileData, String> {
 // ── HTTP ─────────────────────────────────────────────────────────────────────
 
 async fn fetch_page(url: &str) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .user_agent(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
-             AppleWebKit/537.36 (KHTML, like Gecko) \
-             Chrome/124.0.0.0 Safari/537.36",
-        )
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("http client: {e}"))?;
-
-    let resp = client
+    let resp = crate::net::http::shared()
         .get(url)
+        .timeout(std::time::Duration::from_secs(15))
         .header("Accept-Language", "en-US,en;q=0.9")
         .send()
         .await

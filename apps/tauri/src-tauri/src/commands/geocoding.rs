@@ -6,22 +6,18 @@ pub async fn geocode_suggest(query: String) -> Value {
         return json!([]);
     }
 
-    let client = reqwest::Client::builder()
-        .user_agent("ai-job-hunter/1.0")
-        .timeout(std::time::Duration::from_secs(5))
-        .build();
-
-    let client = match client {
-        Ok(c) => c,
-        Err(_) => return json!([]),
-    };
-
     let url = format!(
         "https://nominatim.openstreetmap.org/search?format=json&q={}&limit=5&addressdetails=1",
         urlencoding::encode(&query)
     );
 
-    let response = match client.get(&url).send().await {
+    let response = match crate::net::http::shared()
+        .get(&url)
+        .header(reqwest::header::USER_AGENT, "ai-job-hunter/1.0")
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+    {
         Ok(r) => r,
         Err(_) => return json!([]),
     };

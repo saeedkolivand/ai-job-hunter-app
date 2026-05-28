@@ -93,11 +93,9 @@ impl AiProvider for OpenAiClient {
             body[field] = json!(mt);
         }
 
-        let response = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(300))
-            .build()
-            .map_err(|e| e.to_string())?
+        let response = crate::net::http::shared()
             .post(&endpoint)
+            .timeout(std::time::Duration::from_secs(300))
             .bearer_auth(&api_key)
             .json(&body)
             .send()
@@ -210,11 +208,9 @@ impl AiProvider for OpenAiClient {
             body["temperature"] = json!(temperature.unwrap_or(0.7));
         }
 
-        let resp = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
-            .build()
-            .map_err(|e| e.to_string())?
+        let resp = crate::net::http::shared()
             .post(&endpoint)
+            .timeout(std::time::Duration::from_secs(120))
             .bearer_auth(&api_key)
             .json(&body)
             .send()
@@ -247,11 +243,9 @@ impl AiProvider for OpenAiClient {
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
         let endpoint = format!("{}/embeddings", self.base_url);
         let trace = RequestTrace::begin(self.id, model, "/embeddings", &self.base_url, false);
-        let resp = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(|e| e.to_string())?
+        let resp = crate::net::http::shared()
             .post(&endpoint)
+            .timeout(std::time::Duration::from_secs(30))
             .bearer_auth(&api_key)
             .json(&json!({ "model": model, "input": text }))
             .send()

@@ -418,11 +418,12 @@ Cross-cutting concerns have exactly **one owning module**. No other module may
 reconstruct that concern's logic — this prevents the duplication and hidden
 coupling the [architecture roadmap](ARCHITECTURE_ROADMAP.md) is eliminating.
 
-| Concern                              | Sole owner              | Use instead of rolling your own                                                         |
-| ------------------------------------ | ----------------------- | --------------------------------------------------------------------------------------- |
-| env vars, data dir, filesystem paths | `platform::config`      | `platform::config::data_dir()` — never read `AJH_DATA_DIR` or rebuild `~/.ajh` yourself |
-| AI provider routing + capabilities   | `commands::ai_provider` | `resolve(ProviderId, ..)`                                                               |
-| workflow orchestration               | `pipeline`              | compose `Stage`/`Pipeline`                                                              |
+| Concern                              | Sole owner              | Use instead of rolling your own                                                                                               |
+| ------------------------------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| env vars, data dir, filesystem paths | `platform::config`      | `platform::config::data_dir()` — never read `AJH_DATA_DIR` or rebuild `~/.ajh` yourself                                       |
+| AI provider routing + capabilities   | `commands::ai_provider` | `resolve(ProviderId, ..)`                                                                                                     |
+| HTTP clients (TLS, pool, user-agent) | `net::http`             | `net::http::shared()` + per-request `.timeout()`, or `build_client()` for a cookie jar — never `reqwest::Client::new/builder` |
+| workflow orchestration               | `pipeline`              | compose `Stage`/`Pipeline`                                                                                                    |
 
 This table grows one row per roadmap phase. Where practical, a CI guardrail
 enforces ownership (e.g. `AJH_DATA_DIR` is grep-banned outside `platform/config.rs`).
@@ -442,3 +443,4 @@ enforces ownership (e.g. `AJH_DATA_DIR` is grep-banned outside `platform/config.
 | Hardcoded colors in className                    | `text-brand`, `bg-brand`, etc.                                        |
 | Storing credentials in SQLite                    | OS keychain via `client.credentials`                                  |
 | Reading `AJH_DATA_DIR` / rebuilding `~/.ajh`     | `platform::config::data_dir()`                                        |
+| `reqwest::Client::new()` / `::builder()`         | `net::http::shared()` or `net::http::build_client()`                  |

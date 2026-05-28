@@ -617,6 +617,22 @@ jobs:
           echo "OK — AJH_DATA_DIR is owned solely by platform/config.rs"
           echo "::endgroup::"
 
+      # Architecture guardrail (see docs/ARCHITECTURE_ROADMAP.md, Phase 2).
+      # reqwest clients must be built ONLY in net/http.rs; everything else
+      # composes net::http::shared() / build_client().
+      - name: 🚧 Architecture Guardrail — centralized HTTP client
+        working-directory: apps/tauri/src-tauri/src
+        run: |
+          echo "::group::Checking reqwest::Client construction ownership"
+          matches=$(grep -rnE "reqwest::Client::(new|builder)\(" . --include="*.rs" | grep -v "^./net/http.rs:" || true)
+          if [ -n "$matches" ]; then
+            echo "::error::reqwest::Client must only be constructed in net/http.rs. Use net::http::shared() or net::http::build_client() instead."
+            echo "$matches"
+            exit 1
+          fi
+          echo "OK — reqwest clients are built solely in net/http.rs"
+          echo "::endgroup::"
+
       - name: 📝 Job Summary
         if: always()
         run: |

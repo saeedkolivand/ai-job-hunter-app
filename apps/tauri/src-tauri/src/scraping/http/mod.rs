@@ -52,7 +52,7 @@ pub async fn fetch_text(
             return Err(anyhow::anyhow!("Request cancelled"));
         }
 
-        let client = reqwest::Client::new();
+        let client = crate::net::http::shared();
         let mut request = match opts.method.clone().unwrap_or(reqwest::Method::GET) {
             reqwest::Method::GET => client.get(url),
             reqwest::Method::POST => client.post(url),

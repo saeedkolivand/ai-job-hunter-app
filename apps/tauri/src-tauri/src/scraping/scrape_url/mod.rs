@@ -58,7 +58,7 @@ async fn try_greenhouse(url: &str) -> Result<Option<JobPosting>> {
         urlencoding::encode(&company),
         urlencoding::encode(&job_id),
     );
-    let client = reqwest::Client::new();
+    let client = crate::net::http::shared();
     let res = client.get(&api).send().await?;
     if !res.status().is_success() {
         return Ok(None);
@@ -146,7 +146,7 @@ async fn try_lever(url: &str) -> Result<Option<JobPosting>> {
         urlencoding::encode(&company),
         urlencoding::encode(&job_id),
     );
-    let client = reqwest::Client::new();
+    let client = crate::net::http::shared();
     let res = client.get(&api).send().await?;
     if !res.status().is_success() {
         return Ok(None);
@@ -237,7 +237,7 @@ async fn try_ashby(url: &str) -> Result<Option<JobPosting>> {
         "variables": { "organizationHostedJobsPageName": company, "jobPostingId": job_id },
         "query": "query ApiJobPosting($organizationHostedJobsPageName: String!, $jobPostingId: String!) { jobPosting(organizationHostedJobsPageName: $organizationHostedJobsPageName, jobPostingId: $jobPostingId) { title locationName departmentName descriptionPlain } }"
     });
-    let client = reqwest::Client::new();
+    let client = crate::net::http::shared();
     let res = client
         .post("https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobPosting")
         .header("content-type", "application/json")
@@ -276,14 +276,11 @@ async fn try_ashby(url: &str) -> Result<Option<JobPosting>> {
 // ── Generic HTML fallback ───────────────────────────────────────────────────
 
 async fn generic_html(url: &str) -> Result<Option<JobPosting>> {
-    let client = reqwest::Client::builder()
-        .user_agent(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
-             (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        )
+    let res = crate::net::http::shared()
+        .get(url)
         .timeout(std::time::Duration::from_secs(20))
-        .build()?;
-    let res = client.get(url).send().await?;
+        .send()
+        .await?;
     if !res.status().is_success() {
         return Ok(None);
     }
@@ -457,7 +454,7 @@ async fn try_workday(url: &str) -> Result<Option<JobPosting>> {
         tenant, host, tenant, site, req_id
     );
 
-    let client = reqwest::Client::new();
+    let client = crate::net::http::shared();
     let res = client.get(&api).send().await?;
     if !res.status().is_success() {
         return Ok(None);
@@ -525,7 +522,7 @@ async fn try_smartrecruiters(url: &str) -> Result<Option<JobPosting>> {
         urlencoding::encode(job_id)
     );
 
-    let client = reqwest::Client::new();
+    let client = crate::net::http::shared();
     let res = client.get(&api).send().await?;
     if !res.status().is_success() {
         return Ok(None);
@@ -609,7 +606,7 @@ async fn try_personio(url: &str) -> Result<Option<JobPosting>> {
 
     // Fetch the XML feed and find the matching position.
     let feed_url = format!("https://{}", host);
-    let client = reqwest::Client::new();
+    let client = crate::net::http::shared();
     let res = client.get(&feed_url).send().await?;
     if !res.status().is_success() {
         return Ok(None);

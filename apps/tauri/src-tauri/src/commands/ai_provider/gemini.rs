@@ -74,11 +74,9 @@ impl AiProvider for GeminiClient {
         }
 
         let url = format!("{BASE}{endpoint_label}?key={api_key}");
-        let response = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(300))
-            .build()
-            .map_err(|e| e.to_string())?
+        let response = crate::net::http::shared()
             .post(&url)
+            .timeout(std::time::Duration::from_secs(300))
             .json(&body)
             .send()
             .await;
@@ -199,11 +197,9 @@ impl AiProvider for GeminiClient {
         }
 
         let url = format!("{BASE}{endpoint_label}?key={api_key}");
-        let resp = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
-            .build()
-            .map_err(|e| e.to_string())?
+        let resp = crate::net::http::shared()
             .post(&url)
+            .timeout(std::time::Duration::from_secs(120))
             .json(&body)
             .send()
             .await;
@@ -248,11 +244,9 @@ impl AiProvider for GeminiClient {
             "content": { "parts": [{ "text": text }] },
         });
         let url = format!("{BASE}{endpoint_label}?key={api_key}");
-        let resp = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(|e| e.to_string())?
+        let resp = crate::net::http::shared()
             .post(&url)
+            .timeout(std::time::Duration::from_secs(30))
             .json(&body)
             .send()
             .await

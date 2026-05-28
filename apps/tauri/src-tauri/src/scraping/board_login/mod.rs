@@ -407,15 +407,11 @@ pub fn build_authed_client(app_data_dir: &Path, board_id: &str) -> Result<reqwes
         jar.add_cookie_str(&cookie_str, &url);
     }
 
-    reqwest::Client::builder()
-        .cookie_provider(jar)
-        .user_agent(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
-             (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        )
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| anyhow!("reqwest client build failed: {e}"))
+    crate::net::http::build_client(crate::net::http::ClientConfig {
+        timeout: Some(std::time::Duration::from_secs(30)),
+        cookie_jar: Some(jar),
+    })
+    .map_err(|e| anyhow!("reqwest client build failed: {e}"))
 }
 
 /// Convenience: build cookie param vec for chromiumoxide page restoration.

@@ -83,11 +83,9 @@ impl AiProvider for AnthropicClient {
             body["system"] = json!(system_content);
         }
 
-        let response = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(300))
-            .build()
-            .map_err(|e| e.to_string())?
+        let response = crate::net::http::shared()
             .post(&endpoint)
+            .timeout(std::time::Duration::from_secs(300))
             .header("x-api-key", &api_key)
             .header("anthropic-version", VERSION)
             .json(&body)
@@ -224,11 +222,9 @@ impl AiProvider for AnthropicClient {
             body["system"] = json!(system);
         }
 
-        let resp = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
-            .build()
-            .map_err(|e| e.to_string())?
+        let resp = crate::net::http::shared()
             .post(&endpoint)
+            .timeout(std::time::Duration::from_secs(120))
             .header("x-api-key", &api_key)
             .header("anthropic-version", VERSION)
             .json(&body)
