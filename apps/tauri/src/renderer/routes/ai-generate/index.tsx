@@ -26,7 +26,7 @@ import { useFileUpload } from './hooks/useFileUpload';
 import { useGeneration } from './hooks/useGeneration';
 import { useStageRotation } from './hooks/useStageRotation';
 
-export const Route = createFileRoute('/ai-generate')({ component: AIGeneratePage });
+export const Route = createFileRoute('/ai-generate/')({ component: AIGeneratePage });
 
 type GenTarget = 'resume' | 'cover' | 'both';
 

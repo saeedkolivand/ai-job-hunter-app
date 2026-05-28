@@ -10,7 +10,7 @@ import { SettingsContent } from './components/SettingsContent';
 import { SettingsSidebar } from './components/SettingsSidebar';
 import { NAV_GROUPS, type NavGroup, type NavItem, type SectionId } from './constants';
 
-export const Route = createFileRoute('/settings')({ component: SettingsPage });
+export const Route = createFileRoute('/settings/')({ component: SettingsPage });
 
 function SettingsPage() {
   const { t } = useTranslation();

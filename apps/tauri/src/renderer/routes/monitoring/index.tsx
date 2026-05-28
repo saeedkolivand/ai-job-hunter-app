@@ -18,7 +18,7 @@ import { useActivityFeed } from './hooks/useActivityFeed';
 import { useJobMetrics } from './hooks/useJobMetrics';
 import type { JobRecord } from './types';
 
-export const Route = createFileRoute('/monitoring')({ component: MonitoringPage });
+export const Route = createFileRoute('/monitoring/')({ component: MonitoringPage });
 
 function MonitoringPage() {
   const { t } = useTranslation();

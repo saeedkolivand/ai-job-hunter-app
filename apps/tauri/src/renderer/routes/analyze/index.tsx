@@ -36,7 +36,7 @@ import type { PromptQuality } from '@/store/preferences-schema';
 import { useOutputTone, usePreferencesStore, usePromptQuality } from '@/store/preferences-store';
 import { useSessionStore } from '@/store/session-store';
 
-export const Route = createFileRoute('/analyze')({ component: Analyze });
+export const Route = createFileRoute('/analyze/')({ component: Analyze });
 
 const ACCEPTED_EXTS = ['pdf', 'docx', 'txt', 'md', 'markdown'] as const;
 const MAX_BYTES = 25 * 1024 * 1024;

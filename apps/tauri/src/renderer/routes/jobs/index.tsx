@@ -28,7 +28,7 @@ import { useFormatRelativeTime } from './hooks/useFormatRelativeTime';
 import { useScraping } from './hooks/useScraping';
 import type { JobEvent, Posting } from './types';
 
-export const Route = createFileRoute('/jobs')({ component: Jobs });
+export const Route = createFileRoute('/jobs/')({ component: Jobs });
 
 function Jobs() {
   const { t } = useTranslation();

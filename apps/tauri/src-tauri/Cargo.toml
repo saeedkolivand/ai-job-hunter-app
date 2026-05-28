@@ -35,7 +35,7 @@ reqwest = { version = "0.13", features = ["json", "native-tls", "rustls", "rustl
 
 log = "0.4"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "std", "ansi"], default-features = false }
 
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"

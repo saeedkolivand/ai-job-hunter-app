@@ -9,135 +9,135 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SupportRouteImport } from './routes/support'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as SearchRouteImport } from './routes/search'
-import { Route as ResumesRouteImport } from './routes/resumes'
-import { Route as MonitoringRouteImport } from './routes/monitoring'
-import { Route as JobsRouteImport } from './routes/jobs'
-import { Route as AutopilotRouteImport } from './routes/autopilot'
-import { Route as AnalyzeRouteImport } from './routes/analyze'
-import { Route as AiGenerateRouteImport } from './routes/ai-generate'
-import { Route as AiRouteImport } from './routes/ai'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as IndexIndexRouteImport } from './routes/index/index'
+import { Route as SupportIndexRouteImport } from './routes/support/index'
+import { Route as SettingsIndexRouteImport } from './routes/settings/index'
+import { Route as SearchIndexRouteImport } from './routes/search/index'
+import { Route as ResumesIndexRouteImport } from './routes/resumes/index'
+import { Route as MonitoringIndexRouteImport } from './routes/monitoring/index'
+import { Route as JobsIndexRouteImport } from './routes/jobs/index'
+import { Route as AutopilotIndexRouteImport } from './routes/autopilot/index'
+import { Route as AnalyzeIndexRouteImport } from './routes/analyze/index'
+import { Route as AiIndexRouteImport } from './routes/ai/index'
+import { Route as AiGenerateIndexRouteImport } from './routes/ai-generate/index'
 
-const SupportRoute = SupportRouteImport.update({
-  id: '/support',
-  path: '/support',
+const IndexIndexRoute = IndexIndexRouteImport.update({
+  id: '/index/',
+  path: '/index/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
+const SupportIndexRoute = SupportIndexRouteImport.update({
+  id: '/support/',
+  path: '/support/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SearchRoute = SearchRouteImport.update({
-  id: '/search',
-  path: '/search',
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/settings/',
+  path: '/settings/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ResumesRoute = ResumesRouteImport.update({
-  id: '/resumes',
-  path: '/resumes',
+const SearchIndexRoute = SearchIndexRouteImport.update({
+  id: '/search/',
+  path: '/search/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const MonitoringRoute = MonitoringRouteImport.update({
-  id: '/monitoring',
-  path: '/monitoring',
+const ResumesIndexRoute = ResumesIndexRouteImport.update({
+  id: '/resumes/',
+  path: '/resumes/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const JobsRoute = JobsRouteImport.update({
-  id: '/jobs',
-  path: '/jobs',
+const MonitoringIndexRoute = MonitoringIndexRouteImport.update({
+  id: '/monitoring/',
+  path: '/monitoring/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AutopilotRoute = AutopilotRouteImport.update({
-  id: '/autopilot',
-  path: '/autopilot',
+const JobsIndexRoute = JobsIndexRouteImport.update({
+  id: '/jobs/',
+  path: '/jobs/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AnalyzeRoute = AnalyzeRouteImport.update({
-  id: '/analyze',
-  path: '/analyze',
+const AutopilotIndexRoute = AutopilotIndexRouteImport.update({
+  id: '/autopilot/',
+  path: '/autopilot/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AiGenerateRoute = AiGenerateRouteImport.update({
-  id: '/ai-generate',
-  path: '/ai-generate',
+const AnalyzeIndexRoute = AnalyzeIndexRouteImport.update({
+  id: '/analyze/',
+  path: '/analyze/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AiRoute = AiRouteImport.update({
-  id: '/ai',
-  path: '/ai',
+const AiIndexRoute = AiIndexRouteImport.update({
+  id: '/ai/',
+  path: '/ai/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AiGenerateIndexRoute = AiGenerateIndexRouteImport.update({
+  id: '/ai-generate/',
+  path: '/ai-generate/',
   getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/ai': typeof AiRoute
-  '/ai-generate': typeof AiGenerateRoute
-  '/analyze': typeof AnalyzeRoute
-  '/autopilot': typeof AutopilotRoute
-  '/jobs': typeof JobsRoute
-  '/monitoring': typeof MonitoringRoute
-  '/resumes': typeof ResumesRoute
-  '/search': typeof SearchRoute
-  '/settings': typeof SettingsRoute
-  '/support': typeof SupportRoute
+  '/ai-generate/': typeof AiGenerateIndexRoute
+  '/ai/': typeof AiIndexRoute
+  '/analyze/': typeof AnalyzeIndexRoute
+  '/autopilot/': typeof AutopilotIndexRoute
+  '/index/': typeof IndexIndexRoute
+  '/jobs/': typeof JobsIndexRoute
+  '/monitoring/': typeof MonitoringIndexRoute
+  '/resumes/': typeof ResumesIndexRoute
+  '/search/': typeof SearchIndexRoute
+  '/settings/': typeof SettingsIndexRoute
+  '/support/': typeof SupportIndexRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/ai': typeof AiRoute
-  '/ai-generate': typeof AiGenerateRoute
-  '/analyze': typeof AnalyzeRoute
-  '/autopilot': typeof AutopilotRoute
-  '/jobs': typeof JobsRoute
-  '/monitoring': typeof MonitoringRoute
-  '/resumes': typeof ResumesRoute
-  '/search': typeof SearchRoute
-  '/settings': typeof SettingsRoute
-  '/support': typeof SupportRoute
+  '/ai-generate': typeof AiGenerateIndexRoute
+  '/ai': typeof AiIndexRoute
+  '/analyze': typeof AnalyzeIndexRoute
+  '/autopilot': typeof AutopilotIndexRoute
+  '/index': typeof IndexIndexRoute
+  '/jobs': typeof JobsIndexRoute
+  '/monitoring': typeof MonitoringIndexRoute
+  '/resumes': typeof ResumesIndexRoute
+  '/search': typeof SearchIndexRoute
+  '/settings': typeof SettingsIndexRoute
+  '/support': typeof SupportIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/ai': typeof AiRoute
-  '/ai-generate': typeof AiGenerateRoute
-  '/analyze': typeof AnalyzeRoute
-  '/autopilot': typeof AutopilotRoute
-  '/jobs': typeof JobsRoute
-  '/monitoring': typeof MonitoringRoute
-  '/resumes': typeof ResumesRoute
-  '/search': typeof SearchRoute
-  '/settings': typeof SettingsRoute
-  '/support': typeof SupportRoute
+  '/ai-generate/': typeof AiGenerateIndexRoute
+  '/ai/': typeof AiIndexRoute
+  '/analyze/': typeof AnalyzeIndexRoute
+  '/autopilot/': typeof AutopilotIndexRoute
+  '/index/': typeof IndexIndexRoute
+  '/jobs/': typeof JobsIndexRoute
+  '/monitoring/': typeof MonitoringIndexRoute
+  '/resumes/': typeof ResumesIndexRoute
+  '/search/': typeof SearchIndexRoute
+  '/settings/': typeof SettingsIndexRoute
+  '/support/': typeof SupportIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/'
-    | '/ai'
-    | '/ai-generate'
-    | '/analyze'
-    | '/autopilot'
-    | '/jobs'
-    | '/monitoring'
-    | '/resumes'
-    | '/search'
-    | '/settings'
-    | '/support'
+    | '/ai-generate/'
+    | '/ai/'
+    | '/analyze/'
+    | '/autopilot/'
+    | '/index/'
+    | '/jobs/'
+    | '/monitoring/'
+    | '/resumes/'
+    | '/search/'
+    | '/settings/'
+    | '/support/'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
-    | '/ai'
     | '/ai-generate'
+    | '/ai'
     | '/analyze'
     | '/autopilot'
+    | '/index'
     | '/jobs'
     | '/monitoring'
     | '/resumes'
@@ -146,127 +146,127 @@ export interface FileRouteTypes {
     | '/support'
   id:
     | '__root__'
-    | '/'
-    | '/ai'
-    | '/ai-generate'
-    | '/analyze'
-    | '/autopilot'
-    | '/jobs'
-    | '/monitoring'
-    | '/resumes'
-    | '/search'
-    | '/settings'
-    | '/support'
+    | '/ai-generate/'
+    | '/ai/'
+    | '/analyze/'
+    | '/autopilot/'
+    | '/index/'
+    | '/jobs/'
+    | '/monitoring/'
+    | '/resumes/'
+    | '/search/'
+    | '/settings/'
+    | '/support/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  AiRoute: typeof AiRoute
-  AiGenerateRoute: typeof AiGenerateRoute
-  AnalyzeRoute: typeof AnalyzeRoute
-  AutopilotRoute: typeof AutopilotRoute
-  JobsRoute: typeof JobsRoute
-  MonitoringRoute: typeof MonitoringRoute
-  ResumesRoute: typeof ResumesRoute
-  SearchRoute: typeof SearchRoute
-  SettingsRoute: typeof SettingsRoute
-  SupportRoute: typeof SupportRoute
+  AiGenerateIndexRoute: typeof AiGenerateIndexRoute
+  AiIndexRoute: typeof AiIndexRoute
+  AnalyzeIndexRoute: typeof AnalyzeIndexRoute
+  AutopilotIndexRoute: typeof AutopilotIndexRoute
+  IndexIndexRoute: typeof IndexIndexRoute
+  JobsIndexRoute: typeof JobsIndexRoute
+  MonitoringIndexRoute: typeof MonitoringIndexRoute
+  ResumesIndexRoute: typeof ResumesIndexRoute
+  SearchIndexRoute: typeof SearchIndexRoute
+  SettingsIndexRoute: typeof SettingsIndexRoute
+  SupportIndexRoute: typeof SupportIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/support': {
-      id: '/support'
+    '/index/': {
+      id: '/index/'
+      path: '/index'
+      fullPath: '/index/'
+      preLoaderRoute: typeof IndexIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/support/': {
+      id: '/support/'
       path: '/support'
-      fullPath: '/support'
-      preLoaderRoute: typeof SupportRouteImport
+      fullPath: '/support/'
+      preLoaderRoute: typeof SupportIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings': {
-      id: '/settings'
+    '/settings/': {
+      id: '/settings/'
       path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/search': {
-      id: '/search'
+    '/search/': {
+      id: '/search/'
       path: '/search'
-      fullPath: '/search'
-      preLoaderRoute: typeof SearchRouteImport
+      fullPath: '/search/'
+      preLoaderRoute: typeof SearchIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/resumes': {
-      id: '/resumes'
+    '/resumes/': {
+      id: '/resumes/'
       path: '/resumes'
-      fullPath: '/resumes'
-      preLoaderRoute: typeof ResumesRouteImport
+      fullPath: '/resumes/'
+      preLoaderRoute: typeof ResumesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/monitoring': {
-      id: '/monitoring'
+    '/monitoring/': {
+      id: '/monitoring/'
       path: '/monitoring'
-      fullPath: '/monitoring'
-      preLoaderRoute: typeof MonitoringRouteImport
+      fullPath: '/monitoring/'
+      preLoaderRoute: typeof MonitoringIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/jobs': {
-      id: '/jobs'
+    '/jobs/': {
+      id: '/jobs/'
       path: '/jobs'
-      fullPath: '/jobs'
-      preLoaderRoute: typeof JobsRouteImport
+      fullPath: '/jobs/'
+      preLoaderRoute: typeof JobsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/autopilot': {
-      id: '/autopilot'
+    '/autopilot/': {
+      id: '/autopilot/'
       path: '/autopilot'
-      fullPath: '/autopilot'
-      preLoaderRoute: typeof AutopilotRouteImport
+      fullPath: '/autopilot/'
+      preLoaderRoute: typeof AutopilotIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/analyze': {
-      id: '/analyze'
+    '/analyze/': {
+      id: '/analyze/'
       path: '/analyze'
-      fullPath: '/analyze'
-      preLoaderRoute: typeof AnalyzeRouteImport
+      fullPath: '/analyze/'
+      preLoaderRoute: typeof AnalyzeIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/ai-generate': {
-      id: '/ai-generate'
-      path: '/ai-generate'
-      fullPath: '/ai-generate'
-      preLoaderRoute: typeof AiGenerateRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ai': {
-      id: '/ai'
+    '/ai/': {
+      id: '/ai/'
       path: '/ai'
-      fullPath: '/ai'
-      preLoaderRoute: typeof AiRouteImport
+      fullPath: '/ai/'
+      preLoaderRoute: typeof AiIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/ai-generate/': {
+      id: '/ai-generate/'
+      path: '/ai-generate'
+      fullPath: '/ai-generate/'
+      preLoaderRoute: typeof AiGenerateIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  AiRoute: AiRoute,
-  AiGenerateRoute: AiGenerateRoute,
-  AnalyzeRoute: AnalyzeRoute,
-  AutopilotRoute: AutopilotRoute,
-  JobsRoute: JobsRoute,
-  MonitoringRoute: MonitoringRoute,
-  ResumesRoute: ResumesRoute,
-  SearchRoute: SearchRoute,
-  SettingsRoute: SettingsRoute,
-  SupportRoute: SupportRoute,
+  AiGenerateIndexRoute: AiGenerateIndexRoute,
+  AiIndexRoute: AiIndexRoute,
+  AnalyzeIndexRoute: AnalyzeIndexRoute,
+  AutopilotIndexRoute: AutopilotIndexRoute,
+  IndexIndexRoute: IndexIndexRoute,
+  JobsIndexRoute: JobsIndexRoute,
+  MonitoringIndexRoute: MonitoringIndexRoute,
+  ResumesIndexRoute: ResumesIndexRoute,
+  SearchIndexRoute: SearchIndexRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
+  SupportIndexRoute: SupportIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
