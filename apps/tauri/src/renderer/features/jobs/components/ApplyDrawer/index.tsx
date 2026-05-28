@@ -7,6 +7,8 @@ import { Button, cn, GlassCard, TextArea } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 import { useApplyJob, useCancelJob, useJobEvents } from '@/services';
 
+import { MatchScoreCard } from '../MatchScoreCard';
+
 interface Posting {
   id: string;
   source: string;
@@ -133,7 +135,8 @@ export function ApplyDrawer({ posting, onClose }: ApplyDrawerProps) {
       </header>
 
       {!canApply ? (
-        <div className="flex-1 p-5">
+        <div className="flex-1 overflow-y-auto p-5">
+          <MatchScoreCard jobId={posting.id} />
           <GlassCard tone="violet" highlight className="text-sm text-foreground/70">
             {t('jobs.applyNotSupported')}
           </GlassCard>
@@ -141,6 +144,8 @@ export function ApplyDrawer({ posting, onClose }: ApplyDrawerProps) {
       ) : (
         <>
           <div className="flex-1 overflow-y-auto p-5">
+            <MatchScoreCard jobId={posting.id} />
+
             {/* ToS warning */}
             <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-400/15 bg-amber-400/5 p-3 text-xs text-amber-200/90">
               <ShieldAlert size={14} className="mt-0.5 shrink-0" />

@@ -118,6 +118,30 @@ impl DocumentStore {
         .unwrap_or_default()
     }
 
+    /// Fetch a single document by id.
+    pub fn get(&self, id: &str) -> Option<DocumentRecord> {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT id, title, name, locale, text, pages, created_at, indexed, is_default
+             FROM documents WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok(DocumentRecord {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    name: row.get(2)?,
+                    locale: row.get(3)?,
+                    text: row.get(4)?,
+                    pages: row.get(5)?,
+                    created_at: row.get::<_, i64>(6)? as u64,
+                    indexed: row.get::<_, i64>(7)? != 0,
+                    is_default: row.get::<_, i64>(8).unwrap_or(0) != 0,
+                })
+            },
+        )
+        .ok()
+    }
+
     pub fn insert(&self, rec: &DocumentRecord) -> Result<(), String> {
         let conn = self.conn.lock();
         // If this is the first document, automatically set it as default

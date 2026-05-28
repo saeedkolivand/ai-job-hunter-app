@@ -9,5 +9,7 @@ pub mod apply;
 pub mod autopilot;
 pub mod conversations;
 pub mod documents;
+pub mod matching;
 pub mod resume;
 pub mod scrape;
+pub mod search;
