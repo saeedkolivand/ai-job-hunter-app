@@ -37,7 +37,7 @@ async fn linkedin_easy_apply(
     posting_url: String,
     ctx: ApplyContext,
 ) -> Result<ApplyResult> {
-    let app_data_dir = resolve_data_dir();
+    let app_data_dir = crate::platform::config::data_dir();
     let selectors = FormSelectors::linkedin();
 
     emit_step(&ctx, "launching", true, Some("Opening LinkedIn posting…"));
@@ -244,14 +244,4 @@ fn emit_step(ctx: &ApplyContext, stage: &str, ok: bool, note: Option<&str>) {
             note: note.map(str::to_string),
         });
     }
-}
-
-fn resolve_data_dir() -> std::path::PathBuf {
-    if let Ok(dir) = std::env::var("AJH_DATA_DIR") {
-        return std::path::PathBuf::from(dir);
-    }
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_default();
-    std::path::PathBuf::from(home).join(".ajh")
 }
