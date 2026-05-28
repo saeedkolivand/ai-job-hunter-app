@@ -461,21 +461,21 @@ This question shows maturity. Good answers for this project:
 
 ## 10. Quick-Reference: Technologies and Why
 
-| Technology           | Why                                                                         |
-| -------------------- | --------------------------------------------------------------------------- |
-| **Tauri 2**          | Smaller binary than Electron; Rust backend; OS-native WebView               |
-| **React 19**         | Concurrent features; first-class support in TanStack ecosystem              |
-| **TypeScript 6**     | `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` for maximum safety |
-| **TanStack Router**  | File-based routing with full type safety on route params and search params  |
-| **TanStack Query**   | Eliminates `useEffect` data fetching; built-in caching, background refetch  |
-| **Zustand**          | Minimal boilerplate for simple client state; React 19 concurrent-safe       |
-| **TailwindCSS v4**   | CSS-first config with `@theme`; zero runtime                                |
-| **motion/react**     | Framer Motion v11 rebranded; best-in-class animation performance            |
-| **Zod 4**            | Schema-first validation with zero-cost type inference                       |
-| **Pino**             | Fastest Node.js logger; structured JSON output                              |
-| **Turborepo**        | Incremental monorepo builds with shared remote cache                        |
-| **Vitest**           | Fast, Vite-native test runner; no Jest config migration needed              |
-| **semantic-release** | Fully automated versioning driven by commit messages                        |
-| **parking_lot**      | Drop-in `std::sync::Mutex` replacement with no poisoning risk               |
-| **LanceDB**          | Embedded vector DB with no server process; Rust-native                      |
-| **Tesseract.js**     | Client-side OCR in a Web Worker; no cloud API needed                        |
+| Technology           | Why                                                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Tauri 2**          | Smaller binary than Electron; Rust backend; OS-native WebView                                                 |
+| **React 19**         | Concurrent features; first-class support in TanStack ecosystem                                                |
+| **TypeScript 6**     | `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` for maximum safety                                   |
+| **TanStack Router**  | File-based routing with full type safety on route params and search params                                    |
+| **TanStack Query**   | Eliminates `useEffect` data fetching; built-in caching, background refetch                                    |
+| **Zustand**          | Minimal boilerplate for simple client state; React 19 concurrent-safe                                         |
+| **TailwindCSS v4**   | CSS-first config with `@theme`; zero runtime                                                                  |
+| **motion/react**     | Framer Motion v11 rebranded; best-in-class animation performance                                              |
+| **Zod 4**            | Schema-first validation with zero-cost type inference                                                         |
+| **Pino**             | Fastest Node.js logger; structured JSON output for the scraper-runtime sidecar (Rust uses `tauri-plugin-log`) |
+| **Turborepo**        | Incremental monorepo builds with shared remote cache                                                          |
+| **Vitest**           | Fast, Vite-native test runner; no Jest config migration needed                                                |
+| **semantic-release** | Fully automated versioning driven by commit messages                                                          |
+| **parking_lot**      | Drop-in `std::sync::Mutex` replacement with no poisoning risk                                                 |
+| **LanceDB**          | Embedded vector DB with no server process; Rust-native                                                        |
+| **Tesseract.js**     | Client-side OCR in a Web Worker; no cloud API needed                                                          |
