@@ -172,16 +172,15 @@ The app uses the OS keychain for secrets — no `.env` files needed. API keys an
 ```
 ai-job-hunter-assistant-app/
 ├── apps/
-│   ├── tauri/                    # Main desktop app
-│   │   ├── src-tauri/            # Rust core (commands, scraping, DB)
-│   │   └── src/renderer/         # React frontend
-│   │       ├── features/         # Feature-scoped components
-│   │       ├── routes/           # TanStack Router pages
-│   │       ├── services/         # React Query IPC hooks
-│   │       ├── lib/              # Utilities (motion, i18n, machine)
-│   │       ├── store/            # Zustand stores
-│   │       └── providers/        # React context providers
-│   └── scraper-runtime/          # Node.js HTTP sidecar
+│   └── tauri/                    # Main desktop app (Rust core + React renderer)
+│       ├── src-tauri/            # Rust core (commands, scraping, DB)
+│       └── src/renderer/         # React frontend
+│           ├── features/         # Feature-scoped components
+│           ├── routes/           # TanStack Router pages
+│           ├── services/         # React Query IPC hooks
+│           ├── lib/              # Utilities (motion, i18n, machine)
+│           ├── store/            # Zustand stores
+│           └── providers/        # React context providers
 ├── packages/
 │   ├── shared/                   # IPC contracts, Zod schemas, shared types
 │   ├── ui/                       # @ajh/ui — React component library

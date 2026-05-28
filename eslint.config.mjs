@@ -69,16 +69,6 @@ const DEEP_UI_IMPORTS = [
   '@/components/ui/index',
 ];
 
-// ── Renderer package boundary — main-process packages ────────────────────────
-const MAIN_PROCESS_PACKAGES = [
-  '@ajh/core',
-  '@ajh/core/**',
-  '@ajh/ai',
-  '@ajh/ai/**',
-  '@ajh/workers',
-  '@ajh/workers/**',
-];
-
 // ── Shared no-restricted-imports sets ────────────────────────────────────────
 
 const I18N_IMPORT_RESTRICTION = {
@@ -213,19 +203,7 @@ export default tseslint.config(
   {
     files: ['apps/desktop/src/renderer/**/*.ts', 'apps/desktop/src/renderer/**/*.tsx'],
     rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          ...I18N_IMPORT_RESTRICTION,
-          patterns: [
-            {
-              group: MAIN_PROCESS_PACKAGES,
-              message:
-                'Main-process packages (@ajh/core, @ajh/ai, @ajh/workers) are not available in the renderer. Add an IPC method instead.',
-            },
-          ],
-        },
-      ],
+      'no-restricted-imports': ['error', { ...I18N_IMPORT_RESTRICTION }],
     },
   },
 
@@ -244,11 +222,6 @@ export default tseslint.config(
         {
           ...I18N_IMPORT_RESTRICTION,
           patterns: [
-            {
-              group: MAIN_PROCESS_PACKAGES,
-              message:
-                'Main-process packages are not available in the renderer. Add an IPC method instead.',
-            },
             {
               group: DEEP_UI_IMPORTS,
               message:
@@ -345,11 +318,6 @@ export default tseslint.config(
           ...I18N_IMPORT_RESTRICTION,
           patterns: [
             {
-              group: MAIN_PROCESS_PACKAGES,
-              message:
-                'Main-process packages are not available in the renderer. Add an IPC method instead.',
-            },
-            {
               group: DEEP_UI_IMPORTS,
               message:
                 "Import from '@ajh/ui' directly instead of deep component paths. Example: import { Button } from '@ajh/ui'. The only exception is UpdateBanner: import { UpdateBanner } from '@/components/ui/UpdateBanner'.",
@@ -433,6 +401,18 @@ export default tseslint.config(
           ],
         },
       ],
+    },
+  },
+
+  // ── @ajh/shared build scripts — Node tooling, never shipped ────────────────
+  // The codegen under packages/shared/scripts runs at build time only and is
+  // not part of the published `src/` surface, so the no-Node-deps boundary and
+  // console restriction above do not apply here.
+  {
+    files: ['packages/shared/scripts/**/*.ts'],
+    rules: {
+      'no-console': 'off',
+      'no-restricted-imports': 'off',
     },
   }
 );
