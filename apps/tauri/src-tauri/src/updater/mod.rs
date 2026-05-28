@@ -85,7 +85,7 @@ pub async fn updater_check(app: AppHandle) -> Value {
         Err(e) => {
             let msg = e.to_string();
             let user_msg = if msg.contains("missing field") && msg.contains("signature") {
-                "Update check failed: Release is not properly signed. Please check UPDATER_SETUP.md for instructions.".to_string()
+                "Update check failed: Release is not properly signed. See docs/DEPLOYMENT.md (Updater signing keys).".to_string()
             } else if msg.contains("invalid encoding") || msg.contains("minisign") {
                 "Update check failed: Signature file is corrupted or invalid.".to_string()
             } else if msg.contains("404") || msg.contains("not found") {

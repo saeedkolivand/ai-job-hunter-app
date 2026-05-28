@@ -15,12 +15,12 @@
 #         Content: the entire contents of ~/.tauri/ajh.key
 #   2. Add TAURI_SIGNING_PRIVATE_KEY_PASSWORD to GitHub Secrets:
 #         Content: the password you entered (or empty string if none)
-#   3. Add TAURI_SIGNING_PUBLIC_KEY to GitHub Secrets:
-#         Content: the public key printed below (also in ~/.tauri/ajh.key.pub)
-#   4. In apps/tauri/src-tauri/tauri.conf.json, replace the placeholder
-#      pubkey with the real public key from TAURI_SIGNING_PUBLIC_KEY.
-#      The CI pipeline injects this automatically via the sync-tauri-version
-#      script, but the value in the repo must be valid base64.
+#   3. Commit the PUBLIC key into apps/tauri/src-tauri/tauri.conf.json at
+#      plugins.updater.pubkey — paste the contents of ~/.tauri/ajh.key.pub
+#      verbatim. The public key is NOT a secret; it is the single source of
+#      truth the app verifies updates against, so it lives in the repo (CI does
+#      not inject it). It must match the private key from step 1, or the
+#      auto-updater breaks. See docs/DEPLOYMENT.md (Updater signing keys).
 
 set -euo pipefail
 
@@ -45,5 +45,6 @@ echo ""
 echo "Next steps:"
 echo "  1. Add the private key file contents as GitHub secret TAURI_SIGNING_PRIVATE_KEY"
 echo "  2. Add your key password as TAURI_SIGNING_PRIVATE_KEY_PASSWORD (empty string if none)"
-echo "  3. Add the public key above as TAURI_SIGNING_PUBLIC_KEY"
-echo "  4. The CI pipeline reads TAURI_SIGNING_PUBLIC_KEY and injects it into tauri.conf.json"
+echo "  3. Paste the public key above into plugins.updater.pubkey in"
+echo "     apps/tauri/src-tauri/tauri.conf.json and commit it (it is not a secret)"
+echo "  4. CI verifies the committed pubkey matches the signing key on every release"

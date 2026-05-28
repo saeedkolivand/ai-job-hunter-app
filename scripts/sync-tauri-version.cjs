@@ -2,20 +2,21 @@
 /**
  * sync-tauri-version.js
  *
- * Syncs the semantic-release version into all three Tauri version fields and
- * injects the minisign public key from the environment.
+ * Syncs the semantic-release version into all Tauri version fields.
  *
  * Usage:
  *   node scripts/sync-tauri-version.js <version>
  *
- * Required env vars:
- *   TAURI_SIGNING_PUBLIC_KEY  — base64-encoded minisign public key
- *                               (from the TAURI_SIGNING_PUBLIC_KEY GitHub secret)
+ * The updater public key is NOT touched here. It is committed directly in
+ * tauri.conf.json (a public key is not a secret) so it is the single source of
+ * truth and cannot silently diverge from the signing key. See
+ * docs/DEPLOYMENT.md (Updater signing keys).
  *
  * Files updated:
- *   apps/tauri/src-tauri/tauri.conf.json  — version + plugins.updater.pubkey
+ *   apps/tauri/src-tauri/tauri.conf.json  — version
  *   apps/tauri/src-tauri/Cargo.toml       — [package] version
  *   apps/tauri/package.json               — version
+ *   package.json                          — version
  */
 
 'use strict';
@@ -29,12 +30,6 @@ if (!version) {
   process.exit(1);
 }
 
-const pubkey = process.env.TAURI_SIGNING_PUBLIC_KEY;
-if (!pubkey) {
-  console.error('TAURI_SIGNING_PUBLIC_KEY environment variable is required');
-  process.exit(1);
-}
-
 const root = path.resolve(__dirname, '..');
 
 // ── tauri.conf.json ────────────────────────────────────────────────────────
@@ -42,11 +37,8 @@ const root = path.resolve(__dirname, '..');
 const confPath = path.join(root, 'apps/tauri/src-tauri/tauri.conf.json');
 const conf = JSON.parse(fs.readFileSync(confPath, 'utf8'));
 conf.version = version;
-conf.plugins = conf.plugins ?? {};
-conf.plugins.updater = conf.plugins.updater ?? {};
-conf.plugins.updater.pubkey = pubkey;
 fs.writeFileSync(confPath, JSON.stringify(conf, null, 2) + '\n');
-console.log(`tauri.conf.json  → version=${version}, pubkey injected`);
+console.log(`tauri.conf.json  → version=${version}`);
 
 // ── Cargo.toml ─────────────────────────────────────────────────────────────
 
