@@ -43,7 +43,10 @@ export const keys = {
     checkBrowser: ['system', 'checkBrowser'] as const,
   },
   jobs: { all: ['jobs'] as const, detail: (id: string) => ['jobs', id] as const },
-  ai: { models: ['ai', 'models'] as const },
+  ai: {
+    models: ['ai', 'models'] as const,
+    embeddingStatus: ['ai', 'embeddingStatus'] as const,
+  },
   documents: { all: ['documents'] as const },
   jobPreferences: { all: ['jobPreferences'] as const },
   postings: {

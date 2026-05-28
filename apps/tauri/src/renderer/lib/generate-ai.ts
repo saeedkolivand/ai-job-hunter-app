@@ -73,7 +73,10 @@ async function streamGenerate(
   const activeProvider = providerConfig?.activeProvider ?? 'ollama';
   const providerSettings = providerConfig?.providers?.[activeProvider];
   const activeModel = providerSettings?.model || model;
-  const res = (await api.ai.generate({
+  // Resume + cover-letter generation runs through the backend orchestration
+  // pipeline (a composable Pipeline of stages), not the raw generate command.
+  // Same streaming contract: emits `ai:stream` deltas under the returned jobId.
+  const res = (await api.ai.generatePipeline({
     model: activeModel,
     messages: [
       { role: 'system', content: system },
@@ -85,7 +88,7 @@ async function streamGenerate(
     // not fall back to Ollama. baseUrl only applies to OpenAI-compatible servers.
     provider: activeProvider,
     baseUrl: providerSettings?.baseUrl,
-  } as Parameters<typeof api.ai.generate>[0])) as { jobId: string };
+  } as Parameters<typeof api.ai.generatePipeline>[0])) as { jobId: string };
 
   const jobId = res.jobId;
   let buffer = '';

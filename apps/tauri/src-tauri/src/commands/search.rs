@@ -4,7 +4,8 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-use crate::documents::{cosine_similarity, embed};
+use crate::commands::ai_provider::compare;
+use crate::documents::embed;
 use crate::ipc_contracts::search::HybridSearchRequest;
 use crate::postings::PostingsCache;
 
@@ -33,7 +34,7 @@ pub async fn search_hybrid(app: AppHandle, req: HybridSearchRequest) -> Value {
         return json!([]);
     }
 
-    let query_vec = embed(query).await;
+    let query_vec = embed(&app, query).await;
     let query_kw = keywords(query);
     let weight = req.semantic_weight.clamp(0.0, 1.0);
 
@@ -46,10 +47,10 @@ pub async fn search_hybrid(app: AppHandle, req: HybridSearchRequest) -> Value {
 
         let keyword = keyword_score(&query_kw, &keywords(&text));
         let semantic = match &query_vec {
-            Some(q) => posting_embedding(&app, id, &text)
-                .await
-                .map(|v| cosine_similarity(q, &v).clamp(0.0, 1.0))
-                .unwrap_or(0.0),
+            Some(q) => match posting_embedding(&app, id, &text).await {
+                Some(v) => compare(q, &v).map(|s| s.clamp(0.0, 1.0)).unwrap_or(0.0),
+                None => 0.0,
+            },
             None => 0.0,
         };
 
@@ -90,19 +91,27 @@ fn posting_text(posting: &Value) -> String {
 }
 
 /// Embedding for a posting, cached in `PostingsCache` so repeat searches over
-/// the same live postings don't re-embed.
-async fn posting_embedding(app: &AppHandle, id: &str, text: &str) -> Option<Vec<f64>> {
+/// the same live postings don't re-embed. The cache entry carries its space; a
+/// cached vector from a stale space is discarded and re-embedded.
+async fn posting_embedding(
+    app: &AppHandle,
+    id: &str,
+    text: &str,
+) -> Option<crate::commands::ai_provider::EmbeddingVector> {
+    let active = app.state::<crate::documents::DocumentStore>().embedding_config();
     {
         let cache = app.state::<Mutex<PostingsCache>>();
         let cached = cache.lock().get_embedding(id);
         if let Some(v) = cached {
-            return Some(v);
+            if active.matches(&v.space) {
+                return Some(v);
+            }
         }
     }
     if text.trim().is_empty() {
         return None;
     }
-    let vector = embed(text).await?;
+    let vector = embed(app, text).await?;
     {
         let cache = app.state::<Mutex<PostingsCache>>();
         cache.lock().set_embedding(id.to_string(), vector.clone());

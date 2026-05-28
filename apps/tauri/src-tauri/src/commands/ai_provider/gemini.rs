@@ -177,6 +177,105 @@ impl AiProvider for GeminiClient {
         Ok(())
     }
 
+    async fn complete(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> Result<String, String> {
+        let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
+        let m = model.strip_prefix("models/").unwrap_or(model);
+        let endpoint_label = format!("/v1beta/models/{m}:generateContent");
+        let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
+
+        let mut body = json!({
+            "contents": [ { "role": "user", "parts": [{ "text": user }] } ],
+            "generationConfig": { "temperature": temperature.unwrap_or(0.7) },
+        });
+        if !system.is_empty() {
+            body["systemInstruction"] = json!({ "parts": [{ "text": system }] });
+        }
+
+        let url = format!("{BASE}{endpoint_label}?key={api_key}");
+        let resp = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .map_err(|e| e.to_string())?
+            .post(&url)
+            .json(&body)
+            .send()
+            .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                return Err(format!("Gemini unreachable: {e}"));
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            return Err(friendly_api_error(ProviderId::Gemini, status, &body_text));
+        }
+        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        trace.end(Some(status.as_u16()), true);
+        data.get("candidates")
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("content"))
+            .and_then(|c| c.get("parts"))
+            .and_then(|p| p.as_array())
+            .map(|parts| {
+                parts
+                    .iter()
+                    .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "Gemini: unexpected response shape".to_string())
+    }
+
+    async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> Result<Vec<f64>, String> {
+        let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
+        let m = model.strip_prefix("models/").unwrap_or(model);
+        let endpoint_label = format!("/v1beta/models/{m}:embedContent");
+        let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
+        let body = json!({
+            "model": format!("models/{m}"),
+            "content": { "parts": [{ "text": text }] },
+        });
+        let url = format!("{BASE}{endpoint_label}?key={api_key}");
+        let resp = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| e.to_string())?
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Gemini unreachable: {e}"))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            return Err(friendly_api_error(ProviderId::Gemini, status, &body_text));
+        }
+        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        trace.end(Some(status.as_u16()), true);
+        data.get("embedding")
+            .and_then(|e| e.get("values"))
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_f64()).collect())
+            .ok_or_else(|| "Gemini: missing embedding in response".to_string())
+    }
+
+    fn default_embedding_model(&self) -> Option<&'static str> {
+        Some("text-embedding-004")
+    }
+
     async fn list_models(&self, client: &reqwest::Client, api_key: &str) -> Vec<Value> {
         let resp = client
             .get(format!("{BASE}/v1/models?key={api_key}"))

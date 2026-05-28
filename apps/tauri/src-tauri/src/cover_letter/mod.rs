@@ -1,17 +1,16 @@
-pub mod cache;
 pub mod leakage;
-pub mod llm;
 pub mod research;
 
-use parking_lot::Mutex;
+use async_trait::async_trait;
+use serde_json::{json, Value};
+use tauri::{AppHandle, Emitter};
 
-use serde_json::json;
-use tauri::{AppHandle, Emitter, Manager};
+use crate::pipeline::retry::{self, DraftGenerator, RetryPolicy};
+use crate::pipeline::validation::Validator;
+use crate::pipeline::{Completer, Pipeline, Stage};
 
-use cache::CompanyBriefCache;
-use llm::{
-    anthropic::AnthropicProvider, ollama::OllamaProvider, openai::OpenAiProvider, LlmProvider,
-};
+use leakage::LeakageValidator;
+use research::CompanyResearch;
 
 // ── Request / response types ──────────────────────────────────────────────────
 
@@ -27,9 +26,9 @@ pub struct CoverLetterRequest {
     pub enable_research: Option<bool>,
     /// Run leakage validation and retry on FAIL (default true)
     pub enable_leakage_check: Option<bool>,
-    /// Which LLM provider to use ("anthropic" | "openai" | "openai-compatible" | "ollama")
+    /// Which provider to route through ("anthropic" | "openai" | "openai-compatible" | "ollama" | "gemini")
     pub provider: Option<String>,
-    /// Provider-specific model name override
+    /// Provider-specific model name
     pub model: Option<String>,
     /// Base URL for openai-compatible providers
     pub base_url: Option<String>,
@@ -90,82 +89,152 @@ fn build_user_prompt(
     )
 }
 
-// ── LLM provider factory ──────────────────────────────────────────────────────
+// ── Pipeline context ────────────────────────────────────────────────────────────
 
-type ProviderPair = (Box<dyn LlmProvider>, Box<dyn LlmProvider>);
+/// Shared state for the cover-letter pipeline. Stages read inputs and write the
+/// accumulated company/brief/draft/verdict. Provider access + event emission go
+/// through the centralized [`Completer`].
+struct CoverLetterContext {
+    completer: Completer,
+    resume: String,
+    resume_summary: String,
+    job_ad: String,
+    mode: String,
+    locale: String,
+    enable_research: bool,
+    enable_leakage: bool,
+    // Accumulators
+    company: String,
+    brief: String,
+    draft: String,
+    leakage_verdict: Option<String>,
+    retries: u8,
+}
 
-/// Resolve the provider name and build the concrete `LlmProvider`.
-/// API keys are read directly from the OS keychain via `CredentialStore` —
-/// they never travel through the frontend.
-fn resolve_provider(
-    app: &AppHandle,
-    provider_hint: Option<&str>,
-    model: Option<&str>,
-    base_url: Option<&str>,
-) -> Result<ProviderPair, String> {
-    let get_key = |name: &str| -> Option<String> {
-        app.state::<Mutex<crate::credentials::CredentialStore>>()
-            .lock()
-            .get_decrypted(&format!("ai:{name}"))
-            .map(|(_, k)| k)
-    };
-
-    // Determine provider: use hint, or auto-select from what has a key
-    let provider = provider_hint
-        .map(String::from)
-        .or_else(|| {
-            for p in &["anthropic", "openai", "gemini", "openai-compatible"] {
-                if get_key(p).is_some() {
-                    return Some(p.to_string());
-                }
-            }
-            None
-        })
-        .unwrap_or_else(|| "ollama".to_string());
-
-    match provider.as_str() {
-        "anthropic" => {
-            let key = get_key("anthropic")
-                .ok_or_else(|| "anthropic API key not set — add it in Settings".to_string())?;
-            // gen uses the caller's model choice (or Sonnet); fast uses Haiku for ancillary calls
-            let gen = AnthropicProvider::new(key.clone(), model.map(String::from))?;
-            let fast = AnthropicProvider::new(
-                key,
-                Some("claude-haiku-4-5-20251001".to_string()),
-            )?;
-            Ok((Box::new(gen), Box::new(fast)))
+impl CoverLetterContext {
+    fn new(completer: Completer, req: &CoverLetterRequest) -> Self {
+        Self {
+            completer,
+            resume_summary: extract_resume_summary(&req.resume),
+            resume: req.resume.clone(),
+            job_ad: req.job_ad.clone(),
+            mode: req.mode.clone().unwrap_or_else(|| "recruiter".to_string()),
+            locale: req.locale.clone().unwrap_or_else(|| "en".to_string()),
+            enable_research: req.enable_research.unwrap_or(true),
+            enable_leakage: req.enable_leakage_check.unwrap_or(true),
+            company: String::new(),
+            brief: String::new(),
+            draft: String::new(),
+            leakage_verdict: None,
+            retries: 0,
         }
-        "openai" | "openai-compatible" => {
-            let key = get_key(&provider)
-                .ok_or_else(|| format!("{provider} API key not set — add it in Settings"))?;
-            let gen = OpenAiProvider::new(
-                key.clone(),
-                model.map(String::from),
-                base_url.map(String::from),
-            )?;
-            // gpt-4o-mini for research briefs and validation
-            let fast = OpenAiProvider::new(
-                key,
-                Some("gpt-4o-mini".to_string()),
-                base_url.map(String::from),
-            )?;
-            Ok((Box::new(gen), Box::new(fast)))
-        }
-        _ => {
-            // Ollama — local, no key needed; same model for all passes
-            let m = model.unwrap_or("llama3.2").to_string();
-            let gen = OllamaProvider::new(m.clone())?;
-            let fast = OllamaProvider::new(m)?;
-            Ok((Box::new(gen), Box::new(fast)))
+    }
+
+    fn emit(&self, event: &str, payload: Value) {
+        let _ = self.completer.app().emit(event, payload);
+    }
+
+    fn into_response(self) -> CoverLetterResponse {
+        CoverLetterResponse {
+            text: self.draft,
+            company_brief: if self.brief.is_empty() { None } else { Some(self.brief) },
+            leakage_verdict: self.leakage_verdict,
+            retries: self.retries,
         }
     }
 }
 
-// ── Emit helpers ──────────────────────────────────────────────────────────────
+// ── Stages ────────────────────────────────────────────────────────────────────
 
-fn emit(app: &AppHandle, event: &str, payload: serde_json::Value) {
-    if let Err(e) = app.emit(event, payload) {
-        tracing::warn!("emit {event} failed: {e}");
+/// Phase 1 — company research (reusable [`crate::pipeline::enrichment::Enricher`]).
+struct ResearchStage;
+
+#[async_trait]
+impl Stage<CoverLetterContext> for ResearchStage {
+    fn name(&self) -> &'static str {
+        "research"
+    }
+    async fn run(&self, ctx: &mut CoverLetterContext) -> Result<(), String> {
+        if !ctx.enable_research {
+            return Ok(());
+        }
+        use crate::pipeline::enrichment::Enricher;
+        ctx.emit("cover_letter:research:start", json!({}));
+        let result = CompanyResearch.enrich(&ctx.completer, &ctx.job_ad).await;
+        ctx.company = result.key;
+        ctx.brief = result.content;
+        ctx.emit(
+            "cover_letter:research:done",
+            json!({ "company": ctx.company, "briefLen": ctx.brief.len() }),
+        );
+        Ok(())
+    }
+}
+
+/// Phases 2–5 — build prompt, generate draft, validate, regenerate-if-needed,
+/// via the reusable [`retry::generate_validated`] loop.
+struct GenerateValidatedStage;
+
+#[async_trait]
+impl Stage<CoverLetterContext> for GenerateValidatedStage {
+    fn name(&self) -> &'static str {
+        "generate"
+    }
+    async fn run(&self, ctx: &mut CoverLetterContext) -> Result<(), String> {
+        let generator = CoverLetterDraftGenerator {
+            resume_summary: ctx.resume_summary.clone(),
+            job_ad: ctx.job_ad.clone(),
+            brief: ctx.brief.clone(),
+            mode: ctx.mode.clone(),
+            locale: ctx.locale.clone(),
+        };
+        let validator = if ctx.enable_leakage {
+            Some(LeakageValidator::new(ctx.resume.clone(), ctx.job_ad.clone()))
+        } else {
+            None
+        };
+        let validator_ref = validator.as_ref().map(|v| v as &dyn Validator);
+
+        let out = retry::generate_validated(
+            &ctx.completer,
+            RetryPolicy::new(3),
+            &generator,
+            validator_ref,
+        )
+        .await?;
+
+        ctx.draft = out.text;
+        ctx.leakage_verdict = out.report.map(|r| r.verdict);
+        ctx.retries = out.retries;
+        Ok(())
+    }
+}
+
+/// Builds the cover-letter prompt and runs one non-streaming generation attempt
+/// through the centralized provider. Validation needs the full text, so this is
+/// `complete()` (collect), not token streaming.
+struct CoverLetterDraftGenerator {
+    resume_summary: String,
+    job_ad: String,
+    brief: String,
+    mode: String,
+    locale: String,
+}
+
+#[async_trait]
+impl DraftGenerator for CoverLetterDraftGenerator {
+    async fn generate(&self, completer: &Completer, attempt: u8) -> Result<String, String> {
+        let _ = completer
+            .app()
+            .emit("cover_letter:generation:start", json!({ "attempt": attempt }));
+        let user = build_user_prompt(&self.resume_summary, &self.job_ad, &self.brief, &self.mode, &self.locale);
+        let raw = completer.complete(COVER_LETTER_SYSTEM, &user, Some(0.4)).await?;
+        let text = strip_think_blocks(&raw);
+        let _ = completer.app().emit(
+            "cover_letter:generation:done",
+            json!({ "attempt": attempt, "chars": text.len() }),
+        );
+        Ok(text)
     }
 }
 
@@ -175,162 +244,28 @@ pub async fn run_pipeline(
     app: AppHandle,
     req: CoverLetterRequest,
 ) -> Result<CoverLetterResponse, String> {
-    let enable_research = req.enable_research.unwrap_or(true);
-    let enable_leakage = req.enable_leakage_check.unwrap_or(true);
-    let mode = req.mode.as_deref().unwrap_or("recruiter");
-    let locale = req.locale.as_deref().unwrap_or("en");
-
-    // Build providers (gen-quality + fast for ancillary calls)
-    let (gen_llm, fast_llm) = resolve_provider(
-        &app,
-        req.provider.as_deref(),
-        req.model.as_deref(),
-        req.base_url.as_deref(),
-    )
-    .map_err(|e| {
-        tracing::error!("cover_letter: provider resolution failed: {e}");
-        e
-    })?;
-
-    let brave_key = app
-        .state::<Mutex<crate::credentials::CredentialStore>>()
-        .lock()
-        .get_decrypted("ai:brave")
-        .map(|(_, k)| k);
-
-    let cache = app.state::<CompanyBriefCache>();
-
-    // ── Phase 1: research + resume key-point extraction (concurrent) ──────────
-    emit(&app, "cover_letter:research:start", json!({}));
-
-    let resume_clone = req.resume.clone();
-    let job_ad_clone = req.job_ad.clone();
-    let cache_ref: &CompanyBriefCache = &cache;
-
-    let (research_result, resume_summary) = tokio::join!(
-        async {
-            if enable_research {
-                research::run(
-                    fast_llm.as_ref(),
-                    &job_ad_clone,
-                    cache_ref,
-                    brave_key.as_deref(),
-                )
-                .await
-            } else {
-                (String::new(), String::new())
-            }
-        },
-        tokio::task::spawn_blocking(move || extract_resume_summary(&resume_clone))
-    );
-
-    let (company, company_brief) = research_result;
-    let resume_summary = resume_summary.unwrap_or_else(|_| req.resume.clone());
-
-    emit(
-        &app,
-        "cover_letter:research:done",
-        json!({ "company": company, "briefLen": company_brief.len() }),
-    );
-
-    // ── Phase 2: generation (with up to 2 retries on leakage FAIL) ────────────
-    let mut retries: u8 = 0;
-    let mut text = String::new();
-    let mut leakage_verdict: Option<String> = None;
-
-    for attempt in 0..=2u8 {
-        emit(
-            &app,
-            "cover_letter:generation:start",
-            json!({ "attempt": attempt }),
-        );
-
-        let user_prompt = build_user_prompt(
-            &resume_summary,
-            &req.job_ad,
-            &company_brief,
-            mode,
-            locale,
-        );
-
-        text = gen_llm
-            .complete(COVER_LETTER_SYSTEM, &user_prompt)
-            .await
+    // Resolve the active provider + model through the centralized layer.
+    let completer =
+        Completer::resolve(&app, req.provider.as_deref(), req.model.as_deref(), req.base_url.clone())
             .map_err(|e| {
-                tracing::error!("cover_letter: generation failed (attempt {attempt}): {e}");
+                tracing::error!("cover_letter: provider resolution failed: {e}");
                 e
             })?;
 
-        // Strip any <think>...</think> blocks emitted by local reasoning models
-        text = strip_think_blocks(&text);
+    let mut ctx = CoverLetterContext::new(completer, &req);
 
-        emit(
-            &app,
-            "cover_letter:generation:done",
-            json!({ "attempt": attempt, "chars": text.len() }),
-        );
+    Pipeline::new("cover_letter")
+        .add(ResearchStage)
+        .add(GenerateValidatedStage)
+        .run(&mut ctx)
+        .await?;
 
-        if !enable_leakage {
-            break;
-        }
-
-        // ── Phase 3: leakage validation ────────────────────────────────────────
-        emit(
-            &app,
-            "cover_letter:validation:start",
-            json!({ "attempt": attempt }),
-        );
-
-        match leakage::validate(fast_llm.as_ref(), &req.resume, &req.job_ad, &text).await {
-            Ok(result) => {
-                let verdict = result.verdict.clone();
-                tracing::info!(
-                    attempt,
-                    verdict = %verdict,
-                    issues = result.issues.len(),
-                    "cover_letter: validation complete"
-                );
-                emit(
-                    &app,
-                    "cover_letter:validation:done",
-                    json!({ "attempt": attempt, "verdict": verdict, "issues": result.issues.len() }),
-                );
-                leakage_verdict = Some(verdict.clone());
-
-                if verdict == "PASS" || attempt == 2 {
-                    break;
-                }
-                retries += 1;
-            }
-            Err(e) => {
-                tracing::warn!("cover_letter: validation error (non-fatal): {e}");
-                emit(
-                    &app,
-                    "cover_letter:validation:done",
-                    json!({ "attempt": attempt, "verdict": "SKIPPED", "error": e }),
-                );
-                leakage_verdict = Some("SKIPPED".to_string());
-                break;
-            }
-        }
-    }
-
-    Ok(CoverLetterResponse {
-        text,
-        company_brief: if company_brief.is_empty() {
-            None
-        } else {
-            Some(company_brief)
-        },
-        leakage_verdict,
-        retries,
-    })
+    Ok(ctx.into_response())
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Lightweight resume summariser: strips markdown, truncates to 4000 chars.
-/// Runs in a blocking thread since it's pure CPU work.
 fn extract_resume_summary(resume: &str) -> String {
     let cleaned = resume
         .lines()

@@ -49,7 +49,8 @@ export function ModelSelector({ className }: ModelSelectorProps) {
   const geminiModels = useListProviderModels('gemini', providerStatus.gemini);
   const compatModels = useListProviderModels(
     'openai-compatible',
-    providerStatus['openai-compatible']
+    providerStatus['openai-compatible'],
+    providerConfig?.providers?.['openai-compatible']?.baseUrl
   );
 
   // Build grouped options with sections
