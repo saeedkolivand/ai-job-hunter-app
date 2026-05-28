@@ -1,17 +1,16 @@
 import { AnimatePresence } from 'motion/react';
 
-import { Button, GlassCard } from '@ajh/ui';
+import { GlassCard } from '@ajh/ui';
 
 import { ActivityRow } from '@/features/monitoring/components/ActivityRow';
 import type { ActivityItem } from '@/features/monitoring/types';
 
 interface Props {
   activity: ActivityItem[];
-  onClear: () => void;
   t: (key: string) => string;
 }
 
-export function ActivityFeedSection({ activity, onClear, t }: Props) {
+export function ActivityFeedSection({ activity, t }: Props) {
   return (
     <GlassCard tone="graphite" highlight className="col-span-3">
       <div className="mb-3 flex items-center justify-between">
@@ -21,16 +20,6 @@ export function ActivityFeedSection({ activity, onClear, t }: Props) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {activity.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onClear}
-              className="text-[10px] text-foreground/30 hover:text-foreground/60 h-auto py-1"
-            >
-              {t('monitoring.actions.clear')}
-            </Button>
-          )}
           <span className="flex items-center gap-1.5 text-[10px] text-emerald-300/85">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
             {t('monitoring.actions.live')}

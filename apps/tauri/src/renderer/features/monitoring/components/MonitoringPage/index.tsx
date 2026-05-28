@@ -50,7 +50,7 @@ export function MonitoringPage() {
   const allJobs = useMemo(() => (allJobsData ?? []) as JobRecord[], [allJobsData]);
 
   const { activeJobs, counters, successRate } = useJobMetrics(allJobs);
-  const { activity, setLiveActivity } = useActivityFeed(allJobs, KIND_LABEL_MAP);
+  const { activity } = useActivityFeed(allJobs, KIND_LABEL_MAP);
 
   const last24h = useMemo(() => {
     const bins = Array.from({ length: 24 }, () => 0);
@@ -134,7 +134,7 @@ export function MonitoringPage() {
 
         <div className="grid grid-cols-5 gap-4">
           <ActiveJobsSection activeJobs={activeJobs} kindLabel={KIND_LABEL_MAP} t={t} />
-          <ActivityFeedSection activity={activity} onClear={() => setLiveActivity([])} t={t} />
+          <ActivityFeedSection activity={activity} t={t} />
         </div>
 
         <GlassCard tone="graphite" highlight>
