@@ -4,6 +4,13 @@ import type { AiStreamChunk } from '../../types/index.js';
 export interface AiContract {
   generate(req: AiGenerateRequest): Promise<{ jobId: string }>;
 
+  /**
+   * Stream a generation through the backend orchestration pipeline. Same wire
+   * shape as `generate`, but the work runs as a composable `Pipeline` (so feature
+   * generators share one lifecycle). Used by resume/cover-letter generation.
+   */
+  generatePipeline(req: AiGenerateRequest): Promise<{ jobId: string }>;
+
   onStream(handler: (chunk: AiStreamChunk) => void): () => void;
 
   listModels(): Promise<Array<{ name: string }>>;

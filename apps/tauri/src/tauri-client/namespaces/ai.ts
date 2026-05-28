@@ -8,6 +8,7 @@ import { asyncUnsub } from '../utils.js';
 
 export const ai = {
   generate: (req: AiGenerateRequest) => invoke('ai_generate', { req }),
+  generatePipeline: (req: AiGenerateRequest) => invoke('generate_pipeline', { req }),
   listModels: () => invoke('ai_list_models'),
   pullModel: (model: string) => invoke('ai_pull_model', { model }),
   unloadModel: (model: string) => invoke('ai_unload_model', { model }),

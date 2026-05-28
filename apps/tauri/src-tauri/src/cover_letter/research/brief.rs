@@ -1,5 +1,5 @@
 use crate::cover_letter::research::search::SearchResult;
-use crate::cover_letter::Completer;
+use crate::pipeline::Completer;
 
 const SYSTEM: &str = "\
 You are a company research assistant. \
@@ -34,5 +34,5 @@ pub async fn synthesise(
          Be precise — do not invent facts not present in the snippets."
     );
 
-    llm.complete(SYSTEM, &user).await
+    llm.complete(SYSTEM, &user, Some(0.2)).await
 }

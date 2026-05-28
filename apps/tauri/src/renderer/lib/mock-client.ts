@@ -55,6 +55,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
 
     ai: {
       generate: noop,
+      generatePipeline: noop,
       listModels: emptyList,
       pullModel: noop,
       unloadModel: noop,

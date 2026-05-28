@@ -2,80 +2,95 @@ pub mod brief;
 pub mod extractor;
 pub mod search;
 
-use super::cache::CompanyBriefCache;
-use super::Completer;
+use std::time::Duration;
 
-/// Full research pipeline: extract → cache-check → search → brief → cache-store.
-///
-/// Returns `(company_name, brief_text)`. The brief is empty when research is
-/// skipped (no Brave key, company name could not be extracted, or search fails).
-/// The caller treats an empty brief as graceful degradation — generation still
-/// proceeds without the extra context.
-pub async fn run(
-    llm: &Completer,
-    job_ad: &str,
-    cache: &CompanyBriefCache,
-    brave_key: Option<&str>,
-) -> (String, String) {
-    let meta = extractor::extract(job_ad);
-    let company = meta.company.clone();
+use async_trait::async_trait;
+use parking_lot::Mutex;
+use tauri::Manager;
 
-    if company.is_empty() {
-        tracing::debug!("research: could not extract company name from job ad");
-        return (String::new(), String::new());
+use crate::pipeline::cache::KvCache;
+use crate::pipeline::enrichment::{Enricher, EnrichmentResult};
+use crate::pipeline::Completer;
+
+const CACHE_NS: &str = "company_brief";
+const TTL_SECS: i64 = 7 * 24 * 3600;
+
+/// Company-research enricher: extract company → cache check → Brave search →
+/// brief synthesis (via the centralized provider) → cache store. Degrades
+/// gracefully — any missing key/failure yields an empty brief, never an error,
+/// so generation still proceeds.
+pub struct CompanyResearch;
+
+#[async_trait]
+impl Enricher for CompanyResearch {
+    async fn enrich(&self, completer: &Completer, input: &str) -> EnrichmentResult {
+        let meta = extractor::extract(input);
+        let company = meta.company.clone();
+        if company.is_empty() {
+            tracing::debug!("research: could not extract company name from job ad");
+            return EnrichmentResult::empty();
+        }
+
+        let app = completer.app();
+
+        // Fast path: cached brief younger than the TTL.
+        if let Some(cache) = app.try_state::<KvCache>() {
+            if let Some(brief) = cache.get(CACHE_NS, &company, TTL_SECS) {
+                tracing::debug!(company = %company, "research: cache hit");
+                return EnrichmentResult { key: company, content: brief };
+            }
+        }
+
+        // Need a Brave key to search.
+        let brave_key = app
+            .try_state::<Mutex<crate::credentials::CredentialStore>>()
+            .and_then(|store| store.lock().get_decrypted("ai:brave").map(|(_, k)| k));
+        let key = match brave_key {
+            Some(k) if !k.is_empty() => k,
+            _ => {
+                tracing::debug!(company = %company, "research: no brave key, skipping search");
+                return EnrichmentResult { key: company, content: String::new() };
+            }
+        };
+
+        let http = match reqwest::Client::builder()
+            .use_rustls_tls()
+            .timeout(Duration::from_secs(10))
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("research: http client build failed: {e}");
+                return EnrichmentResult { key: company, content: String::new() };
+            }
+        };
+
+        let query = format!(
+            "{} company overview site:linkedin.com OR crunchbase.com OR bloomberg.com",
+            company
+        );
+        let results = match search::brave_search(&http, &key, &query, 5).await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("research: search failed for {company}: {e}");
+                return EnrichmentResult { key: company, content: String::new() };
+            }
+        };
+
+        let brief = match brief::synthesise(completer, &company, &meta.role, &results).await {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::warn!("research: brief synthesis failed for {company}: {e}");
+                return EnrichmentResult { key: company, content: String::new() };
+            }
+        };
+
+        if !brief.is_empty() {
+            if let Some(cache) = app.try_state::<KvCache>() {
+                cache.set(CACHE_NS, &company, &brief);
+            }
+        }
+
+        EnrichmentResult { key: company, content: brief }
     }
-
-    // Fast path: return cached brief if available
-    if let Some(cached) = cache.get(&company) {
-        tracing::debug!(company = %company, "research: cache hit");
-        return (company, cached);
-    }
-
-    // Need a Brave key to search
-    let key = match brave_key {
-        Some(k) if !k.is_empty() => k,
-        _ => {
-            tracing::debug!(company = %company, "research: no brave key, skipping search");
-            return (company, String::new());
-        }
-    };
-
-    let http = match reqwest::Client::builder()
-        .use_rustls_tls()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!("research: http client build failed: {e}");
-            return (company, String::new());
-        }
-    };
-
-    let query = format!("{} company overview site:linkedin.com OR crunchbase.com OR {}",
-        company,
-        // Fallback to a broad query if domain unknown
-        "bloomberg.com");
-
-    let results = match search::brave_search(&http, key, &query, 5).await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!("research: search failed for {company}: {e}");
-            return (company, String::new());
-        }
-    };
-
-    let brief = match brief::synthesise(llm, &company, &meta.role, &results).await {
-        Ok(b) => b,
-        Err(e) => {
-            tracing::warn!("research: brief synthesis failed for {company}: {e}");
-            return (company, String::new());
-        }
-    };
-
-    if !brief.is_empty() {
-        cache.set(&company, &brief);
-    }
-
-    (company, brief)
 }

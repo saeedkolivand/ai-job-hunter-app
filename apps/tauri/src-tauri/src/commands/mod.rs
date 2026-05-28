@@ -6,6 +6,7 @@ pub mod data;
 pub mod system;
 pub mod ai;
 pub mod ai_provider;
+pub mod pipeline;
 pub mod scrape;
 pub mod apply;
 pub mod autopilot;

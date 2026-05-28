@@ -33,6 +33,7 @@ mod export;
 mod ipc_contracts;
 mod job_preferences;
 mod jobs;
+mod pipeline;
 mod platform;
 mod postings;
 mod profile_import;
@@ -191,9 +192,9 @@ fn main() {
             } else {
                 log::warn!("[setup] conversation db failed to open (non-fatal)");
             }
-            match cover_letter::cache::CompanyBriefCache::open(&data_dir) {
+            match pipeline::cache::KvCache::open(&data_dir) {
                 Ok(cache) => { app.manage(cache); }
-                Err(e) => log::warn!("[setup] company brief cache failed to open (non-fatal): {e}"),
+                Err(e) => log::warn!("[setup] pipeline cache failed to open (non-fatal): {e}"),
             }
 
             // Build and set the application menu.
@@ -260,6 +261,7 @@ fn main() {
             commands::ai::ai_embedding_status,
             commands::ai::ai_set_embedding_config,
             commands::ai::ai_reembed_all,
+            commands::pipeline::generate_pipeline,
             // resume extraction
             extraction::extract_resume,
             // documents
