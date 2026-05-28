@@ -18,6 +18,9 @@ use serde_json::Value;
 #[derive(Default)]
 pub struct PostingsCache {
     items: Vec<Value>,
+    /// Embedding cache keyed by posting id, populated lazily by hybrid search so
+    /// repeat searches over the same live postings don't re-embed.
+    embeddings: HashMap<String, Vec<f64>>,
 }
 
 impl PostingsCache {
@@ -32,6 +35,15 @@ impl PostingsCache {
 
     pub fn clear_all(&mut self) {
         self.items.clear();
+        self.embeddings.clear();
+    }
+
+    pub fn get_embedding(&self, id: &str) -> Option<Vec<f64>> {
+        self.embeddings.get(id).cloned()
+    }
+
+    pub fn set_embedding(&mut self, id: String, vector: Vec<f64>) {
+        self.embeddings.insert(id, vector);
     }
 }
 
