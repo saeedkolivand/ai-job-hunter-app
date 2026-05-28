@@ -18,20 +18,21 @@ Last updated: 2026-05-28
 
 ## Infrastructure
 
-| Component                        | Status | Notes                        |
-| -------------------------------- | ------ | ---------------------------- |
-| Tauri 2.x shell                  | ✅     | Window, tray, menus, IPC     |
-| pnpm monorepo + Turbo            | ✅     | All packages wired           |
-| TypeScript 6 across all packages | ✅     | Strict mode enabled          |
-| Vite + HMR for renderer          | ✅     |                              |
-| TanStack Router (file-based)     | ✅     | All 9 routes                 |
-| TanStack Query + service hooks   | ✅     | All 21 namespaces            |
-| Zustand stores                   | ✅     | preferences-store, others    |
-| AppClient / mock transport       | ✅     | Tauri + mock implementations |
-| ESLint + Prettier                | ✅     | Enforced in CI               |
-| Husky + commitlint               | ✅     | Pre-commit hooks             |
-| Semantic release pipeline        | ✅     | Auto-versioning on main      |
-| Auto-updater                     | ✅     | GitHub Releases integration  |
+| Component                        | Status | Notes                                                              |
+| -------------------------------- | ------ | ------------------------------------------------------------------ |
+| Tauri 2.x shell                  | ✅     | Window, tray, menus, IPC                                           |
+| pnpm monorepo + Turbo            | ✅     | All packages wired                                                 |
+| TypeScript 6 across all packages | ✅     | Strict mode enabled                                                |
+| Vite + HMR for renderer          | ✅     |                                                                    |
+| TanStack Router (file-based)     | ✅     | All 9 routes                                                       |
+| TanStack Query + service hooks   | ✅     | All 21 namespaces                                                  |
+| Zustand stores                   | ✅     | preferences-store, others                                          |
+| AppClient / mock transport       | ✅     | Tauri + mock implementations                                       |
+| ESLint + Prettier                | ✅     | Enforced in CI                                                     |
+| Husky + commitlint               | ✅     | Pre-commit hooks                                                   |
+| Semantic release pipeline        | ✅     | Auto-versioning on main                                            |
+| Auto-updater                     | ✅     | GitHub Releases integration                                        |
+| Data backup / restore            | ✅     | `DataStore` trait → full export/import bundle (Settings → Privacy) |
 
 ---
 
@@ -146,13 +147,14 @@ former `packages/ai` and `packages/data` Node packages were removed.
 
 ## Planned / Backlog
 
-| Feature                                 | Priority | Notes                                                    |
-| --------------------------------------- | -------- | -------------------------------------------------------- |
-| URL-to-job-ad extraction in AI Generate | Medium   | `scrape.url` IPC contract exists; UI input not yet wired |
-| LinkedIn official API integration       | Medium   | Currently Playwright-only                                |
-| Browser extension (quick apply)         | Low      |                                                          |
-| Advanced skill taxonomy                 | Medium   | Structured ontology for matching                         |
-| Salary negotiation assistant            | Low      |                                                          |
-| Team/shared job tracking                | Low      | Would require cloud sync                                 |
-| Interview preparation AI                | Medium   | Mock interview Q&A                                       |
-| Application analytics dashboard         | Medium   | Track apply→response rates                               |
+| Feature                                 | Priority | Notes                                                                                      |
+| --------------------------------------- | -------- | ------------------------------------------------------------------------------------------ |
+| URL-to-job-ad extraction in AI Generate | Medium   | `scrape.url` IPC contract exists; UI input not yet wired                                   |
+| LinkedIn official API integration       | Medium   | Currently Playwright-only                                                                  |
+| Browser extension (quick apply)         | Low      |                                                                                            |
+| Advanced skill taxonomy                 | Medium   | Structured ontology for matching                                                           |
+| Salary negotiation assistant            | Low      |                                                                                            |
+| Cloud sync                              | Low      | Deferred — needs a remote backend; the backup bundle + `DataStore` trait are the substrate |
+| Team/shared job tracking                | Low      | Would require cloud sync                                                                   |
+| Interview preparation AI                | Medium   | Mock interview Q&A                                                                         |
+| Application analytics dashboard         | Medium   | Track apply→response rates                                                                 |
