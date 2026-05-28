@@ -72,7 +72,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           HUSKY: 0
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
 
       - name: 📝 Release Summary
         if: always()
@@ -133,8 +132,6 @@ jobs:
           cache: pnpm
 
       - name: 🔖 Sync Version Files
-        env:
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
         run: |
           echo "::group::Syncing tracked version files"
           node scripts/sync-tauri-version.cjs ${{ needs.release.outputs.version }}
@@ -230,16 +227,9 @@ jobs:
           echo "::endgroup::"
 
       - name: 🔖 Sync Release Version
-        env:
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
         run: |
           echo "::group::Syncing Tauri release metadata"
           node scripts/sync-tauri-version.cjs ${{ needs.sync-version-files.outputs.version }}
-          echo "::endgroup::"
-
-          echo "::group::Verifying public key"
-          echo "Public key configured in tauri.conf.json:"
-          cat apps/tauri/src-tauri/tauri.conf.json | grep -A 1 '"pubkey"'
           echo "::endgroup::"
 
       - name: 🔨 Build Workspace
@@ -288,6 +278,17 @@ jobs:
           echo "::error::Tauri build failed on ${{ matrix.platform }}. Please review the build output above."
           exit 1
 
+      - name: 🔐 Verify Updater Signing Key
+        if: steps.tauri-build.outcome == 'success'
+        shell: bash
+        run: |
+          echo "::group::Verifying updater signature key matches committed pubkey"
+          # Fails the build if artifacts were signed with a key that does not
+          # match the pubkey shipped in the app — which would break the
+          # auto-updater for every user. See docs/DEPLOYMENT.md (Updater signing keys).
+          node scripts/verify-updater-key.cjs
+          echo "::endgroup::"
+
       - name: 🏷️ Normalize Artifact Names
         if: success()
         shell: bash
@@ -310,20 +311,35 @@ jobs:
           fi
           echo "::endgroup::"
 
-      - name: 🏷️ Disambiguate macOS DMG Architecture
+      - name: 🏷️ Disambiguate macOS Artifact Architecture
         if: runner.os == 'macOS' && success()
         shell: bash
         run: |
-          echo "::group::Tagging macOS DMGs with architecture suffix"
+          echo "::group::Tagging macOS artifacts with architecture suffix"
           shopt -s nullglob
-          for f in apps/tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg; do
-            mv "$f" "${f%.dmg}-intel.dmg"
-            echo "Renamed (intel): $(basename "$f")"
-          done
-          for f in apps/tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg; do
-            mv "$f" "${f%.dmg}-apple-silicon.dmg"
-            echo "Renamed (apple-silicon): $(basename "$f")"
-          done
+          # Both arch builds emit identically named .app.tar.gz / .dmg files.
+          # Uploading two assets with the same name to one release races in the
+          # upload action and intermittently fails the job. Suffix every macOS
+          # artifact (and its updater .sig) with its architecture so names are
+          # unique and latest.json can serve the correct binary per arch.
+          tag_macos_artifacts() {
+            local triple="$1" suffix="$2" base
+            base="apps/tauri/src-tauri/target/${triple}/release/bundle"
+            for f in "${base}"/dmg/*.dmg; do
+              mv "$f" "${f%.dmg}-${suffix}.dmg"
+              echo "Renamed (${suffix}): $(basename "$f")"
+            done
+            for f in "${base}"/macos/*.app.tar.gz; do
+              mv "$f" "${f%.app.tar.gz}-${suffix}.app.tar.gz"
+              echo "Renamed (${suffix}): $(basename "$f")"
+            done
+            for f in "${base}"/macos/*.app.tar.gz.sig; do
+              mv "$f" "${f%.app.tar.gz.sig}-${suffix}.app.tar.gz.sig"
+              echo "Renamed (${suffix}): $(basename "$f")"
+            done
+          }
+          tag_macos_artifacts x86_64-apple-darwin intel
+          tag_macos_artifacts aarch64-apple-darwin apple-silicon
           echo "::endgroup::"
 
       - name: Upload Release Assets
@@ -478,18 +494,30 @@ jobs:
             echo "::warning::Linux AppImage signature not found at $APPIMAGE_SIG"
           fi
 
-          # macOS (single .app.tar.gz served for both architectures)
-          MAC_SIG="temp/AI-Job-Hunter-Assistant.app.tar.gz.sig"
-          if [ -f "$MAC_SIG" ]; then
-            SIG=$(tr -d '\n' < "$MAC_SIG")
-            for triple in darwin-x86_64 darwin-aarch64; do
-              echo "    \"$triple\": {" >> latest.json
-              echo "      \"signature\": \"$SIG\"," >> latest.json
-              echo "      \"url\": \"${BASE_URL}/AI-Job-Hunter-Assistant.app.tar.gz\"" >> latest.json
-              echo '    },' >> latest.json
-            done
+          # macOS — arch-specific .app.tar.gz bundles. Each arch build produces
+          # its own (non-universal) bundle, so each updater target must point at
+          # the matching file + signature. Names come from the macOS
+          # disambiguation step in the build job (-intel / -apple-silicon).
+          MAC_INTEL_SIG="temp/AI-Job-Hunter-Assistant-intel.app.tar.gz.sig"
+          if [ -f "$MAC_INTEL_SIG" ]; then
+            SIG=$(tr -d '\n' < "$MAC_INTEL_SIG")
+            echo '    "darwin-x86_64": {' >> latest.json
+            echo "      \"signature\": \"$SIG\"," >> latest.json
+            echo "      \"url\": \"${BASE_URL}/AI-Job-Hunter-Assistant-intel.app.tar.gz\"" >> latest.json
+            echo '    },' >> latest.json
           else
-            echo "::warning::macOS app bundle signature not found at $MAC_SIG"
+            echo "::warning::macOS Intel app bundle signature not found at $MAC_INTEL_SIG"
+          fi
+
+          MAC_ARM_SIG="temp/AI-Job-Hunter-Assistant-apple-silicon.app.tar.gz.sig"
+          if [ -f "$MAC_ARM_SIG" ]; then
+            SIG=$(tr -d '\n' < "$MAC_ARM_SIG")
+            echo '    "darwin-aarch64": {' >> latest.json
+            echo "      \"signature\": \"$SIG\"," >> latest.json
+            echo "      \"url\": \"${BASE_URL}/AI-Job-Hunter-Assistant-apple-silicon.app.tar.gz\"" >> latest.json
+            echo '    },' >> latest.json
+          else
+            echo "::warning::macOS Apple Silicon app bundle signature not found at $MAC_ARM_SIG"
           fi
 
           # Close JSON (remove trailing comma and close)
