@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-05-26
+Last updated: 2026-05-28
 
 ---
 
@@ -35,37 +35,16 @@ Last updated: 2026-05-26
 
 ---
 
-## AI Runtime (`packages/ai`)
+## AI & Data (Rust core)
 
-| Feature                       | Status | Notes                                 |
-| ----------------------------- | ------ | ------------------------------------- |
-| Ollama chat (streaming)       | ✅     | SSE chunks via undici                 |
-| Ollama embeddings             | ✅     | Batch vectorization                   |
-| Ollama model pull             | ✅     | Progress events                       |
-| OpenAI provider               | ✅     | GPT-4o, GPT-4-turbo, GPT-3.5          |
-| Anthropic provider            | ✅     | Claude 3.5 Sonnet + extended thinking |
-| Google Gemini provider        | ✅     |                                       |
-| OpenAI-compatible (LM Studio) | ✅     |                                       |
-| Model registry per provider   | ✅     |                                       |
-| Provider health check         | ✅     |                                       |
+AI generation (`commands/ai_provider.rs`) and data/document handling
+(`documents/`, `jobs/`, SQLite via `rusqlite`) now live in the Rust core; the
+former `packages/ai` and `packages/data` Node packages were removed.
 
----
-
-## Data Runtime (`packages/data`)
-
-| Feature                       | Status | Notes                               |
-| ----------------------------- | ------ | ----------------------------------- |
-| SQLite schema (Drizzle)       | ✅     | jobs, documents, interactions, etc. |
-| LanceDB vector store          | ✅     | 4 collections                       |
-| Document import (PDF)         | ✅     | pdfjs-dist                          |
-| Document import (DOCX)        | ✅     | mammoth                             |
-| Document import (TXT/MD)      | ✅     |                                     |
-| Document import (image / OCR) | ✅     | Tesseract.js web worker             |
-| Text chunking worker          | ✅     | Sliding window splitting            |
-| Batch embedding worker        | ✅     | Ollama batch API                    |
-| Hybrid search                 | ✅     | LanceDB ANN + SQL filter            |
-| Resume-job matcher            | ✅     | Semantic + ATS scoring              |
-| Job interactions tracking     | ✅     | viewed, applied, bookmarked         |
+> ⚠️ This feature matrix previously tracked the deleted Node packages and has
+> not been re-audited against the Rust implementation. Some features that were
+> ✅ in TypeScript (notably hybrid search and the resume-job matcher) are
+> currently stubs in Rust — verify against the code before relying on this.
 
 ---
 

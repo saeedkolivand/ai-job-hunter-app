@@ -128,7 +128,6 @@ apps/
     src/
       tauri-client.ts   ← Tauri invoke/listen wiring
       renderer/         ← React app (routes, features, services, stores)
-  scraper-runtime/      ← Node.js HTTP sidecar
 
 packages/
   shared/               ← IPC contracts + Zod schemas + shared types

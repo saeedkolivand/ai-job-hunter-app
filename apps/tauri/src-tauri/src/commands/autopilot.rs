@@ -9,6 +9,10 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio_util::sync::CancellationToken;
 
+// AutopilotCreateRequest / AutopilotUpdateRequest are generated from the Zod
+// schemas in packages/shared by `pnpm gen:ipc`.
+pub use crate::ipc_contracts::autopilot::{AutopilotCreateRequest, AutopilotUpdateRequest};
+
 fn uuid_v4() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let t = SystemTime::now()
@@ -35,14 +39,14 @@ pub fn autopilot_get(app: AppHandle, autopilot_id: String) -> Value {
 }
 
 #[tauri::command]
-pub fn autopilot_create(app: AppHandle, req: Value) -> Value {
-    let ap = store(&app).lock().create(req);
+pub fn autopilot_create(app: AppHandle, req: AutopilotCreateRequest) -> Value {
+    let ap = store(&app).lock().create(serde_json::to_value(&req).unwrap_or_default());
     json!(ap)
 }
 
 #[tauri::command]
-pub fn autopilot_update(app: AppHandle, autopilot_id: String, req: Value) -> Value {
-    let ap = store(&app).lock().update(&autopilot_id, req);
+pub fn autopilot_update(app: AppHandle, autopilot_id: String, req: AutopilotUpdateRequest) -> Value {
+    let ap = store(&app).lock().update(&autopilot_id, serde_json::to_value(&req).unwrap_or_default());
     json!(ap)
 }
 
@@ -125,12 +129,13 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
             &format!("[{}/{}] Applying to {} (score {score})", i + 1, candidates.len(), posting.title),
         );
 
-        let apply_req = json!({
-            "board": target.board,
-            "url": posting.url,
-            "coverLetter": autopilot.cover_letter,
-            "autoSubmit": autopilot.auto_submit,
-        });
+        let apply_req = crate::ipc_contracts::apply::ApplyStartRequest {
+            board: target.board.clone(),
+            url: posting.url.clone(),
+            cover_letter: autopilot.cover_letter.clone(),
+            resume_path: None,
+            auto_submit: Some(autopilot.auto_submit),
+        };
         let apply_result = crate::commands::apply::apply_start(app.clone(), apply_req).await;
 
         let ok = apply_result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);

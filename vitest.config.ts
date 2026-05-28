@@ -27,8 +27,6 @@ export default defineConfig({
   resolve: {
     alias: {
       '@ajh/shared': resolve('./packages/shared/src/index.ts'),
-      '@ajh/core': resolve('./packages/core/src/index.ts'),
-      '@ajh/ai': resolve('./packages/ai/src/index.ts'),
     },
   },
 });

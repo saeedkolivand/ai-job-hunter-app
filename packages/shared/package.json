@@ -39,13 +39,16 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "gen:ipc": "tsx scripts/gen-ipc-rust.ts",
+    "gen:ipc:check": "tsx scripts/gen-ipc-rust.ts --check"
   },
   "dependencies": {
     "franc": "^6.2.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "tsx": "^4.22.3",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
   }

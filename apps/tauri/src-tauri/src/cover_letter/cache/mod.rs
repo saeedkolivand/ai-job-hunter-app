@@ -4,6 +4,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
 
+use crate::db::{run_migrations, Migration};
+
 const TTL_SECS: i64 = 7 * 24 * 3600;
 
 pub struct CompanyBriefCache {
@@ -11,18 +13,24 @@ pub struct CompanyBriefCache {
 }
 
 impl CompanyBriefCache {
+    const MIGRATIONS: &'static [Migration] = &[Migration {
+        name: "create_company_briefs",
+        up: |conn| {
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS company_briefs (
+                    company    TEXT NOT NULL COLLATE NOCASE,
+                    brief      TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    PRIMARY KEY (company)
+                );",
+            )
+        },
+    }];
+
     pub fn open(data_dir: &Path) -> Result<Self, String> {
         let path = data_dir.join("company_briefs.db");
         let conn = Connection::open(&path).map_err(|e| format!("cache open: {e}"))?;
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS company_briefs (
-                company    TEXT NOT NULL COLLATE NOCASE,
-                brief      TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                PRIMARY KEY (company)
-            );",
-        )
-        .map_err(|e| format!("cache init: {e}"))?;
+        run_migrations(&conn, Self::MIGRATIONS)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })

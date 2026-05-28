@@ -14,7 +14,7 @@ This document covers every major architectural decision in the project — the r
 
 > "The app is a local-first desktop application built on Tauri 2. Tauri uses a Rust backend as the process host and a Chromium WebView for the React frontend. Those two halves communicate over a typed IPC layer — I defined 21 typed contract namespaces in a shared package so there's no drift between what the frontend calls and what Rust implements.
 >
-> The heavier work — scraping, OCR, embeddings — runs in a Node.js sidecar process so it doesn't block Tauri's async runtime. The sidecar has its own runtime manager, a typed pub/sub event bus, and a job queue with retry.
+> The heavier work — scraping, OCR, embeddings — runs natively in the Rust core. Long operations are spawned as background `tokio` tasks (tracked by a SQLite-backed job tracker with retry) so they don't block command handling. An earlier design ran this in a separate Node.js sidecar, but it was folded into Rust to drop a whole process and language from the runtime.
 >
 > On the frontend I used TanStack Router for file-based routing, TanStack Query for all server state, Zustand for client state, and a custom micro state machine for multi-step flows. All UI primitives come from a private `@ajh/ui` component library I built in the same monorepo, which enforces the design token system via ESLint rules.
 >
@@ -48,14 +48,13 @@ The app has clear, enforced package boundaries:
 packages/shared    ← IPC contracts, Zod schemas (no React, no Node)
 packages/ui        ← component library (no IPC, no state management)
 packages/prompts   ← AI prompt templates (pure TypeScript)
-packages/core      ← event bus, job queue, logger
-packages/ai        ← Ollama client, AI runtime
-packages/workers   ← Web Workers (OCR, embeddings)
 ```
+
+(The heavy work — scraping, AI, documents, embeddings — lives in the Rust core under `apps/tauri/src-tauri/`. Earlier Node packages for a sidecar runtime were removed once that work moved to Rust.)
 
 Each package has its own `tsconfig`, build step, and test suite. Turborepo's dependency graph means builds are incremental — if `packages/shared` hasn't changed, nothing that depends on it rebuilds. This keeps `pnpm build` fast even as the project grows.
 
-The key discipline: **ESLint hard-blocks cross-boundary imports**. The renderer can't import from `@ajh/core` or `@ajh/data`. This isn't just a convention — it's enforced at lint time and blocks commits.
+The key discipline: **ESLint hard-blocks cross-boundary imports** — e.g. `packages/shared` may not import React or Node APIs. This isn't just a convention — it's enforced at lint time and blocks commits.
 
 ---
 
@@ -362,9 +361,9 @@ The mock AppClient (`createMockClient()`) is the key enabler for testing UI in i
 
 ## 6. Performance Considerations
 
-### Web Workers for CPU-Intensive Work
+### Off-Thread CPU-Intensive Work
 
-OCR (Tesseract.js), text chunking, and batch embedding run in dedicated Web Workers via `packages/workers`. This keeps the main thread free for React rendering. A cancellation token pattern allows long-running workers to be interrupted mid-operation.
+OCR runs via Tesseract.js, which manages its own Web Worker in the renderer, so recognition never blocks the UI thread. Text chunking, embedding, and document extraction run in the Rust core as background `tokio` tasks, keeping both the renderer and command handling responsive.
 
 ### Performance Mode
 
@@ -461,21 +460,20 @@ This question shows maturity. Good answers for this project:
 
 ## 10. Quick-Reference: Technologies and Why
 
-| Technology           | Why                                                                                                           |
-| -------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **Tauri 2**          | Smaller binary than Electron; Rust backend; OS-native WebView                                                 |
-| **React 19**         | Concurrent features; first-class support in TanStack ecosystem                                                |
-| **TypeScript 6**     | `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` for maximum safety                                   |
-| **TanStack Router**  | File-based routing with full type safety on route params and search params                                    |
-| **TanStack Query**   | Eliminates `useEffect` data fetching; built-in caching, background refetch                                    |
-| **Zustand**          | Minimal boilerplate for simple client state; React 19 concurrent-safe                                         |
-| **TailwindCSS v4**   | CSS-first config with `@theme`; zero runtime                                                                  |
-| **motion/react**     | Framer Motion v11 rebranded; best-in-class animation performance                                              |
-| **Zod 4**            | Schema-first validation with zero-cost type inference                                                         |
-| **Pino**             | Fastest Node.js logger; structured JSON output for the scraper-runtime sidecar (Rust uses `tauri-plugin-log`) |
-| **Turborepo**        | Incremental monorepo builds with shared remote cache                                                          |
-| **Vitest**           | Fast, Vite-native test runner; no Jest config migration needed                                                |
-| **semantic-release** | Fully automated versioning driven by commit messages                                                          |
-| **parking_lot**      | Drop-in `std::sync::Mutex` replacement with no poisoning risk                                                 |
-| **LanceDB**          | Embedded vector DB with no server process; Rust-native                                                        |
-| **Tesseract.js**     | Client-side OCR in a Web Worker; no cloud API needed                                                          |
+| Technology           | Why                                                                         |
+| -------------------- | --------------------------------------------------------------------------- |
+| **Tauri 2**          | Smaller binary than Electron; Rust backend; OS-native WebView               |
+| **React 19**         | Concurrent features; first-class support in TanStack ecosystem              |
+| **TypeScript 6**     | `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` for maximum safety |
+| **TanStack Router**  | File-based routing with full type safety on route params and search params  |
+| **TanStack Query**   | Eliminates `useEffect` data fetching; built-in caching, background refetch  |
+| **Zustand**          | Minimal boilerplate for simple client state; React 19 concurrent-safe       |
+| **TailwindCSS v4**   | CSS-first config with `@theme`; zero runtime                                |
+| **motion/react**     | Framer Motion v11 rebranded; best-in-class animation performance            |
+| **Zod 4**            | Schema-first validation with zero-cost type inference                       |
+| **Turborepo**        | Incremental monorepo builds with shared remote cache                        |
+| **Vitest**           | Fast, Vite-native test runner; no Jest config migration needed              |
+| **semantic-release** | Fully automated versioning driven by commit messages                        |
+| **parking_lot**      | Drop-in `std::sync::Mutex` replacement with no poisoning risk               |
+| **LanceDB**          | Embedded vector DB with no server process; Rust-native                      |
+| **Tesseract.js**     | Client-side OCR in a Web Worker; no cloud API needed                        |
