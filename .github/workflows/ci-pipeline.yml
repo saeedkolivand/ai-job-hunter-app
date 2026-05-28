@@ -254,6 +254,9 @@ jobs:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
 
+      - name: 🏗️ Restore Package Build Outputs
+        run: pnpm build:packages
+
       - name: 🗺️ Generate Route Tree
         run: pnpm --filter @ajh/tauri build:frontend
 
