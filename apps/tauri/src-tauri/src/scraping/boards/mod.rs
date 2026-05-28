@@ -39,3 +39,42 @@ pub use wwr::WeWorkRemotelyScraper;
 pub use workday::WorkdayScraper;
 pub use xing::XingScraper;
 pub use ycombinator::YCombinatorScraper;
+
+use super::types::Scraper;
+
+/// Every scraper, registered exactly once — in catalog display order. Both
+/// dispatch ([`get`]) and the UI catalog ([`all`] → `ScraperEngine::catalog`)
+/// derive from this list via the `Scraper` trait, so adding a board is one
+/// implementation module + one line here (no parallel match or hardcoded array).
+static SCRAPERS: &[&dyn Scraper] = &[
+    &YCombinatorScraper,
+    &RemotiveScraper,
+    &RemoteOkScraper,
+    &WeWorkRemotelyScraper,
+    &ArbeitnowScraper,
+    &BerlinStartupJobsScraper,
+    &GermanTechJobsScraper,
+    &GreenhouseScraper,
+    &LeverScraper,
+    &StepStoneScraper,
+    &SmartRecruitersScraper,
+    &PersonioScraper,
+    &RecruiteeScraper,
+    &WorkdayScraper,
+    &AshbyScraper,
+    &ArbeitsagenturScraper,
+    &LinkedInScraper,
+    &IndeedScraper,
+    &XingScraper,
+    &GlassdoorScraper,
+];
+
+/// All registered scrapers, in catalog display order.
+pub fn all() -> &'static [&'static dyn Scraper] {
+    SCRAPERS
+}
+
+/// Resolve a scraper by its `id()`. `None` for an unknown board.
+pub fn get(id: &str) -> Option<&'static dyn Scraper> {
+    SCRAPERS.iter().copied().find(|s| s.id() == id)
+}

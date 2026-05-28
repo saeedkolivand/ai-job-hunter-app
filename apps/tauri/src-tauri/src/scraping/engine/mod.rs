@@ -3,8 +3,7 @@
 /// Uses interior mutability so `Arc<ScraperEngine>` can be cloned into Tauri
 /// commands and scrape jobs run concurrently (bounded by `semaphore`) without
 /// serializing on an outer mutex.
-use super::boards::*;
-use super::types::{BoardSearchInput, JobPosting, Scraper, ScrapeContext};
+use super::types::{BoardSearchInput, JobPosting, ScraperMode, ScrapeContext};
 use arc_swap::ArcSwap;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -43,33 +42,16 @@ impl ScraperEngine {
     }
 
     pub fn catalog(&self) -> Vec<ScraperCatalogEntry> {
-        const ROWS: &[(&str, &str, &str)] = &[
-            ("ycombinator", "Y Combinator", "http"),
-            ("remotive", "Remotive", "http"),
-            ("remoteok", "RemoteOK", "http"),
-            ("wwr", "We Work Remotely", "http"),
-            ("arbeitnow", "Arbeitnow", "http"),
-            ("berlinstartupjobs", "Berlin Startup Jobs", "http"),
-            ("germantechjobs", "German Tech Jobs", "http"),
-            ("greenhouse", "Greenhouse", "http"),
-            ("lever", "Lever", "http"),
-            ("stepstone", "StepStone", "http"),
-            ("smartrecruiters", "SmartRecruiters", "http"),
-            ("personio", "Personio", "http"),
-            ("recruitee", "Recruitee", "http"),
-            ("workday", "Workday", "http"),
-            ("ashby", "Ashby", "http"),
-            ("arbeitsagentur", "Arbeitsagentur", "http"),
-            ("linkedin", "LinkedIn", "http"),
-            ("indeed", "Indeed", "browser"),
-            ("xing", "Xing", "browser"),
-            ("glassdoor", "Glassdoor", "browser"),
-        ];
-        ROWS.iter()
-            .map(|(id, name, mode)| ScraperCatalogEntry {
-                id: (*id).to_string(),
-                display_name: (*name).to_string(),
-                mode: (*mode).to_string(),
+        super::boards::all()
+            .iter()
+            .map(|s| ScraperCatalogEntry {
+                id: s.id().to_string(),
+                display_name: s.display_name().to_string(),
+                mode: match s.mode() {
+                    ScraperMode::Http => "http",
+                    ScraperMode::Browser => "browser",
+                }
+                .to_string(),
             })
             .collect()
     }
@@ -112,28 +94,9 @@ impl ScraperEngine {
         };
 
         let span = crate::observability::Span::begin("scrape", format!("board={board} job={job_id}"));
-        let result = match board {
-            "ycombinator" => Scraper::search(&YCombinatorScraper, input, ctx).await,
-            "remotive" => Scraper::search(&RemotiveScraper, input, ctx).await,
-            "remoteok" => Scraper::search(&RemoteOkScraper, input, ctx).await,
-            "wwr" => Scraper::search(&WeWorkRemotelyScraper, input, ctx).await,
-            "arbeitnow" => Scraper::search(&ArbeitnowScraper, input, ctx).await,
-            "berlinstartupjobs" => Scraper::search(&BerlinStartupJobsScraper, input, ctx).await,
-            "germantechjobs" => Scraper::search(&GermanTechJobsScraper, input, ctx).await,
-            "greenhouse" => Scraper::search(&GreenhouseScraper, input, ctx).await,
-            "lever" => Scraper::search(&LeverScraper, input, ctx).await,
-            "stepstone" => Scraper::search(&StepStoneScraper, input, ctx).await,
-            "smartrecruiters" => Scraper::search(&SmartRecruitersScraper, input, ctx).await,
-            "personio" => Scraper::search(&PersonioScraper, input, ctx).await,
-            "recruitee" => Scraper::search(&RecruiteeScraper, input, ctx).await,
-            "workday" => Scraper::search(&WorkdayScraper, input, ctx).await,
-            "ashby" => Scraper::search(&AshbyScraper, input, ctx).await,
-            "arbeitsagentur" => Scraper::search(&ArbeitsagenturScraper, input, ctx).await,
-            "linkedin" => Scraper::search(&LinkedInScraper, input, ctx).await,
-            "indeed" => Scraper::search(&IndeedScraper, input, ctx).await,
-            "xing" => Scraper::search(&XingScraper, input, ctx).await,
-            "glassdoor" => Scraper::search(&GlassdoorScraper, input, ctx).await,
-            _ => Err(anyhow::anyhow!("Unknown board: {}", board)),
+        let result = match super::boards::get(board) {
+            Some(scraper) => scraper.search(input, ctx).await,
+            None => Err(anyhow::anyhow!("Unknown board: {}", board)),
         };
 
         // Always clear the token slot, even on error.

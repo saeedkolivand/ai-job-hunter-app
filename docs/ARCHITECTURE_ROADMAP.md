@@ -258,6 +258,17 @@ retriable}` IPC envelope + normalizing the `-> Value`+`{error}` command contract
 
 ### Phase 5 — Registry + capability elevation (L, medium risk)
 
+> **Status: in review** (branch `refactor/phase5-board-registry`). Replaced the
+> scraping 20-arm string `match` + hardcoded `catalog()` ROWS, and the applier
+> hardcoded `catalog()` vec + `get()` match, with a single registry-of-trait-objects
+> per domain (`scraping::boards::{SCRAPERS,get,all}`, `applying::registry::APPLIERS`):
+> dispatch + catalog both derive from one list via the existing `Scraper`/`Applier`
+> trait metadata (`id`/`display_name`/`mode`). Behavior-preserving (catalog
+> ids/names/modes/order unchanged). Used registry-of-trait-objects rather than a
+> `BoardId` enum — the board id is the string wire format and the trait already
+> carries capabilities. No CI grep guardrail (board dispatch never used `.starts_with`
+> sniffing); the single registry list is the structural guarantee.
+
 - **Pain:** scraping/applying dispatch via string `match` + a parallel hardcoded
   `catalog()`; adding a board touches ≥2 sites; no capability model (P5/P6/P7).
 - **Target:** `BoardId` enum + `BoardCapabilities` (`mode: Http|Browser`,
