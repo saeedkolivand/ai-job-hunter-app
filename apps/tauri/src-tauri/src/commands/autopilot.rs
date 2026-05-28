@@ -98,7 +98,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         Ok(p) => p,
         Err(e) => {
             engine.unregister_token(&job_id).await;
-            app.state::<Mutex<crate::jobs::JobTracker>>().lock().fail(&job_id, e.clone());
+            app.state::<Mutex<crate::jobs::JobTracker>>().lock().fail(&job_id, e.to_string());
             return json!({ "error": e, "jobId": job_id });
         }
     };

@@ -3,6 +3,7 @@ use tempfile::TempDir;
 
 use super::cache::KvCache;
 use super::{Pipeline, Stage};
+use crate::error::{AppError, AppResult};
 
 // ── Pipeline ordering / abort ───────────────────────────────────────────────────
 
@@ -16,7 +17,7 @@ impl Stage<Ctx> for Step {
     fn name(&self) -> &'static str {
         self.0
     }
-    async fn run(&self, ctx: &mut Ctx) -> Result<(), String> {
+    async fn run(&self, ctx: &mut Ctx) -> AppResult<()> {
         ctx.log.push(self.0);
         Ok(())
     }
@@ -28,9 +29,9 @@ impl Stage<Ctx> for Boom {
     fn name(&self) -> &'static str {
         "boom"
     }
-    async fn run(&self, ctx: &mut Ctx) -> Result<(), String> {
+    async fn run(&self, ctx: &mut Ctx) -> AppResult<()> {
         ctx.log.push("boom");
-        Err("boom".to_string())
+        Err(AppError::Message("boom".to_string()))
     }
 }
 

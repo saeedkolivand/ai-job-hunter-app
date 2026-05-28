@@ -53,11 +53,11 @@ pub async fn ai_generate(app: AppHandle, req: AiGenerateRequest) -> Value {
     // 2. Provider must be known.
     let provider_id = match ProviderId::parse(&provider_str) {
         Ok(id) => id,
-        Err(e) => return fail(&app, &job_id, e),
+        Err(e) => return fail(&app, &job_id, e.to_string()),
     };
     // 3. Model must belong to the active provider.
     if let Err(e) = provider_id.validate_model(&req.model) {
-        return fail(&app, &job_id, e);
+        return fail(&app, &job_id, e.to_string());
     }
 
     log::info!(
@@ -72,11 +72,12 @@ pub async fn ai_generate(app: AppHandle, req: AiGenerateRequest) -> Value {
     tauri::async_runtime::spawn(async move {
         let provider = resolve(provider_id, base_url);
         if let Err(e) = provider.chat_stream(&app_clone, &job_id_clone, &req).await {
-            emit_stream_error(&app_clone, &job_id_clone, &e);
+            let msg = e.to_string();
+            emit_stream_error(&app_clone, &job_id_clone, &msg);
             app_clone
                 .state::<Mutex<JobTracker>>()
                 .lock()
-                .fail(&job_id_clone, e);
+                .fail(&job_id_clone, msg);
         }
     });
 
@@ -207,7 +208,7 @@ pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
                 app_clone
                     .state::<Mutex<JobTracker>>()
                     .lock()
-                    .fail(&job_id_clone, e);
+                    .fail(&job_id_clone, e.to_string());
             }
         }
     });

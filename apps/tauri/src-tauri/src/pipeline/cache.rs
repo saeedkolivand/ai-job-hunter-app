@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 
 use crate::db::{run_migrations, Migration};
+use crate::error::AppResult;
 
 pub struct KvCache {
     conn: Mutex<Connection>,
@@ -30,7 +31,7 @@ impl KvCache {
         },
     }];
 
-    pub fn open(data_dir: &Path) -> Result<Self, String> {
+    pub fn open(data_dir: &Path) -> AppResult<Self> {
         let path = data_dir.join("pipeline_cache.db");
         let conn = Connection::open(&path).map_err(|e| format!("kv cache open: {e}"))?;
         run_migrations(&conn, Self::MIGRATIONS)?;

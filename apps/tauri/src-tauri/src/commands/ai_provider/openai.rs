@@ -10,6 +10,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::commands::ai::get_provider_key;
 use crate::jobs::JobTracker;
 
+use crate::error::{AppError, AppResult};
+
 use super::{
     friendly_api_error, AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace,
     TokenParam,
@@ -69,7 +71,7 @@ impl AiProvider for OpenAiClient {
         app: &AppHandle,
         job_id: &str,
         req: &AiGenerateRequest,
-    ) -> Result<(), String> {
+    ) -> AppResult<()> {
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
         let caps = self.capabilities(&req.model);
         let endpoint = format!("{}/chat/completions", self.base_url);
@@ -105,7 +107,7 @@ impl AiProvider for OpenAiClient {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                return Err(format!("{} unreachable: {e}", self.id.as_str()));
+                return Err(AppError::Network(format!("{} unreachable: {e}", self.id.as_str())));
             }
         };
 
@@ -122,7 +124,7 @@ impl AiProvider for OpenAiClient {
                 if job.status == crate::jobs::JobStatus::Cancelled {
                     drop(response);
                     trace.end(Some(status.as_u16()), false);
-                    return Err("Job cancelled".to_string());
+                    return Err(AppError::Message("Job cancelled".to_string()));
                 }
             }
 
@@ -170,7 +172,7 @@ impl AiProvider for OpenAiClient {
                 Ok(None) => break,
                 Err(e) => {
                     trace.end(Some(status.as_u16()), false);
-                    return Err(format!("Stream error: {e}"));
+                    return Err(AppError::Network(format!("Stream error: {e}")));
                 }
             }
         }
@@ -190,7 +192,7 @@ impl AiProvider for OpenAiClient {
         system: &str,
         user: &str,
         temperature: Option<f64>,
-    ) -> Result<String, String> {
+    ) -> AppResult<String> {
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
         let caps = self.capabilities(model);
         let endpoint = format!("{}/chat/completions", self.base_url);
@@ -219,7 +221,7 @@ impl AiProvider for OpenAiClient {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                return Err(format!("{} unreachable: {e}", self.id.as_str()));
+                return Err(AppError::Network(format!("{} unreachable: {e}", self.id.as_str())));
             }
         };
         let status = resp.status();
@@ -236,10 +238,10 @@ impl AiProvider for OpenAiClient {
             .and_then(|m| m.get("content"))
             .and_then(|t| t.as_str())
             .map(String::from)
-            .ok_or_else(|| format!("{}: unexpected response shape", self.id.as_str()))
+            .ok_or_else(|| AppError::Provider(format!("{}: unexpected response shape", self.id.as_str())))
     }
 
-    async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> Result<Vec<f64>, String> {
+    async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
         let endpoint = format!("{}/embeddings", self.base_url);
         let trace = RequestTrace::begin(self.id, model, "/embeddings", &self.base_url, false);
@@ -264,7 +266,7 @@ impl AiProvider for OpenAiClient {
             .and_then(|e| e.get("embedding"))
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().filter_map(|v| v.as_f64()).collect())
-            .ok_or_else(|| format!("{}: missing embedding in response", self.id.as_str()))
+            .ok_or_else(|| AppError::Provider(format!("{}: missing embedding in response", self.id.as_str())))
     }
 
     fn default_embedding_model(&self) -> Option<&'static str> {
@@ -301,7 +303,7 @@ impl AiProvider for OpenAiClient {
         vec![]
     }
 
-    async fn test_key(&self, client: &reqwest::Client, api_key: &str) -> Result<(), String> {
+    async fn test_key(&self, client: &reqwest::Client, api_key: &str) -> AppResult<()> {
         let resp = client
             .get(format!("{}/models", self.base_url))
             .bearer_auth(api_key)
@@ -311,7 +313,7 @@ impl AiProvider for OpenAiClient {
         if resp.status().is_success() {
             Ok(())
         } else {
-            Err(format!("API returned status: {}", resp.status()))
+            Err(AppError::Provider(format!("API returned status: {}", resp.status())))
         }
     }
 }

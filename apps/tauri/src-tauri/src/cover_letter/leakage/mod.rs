@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tauri::Emitter;
 
+use crate::error::AppResult;
 use crate::pipeline::validation::{ValidationIssue, ValidationReport, Validator};
 use crate::pipeline::Completer;
 
@@ -32,7 +33,7 @@ impl Validator for LeakageValidator {
         "leakage"
     }
 
-    async fn validate(&self, completer: &Completer, draft: &str) -> Result<ValidationReport, String> {
+    async fn validate(&self, completer: &Completer, draft: &str) -> AppResult<ValidationReport> {
         let _ = completer.app().emit("cover_letter:validation:start", json!({}));
 
         let user = format!(

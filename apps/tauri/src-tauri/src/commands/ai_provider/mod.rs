@@ -16,6 +16,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 
+use crate::error::{AppError, AppResult};
 pub use crate::ipc_contracts::ai::AiGenerateRequest;
 
 mod anthropic;
@@ -45,16 +46,16 @@ pub enum ProviderId {
 
 impl ProviderId {
     /// Parse a wire string. Unknown values are a hard error — never a fallback.
-    pub fn parse(s: &str) -> Result<Self, String> {
+    pub fn parse(s: &str) -> AppResult<Self> {
         match s {
             "ollama" => Ok(Self::Ollama),
             "openai" => Ok(Self::OpenAi),
             "openai-compatible" => Ok(Self::OpenAiCompatible),
             "anthropic" => Ok(Self::Anthropic),
             "gemini" => Ok(Self::Gemini),
-            other => Err(format!(
+            other => Err(AppError::Config(format!(
                 "Unknown AI provider '{other}'. Select a configured provider in Settings → AI."
-            )),
+            ))),
         }
     }
 
@@ -82,10 +83,12 @@ impl ProviderId {
     /// Reject obvious provider/model mismatches server-side (do not trust the UI).
     /// Lenient for Ollama and OpenAI-compatible servers, where model names are
     /// arbitrary; strict for the native cloud providers with namespaced models.
-    pub fn validate_model(&self, model: &str) -> Result<(), String> {
+    pub fn validate_model(&self, model: &str) -> AppResult<()> {
         let m = model.trim().to_ascii_lowercase();
         if m.is_empty() {
-            return Err("No model selected for the active provider.".to_string());
+            return Err(AppError::Config(
+                "No model selected for the active provider.".to_string(),
+            ));
         }
         let looks_anthropic = m.starts_with("claude");
         let looks_gemini = m.starts_with("gemini") || m.starts_with("models/gemini");
@@ -96,11 +99,11 @@ impl ProviderId {
             || m.starts_with("o4");
 
         let mismatch = |family: &str| {
-            Err(format!(
+            Err(AppError::Validation(format!(
                 "Model '{model}' looks like a {family} model, but the active provider is {}. \
                  Pick a matching model or switch providers.",
                 self.as_str()
-            ))
+            )))
         };
 
         match self {
@@ -160,7 +163,7 @@ pub trait AiProvider: Send + Sync {
         app: &AppHandle,
         job_id: &str,
         req: &AiGenerateRequest,
-    ) -> Result<(), String>;
+    ) -> AppResult<()>;
 
     /// Non-streaming completion: returns the full assistant text in one shot.
     /// Unlike `chat_stream` it emits no `ai:stream` events and never touches the
@@ -174,11 +177,11 @@ pub trait AiProvider: Send + Sync {
         system: &str,
         user: &str,
         temperature: Option<f64>,
-    ) -> Result<String, String>;
+    ) -> AppResult<String>;
 
     /// Embed a single text, returning the raw vector. Errors when this provider
     /// has no embeddings API (callers gate on `capabilities().supports_embeddings`).
-    async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> Result<Vec<f64>, String>;
+    async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>>;
 
     /// The provider's default embedding model, or `None` if it has no embeddings API.
     fn default_embedding_model(&self) -> Option<&'static str>;
@@ -187,7 +190,7 @@ pub trait AiProvider: Send + Sync {
     async fn list_models(&self, client: &reqwest::Client, api_key: &str) -> Vec<Value>;
 
     /// Validate the stored API key — Ok(()) when the provider is reachable/authed.
-    async fn test_key(&self, client: &reqwest::Client, api_key: &str) -> Result<(), String>;
+    async fn test_key(&self, client: &reqwest::Client, api_key: &str) -> AppResult<()>;
 }
 
 /// Single routing point. `base_url` only applies to OpenAI-compatible servers.
@@ -204,7 +207,7 @@ pub fn resolve(id: ProviderId, base_url: Option<String>) -> Box<dyn AiProvider> 
 }
 
 /// Parse + resolve in one step (used by the settings commands).
-pub fn resolve_by_name(name: &str, base_url: Option<String>) -> Result<Box<dyn AiProvider>, String> {
+pub fn resolve_by_name(name: &str, base_url: Option<String>) -> AppResult<Box<dyn AiProvider>> {
     Ok(resolve(ProviderId::parse(name)?, base_url))
 }
 
@@ -243,22 +246,28 @@ pub async fn embed_text(
     model: &str,
     base_url: Option<String>,
     text: &str,
-) -> Result<EmbeddingVector, String> {
+) -> AppResult<EmbeddingVector> {
     let client = resolve(provider, base_url);
     let model = if model.trim().is_empty() {
         client
             .default_embedding_model()
-            .ok_or_else(|| format!("{} does not support embeddings.", provider.as_str()))?
+            .ok_or_else(|| AppError::Config(format!("{} does not support embeddings.", provider.as_str())))?
             .to_string()
     } else {
         model.to_string()
     };
     if !client.capabilities(&model).supports_embeddings {
-        return Err(format!("{} does not support embeddings.", provider.as_str()));
+        return Err(AppError::Config(format!(
+            "{} does not support embeddings.",
+            provider.as_str()
+        )));
     }
     let values = client.embed(app, &model, text).await?;
     if values.is_empty() {
-        return Err(format!("{} returned an empty embedding.", provider.as_str()));
+        return Err(AppError::Provider(format!(
+            "{} returned an empty embedding.",
+            provider.as_str()
+        )));
     }
     let dim = values.len();
     Ok(EmbeddingVector {
@@ -274,12 +283,12 @@ pub async fn embed_text(
 /// Cosine similarity between two vectors that MUST share an embedding space.
 /// Returns `Err` on a space mismatch — incomparable vectors are never silently
 /// scored (the old behavior returned 0.0 and hid the bug).
-pub fn compare(a: &EmbeddingVector, b: &EmbeddingVector) -> Result<f64, String> {
+pub fn compare(a: &EmbeddingVector, b: &EmbeddingVector) -> AppResult<f64> {
     if a.space != b.space {
-        return Err(format!(
+        return Err(AppError::Validation(format!(
             "refusing to compare embeddings from different spaces: {} vs {}",
             a.space, b.space
-        ));
+        )));
     }
     Ok(cosine(&a.values, &b.values))
 }
@@ -378,19 +387,21 @@ pub fn extract_error_message(body: &str) -> String {
 }
 
 /// Map a provider HTTP error to a clear, actionable message.
-pub fn friendly_api_error(provider: ProviderId, status: reqwest::StatusCode, body: &str) -> String {
+pub fn friendly_api_error(provider: ProviderId, status: reqwest::StatusCode, body: &str) -> AppError {
     let name = provider.as_str();
     let code = status.as_u16();
     let detail = extract_error_message(body);
     match code {
-        401 | 403 => format!("{name}: invalid or unauthorized API key."),
-        404 => format!("{name}: model or endpoint not found — {detail}"),
-        413 => format!("{name}: request too large — try a smaller resume/job ad."),
-        422 => format!("{name}: this model rejected the request — {detail}"),
-        429 => format!("{name}: rate limit or quota reached. Wait a moment or check your plan."),
-        400 => format!("{name}: request rejected — {detail}"),
-        500..=599 => format!("{name}: service error ({code}). Try again shortly."),
-        _ => format!("{name} {code}: {detail}"),
+        401 | 403 => AppError::Config(format!("{name}: invalid or unauthorized API key.")),
+        404 => AppError::Provider(format!("{name}: model or endpoint not found — {detail}")),
+        413 => AppError::Provider(format!("{name}: request too large — try a smaller resume/job ad.")),
+        422 => AppError::Provider(format!("{name}: this model rejected the request — {detail}")),
+        429 => AppError::Network(format!(
+            "{name}: rate limit or quota reached. Wait a moment or check your plan."
+        )),
+        400 => AppError::Provider(format!("{name}: request rejected — {detail}")),
+        500..=599 => AppError::Network(format!("{name}: service error ({code}). Try again shortly.")),
+        _ => AppError::Provider(format!("{name} {code}: {detail}")),
     }
 }
 

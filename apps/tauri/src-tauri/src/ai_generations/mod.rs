@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::data_store::DataStore;
 use crate::db::{run_migrations, Migration};
+use crate::error::AppResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiGenerationRecord {
@@ -70,7 +71,7 @@ impl AiGenerationStore {
         },
     }];
 
-    pub fn open(data_dir: &PathBuf) -> Result<Self, String> {
+    pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
         std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
         let path = data_dir.join("ai_generations.db");
         let conn = Connection::open(&path).map_err(|e| e.to_string())?;
@@ -118,7 +119,7 @@ impl AiGenerationStore {
         .unwrap_or_default()
     }
 
-    pub fn insert(&self, rec: &AiGenerationRecord) -> Result<(), String> {
+    pub fn insert(&self, rec: &AiGenerationRecord) -> AppResult<()> {
         let top_req_json = serde_json::to_string(&rec.top_requirements).unwrap_or_default();
         let conn = self.conn.lock();
         conn.execute(
@@ -148,7 +149,7 @@ impl AiGenerationStore {
         Ok(())
     }
 
-    pub fn remove(&self, id: &str) -> Result<(), String> {
+    pub fn remove(&self, id: &str) -> AppResult<()> {
         let conn = self.conn.lock();
         conn.execute("DELETE FROM ai_generations WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
@@ -176,7 +177,7 @@ impl DataStore for AiGenerationStore {
         serde_json::json!(self.list())
     }
 
-    fn import(&self, data: &serde_json::Value) -> Result<usize, String> {
+    fn import(&self, data: &serde_json::Value) -> AppResult<usize> {
         let items = data.as_array().ok_or("aiGenerations: expected an array")?;
         self.clear_all();
         let mut count = 0;
