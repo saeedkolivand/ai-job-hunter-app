@@ -36,7 +36,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
-    "@tanstack/router-vite-plugin": "^1.167.6",
+    "@tanstack/router-vite-plugin": "^1.167.11",
     "@tauri-apps/cli": "^2.11.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
