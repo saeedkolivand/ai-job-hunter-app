@@ -7,13 +7,15 @@
 /// Migrations must be idempotent where possible (use IF NOT EXISTS, etc.).
 use rusqlite::Connection;
 
+use crate::error::AppResult;
+
 pub struct Migration {
     pub name: &'static str,
     pub up: fn(&Connection) -> rusqlite::Result<()>,
 }
 
 /// Run all pending migrations against `conn`.
-pub fn run_migrations(conn: &Connection, migrations: &[Migration]) -> Result<(), String> {
+pub fn run_migrations(conn: &Connection, migrations: &[Migration]) -> AppResult<()> {
     let current: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(|e| e.to_string())?;

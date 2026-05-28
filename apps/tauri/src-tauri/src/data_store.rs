@@ -11,6 +11,8 @@
 
 use serde_json::Value;
 
+use crate::error::AppResult;
+
 pub trait DataStore {
     /// Key under which this store's data lives in the export bundle.
     fn key(&self) -> &'static str;
@@ -20,5 +22,5 @@ pub trait DataStore {
 
     /// Replace the store's contents from previously-exported data.
     /// Returns the number of records restored.
-    fn import(&self, data: &Value) -> Result<usize, String>;
+    fn import(&self, data: &Value) -> AppResult<usize>;
 }

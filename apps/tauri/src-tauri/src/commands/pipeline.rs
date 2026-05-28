@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::commands::ai_provider::{emit_stream_error, resolve, AiGenerateRequest, ProviderId};
+use crate::error::AppResult;
 use crate::jobs::JobTracker;
 use crate::pipeline::{Pipeline, Stage};
 
@@ -34,7 +35,7 @@ impl Stage<GenerationContext> for StreamGenerateStage {
     fn name(&self) -> &'static str {
         "generate"
     }
-    async fn run(&self, ctx: &mut GenerationContext) -> Result<(), String> {
+    async fn run(&self, ctx: &mut GenerationContext) -> AppResult<()> {
         let provider = resolve(ctx.provider_id, ctx.req.base_url.clone());
         provider.chat_stream(&ctx.app, &ctx.job_id, &ctx.req).await
     }
@@ -68,10 +69,10 @@ pub async fn generate_pipeline(app: AppHandle, req: AiGenerateRequest) -> Value 
     };
     let provider_id = match ProviderId::parse(&provider_str) {
         Ok(id) => id,
-        Err(e) => return fail(&app, &job_id, e),
+        Err(e) => return fail(&app, &job_id, e.to_string()),
     };
     if let Err(e) = provider_id.validate_model(&req.model) {
-        return fail(&app, &job_id, e);
+        return fail(&app, &job_id, e.to_string());
     }
 
     let job_id_clone = job_id.clone();
@@ -85,11 +86,12 @@ pub async fn generate_pipeline(app: AppHandle, req: AiGenerateRequest) -> Value 
         };
         let pipeline = Pipeline::new("generate").add(StreamGenerateStage);
         if let Err(e) = pipeline.run(&mut ctx).await {
-            emit_stream_error(&app_clone, &job_id_clone, &e);
+            let msg = e.to_string();
+            emit_stream_error(&app_clone, &job_id_clone, &msg);
             app_clone
                 .state::<Mutex<JobTracker>>()
                 .lock()
-                .fail(&job_id_clone, e);
+                .fail(&job_id_clone, msg);
         }
     });
 

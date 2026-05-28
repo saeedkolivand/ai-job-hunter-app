@@ -17,6 +17,7 @@ use tauri::{AppHandle, Manager};
 use crate::commands::ai_provider::{EmbeddingSpace, EmbeddingVector, ProviderId};
 use crate::data_store::DataStore;
 use crate::db::{column_exists, run_migrations, Migration};
+use crate::error::AppResult;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -141,7 +142,7 @@ impl DocumentStore {
         },
     ];
 
-    pub fn open(data_dir: &PathBuf) -> Result<Self, String> {
+    pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
         std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
         let path = data_dir.join("documents.db");
         let conn = Connection::open(&path).map_err(|e| e.to_string())?;
@@ -231,7 +232,7 @@ impl DocumentStore {
         .ok()
     }
 
-    pub fn insert(&self, rec: &DocumentRecord) -> Result<(), String> {
+    pub fn insert(&self, rec: &DocumentRecord) -> AppResult<()> {
         let conn = self.conn.lock();
         // If this is the first document, automatically set it as default
         let count: i64 = conn
@@ -258,14 +259,14 @@ impl DocumentStore {
         Ok(())
     }
 
-    pub fn set_indexed(&self, id: &str) -> Result<(), String> {
+    pub fn set_indexed(&self, id: &str) -> AppResult<()> {
         let conn = self.conn.lock();
         conn.execute("UPDATE documents SET indexed = 1 WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
         Ok(())
     }
 
-    pub fn remove(&self, id: &str) -> Result<(), String> {
+    pub fn remove(&self, id: &str) -> AppResult<()> {
         let conn = self.conn.lock();
         conn.execute("DELETE FROM documents WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
@@ -274,7 +275,7 @@ impl DocumentStore {
         Ok(())
     }
 
-    pub fn set_default(&self, id: &str) -> Result<(), String> {
+    pub fn set_default(&self, id: &str) -> AppResult<()> {
         let conn = self.conn.lock();
         // Clear all defaults, then set the new one
         conn.execute("UPDATE documents SET is_default = 0", [])
@@ -286,7 +287,7 @@ impl DocumentStore {
 
     /// Store a space-tagged vector. The space (`provider`/`model`/`dim`) travels
     /// with the values so comparisons can reject incompatible vectors.
-    pub fn upsert_vector(&self, doc_id: &str, v: &EmbeddingVector) -> Result<(), String> {
+    pub fn upsert_vector(&self, doc_id: &str, v: &EmbeddingVector) -> AppResult<()> {
         let json = serde_json::to_string(&v.values).map_err(|e| e.to_string())?;
         let conn = self.conn.lock();
         conn.execute(
@@ -407,7 +408,7 @@ impl DocumentStore {
         })
     }
 
-    pub fn set_embedding_config(&self, cfg: &EmbeddingConfig) -> Result<(), String> {
+    pub fn set_embedding_config(&self, cfg: &EmbeddingConfig) -> AppResult<()> {
         let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO embedding_config (id, provider, model, base_url, updated_at)
@@ -504,7 +505,7 @@ impl DataStore for DocumentStore {
         serde_json::json!(docs)
     }
 
-    fn import(&self, data: &serde_json::Value) -> Result<usize, String> {
+    fn import(&self, data: &serde_json::Value) -> AppResult<usize> {
         let items = data.as_array().ok_or("documents: expected an array")?;
         self.clear_all();
         let mut count = 0;

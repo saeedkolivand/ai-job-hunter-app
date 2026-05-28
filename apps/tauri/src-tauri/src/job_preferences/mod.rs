@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::data_store::DataStore;
 use crate::db::{run_migrations, Migration};
+use crate::error::AppResult;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -60,7 +61,7 @@ impl JobPreferencesStore {
         },
     }];
 
-    pub fn open(data_dir: &PathBuf) -> Result<Self, String> {
+    pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
         std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
         let path = data_dir.join("job_preferences.db");
         let conn = Connection::open(&path).map_err(|e| e.to_string())?;
@@ -98,7 +99,7 @@ impl JobPreferencesStore {
         })
     }
 
-    pub fn set(&self, prefs: &JobPreferences) -> Result<(), String> {
+    pub fn set(&self, prefs: &JobPreferences) -> AppResult<()> {
         let conn = self.conn.lock();
         let tech_stack_json = prefs.tech_stack.as_ref()
             .and_then(|ts| serde_json::to_string(ts).ok());
@@ -131,7 +132,7 @@ impl DataStore for JobPreferencesStore {
         serde_json::to_value(self.get()).unwrap_or_else(|_| serde_json::json!({}))
     }
 
-    fn import(&self, data: &serde_json::Value) -> Result<usize, String> {
+    fn import(&self, data: &serde_json::Value) -> AppResult<usize> {
         // Single settings row; treat null/missing as "nothing to restore".
         if data.is_null() {
             return Ok(0);

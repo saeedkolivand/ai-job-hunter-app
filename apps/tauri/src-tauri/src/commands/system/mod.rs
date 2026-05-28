@@ -1,5 +1,6 @@
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
+use crate::error::{AppError, AppResult};
 use crate::scraping::ScraperEngine;
 
 #[tauri::command]
@@ -87,11 +88,11 @@ pub fn system_open_devtools(app: AppHandle) {
 }
 
 #[tauri::command]
-pub async fn system_open_external(app: AppHandle, url: String) -> Result<(), String> {
+pub async fn system_open_external(app: AppHandle, url: String) -> AppResult<()> {
     use tauri_plugin_opener::OpenerExt;
     app.opener()
         .open_url(&url, None::<&str>)
-        .map_err(|e| e.to_string())
+        .map_err(|e| AppError::Message(e.to_string()))
 }
 
 #[tauri::command]

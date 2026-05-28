@@ -1,4 +1,5 @@
 use crate::cover_letter::research::search::SearchResult;
+use crate::error::AppResult;
 use crate::pipeline::Completer;
 
 const SYSTEM: &str = "\
@@ -12,7 +13,7 @@ pub async fn synthesise(
     company: &str,
     role: &str,
     results: &[SearchResult],
-) -> Result<String, String> {
+) -> AppResult<String> {
     if results.is_empty() {
         return Ok(String::new());
     }

@@ -29,6 +29,7 @@ mod conversations;
 mod credentials;
 mod data_store;
 mod documents;
+mod error;
 mod export;
 mod ipc_contracts;
 mod job_preferences;

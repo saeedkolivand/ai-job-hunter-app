@@ -633,6 +633,22 @@ jobs:
           echo "OK — reqwest clients are built solely in net/http.rs"
           echo "::endgroup::"
 
+      # Architecture guardrail (see docs/ARCHITECTURE_ROADMAP.md, Phase 3).
+      # Internal fallible code uses AppResult/AppError, not Result<_, String>.
+      # (Test files and error.rs are exempt.)
+      - name: 🚧 Architecture Guardrail — typed errors
+        working-directory: apps/tauri/src-tauri/src
+        run: |
+          echo "::group::Checking for Result<_, String> outside error.rs"
+          matches=$(grep -rnE "Result<[^=]*, String>" . --include="*.rs" | grep -v "test.rs:" | grep -v "^./error.rs:" || true)
+          if [ -n "$matches" ]; then
+            echo "::error::Use AppResult/AppError (crate::error) instead of Result<_, String>."
+            echo "$matches"
+            exit 1
+          fi
+          echo "OK — no stringly-typed Result outside error.rs"
+          echo "::endgroup::"
+
       - name: 📝 Job Summary
         if: always()
         run: |

@@ -1,5 +1,6 @@
 use crate::scraping::{BoardSearchInput, JobPosting, ScraperEngine};
 use crate::autopilot::AutopilotTarget;
+use crate::error::{AppError, AppResult};
 use tauri::{AppHandle, Emitter};
 use tokio_util::sync::CancellationToken;
 
@@ -9,7 +10,7 @@ pub async fn autopilot_scrape(
     target: &AutopilotTarget,
     job_id: &str,
     app: &AppHandle,
-) -> Result<Vec<JobPosting>, String> {
+) -> AppResult<Vec<JobPosting>> {
     let input = BoardSearchInput {
         query: target.query.clone(),
         location: target.location.clone(),
@@ -50,7 +51,7 @@ pub async fn autopilot_scrape(
         )
         .await;
 
-    result.map_err(|e| e.to_string())
+    result.map_err(AppError::from)
 }
 
 /// Rank job postings by semantic similarity to resume

@@ -214,6 +214,14 @@ blast radius.
 
 ### Phase 3 — Unified typed error hierarchy (L, medium risk)
 
+> **Status: in review** (branch `refactor/phase3-typed-errors`). Introduced
+> `error::AppError` (thiserror, `code()`/`retriable()`, broad `From` set) that
+> serializes to its message string — behavior-preserving on the wire. Migrated
+> **all internal `Result<_, String>` → `AppResult`** (sites: 68 → 0 outside
+> `error.rs`/tests); domain enums (`ExtractionError`) compose via `From`; CI grep
+> guardrail added. Deferred (renderer-coupled): the structured `{code,message,
+retriable}` IPC envelope + normalizing the `-> Value`+`{error}` command contract.
+
 - **Pain:** ~68 `Result<_, String>` sites; only `ApplyError`/`ExtractionError`
   typed; no stable error codes to the renderer (P4/P5).
 - **Target:** an `error::AppError` (via `thiserror`) with variants per failure

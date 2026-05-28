@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 
 use super::Completer;
+use crate::error::AppResult;
 
 /// A single problem found in generated content.
 pub struct ValidationIssue {
@@ -30,5 +31,5 @@ impl ValidationReport {
 #[async_trait]
 pub trait Validator: Send + Sync {
     fn name(&self) -> &'static str;
-    async fn validate(&self, completer: &Completer, draft: &str) -> Result<ValidationReport, String>;
+    async fn validate(&self, completer: &Completer, draft: &str) -> AppResult<ValidationReport>;
 }

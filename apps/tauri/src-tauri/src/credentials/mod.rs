@@ -21,6 +21,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use keyring_core::Entry;
 use serde::{Deserialize, Serialize};
 
+use crate::error::AppResult;
+
 const SERVICE: &str = "com.ajh.tauri";
 
 /// Initialise the OS-native keyring backend. Must be called once before any
@@ -88,7 +90,7 @@ impl CredentialStore {
         meta.values().cloned().collect()
     }
 
-    pub fn set(&self, board_id: &str, username: &str, password: &str) -> Result<(), String> {
+    pub fn set(&self, board_id: &str, username: &str, password: &str) -> AppResult<()> {
         Entry::new(SERVICE, board_id)
             .map_err(|e| format!("keyring entry error: {e}"))?
             .set_password(password)
@@ -107,7 +109,7 @@ impl CredentialStore {
         Ok(())
     }
 
-    pub fn remove(&self, board_id: &str) -> Result<(), String> {
+    pub fn remove(&self, board_id: &str) -> AppResult<()> {
         if let Ok(entry) = Entry::new(SERVICE, board_id) {
             // Ignore "not found" — the metadata may exist without a keychain
             // entry if the keychain was cleared externally.

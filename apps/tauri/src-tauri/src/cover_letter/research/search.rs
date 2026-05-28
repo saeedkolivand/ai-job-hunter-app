@@ -1,5 +1,7 @@
 use serde_json::Value;
 
+use crate::error::{AppError, AppResult};
+
 const BRAVE_SEARCH_URL: &str = "https://api.search.brave.com/res/v1/web/search";
 
 /// A single search result snippet.
@@ -18,7 +20,7 @@ pub async fn brave_search(
     api_key: &str,
     query: &str,
     limit: usize,
-) -> Result<Vec<SearchResult>, String> {
+) -> AppResult<Vec<SearchResult>> {
     let resp = client
         .get(BRAVE_SEARCH_URL)
         .header("Accept", "application/json")
@@ -32,7 +34,7 @@ pub async fn brave_search(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("brave search {status}: {body}"));
+        return Err(AppError::Network(format!("brave search {status}: {body}")));
     }
 
     let body: Value = resp.json().await.map_err(|e| format!("brave search parse: {e}"))?;

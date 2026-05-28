@@ -4,6 +4,7 @@ use async_trait::async_trait;
 
 use super::validation::{ValidationReport, Validator};
 use super::Completer;
+use crate::error::AppResult;
 
 /// How many generation attempts a [`generate_validated`] loop may make.
 pub struct RetryPolicy {
@@ -21,7 +22,7 @@ impl RetryPolicy {
 /// (via `completer.app()`); the loop stays generic.
 #[async_trait]
 pub trait DraftGenerator: Send + Sync {
-    async fn generate(&self, completer: &Completer, attempt: u8) -> Result<String, String>;
+    async fn generate(&self, completer: &Completer, attempt: u8) -> AppResult<String>;
 }
 
 /// Result of a generate/validate loop.
@@ -40,7 +41,7 @@ pub async fn generate_validated(
     policy: RetryPolicy,
     generator: &dyn DraftGenerator,
     validator: Option<&dyn Validator>,
-) -> Result<ValidatedDraft, String> {
+) -> AppResult<ValidatedDraft> {
     let mut text = String::new();
     let mut report: Option<ValidationReport> = None;
     let mut retries = 0u8;

@@ -8,6 +8,7 @@ use std::path::Path;
 
 use tracing::{instrument, warn};
 
+use crate::error::{AppError, AppResult};
 use types::{ExtractionError, ExtractedResume, SourceFormat};
 
 const MAX_BYTES: usize = 10 * 1024 * 1024; // 10 MB
@@ -19,18 +20,18 @@ const MAX_BYTES: usize = 10 * 1024 * 1024; // 10 MB
 /// `Display` form of `ExtractionError` reaches the frontend.
 #[tauri::command]
 #[instrument(skip_all, fields(path))]
-pub async fn extract_resume(path: String) -> Result<ExtractedResume, String> {
+pub async fn extract_resume(path: String) -> AppResult<ExtractedResume> {
     tracing::Span::current().record("path", &path.as_str());
 
     let bytes = std::fs::read(&path).map_err(|e| {
         let err = ExtractionError::IoError(e.to_string());
         warn!(%err, "failed to read file");
-        err.to_string()
+        AppError::from(err)
     })?;
 
     route(&path, &bytes).map_err(|e| {
         warn!(error = %e, "extraction failed");
-        e.to_string()
+        AppError::from(e)
     })
 }
 

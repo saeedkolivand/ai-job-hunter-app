@@ -8,6 +8,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::commands::ai::get_provider_key;
 use crate::jobs::JobTracker;
 
+use crate::error::{AppError, AppResult};
+
 use super::{
     friendly_api_error, AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace,
     TokenParam,
@@ -41,7 +43,7 @@ impl AiProvider for GeminiClient {
         app: &AppHandle,
         job_id: &str,
         req: &AiGenerateRequest,
-    ) -> Result<(), String> {
+    ) -> AppResult<()> {
         let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
         let endpoint_label = format!("/v1beta/models/{}:streamGenerateContent", req.model);
         let trace = RequestTrace::begin(ProviderId::Gemini, &req.model, &endpoint_label, BASE, true);
@@ -85,7 +87,7 @@ impl AiProvider for GeminiClient {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                return Err(format!("Gemini unreachable: {e}"));
+                return Err(AppError::Network(format!("Gemini unreachable: {e}")));
             }
         };
 
@@ -106,7 +108,7 @@ impl AiProvider for GeminiClient {
                 if job.status == crate::jobs::JobStatus::Cancelled {
                     drop(response);
                     trace.end(Some(status.as_u16()), false);
-                    return Err("Job cancelled".to_string());
+                    return Err(AppError::Message("Job cancelled".to_string()));
                 }
             }
 
@@ -162,7 +164,7 @@ impl AiProvider for GeminiClient {
                 Ok(None) => break,
                 Err(e) => {
                     trace.end(Some(status.as_u16()), false);
-                    return Err(format!("Stream error: {e}"));
+                    return Err(AppError::Network(format!("Stream error: {e}")));
                 }
             }
         }
@@ -182,7 +184,7 @@ impl AiProvider for GeminiClient {
         system: &str,
         user: &str,
         temperature: Option<f64>,
-    ) -> Result<String, String> {
+    ) -> AppResult<String> {
         let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
         let m = model.strip_prefix("models/").unwrap_or(model);
         let endpoint_label = format!("/v1beta/models/{m}:generateContent");
@@ -207,7 +209,7 @@ impl AiProvider for GeminiClient {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                return Err(format!("Gemini unreachable: {e}"));
+                return Err(AppError::Network(format!("Gemini unreachable: {e}")));
             }
         };
         let status = resp.status();
@@ -231,10 +233,10 @@ impl AiProvider for GeminiClient {
                     .join("")
             })
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| "Gemini: unexpected response shape".to_string())
+            .ok_or_else(|| AppError::Provider("Gemini: unexpected response shape".to_string()))
     }
 
-    async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> Result<Vec<f64>, String> {
+    async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
         let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
         let m = model.strip_prefix("models/").unwrap_or(model);
         let endpoint_label = format!("/v1beta/models/{m}:embedContent");
@@ -263,7 +265,7 @@ impl AiProvider for GeminiClient {
             .and_then(|e| e.get("values"))
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().filter_map(|v| v.as_f64()).collect())
-            .ok_or_else(|| "Gemini: missing embedding in response".to_string())
+            .ok_or_else(|| AppError::Provider("Gemini: missing embedding in response".to_string()))
     }
 
     fn default_embedding_model(&self) -> Option<&'static str> {
@@ -290,7 +292,7 @@ impl AiProvider for GeminiClient {
         vec![]
     }
 
-    async fn test_key(&self, client: &reqwest::Client, api_key: &str) -> Result<(), String> {
+    async fn test_key(&self, client: &reqwest::Client, api_key: &str) -> AppResult<()> {
         let resp = client
             .get(format!("{BASE}/v1/models?key={api_key}"))
             .send()
@@ -299,7 +301,7 @@ impl AiProvider for GeminiClient {
         if resp.status().is_success() {
             Ok(())
         } else {
-            Err(format!("API returned status: {}", resp.status()))
+            Err(AppError::Provider(format!("API returned status: {}", resp.status())))
         }
     }
 }
