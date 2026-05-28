@@ -254,6 +254,9 @@ jobs:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
 
+      - name: 🗺️ Generate Route Tree
+        run: pnpm --filter @ajh/tauri build:frontend
+
       - name: 🔍 Run Type Check
         id: typecheck
         run: pnpm typecheck
