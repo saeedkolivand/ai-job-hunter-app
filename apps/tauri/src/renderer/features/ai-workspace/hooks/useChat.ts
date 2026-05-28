@@ -60,12 +60,13 @@ export function useChat() {
     if (raw.error) {
       activeJobRef.current = null;
       setStreaming(false);
+      const errorMessage = raw.error.message;
       setMessages((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
           role: 'assistant' as const,
-          content: raw.error!.message,
+          content: errorMessage,
         },
       ]);
       return;
