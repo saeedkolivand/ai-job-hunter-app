@@ -142,6 +142,16 @@ The Rust backend uses the `keyring-core` crate with platform-specific store adap
 
 ---
 
+### "How does backup and restore work?"
+
+Each persistent store (documents, AI generations, job preferences, autopilots, conversations, interactions) implements a single `DataStore` trait — `export() -> Value` and `import(&Value)` with REPLACE semantics. The `data.export` / `data.import` commands assemble one versioned JSON bundle (`{ version, exportedAt, stores }`) and write/read it via the Tauri dialog plugin; the user backs up or restores from Settings → Privacy.
+
+Credentials (kept in the OS keychain), ephemeral caches, and the transient job-execution log are deliberately excluded. Restore is a full replace, not a merge, so a backup file is an exact snapshot.
+
+**Interview follow-up:** The `DataStore` trait keeps the data layer uniform without a heavyweight ORM, and the bundle is the foundation a future cloud-sync feature would build on — sync itself is deferred since the app is local-first with no remote backend today.
+
+---
+
 ### "How is the component library structured?"
 
 `packages/ui` is a standalone React component library published as `@ajh/ui` within the monorepo. It has:

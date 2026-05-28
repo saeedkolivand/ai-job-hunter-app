@@ -20,6 +20,7 @@ export * from './use-autopilot';
 export * from './use-boards';
 export * from './use-conversations';
 export * from './use-credentials';
+export * from './use-data';
 export * from './use-documents';
 export * from './use-job-preferences';
 export * from './use-jobs';

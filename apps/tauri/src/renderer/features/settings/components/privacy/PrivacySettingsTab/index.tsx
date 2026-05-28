@@ -165,18 +165,19 @@ export function PrivacySettingsTab() {
     try {
       const res = (await importData.mutateAsync()) as {
         success: boolean;
-        imported: number;
+        imported?: Record<string, number | { error: string }>;
         error?: string;
       };
-      if (res.success)
+      if (res.success) {
+        const count = Object.values(res.imported ?? {}).reduce<number>(
+          (sum, v) => sum + (typeof v === 'number' ? v : 0),
+          0
+        );
         notify(
-          t('settings.privacy.importSuccess', {
-            count: res.imported,
-            plural: res.imported === 1 ? '' : 's',
-          }),
+          t('settings.privacy.importSuccess', { count, plural: count === 1 ? '' : 's' }),
           'success'
         );
-      else if (res.error) notify(t('settings.privacy.somethingWentWrong'), 'error');
+      } else if (res.error) notify(t('settings.privacy.somethingWentWrong'), 'error');
     } catch {
       notify(t('settings.privacy.somethingWentWrong'), 'error');
     }

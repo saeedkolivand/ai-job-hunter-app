@@ -21,6 +21,7 @@ import { autopilot } from './namespaces/autopilot.js';
 import { boards } from './namespaces/boards.js';
 import { conversations } from './namespaces/conversations.js';
 import { credentials } from './namespaces/credentials.js';
+import { data } from './namespaces/data.js';
 import { dialog } from './namespaces/dialog.js';
 import { documents } from './namespaces/documents.js';
 import { geocode } from './namespaces/geocode.js';
@@ -61,5 +62,6 @@ export function createTauriInvokeClient(): AppClient {
     conversations: conversations as AppClient['conversations'],
     autopilot: autopilot as AppClient['autopilot'],
     dialog: dialog as AppClient['dialog'],
+    data: data as AppClient['data'],
   } satisfies AppClient;
 }

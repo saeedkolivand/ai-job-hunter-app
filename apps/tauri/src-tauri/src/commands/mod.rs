@@ -2,6 +2,7 @@
 
 pub mod ai_generations;
 pub mod cover_letter;
+pub mod data;
 pub mod system;
 pub mod ai;
 pub mod ai_provider;

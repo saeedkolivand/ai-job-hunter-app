@@ -23,6 +23,7 @@ import { AUTOPILOT_CHANNELS, type AutopilotContract } from './autopilot.js';
 import { BOARDS_CHANNELS, type BoardsContract } from './boards.js';
 import { CONVERSATIONS_CHANNELS, type ConversationsContract } from './conversations.js';
 import { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js';
+import { DATA_CHANNELS, type DataContract } from './data.js';
 import { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
 import { DOCUMENTS_CHANNELS, type DocumentsContract } from './documents.js';
 import { GEOCODE_CHANNELS, type GeocodeContract } from './geocode.js';
@@ -64,6 +65,7 @@ export interface IpcContract {
   updater: UpdaterContract;
   shortcuts: ShortcutsContract;
   dialog: DialogContract;
+  data: DataContract;
 }
 
 // Combine all channel constants into the original IPC_CHANNELS object
@@ -91,6 +93,7 @@ export const IPC_CHANNELS = {
   updater: UPDATER_CHANNELS,
   shortcuts: SHORTCUTS_CHANNELS,
   dialog: DIALOG_CHANNELS,
+  data: DATA_CHANNELS,
 } as const;
 
 // Union type of all channel strings
@@ -123,6 +126,7 @@ export {
 export { BOARDS_CHANNELS, type BoardsContract } from './boards.js';
 export { CONVERSATIONS_CHANNELS, type ConversationsContract } from './conversations.js';
 export { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js';
+export { DATA_CHANNELS, type DataContract } from './data.js';
 export { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
 export { DOCUMENTS_CHANNELS, type DocumentsContract } from './documents.js';
 export { GEOCODE_CHANNELS, type GeocodeContract } from './geocode.js';

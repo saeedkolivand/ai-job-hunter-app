@@ -6,6 +6,7 @@ use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
+use crate::data_store::DataStore;
 use crate::db::{run_migrations, Migration};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -118,6 +119,27 @@ impl JobPreferencesStore {
         )
         .map_err(|e| e.to_string())?;
         Ok(())
+    }
+}
+
+impl DataStore for JobPreferencesStore {
+    fn key(&self) -> &'static str {
+        "jobPreferences"
+    }
+
+    fn export(&self) -> serde_json::Value {
+        serde_json::to_value(self.get()).unwrap_or_else(|_| serde_json::json!({}))
+    }
+
+    fn import(&self, data: &serde_json::Value) -> Result<usize, String> {
+        // Single settings row; treat null/missing as "nothing to restore".
+        if data.is_null() {
+            return Ok(0);
+        }
+        let prefs: JobPreferences =
+            serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+        self.set(&prefs)?;
+        Ok(1)
     }
 }
 

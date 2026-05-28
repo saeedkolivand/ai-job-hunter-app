@@ -51,17 +51,3 @@ export const usePersistJob = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.postings.interactions() }),
   });
 };
-
-export const useExportData = () => {
-  const api = useAppClient();
-  return useMutation({ mutationFn: () => api.scrape.exportData() });
-};
-
-export const useImportData = () => {
-  const api = useAppClient();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.scrape.importData(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.postings.all }),
-  });
-};
