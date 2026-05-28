@@ -602,6 +602,21 @@ jobs:
           cargo clippy --all-targets --all-features -- -D warnings
           echo "::endgroup::"
 
+      # Architecture guardrail (see docs/ARCHITECTURE_ROADMAP.md, Phase 1).
+      # The data-dir env var + path fallback must live ONLY in platform/config.rs.
+      - name: 🚧 Architecture Guardrail — centralized data dir
+        working-directory: apps/tauri/src-tauri/src
+        run: |
+          echo "::group::Checking AJH_DATA_DIR ownership"
+          matches=$(grep -rn "AJH_DATA_DIR" . --include="*.rs" | grep -v "^./platform/config.rs:" || true)
+          if [ -n "$matches" ]; then
+            echo "::error::AJH_DATA_DIR must only be referenced in platform/config.rs. Use platform::config::data_dir() instead."
+            echo "$matches"
+            exit 1
+          fi
+          echo "OK — AJH_DATA_DIR is owned solely by platform/config.rs"
+          echo "::endgroup::"
+
       - name: 📝 Job Summary
         if: always()
         run: |

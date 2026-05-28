@@ -1,20 +1,5 @@
 use super::*;
 
-// Env-var override and default are exercised in a single test: `AJH_DATA_DIR` is
-// process-global, so splitting them into parallel tests races (one's remove_var
-// can land between the other's set_var and read).
-#[test]
-fn test_resolve_data_dir() {
-    // Override via env var.
-    unsafe { std::env::set_var("AJH_DATA_DIR", "/custom/path"); }
-    assert_eq!(resolve_data_dir().to_string_lossy(), "/custom/path");
-
-    // Default falls back to USERPROFILE/HOME and ends with .ajh.
-    unsafe { std::env::remove_var("AJH_DATA_DIR"); }
-    let dir_str = resolve_data_dir().to_string_lossy().to_string();
-    assert!(dir_str.contains(".ajh"));
-}
-
 #[test]
 fn test_emit_step_with_callback() {
     let ctx = ApplyContext {

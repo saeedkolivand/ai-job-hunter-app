@@ -26,7 +26,7 @@ impl Scraper for LinkedInScraper {
         let session_data = self.load_session_data().await;
         if session_data.is_some() {
             // Touch the auth-status heartbeat so freshness countdown restarts.
-            crate::scraping::board_login::touch_session(&resolve_data_dir(), "linkedin");
+            crate::scraping::board_login::touch_session(&crate::platform::config::data_dir(), "linkedin");
         }
 
         // Create HTTP client with session
@@ -72,7 +72,7 @@ impl LinkedInScraper {
         use crate::scraping::board_login;
         use crate::scraping::linkedin::session::{Cookie, LinkedInSessionData};
 
-        let data_dir = resolve_data_dir();
+        let data_dir = crate::platform::config::data_dir();
         if board_login::session_is_stale(&data_dir, "linkedin") {
             log::warn!("[linkedin] session is stale — falling back to guest mode");
             return None;
@@ -117,18 +117,6 @@ impl LinkedInScraper {
             last_updated: chrono::Utc::now().timestamp_millis() as u64,
         })
     }
-}
-
-/// Resolve the AJH data directory. `main()` exports `AJH_DATA_DIR` at startup
-/// so scrapers reach the right path even though they have no `AppHandle`.
-fn resolve_data_dir() -> std::path::PathBuf {
-    if let Ok(dir) = std::env::var("AJH_DATA_DIR") {
-        return std::path::PathBuf::from(dir);
-    }
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_default();
-    std::path::PathBuf::from(home).join(".ajh")
 }
 
 #[cfg(test)]

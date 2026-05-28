@@ -357,7 +357,7 @@ async fn try_linkedin(url: &str) -> Result<Option<JobPosting>> {
         return Ok(None);
     }
 
-    let data_dir = resolve_data_dir();
+    let data_dir = crate::platform::config::data_dir();
     let client = crate::scraping::board_login::build_authed_client(&data_dir, "linkedin")?;
 
     let res = client.get(url).send().await?;
@@ -663,16 +663,6 @@ async fn try_personio(url: &str) -> Result<Option<JobPosting>> {
     }
 
     Ok(None)
-}
-
-fn resolve_data_dir() -> std::path::PathBuf {
-    if let Ok(dir) = std::env::var("AJH_DATA_DIR") {
-        return std::path::PathBuf::from(dir);
-    }
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_default();
-    std::path::PathBuf::from(home).join(".ajh")
 }
 
 #[cfg(test)]
