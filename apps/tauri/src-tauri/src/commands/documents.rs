@@ -82,9 +82,12 @@ pub async fn documents_set_default(app: AppHandle, id: String) -> Value {
 }
 
 #[tauri::command]
-pub async fn documents_embed_text(req: DocumentsEmbedTextRequest) -> Value {
-    match crate::documents::embed(&req.text).await {
-        Some(vector) => json!({ "vector": vector }),
+pub async fn documents_embed_text(app: AppHandle, req: DocumentsEmbedTextRequest) -> Value {
+    match crate::documents::embed(&app, &req.text).await {
+        Some(ev) => json!({
+            "vector": ev.values,
+            "space": { "provider": ev.space.provider, "model": ev.space.model, "dim": ev.space.dim },
+        }),
         None => json!({ "error": "embedding failed" }),
     }
 }
@@ -101,7 +104,17 @@ pub fn documents_set_indexed(app: AppHandle, id: String) -> Value {
 #[tauri::command]
 pub fn documents_upsert_vector(app: AppHandle, req: DocumentsUpsertVectorRequest) -> Value {
     let store = app.state::<crate::documents::DocumentStore>();
-    match store.upsert_vector(&req.doc_id, &req.vector) {
+    // Externally-supplied vectors are tagged with the active embedding space.
+    let cfg = store.embedding_config();
+    let ev = crate::commands::ai_provider::EmbeddingVector {
+        space: crate::commands::ai_provider::EmbeddingSpace {
+            provider: cfg.provider,
+            model: cfg.model,
+            dim: req.vector.len(),
+        },
+        values: req.vector,
+    };
+    match store.upsert_vector(&req.doc_id, &ev) {
         Ok(()) => json!({ "success": true }),
         Err(e) => json!({ "error": e.to_string() }),
     }
@@ -111,7 +124,10 @@ pub fn documents_upsert_vector(app: AppHandle, req: DocumentsUpsertVectorRequest
 pub fn documents_get_vector(app: AppHandle, doc_id: String) -> Value {
     let store = app.state::<crate::documents::DocumentStore>();
     match store.get_vector(&doc_id) {
-        Some(vector) => json!({ "vector": vector }),
+        Some(ev) => json!({
+            "vector": ev.values,
+            "space": { "provider": ev.space.provider, "model": ev.space.model, "dim": ev.space.dim },
+        }),
         None => json!(null),
     }
 }
@@ -119,7 +135,18 @@ pub fn documents_get_vector(app: AppHandle, doc_id: String) -> Value {
 #[tauri::command]
 pub fn documents_all_vectors(app: AppHandle) -> Value {
     let store = app.state::<crate::documents::DocumentStore>();
-    json!(store.all_vectors())
+    let out: Vec<Value> = store
+        .all_vectors()
+        .into_iter()
+        .map(|(id, ev)| {
+            json!({
+                "docId": id,
+                "vector": ev.values,
+                "space": { "provider": ev.space.provider, "model": ev.space.model, "dim": ev.space.dim },
+            })
+        })
+        .collect();
+    json!(out)
 }
 
 #[tauri::command]

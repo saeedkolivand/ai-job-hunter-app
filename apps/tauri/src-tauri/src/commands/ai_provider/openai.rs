@@ -185,6 +185,98 @@ impl AiProvider for OpenAiClient {
         Ok(())
     }
 
+    async fn complete(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> Result<String, String> {
+        let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
+        let caps = self.capabilities(model);
+        let endpoint = format!("{}/chat/completions", self.base_url);
+        let trace = RequestTrace::begin(self.id, model, "/chat/completions", &self.base_url, false);
+
+        let mut body = json!({
+            "model": model,
+            "messages": [
+                { "role": "system", "content": system },
+                { "role": "user", "content": user },
+            ],
+            "stream": false,
+        });
+        if caps.supports_temperature {
+            body["temperature"] = json!(temperature.unwrap_or(0.7));
+        }
+
+        let resp = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .map_err(|e| e.to_string())?
+            .post(&endpoint)
+            .bearer_auth(&api_key)
+            .json(&body)
+            .send()
+            .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                return Err(format!("{} unreachable: {e}", self.id.as_str()));
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            return Err(friendly_api_error(self.id, status, &body_text));
+        }
+        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        trace.end(Some(status.as_u16()), true);
+        data.get("choices")
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("message"))
+            .and_then(|m| m.get("content"))
+            .and_then(|t| t.as_str())
+            .map(String::from)
+            .ok_or_else(|| format!("{}: unexpected response shape", self.id.as_str()))
+    }
+
+    async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> Result<Vec<f64>, String> {
+        let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
+        let endpoint = format!("{}/embeddings", self.base_url);
+        let trace = RequestTrace::begin(self.id, model, "/embeddings", &self.base_url, false);
+        let resp = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| e.to_string())?
+            .post(&endpoint)
+            .bearer_auth(&api_key)
+            .json(&json!({ "model": model, "input": text }))
+            .send()
+            .await
+            .map_err(|e| format!("{} unreachable: {e}", self.id.as_str()))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            return Err(friendly_api_error(self.id, status, &body_text));
+        }
+        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        trace.end(Some(status.as_u16()), true);
+        data.get("data")
+            .and_then(|d| d.get(0))
+            .and_then(|e| e.get("embedding"))
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_f64()).collect())
+            .ok_or_else(|| format!("{}: missing embedding in response", self.id.as_str()))
+    }
+
+    fn default_embedding_model(&self) -> Option<&'static str> {
+        Some("text-embedding-3-small")
+    }
+
     async fn list_models(&self, client: &reqwest::Client, api_key: &str) -> Vec<Value> {
         let resp = client
             .get(format!("{}/models", self.base_url))

@@ -56,13 +56,14 @@ pub async fn autopilot_scrape(
 /// Rank job postings by semantic similarity to resume
 #[allow(dead_code)]
 pub async fn autopilot_rank(
+    app: &AppHandle,
     postings: Vec<JobPosting>,
     resume_text: Option<&str>,
     min_match_score: f64,
     cancel_token: &CancellationToken,
 ) -> Vec<(f64, JobPosting)> {
     let resume_vec = match resume_text {
-        Some(text) if !text.is_empty() => crate::documents::embed(text).await,
+        Some(text) if !text.is_empty() => crate::documents::embed(app, text).await,
         _ => None,
     };
 
@@ -73,8 +74,11 @@ pub async fn autopilot_rank(
         }
         let score = match (&resume_vec, &posting.description) {
             (Some(rv), Some(desc)) if !desc.is_empty() => {
-                match crate::documents::embed(desc).await {
-                    Some(jv) => (crate::documents::cosine_similarity(rv, &jv) * 100.0).round(),
+                match crate::documents::embed(app, desc).await {
+                    // Space-checked: incompatible vectors score 0, never silently mixed.
+                    Some(jv) => crate::commands::ai_provider::compare(rv, &jv)
+                        .map(|s| (s * 100.0).round())
+                        .unwrap_or(0.0),
                     None => 0.0,
                 }
             }

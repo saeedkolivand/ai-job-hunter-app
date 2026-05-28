@@ -1,6 +1,19 @@
 use super::*;
 use tempfile::TempDir;
 
+/// Build a space-tagged vector for the default (Ollama/nomic) space in tests.
+fn ev(values: Vec<f64>) -> EmbeddingVector {
+    let dim = values.len();
+    EmbeddingVector {
+        values,
+        space: EmbeddingSpace {
+            provider: "ollama".to_string(),
+            model: "nomic-embed-text".to_string(),
+            dim,
+        },
+    }
+}
+
 #[test]
 fn test_open_store() {
     let temp_dir = TempDir::new().unwrap();
@@ -168,16 +181,14 @@ fn test_upsert_vector() {
     
     let doc_id = "doc-123";
     let vector = vec![0.1, 0.2, 0.3, 0.4];
-    
-    store.upsert_vector(doc_id, &vector).unwrap();
-    let retrieved = store.get_vector(doc_id);
-    assert_eq!(retrieved, Some(vector));
-    
+
+    store.upsert_vector(doc_id, &ev(vector.clone())).unwrap();
+    assert_eq!(store.get_vector(doc_id).map(|e| e.values), Some(vector));
+
     // Update the vector
     let new_vector = vec![0.5, 0.6, 0.7, 0.8];
-    store.upsert_vector(doc_id, &new_vector).unwrap();
-    let retrieved = store.get_vector(doc_id);
-    assert_eq!(retrieved, Some(new_vector));
+    store.upsert_vector(doc_id, &ev(new_vector.clone())).unwrap();
+    assert_eq!(store.get_vector(doc_id).map(|e| e.values), Some(new_vector));
 }
 
 #[test]
@@ -187,10 +198,10 @@ fn test_get_vector() {
     
     let doc_id = "doc-123";
     let vector = vec![0.1, 0.2, 0.3];
-    
-    store.upsert_vector(doc_id, &vector).unwrap();
-    assert_eq!(store.get_vector(doc_id), Some(vector));
-    assert_eq!(store.get_vector("nonexistent"), None);
+
+    store.upsert_vector(doc_id, &ev(vector.clone())).unwrap();
+    assert_eq!(store.get_vector(doc_id).map(|e| e.values), Some(vector));
+    assert!(store.get_vector("nonexistent").is_none());
 }
 
 #[test]
@@ -198,9 +209,9 @@ fn test_all_vectors() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
     
-    store.upsert_vector("doc-1", &[0.1, 0.2]).unwrap();
-    store.upsert_vector("doc-2", &[0.3, 0.4]).unwrap();
-    
+    store.upsert_vector("doc-1", &ev(vec![0.1, 0.2])).unwrap();
+    store.upsert_vector("doc-2", &ev(vec![0.3, 0.4])).unwrap();
+
     let vectors = store.all_vectors();
     assert_eq!(vectors.len(), 2);
 }
@@ -283,7 +294,7 @@ fn test_data_store_export_import_round_trip() {
     store.insert(&a).unwrap();
     store.insert(&b).unwrap();
     store.set_default("doc-b").unwrap();
-    store.upsert_vector("doc-b", &[0.1, 0.2, 0.3]).unwrap();
+    store.upsert_vector("doc-b", &ev(vec![0.1, 0.2, 0.3])).unwrap();
 
     let bundle = store.export();
 
@@ -298,5 +309,8 @@ fn test_data_store_export_import_round_trip() {
     // The originally-default doc stays default after restore.
     assert_eq!(docs.iter().find(|d| d.is_default).map(|d| d.id.as_str()), Some("doc-b"));
     // Vectors survive the round trip.
-    assert_eq!(restored.get_vector("doc-b"), Some(vec![0.1, 0.2, 0.3]));
+    assert_eq!(
+        restored.get_vector("doc-b").map(|e| e.values),
+        Some(vec![0.1, 0.2, 0.3])
+    );
 }

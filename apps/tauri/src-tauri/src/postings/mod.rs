@@ -11,6 +11,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::commands::ai_provider::EmbeddingVector;
+
 // ── PostingsCache ─────────────────────────────────────────────────────────────
 
 /// Live job postings received during an active scrape.
@@ -19,8 +21,9 @@ use serde_json::Value;
 pub struct PostingsCache {
     items: Vec<Value>,
     /// Embedding cache keyed by posting id, populated lazily by hybrid search so
-    /// repeat searches over the same live postings don't re-embed.
-    embeddings: HashMap<String, Vec<f64>>,
+    /// repeat searches over the same live postings don't re-embed. Each entry
+    /// carries its embedding space so stale-space entries can be detected.
+    embeddings: HashMap<String, EmbeddingVector>,
 }
 
 impl PostingsCache {
@@ -38,12 +41,18 @@ impl PostingsCache {
         self.embeddings.clear();
     }
 
-    pub fn get_embedding(&self, id: &str) -> Option<Vec<f64>> {
+    pub fn get_embedding(&self, id: &str) -> Option<EmbeddingVector> {
         self.embeddings.get(id).cloned()
     }
 
-    pub fn set_embedding(&mut self, id: String, vector: Vec<f64>) {
+    pub fn set_embedding(&mut self, id: String, vector: EmbeddingVector) {
         self.embeddings.insert(id, vector);
+    }
+
+    /// Drop cached embeddings (keeping items) — used when the embedding space
+    /// changes so stale-space vectors aren't reused.
+    pub fn clear_embeddings(&mut self) {
+        self.embeddings.clear();
     }
 }
 

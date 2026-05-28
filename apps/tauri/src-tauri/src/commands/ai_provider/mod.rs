@@ -12,6 +12,7 @@
 use std::time::Instant;
 
 use async_trait::async_trait;
+use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 
@@ -161,6 +162,27 @@ pub trait AiProvider: Send + Sync {
         req: &AiGenerateRequest,
     ) -> Result<(), String>;
 
+    /// Non-streaming completion: returns the full assistant text in one shot.
+    /// Unlike `chat_stream` it emits no `ai:stream` events and never touches the
+    /// JobTracker — it's for server-side pipelines (e.g. cover-letter research +
+    /// leakage validation) that need the whole response before continuing.
+    /// Resolves its own API key, exactly like `chat_stream`.
+    async fn complete(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> Result<String, String>;
+
+    /// Embed a single text, returning the raw vector. Errors when this provider
+    /// has no embeddings API (callers gate on `capabilities().supports_embeddings`).
+    async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> Result<Vec<f64>, String>;
+
+    /// The provider's default embedding model, or `None` if it has no embeddings API.
+    fn default_embedding_model(&self) -> Option<&'static str>;
+
     /// List models this provider exposes for the given key.
     async fn list_models(&self, client: &reqwest::Client, api_key: &str) -> Vec<Value>;
 
@@ -184,6 +206,97 @@ pub fn resolve(id: ProviderId, base_url: Option<String>) -> Box<dyn AiProvider> 
 /// Parse + resolve in one step (used by the settings commands).
 pub fn resolve_by_name(name: &str, base_url: Option<String>) -> Result<Box<dyn AiProvider>, String> {
     Ok(resolve(ProviderId::parse(name)?, base_url))
+}
+
+// ── Embeddings ────────────────────────────────────────────────────────────────
+
+/// The identity of an embedding "space": vectors are only comparable when they
+/// share the same `(provider, model, dim)`. Stored alongside every vector so
+/// incompatible vectors can never be silently mixed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbeddingSpace {
+    pub provider: String,
+    pub model: String,
+    pub dim: usize,
+}
+
+impl std::fmt::Display for EmbeddingSpace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}@{}", self.provider, self.model, self.dim)
+    }
+}
+
+/// A vector tagged with the space it was produced in.
+#[derive(Debug, Clone)]
+pub struct EmbeddingVector {
+    pub values: Vec<f64>,
+    pub space: EmbeddingSpace,
+}
+
+/// Embed `text` with an explicit provider/model, returning a space-tagged vector.
+/// Routes through the same `resolve` + capability + auth flow as chat, so there
+/// are no Ollama assumptions and no silent fallback.
+pub async fn embed_text(
+    app: &AppHandle,
+    provider: ProviderId,
+    model: &str,
+    base_url: Option<String>,
+    text: &str,
+) -> Result<EmbeddingVector, String> {
+    let client = resolve(provider, base_url);
+    let model = if model.trim().is_empty() {
+        client
+            .default_embedding_model()
+            .ok_or_else(|| format!("{} does not support embeddings.", provider.as_str()))?
+            .to_string()
+    } else {
+        model.to_string()
+    };
+    if !client.capabilities(&model).supports_embeddings {
+        return Err(format!("{} does not support embeddings.", provider.as_str()));
+    }
+    let values = client.embed(app, &model, text).await?;
+    if values.is_empty() {
+        return Err(format!("{} returned an empty embedding.", provider.as_str()));
+    }
+    let dim = values.len();
+    Ok(EmbeddingVector {
+        values,
+        space: EmbeddingSpace {
+            provider: provider.as_str().to_string(),
+            model,
+            dim,
+        },
+    })
+}
+
+/// Cosine similarity between two vectors that MUST share an embedding space.
+/// Returns `Err` on a space mismatch — incomparable vectors are never silently
+/// scored (the old behavior returned 0.0 and hid the bug).
+pub fn compare(a: &EmbeddingVector, b: &EmbeddingVector) -> Result<f64, String> {
+    if a.space != b.space {
+        return Err(format!(
+            "refusing to compare embeddings from different spaces: {} vs {}",
+            a.space, b.space
+        ));
+    }
+    Ok(cosine(&a.values, &b.values))
+}
+
+/// Raw cosine similarity. Prefer [`compare`] for stored vectors so spaces are checked.
+pub fn cosine(a: &[f64], b: &[f64]) -> f64 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let dot: f64 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+    let norm_a: f64 = a.iter().map(|x| x * x).sum::<f64>().sqrt();
+    let norm_b: f64 = b.iter().map(|x| x * x).sum::<f64>().sqrt();
+    if norm_a == 0.0 || norm_b == 0.0 {
+        0.0
+    } else {
+        dot / (norm_a * norm_b)
+    }
 }
 
 // ── Request tracing ─────────────────────────────────────────────────────────────

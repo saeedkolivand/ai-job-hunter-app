@@ -39,11 +39,11 @@ export const useRemoveProviderKey = () => {
   });
 };
 
-export const useListProviderModels = (provider: string, enabled = true) => {
+export const useListProviderModels = (provider: string, enabled = true, baseUrl?: string) => {
   const api = useAppClient();
   return useQuery({
-    queryKey: [...keys.ai.models, 'provider-models', provider],
-    queryFn: () => api.ai.listProviderModels({ provider }),
+    queryKey: [...keys.ai.models, 'provider-models', provider, baseUrl ?? ''],
+    queryFn: () => api.ai.listProviderModels({ provider, baseUrl }),
     enabled: enabled && provider !== 'ollama',
     staleTime: 300_000,
   });
@@ -52,7 +52,37 @@ export const useListProviderModels = (provider: string, enabled = true) => {
 export const useTestProviderKey = () => {
   const api = useAppClient();
   return useMutation({
-    mutationFn: ({ provider }: { provider: string }) => api.ai.testProviderKey({ provider }),
+    mutationFn: ({ provider, baseUrl }: { provider: string; baseUrl?: string }) =>
+      api.ai.testProviderKey({ provider, baseUrl }),
+  });
+};
+
+/** Active embedding space, per-space vector counts, and document index coverage. */
+export const useEmbeddingStatus = () => {
+  const api = useAppClient();
+  return useQuery({
+    queryKey: keys.ai.embeddingStatus,
+    queryFn: () => api.ai.embeddingStatus(),
+    staleTime: 10_000,
+  });
+};
+
+export const useSetEmbeddingConfig = () => {
+  const api = useAppClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: { provider: string; model?: string; baseUrl?: string }) =>
+      api.ai.setEmbeddingConfig(req),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.ai.embeddingStatus });
+    },
+  });
+};
+
+export const useReembedAll = () => {
+  const api = useAppClient();
+  return useMutation({
+    mutationFn: () => api.ai.reembedAll(),
   });
 };
 

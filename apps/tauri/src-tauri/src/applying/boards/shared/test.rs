@@ -1,12 +1,18 @@
 use super::*;
 
+// Env-var override and default are exercised in a single test: `AJH_DATA_DIR` is
+// process-global, so splitting them into parallel tests races (one's remove_var
+// can land between the other's set_var and read).
 #[test]
-fn test_resolve_data_dir_default() {
+fn test_resolve_data_dir() {
+    // Override via env var.
+    unsafe { std::env::set_var("AJH_DATA_DIR", "/custom/path"); }
+    assert_eq!(resolve_data_dir().to_string_lossy(), "/custom/path");
+
+    // Default falls back to USERPROFILE/HOME and ends with .ajh.
     unsafe { std::env::remove_var("AJH_DATA_DIR"); }
-    let dir = resolve_data_dir();
-    // Should use USERPROFILE or HOME and end with .ajh
-    let dir_str = dir.to_string_lossy();
-    assert!(dir_str.contains(".ajh") || dir_str.ends_with(".ajh"));
+    let dir_str = resolve_data_dir().to_string_lossy().to_string();
+    assert!(dir_str.contains(".ajh"));
 }
 
 #[test]
@@ -72,15 +78,6 @@ fn test_emit_step_with_false_ok() {
         })),
     };
     emit_step(&ctx, "test", false, Some("failed"));
-}
-
-#[test]
-fn test_resolve_data_dir_with_env_var() {
-    unsafe { std::env::set_var("AJH_DATA_DIR", "/custom/path"); }
-    let dir = resolve_data_dir();
-    // On Windows, paths are normalized; compare string representation
-    assert_eq!(dir.to_string_lossy(), "/custom/path");
-    unsafe { std::env::remove_var("AJH_DATA_DIR"); }
 }
 
 #[test]

@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-use crate::documents::{cosine_similarity, embed, DocumentStore};
+use crate::documents::{embed, DocumentStore};
 use crate::ipc_contracts::matching::MatchResumeRequest;
 use crate::ipc_contracts::resume::ResumeExtractTextRequest;
 use crate::postings::PostingsCache;
@@ -26,16 +26,26 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
         return json!({ "error": format!("job not found in cache: {}", req.job_id) });
     };
 
-    // Semantic: reuse the resume's stored vector when present, else embed its text.
-    let resume_vec = store.get_vector(&req.resume_id);
-    let resume_vec = match resume_vec {
-        Some(v) => Some(v),
-        None => embed(&resume.text).await,
+    // Semantic: reuse the resume's stored vector only when it was produced by the
+    // active embedding space; otherwise (re-)embed and persist so the index stays
+    // consistent. Never compares vectors across spaces.
+    let active = store.embedding_config();
+    let resume_vec = match store.get_vector(&req.resume_id) {
+        Some(v) if active.matches(&v.space) => Some(v),
+        _ => {
+            let v = embed(&app, &resume.text).await;
+            if let Some(ref ev) = v {
+                let _ = store.upsert_vector(&req.resume_id, ev);
+            }
+            v
+        }
     };
-    let job_vec = embed(&job_text).await;
+    let job_vec = embed(&app, &job_text).await;
     let semantic = match (&resume_vec, &job_vec) {
-        (Some(a), Some(b)) => (cosine_similarity(a, b).clamp(0.0, 1.0) * 100.0).round(),
-        _ => 0.0, // Ollama offline — fall back to keyword-only.
+        (Some(a), Some(b)) => crate::commands::ai_provider::compare(a, b)
+            .map(|s| (s.clamp(0.0, 1.0) * 100.0).round())
+            .unwrap_or(0.0),
+        _ => 0.0, // embeddings unavailable — fall back to keyword-only.
     };
 
     // ATS: how many job keywords appear in the resume text.
