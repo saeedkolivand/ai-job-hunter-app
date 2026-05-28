@@ -23,6 +23,7 @@ pub struct AiMessage {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct AiGenerateRequest {
     pub model: String,
     pub messages: Vec<AiMessage>,
