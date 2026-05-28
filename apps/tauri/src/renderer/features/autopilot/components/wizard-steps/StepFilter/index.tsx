@@ -1,7 +1,11 @@
-import { Input, TextArea } from '@ajh/ui';
+import { useState } from 'react';
 
+import { Input } from '@ajh/ui';
+
+import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import type { Prefilled, SetFn, WizardState } from '@/features/autopilot/types';
 import { useTranslation } from '@/lib/i18n';
+import { useExtractText } from '@/services';
 
 import { PrefilledBadge } from '../PrefilledBadge';
 import { WizardField } from '../WizardField';
@@ -17,6 +21,21 @@ interface StepFilterProps {
 
 export function StepFilter({ form, set, prefilled }: StepFilterProps) {
   const { t } = useTranslation();
+  const extractText = useExtractText();
+  const [uploadingResume, setUploadingResume] = useState(false);
+
+  const handleResumeUpload = async (file: File) => {
+    setUploadingResume(true);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const res = (await extractText.mutateAsync({ name: file.name, bytes })) as { text: string };
+      const text = (res?.text ?? '').trim();
+      if (text) set('resumeText', text);
+    } finally {
+      setUploadingResume(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div>
@@ -49,19 +68,13 @@ export function StepFilter({ form, set, prefilled }: StepFilterProps) {
         </p>
       </WizardField>
 
-      <WizardField
-        label={t('autopilot.wizard.filter.resume')}
-        hint={t('autopilot.wizard.filter.resumeOptional')}
-      >
-        <TextArea
-          value={form.resumeText}
-          onChange={(e) => set('resumeText', e.target.value)}
-          placeholder={t('autopilot.wizard.filter.resumePlaceholder')}
-          className="w-full bg-white/[0.02] text-[11px] text-foreground/70 placeholder:text-foreground/20 font-mono leading-relaxed"
-          rows={4}
-          spellCheck={false}
-        />
-      </WizardField>
+      <ResumeInputCard
+        value={form.resumeText}
+        onChange={(v) => set('resumeText', v)}
+        onUpload={handleResumeUpload}
+        uploading={uploadingResume}
+        placeholder={t('autopilot.wizard.filter.resumePlaceholder')}
+      />
 
       <div className="grid grid-cols-2 gap-3">
         <WizardField

@@ -213,9 +213,24 @@ export interface Autopilot {
   autoSubmit: boolean;
   totalFound: number;
   totalApplied: number;
+  /** Jobs surfaced by the most recent run. */
+  foundJobs?: AutopilotFoundJob[];
   lastRunAt?: number;
   createdAt: number;
   updatedAt: number;
+}
+
+/** A job posting surfaced by an autopilot run. */
+export interface AutopilotFoundJob {
+  title: string;
+  company: string;
+  url: string;
+  location?: string;
+  /** Full job description — used to pre-fill a tailored generation. */
+  description?: string;
+  /** Match score (0–100) when the posting passed ranking. */
+  score?: number;
+  foundAt: number;
 }
 
 /** Result record for a single autopilot run. */

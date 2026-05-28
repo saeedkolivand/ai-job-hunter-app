@@ -90,15 +90,23 @@ export async function runAnalysis({
   ) as (typeof validLocales)[number];
 
   const api = getClient();
+  // Route to the active provider's endpoint — without this the backend defaults
+  // to Ollama, so cloud analysis would wrongly hit the local Ollama host.
+  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
+  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+  const providerSettings = providerConfig?.providers?.[activeProvider];
   const res = (await api.ai.generate({
-    model,
+    model: providerSettings?.model || model,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
     locale: safeLocale,
     temperature: 0.1,
-  })) as { jobId: string };
+    ...(activeProvider !== 'ollama'
+      ? { provider: activeProvider, baseUrl: providerSettings?.baseUrl }
+      : {}),
+  } as Parameters<typeof api.ai.generate>[0])) as { jobId: string };
 
   const jobId = res.jobId;
   onJobId?.(jobId);

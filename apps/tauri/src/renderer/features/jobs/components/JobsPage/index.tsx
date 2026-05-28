@@ -60,6 +60,7 @@ export function JobsPage() {
     scrapeJobRef,
     startScrape,
     cancelScrape,
+    noteScrapeFinished,
     handleInlineConnect,
     handleInlineDisconnect,
     boardConnected,
@@ -89,7 +90,14 @@ export function JobsPage() {
       return;
     }
 
-    if (ev.jobId !== scrapeJobRef.current) return;
+    if (ev.type === 'job.completed') {
+      noteScrapeFinished(ev.jobId, { ok: true });
+    } else if (ev.type === 'job.failed') {
+      noteScrapeFinished(ev.jobId, {
+        ok: false,
+        note: typeof ev.data === 'string' ? ev.data : t('jobs.scrapeFailed'),
+      });
+    }
   });
 
   const allPostings = useMemo(() => {

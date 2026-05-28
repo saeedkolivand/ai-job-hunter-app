@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { JobEvent } from '@ajh/shared';
@@ -51,12 +51,18 @@ export const useRetryJob = () => {
 export const useJobEvents = (onEvent?: (event: JobEvent) => void) => {
   const api = useAppClient();
   const qc = useQueryClient();
+  // Keep the latest handler in a ref so the listener can subscribe ONCE.
+  // Re-subscribing on every render (the handler is usually an inline closure)
+  // races with the async Tauri `listen`, leaving windows where no native
+  // listener is attached — during which a `job.completed` event is lost.
+  const handlerRef = useRef(onEvent);
+  handlerRef.current = onEvent;
   useEffect(() => {
     const offRaw = api.jobs.onEvent((event: unknown) => {
       void qc.invalidateQueries({ queryKey: keys.jobs.all });
-      onEvent?.(event as JobEvent);
+      handlerRef.current?.(event as JobEvent);
     });
     const off = offRaw as unknown as (() => void) | undefined;
     return () => off?.();
-  }, [api, qc, onEvent]);
+  }, [api, qc]);
 };

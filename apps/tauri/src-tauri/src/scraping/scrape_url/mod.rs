@@ -36,6 +36,13 @@ pub async fn resolve(url: &str) -> Result<Option<JobPosting>> {
     generic_html(url).await
 }
 
+/// LinkedIn (and similar pages) render "Show more" / "Show less" toggle buttons
+/// right after the description markup; strip those trailing labels.
+fn clean_description(text: &str) -> String {
+    let re = regex::Regex::new(r"(?i)(\s*(show more|show less))+\s*$").unwrap();
+    re.replace(text, "").trim().to_string()
+}
+
 // ── Greenhouse ──────────────────────────────────────────────────────────────
 //
 // URL: https://boards.greenhouse.io/<company>/jobs/<job_id>
@@ -384,7 +391,13 @@ async fn try_linkedin(url: &str) -> Result<Option<JobPosting>> {
     let description = doc
         .select(&desc_sel)
         .next()
-        .map(|e| crate::scraping::http::strip_html(&e.inner_html()));
+        .map(|e| clean_description(&crate::scraping::http::html_to_text(&e.inner_html())));
+
+    log::info!(
+        "[scrape_url] linkedin {} description: {} chars",
+        job_id,
+        description.as_ref().map(|d| d.len()).unwrap_or(0)
+    );
 
     Ok(Some(JobPosting {
         id: format!("linkedin:{}", job_id),

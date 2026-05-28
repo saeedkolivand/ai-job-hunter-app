@@ -223,6 +223,20 @@ pub fn scrape_persist_job(app: AppHandle, req: ScrapePersistJobRequest) -> Value
     json!({ "success": true })
 }
 
+/// Resolve a single job posting (incl. full description) from its URL.
+/// Synchronous request/response — used to fetch a description on demand for
+/// boards whose list scrape omits it (LinkedIn, Glassdoor, etc.).
+#[tauri::command]
+pub async fn scrape_resolve_url(url: String) -> Value {
+    if url.is_empty() {
+        return json!(null);
+    }
+    match crate::scraping::scrape_url::resolve(&url).await {
+        Ok(Some(posting)) => serde_json::to_value(&posting).unwrap_or(json!(null)),
+        _ => json!(null),
+    }
+}
+
 #[tauri::command]
 pub fn scrape_list_postings(app: AppHandle) -> Value {
     let cache = app.state::<Mutex<PostingsCache>>();

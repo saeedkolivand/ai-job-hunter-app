@@ -5,6 +5,7 @@ import type { ScrapeBoardRequest, ScrapeUrlRequest } from '@ajh/shared/schemas';
 export const scrape = {
   board: (req: ScrapeBoardRequest) => invoke('scrape_board', { req }),
   url: (req: ScrapeUrlRequest) => invoke('scrape_url', { req }),
+  resolveUrl: ({ url }: { url: string }) => invoke('scrape_resolve_url', { url }),
   persistJob: (req: unknown) => invoke('scrape_persist_job', { req }),
   listPostings: () => invoke('scrape_list_postings'),
   clearPostings: () => invoke('scrape_clear_postings'),

@@ -72,7 +72,21 @@ Modern job searching is repetitive, time-consuming, and emotionally draining. AI
 
 ## Installation
 
-### Prerequisites
+### Running a released build (macOS)
+
+Download the latest `.dmg` from the [Releases](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases) page and drag the app into your Applications folder.
+
+Because the app is not notarized by Apple, macOS Gatekeeper may refuse to open it (e.g. "app is damaged and can't be opened"). Clear the quarantine attribute once after installing:
+
+```bash
+xattr -cr /Applications/AI\ Job\ Hunter\ Assistant.app
+```
+
+Then launch the app normally.
+
+### Build from source
+
+#### Prerequisites
 
 | Requirement    | Version | Notes                                           |
 | -------------- | ------- | ----------------------------------------------- |
@@ -81,7 +95,7 @@ Modern job searching is repetitive, time-consuming, and emotionally draining. AI
 | Rust toolchain | stable  | `rustup install stable`                         |
 | Ollama         | latest  | [ollama.com](https://ollama.com) — for local AI |
 
-### Clone and install
+#### Clone and install
 
 ```bash
 git clone https://github.com/saeedkolivand/ai-job-hunter-assistant-app.git
@@ -89,7 +103,7 @@ cd ai-job-hunter-assistant-app
 pnpm install
 ```
 
-### Pull an AI model
+#### Pull an AI model
 
 ```bash
 ollama pull mistral
@@ -97,7 +111,7 @@ ollama pull mistral
 ollama pull llama3.2
 ```
 
-### Start in development mode
+#### Start in development mode
 
 ```bash
 pnpm dev

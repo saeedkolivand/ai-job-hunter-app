@@ -1,11 +1,25 @@
-import { Pause, Play, RotateCcw, Trash2 } from 'lucide-react';
+import {
+  Briefcase,
+  ChevronUp,
+  ExternalLink,
+  Pause,
+  Pencil,
+  Play,
+  RotateCcw,
+  Trash2,
+  Wand2,
+} from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useState } from 'react';
 
-import type { Autopilot } from '@ajh/shared';
-import { Button, cn, GlassCard } from '@ajh/ui';
+import type { Autopilot, AutopilotFoundJob } from '@ajh/shared';
+import { Button, cn, GlassCard, transition } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { type AutopilotRunState, RUN_STATE_LABEL } from '@/lib/machines/autopilot-run.machine';
+import { useOpenExternal } from '@/services';
+
+import { ApplyJobModal } from '../ApplyJobModal';
 
 interface StepLog {
   step: string;
@@ -19,6 +33,7 @@ interface AutopilotCardProps {
   stepLogs: StepLog[];
   onRun(): void;
   onTogglePause(): void;
+  onEdit(): void;
   onDelete(): void;
 }
 
@@ -38,11 +53,17 @@ export function AutopilotCard({
   stepLogs,
   onRun,
   onTogglePause,
+  onEdit,
   onDelete,
 }: AutopilotCardProps) {
   const paused = ap.status === 'paused';
   const running = runState === 'scraping' || runState === 'ranking' || runState === 'applying';
   const { t } = useTranslation();
+  const openExternal = useOpenExternal();
+  const [showFound, setShowFound] = useState(false);
+  const [applyJob, setApplyJob] = useState<AutopilotFoundJob | null>(null);
+  const foundJobs = ap.foundJobs ?? [];
+
   const lastRun = ap.lastRunAt
     ? new Date(ap.lastRunAt).toLocaleString()
     : t('autopilot.wizard.never');
@@ -101,11 +122,36 @@ export function AutopilotCard({
             {running ? <RotateCcw size={11} className="animate-spin" /> : <Play size={11} />}
             {running ? RUN_STATE_LABEL[runState] : t('autopilot.wizard.run')}
           </Button>
+          {foundJobs.length > 0 && (
+            <Button
+              onClick={() => setShowFound((v) => !v)}
+              aria-label={t('autopilot.foundJobs')}
+              title={t('autopilot.foundJobs')}
+              className={cn(
+                'flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition-colors h-auto border-transparent',
+                showFound
+                  ? 'bg-brand/15 text-brand-soft'
+                  : 'bg-white/[0.04] text-foreground/50 hover:text-foreground/80'
+              )}
+            >
+              <Briefcase size={11} />
+              {foundJobs.length}
+            </Button>
+          )}
           <Button
             onClick={onTogglePause}
             className="rounded-lg p-1.5 text-foreground/40 hover:bg-white/[0.06] hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
           >
             {paused ? <Play size={13} /> : <Pause size={13} />}
+          </Button>
+          <Button
+            onClick={onEdit}
+            disabled={running}
+            aria-label={t('autopilot.edit')}
+            title={t('autopilot.edit')}
+            className="rounded-lg p-1.5 text-foreground/40 hover:bg-white/[0.06] hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent disabled:opacity-40"
+          >
+            <Pencil size={13} />
           </Button>
           <Button
             onClick={onDelete}
@@ -139,6 +185,80 @@ export function AutopilotCard({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Found jobs from the most recent run */}
+      <AnimatePresence>
+        {showFound && foundJobs.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={transition.fast}
+            className="overflow-hidden"
+          >
+            <div className="overflow-hidden rounded-lg border border-white/[0.05] bg-white/[0.03]">
+              <div className="flex items-center justify-between border-b border-white/[0.05] px-3 py-2">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/40">
+                  {t('autopilot.foundJobs')} · {foundJobs.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowFound(false)}
+                  aria-label={t('autopilot.collapse')}
+                  title={t('autopilot.collapse')}
+                  className="rounded p-0.5 text-foreground/30 transition-colors hover:text-foreground/70"
+                >
+                  <ChevronUp size={12} />
+                </button>
+              </div>
+              <div className="max-h-64 divide-y divide-white/[0.04] overflow-y-auto">
+                {foundJobs.map((job, i) => (
+                  <div
+                    key={`${job.url}-${i}`}
+                    className="flex items-center gap-2 px-3 py-2 transition-colors hover:bg-white/[0.03]"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => void openExternal.mutate(job.url)}
+                      title={t('autopilot.viewJob')}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[11px] text-foreground/80">{job.title}</div>
+                        <div className="flex items-center gap-1.5 text-[10px] text-foreground/40">
+                          <span className="truncate">{job.company}</span>
+                          {job.location && <span className="truncate">· {job.location}</span>}
+                        </div>
+                      </div>
+                      {typeof job.score === 'number' && (
+                        <span className="shrink-0 rounded bg-brand/10 px-1.5 py-0.5 text-[9px] text-brand-soft">
+                          {Math.round(job.score)}%
+                        </span>
+                      )}
+                      <ExternalLink size={11} className="shrink-0 text-foreground/25" />
+                    </button>
+                    <Button
+                      onClick={() => setApplyJob(job)}
+                      title={t('autopilot.applyJob')}
+                      className="flex shrink-0 items-center gap-1 rounded-lg border-transparent bg-brand/10 px-2 py-1 text-[10px] font-medium text-brand-soft transition-colors hover:bg-brand/20 h-auto"
+                    >
+                      <Wand2 size={10} /> {t('autopilot.applyJob')}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {applyJob && (
+        <ApplyJobModal
+          job={applyJob}
+          resumeText={ap.resumeText}
+          onClose={() => setApplyJob(null)}
+        />
+      )}
     </GlassCard>
   );
 }
