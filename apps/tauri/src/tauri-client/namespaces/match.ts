@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
+import type { MatchResumeRequest } from '@ajh/shared/schemas';
+
 export const match = {
-  resume: (req: unknown) => invoke('match_resume', { req }),
+  resume: (req: MatchResumeRequest) => invoke('match_resume', { req }),
 };

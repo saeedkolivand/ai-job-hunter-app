@@ -274,7 +274,7 @@ fn main() {
             commands::job_preferences::job_preferences_get,
             commands::job_preferences::job_preferences_set,
             // search
-            commands::search::search_postings,
+            commands::search::search_hybrid,
             // scrape
             commands::scrape::scrape_board,
             commands::scrape::scrape_url,
