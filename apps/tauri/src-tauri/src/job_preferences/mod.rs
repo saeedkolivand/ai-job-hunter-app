@@ -6,6 +6,8 @@ use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
+use crate::db::{run_migrations, Migration};
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,30 +39,31 @@ pub struct JobPreferencesStore {
 }
 
 impl JobPreferencesStore {
+    const MIGRATIONS: &'static [Migration] = &[Migration {
+        name: "create_job_preferences",
+        up: |conn| {
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS job_preferences (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    location TEXT,
+                    remote TEXT,
+                    seniority TEXT,
+                    salary_min INTEGER,
+                    salary_max INTEGER,
+                    tech_stack TEXT
+                );",
+            )?;
+            // Ensure the single settings row exists.
+            conn.execute("INSERT OR IGNORE INTO job_preferences (id) VALUES (1)", [])?;
+            Ok(())
+        },
+    }];
+
     pub fn open(data_dir: &PathBuf) -> Result<Self, String> {
         std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
         let path = data_dir.join("job_preferences.db");
         let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS job_preferences (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                location TEXT,
-                remote TEXT,
-                seniority TEXT,
-                salary_min INTEGER,
-                salary_max INTEGER,
-                tech_stack TEXT
-            );",
-        )
-        .map_err(|e| e.to_string())?;
-        
-        // Ensure the single row exists
-        conn.execute(
-            "INSERT OR IGNORE INTO job_preferences (id) VALUES (1)",
-            [],
-        )
-        .map_err(|e| e.to_string())?;
-        
+        run_migrations(&conn, Self::MIGRATIONS)?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 

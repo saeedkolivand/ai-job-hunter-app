@@ -4,6 +4,7 @@ pub mod ai_generations;
 pub mod cover_letter;
 pub mod system;
 pub mod ai;
+pub mod ai_provider;
 pub mod scrape;
 pub mod apply;
 pub mod autopilot;

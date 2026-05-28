@@ -29,6 +29,7 @@ mod conversations;
 mod credentials;
 mod documents;
 mod export;
+mod ipc_contracts;
 mod job_preferences;
 mod jobs;
 mod platform;

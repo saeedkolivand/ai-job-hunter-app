@@ -5,25 +5,9 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::postings::{InteractionRecord, InteractionStore, PostingsCache};
 use crate::scraping::{BoardSearchInput, ScraperEngine};
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ScrapeBoardRequest {
-    pub board: String,
-    pub query: String,
-    pub location: Option<String>,
-    #[serde(default = "default_pages")]
-    pub pages: u32,
-    pub date_filter: Option<String>,
-    pub locale: Option<String>,
-}
-
-fn default_pages() -> u32 { 1 }
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ScrapeUrlRequest {
-    pub url: String,
-}
+// ScrapeBoardRequest and ScrapeUrlRequest are generated from the Zod schemas in
+// packages/shared by `pnpm gen:ipc`. See crate::ipc_contracts::scrape.
+pub use crate::ipc_contracts::scrape::{ScrapeBoardRequest, ScrapeUrlRequest};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

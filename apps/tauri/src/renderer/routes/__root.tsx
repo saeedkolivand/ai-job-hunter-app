@@ -4,6 +4,7 @@ import { createRootRoute, Outlet, useRouter } from '@tanstack/react-router';
 import { NotificationProvider } from '@ajh/ui';
 
 import { CinematicBackground } from '@/components/background/CinematicBackground';
+import { ProtocolVersionGate } from '@/components/layout/ProtocolVersionGate';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { StatusBar } from '@/components/layout/StatusBar';
 import { Titlebar } from '@/components/layout/Titlebar';
@@ -81,21 +82,23 @@ function RootLayout() {
 
   return (
     <NotificationProvider>
-      <CapabilityProvider>
-        <div className="app-content relative flex h-screen flex-col overflow-hidden pt-3">
-          <CinematicBackground />
-          <Titlebar />
-          <div className="flex flex-1 overflow-hidden">
-            <Sidebar />
-            <main className="glass-surface m-3 flex-1 overflow-hidden rounded-2xl">
-              <Outlet />
-            </main>
+      <ProtocolVersionGate>
+        <CapabilityProvider>
+          <div className="app-content relative flex h-screen flex-col overflow-hidden pt-3">
+            <CinematicBackground />
+            <Titlebar />
+            <div className="flex flex-1 overflow-hidden">
+              <Sidebar />
+              <main className="glass-surface m-3 flex-1 overflow-hidden rounded-2xl">
+                <Outlet />
+              </main>
+            </div>
+            <StatusBar />
+            <OnboardingWizard />
+            <UpdateBanner />
           </div>
-          <StatusBar />
-          <OnboardingWizard />
-          <UpdateBanner />
-        </div>
-      </CapabilityProvider>
+        </CapabilityProvider>
+      </ProtocolVersionGate>
     </NotificationProvider>
   );
 }

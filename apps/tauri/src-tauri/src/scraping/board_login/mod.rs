@@ -1,6 +1,6 @@
 //! Board authentication flow.
 //!
-//! Replaces `apps/scraper-runtime/src/login.ts`. Opens a headed Chromium
+//! Opens a headed Chromium
 //! window via `chromiumoxide` pointed at the board's login URL. Auth is
 //! detected by URL pattern and/or cookie predicates per board. On success
 //! the cookies are exported to `<board-state>/cookies.json` so HTTP scrapers

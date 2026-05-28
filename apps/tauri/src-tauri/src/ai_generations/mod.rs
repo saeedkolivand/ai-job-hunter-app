@@ -6,6 +6,8 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::db::{run_migrations, Migration};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiGenerationRecord {
     pub id: String,
@@ -43,29 +45,35 @@ pub struct AiGenerationStore {
 }
 
 impl AiGenerationStore {
+    const MIGRATIONS: &'static [Migration] = &[Migration {
+        name: "create_ai_generations",
+        up: |conn| {
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS ai_generations (
+                    id                TEXT PRIMARY KEY,
+                    created_at        INTEGER NOT NULL,
+                    candidate_name    TEXT NOT NULL DEFAULT '',
+                    job_title         TEXT NOT NULL DEFAULT '',
+                    company_name      TEXT NOT NULL DEFAULT '',
+                    resume_language   TEXT NOT NULL DEFAULT 'en',
+                    job_ad_language   TEXT NOT NULL DEFAULT 'en',
+                    target_language   TEXT NOT NULL DEFAULT 'en',
+                    mismatch          INTEGER NOT NULL DEFAULT 0,
+                    top_requirements  TEXT NOT NULL DEFAULT '[]',
+                    mode              TEXT NOT NULL DEFAULT 'ats',
+                    resume_text       TEXT NOT NULL DEFAULT '',
+                    cover_letter_text TEXT NOT NULL DEFAULT '',
+                    job_ad            TEXT NOT NULL DEFAULT ''
+                );",
+            )
+        },
+    }];
+
     pub fn open(data_dir: &PathBuf) -> Result<Self, String> {
         std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
         let path = data_dir.join("ai_generations.db");
         let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS ai_generations (
-                id                TEXT PRIMARY KEY,
-                created_at        INTEGER NOT NULL,
-                candidate_name    TEXT NOT NULL DEFAULT '',
-                job_title         TEXT NOT NULL DEFAULT '',
-                company_name      TEXT NOT NULL DEFAULT '',
-                resume_language   TEXT NOT NULL DEFAULT 'en',
-                job_ad_language   TEXT NOT NULL DEFAULT 'en',
-                target_language   TEXT NOT NULL DEFAULT 'en',
-                mismatch          INTEGER NOT NULL DEFAULT 0,
-                top_requirements  TEXT NOT NULL DEFAULT '[]',
-                mode              TEXT NOT NULL DEFAULT 'ats',
-                resume_text       TEXT NOT NULL DEFAULT '',
-                cover_letter_text TEXT NOT NULL DEFAULT '',
-                job_ad            TEXT NOT NULL DEFAULT ''
-            );",
-        )
-        .map_err(|e| e.to_string())?;
+        run_migrations(&conn, Self::MIGRATIONS)?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 

@@ -1,5 +1,6 @@
 use crate::applying::types::{ApplyContext, ApplyStep};
 use crate::apply_helpers::{decode_resume_to_temp, setup_apply_job};
+use crate::ipc_contracts::apply::ApplyStartRequest;
 use crate::scraping::ScraperEngine;
 use serde_json::{json, Value};
 use parking_lot::Mutex;
@@ -7,9 +8,12 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio_util::sync::CancellationToken;
 
 #[tauri::command]
-pub async fn apply_start(app: AppHandle, req: Value) -> Value {
+pub async fn apply_start(app: AppHandle, req: ApplyStartRequest) -> Value {
     use crate::applying::registry::ApplierRegistry;
 
+    // The applier helpers read fields dynamically; serialize the typed request
+    // back to JSON so they keep working unchanged.
+    let req = serde_json::to_value(&req).unwrap_or_default();
     let board = req.get("board").and_then(|b| b.as_str()).unwrap_or("");
     let url = req.get("url").and_then(|u| u.as_str()).unwrap_or("");
     if board.is_empty() || url.is_empty() {

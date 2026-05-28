@@ -170,10 +170,15 @@ jobs:
         continue-on-error: true
         run: pnpm format:check
 
+      - name: 🧬 Check IPC Codegen Drift
+        id: gen_ipc
+        continue-on-error: true
+        run: pnpm gen:ipc:check
+
       - name: ❌ Check for Failures
-        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure'
+        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure'
         run: |
-          echo "::error file=package.json::Lint or format check failed. Run 'pnpm lint:fix' and 'pnpm format' locally to fix."
+          echo "::error file=package.json::Lint, format, or IPC codegen check failed. Run 'pnpm lint:fix', 'pnpm format', and 'pnpm gen:ipc' locally to fix."
           echo "::error::Please fix the issues above before merging."
           exit 1
 

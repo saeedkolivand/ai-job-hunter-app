@@ -42,12 +42,7 @@ Local-first desktop app in a pnpm monorepo. **Tauri is the shell.**
 packages/shared       ← IPC contracts, Zod schemas, shared types (no UI, no Node)
 packages/ui           ← React component library + design system (no app logic)
 packages/prompts      ← AI prompt templates (pure TS, zero deps)
-packages/core         ← EventBus, JobQueue, Logger
-packages/ai           ← Ollama client + AI runtime
-packages/data         ← DB, scraping, matching, files
-packages/workers      ← Worker thread pool
-apps/tauri            ← Tauri app (Rust + React via sidecar)
-apps/scraper-runtime  ← Node.js HTTP sidecar (scraping, login, documents, AI)
+apps/tauri            ← Tauri app: Rust core (scraping, login, documents, AI) + React renderer
 ```
 
 Renderer → shell communication: `AppClient` context only.
@@ -149,7 +144,6 @@ No `useState + useEffect` for remote data. Every IPC call goes through a service
 - `packages/shared` — no React, no Node APIs
 - `packages/ui` — no Zustand, no IPC, no routing
 - `packages/prompts` — no UI, no `window`
-- Renderer **never** imports from `@ajh/core`, `@ajh/ai`, `@ajh/data`, `@ajh/workers`
 
 ### 13. Stale branch check — before any work
 
@@ -180,8 +174,6 @@ No `// eslint-disable`, no `@ts-ignore`. Add scoped overrides to `eslint.config.
 | IPC contract           | `packages/shared/src/ipc/contracts.ts`                      |
 | Tauri commands         | `apps/tauri/src-tauri/src/commands.rs`                      |
 | Tauri client (TS)      | `apps/tauri/src/tauri-client.ts`                            |
-| Sidecar entry          | `apps/scraper-runtime/src/index.ts`                         |
-| Sidecar protocol       | `apps/scraper-runtime/src/protocol.ts`                      |
 | Service hooks          | `apps/tauri/src/renderer/services/`                         |
 | UI package             | `packages/ui/src/index.ts` → `@ajh/ui`                      |
 | Motion tokens          | `packages/ui/src/lib/motion.ts` (import via `@/lib/motion`) |

@@ -24,6 +24,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "gen:ipc": "pnpm --filter @ajh/shared gen:ipc",
+    "gen:ipc:check": "pnpm --filter @ajh/shared gen:ipc:check",
     "clean": "pnpm -r exec rimraf dist out .turbo node_modules/.cache",
     "prepare": "husky"
   },
