@@ -2,10 +2,10 @@ import { AlertCircle, ArrowRight, Briefcase, RefreshCw, Wand2 } from 'lucide-rea
 
 import { Button, CollapsibleFileInput } from '@ajh/ui';
 
+import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import { ModelSelector } from '@/components/ui/ModelSelector';
 import { GenerationConfig } from '@/features/ai-generate/components/GenerationConfig';
 import { GenerationMetadata } from '@/features/ai-generate/components/GenerationMetadata';
-import { ResumeInputCard } from '@/features/ai-workspace/components/ResumeInputCard';
 import type { GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate-ai';
 import { useTranslation } from '@/lib/i18n';
 

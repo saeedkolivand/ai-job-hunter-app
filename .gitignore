@@ -214,3 +214,4 @@ CHANGELOG.md
 .profraw
 .cargo
 target/llvm-cov/
+.mcp.json

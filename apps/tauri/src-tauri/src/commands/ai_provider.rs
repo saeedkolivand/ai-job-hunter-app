@@ -276,6 +276,56 @@ impl AiProvider for GeminiProvider {
     }
 }
 
+// ── Per-model request quirks & error mapping ──────────────────────────────────
+
+/// OpenAI reasoning models (o1/o3/o4 families) reject `temperature` and use
+/// `max_completion_tokens` instead of `max_tokens`. Detect them so we send a
+/// request shape their endpoint accepts.
+fn is_openai_reasoning_model(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    m.starts_with("o1") || m.starts_with("o3") || m.starts_with("o4")
+}
+
+/// Pull a human-readable message out of a provider's JSON error body, falling
+/// back to a trimmed snippet of the raw body.
+fn extract_error_message(body: &str) -> String {
+    if let Ok(v) = serde_json::from_str::<Value>(body) {
+        if let Some(msg) = v
+            .get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+            .or_else(|| v.get("message").and_then(|m| m.as_str()))
+            .or_else(|| {
+                v.get("error")
+                    .and_then(|e| e.get(0))
+                    .and_then(|e| e.get("message"))
+                    .and_then(|m| m.as_str())
+            })
+        {
+            return msg.to_string();
+        }
+    }
+    body.trim().chars().take(200).collect()
+}
+
+/// Map an HTTP error from a provider into a clear, actionable message.
+fn friendly_api_error(provider: &str, status: reqwest::StatusCode, body: &str) -> String {
+    let code = status.as_u16();
+    let detail = extract_error_message(body);
+    match code {
+        401 | 403 => format!("{provider}: invalid or unauthorized API key."),
+        404 => format!("{provider}: model or endpoint not found — {detail}"),
+        413 => format!("{provider}: request too large — try a smaller resume/job ad."),
+        422 => format!("{provider}: this model rejected the request — {detail}"),
+        429 => {
+            format!("{provider}: rate limit or quota reached. Wait a moment or check your plan.")
+        }
+        400 => format!("{provider}: request rejected — {detail}"),
+        500..=599 => format!("{provider}: service error ({code}). Try again shortly."),
+        _ => format!("{provider} {code}: {detail}"),
+    }
+}
+
 // ── Streaming implementations ─────────────────────────────────────────────────
 
 async fn stream_ollama_chat(
@@ -396,16 +446,20 @@ async fn stream_openai_chat(
         .iter()
         .map(|m| json!({ "role": m.role, "content": m.content }))
         .collect::<Vec<_>>();
-    let temperature = req.temperature.unwrap_or(0.7);
+    let reasoning = is_openai_reasoning_model(&req.model);
 
     let mut body = json!({
         "model": req.model,
         "messages": messages,
         "stream": true,
-        "temperature": temperature,
     });
+    // Reasoning models (o1/o3/o4) reject `temperature` and require
+    // `max_completion_tokens`; standard chat models use `temperature`/`max_tokens`.
+    if !reasoning {
+        body["temperature"] = json!(req.temperature.unwrap_or(0.7));
+    }
     if let Some(mt) = req.max_tokens {
-        body["max_tokens"] = json!(mt);
+        body[if reasoning { "max_completion_tokens" } else { "max_tokens" }] = json!(mt);
     }
 
     let mut response = reqwest::Client::builder()
@@ -422,7 +476,7 @@ async fn stream_openai_chat(
     if !response.status().is_success() {
         let status = response.status();
         let body_text = response.text().await.unwrap_or_default();
-        return Err(format!("OpenAI {status}: {body_text}"));
+        return Err(friendly_api_error("OpenAI", status, &body_text));
     }
 
     let mut line_buf = String::new();
@@ -549,7 +603,7 @@ async fn stream_anthropic_chat(
     if !response.status().is_success() {
         let status = response.status();
         let body_text = response.text().await.unwrap_or_default();
-        return Err(format!("Anthropic {status}: {body_text}"));
+        return Err(friendly_api_error("Anthropic", status, &body_text));
     }
 
     let mut line_buf = String::new();
@@ -709,7 +763,7 @@ async fn stream_gemini_chat(
     if !response.status().is_success() {
         let status = response.status();
         let body_text = response.text().await.unwrap_or_default();
-        return Err(format!("Gemini {status}: {body_text}"));
+        return Err(friendly_api_error("Gemini", status, &body_text));
     }
 
     let mut buf = String::new();

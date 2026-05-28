@@ -49,6 +49,7 @@ export const keys = {
   postings: {
     all: ['postings'] as const,
     interactions: (type?: string) => ['postings', 'interactions', type] as const,
+    resolve: (url: string) => ['postings', 'resolve', url] as const,
   },
   search: { results: (q: string) => ['search', q] as const },
   credentials: { all: ['credentials'] as const },
