@@ -153,6 +153,30 @@ In `apps/tauri/src-tauri/tauri.conf.json`:
 }
 ```
 
+### Updater signing keys
+
+Every release artifact the updater consumes (NSIS `.exe`, Linux `.AppImage`, macOS `.app.tar.gz`) is signed with a **minisign** key. The shipped app verifies each downloaded update against the public key baked into it.
+
+There are exactly two halves of **one** key pair, and they must always match:
+
+| Half        | Where it lives                                                     | Secret? |
+| ----------- | ------------------------------------------------------------------ | ------- |
+| Private key | GitHub secret `TAURI_SIGNING_PRIVATE_KEY` (+ `…_PASSWORD`) — signs | Yes     |
+| Public key  | `plugins.updater.pubkey` in `tauri.conf.json` — verifies           | No      |
+
+The public key is **committed in `tauri.conf.json` as the single source of truth.** CI does not inject it — `scripts/sync-tauri-version.cjs` only syncs version numbers. If the committed public key ever stops matching `TAURI_SIGNING_PRIVATE_KEY`, every shipped update fails at download with `invalid encoding in minisign data` (or a signature error), because the app cannot verify an artifact signed by an unknown key.
+
+`scripts/verify-updater-key.cjs` runs in the release build and **fails the build before publishing** if a freshly-signed artifact's key id does not match the committed public key — so this can never silently regress.
+
+#### Rotating the key
+
+1. Generate a new pair: `bash scripts/generate-tauri-signing-key.sh`
+2. Set the GitHub secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` to the new private key + password.
+3. Put the matching public key (contents of `~/.tauri/ajh.key.pub`) into `plugins.updater.pubkey` in `tauri.conf.json` and commit it.
+4. Cut a release. The CI guard confirms the pair matches.
+
+> **One-time break across a rotation:** users on a build signed by the _old_ key cannot auto-update to a release signed by the _new_ key — their app only trusts the old public key. They must download and reinstall once. Every release after that auto-updates normally.
+
 ---
 
 ## Code Signing
