@@ -199,7 +199,7 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
 
         <div className="flex-1" />
 
-        {!canContinue && !skipping && (
+        {(mode === 'cloud' || !canContinue) && !skipping && (
           <Button
             variant="ghost"
             size="sm"

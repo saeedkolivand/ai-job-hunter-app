@@ -10,8 +10,8 @@ import {
 
 import { Button, cn, CollapsibleFileInput } from '@ajh/ui';
 
+import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import { ModelSelector } from '@/components/ui/ModelSelector';
-import { ResumeInputCard } from '@/features/ai-workspace/components/ResumeInputCard';
 import type { Stage } from '@/features/analyze/constants';
 import { useTranslation } from '@/lib/i18n';
 import type { PromptQuality } from '@/store/preferences-schema';

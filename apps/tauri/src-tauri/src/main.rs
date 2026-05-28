@@ -279,6 +279,7 @@ fn main() {
             // scrape
             commands::scrape::scrape_board,
             commands::scrape::scrape_url,
+            commands::scrape::scrape_resolve_url,
             commands::scrape::scrape_persist_job,
             commands::scrape::scrape_list_postings,
             commands::scrape::scrape_clear_postings,

@@ -11,7 +11,7 @@ import { StepSchedule } from '@/features/autopilot/components/wizard-steps/StepS
 import { StepTarget } from '@/features/autopilot/components/wizard-steps/StepTarget';
 import type { SetFn, WizardState } from '@/features/autopilot/types';
 import { useTranslation } from '@/lib/i18n';
-import { useCreateAutopilot, useJobPreferences } from '@/services';
+import { useCreateAutopilot, useJobPreferences, useUpdateAutopilot } from '@/services';
 import { useSessionStore } from '@/store/session-store';
 
 interface CreationWizardProps {
@@ -44,12 +44,34 @@ function buildDefaults(jobPrefs?: JobPreferences): WizardState {
   };
 }
 
+/** Map a persisted autopilot back into the wizard form for editing. */
+export function autopilotToWizardState(ap: Autopilot): WizardState {
+  return {
+    name: ap.name,
+    board: ap.target.board,
+    query: ap.target.query,
+    location: ap.target.location ?? '',
+    workType: ap.target.workType ?? 'any',
+    pages: ap.target.pages,
+    dateFilter: ap.target.dateFilter ?? '',
+    minMatchScore: ap.filter.minMatchScore,
+    keywords: ap.filter.keywords?.join(', ') ?? '',
+    excludeKeywords: ap.filter.excludeKeywords?.join(', ') ?? '',
+    resumeText: ap.resumeText ?? '',
+    action: ap.action,
+    coverLetter: ap.coverLetter ?? '',
+    autoSubmit: ap.autoSubmit,
+    schedule: ap.schedule,
+  };
+}
+
 export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
   const { t } = useTranslation();
   const { data: jobPrefs } = useJobPreferences();
 
   const { autopilot, setAutopilot } = useSessionStore();
-  const { wizardStep: step, wizardForm } = autopilot;
+  const { wizardStep: step, wizardForm, editingId } = autopilot;
+  const editing = editingId !== null;
   const setStep = (v: number) => setAutopilot({ wizardStep: v });
   const setWizardForm = useCallback(
     (v: WizardState) => setAutopilot({ wizardForm: v }),
@@ -58,7 +80,8 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
   const form = wizardForm ?? buildDefaults(jobPrefs as JobPreferences | undefined);
   const [error, setError] = useState<string | null>(null);
   const createAutopilot = useCreateAutopilot();
-  const saving = createAutopilot.isPending;
+  const updateAutopilot = useUpdateAutopilot();
+  const saving = createAutopilot.isPending || updateAutopilot.isPending;
 
   // Initialize form in the store on first open (when wizardForm is null)
   useEffect(() => {
@@ -67,10 +90,11 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
     }
   }, [wizardForm, jobPrefs, setWizardForm]);
 
-  // Track which fields were pre-filled so we can show a hint
+  // Track which fields were pre-filled from settings so we can show a hint.
+  // Suppressed when editing — those values come from the autopilot, not settings.
   const prefilledFields = {
-    location: !!jobPrefs?.location,
-    keywords: ((jobPrefs as JobPreferences | undefined)?.techStack?.length ?? 0) > 0,
+    location: !editing && !!jobPrefs?.location,
+    keywords: !editing && ((jobPrefs as JobPreferences | undefined)?.techStack?.length ?? 0) > 0,
   };
 
   const set: SetFn = <K extends keyof WizardState>(k: K, v: WizardState[K]) =>
@@ -84,41 +108,50 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
 
   const save = async () => {
     setError(null);
+    const payload = {
+      name: form.name,
+      target: {
+        board: form.board,
+        query: form.query,
+        location: form.location || undefined,
+        workType: form.workType !== 'any' ? form.workType : undefined,
+        pages: form.pages,
+        dateFilter: form.dateFilter || undefined,
+      },
+      filter: {
+        minMatchScore: form.minMatchScore,
+        keywords: form.keywords
+          ? form.keywords
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : undefined,
+        excludeKeywords: form.excludeKeywords
+          ? form.excludeKeywords
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : undefined,
+      },
+      resumeText: form.resumeText || undefined,
+      action: form.action,
+      coverLetter: form.coverLetter || undefined,
+      autoSubmit: form.autoSubmit,
+      schedule: form.schedule,
+    };
     try {
-      const ap = (await createAutopilot.mutateAsync({
-        name: form.name,
-        target: {
-          board: form.board,
-          query: form.query,
-          location: form.location || undefined,
-          workType: form.workType !== 'any' ? form.workType : undefined,
-          pages: form.pages,
-          dateFilter: form.dateFilter || undefined,
-        },
-        filter: {
-          minMatchScore: form.minMatchScore,
-          keywords: form.keywords
-            ? form.keywords
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean)
-            : undefined,
-          excludeKeywords: form.excludeKeywords
-            ? form.excludeKeywords
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean)
-            : undefined,
-        },
-        resumeText: form.resumeText || undefined,
-        action: form.action,
-        coverLetter: form.coverLetter || undefined,
-        autoSubmit: form.autoSubmit,
-        schedule: form.schedule,
-      })) as Autopilot;
+      const ap = (
+        editingId !== null
+          ? await updateAutopilot.mutateAsync({ id: editingId, ...payload })
+          : await createAutopilot.mutateAsync(payload)
+      ) as Autopilot;
       onDone(ap);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('autopilot.wizard.createFailed'));
+      setError(
+        err instanceof Error
+          ? err.message
+          : t(editing ? 'autopilot.wizard.updateFailed' : 'autopilot.wizard.createFailed')
+      );
     }
   };
 
@@ -243,7 +276,7 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
           <div className="flex items-center gap-2">
             <Zap size={14} className="text-brand-soft" />
             <span className="text-sm font-semibold text-foreground/80">
-              {t('autopilot.wizard.title')}
+              {t(editing ? 'autopilot.wizard.editTitle' : 'autopilot.wizard.title')}
             </span>
           </div>
           <Button
@@ -331,7 +364,8 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
               onClick={() => void save()}
               className="transition-all duration-150 ease-out"
             >
-              {!saving && <Zap size={13} />} {t('autopilot.wizard.create')}
+              {!saving && <Zap size={13} />}{' '}
+              {t(editing ? 'autopilot.wizard.save' : 'autopilot.wizard.create')}
             </Button>
           )}
         </div>

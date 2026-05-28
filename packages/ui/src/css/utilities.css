@@ -269,120 +269,94 @@
 
 /* ── Aurora / Nebula / Streak keyframes ──────────────────────────────────── */
 /*
- * IMPORTANT: blur() MUST be included in every keyframe alongside hue-rotate().
- * CSS animations sit above author styles in the cascade — a keyframe that only
- * sets `filter: hue-rotate(X)` silently strips the `blur-[Npx]` Tailwind class,
- * turning the soft glow blobs into sharp circles. Always use the full filter
- * shorthand: blur(Npx) hue-rotate(Xdeg).
+ * PERFORMANCE: these keyframes animate ONLY `transform` (and `opacity` for
+ * streaks). The static `filter: blur()` lives on the `.animate-*` class below,
+ * never inside a keyframe. Animating `filter` (blur/hue-rotate) forces WebKit —
+ * the engine behind Tauri's macOS WebView — to re-rasterize the large blurred
+ * region every frame, which causes severe jank/flicker. With blur applied once
+ * as a base style, the blurred layer is cached and only its transform moves on
+ * the GPU, so the backdrop stays smooth on macOS, Windows, and Linux alike.
  */
 @keyframes aurora-1 {
   0% {
     transform: translate3d(-30vw, 0, 0);
-    filter: blur(120px) hue-rotate(0deg);
   }
   50% {
     transform: translate3d(30vw, 15vh, 0);
-    filter: blur(120px) hue-rotate(30deg);
   }
   100% {
     transform: translate3d(130vw, 0, 0);
-    filter: blur(120px) hue-rotate(0deg);
   }
 }
 @keyframes aurora-2 {
   0% {
     transform: translate3d(130vw, 0, 0);
-    filter: blur(140px) hue-rotate(0deg);
   }
   50% {
     transform: translate3d(-30vw, -15vh, 0);
-    filter: blur(140px) hue-rotate(-30deg);
   }
   100% {
     transform: translate3d(-30vw, 0, 0);
-    filter: blur(140px) hue-rotate(0deg);
   }
 }
 @keyframes aurora-3 {
   0% {
     transform: translate3d(-25vw, 10vh, 0);
-    filter: blur(120px) hue-rotate(15deg);
   }
   50% {
     transform: translate3d(50vw, -10vh, 0);
-    filter: blur(120px) hue-rotate(45deg);
   }
   100% {
     transform: translate3d(125vw, 10vh, 0);
-    filter: blur(120px) hue-rotate(15deg);
   }
 }
 @keyframes aurora-4 {
   0% {
     transform: translate3d(125vw, -10vh, 0);
-    filter: blur(130px) hue-rotate(-15deg);
   }
   50% {
     transform: translate3d(-50vw, 10vh, 0);
-    filter: blur(130px) hue-rotate(-45deg);
   }
   100% {
     transform: translate3d(-25vw, -10vh, 0);
-    filter: blur(130px) hue-rotate(-15deg);
   }
 }
 @keyframes nebula-1 {
   0% {
     transform: translate3d(-20vw, 0, 0);
-    filter: blur(80px);
-    opacity: 0.6;
   }
   50% {
     transform: translate3d(40vw, 20vh, 0);
-    filter: blur(80px);
-    opacity: 0.6;
   }
   100% {
     transform: translate3d(120vw, 0, 0);
-    filter: blur(80px);
-    opacity: 0.6;
   }
 }
 @keyframes nebula-2 {
   0% {
     transform: translate3d(120vw, 0, 0);
-    filter: blur(80px);
-    opacity: 0.6;
   }
   50% {
     transform: translate3d(-40vw, -20vh, 0);
-    filter: blur(80px);
-    opacity: 0.6;
   }
   100% {
     transform: translate3d(-20vw, 0, 0);
-    filter: blur(80px);
-    opacity: 0.6;
   }
 }
 @keyframes nebula-3 {
   0% {
     transform: translate3d(-18vw, -5vh, 0);
-    filter: blur(70px);
   }
   100% {
     transform: translate3d(118vw, -5vh, 0);
-    filter: blur(70px);
   }
 }
 @keyframes nebula-4 {
   0% {
     transform: translate3d(118vw, 5vh, 0);
-    filter: blur(70px);
   }
   100% {
     transform: translate3d(-18vw, 5vh, 0);
-    filter: blur(70px);
   }
 }
 @keyframes streak-1 {
@@ -431,34 +405,42 @@
 }
 
 .animate-aurora-1 {
+  filter: blur(120px);
   animation: aurora-1 90s linear infinite;
   animation-delay: -10s;
 }
 .animate-aurora-2 {
+  filter: blur(140px);
   animation: aurora-2 95s linear infinite;
   animation-delay: -48s;
 }
 .animate-aurora-3 {
+  filter: blur(120px);
   animation: aurora-3 85s linear infinite;
   animation-delay: -22s;
 }
 .animate-aurora-4 {
+  filter: blur(130px);
   animation: aurora-4 100s linear infinite;
   animation-delay: -65s;
 }
 .animate-nebula-1 {
+  filter: blur(80px);
   animation: nebula-1 70s linear infinite;
   animation-delay: -18s;
 }
 .animate-nebula-2 {
+  filter: blur(80px);
   animation: nebula-2 75s linear infinite;
   animation-delay: -50s;
 }
 .animate-nebula-3 {
+  filter: blur(70px);
   animation: nebula-3 65s linear infinite;
   animation-delay: -30s;
 }
 .animate-nebula-4 {
+  filter: blur(70px);
   animation: nebula-4 68s linear infinite;
   animation-delay: -42s;
 }

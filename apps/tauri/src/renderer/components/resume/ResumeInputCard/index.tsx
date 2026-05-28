@@ -75,12 +75,16 @@ export function ResumeInputCard({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const savedBtnRef = useRef<HTMLButtonElement>(null);
+  const savedMenuRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(true);
   const [inputMode, setInputMode] = useState<'upload' | 'paste'>('upload');
   const [dragging, setDragging] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   const [lastUploadedFile, setLastUploadedFile] = useState<File | null>(null);
+  // Which saved resume is currently loaded into the editor (null when the text
+  // came from an upload, paste, or profile import rather than a saved doc).
+  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [profileUrl, setProfileUrl] = useState('');
@@ -94,12 +98,18 @@ export function ResumeInputCard({
 
   const hasSaved = docs.length > 0;
   const defaultDoc = docs.find((d) => d.isDefault) ?? docs[0];
+  // Label the trigger with the loaded resume, falling back to the default.
+  const triggerDoc = docs.find((d) => d.id === selectedDocId) ?? defaultDoc;
 
   // Close saved-menu on outside click
   useEffect(() => {
     if (!showSaved) return;
     const handler = (e: MouseEvent) => {
-      if (savedBtnRef.current?.contains(e.target as Node)) return;
+      if (
+        savedBtnRef.current?.contains(e.target as Node) ||
+        savedMenuRef.current?.contains(e.target as Node)
+      )
+        return;
       setShowSaved(false);
     };
     document.addEventListener('mousedown', handler);
@@ -118,21 +128,25 @@ export function ResumeInputCard({
     if (value) return;
     const raw = rawDocs.find((d) => d.isDefault) ?? rawDocs[0];
     const text = raw?.text?.trim();
-    if (text) onChange(text);
-  }, [value, rawDocs, onChange]);
-
-  /** Load text from a saved document record into the textarea */
-  const handleSelectSaved = async (doc: DocumentRecord) => {
-    const raw = rawDocs.find((d) => d._id === doc.id);
-    const text = raw?.text?.trim();
     if (text) {
       onChange(text);
+      setSelectedDocId(raw?._id ?? null);
     }
-    // Set as default in backend
-    await setDefaultDocument.mutateAsync(doc.id);
+  }, [value, rawDocs, onChange]);
+
+  /** Load a saved resume into the editor (does not change the default) */
+  const handleSelectSaved = (doc: DocumentRecord) => {
+    const raw = rawDocs.find((d) => d._id === doc.id);
+    const text = raw?.text?.trim();
+    if (text) onChange(text);
+    setSelectedDocId(doc.id);
     setShowSaved(false);
     setLastUploadedFile(null);
-    notify(t('resumeInput.selectedSaved', { name: doc.title }), 'success');
+  };
+
+  /** Make a saved resume the default — keeps the menu open so the badge moves */
+  const handleSetDefaultSaved = (doc: DocumentRecord) => {
+    void setDefaultDocument.mutateAsync(doc.id);
   };
 
   /** Save the freshly-uploaded file to the document library */
@@ -141,14 +155,10 @@ export function ResumeInputCard({
     setSaving(true);
     try {
       const result = await importFile(lastUploadedFile);
-      if (
-        asDefault &&
-        result &&
-        typeof result === 'object' &&
-        'id' in result &&
-        typeof result.id === 'string'
-      ) {
-        await setDefaultDocument.mutateAsync(result.id);
+      if (result && typeof result === 'object' && 'id' in result && typeof result.id === 'string') {
+        if (asDefault) await setDefaultDocument.mutateAsync(result.id);
+        // The loaded text is now backed by this saved doc.
+        setSelectedDocId(result.id);
       }
       notify(
         asDefault ? t('resumeInput.savedAsDefault') : t('resumeInput.savedToLibrary'),
@@ -168,6 +178,7 @@ export function ResumeInputCard({
       return;
     }
     setLastUploadedFile(file);
+    setSelectedDocId(null);
     await onUpload(file);
   };
 
@@ -184,6 +195,7 @@ export function ResumeInputCard({
         return;
       }
       onChange(result.text);
+      setSelectedDocId(null);
       setProfileUrl('');
       setShowUrlInput(false);
       notify(t('resumeInput.profileImported'), 'success');
@@ -223,8 +235,8 @@ export function ResumeInputCard({
                 className="gap-1 text-[10px] text-foreground/45 hover:text-foreground/70 h-6 px-2"
               >
                 <BookmarkCheck size={11} />
-                {defaultDoc
-                  ? defaultDoc.title.slice(0, 18) + (defaultDoc.title.length > 18 ? '…' : '')
+                {triggerDoc
+                  ? triggerDoc.title.slice(0, 18) + (triggerDoc.title.length > 18 ? '…' : '')
                   : t('resumeInput.saved')}
                 {showSaved ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
               </Button>
@@ -233,7 +245,10 @@ export function ResumeInputCard({
                 show={showSaved}
                 docs={docs}
                 menuPos={menuPos}
+                selectedId={selectedDocId}
                 onSelect={handleSelectSaved}
+                onSetDefault={handleSetDefaultSaved}
+                menuRef={savedMenuRef}
               />
             </>
           )}

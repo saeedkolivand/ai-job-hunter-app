@@ -60,6 +60,8 @@ interface SettingsSlice {
 
 interface AutopilotSlice {
   creating: boolean;
+  // Set when the wizard is editing an existing autopilot; null when creating.
+  editingId: string | null;
   wizardStep: number;
   wizardForm: WizardState | null;
 }
@@ -119,7 +121,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   jobs: { filter: '', sortBy: 'newest' },
   resumes: { tab: 'applied', filter: '' },
   settings: { activeSection: 'general' },
-  autopilot: { creating: false, wizardStep: 0, wizardForm: null },
+  autopilot: { creating: false, editingId: null, wizardStep: 0, wizardForm: null },
 
   setAIGenerate: (patch) => set((s) => ({ aiGenerate: { ...s.aiGenerate, ...patch } })),
   resetAIGenerate: () => set({ aiGenerate: { ...AI_GENERATE_DEFAULTS } }),
@@ -136,6 +138,12 @@ export const useSessionStore = create<SessionState>((set) => ({
   setAutopilot: (patch) => set((s) => ({ autopilot: { ...s.autopilot, ...patch } })),
   resetAutopilotWizard: () =>
     set((s) => ({
-      autopilot: { ...s.autopilot, creating: false, wizardStep: 0, wizardForm: null },
+      autopilot: {
+        ...s.autopilot,
+        creating: false,
+        editingId: null,
+        wizardStep: 0,
+        wizardForm: null,
+      },
     })),
 }));

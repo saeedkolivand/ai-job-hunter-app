@@ -25,14 +25,14 @@ export function StepSchedule({ form, set }: StepScheduleProps) {
       desc: t('autopilot.wizard.schedule.hourlyDesc'),
     },
     {
-      id: 'twice_daily' as AutopilotSchedule,
-      label: t('autopilot.wizard.schedule.twiceDaily'),
-      desc: t('autopilot.wizard.schedule.twiceDailyDesc'),
-    },
-    {
       id: 'daily' as AutopilotSchedule,
       label: t('autopilot.wizard.schedule.daily'),
       desc: t('autopilot.wizard.schedule.dailyDesc'),
+    },
+    {
+      id: 'twice_daily' as AutopilotSchedule,
+      label: t('autopilot.wizard.schedule.twiceDaily'),
+      desc: t('autopilot.wizard.schedule.twiceDailyDesc'),
     },
   ];
 

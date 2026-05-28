@@ -6,6 +6,9 @@ export interface ScrapeContract {
 
   url(req: ScrapeUrlRequest): Promise<{ jobId: string }>;
 
+  /** Resolve a single posting (incl. full description) from its URL. */
+  resolveUrl(req: { url: string }): Promise<JobPosting | null>;
+
   listPostings(): Promise<JobPosting[]>;
 
   clearPostings(): Promise<void>;
@@ -29,6 +32,7 @@ export interface ScrapeContract {
 export const SCRAPE_CHANNELS = {
   board: 'scrape:board',
   url: 'scrape:url',
+  resolveUrl: 'scrape:resolveUrl',
   listPostings: 'scrape:listPostings',
   persistJob: 'scrape:persistJob',
   clearPostings: 'scrape:clearPostings',

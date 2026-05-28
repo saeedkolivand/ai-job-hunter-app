@@ -1,11 +1,13 @@
-import { Check, Copy, Download, FileText, Loader2, RotateCcw } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { Check, Copy, Download, FileText, RotateCcw } from 'lucide-react';
+import { motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 
-import { Button, cn, TextArea, transition } from '@ajh/ui';
+import { Button, cn, TextArea } from '@ajh/ui';
 
 import { buildFilename, type GenerationMeta, MODES, type TemplateId } from '@/lib/generate-ai';
 import { useTranslation } from '@/lib/i18n';
+
+import { ExportModal } from '../ExportModal';
 
 interface OutputPanelDoneProps {
   resumeOut: string;
@@ -39,6 +41,7 @@ export function OutputPanelDone({
   isGenerating = false,
 }: OutputPanelDoneProps) {
   const { t } = useTranslation();
+  const [exportOpen, setExportOpen] = useState(false);
 
   // If the active tab has no content but the other does, switch automatically
   useEffect(() => {
@@ -88,7 +91,14 @@ export function OutputPanelDone({
             {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
             {copied ? t('aiGenerate.copied') : t('aiGenerate.copy')}
           </Button>
-          <ExportMenu onExport={onExport} t={t} disabled={isGenerating} />
+          <Button
+            onClick={() => setExportOpen(true)}
+            disabled={isGenerating}
+            className="flex items-center gap-1.5 rounded-lg bg-brand/15 px-2.5 py-1.5 text-[11px] font-medium text-brand-soft hover:bg-brand/20 transition-colors h-auto disabled:opacity-30 disabled:pointer-events-none"
+          >
+            <Download size={11} />
+            {t('aiGenerate.export')}
+          </Button>
         </div>
       </div>
 
@@ -126,70 +136,14 @@ export function OutputPanelDone({
           <RotateCcw size={11} /> {t('aiGenerate.regenerate')}
         </Button>
       </div>
+
+      <ExportModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        meta={meta}
+        docType={activeOut === 'resume' ? 'resume' : 'cover-letter'}
+        onExport={onExport}
+      />
     </motion.div>
-  );
-}
-
-// ─── Export menu ──────────────────────────────────────────────────────────────
-
-function ExportMenu({
-  onExport,
-  t,
-  disabled = false,
-}: {
-  onExport: (fmt: 'pdf' | 'docx' | 'txt') => Promise<void>;
-  t: (key: string, params?: Record<string, unknown>) => string;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState<string | null>(null);
-
-  const handle = async (fmt: 'pdf' | 'docx' | 'txt') => {
-    if (disabled) return;
-    setLoading(fmt);
-    setOpen(false);
-    try {
-      await onExport(fmt);
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  return (
-    <div className="relative">
-      <Button
-        onClick={() => !disabled && setOpen((o) => !o)}
-        disabled={disabled}
-        className="flex items-center gap-1.5 rounded-lg bg-brand/15 px-2.5 py-1.5 text-[11px] font-medium text-brand-soft hover:bg-brand/20 transition-colors h-auto disabled:opacity-30 disabled:pointer-events-none"
-      >
-        {loading ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
-        {t('aiGenerate.export')}
-      </Button>
-      <AnimatePresence>
-        {open && (
-          <>
-            <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setOpen(false)} />
-            <motion.div
-              initial={{ opacity: 0, y: -4, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -4, scale: 0.97 }}
-              transition={transition.fast}
-              className="absolute right-0 top-full z-[var(--z-modal)] mt-1.5 w-36 overflow-hidden rounded-xl border border-white/10 bg-secondary shadow-2xl"
-            >
-              {(['pdf', 'docx', 'txt'] as const).map((fmt) => (
-                <Button
-                  key={fmt}
-                  onClick={() => void handle(fmt)}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-foreground/65 hover:bg-white/[0.05] hover:text-foreground transition-colors h-auto rounded-none border-none bg-transparent"
-                >
-                  <Download size={11} />
-                  {t('aiGenerate.download', { fmt: fmt.toUpperCase() })}
-                </Button>
-              ))}
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-    </div>
   );
 }

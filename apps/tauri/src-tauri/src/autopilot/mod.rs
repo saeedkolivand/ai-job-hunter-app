@@ -45,6 +45,25 @@ pub struct AutopilotFilter {
     pub exclude_keywords: Option<Vec<String>>,
 }
 
+/// A job posting surfaced by an autopilot run. Lightweight summary persisted so
+/// the user can review what each autopilot found.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FoundJob {
+    pub title: String,
+    pub company: String,
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    /// Full job description — used to pre-fill a tailored resume/cover letter generation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Match score (0–100) when the posting passed ranking; absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score: Option<f64>,
+    pub found_at: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum AutopilotStatus {
@@ -71,6 +90,9 @@ pub struct Autopilot {
     pub auto_submit: bool,
     pub total_found: u32,
     pub total_applied: u32,
+    /// Jobs surfaced by the most recent run. Defaulted so older records load.
+    #[serde(default)]
+    pub found_jobs: Vec<FoundJob>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_run_at: Option<u64>,
     pub created_at: u64,
@@ -137,6 +159,7 @@ impl AutopilotStore {
             auto_submit: input["autoSubmit"].as_bool().unwrap_or(false),
             total_found: 0,
             total_applied: 0,
+            found_jobs: Vec::new(),
             last_run_at: None,
             created_at: now,
             updated_at: now,
@@ -198,6 +221,26 @@ impl AutopilotStore {
         if let Some(ap) = map.get_mut(id) {
             ap.status = status;
             ap.updated_at = now_ms();
+        }
+        self.save(map);
+    }
+
+    /// Persist the outcome of a run: counts, the found-jobs list, and last-run time.
+    pub fn record_run(
+        &self,
+        id: &str,
+        total_found: u32,
+        total_applied: u32,
+        found_jobs: Vec<FoundJob>,
+    ) {
+        let mut map = self.load();
+        if let Some(ap) = map.get_mut(id) {
+            let now = now_ms();
+            ap.total_found = total_found;
+            ap.total_applied = total_applied;
+            ap.found_jobs = found_jobs;
+            ap.last_run_at = Some(now);
+            ap.updated_at = now;
         }
         self.save(map);
     }

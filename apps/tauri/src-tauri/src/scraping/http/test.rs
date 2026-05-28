@@ -72,6 +72,30 @@ fn test_strip_html_nested_tags() {
     assert_eq!(result, "Bold");
 }
 
+#[test]
+fn test_html_to_text_preserves_structure() {
+    let html = "<p>Intro paragraph.</p><p>Responsibilities:</p><ul><li>Build features</li><li>Write tests</li></ul>";
+    let result = html_to_text(html);
+    assert_eq!(
+        result,
+        "Intro paragraph.\nResponsibilities:\n• Build features\n• Write tests"
+    );
+}
+
+#[test]
+fn test_html_to_text_br_and_entities() {
+    let html = "Line one<br>Line two &amp; more";
+    let result = html_to_text(html);
+    assert_eq!(result, "Line one\nLine two & more");
+}
+
+#[test]
+fn test_html_to_text_caps_blank_lines() {
+    let html = "<div>A</div><div></div><div></div><div>B</div>";
+    let result = html_to_text(html);
+    assert_eq!(result, "A\n\nB");
+}
+
 #[tokio::test]
 async fn test_fetch_text_success() {
     use wiremock::{Mock, MockServer, ResponseTemplate};

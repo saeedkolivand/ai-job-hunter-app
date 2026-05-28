@@ -1,4 +1,4 @@
-import { MapPin, Search, X } from 'lucide-react';
+import { CornerDownLeft, MapPin, Search, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
 import { cn } from '../../lib/cn';
@@ -33,6 +33,10 @@ export function LocationDropdown({
   dropdownRef: React.RefObject<HTMLDivElement | null>;
   onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
 }) {
+  const trimmed = query.trim();
+  const hasExactMatch = suggestions.some((s) => s.display.toLowerCase() === trimmed.toLowerCase());
+  const showCustom = trimmed.length > 0 && !hasExactMatch;
+
   return (
     <AnimatePresence>
       {open && (
@@ -77,33 +81,51 @@ export function LocationDropdown({
 
           {/* Suggestions */}
           <div className="max-h-56 space-y-0.5 overflow-y-auto px-1 py-1">
-            {suggestions.length === 0 && query.trim().length >= 2 ? (
-              <div className="px-3 py-4 text-center text-xs text-foreground/35">No results</div>
-            ) : suggestions.length === 0 ? (
+            {showCustom && (
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onSelect(trimmed);
+                }}
+                onMouseEnter={() => setActiveIndex(-1)}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors',
+                  activeIndex < 0
+                    ? 'bg-brand/15 text-brand-soft'
+                    : 'text-foreground/70 hover:bg-white/[0.05] hover:text-foreground/90'
+                )}
+              >
+                <CornerDownLeft size={11} className="shrink-0 text-foreground/35" />
+                <span className="truncate">
+                  Use “<span className="text-foreground/90">{trimmed}</span>”
+                </span>
+              </button>
+            )}
+            {suggestions.map((s, i) => (
+              <button
+                key={s.display}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onSelect(s.display);
+                }}
+                onMouseEnter={() => setActiveIndex(i)}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors',
+                  i === activeIndex
+                    ? 'bg-brand/15 text-brand-soft'
+                    : 'text-foreground/70 hover:bg-white/[0.05] hover:text-foreground/90'
+                )}
+              >
+                <MapPin size={11} className="shrink-0 text-foreground/35" />
+                <span className="truncate">{s.display}</span>
+              </button>
+            ))}
+            {!showCustom && suggestions.length === 0 && (
               <div className="px-3 py-4 text-center text-xs text-foreground/25">
                 Type to search…
               </div>
-            ) : (
-              suggestions.map((s, i) => (
-                <button
-                  key={s.display}
-                  type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    onSelect(s.display);
-                  }}
-                  onMouseEnter={() => setActiveIndex(i)}
-                  className={cn(
-                    'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors',
-                    i === activeIndex
-                      ? 'bg-brand/15 text-brand-soft'
-                      : 'text-foreground/70 hover:bg-white/[0.05] hover:text-foreground/90'
-                  )}
-                >
-                  <MapPin size={11} className="shrink-0 text-foreground/35" />
-                  <span className="truncate">{s.display}</span>
-                </button>
-              ))
             )}
           </div>
         </motion.div>

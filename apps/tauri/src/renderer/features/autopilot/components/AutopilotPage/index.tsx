@@ -6,7 +6,10 @@ import { Button } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
 import { AutopilotCard } from '@/features/autopilot/components/AutopilotCard';
-import { CreationWizard } from '@/features/autopilot/components/CreationWizard';
+import {
+  autopilotToWizardState,
+  CreationWizard,
+} from '@/features/autopilot/components/CreationWizard';
 import { EmptyState } from '@/features/autopilot/components/EmptyState';
 import { useAutopilotRun } from '@/features/autopilot/hooks/useAutopilotRun';
 import { useTranslation } from '@/lib/i18n';
@@ -27,6 +30,15 @@ function AutopilotPage() {
 
   const handleCreated = (_ap: Autopilot) => {
     resetWizard();
+  };
+
+  const handleEdit = (ap: Autopilot) => {
+    setAutopilot({
+      creating: true,
+      editingId: ap._id,
+      wizardStep: 0,
+      wizardForm: autopilotToWizardState(ap),
+    });
   };
 
   return (
@@ -85,6 +97,7 @@ function AutopilotPage() {
                     stepLogs={stepLogs[ap._id] ?? []}
                     onRun={() => void handleRun(ap._id)}
                     onTogglePause={() => void handleTogglePause(ap)}
+                    onEdit={() => handleEdit(ap)}
                     onDelete={() => void handleDelete(ap._id)}
                   />
                 );

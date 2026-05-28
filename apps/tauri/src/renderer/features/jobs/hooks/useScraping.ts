@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
 import type { useNotification } from '@ajh/ui';
@@ -6,15 +6,19 @@ import type { useNotification } from '@ajh/ui';
 import { AUTH_BENEFITS } from '@/features/jobs/constants';
 import type { Posting } from '@/features/jobs/types';
 import {
+  fetchJob,
   useBoardConnect,
   useBoardDisconnect,
   useBoardStatus,
   useCancelJob,
+  useClearPostings,
   useLinkedInConnect,
   useLinkedInDisconnect,
   useLinkedInStatus,
   useScrapeBoard,
 } from '@/services';
+
+type ScrapeOutcome = { ok: boolean; note?: string };
 
 interface ScrapeForm {
   board: string;
@@ -28,12 +32,19 @@ interface ScrapeForm {
 export function useScraping(notify: ReturnType<typeof useNotification>, scrapeForm: ScrapeForm) {
   const [scraping, setScraping] = useState(false);
   const [scrapeJobId, setScrapeJobId] = useState<string | null>(null);
-  const [scrapeOutcome, setScrapeOutcome] = useState<{ ok: boolean; note?: string } | null>(null);
+  const [scrapeOutcome, setScrapeOutcome] = useState<ScrapeOutcome | null>(null);
   const [livePostings, setLivePostings] = useState<Posting[]>([]);
   const scrapeJobRef = useRef<string | null>(null);
+  // Completion/failure events can arrive before startScrape records the jobId
+  // (the backend spawns the task and streams events before invoke resolves).
+  // Buffer those here so the outcome isn't lost.
+  const pendingFinishRef = useRef<Map<string, ScrapeOutcome>>(new Map());
+  // Signature of the last search; a new search clears previous scraped jobs.
+  const lastSearchRef = useRef<string>('');
 
   const scrapeBoard = useScrapeBoard();
   const cancelJob = useCancelJob();
+  const clearPostings = useClearPostings();
 
   const isLinkedInBoard = scrapeForm.board === 'linkedin';
   const linkedInStatus = useLinkedInStatus();
@@ -94,6 +105,24 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
     setScrapeOutcome(null);
     setScraping(true);
     setLivePostings([]);
+    pendingFinishRef.current.clear();
+
+    // When the search target changes, drop the previously scraped jobs so the
+    // list reflects the new query rather than accumulating across searches.
+    const signature = [
+      scrapeForm.board,
+      scrapeForm.query.trim().toLowerCase(),
+      scrapeForm.location.trim().toLowerCase(),
+      scrapeForm.dateFilter ?? '',
+    ].join('|');
+    if (signature !== lastSearchRef.current) {
+      lastSearchRef.current = signature;
+      try {
+        await clearPostings.mutateAsync();
+      } catch {
+        // Best-effort — proceed with the scrape even if clearing failed.
+      }
+    }
 
     const prevJobId = scrapeJobRef.current;
     if (prevJobId) {
@@ -107,18 +136,7 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
     }
 
     try {
-      let res = await doScrape();
-
-      if (res.error?.includes('Concurrency limit')) {
-        if (res.jobId) {
-          try {
-            await cancelJob.mutateAsync(res.jobId);
-          } catch {
-            // best-effort
-          }
-        }
-        res = await doScrape();
-      }
+      const res = await doScrape();
 
       if (res.error) {
         setScraping(false);
@@ -129,6 +147,13 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
 
       scrapeJobRef.current = res.jobId;
       setScrapeJobId(res.jobId);
+
+      // If the job already finished during the invoke round-trip, apply it now.
+      const buffered = pendingFinishRef.current.get(res.jobId);
+      if (buffered) {
+        pendingFinishRef.current.delete(res.jobId);
+        finishScrape(res.jobId, buffered);
+      }
     } catch (err) {
       setScraping(false);
       setScrapeOutcome({ ok: false, note: err instanceof Error ? err.message : String(err) });
@@ -151,7 +176,57 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
     }
   };
 
+  /**
+   * Reset scraping state once the active job finishes/fails. Idempotent and
+   * keyed by jobId, so the event path and the watchdog poll can both call it
+   * safely — only the first one for the active job takes effect.
+   */
+  const finishScrape = useCallback((jobId: string, outcome: ScrapeOutcome) => {
+    if (!jobId || jobId !== scrapeJobRef.current) return;
+    scrapeJobRef.current = null;
+    setScrapeJobId(null);
+    setScraping(false);
+    setScrapeOutcome(outcome);
+  }, []);
+
+  /**
+   * Handle a completion/failure event. If it arrives before startScrape has
+   * recorded the jobId (a fast scrape can finish during the invoke round-trip),
+   * buffer it so startScrape can apply it once the id is known.
+   */
+  const noteScrapeFinished = (jobId: string, outcome: ScrapeOutcome) => {
+    if (!jobId) return;
+    if (jobId === scrapeJobRef.current) finishScrape(jobId, outcome);
+    else pendingFinishRef.current.set(jobId, outcome);
+  };
+
+  // Watchdog: streamed events can be dropped (async listener churn, missed
+  // emits). Poll the job tracker — the authoritative terminal state — so a
+  // finished scrape can never leave the UI stuck "searching".
+  useEffect(() => {
+    if (!scrapeJobId) return;
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const job = (await fetchJob(scrapeJobId)) as { status?: string; error?: string } | null;
+        if (cancelled || !job?.status) return;
+        if (job.status === 'completed') finishScrape(scrapeJobId, { ok: true });
+        else if (job.status === 'failed')
+          finishScrape(scrapeJobId, { ok: false, note: job.error ?? undefined });
+        else if (job.status === 'cancelled') finishScrape(scrapeJobId, { ok: false });
+      } catch {
+        // Transient — retry on the next tick.
+      }
+    };
+    const id = setInterval(() => void check(), 2500);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [scrapeJobId, finishScrape]);
+
   return {
+    noteScrapeFinished,
     scraping,
     scrapeJobId,
     scrapeOutcome,

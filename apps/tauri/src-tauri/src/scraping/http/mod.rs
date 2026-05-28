@@ -160,8 +160,52 @@ pub fn strip_html(html: &str) -> String {
     
     // Collapse whitespace
     result = regex::Regex::new(r"\s+").unwrap().replace_all(&result, " ").to_string();
-    
+
     result.trim().to_string()
+}
+
+/// Like `strip_html`, but preserves document structure: block elements become
+/// line breaks and `<li>` items become bullet lines, so job descriptions stay
+/// readable instead of collapsing into one paragraph.
+pub fn html_to_text(html: &str) -> String {
+    let mut s = html.to_string();
+
+    // Drop script/style blocks entirely.
+    s = regex::Regex::new(r"(?is)<(script|style)[\s\S]*?</(script|style)>")
+        .unwrap()
+        .replace_all(&s, " ")
+        .to_string();
+
+    // List items → bullet on their own line.
+    s = regex::Regex::new(r"(?i)<li[^>]*>").unwrap().replace_all(&s, "\n• ").to_string();
+    // Explicit line breaks.
+    s = regex::Regex::new(r"(?i)<br\s*/?>").unwrap().replace_all(&s, "\n").to_string();
+    // Block-level closers → newline (li excluded; its opener already broke the line).
+    s = regex::Regex::new(r"(?i)</(p|div|ul|ol|h[1-6]|tr|section|header|article)>")
+        .unwrap()
+        .replace_all(&s, "\n")
+        .to_string();
+
+    // Strip any remaining tags.
+    s = regex::Regex::new(r"<[^>]+>").unwrap().replace_all(&s, "").to_string();
+
+    // Decode common entities.
+    s = s
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'");
+
+    // Collapse runs of spaces/tabs, trim each line, cap consecutive blank lines.
+    s = regex::Regex::new(r"[ \t]+").unwrap().replace_all(&s, " ").to_string();
+    s = regex::Regex::new(r" *\n *").unwrap().replace_all(&s, "\n").to_string();
+    s = regex::Regex::new(r"\n{3,}").unwrap().replace_all(&s, "\n\n").to_string();
+    // Keep bullets tight under their heading — no blank line before a bullet.
+    s = regex::Regex::new(r"\n{2,}•").unwrap().replace_all(&s, "\n•").to_string();
+
+    s.trim().to_string()
 }
 
 #[cfg(test)]

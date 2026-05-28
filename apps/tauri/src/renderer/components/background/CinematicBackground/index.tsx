@@ -24,10 +24,6 @@ export function CinematicBackground() {
   const mode = usePerformanceMode();
   const { x, y } = useMouseParallax();
 
-  // Detect Mac and use low-memory mode to avoid CSS rendering issues
-  const isMac = typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac');
-  const effectiveMode = isMac ? 'low-memory' : mode;
-
   // ── Lerp cursor blob ──────────────────────────────────────────────────────
   const blobRef = useRef<HTMLDivElement>(null);
   const targetRef = useRef({ x: 0, y: 0 }); // where the cursor IS
@@ -38,7 +34,7 @@ export function CinematicBackground() {
 
   useEffect(() => {
     // Skip RAF loop in low-memory mode — component returns null below.
-    if (effectiveMode === 'low-memory') return;
+    if (mode === 'low-memory') return;
     // Seed starting position to viewport center so blob doesn't slide in from (0,0)
     if (typeof window !== 'undefined') {
       const cx = window.innerWidth / 2;
@@ -69,11 +65,11 @@ export function CinematicBackground() {
       window.removeEventListener('pointermove', onMove);
       cancelAnimationFrame(rafRef.current);
     };
-  }, [effectiveMode]); // re-run if mode changes so RAF is cleaned up correctly
+  }, [mode]); // re-run if mode changes so RAF is cleaned up correctly
 
   // All hooks have been called — safe to bail out now.
   // Body is already #07060f in low-memory mode; skip all GPU layers.
-  if (effectiveMode === 'low-memory') return null;
+  if (mode === 'low-memory') return null;
 
   const orbA = { transform: `translate3d(${x * 30}px, ${y * 20}px, 0)` };
   const orbB = { transform: `translate3d(${x * -25}px, ${y * 15}px, 0)` };
@@ -86,28 +82,28 @@ export function CinematicBackground() {
         className="absolute -top-1/4 left-0 h-[60vh] w-[60vw] rounded-full opacity-40 animate-aurora-1"
         style={{
           background: 'radial-gradient(closest-side, var(--aurora-violet) 0%, transparent 70%)',
-          willChange: 'transform, filter',
+          willChange: 'transform',
         }}
       />
       <div
         className="absolute -top-1/4 left-0 h-[55vh] w-[55vw] rounded-full opacity-35 animate-aurora-2"
         style={{
           background: 'radial-gradient(closest-side, var(--aurora-indigo) 0%, transparent 70%)',
-          willChange: 'transform, filter',
+          willChange: 'transform',
         }}
       />
       <div
         className="absolute top-1/3 left-0 h-[40vh] w-[40vw] rounded-full opacity-25 animate-aurora-3"
         style={{
           background: 'radial-gradient(closest-side, var(--aurora-pink) 0%, transparent 70%)',
-          willChange: 'transform, filter',
+          willChange: 'transform',
         }}
       />
       <div
         className="absolute top-1/2 left-0 h-[45vh] w-[45vw] rounded-full opacity-25 animate-aurora-4"
         style={{
           background: 'radial-gradient(closest-side, var(--aurora-cyan) 0%, transparent 70%)',
-          willChange: 'transform, filter',
+          willChange: 'transform',
         }}
       />
 
@@ -116,14 +112,14 @@ export function CinematicBackground() {
         className="absolute top-[10vh] left-0 h-[30vh] w-[30vw] rounded-full opacity-40 animate-nebula-1"
         style={{
           background: 'radial-gradient(closest-side, var(--nebula-violet) 0%, transparent 70%)',
-          willChange: 'transform, filter',
+          willChange: 'transform',
         }}
       />
       <div
         className="absolute top-[60vh] left-0 h-[25vh] w-[25vw] rounded-full opacity-35 animate-nebula-2"
         style={{
           background: 'radial-gradient(closest-side, var(--nebula-indigo) 0%, transparent 70%)',
-          willChange: 'transform, filter',
+          willChange: 'transform',
         }}
       />
 

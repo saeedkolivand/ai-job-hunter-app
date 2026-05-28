@@ -33,6 +33,17 @@ export const useScrapeUrl = () => {
   return useMutation({ mutationFn: (req: ScrapeUrlRequest) => api.scrape.url(req) });
 };
 
+/** Resolve a single posting (incl. full description) from its URL, on demand. */
+export const useResolveJobUrl = (url: string, enabled = true) => {
+  const api = useAppClient();
+  return useQuery({
+    queryKey: keys.postings.resolve(url),
+    queryFn: () => api.scrape.resolveUrl({ url }),
+    enabled: enabled && !!url,
+    staleTime: 5 * 60_000,
+  });
+};
+
 export const useClearPostings = () => {
   const api = useAppClient();
   const qc = useQueryClient();

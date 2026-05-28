@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
-use crate::autopilot::{AutopilotStatus, AutopilotStore};
+use crate::autopilot::{AutopilotStatus, AutopilotStore, FoundJob};
 use crate::autopilot_helpers::autopilot_scrape;
 use crate::scraping::{JobPosting, ScraperEngine};
 use serde_json::{json, Value};
@@ -20,6 +20,14 @@ fn uuid_v4() -> String {
         .unwrap_or_default()
         .as_nanos();
     format!("job-{t:x}")
+}
+
+fn now_ms() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 fn store(app: &AppHandle) -> Arc<Mutex<AutopilotStore>> {
@@ -98,12 +106,35 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     let total_found = postings.len();
     emit_step(&app, &job_id, "scrape_done", &format!("Found {} postings", total_found));
 
+    // Snapshot every scraped posting so the user can review what was found,
+    // before `postings` is consumed by ranking.
+    let found_at = now_ms();
+    let mut found_jobs: Vec<FoundJob> = postings
+        .iter()
+        .map(|p| FoundJob {
+            title: p.title.clone(),
+            company: p.company.clone(),
+            url: p.url.clone(),
+            location: p.location.clone(),
+            description: p.description.clone(),
+            score: None,
+            found_at,
+        })
+        .collect();
+
     let scored = autopilot_rank(
         postings,
         autopilot.resume_text.as_deref(),
         filter.min_match_score,
         &cancel_token,
     ).await;
+
+    // Annotate the matched postings with their score.
+    for (score, posting) in &scored {
+        if let Some(fj) = found_jobs.iter_mut().find(|f| f.url == posting.url) {
+            fj.score = Some(*score);
+        }
+    }
 
     let top_n = target.top_n.max(1) as usize;
     let candidates: Vec<_> = scored.into_iter().take(top_n).collect();
@@ -151,10 +182,9 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         );
     }
 
-    store(&app).lock().update(
-        &autopilot_id,
-        json!({ "totalFound": total_found, "totalApplied": applied }),
-    );
+    store(&app)
+        .lock()
+        .record_run(&autopilot_id, total_found as u32, applied, found_jobs);
 
     engine.unregister_token(&job_id).await;
 
