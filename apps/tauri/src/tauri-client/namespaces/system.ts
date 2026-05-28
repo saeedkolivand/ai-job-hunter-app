@@ -12,4 +12,5 @@ export const system = {
   getMetrics: () => invoke('system_get_metrics'),
   checkBrowser: () => invoke('system_check_browser'),
   openDevtools: () => invoke('system_open_devtools'),
+  getProtocolVersion: () => invoke<string>('system_get_protocol_version'),
 };

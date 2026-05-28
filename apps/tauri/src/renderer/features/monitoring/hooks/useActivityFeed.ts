@@ -19,12 +19,18 @@ interface JobEvent {
 
 export function useActivityFeed(allJobs: JobRecord[], kindLabelMap: Record<string, string>) {
   const [liveActivity, setLiveActivity] = useState<ActivityItem[]>([]);
+  const [clearedBefore, setClearedBefore] = useState<number>(0);
 
   // Historical activity from completed/failed jobs
   const historicalActivity = useMemo(() => {
     return allJobs
       .filter((j) => j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled')
-      .sort((a, b) => (b.finishedAt ?? b.updatedAt) - (a.finishedAt ?? a.updatedAt))
+      .filter((j) => (j.finishedAt ?? j.updatedAt ?? j.createdAt) > clearedBefore)
+      .sort(
+        (a, b) =>
+          (b.finishedAt ?? b.updatedAt ?? b.createdAt) -
+          (a.finishedAt ?? a.updatedAt ?? a.createdAt)
+      )
       .slice(0, 40)
       .map((j) => {
         const verb = j.status === 'completed' ? '✓' : j.status === 'failed' ? '✕' : '⊘';
@@ -38,12 +44,12 @@ export function useActivityFeed(allJobs: JobRecord[], kindLabelMap: Record<strin
                 : 'emerald';
         return {
           id: j.id,
-          time: j.finishedAt ?? j.updatedAt,
+          time: j.finishedAt ?? j.updatedAt ?? j.createdAt,
           text: `${verb} ${kindLabelMap[j.kind] ?? j.kind}`,
           tone,
         };
       });
-  }, [allJobs, kindLabelMap]);
+  }, [allJobs, kindLabelMap, clearedBefore]);
 
   // Merge live (top) with historical (deduped)
   const activity = useMemo(() => {
@@ -95,5 +101,10 @@ export function useActivityFeed(allJobs: JobRecord[], kindLabelMap: Record<strin
     })();
   });
 
-  return { activity, liveActivity, setLiveActivity };
+  const clearAll = () => {
+    setLiveActivity([]);
+    setClearedBefore(Date.now());
+  };
+
+  return { activity, liveActivity, setLiveActivity, clearAll };
 }

@@ -16,6 +16,7 @@ export interface PoolOptions {
   maxWorkers?: number;
   memoryFloorMB?: number; // never spawn new workers below this free mem
   idleTimeoutMs?: number;
+  maxQueueSize?: number; // reject new tasks when pending queue exceeds this (0 = unlimited)
 }
 
 export interface WorkerTask<TPayload = unknown, _TResult = unknown> {
@@ -53,13 +54,29 @@ export class WorkerPool {
       maxWorkers: opts.maxWorkers ?? Math.max(2, Math.min(cpuCount - 1, 6)),
       memoryFloorMB: opts.memoryFloorMB ?? 512,
       idleTimeoutMs: opts.idleTimeoutMs ?? 60_000,
+      maxQueueSize: opts.maxQueueSize ?? 0,
     };
     for (let i = 0; i < this.opts.minWorkers; i++) this.spawn();
     setInterval(() => this.gc(), 30_000).unref?.();
   }
 
+  get queueLength(): number {
+    return this.queue.length;
+  }
+
+  get activeWorkers(): number {
+    return this.slots.filter((s) => s.busy).length;
+  }
+
   async run<TPayload, TResult>(task: WorkerTask<TPayload, TResult>): Promise<TResult> {
     if (this.destroyed) throw new Error('Worker pool destroyed');
+    if (this.opts.maxQueueSize > 0 && this.queue.length >= this.opts.maxQueueSize) {
+      this.logger.warn(
+        { queueLength: this.queue.length, maxQueueSize: this.opts.maxQueueSize },
+        'worker pool queue full'
+      );
+      throw new Error(`Worker pool queue full (max ${this.opts.maxQueueSize})`);
+    }
     return new Promise<TResult>((resolve, reject) => {
       const pending: Pending = {
         id: String(++this.nextId),

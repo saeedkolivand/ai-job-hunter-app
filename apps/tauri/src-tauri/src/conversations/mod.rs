@@ -3,9 +3,35 @@ use serde_json::{json, Value};
 use parking_lot::Mutex;
 use tauri::{AppHandle, Manager};
 
+use crate::db::{run_migrations, Migration};
+
 pub struct ConversationDb(pub Mutex<Connection>);
 
 impl ConversationDb {
+    const MIGRATIONS: &'static [Migration] = &[
+        Migration {
+            name: "create_conversations_and_messages",
+            up: |conn| {
+                conn.execute_batch(
+                    "PRAGMA journal_mode=WAL;
+                    CREATE TABLE IF NOT EXISTS conversations (
+                        id TEXT PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        created_at INTEGER NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS messages (
+                        id TEXT PRIMARY KEY,
+                        conversation_id TEXT NOT NULL REFERENCES conversations(id),
+                        role TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        created_at INTEGER NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, created_at);",
+                )
+            },
+        },
+    ];
+
     pub fn open(app: &AppHandle) -> Result<Self> {
         let data_dir = app
             .path()
@@ -13,22 +39,8 @@ impl ConversationDb {
             .expect("no app data dir");
         std::fs::create_dir_all(&data_dir).ok();
         let conn = Connection::open(data_dir.join("conversations.db"))?;
-        conn.execute_batch("
-            PRAGMA journal_mode=WAL;
-            CREATE TABLE IF NOT EXISTS conversations (
-                id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                created_at INTEGER NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS messages (
-                id TEXT PRIMARY KEY,
-                conversation_id TEXT NOT NULL REFERENCES conversations(id),
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                created_at INTEGER NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, created_at);
-        ")?;
+        run_migrations(&conn, Self::MIGRATIONS)
+            .map_err(|e| rusqlite::Error::InvalidParameterName(e))?;
         Ok(Self(Mutex::new(conn)))
     }
 

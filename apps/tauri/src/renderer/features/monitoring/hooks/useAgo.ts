@@ -6,6 +6,7 @@ export function useAgo(ts: number): string {
     const id = setInterval(() => setTick((n) => n + 1), 15_000);
     return () => clearInterval(id);
   }, []);
+  if (!ts || !Number.isFinite(ts)) return '—';
   const s = Math.max(1, Math.round((Date.now() - ts) / 1000));
   if (s < 60) return `${s}s`;
   if (s < 3600) return `${Math.round(s / 60)}m`;

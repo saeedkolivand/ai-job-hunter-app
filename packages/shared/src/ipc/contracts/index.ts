@@ -98,6 +98,13 @@ export const IPC_CHANNELS = {
 export type IpcChannel =
   (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS][keyof (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]];
 
+/**
+ * Renderer-side protocol version. Must match the version returned by
+ * `system.getProtocolVersion()` from the Tauri shell. A mismatch at startup
+ * indicates a partially-updated install and should be surfaced to the user.
+ */
+export const PROTOCOL_VERSION = '1.0.0';
+
 // Re-export individual namespace contracts for direct imports if needed
 
 export { AI_CHANNELS, type AiContract } from './ai.js';

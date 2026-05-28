@@ -310,5 +310,10 @@ pub fn system_get_metrics() -> Value {
     })
 }
 
+#[tauri::command]
+pub fn system_get_protocol_version() -> String {
+    "1.0.0".to_string()
+}
+
 #[cfg(test)]
 mod test;

@@ -1,4 +1,6 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 
 use crate::autopilot::{AutopilotStatus, AutopilotStore};
 use crate::autopilot_helpers::autopilot_scrape;
@@ -22,37 +24,37 @@ fn store(app: &AppHandle) -> Arc<Mutex<AutopilotStore>> {
 
 #[tauri::command]
 pub fn autopilot_list(app: AppHandle) -> Value {
-    let list = store(&app).lock().unwrap().list();
+    let list = store(&app).lock().list();
     json!(list)
 }
 
 #[tauri::command]
 pub fn autopilot_get(app: AppHandle, autopilot_id: String) -> Value {
-    let ap = store(&app).lock().unwrap().get(&autopilot_id);
+    let ap = store(&app).lock().get(&autopilot_id);
     json!(ap)
 }
 
 #[tauri::command]
 pub fn autopilot_create(app: AppHandle, req: Value) -> Value {
-    let ap = store(&app).lock().unwrap().create(req);
+    let ap = store(&app).lock().create(req);
     json!(ap)
 }
 
 #[tauri::command]
 pub fn autopilot_update(app: AppHandle, autopilot_id: String, req: Value) -> Value {
-    let ap = store(&app).lock().unwrap().update(&autopilot_id, req);
+    let ap = store(&app).lock().update(&autopilot_id, req);
     json!(ap)
 }
 
 #[tauri::command]
 pub fn autopilot_remove(app: AppHandle, autopilot_id: String) -> Value {
-    store(&app).lock().unwrap().remove(&autopilot_id);
+    store(&app).lock().remove(&autopilot_id);
     json!(null)
 }
 
 #[tauri::command]
 pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
-    let autopilot = store(&app).lock().unwrap().get(&autopilot_id);
+    let autopilot = store(&app).lock().get(&autopilot_id);
 
     let Some(autopilot) = autopilot else {
         return json!({ "error": format!("autopilot not found: {autopilot_id}") });
@@ -64,7 +66,6 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     let job_id = uuid_v4();
     app.state::<Mutex<crate::jobs::JobTracker>>()
         .lock()
-        .unwrap()
         .start(&job_id, "autopilot.run");
 
     let engine = app.state::<Arc<ScraperEngine>>().inner().clone();
@@ -85,9 +86,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         Ok(p) => p,
         Err(e) => {
             engine.unregister_token(&job_id).await;
-            if let Ok(mut g) = app.state::<Mutex<crate::jobs::JobTracker>>().lock() {
-                g.fail(&job_id, e.clone());
-            }
+            app.state::<Mutex<crate::jobs::JobTracker>>().lock().fail(&job_id, e.clone());
             return json!({ "error": e, "jobId": job_id });
         }
     };
@@ -147,18 +146,16 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         );
     }
 
-    {
-        store(&app).lock().unwrap().update(
-            &autopilot_id,
-            json!({ "totalFound": total_found, "totalApplied": applied }),
-        );
-    }
+    store(&app).lock().update(
+        &autopilot_id,
+        json!({ "totalFound": total_found, "totalApplied": applied }),
+    );
 
     engine.unregister_token(&job_id).await;
 
-    if let Ok(mut g) = app.state::<Mutex<crate::jobs::JobTracker>>().lock() {
-        g.complete(&job_id, json!({ "found": total_found, "applied": applied }));
-    }
+    app.state::<Mutex<crate::jobs::JobTracker>>()
+        .lock()
+        .complete(&job_id, json!({ "found": total_found, "applied": applied }));
 
     emit_step(&app, &job_id, "complete", &format!("Found {total_found}, applied to {applied}"));
 
@@ -167,13 +164,13 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
 
 #[tauri::command]
 pub fn autopilot_pause(app: AppHandle, autopilot_id: String) -> Value {
-    store(&app).lock().unwrap().set_status(&autopilot_id, AutopilotStatus::Paused);
+    store(&app).lock().set_status(&autopilot_id, AutopilotStatus::Paused);
     json!(null)
 }
 
 #[tauri::command]
 pub fn autopilot_resume(app: AppHandle, autopilot_id: String) -> Value {
-    store(&app).lock().unwrap().set_status(&autopilot_id, AutopilotStatus::Active);
+    store(&app).lock().set_status(&autopilot_id, AutopilotStatus::Active);
     json!(null)
 }
 

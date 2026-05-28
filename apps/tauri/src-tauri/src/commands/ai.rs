@@ -59,7 +59,7 @@ pub async fn ai_generate(app: AppHandle, req: Value) -> Value {
         if let Err(e) = result {
             let _ = app_clone.emit(
                 "ai:stream",
-                json!({ "jobId": job_id_clone, "delta": format!("\n\nError: {e}"), "done": true }),
+                json!({ "jobId": job_id_clone, "delta": "", "done": true, "error": { "code": "GENERATION_FAILED", "message": format!("{e}") } }),
             );
             app_clone
                 .state::<Mutex<JobTracker>>()
