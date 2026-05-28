@@ -238,17 +238,12 @@ ai-job-hunter/
 @ajh/tauri (renderer)
   └── @ajh/shared
   └── @ajh/ui
-@ajh/data
-  └── @ajh/shared
-  └── @ajh/core
-@ajh/ai
-  └── @ajh/shared
-  └── @ajh/core
-@ajh/core
+  └── @ajh/prompts
+@ajh/ui
   └── @ajh/shared
 ```
 
-Build order: `shared → core → ai → data → tauri`
+Build order: `shared → ui / prompts → tauri`
 
 ---
 
@@ -343,7 +338,7 @@ ESLint and Prettier are enforced on every commit (lint-staged). CI also checks f
 Key rules:
 
 - Use `type` imports: `import type { Foo } from './foo'`
-- No `console.log` in source (use `createLogger` from `@ajh/core`)
+- No stray `console.log` in source (lint allows only `console.warn` / `console.error`)
 - Prefer `const` over `let`
 - No implicit `any`
 - Named exports preferred over default exports (except React components and route files)

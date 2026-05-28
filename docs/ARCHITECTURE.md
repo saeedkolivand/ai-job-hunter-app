@@ -26,45 +26,34 @@ graph TB
         Window["Window / Tray / Menu"]
     end
 
-    subgraph Background["Background Runtimes"]
-        EventBus["EventBus\n(typed pub/sub)"]
-        JobQueue["JobQueue\n(task dispatch)"]
-        Scheduler["Scheduler\n(cron-like)"]
-        RuntimeManager["RuntimeManager\n(lifecycle)"]
+    subgraph RustModules["Rust Modules (in-process)"]
+        Scraping["scraping/\n(chromiumoxide, 18+ boards)"]
+        Documents["documents/\n(extraction, SQLite, vectors)"]
+        AiProvider["commands/ai_provider\n(Ollama + cloud providers)"]
+        Jobs["jobs/\n(SQLite-backed JobTracker)"]
+        Autopilot["autopilot/\n(workflow + scheduler)"]
     end
 
-    subgraph AIRuntime["AI Runtime"]
-        OllamaClient["Ollama Client\n(chat + embed)"]
-        CloudProviders["Cloud Providers\n(OpenAI / Anthropic\nGemini / LM Studio)"]
-        EmbedWorker["Embedding Worker\n(Web Worker)"]
-    end
-
-    subgraph DataRuntime["Data Runtime"]
-        SQLite["SQLite\n(Drizzle ORM)"]
-        LanceDB["LanceDB\n(vector search)"]
-        ChunkWorker["Chunking Worker\n(Web Worker)"]
-        OCRWorker["OCR Worker\n(Tesseract.js)"]
-    end
-
-    subgraph Scrapers["Scraping Layer"]
-        Playwright["Playwright\n(browser automation)"]
-        Cheerio["Cheerio\n(HTML parsing)"]
-        Boards["18+ Board\nImplementations"]
+    subgraph External["External (local + network)"]
+        Ollama["Ollama\n(chat + embeddings)"]
+        Cloud["Cloud Providers\n(OpenAI / Anthropic / Gemini)"]
+        SQLite["SQLite\n(rusqlite, bundled)"]
+        Browser["Chromium\n(scraping / login)"]
     end
 
     Router --> Services
     Services --> Commands
-    Commands --> EventBus
-    EventBus --> JobQueue
-    JobQueue --> RuntimeManager
-    RuntimeManager --> AIRuntime
-    RuntimeManager --> DataRuntime
-    RuntimeManager --> Scrapers
-    Playwright --> Boards
-    Cheerio --> Boards
-    OllamaClient --> EmbedWorker
-    SQLite --> ChunkWorker
-    SQLite --> OCRWorker
+    Commands --> Scraping
+    Commands --> Documents
+    Commands --> AiProvider
+    Commands --> Jobs
+    Commands --> Autopilot
+    AiProvider --> Ollama
+    AiProvider --> Cloud
+    Documents --> SQLite
+    Documents --> Ollama
+    Jobs --> SQLite
+    Scraping --> Browser
     Commands --> Keychain
     Commands --> Updater
 ```
@@ -149,81 +138,15 @@ packages/shared/src/
 
 ---
 
-### `packages/core` — Runtime Infrastructure
-
-```mermaid
-graph LR
-    EventBus["EventBus\n(typed pub/sub)"]
-    JobQueue["JobQueue\n(dispatch + retry)"]
-    Scheduler["Scheduler\n(async cron)"]
-    RuntimeManager["RuntimeManager\n(lifecycle)"]
-    StateCoordinator["StateCoordinator\n(cross-runtime sync)"]
-    Logger["Logger\n(Pino factory)"]
-
-    RuntimeManager --> EventBus
-    RuntimeManager --> JobQueue
-    RuntimeManager --> Scheduler
-    RuntimeManager --> StateCoordinator
-```
-
-- **EventBus** — typed publish/subscribe within the Node process; decouples producers from consumers
-- **JobQueue** — enqueues tasks by kind, dispatches to handler, supports retry with backoff
-- **Scheduler** — cron-like recurring tasks (Autopilot runs, model health checks)
-- **RuntimeManager** — starts/stops AI and Data runtimes, coordinates graceful shutdown
-- **StateCoordinator** — synchronizes state changes across AI, Data, and Worker runtimes
-
----
-
-### `packages/ai` — AI Runtime
-
-```mermaid
-graph TB
-    AiRuntime["AiRuntime"]
-    OllamaClient["OllamaClient\n(HTTP via undici)"]
-    ModelRegistry["ModelRegistry\n(per-provider model list)"]
-    ChatGen["ChatGenerator\n(streaming SSE)"]
-    EmbedGen["EmbeddingGenerator\n(batch vectors)"]
-    CloudAdapters["Cloud Adapters\nOpenAI / Anthropic / Gemini"]
-
-    AiRuntime --> OllamaClient
-    AiRuntime --> ModelRegistry
-    AiRuntime --> ChatGen
-    AiRuntime --> EmbedGen
-    AiRuntime --> CloudAdapters
-    OllamaClient --> ChatGen
-    OllamaClient --> EmbedGen
-```
-
-Supports providers: **Ollama** (default, local), **OpenAI**, **Anthropic** (with extended thinking blocks), **Gemini**, **OpenAI-compatible** (LM Studio, remote Ollama).
-
----
-
-### `packages/data` — Data Runtime
-
-```mermaid
-graph TB
-    DataRuntime["DataRuntime"]
-    SQLiteDB["SQLite\n(better-sqlite3 + Drizzle)"]
-    VectorDB["LanceDB\n(ANN + hybrid search)"]
-    Matcher["Matcher\n(resume-job scoring)"]
-    FileProcessor["FileProcessor\n(PDF/DOCX/TXT/OCR)"]
-    Scrapers["Board Scrapers"]
-
-    DataRuntime --> SQLiteDB
-    DataRuntime --> VectorDB
-    DataRuntime --> Matcher
-    DataRuntime --> FileProcessor
-    DataRuntime --> Scrapers
-    FileProcessor --> OCRWorker["OCR Worker\n(Tesseract.js)"]
-    FileProcessor --> ChunkWorker["Chunk Worker\n(text splitting)"]
-    VectorDB --> EmbedWorker["Embed Worker\n(batch vectorize)"]
-```
-
----
-
 ### `packages/ui` — Component Library (`@ajh/ui`)
 
 A standalone React component library with no routing, IPC, or state management dependencies. Consumed only from the renderer.
+
+### `packages/prompts` — Prompt Templates
+
+Pure-TypeScript AI prompt templates (zero dependencies). Imported by the renderer's generation helpers.
+
+> The heavy work (scraping, document extraction, AI generation, embeddings) runs natively in the Rust core under `apps/tauri/src-tauri/` — see the Component Breakdown above. Earlier Node packages (`@ajh/core`, `@ajh/ai`, `@ajh/data`, `@ajh/workers`) implemented this for a now-removed sidecar and have been deleted.
 
 ---
 
@@ -489,18 +412,12 @@ graph TD
     Renderer["apps/tauri renderer"]
     Shared["packages/shared"]
     UI["packages/ui"]
-    Core["packages/core"]
-    AI["packages/ai"]
-    Data["packages/data"]
     Prompts["packages/prompts"]
-    Workers["packages/workers"]
 
     Renderer --> Shared
     Renderer --> UI
-    AI --> Shared
-    Data --> Shared
-    Workers --> Shared
-    Prompts --> Shared
+    Renderer --> Prompts
+    UI --> Shared
 
     style Renderer fill:#4f46e5,color:#fff
     style UI fill:#7c3aed,color:#fff
@@ -512,4 +429,4 @@ graph TD
 - `packages/shared` — no React, no Node APIs, no UI
 - `packages/ui` — no Zustand, no IPC, no routing
 - `packages/prompts` — no UI, no `window`
-- Renderer **never** imports from `@ajh/core`, `@ajh/ai`, `@ajh/data`, `@ajh/workers`
+- The renderer imports only `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`

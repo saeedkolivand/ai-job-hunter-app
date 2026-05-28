@@ -1,8 +1,5 @@
 /// AutopilotStore — JSON-file-backed CRUD for Autopilot records.
 ///
-/// Mirrors packages/data/src/autopilot/store.ts (NeDB) with the same public
-/// API surface so the renderer's existing autopilot hooks work unchanged.
-///
 /// Records are persisted to <dataDir>/autopilots.json as a flat JSON array.
 /// All field names are serialised in camelCase to match the TypeScript schema
 /// (`#[serde(rename_all = "camelCase")]`).

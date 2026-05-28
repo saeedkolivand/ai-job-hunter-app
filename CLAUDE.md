@@ -42,10 +42,6 @@ Local-first desktop app in a pnpm monorepo. **Tauri is the shell.**
 packages/shared       ← IPC contracts, Zod schemas, shared types (no UI, no Node)
 packages/ui           ← React component library + design system (no app logic)
 packages/prompts      ← AI prompt templates (pure TS, zero deps)
-packages/core         ← EventBus, JobQueue, Logger
-packages/ai           ← Ollama client + AI runtime
-packages/data         ← DB, scraping, matching, files
-packages/workers      ← Worker thread pool
 apps/tauri            ← Tauri app: Rust core (scraping, login, documents, AI) + React renderer
 ```
 
@@ -148,7 +144,6 @@ No `useState + useEffect` for remote data. Every IPC call goes through a service
 - `packages/shared` — no React, no Node APIs
 - `packages/ui` — no Zustand, no IPC, no routing
 - `packages/prompts` — no UI, no `window`
-- Renderer **never** imports from `@ajh/core`, `@ajh/ai`, `@ajh/data`, `@ajh/workers`
 
 ### 13. Stale branch check — before any work
 

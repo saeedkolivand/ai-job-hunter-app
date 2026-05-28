@@ -69,16 +69,6 @@ const DEEP_UI_IMPORTS = [
   '@/components/ui/index',
 ];
 
-// ── Renderer package boundary — main-process packages ────────────────────────
-const MAIN_PROCESS_PACKAGES = [
-  '@ajh/core',
-  '@ajh/core/**',
-  '@ajh/ai',
-  '@ajh/ai/**',
-  '@ajh/workers',
-  '@ajh/workers/**',
-];
-
 // ── Shared no-restricted-imports sets ────────────────────────────────────────
 
 const I18N_IMPORT_RESTRICTION = {
@@ -213,19 +203,7 @@ export default tseslint.config(
   {
     files: ['apps/desktop/src/renderer/**/*.ts', 'apps/desktop/src/renderer/**/*.tsx'],
     rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          ...I18N_IMPORT_RESTRICTION,
-          patterns: [
-            {
-              group: MAIN_PROCESS_PACKAGES,
-              message:
-                'Main-process packages (@ajh/core, @ajh/ai, @ajh/workers) are not available in the renderer. Add an IPC method instead.',
-            },
-          ],
-        },
-      ],
+      'no-restricted-imports': ['error', { ...I18N_IMPORT_RESTRICTION }],
     },
   },
 
@@ -244,11 +222,6 @@ export default tseslint.config(
         {
           ...I18N_IMPORT_RESTRICTION,
           patterns: [
-            {
-              group: MAIN_PROCESS_PACKAGES,
-              message:
-                'Main-process packages are not available in the renderer. Add an IPC method instead.',
-            },
             {
               group: DEEP_UI_IMPORTS,
               message:
@@ -344,11 +317,6 @@ export default tseslint.config(
         {
           ...I18N_IMPORT_RESTRICTION,
           patterns: [
-            {
-              group: MAIN_PROCESS_PACKAGES,
-              message:
-                'Main-process packages are not available in the renderer. Add an IPC method instead.',
-            },
             {
               group: DEEP_UI_IMPORTS,
               message:

@@ -41,7 +41,6 @@ Local-first Tauri desktop app in a pnpm monorepo.
 packages/shared    ← IPC contracts, Zod schemas, shared types (no UI, no Node)
 packages/ui        ← React component library (@ajh/ui — no app logic)
 packages/prompts   ← AI prompt templates (pure TS, zero deps)
-packages/core/ai/data/workers ← Main process only. Never import in renderer.
 apps/tauri         ← Tauri app (Rust core + React renderer)
 ```
 
@@ -74,7 +73,7 @@ IPC contract: `packages/shared/src/ipc/contracts.ts`.
 
 **10. Data fetching** — React Query via service hooks only. No `useState + useEffect` for remote data.
 
-**11. Package boundaries** — renderer never imports `@ajh/core`, `@ajh/ai`, `@ajh/data`, `@ajh/workers`.
+**11. Package boundaries** — renderer imports only `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`.
 
 **12. State machines** — 3+ state flows use `useMachine` + machines in `lib/machines/`.
 
