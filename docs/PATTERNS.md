@@ -423,6 +423,7 @@ coupling the [architecture roadmap](ARCHITECTURE_ROADMAP.md) is eliminating.
 | env vars, data dir, filesystem paths | `platform::config`      | `platform::config::data_dir()` — never read `AJH_DATA_DIR` or rebuild `~/.ajh` yourself                                       |
 | AI provider routing + capabilities   | `commands::ai_provider` | `resolve(ProviderId, ..)`                                                                                                     |
 | HTTP clients (TLS, pool, user-agent) | `net::http`             | `net::http::shared()` + per-request `.timeout()`, or `build_client()` for a cookie jar — never `reqwest::Client::new/builder` |
+| error types                          | `error::AppError`       | return `AppResult<T>` from fallible internals — never `Result<_, String>` (domain enums like `ExtractionError` add `From`)    |
 | workflow orchestration               | `pipeline`              | compose `Stage`/`Pipeline`                                                                                                    |
 
 This table grows one row per roadmap phase. Where practical, a CI guardrail
@@ -444,3 +445,4 @@ enforces ownership (e.g. `AJH_DATA_DIR` is grep-banned outside `platform/config.
 | Storing credentials in SQLite                    | OS keychain via `client.credentials`                                  |
 | Reading `AJH_DATA_DIR` / rebuilding `~/.ajh`     | `platform::config::data_dir()`                                        |
 | `reqwest::Client::new()` / `::builder()`         | `net::http::shared()` or `net::http::build_client()`                  |
+| `Result<_, String>` for fallible internals       | `AppResult<_>` / `AppError` from `crate::error`                       |

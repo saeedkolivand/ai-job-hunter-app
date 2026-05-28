@@ -1,5 +1,7 @@
 pub mod linkedin;
 
+use crate::error::AppResult;
+
 /// Platform-agnostic profile scraping result.
 #[derive(Debug)]
 pub struct ProfileData {
@@ -66,7 +68,7 @@ impl ProfileData {
 }
 
 /// Detects the platform from a URL and delegates to the matching provider.
-pub async fn import_from_url(url: &str) -> Result<ProfileData, String> {
+pub async fn import_from_url(url: &str) -> AppResult<ProfileData> {
     let platform = detect_platform(url).ok_or_else(|| {
         "unsupported profile URL — only LinkedIn is supported at this time".to_string()
     })?;

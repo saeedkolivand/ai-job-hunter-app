@@ -10,6 +10,7 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::error::{AppError, AppResult};
 use crate::jobs::JobTracker;
 
 use super::{
@@ -52,7 +53,7 @@ impl AiProvider for OllamaClient {
         app: &AppHandle,
         job_id: &str,
         req: &AiGenerateRequest,
-    ) -> Result<(), String> {
+    ) -> AppResult<()> {
         stream_chat(app, job_id, req).await
     }
 
@@ -63,7 +64,7 @@ impl AiProvider for OllamaClient {
         system: &str,
         user: &str,
         temperature: Option<f64>,
-    ) -> Result<String, String> {
+    ) -> AppResult<String> {
         let base = host();
         let endpoint = format!("{base}/api/chat");
         let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat", &base, false);
@@ -90,14 +91,14 @@ impl AiProvider for OllamaClient {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                return Err(format!("Ollama unreachable: {e}"));
+                return Err(AppError::Network(format!("Ollama unreachable: {e}")));
             }
         };
         let status = resp.status();
         if !status.is_success() {
             let body_text = resp.text().await.unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
-            return Err(format!("Ollama {status}: {body_text}"));
+            return Err(AppError::Provider(format!("Ollama {status}: {body_text}")));
         }
         let data: Value = resp.json().await.map_err(|e| format!("Ollama parse: {e}"))?;
         trace.end(Some(status.as_u16()), true);
@@ -105,10 +106,10 @@ impl AiProvider for OllamaClient {
             .and_then(|m| m.get("content"))
             .and_then(|c| c.as_str())
             .map(String::from)
-            .ok_or_else(|| "Ollama: unexpected response shape".to_string())
+            .ok_or_else(|| AppError::Provider("Ollama: unexpected response shape".to_string()))
     }
 
-    async fn embed(&self, _app: &AppHandle, model: &str, text: &str) -> Result<Vec<f64>, String> {
+    async fn embed(&self, _app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
         embed_with(model, text).await
     }
 
@@ -120,12 +121,12 @@ impl AiProvider for OllamaClient {
         list_tag_models(client).await
     }
 
-    async fn test_key(&self, client: &reqwest::Client, _api_key: &str) -> Result<(), String> {
+    async fn test_key(&self, client: &reqwest::Client, _api_key: &str) -> AppResult<()> {
         // Ollama needs no key — a reachable host counts as healthy.
         match client.get(format!("{}/api/tags", host())).send().await {
             Ok(r) if r.status().is_success() => Ok(()),
-            Ok(r) => Err(format!("Ollama returned status: {}", r.status())),
-            Err(e) => Err(format!("Ollama unreachable: {e}")),
+            Ok(r) => Err(AppError::Provider(format!("Ollama returned status: {}", r.status()))),
+            Err(e) => Err(AppError::Network(format!("Ollama unreachable: {e}"))),
         }
     }
 }
@@ -178,7 +179,7 @@ pub async fn reachable_model() -> (bool, Option<String>) {
 
 /// Embed `text` with a specific Ollama embedding model. Returns a clear error
 /// (not `None`) so callers can surface why embedding failed.
-pub async fn embed_with(model: &str, text: &str) -> Result<Vec<f64>, String> {
+pub async fn embed_with(model: &str, text: &str) -> AppResult<Vec<f64>> {
     // Char-boundary-safe truncation (avoids panics on multi-byte input).
     let truncated: String = text.chars().take(8000).collect();
     let body = json!({ "model": model, "prompt": truncated });
@@ -192,7 +193,7 @@ pub async fn embed_with(model: &str, text: &str) -> Result<Vec<f64>, String> {
     let status = resp.status();
     if !status.is_success() {
         let body_text = resp.text().await.unwrap_or_default();
-        return Err(format!("Ollama {status}: {body_text}"));
+        return Err(AppError::Provider(format!("Ollama {status}: {body_text}")));
     }
     let data: Value = resp.json().await.map_err(|e| format!("Ollama parse: {e}"))?;
     let arr = data
@@ -203,7 +204,7 @@ pub async fn embed_with(model: &str, text: &str) -> Result<Vec<f64>, String> {
 }
 
 /// Stream a model pull, emitting `jobs:event` progress. Returns when complete.
-pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> Result<(), String> {
+pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
     let mut response = crate::net::http::shared()
         .post(format!("{}/api/pull", host()))
         .timeout(std::time::Duration::from_secs(3600))
@@ -215,7 +216,7 @@ pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> Result<(), Stri
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("Ollama {status}: {body}"));
+        return Err(AppError::Provider(format!("Ollama {status}: {body}")));
     }
 
     let mut line_buf = String::new();
@@ -251,7 +252,7 @@ async fn stream_chat(
     app: &AppHandle,
     job_id: &str,
     req: &AiGenerateRequest,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let base = host();
     let endpoint = format!("{base}/api/chat");
     let trace = RequestTrace::begin(ProviderId::Ollama, &req.model, "/api/chat", &base, true);
@@ -287,7 +288,7 @@ async fn stream_chat(
         Ok(r) => r,
         Err(e) => {
             trace.end(None, false);
-            return Err(format!("Ollama unreachable: {e}"));
+            return Err(AppError::Network(format!("Ollama unreachable: {e}")));
         }
     };
 
@@ -295,7 +296,7 @@ async fn stream_chat(
     if !status.is_success() {
         let body_text = response.text().await.unwrap_or_default();
         trace.end(Some(status.as_u16()), false);
-        return Err(format!("Ollama {status}: {body_text}"));
+        return Err(AppError::Provider(format!("Ollama {status}: {body_text}")));
     }
 
     let mut line_buf = String::new();
@@ -304,7 +305,7 @@ async fn stream_chat(
             if job.status == crate::jobs::JobStatus::Cancelled {
                 let _ = response.error_for_status_ref();
                 trace.end(Some(status.as_u16()), false);
-                return Err("Job cancelled".to_string());
+                return Err(AppError::Message("Job cancelled".to_string()));
             }
         }
 
@@ -343,7 +344,7 @@ async fn stream_chat(
             Ok(None) => break,
             Err(e) => {
                 trace.end(Some(status.as_u16()), false);
-                return Err(format!("Stream error: {e}"));
+                return Err(AppError::Network(format!("Stream error: {e}")));
             }
         }
     }

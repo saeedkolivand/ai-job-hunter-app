@@ -2,13 +2,14 @@ use scraper::{Html, Selector};
 use serde_json::Value;
 
 use super::ProfileData;
+use crate::error::{AppError, AppResult};
 
 /// Fetch a LinkedIn public profile page and extract structured data.
 ///
 /// LinkedIn embeds `application/ld+json` blocks with schema.org Person/Organization
 /// data on public profile pages. We parse those first; visible HTML sections serve
 /// as a fallback for experience, education, and skills.
-pub async fn import(url: &str) -> Result<ProfileData, String> {
+pub async fn import(url: &str) -> AppResult<ProfileData> {
     let html = fetch_page(url).await?;
     let document = Html::parse_document(&html);
 
@@ -48,9 +49,9 @@ pub async fn import(url: &str) -> Result<ProfileData, String> {
     });
 
     if name.is_none() && experience.is_empty() && skills.is_empty() {
-        return Err(
+        return Err(AppError::Parse(
             "could not extract profile data — the page may require LinkedIn login".to_string(),
-        );
+        ));
     }
 
     Ok(ProfileData {
@@ -67,7 +68,7 @@ pub async fn import(url: &str) -> Result<ProfileData, String> {
 
 // ── HTTP ─────────────────────────────────────────────────────────────────────
 
-async fn fetch_page(url: &str) -> Result<String, String> {
+async fn fetch_page(url: &str) -> AppResult<String> {
     let resp = crate::net::http::shared()
         .get(url)
         .timeout(std::time::Duration::from_secs(15))
@@ -78,12 +79,12 @@ async fn fetch_page(url: &str) -> Result<String, String> {
 
     if !resp.status().is_success() {
         let status = resp.status();
-        return Err(format!(
+        return Err(AppError::Provider(format!(
             "linkedin returned {status} — you may need to log in first"
-        ));
+        )));
     }
 
-    resp.text().await.map_err(|e| format!("read body: {e}"))
+    resp.text().await.map_err(|e| AppError::Network(format!("read body: {e}")))
 }
 
 // ── JSON-LD ───────────────────────────────────────────────────────────────────

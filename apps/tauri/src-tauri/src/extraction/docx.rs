@@ -11,8 +11,7 @@ pub fn extract(bytes: &[u8]) -> Result<ExtractedResume, ExtractionError> {
         ZipArchive::new(cursor).map_err(|e| ExtractionError::DocxError(e.to_string()))?;
 
     let relationships = read_relationships(&mut archive);
-    let document_xml = read_zip_entry(&mut archive, "word/document.xml")
-        .map_err(|e| ExtractionError::DocxError(e))?;
+    let document_xml = read_zip_entry(&mut archive, "word/document.xml")?;
 
     let (text, links) = parse_document(&document_xml, &relationships);
     let confidence = crate::extraction::confidence::score(&text, SourceFormat::Docx);
@@ -28,14 +27,17 @@ pub fn extract(bytes: &[u8]) -> Result<ExtractedResume, ExtractionError> {
 
 // ── ZIP helpers ───────────────────────────────────────────────────────────────
 
-fn read_zip_entry(archive: &mut ZipArchive<std::io::Cursor<&[u8]>>, name: &str) -> Result<String, String> {
+fn read_zip_entry(
+    archive: &mut ZipArchive<std::io::Cursor<&[u8]>>,
+    name: &str,
+) -> Result<String, ExtractionError> {
     let mut entry = archive
         .by_name(name)
-        .map_err(|_| format!("missing {name} in DOCX archive"))?;
+        .map_err(|_| ExtractionError::DocxError(format!("missing {name} in DOCX archive")))?;
     let mut buf = String::new();
     entry
         .read_to_string(&mut buf)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| ExtractionError::DocxError(e.to_string()))?;
     Ok(buf)
 }
 

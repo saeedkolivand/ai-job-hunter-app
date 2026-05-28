@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 
+use crate::error::AppResult;
 use crate::pipeline::retry::{self, DraftGenerator, RetryPolicy};
 use crate::pipeline::validation::Validator;
 use crate::pipeline::{Completer, Pipeline, Stage};
@@ -154,7 +155,7 @@ impl Stage<CoverLetterContext> for ResearchStage {
     fn name(&self) -> &'static str {
         "research"
     }
-    async fn run(&self, ctx: &mut CoverLetterContext) -> Result<(), String> {
+    async fn run(&self, ctx: &mut CoverLetterContext) -> AppResult<()> {
         if !ctx.enable_research {
             return Ok(());
         }
@@ -180,7 +181,7 @@ impl Stage<CoverLetterContext> for GenerateValidatedStage {
     fn name(&self) -> &'static str {
         "generate"
     }
-    async fn run(&self, ctx: &mut CoverLetterContext) -> Result<(), String> {
+    async fn run(&self, ctx: &mut CoverLetterContext) -> AppResult<()> {
         let generator = CoverLetterDraftGenerator {
             resume_summary: ctx.resume_summary.clone(),
             job_ad: ctx.job_ad.clone(),
@@ -223,7 +224,7 @@ struct CoverLetterDraftGenerator {
 
 #[async_trait]
 impl DraftGenerator for CoverLetterDraftGenerator {
-    async fn generate(&self, completer: &Completer, attempt: u8) -> Result<String, String> {
+    async fn generate(&self, completer: &Completer, attempt: u8) -> AppResult<String> {
         let _ = completer
             .app()
             .emit("cover_letter:generation:start", json!({ "attempt": attempt }));
@@ -243,7 +244,7 @@ impl DraftGenerator for CoverLetterDraftGenerator {
 pub async fn run_pipeline(
     app: AppHandle,
     req: CoverLetterRequest,
-) -> Result<CoverLetterResponse, String> {
+) -> AppResult<CoverLetterResponse> {
     // Resolve the active provider + model through the centralized layer.
     let completer =
         Completer::resolve(&app, req.provider.as_deref(), req.model.as_deref(), req.base_url.clone())

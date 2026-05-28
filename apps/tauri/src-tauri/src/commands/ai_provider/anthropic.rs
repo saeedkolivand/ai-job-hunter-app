@@ -8,6 +8,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::commands::ai::get_provider_key;
 use crate::jobs::JobTracker;
 
+use crate::error::{AppError, AppResult};
+
 use super::{
     friendly_api_error, AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace,
     TokenParam,
@@ -43,7 +45,7 @@ impl AiProvider for AnthropicClient {
         app: &AppHandle,
         job_id: &str,
         req: &AiGenerateRequest,
-    ) -> Result<(), String> {
+    ) -> AppResult<()> {
         let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
         let endpoint = format!("{BASE}/messages");
         let trace = RequestTrace::begin(ProviderId::Anthropic, &req.model, "/messages", BASE, true);
@@ -96,7 +98,7 @@ impl AiProvider for AnthropicClient {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                return Err(format!("Anthropic unreachable: {e}"));
+                return Err(AppError::Network(format!("Anthropic unreachable: {e}")));
             }
         };
 
@@ -114,7 +116,7 @@ impl AiProvider for AnthropicClient {
                 if job.status == crate::jobs::JobStatus::Cancelled {
                     drop(response);
                     trace.end(Some(status.as_u16()), false);
-                    return Err("Job cancelled".to_string());
+                    return Err(AppError::Message("Job cancelled".to_string()));
                 }
             }
 
@@ -187,7 +189,7 @@ impl AiProvider for AnthropicClient {
                 Ok(None) => break,
                 Err(e) => {
                     trace.end(Some(status.as_u16()), false);
-                    return Err(format!("Stream error: {e}"));
+                    return Err(AppError::Network(format!("Stream error: {e}")));
                 }
             }
         }
@@ -207,7 +209,7 @@ impl AiProvider for AnthropicClient {
         system: &str,
         user: &str,
         temperature: Option<f64>,
-    ) -> Result<String, String> {
+    ) -> AppResult<String> {
         let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
         let endpoint = format!("{BASE}/messages");
         let trace = RequestTrace::begin(ProviderId::Anthropic, model, "/messages", BASE, false);
@@ -234,7 +236,7 @@ impl AiProvider for AnthropicClient {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                return Err(format!("Anthropic unreachable: {e}"));
+                return Err(AppError::Network(format!("Anthropic unreachable: {e}")));
             }
         };
         let status = resp.status();
@@ -256,11 +258,13 @@ impl AiProvider for AnthropicClient {
                     .join("")
             })
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| "Anthropic: unexpected response shape".to_string())
+            .ok_or_else(|| AppError::Provider("Anthropic: unexpected response shape".to_string()))
     }
 
-    async fn embed(&self, _app: &AppHandle, _model: &str, _text: &str) -> Result<Vec<f64>, String> {
-        Err("Anthropic has no embeddings API. Use OpenAI, Gemini, or Ollama for embeddings.".to_string())
+    async fn embed(&self, _app: &AppHandle, _model: &str, _text: &str) -> AppResult<Vec<f64>> {
+        Err(AppError::Provider(
+            "Anthropic has no embeddings API. Use OpenAI, Gemini, or Ollama for embeddings.".to_string(),
+        ))
     }
 
     fn default_embedding_model(&self) -> Option<&'static str> {
@@ -289,7 +293,7 @@ impl AiProvider for AnthropicClient {
         vec![]
     }
 
-    async fn test_key(&self, client: &reqwest::Client, api_key: &str) -> Result<(), String> {
+    async fn test_key(&self, client: &reqwest::Client, api_key: &str) -> AppResult<()> {
         let resp = client
             .post(format!("{BASE}/messages"))
             .header("x-api-key", api_key)
@@ -307,7 +311,7 @@ impl AiProvider for AnthropicClient {
         if resp.status().is_success() || resp.status() == 400 {
             Ok(())
         } else {
-            Err(format!("API returned status: {}", resp.status()))
+            Err(AppError::Provider(format!("API returned status: {}", resp.status())))
         }
     }
 }

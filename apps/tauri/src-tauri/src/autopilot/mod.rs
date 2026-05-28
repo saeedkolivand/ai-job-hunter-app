@@ -11,6 +11,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::error::AppResult;
+
 // ── Data model ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -318,7 +320,7 @@ impl crate::data_store::DataStore for AutopilotStore {
         serde_json::json!(self.list())
     }
 
-    fn import(&self, data: &serde_json::Value) -> Result<usize, String> {
+    fn import(&self, data: &serde_json::Value) -> AppResult<usize> {
         let items: Vec<Autopilot> =
             serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
         let count = items.len();

@@ -4,6 +4,7 @@ use parking_lot::Mutex;
 use tauri::{AppHandle, Manager};
 
 use crate::db::{run_migrations, Migration};
+use crate::error::AppResult;
 
 pub struct ConversationDb(pub Mutex<Connection>);
 
@@ -40,7 +41,7 @@ impl ConversationDb {
         std::fs::create_dir_all(&data_dir).ok();
         let conn = Connection::open(data_dir.join("conversations.db"))?;
         run_migrations(&conn, Self::MIGRATIONS)
-            .map_err(|e| rusqlite::Error::InvalidParameterName(e))?;
+            .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
         Ok(Self(Mutex::new(conn)))
     }
 
@@ -84,7 +85,7 @@ impl crate::data_store::DataStore for ConversationDb {
         json!({ "conversations": conversations, "messages": messages })
     }
 
-    fn import(&self, data: &Value) -> Result<usize, String> {
+    fn import(&self, data: &Value) -> AppResult<usize> {
         let conversations = data.get("conversations").and_then(|v| v.as_array());
         let messages = data.get("messages").and_then(|v| v.as_array());
         let conn = self.0.lock();

@@ -6,13 +6,16 @@ use super::{
     pdf::generate_pdf,
     types::{ExportFormat, ExportRequest, ExportResult},
 };
+use crate::error::{AppError, AppResult};
 
 /// Tauri command to export resume or cover letter
 #[command]
-pub async fn documents_export_document(mut request: ExportRequest) -> Result<ExportResult, String> {
+pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<ExportResult> {
     // Validate input
     if request.text.trim().is_empty() {
-        return Err("Cannot export empty document. Please generate content first.".to_string());
+        return Err(AppError::Validation(
+            "Cannot export empty document. Please generate content first.".to_string(),
+        ));
     }
 
     // Normalize Unicode before any rendering so unsupported glyphs don't appear
@@ -56,7 +59,7 @@ pub async fn documents_export_document(mut request: ExportRequest) -> Result<Exp
 pub async fn documents_export_and_save(
     app: tauri::AppHandle,
     request: ExportRequest,
-) -> Result<String, String> {
+) -> AppResult<String> {
     // Generate the document
     let result = documents_export_document(request).await?;
 
@@ -78,7 +81,7 @@ pub async fn documents_export_and_save(
     let path = match file_path {
         tauri_plugin_dialog::FilePath::Path(p) => p,
         #[allow(unreachable_patterns)]
-        _ => return Err("Unsupported file path type".to_string()),
+        _ => return Err(AppError::Message("Unsupported file path type".to_string())),
     };
 
     // Write bytes to file

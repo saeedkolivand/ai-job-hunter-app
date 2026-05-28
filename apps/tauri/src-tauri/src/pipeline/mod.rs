@@ -25,6 +25,7 @@ use async_trait::async_trait;
 use tauri::AppHandle;
 
 use crate::commands::ai_provider::{resolve, AiProvider, ProviderId};
+use crate::error::AppResult;
 
 // ── Completer ───────────────────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ impl Completer {
         provider: Option<&str>,
         model: Option<&str>,
         base_url: Option<String>,
-    ) -> Result<Self, String> {
+    ) -> AppResult<Self> {
         let provider_str = provider
             .map(str::trim)
             .filter(|s| !s.is_empty())
@@ -71,7 +72,7 @@ impl Completer {
         system: &str,
         user: &str,
         temperature: Option<f64>,
-    ) -> Result<String, String> {
+    ) -> AppResult<String> {
         self.provider
             .complete(&self.app, &self.model, system, user, temperature)
             .await
@@ -90,7 +91,7 @@ impl Completer {
 #[async_trait]
 pub trait Stage<C>: Send + Sync {
     fn name(&self) -> &'static str;
-    async fn run(&self, ctx: &mut C) -> Result<(), String>;
+    async fn run(&self, ctx: &mut C) -> AppResult<()>;
 }
 
 /// An ordered sequence of [`Stage`]s sharing a context. Runs each stage in order,
@@ -110,7 +111,7 @@ impl<C> Pipeline<C> {
         self
     }
 
-    pub async fn run(&self, ctx: &mut C) -> Result<(), String> {
+    pub async fn run(&self, ctx: &mut C) -> AppResult<()> {
         for stage in &self.stages {
             let trace = StageTrace::begin(self.name, stage.name());
             match stage.run(ctx).await {
