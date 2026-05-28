@@ -130,10 +130,10 @@ pub async fn ai_test_provider_key(
         Some(k) => k,
         None => return json!({ "success": false, "error": "No API key found" }),
     };
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-    {
+    let client = match crate::net::http::build_client(crate::net::http::ClientConfig {
+        timeout: Some(std::time::Duration::from_secs(10)),
+        ..Default::default()
+    }) {
         Ok(c) => c,
         Err(e) => {
             return json!({ "success": false, "error": format!("Failed to create client: {}", e) })
@@ -160,10 +160,10 @@ pub async fn ai_list_provider_models(
         Some(k) => k,
         None => return json!([]),
     };
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-    {
+    let client = match crate::net::http::build_client(crate::net::http::ClientConfig {
+        timeout: Some(std::time::Duration::from_secs(10)),
+        ..Default::default()
+    }) {
         Ok(c) => c,
         Err(_) => return json!([]),
     };
@@ -175,10 +175,10 @@ pub async fn ai_list_provider_models(
 /// section. Cloud models come from `ai_list_provider_models`.
 #[tauri::command]
 pub async fn ai_list_models() -> Value {
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-    {
+    let client = match crate::net::http::build_client(crate::net::http::ClientConfig {
+        timeout: Some(std::time::Duration::from_secs(5)),
+        ..Default::default()
+    }) {
         Ok(c) => c,
         Err(_) => return json!([]),
     };

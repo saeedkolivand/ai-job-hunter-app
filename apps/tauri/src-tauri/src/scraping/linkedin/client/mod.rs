@@ -19,12 +19,11 @@ impl LinkedInHttpClient {
         Self {
             session_data,
             user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36".to_string(),
-            client: Client::builder()
-                .pool_max_idle_per_host(10)
-                .pool_idle_timeout(Duration::from_secs(60))
-                .timeout(Duration::from_secs(30))
-                .build()
-                .unwrap(),
+            client: crate::net::http::build_client(crate::net::http::ClientConfig {
+                timeout: Some(Duration::from_secs(30)),
+                ..Default::default()
+            })
+            .expect("failed to build LinkedIn HTTP client"),
             rate_limiter: super::rate_limiter::linkedin_rate_limiter(),
         }
     }

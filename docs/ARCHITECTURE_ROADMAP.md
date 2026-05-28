@@ -190,6 +190,14 @@ blast radius.
 
 ### Phase 2 — Shared HTTP infrastructure (M, medium risk)
 
+> **Status: in review** (branch `refactor/phase2-shared-http`). Introduced
+> `net::http` as the sole owner of `reqwest::Client` construction: one pooled
+> `shared()` client (unified on rustls, no global timeout — callers set
+> per-request timeouts) + `build_client()` for the per-session cookie-jar case.
+> Migrated all 27 constructions across AI providers, scrapers, geocoding,
+> profile-import, and research; added the CI grep guardrail. `native-tls` Cargo
+> feature is now unused (left in place; drop in a later phase).
+
 - **Pain:** 27 client constructions / 12 files; `scraping::http` rebuilds a
   `Client` per request (no connection reuse); AI/geocoding/profile-import roll
   their own (P2/P8).

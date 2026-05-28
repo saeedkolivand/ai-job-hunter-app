@@ -33,6 +33,7 @@ mod export;
 mod ipc_contracts;
 mod job_preferences;
 mod jobs;
+mod net;
 mod pipeline;
 mod platform;
 mod postings;
