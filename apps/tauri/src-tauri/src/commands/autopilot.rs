@@ -2,12 +2,50 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
-use crate::autopilot::{AutopilotStatus, AutopilotStore};
+use crate::autopilot::{AutopilotFilter, AutopilotStatus, AutopilotStore, AutopilotTarget};
 use crate::autopilot_helpers::autopilot_scrape;
 use crate::scraping::{JobPosting, ScraperEngine};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio_util::sync::CancellationToken;
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutopilotCreateRequest {
+    pub name: String,
+    pub target: AutopilotTarget,
+    pub filter: AutopilotFilter,
+    pub action: String,
+    pub schedule: String,
+    pub resume_text: Option<String>,
+    pub cover_letter: Option<String>,
+    #[serde(default)]
+    pub auto_submit: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutopilotPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<AutopilotTarget>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<AutopilotFilter>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resume_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cover_letter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_submit: Option<bool>,
+}
 
 fn uuid_v4() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -35,14 +73,14 @@ pub fn autopilot_get(app: AppHandle, autopilot_id: String) -> Value {
 }
 
 #[tauri::command]
-pub fn autopilot_create(app: AppHandle, req: Value) -> Value {
-    let ap = store(&app).lock().create(req);
+pub fn autopilot_create(app: AppHandle, req: AutopilotCreateRequest) -> Value {
+    let ap = store(&app).lock().create(serde_json::to_value(&req).unwrap_or_default());
     json!(ap)
 }
 
 #[tauri::command]
-pub fn autopilot_update(app: AppHandle, autopilot_id: String, req: Value) -> Value {
-    let ap = store(&app).lock().update(&autopilot_id, req);
+pub fn autopilot_update(app: AppHandle, autopilot_id: String, req: AutopilotPatch) -> Value {
+    let ap = store(&app).lock().update(&autopilot_id, serde_json::to_value(&req).unwrap_or_default());
     json!(ap)
 }
 
