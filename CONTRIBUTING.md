@@ -209,10 +209,9 @@ The Tauri app opens automatically. Hot-reload is enabled for the renderer.
 ```
 ai-job-hunter/
 ├── apps/
-│   ├── tauri/                  # Tauri app (Rust core + React renderer)
-│   │   ├── src-tauri/          # Rust core (commands, menu, tray, updater)
-│   │   └── src/                # React UI + tauri-client.ts
-│   └── scraper-runtime/        # Node.js HTTP sidecar
+│   └── tauri/                  # Tauri app (Rust core + React renderer)
+│       ├── src-tauri/          # Rust core (commands, menu, tray, updater)
+│       └── src/                # React UI + tauri-client.ts
 │
 ├── packages/
 │   ├── shared/                 # Types, Zod schemas, IPC contracts

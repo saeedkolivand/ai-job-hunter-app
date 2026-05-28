@@ -46,8 +46,7 @@ packages/core         ← EventBus, JobQueue, Logger
 packages/ai           ← Ollama client + AI runtime
 packages/data         ← DB, scraping, matching, files
 packages/workers      ← Worker thread pool
-apps/tauri            ← Tauri app (Rust + React via sidecar)
-apps/scraper-runtime  ← Node.js HTTP sidecar (scraping, login, documents, AI)
+apps/tauri            ← Tauri app: Rust core (scraping, login, documents, AI) + React renderer
 ```
 
 Renderer → shell communication: `AppClient` context only.
@@ -180,8 +179,6 @@ No `// eslint-disable`, no `@ts-ignore`. Add scoped overrides to `eslint.config.
 | IPC contract           | `packages/shared/src/ipc/contracts.ts`                      |
 | Tauri commands         | `apps/tauri/src-tauri/src/commands.rs`                      |
 | Tauri client (TS)      | `apps/tauri/src/tauri-client.ts`                            |
-| Sidecar entry          | `apps/scraper-runtime/src/index.ts`                         |
-| Sidecar protocol       | `apps/scraper-runtime/src/protocol.ts`                      |
 | Service hooks          | `apps/tauri/src/renderer/services/`                         |
 | UI package             | `packages/ui/src/index.ts` → `@ajh/ui`                      |
 | Motion tokens          | `packages/ui/src/lib/motion.ts` (import via `@/lib/motion`) |

@@ -4,7 +4,7 @@
 
 AI Job Hunter is a **local-first desktop application** built on Tauri 2. There is no cloud backend, no telemetry endpoint, and no remote database. Every computation — AI inference, web scraping, vector search, document parsing — runs on the user's machine.
 
-The architecture follows a **ports-and-adapters** model: the React renderer communicates exclusively through typed IPC contracts; the Rust core routes commands to the appropriate runtime; and a Node.js sidecar handles the heavy lifting (scraping, document processing, embeddings).
+The architecture follows a **ports-and-adapters** model: the React renderer communicates exclusively through typed IPC contracts, and the Rust core handles everything else — command routing plus the heavy work (scraping, document processing, embeddings) natively, without a separate process.
 
 ---
 
@@ -26,7 +26,7 @@ graph TB
         Window["Window / Tray / Menu"]
     end
 
-    subgraph Sidecar["Scraper Runtime Sidecar (Node.js)"]
+    subgraph Background["Background Runtimes"]
         EventBus["EventBus\n(typed pub/sub)"]
         JobQueue["JobQueue\n(task dispatch)"]
         Scheduler["Scheduler\n(cron-like)"]
@@ -79,20 +79,20 @@ The Tauri app is split into two processes:
 
 **Rust core (`src-tauri/`)** — thin orchestration layer:
 
-| Module            | Responsibility                                                  |
-| ----------------- | --------------------------------------------------------------- |
-| `commands/`       | IPC endpoint handlers; routes invocations to sidecar or runtime |
-| `scraping/`       | 18 board-specific Playwright scrapers                           |
-| `documents/`      | Document import, OCR dispatch, SQLite storage                   |
-| `jobs/`           | Job tracker state machine (queued → running → done/failed)      |
-| `credentials/`    | OS keychain CRUD via Tauri keychain plugin                      |
-| `conversations/`  | Chat history persistence                                        |
-| `autopilot/`      | Workflow engine + step scheduler                                |
-| `apply_helpers/`  | Form-filling logic for auto-apply                               |
-| `ai_generations/` | Metadata tracking for generated documents                       |
-| `export/`         | DOCX/PDF rendering using docx + jsPDF                           |
-| `updater/`        | Auto-update state (check, download, install)                    |
-| `browser/`        | System browser detection and launch                             |
+| Module            | Responsibility                                                       |
+| ----------------- | -------------------------------------------------------------------- |
+| `commands/`       | IPC endpoint handlers; routes invocations to the appropriate runtime |
+| `scraping/`       | 18 board-specific Playwright scrapers                                |
+| `documents/`      | Document import, OCR dispatch, SQLite storage                        |
+| `jobs/`           | Job tracker state machine (queued → running → done/failed)           |
+| `credentials/`    | OS keychain CRUD via Tauri keychain plugin                           |
+| `conversations/`  | Chat history persistence                                             |
+| `autopilot/`      | Workflow engine + step scheduler                                     |
+| `apply_helpers/`  | Form-filling logic for auto-apply                                    |
+| `ai_generations/` | Metadata tracking for generated documents                            |
+| `export/`         | DOCX/PDF rendering using docx + jsPDF                                |
+| `updater/`        | Auto-update state (check, download, install)                         |
+| `browser/`        | System browser detection and launch                                  |
 
 **React renderer (`src/renderer/`)** — feature-scoped UI:
 
@@ -450,9 +450,9 @@ All data lives on the user's machine — SQLite, LanceDB, credential keychain. N
 
 The renderer never calls `window.__TAURI_INVOKE__` directly. It uses `AppClient` which can be swapped to a mock, enabling UI-only development (`pnpm dev:frontend`) and Vitest tests without the full Tauri runtime.
 
-### 4. Sidecar Architecture
+### 4. Native Rust Runtimes
 
-Heavy work (scraping, OCR, embeddings) runs in a Node.js sidecar process, not inside Tauri's async runtime. This prevents blocking the Rust event loop and enables Web Workers for parallelism.
+Heavy work (scraping, OCR, embeddings) runs natively in the Rust core on Tauri's async runtime and `tokio` tasks — there is no separate Node.js process. Long operations are spawned as background tasks so they don't block command handling, and OCR runs in the renderer via Tesseract.js (its own Web Worker).
 
 ### 5. Streaming as First-Class Concern
 
@@ -494,14 +494,9 @@ graph TD
     Data["packages/data"]
     Prompts["packages/prompts"]
     Workers["packages/workers"]
-    Sidecar["apps/scraper-runtime"]
 
     Renderer --> Shared
     Renderer --> UI
-    Sidecar --> Core
-    Sidecar --> AI
-    Sidecar --> Data
-    Sidecar --> Shared
     AI --> Shared
     Data --> Shared
     Workers --> Shared
