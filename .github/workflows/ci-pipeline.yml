@@ -372,7 +372,7 @@ jobs:
 
       - name: 📊 Upload Test Results on Failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results-${{ github.run_id }}
           # Restricted to coverage and Cargo test logs. Uploading the full
@@ -507,7 +507,7 @@ jobs:
 
       - name: 📊 Upload Build Artifacts on Failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-artifacts-${{ github.run_id }}
           # Restricted to logs/output to avoid uploading the multi-GB
