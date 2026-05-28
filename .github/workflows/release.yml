@@ -328,7 +328,7 @@ jobs:
 
       - name: Upload Release Assets
         if: success()
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.sync-version-files.outputs.version }}
           # Tauri only emits .sig files for NSIS, AppImage, and macOS .app.tar.gz
@@ -503,7 +503,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📤 Upload latest.json to Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.sync-version-files.outputs.version }}
           files: latest.json
