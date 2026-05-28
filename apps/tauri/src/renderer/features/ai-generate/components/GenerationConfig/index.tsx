@@ -1,5 +1,3 @@
-import type React from 'react';
-
 import {
   AlertTriangle,
   FileCheck,
@@ -10,6 +8,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import type React from 'react';
 
 import { Button, cn } from '@ajh/ui';
 
