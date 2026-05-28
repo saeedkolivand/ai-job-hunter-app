@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as IndexRouteImport } from './routes/index'
 import { Route as SupportRouteImport } from './routes/support'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SearchRouteImport } from './routes/search'
@@ -17,10 +18,14 @@ import { Route as MonitoringRouteImport } from './routes/monitoring'
 import { Route as JobsRouteImport } from './routes/jobs'
 import { Route as AutopilotRouteImport } from './routes/autopilot'
 import { Route as AnalyzeRouteImport } from './routes/analyze'
-import { Route as AiGenerateRouteImport } from './routes/ai-generate'
 import { Route as AiRouteImport } from './routes/ai'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as AiGenerateRouteImport } from './routes/ai-generate'
 
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SupportRoute = SupportRouteImport.update({
   id: '/support',
   path: '/support',
@@ -61,26 +66,21 @@ const AnalyzeRoute = AnalyzeRouteImport.update({
   path: '/analyze',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AiGenerateRoute = AiGenerateRouteImport.update({
-  id: '/ai-generate',
-  path: '/ai-generate',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AiRoute = AiRouteImport.update({
   id: '/ai',
   path: '/ai',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AiGenerateRoute = AiGenerateRouteImport.update({
+  id: '/ai-generate',
+  path: '/ai-generate',
   getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/ai': typeof AiRoute
   '/ai-generate': typeof AiGenerateRoute
+  '/ai': typeof AiRoute
   '/analyze': typeof AnalyzeRoute
   '/autopilot': typeof AutopilotRoute
   '/jobs': typeof JobsRoute
@@ -92,8 +92,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/ai': typeof AiRoute
   '/ai-generate': typeof AiGenerateRoute
+  '/ai': typeof AiRoute
   '/analyze': typeof AnalyzeRoute
   '/autopilot': typeof AutopilotRoute
   '/jobs': typeof JobsRoute
@@ -106,8 +106,8 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/ai': typeof AiRoute
   '/ai-generate': typeof AiGenerateRoute
+  '/ai': typeof AiRoute
   '/analyze': typeof AnalyzeRoute
   '/autopilot': typeof AutopilotRoute
   '/jobs': typeof JobsRoute
@@ -121,8 +121,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/ai'
     | '/ai-generate'
+    | '/ai'
     | '/analyze'
     | '/autopilot'
     | '/jobs'
@@ -134,8 +134,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/ai'
     | '/ai-generate'
+    | '/ai'
     | '/analyze'
     | '/autopilot'
     | '/jobs'
@@ -147,8 +147,8 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/ai'
     | '/ai-generate'
+    | '/ai'
     | '/analyze'
     | '/autopilot'
     | '/jobs'
@@ -161,8 +161,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AiRoute: typeof AiRoute
   AiGenerateRoute: typeof AiGenerateRoute
+  AiRoute: typeof AiRoute
   AnalyzeRoute: typeof AnalyzeRoute
   AutopilotRoute: typeof AutopilotRoute
   JobsRoute: typeof JobsRoute
@@ -175,6 +175,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/support': {
       id: '/support'
       path: '/support'
@@ -231,13 +238,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AnalyzeRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/ai-generate': {
-      id: '/ai-generate'
-      path: '/ai-generate'
-      fullPath: '/ai-generate'
-      preLoaderRoute: typeof AiGenerateRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/ai': {
       id: '/ai'
       path: '/ai'
@@ -245,11 +245,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AiRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/ai-generate': {
+      id: '/ai-generate'
+      path: '/ai-generate'
+      fullPath: '/ai-generate'
+      preLoaderRoute: typeof AiGenerateRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -257,8 +257,8 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AiRoute: AiRoute,
   AiGenerateRoute: AiGenerateRoute,
+  AiRoute: AiRoute,
   AnalyzeRoute: AnalyzeRoute,
   AutopilotRoute: AutopilotRoute,
   JobsRoute: JobsRoute,
