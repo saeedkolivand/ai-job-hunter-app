@@ -136,14 +136,6 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 fn main() {
-    // Structured logging: respects RUST_LOG env var (e.g. RUST_LOG=ajh_tauri=debug).
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
-        )
-        .init();
-
     credentials::init_keyring();
 
     tauri::Builder::default()
