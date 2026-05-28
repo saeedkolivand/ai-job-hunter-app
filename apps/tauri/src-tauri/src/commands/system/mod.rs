@@ -7,29 +7,8 @@ pub async fn system_health(app: AppHandle) -> Value {
     let engine = app.state::<std::sync::Arc<ScraperEngine>>();
     let scraper_health = engine.health();
 
-    // Check Ollama availability and get the running model if any.
-    let base = std::env::var("OLLAMA_HOST")
-        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3))
-        .build()
-        .unwrap_or_default();
-
-    let ollama_resp = client.get(format!("{base}/api/tags")).send().await;
-    let (ai_ready, ai_model) = match ollama_resp {
-        Ok(r) if r.status().is_success() => {
-            let body: serde_json::Value = r.json().await.unwrap_or_default();
-            let model = body
-                .get("models")
-                .and_then(|m| m.as_array())
-                .and_then(|arr| arr.first())
-                .and_then(|m| m.get("name"))
-                .and_then(|n| n.as_str())
-                .map(|s| s.to_string());
-            (true, model)
-        }
-        _ => (false, None),
-    };
+    // Local (Ollama) availability + running model, via the Ollama provider module.
+    let (ai_ready, ai_model) = crate::commands::ai_provider::ollama::reachable_model().await;
 
     json!({
         "status": "ok",

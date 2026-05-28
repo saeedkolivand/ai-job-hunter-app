@@ -184,9 +184,9 @@ export function useChat() {
         model: selectedModel.current,
         messages: contextMessages,
         locale,
-        ...(generateConfig.current.provider !== 'ollama'
-          ? { provider: generateConfig.current.provider, baseUrl: generateConfig.current.baseUrl }
-          : {}),
+        // Always send the active provider — backend routes strictly, no fallback.
+        provider: generateConfig.current.provider,
+        baseUrl: generateConfig.current.baseUrl,
       })) as { jobId: string };
 
       activeJobRef.current = res.jobId;

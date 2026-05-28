@@ -25,6 +25,7 @@ import type { Model } from '@/types';
 
 import { ActiveProviderSwitcher } from '../ActiveProviderSwitcher';
 import { PROVIDER_ORDER, PROVIDERS } from '../provider-meta';
+import { ProviderDebugBadge } from '../ProviderDebugBadge';
 import { ProviderRow } from '../ProviderRow';
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -198,6 +199,9 @@ export function AISettingsTab() {
         activeProvider={activeProvider}
         onSetActive={setActiveProvider}
       />
+
+      {/* Routing debug — shows exactly where AI requests will go. */}
+      <ProviderDebugBadge />
 
       {/* Provider list */}
       <GlassCard>

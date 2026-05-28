@@ -81,9 +81,10 @@ async function streamGenerate(
     ],
     locale: safeLocale(locale),
     temperature,
-    ...(activeProvider !== 'ollama'
-      ? { provider: activeProvider, baseUrl: providerSettings?.baseUrl }
-      : {}),
+    // Always send the active provider — the backend routes strictly and will
+    // not fall back to Ollama. baseUrl only applies to OpenAI-compatible servers.
+    provider: activeProvider,
+    baseUrl: providerSettings?.baseUrl,
   } as Parameters<typeof api.ai.generate>[0])) as { jobId: string };
 
   const jobId = res.jobId;
