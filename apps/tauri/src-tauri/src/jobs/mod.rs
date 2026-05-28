@@ -4,7 +4,7 @@
 /// and in SQLite (for crash recovery). On startup, incomplete jobs from the
 /// last session are loaded and surfaced as `failed` so the UI can show them.
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
@@ -59,15 +59,10 @@ pub struct JobRecord {
     pub error: Option<String>,
 }
 
+#[derive(Default)]
 pub struct JobTracker {
     jobs: HashMap<String, JobRecord>,
     db: Option<Connection>,
-}
-
-impl Default for JobTracker {
-    fn default() -> Self {
-        Self { jobs: HashMap::new(), db: None }
-    }
 }
 
 impl JobTracker {
@@ -93,7 +88,7 @@ impl JobTracker {
 
     /// Open a persistent job tracker backed by SQLite in `data_dir`.
     /// Incomplete jobs from the previous session are loaded as `failed`.
-    pub fn open(data_dir: &PathBuf) -> Self {
+    pub fn open(data_dir: &Path) -> Self {
         let db_path = data_dir.join("jobs.db");
         let conn = match Connection::open(&db_path) {
             Ok(c) => c,
