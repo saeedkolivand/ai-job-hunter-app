@@ -2,13 +2,8 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DocumentsImportRequest {
-    pub name: String,
-    pub bytes: Vec<u8>,
-    pub locale: Option<String>,
-}
+// DocumentsImportRequest is generated from DocumentImportRequestSchema by `pnpm gen:ipc`.
+pub use crate::ipc_contracts::documents::DocumentsImportRequest;
 
 #[derive(Debug, Deserialize)]
 pub struct DocumentsEmbedTextRequest {

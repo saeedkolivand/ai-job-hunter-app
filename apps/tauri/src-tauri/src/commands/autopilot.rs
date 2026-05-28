@@ -2,50 +2,16 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
-use crate::autopilot::{AutopilotFilter, AutopilotStatus, AutopilotStore, AutopilotTarget};
+use crate::autopilot::{AutopilotStatus, AutopilotStore};
 use crate::autopilot_helpers::autopilot_scrape;
 use crate::scraping::{JobPosting, ScraperEngine};
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio_util::sync::CancellationToken;
 
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutopilotCreateRequest {
-    pub name: String,
-    pub target: AutopilotTarget,
-    pub filter: AutopilotFilter,
-    pub action: String,
-    pub schedule: String,
-    pub resume_text: Option<String>,
-    pub cover_letter: Option<String>,
-    #[serde(default)]
-    pub auto_submit: bool,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutopilotPatch {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub target: Option<AutopilotTarget>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub filter: Option<AutopilotFilter>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub action: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub schedule: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub resume_text: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cover_letter: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto_submit: Option<bool>,
-}
+// AutopilotCreateRequest / AutopilotUpdateRequest are generated from the Zod
+// schemas in packages/shared by `pnpm gen:ipc`.
+pub use crate::ipc_contracts::autopilot::{AutopilotCreateRequest, AutopilotUpdateRequest};
 
 fn uuid_v4() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -79,7 +45,7 @@ pub fn autopilot_create(app: AppHandle, req: AutopilotCreateRequest) -> Value {
 }
 
 #[tauri::command]
-pub fn autopilot_update(app: AppHandle, autopilot_id: String, req: AutopilotPatch) -> Value {
+pub fn autopilot_update(app: AppHandle, autopilot_id: String, req: AutopilotUpdateRequest) -> Value {
     let ap = store(&app).lock().update(&autopilot_id, serde_json::to_value(&req).unwrap_or_default());
     json!(ap)
 }
@@ -163,12 +129,13 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
             &format!("[{}/{}] Applying to {} (score {score})", i + 1, candidates.len(), posting.title),
         );
 
-        let apply_req = json!({
-            "board": target.board,
-            "url": posting.url,
-            "coverLetter": autopilot.cover_letter,
-            "autoSubmit": autopilot.auto_submit,
-        });
+        let apply_req = crate::ipc_contracts::apply::ApplyStartRequest {
+            board: target.board.clone(),
+            url: posting.url.clone(),
+            cover_letter: autopilot.cover_letter.clone(),
+            resume_path: None,
+            auto_submit: Some(autopilot.auto_submit),
+        };
         let apply_result = crate::commands::apply::apply_start(app.clone(), apply_req).await;
 
         let ok = apply_result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);

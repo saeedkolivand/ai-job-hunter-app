@@ -1,4 +1,3 @@
-use serde::Deserialize;
 use serde_json::{json, Value};
 use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
@@ -6,6 +5,7 @@ use crate::credentials::CredentialStore;
 use crate::jobs::JobTracker;
 
 use super::ai_provider::{provider_for, AiGenerateRequest};
+use crate::ipc_contracts::ai::AiEmbedRequest;
 
 fn uuid_v4() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -14,13 +14,6 @@ fn uuid_v4() -> String {
         .unwrap_or_default()
         .as_nanos();
     format!("job-{t:x}")
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AiEmbedRequest {
-    pub text: String,
-    pub model: Option<String>,
 }
 
 /// Stream an AI generation from the configured provider.

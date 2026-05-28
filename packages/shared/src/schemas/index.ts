@@ -24,8 +24,12 @@ export const AiGenerateRequestSchema = z.object({
   messages: z.array(AiMessageSchema).min(1),
   locale: LocaleSchema,
   temperature: z.number().min(0).max(2).optional(),
-  maxTokens: z.number().min(1).max(32768).optional(),
+  maxTokens: z.number().int().min(1).max(32768).optional(),
   stream: z.boolean().optional(),
+  /** AI backend — 'ollama' (default), 'openai', 'openai-compatible', 'anthropic', 'gemini'. */
+  provider: z.string().optional(),
+  /** Base URL override for openai-compatible providers. */
+  baseUrl: z.string().optional(),
 });
 
 export const DocumentImportRequestSchema = z.object({
@@ -117,6 +121,30 @@ export const EmbedRequestSchema = z.object({
   model: z.string().optional(),
 });
 export type EmbedRequest = z.infer<typeof EmbedRequestSchema>;
+
+export const AiGenerationSaveSchema = z.object({
+  candidateName: z.string().default(''),
+  jobTitle: z.string().default(''),
+  companyName: z.string().default(''),
+  resumeLanguage: z.string().default('en'),
+  jobAdLanguage: z.string().default('en'),
+  targetLanguage: z.string().default('en'),
+  mismatch: z.boolean().default(false),
+  topRequirements: z.array(z.string()).default([]),
+  mode: z.string().default('ats'),
+  resumeText: z.string().default(''),
+  coverLetterText: z.string().default(''),
+  jobAd: z.string().default(''),
+});
+// Note: the `AiGenerationSaveRequest` type is declared in the aiGenerations IPC
+// contract (single source for that name); this schema validates the same shape.
+
+export const ConversationSaveMessageSchema = z.object({
+  conversationId: z.string().default('default'),
+  role: z.string().default('user'),
+  content: z.string().default(''),
+});
+export type ConversationSaveMessageRequest = z.infer<typeof ConversationSaveMessageSchema>;
 
 export const ResumeExtractTextSchema = z.object({
   name: z.string().min(1).max(512),

@@ -6,7 +6,6 @@
 //! arm here, instead of editing the `match` in three separate commands.
 
 use async_trait::async_trait;
-use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -14,27 +13,7 @@ use crate::jobs::JobTracker;
 use parking_lot::Mutex;
 
 use super::ai::get_provider_key;
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AiMessage {
-    pub role: String,
-    pub content: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-pub struct AiGenerateRequest {
-    pub model: String,
-    pub messages: Vec<AiMessage>,
-    pub locale: Option<String>,
-    pub temperature: Option<f64>,
-    pub max_tokens: Option<u64>,
-    pub stream: Option<bool>,
-    pub provider: Option<String>,
-    pub base_url: Option<String>,
-}
+pub use crate::ipc_contracts::ai::AiGenerateRequest;
 
 /// A chat/embedding backend. Object-safe so the registry can return
 /// `Box<dyn AiProvider>`.
