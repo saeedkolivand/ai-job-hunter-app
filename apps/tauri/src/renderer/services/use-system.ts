@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 
-import type { Locale } from '@ajh/shared';
+import { type Locale, PROTOCOL_VERSION } from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
@@ -23,6 +23,37 @@ export const useAppVersion = () => {
     queryFn: () => api.system.getVersion(),
     staleTime: Infinity,
   });
+};
+
+export interface ProtocolVersionCheck {
+  /** True once the backend version has been fetched and compared. */
+  checked: boolean;
+  /** True when the backend version differs from the renderer's expected version. */
+  mismatch: boolean;
+  expected: string;
+  actual?: string;
+}
+
+/**
+ * Boot-time IPC contract handshake. Renderer and Rust ship in one binary, so a
+ * mismatch only happens with a stale webview cache or partial install — in that
+ * state IPC calls may silently misbehave, so we surface it as a hard error.
+ */
+export const useProtocolVersionCheck = (): ProtocolVersionCheck => {
+  const api = useAppClient();
+  const query = useQuery({
+    queryKey: keys.system.protocolVersion,
+    queryFn: () => api.system.getProtocolVersion(),
+    staleTime: Infinity,
+    retry: false,
+  });
+
+  return {
+    checked: query.isSuccess,
+    mismatch: query.isSuccess && query.data !== PROTOCOL_VERSION,
+    expected: PROTOCOL_VERSION,
+    actual: query.data,
+  };
 };
 
 export const useGetPlatform = () => {

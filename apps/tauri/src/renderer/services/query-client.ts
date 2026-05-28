@@ -37,6 +37,7 @@ export const keys = {
   system: {
     health: ['system', 'health'] as const,
     version: ['system', 'version'] as const,
+    protocolVersion: ['system', 'protocolVersion'] as const,
     platform: ['system', 'platform'] as const,
     metrics: ['system', 'metrics'] as const,
     checkBrowser: ['system', 'checkBrowser'] as const,

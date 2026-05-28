@@ -310,9 +310,14 @@ pub fn system_get_metrics() -> Value {
     })
 }
 
+/// IPC contract version. Must stay in sync with `PROTOCOL_VERSION` in
+/// `packages/shared/src/ipc/contracts/index.ts`. Bump both together on any
+/// breaking change to a command signature or event payload shape.
+const PROTOCOL_VERSION: &str = "1.0.0";
+
 #[tauri::command]
 pub fn system_get_protocol_version() -> String {
-    "1.0.0".to_string()
+    PROTOCOL_VERSION.to_string()
 }
 
 #[cfg(test)]
