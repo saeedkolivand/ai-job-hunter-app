@@ -23,6 +23,7 @@ export * from './use-credentials';
 export * from './use-documents';
 export * from './use-job-preferences';
 export * from './use-jobs';
+export * from './use-match';
 export * from './use-postings';
 export * from './use-privacy';
 export * from './use-profile-import';

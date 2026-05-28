@@ -24,6 +24,7 @@ import {
   ConversationSaveMessageSchema,
   DocumentImportRequestSchema,
   EmbedRequestSchema,
+  MatchResumeRequestSchema,
   ResumeExtractTextSchema,
   ScrapeBoardRequestSchema,
   ScrapeUrlRequestSchema,
@@ -91,6 +92,10 @@ const MODULES: ModuleSpec[] = [
   {
     outFile: 'apps/tauri/src-tauri/src/ipc_contracts/apply.rs',
     structs: [{ rustName: 'ApplyStartRequest', schema: ApplyStartSchema }],
+  },
+  {
+    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/matching.rs',
+    structs: [{ rustName: 'MatchResumeRequest', schema: MatchResumeRequestSchema }],
   },
   {
     outFile: 'apps/tauri/src-tauri/src/ipc_contracts/conversations.rs',
