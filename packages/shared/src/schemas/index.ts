@@ -77,6 +77,7 @@ export const ScrapeBoardRequestSchema = z.object({
   location: z.string().optional(),
   pages: z.number().int().min(1).max(20).default(1),
   dateFilter: z.enum(DATE_FILTER_OPTIONS).optional(),
+  locale: LocaleSchema.optional(),
 });
 
 export const ScrapeUrlRequestSchema = z.object({

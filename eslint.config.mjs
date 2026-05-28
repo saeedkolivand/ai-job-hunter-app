@@ -434,5 +434,17 @@ export default tseslint.config(
         },
       ],
     },
+  },
+
+  // ── @ajh/shared build scripts — Node tooling, never shipped ────────────────
+  // The codegen under packages/shared/scripts runs at build time only and is
+  // not part of the published `src/` surface, so the no-Node-deps boundary and
+  // console restriction above do not apply here.
+  {
+    files: ['packages/shared/scripts/**/*.ts'],
+    rules: {
+      'no-console': 'off',
+      'no-restricted-imports': 'off',
+    },
   }
 );
