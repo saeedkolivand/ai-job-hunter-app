@@ -13,6 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
+use crate::data_store::DataStore;
 use crate::db::{column_exists, run_migrations, Migration};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -300,6 +301,54 @@ pub fn strip_extension(name: &str) -> String {
     match name.rsplit_once('.') {
         Some((base, _)) if !base.is_empty() => base.to_string(),
         _ => name.to_string(),
+    }
+}
+
+impl DataStore for DocumentStore {
+    fn key(&self) -> &'static str {
+        "documents"
+    }
+
+    fn export(&self) -> serde_json::Value {
+        let docs: Vec<serde_json::Value> = self
+            .list()
+            .into_iter()
+            .map(|rec| {
+                let mut obj = serde_json::to_value(&rec).unwrap_or_else(|_| serde_json::json!({}));
+                if let Some(vector) = self.get_vector(&rec.id) {
+                    obj["vector"] = serde_json::json!(vector);
+                }
+                obj
+            })
+            .collect();
+        serde_json::json!(docs)
+    }
+
+    fn import(&self, data: &serde_json::Value) -> Result<usize, String> {
+        let items = data.as_array().ok_or("documents: expected an array")?;
+        self.clear_all();
+        let mut count = 0;
+        let mut default_id: Option<String> = None;
+        for item in items {
+            let record: DocumentRecord =
+                serde_json::from_value(item.clone()).map_err(|e| e.to_string())?;
+            if record.is_default {
+                default_id = Some(record.id.clone());
+            }
+            self.insert(&record)?;
+            if let Some(vector) = item.get("vector").and_then(|v| v.as_array()) {
+                let vec: Vec<f64> = vector.iter().filter_map(|v| v.as_f64()).collect();
+                if !vec.is_empty() {
+                    self.upsert_vector(&record.id, &vec)?;
+                }
+            }
+            count += 1;
+        }
+        // insert() auto-defaults the first row; restore the originally-default doc.
+        if let Some(id) = default_id {
+            self.set_default(&id)?;
+        }
+        Ok(count)
     }
 }
 

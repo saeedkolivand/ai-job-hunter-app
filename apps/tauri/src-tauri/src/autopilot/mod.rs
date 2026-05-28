@@ -240,6 +240,14 @@ impl AutopilotStore {
         }
         *self.cache.lock() = Some(map);
     }
+
+    /// Replace all autopilots with the given set (preserving their ids). Used by
+    /// backup restore.
+    pub fn replace_all(&self, items: Vec<Autopilot>) {
+        let map: HashMap<String, Autopilot> =
+            items.into_iter().map(|ap| (ap.id.clone(), ap)).collect();
+        self.save(map);
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -256,6 +264,24 @@ fn str_field(v: &serde_json::Value, key: &str) -> String {
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string()
+}
+
+impl crate::data_store::DataStore for AutopilotStore {
+    fn key(&self) -> &'static str {
+        "autopilots"
+    }
+
+    fn export(&self) -> serde_json::Value {
+        serde_json::json!(self.list())
+    }
+
+    fn import(&self, data: &serde_json::Value) -> Result<usize, String> {
+        let items: Vec<Autopilot> =
+            serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+        let count = items.len();
+        self.replace_all(items);
+        Ok(count)
+    }
 }
 
 #[cfg(test)]

@@ -50,6 +50,102 @@ impl ConversationDb {
     }
 }
 
+impl crate::data_store::DataStore for ConversationDb {
+    fn key(&self) -> &'static str {
+        "conversations"
+    }
+
+    fn export(&self) -> Value {
+        let conn = self.0.lock();
+        let conversations = query_rows(
+            &conn,
+            "SELECT id, title, created_at FROM conversations ORDER BY created_at",
+            |row| {
+                Ok(json!({
+                    "id": row.get::<_, String>(0)?,
+                    "title": row.get::<_, String>(1)?,
+                    "createdAt": row.get::<_, i64>(2)?,
+                }))
+            },
+        );
+        let messages = query_rows(
+            &conn,
+            "SELECT id, conversation_id, role, content, created_at FROM messages ORDER BY created_at",
+            |row| {
+                Ok(json!({
+                    "id": row.get::<_, String>(0)?,
+                    "conversationId": row.get::<_, String>(1)?,
+                    "role": row.get::<_, String>(2)?,
+                    "content": row.get::<_, String>(3)?,
+                    "createdAt": row.get::<_, i64>(4)?,
+                }))
+            },
+        );
+        json!({ "conversations": conversations, "messages": messages })
+    }
+
+    fn import(&self, data: &Value) -> Result<usize, String> {
+        let conversations = data.get("conversations").and_then(|v| v.as_array());
+        let messages = data.get("messages").and_then(|v| v.as_array());
+        let conn = self.0.lock();
+        conn.execute_batch("DELETE FROM messages; DELETE FROM conversations;")
+            .map_err(|e| e.to_string())?;
+
+        let mut count = 0;
+        if let Some(rows) = conversations {
+            for c in rows {
+                conn.execute(
+                    "INSERT INTO conversations (id, title, created_at) VALUES (?1, ?2, ?3)",
+                    params![
+                        str_field(c, "id"),
+                        str_field(c, "title"),
+                        c.get("createdAt").and_then(|v| v.as_i64()).unwrap_or_default(),
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+                count += 1;
+            }
+        }
+        if let Some(rows) = messages {
+            for m in rows {
+                conn.execute(
+                    "INSERT INTO messages (id, conversation_id, role, content, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        str_field(m, "id"),
+                        str_field(m, "conversationId"),
+                        str_field(m, "role"),
+                        str_field(m, "content"),
+                        m.get("createdAt").and_then(|v| v.as_i64()).unwrap_or_default(),
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
+}
+
+fn query_rows(
+    conn: &Connection,
+    sql: &str,
+    map: impl Fn(&rusqlite::Row) -> Result<Value>,
+) -> Vec<Value> {
+    conn.prepare(sql)
+        .ok()
+        .and_then(|mut stmt| {
+            stmt.query_map([], |row| map(row))
+                .ok()
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default()
+}
+
+fn str_field(v: &Value, key: &str) -> String {
+    v.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string()
+}
+
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

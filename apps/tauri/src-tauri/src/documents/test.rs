@@ -250,3 +250,53 @@ fn test_cosine_similarity_edge_cases() {
     // Zero vectors
     assert_eq!(cosine_similarity(&[0.0, 0.0], &[1.0, 1.0]), 0.0);
 }
+
+#[test]
+fn test_data_store_export_import_round_trip() {
+    use crate::data_store::DataStore;
+
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    let a = DocumentRecord {
+        id: "doc-a".to_string(),
+        title: "A".to_string(),
+        name: "a.pdf".to_string(),
+        locale: None,
+        text: "first".to_string(),
+        pages: None,
+        created_at: now_ms(),
+        indexed: false,
+        is_default: false,
+    };
+    let b = DocumentRecord {
+        id: "doc-b".to_string(),
+        title: "B".to_string(),
+        name: "b.pdf".to_string(),
+        locale: None,
+        text: "second".to_string(),
+        pages: None,
+        created_at: now_ms() + 1,
+        indexed: false,
+        is_default: true,
+    };
+    store.insert(&a).unwrap();
+    store.insert(&b).unwrap();
+    store.set_default("doc-b").unwrap();
+    store.upsert_vector("doc-b", &[0.1, 0.2, 0.3]).unwrap();
+
+    let bundle = store.export();
+
+    // Restore into a fresh store.
+    let temp2 = TempDir::new().unwrap();
+    let restored = DocumentStore::open(&temp2.path().to_path_buf()).unwrap();
+    let count = restored.import(&bundle).unwrap();
+
+    assert_eq!(count, 2);
+    let docs = restored.list();
+    assert_eq!(docs.len(), 2);
+    // The originally-default doc stays default after restore.
+    assert_eq!(docs.iter().find(|d| d.is_default).map(|d| d.id.as_str()), Some("doc-b"));
+    // Vectors survive the round trip.
+    assert_eq!(restored.get_vector("doc-b"), Some(vec![0.1, 0.2, 0.3]));
+}

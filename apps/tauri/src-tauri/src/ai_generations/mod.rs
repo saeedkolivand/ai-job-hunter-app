@@ -6,6 +6,7 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::data_store::DataStore;
 use crate::db::{run_migrations, Migration};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,4 +165,27 @@ pub fn now_ms() -> u64 {
 
 pub fn make_generation_id() -> String {
     format!("gen-{}-{}", now_ms(), &Uuid::new_v4().to_string()[..8])
+}
+
+impl DataStore for AiGenerationStore {
+    fn key(&self) -> &'static str {
+        "aiGenerations"
+    }
+
+    fn export(&self) -> serde_json::Value {
+        serde_json::json!(self.list())
+    }
+
+    fn import(&self, data: &serde_json::Value) -> Result<usize, String> {
+        let items = data.as_array().ok_or("aiGenerations: expected an array")?;
+        self.clear_all();
+        let mut count = 0;
+        for item in items {
+            let record: AiGenerationRecord =
+                serde_json::from_value(item.clone()).map_err(|e| e.to_string())?;
+            self.insert(&record)?;
+            count += 1;
+        }
+        Ok(count)
+    }
 }
