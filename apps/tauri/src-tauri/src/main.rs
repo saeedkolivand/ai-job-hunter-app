@@ -157,16 +157,10 @@ fn main() {
         .setup(|app| {
             let handle = app.handle();
 
-            // Data dir for all persistent state.
-            let data_dir = app.path().app_data_dir().unwrap_or_else(|_| {
-                std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".ajh")
-            });
-            // Export so scrapers (which don't have an AppHandle) can resolve
-            // the same directory via `std::env::var("AJH_DATA_DIR")`.
-            if std::env::var_os("AJH_DATA_DIR").is_none() {
-                // SAFETY: only writer, called once before any worker spawns.
-                unsafe { std::env::set_var("AJH_DATA_DIR", &data_dir); }
-            }
+            // Data dir for all persistent state. Resolved + exported once here so
+            // AppHandle-less workers (scrapers/appliers) reach the same path.
+            // All path/env knowledge lives in `platform::config`.
+            let data_dir = platform::config::resolve_and_export_data_dir(handle);
 
             app.manage(std::sync::Arc::new(Mutex::new(AutopilotStore::new(&data_dir))));
             app.manage(Mutex::new(CredentialStore::new(&data_dir)));

@@ -29,7 +29,7 @@ impl Scraper for XingScraper {
         input: BoardSearchInput,
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
-        let data_dir = resolve_data_dir();
+        let data_dir = crate::platform::config::data_dir();
         let client = board_login::build_authed_client(&data_dir, "xing")?;
 
         let max_pages = input.pages.min(5).max(1) as usize;
@@ -157,16 +157,6 @@ fn extract_id_from_href(href: &str) -> String {
         .next()
         .unwrap_or("")
         .to_string()
-}
-
-fn resolve_data_dir() -> std::path::PathBuf {
-    if let Ok(dir) = std::env::var("AJH_DATA_DIR") {
-        return std::path::PathBuf::from(dir);
-    }
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_default();
-    std::path::PathBuf::from(home).join(".ajh")
 }
 
 #[cfg(test)]
