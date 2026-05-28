@@ -9,8 +9,6 @@
 //! arm. This keeps OpenRouter / DeepSeek / Azure / Groq / Together / LM Studio /
 //! vLLM (all OpenAI-compatible) and future native APIs cheap to add.
 
-use std::time::Instant;
-
 use async_trait::async_trait;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -310,16 +308,12 @@ pub fn cosine(a: &[f64], b: &[f64]) -> f64 {
 
 // ── Request tracing ─────────────────────────────────────────────────────────────
 
-/// Structured per-request log. Emits a `→` line at dispatch and a `←` line with
-/// status + duration at completion, e.g.:
-/// `[ai] ← provider=openai model=gpt-4o endpoint=/chat/completions status=200 duration=1842ms ok=true`
+/// Structured per-request log over the shared [`crate::observability::Span`].
+/// Emits a `→` line at dispatch and a `←` line with status + duration at
+/// completion, e.g.:
+/// `[ai] ← provider=openai model=gpt-4o endpoint=/chat/completions … status=200 duration=1842ms ok=true`
 pub struct RequestTrace {
-    provider: ProviderId,
-    model: String,
-    endpoint: String,
-    base_url: String,
-    streaming: bool,
-    start: Instant,
+    span: crate::observability::Span,
 }
 
 impl RequestTrace {
@@ -330,36 +324,20 @@ impl RequestTrace {
         base_url: &str,
         streaming: bool,
     ) -> Self {
-        log::info!(
-            "[ai] → provider={} model={} endpoint={} baseUrl={} streaming={}",
+        let fields = format!(
+            "provider={} model={} endpoint={} baseUrl={} streaming={}",
             provider.as_str(),
             model,
             endpoint,
             base_url,
             streaming
         );
-        Self {
-            provider,
-            model: model.to_string(),
-            endpoint: endpoint.to_string(),
-            base_url: base_url.to_string(),
-            streaming,
-            start: Instant::now(),
-        }
+        Self { span: crate::observability::Span::begin("ai", fields) }
     }
 
     pub fn end(&self, status: Option<u16>, ok: bool) {
-        log::info!(
-            "[ai] ← provider={} model={} endpoint={} baseUrl={} streaming={} status={} duration={}ms ok={}",
-            self.provider.as_str(),
-            self.model,
-            self.endpoint,
-            self.base_url,
-            self.streaming,
-            status.map(|s| s.to_string()).unwrap_or_else(|| "-".to_string()),
-            self.start.elapsed().as_millis(),
-            ok
-        );
+        let status = status.map(|s| s.to_string()).unwrap_or_else(|| "-".to_string());
+        self.span.end_with(&format!("status={status}"), ok);
     }
 }
 

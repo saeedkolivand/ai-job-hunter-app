@@ -35,6 +35,7 @@ mod ipc_contracts;
 mod job_preferences;
 mod jobs;
 mod net;
+mod observability;
 mod pipeline;
 mod platform;
 mod postings;

@@ -239,6 +239,13 @@ retriable}` IPC envelope + normalizing the `-> Value`+`{error}` command contract
 
 ### Phase 4 — Shared observability (M, low risk)
 
+> **Status: in review** (branch `refactor/phase4-observability`). Extracted
+> `observability::Span` (timed `→`/`←` structured logging); refactored
+> `RequestTrace` (AI) and `StageTrace` (pipeline) to compose it — no parallel
+> trace types, log formats unchanged. Adopted in `scrape_board`, `apply_start`,
+> and `autopilot_run` (previously had no timing/outcome spans). No CI grep
+> guardrail (no clean banned token); enforced structurally + module-ownership table.
+
 - **Pain:** `RequestTrace`/`StageTrace` are AI-only; scraping/applying/autopilot
   debugging is guesswork (P9).
 - **Target:** an `observability::trace` span helper (begin/end, timing, status,

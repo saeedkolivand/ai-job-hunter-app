@@ -40,7 +40,12 @@ pub async fn apply_start(app: AppHandle, req: ApplyStartRequest) -> Value {
         on_progress,
     );
 
+    let span = crate::observability::Span::begin("apply", format!("board={board}"));
     let result = applier.apply(url.to_string(), ctx).await;
+    match &result {
+        Ok(r) => span.end_with(&format!("stage={} submitted={}", r.stage, r.submitted), r.ok),
+        Err(_) => span.end(false),
+    }
 
     engine.unregister_token(&job_id).await;
     cleanup_temp_resume(temp_resume);
