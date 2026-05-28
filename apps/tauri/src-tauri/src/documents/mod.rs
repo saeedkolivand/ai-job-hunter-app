@@ -13,6 +13,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
+use crate::db::{column_exists, run_migrations, Migration};
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,42 +42,47 @@ pub struct DocumentStore {
 }
 
 impl DocumentStore {
+    const MIGRATIONS: &'static [Migration] = &[
+        Migration {
+            name: "create_documents_and_vectors",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS documents (
+                        id          TEXT PRIMARY KEY,
+                        title       TEXT NOT NULL,
+                        name        TEXT NOT NULL,
+                        locale      TEXT,
+                        text        TEXT NOT NULL,
+                        pages       INTEGER,
+                        created_at  INTEGER NOT NULL,
+                        indexed     INTEGER NOT NULL DEFAULT 0
+                    );
+                    CREATE TABLE IF NOT EXISTS vectors (
+                        doc_id  TEXT PRIMARY KEY,
+                        vector  TEXT NOT NULL
+                    );",
+                )
+            },
+        },
+        Migration {
+            name: "add_is_default_column",
+            up: |conn| {
+                if !column_exists(conn, "documents", "is_default") {
+                    conn.execute(
+                        "ALTER TABLE documents ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0",
+                        [],
+                    )?;
+                }
+                Ok(())
+            },
+        },
+    ];
+
     pub fn open(data_dir: &PathBuf) -> Result<Self, String> {
         std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
         let path = data_dir.join("documents.db");
         let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS documents (
-                id          TEXT PRIMARY KEY,
-                title       TEXT NOT NULL,
-                name        TEXT NOT NULL,
-                locale      TEXT,
-                text        TEXT NOT NULL,
-                pages       INTEGER,
-                created_at  INTEGER NOT NULL,
-                indexed     INTEGER NOT NULL DEFAULT 0,
-                is_default  INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE TABLE IF NOT EXISTS vectors (
-                doc_id  TEXT PRIMARY KEY,
-                vector  TEXT NOT NULL
-            );",
-        )
-        .map_err(|e| e.to_string())?;
-        
-        // Migration: add is_default column if it doesn't exist
-        // SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so we check first
-        let has_column: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM pragma_table_info('documents') WHERE name = 'is_default'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
-        if has_column == 0 {
-            conn.execute("ALTER TABLE documents ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0", [])
-                .map_err(|e| e.to_string())?;
-        }
+        run_migrations(&conn, Self::MIGRATIONS)?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 

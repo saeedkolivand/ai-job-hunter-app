@@ -57,6 +57,20 @@ export function useChat() {
   useAIStream((chunk: AiStreamChunk) => {
     const raw = chunk;
     if (raw.jobId !== activeJobRef.current) return;
+    if (raw.error) {
+      activeJobRef.current = null;
+      setStreaming(false);
+      const errorMessage = raw.error.message;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant' as const,
+          content: errorMessage,
+        },
+      ]);
+      return;
+    }
     setMessages((prev) => {
       const last = prev[prev.length - 1];
       if (!last || last.jobId !== raw.jobId) {

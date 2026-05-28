@@ -14,5 +14,6 @@ export function system(opts: WebHttpClientOptions) {
     getMetrics: () => cmd('system', 'getMetrics'),
     checkBrowser: () => cmd('system', 'checkBrowser'),
     openDevtools: () => cmd('system', 'openDevtools'),
+    getProtocolVersion: () => cmd('system', 'getProtocolVersion'),
   };
 }

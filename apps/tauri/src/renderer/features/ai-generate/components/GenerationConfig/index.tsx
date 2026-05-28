@@ -1,5 +1,14 @@
-import { AlertTriangle, FileCheck, FileText, Sparkles, Zap } from 'lucide-react';
+import {
+  AlertTriangle,
+  FileCheck,
+  FileText,
+  Gauge,
+  SlidersHorizontal,
+  Sparkles,
+  Zap,
+} from 'lucide-react';
 import { motion } from 'motion/react';
+import type React from 'react';
 
 import { Button, cn } from '@ajh/ui';
 
@@ -22,10 +31,10 @@ interface GenerationConfigProps {
   isGenerating: boolean;
 }
 
-const QUALITY_OPTIONS: { id: PromptQuality; label: string; hint: string }[] = [
-  { id: 'full', label: 'Full', hint: 'All recommendations, detailed rewrites' },
-  { id: 'auto', label: 'Auto', hint: 'Detects model capability automatically' },
-  { id: 'compact', label: 'Fast', hint: 'Optimized for small / local models' },
+const QUALITY_OPTIONS: { id: PromptQuality; label: string; icon: React.ElementType }[] = [
+  { id: 'full', label: 'Full', icon: SlidersHorizontal },
+  { id: 'auto', label: 'Auto', icon: Gauge },
+  { id: 'compact', label: 'Fast', icon: Zap },
 ];
 
 export function GenerationConfig({
@@ -114,7 +123,7 @@ export function GenerationConfig({
           Prompt Quality
         </div>
         <div className="grid grid-cols-3 gap-1.5">
-          {QUALITY_OPTIONS.map(({ id, label }) => (
+          {QUALITY_OPTIONS.map(({ id, label, icon: Icon }) => (
             <Button
               key={id}
               onClick={() => setPromptQuality(id)}
@@ -125,7 +134,7 @@ export function GenerationConfig({
                   : 'border-white/[0.06] bg-white/[0.02] text-foreground/45 hover:border-white/10 hover:text-foreground/70'
               )}
             >
-              {id === 'compact' && <Zap size={12} />}
+              <Icon size={12} />
               {label}
             </Button>
           ))}
