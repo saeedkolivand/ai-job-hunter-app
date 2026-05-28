@@ -27,6 +27,7 @@ mod browser;
 mod commands;
 mod conversations;
 mod credentials;
+mod data_store;
 mod documents;
 mod export;
 mod ipc_contracts;
@@ -282,8 +283,9 @@ fn main() {
             commands::scrape::scrape_list_postings,
             commands::scrape::scrape_clear_postings,
             commands::scrape::scrape_list_interactions,
-            commands::scrape::scrape_export_data,
-            commands::scrape::scrape_import_data,
+            // data backup / restore
+            commands::data::data_export,
+            commands::data::data_import,
             // match
             commands::match_resume::match_resume,
             commands::match_resume::resume_extract_text,

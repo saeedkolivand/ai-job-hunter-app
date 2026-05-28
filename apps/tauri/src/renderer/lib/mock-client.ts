@@ -98,8 +98,10 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       listPostings: emptyList,
       clearPostings: noop,
       listInteractions: emptyList,
-      exportData: noop,
-      importData: noop,
+    },
+    data: {
+      export: async () => ({ success: false }),
+      import: async () => ({ success: false }),
     },
 
     match: {

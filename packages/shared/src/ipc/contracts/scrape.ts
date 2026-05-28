@@ -24,10 +24,6 @@ export interface ScrapeContract {
   >;
 
   persistJob(req: { job: Record<string, unknown>; interactionType: string }): Promise<void>;
-
-  exportData(): Promise<{ success: boolean; filePath?: string; error?: string }>;
-
-  importData(): Promise<{ success: boolean; imported: number; error?: string }>;
 }
 
 export const SCRAPE_CHANNELS = {
@@ -37,6 +33,4 @@ export const SCRAPE_CHANNELS = {
   persistJob: 'scrape:persistJob',
   clearPostings: 'scrape:clearPostings',
   listInteractions: 'scrape:listInteractions',
-  exportData: 'scrape:exportData',
-  importData: 'scrape:importData',
 } as const;

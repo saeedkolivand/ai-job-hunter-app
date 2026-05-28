@@ -9,6 +9,4 @@ export const scrape = {
   listPostings: () => invoke('scrape_list_postings'),
   clearPostings: () => invoke('scrape_clear_postings'),
   listInteractions: (filter?: unknown) => invoke('scrape_list_interactions', { filter }),
-  exportData: () => invoke('scrape_export_data'),
-  importData: () => invoke('scrape_import_data'),
 };
