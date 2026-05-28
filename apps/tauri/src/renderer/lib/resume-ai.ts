@@ -103,9 +103,9 @@ export async function runAnalysis({
     ],
     locale: safeLocale,
     temperature: 0.1,
-    ...(activeProvider !== 'ollama'
-      ? { provider: activeProvider, baseUrl: providerSettings?.baseUrl }
-      : {}),
+    // Always route through the active provider (no silent Ollama fallback).
+    provider: activeProvider,
+    baseUrl: providerSettings?.baseUrl,
   } as Parameters<typeof api.ai.generate>[0])) as { jobId: string };
 
   const jobId = res.jobId;

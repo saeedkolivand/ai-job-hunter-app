@@ -240,31 +240,14 @@ impl DocumentStore {
     }
 }
 
-// ── Ollama embedding ──────────────────────────────────────────────────────────
-
-const EMBED_MODEL: &str = "nomic-embed-text";
+// ── Embedding ───────────────────────────────────────────────────────────────
+//
+// Delegated to the Ollama provider module so no Ollama host/endpoint strings
+// live here. Embeddings stay Ollama-only until the (separate) embeddings
+// migration; the provider router is unaffected by it.
 
 pub async fn embed(text: &str) -> Option<Vec<f64>> {
-    let base = std::env::var("OLLAMA_HOST")
-        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .ok()?;
-    let truncated = &text[..text.len().min(8000)];
-    let body = serde_json::json!({ "model": EMBED_MODEL, "prompt": truncated });
-    let resp = client
-        .post(format!("{base}/api/embeddings"))
-        .json(&body)
-        .send()
-        .await
-        .ok()?;
-    if !resp.status().is_success() {
-        return None;
-    }
-    let data: serde_json::Value = resp.json().await.ok()?;
-    let arr = data.get("embedding")?.as_array()?;
-    Some(arr.iter().filter_map(|v| v.as_f64()).collect())
+    crate::commands::ai_provider::ollama::embed(text).await
 }
 
 // ── Cosine similarity ─────────────────────────────────────────────────────────

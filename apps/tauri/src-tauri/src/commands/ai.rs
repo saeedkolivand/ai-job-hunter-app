@@ -1,11 +1,14 @@
-use serde_json::{json, Value};
 use parking_lot::Mutex;
-use tauri::{AppHandle, Emitter, Manager};
+use serde_json::{json, Value};
+use tauri::{AppHandle, Manager};
+
 use crate::credentials::CredentialStore;
+use crate::ipc_contracts::ai::AiEmbedRequest;
 use crate::jobs::JobTracker;
 
-use super::ai_provider::{provider_for, AiGenerateRequest};
-use crate::ipc_contracts::ai::AiEmbedRequest;
+use super::ai_provider::{
+    emit_stream_error, ollama, resolve, resolve_by_name, AiGenerateRequest, ProviderId,
+};
 
 fn uuid_v4() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -16,28 +19,58 @@ fn uuid_v4() -> String {
     format!("job-{t:x}")
 }
 
-/// Stream an AI generation from the configured provider.
+/// Stream an AI generation from the explicitly-selected provider.
+///
+/// The provider is **required and validated** — unknown/missing providers and
+/// model/provider mismatches fail with a clear error. There is no silent
+/// fallback to Ollama.
 #[tauri::command]
 pub async fn ai_generate(app: AppHandle, req: AiGenerateRequest) -> Value {
-    let provider_name = req.provider.as_deref().unwrap_or("ollama").to_string();
-
     let job_id = uuid_v4();
     app.state::<Mutex<JobTracker>>()
         .lock()
         .start(&job_id, "ai.generate");
 
+    let fail = |app: &AppHandle, job_id: &str, msg: String| -> Value {
+        emit_stream_error(app, job_id, &msg);
+        app.state::<Mutex<JobTracker>>().lock().fail(job_id, msg);
+        json!({ "jobId": job_id })
+    };
+
+    // 1. Provider must be present.
+    let provider_str = match req.provider.as_deref() {
+        Some(p) if !p.trim().is_empty() => p.to_string(),
+        _ => {
+            return fail(
+                &app,
+                &job_id,
+                "No AI provider selected. Choose a provider in Settings → AI.".to_string(),
+            );
+        }
+    };
+    // 2. Provider must be known.
+    let provider_id = match ProviderId::parse(&provider_str) {
+        Ok(id) => id,
+        Err(e) => return fail(&app, &job_id, e),
+    };
+    // 3. Model must belong to the active provider.
+    if let Err(e) = provider_id.validate_model(&req.model) {
+        return fail(&app, &job_id, e);
+    }
+
+    log::info!(
+        "[ai] dispatch provider={} model={}",
+        provider_id.as_str(),
+        req.model
+    );
+
     let job_id_clone = job_id.clone();
     let app_clone = app.clone();
-
+    let base_url = req.base_url.clone();
     tauri::async_runtime::spawn(async move {
-        let provider = provider_for(&provider_name);
-        let result = provider.stream_chat(&app_clone, &job_id_clone, &req).await;
-
-        if let Err(e) = result {
-            let _ = app_clone.emit(
-                "ai:stream",
-                json!({ "jobId": job_id_clone, "delta": "", "done": true, "error": { "code": "GENERATION_FAILED", "message": format!("{e}") } }),
-            );
+        let provider = resolve(provider_id, base_url);
+        if let Err(e) = provider.chat_stream(&app_clone, &job_id_clone, &req).await {
+            emit_stream_error(&app_clone, &job_id_clone, &e);
             app_clone
                 .state::<Mutex<JobTracker>>()
                 .lock()
@@ -83,20 +116,25 @@ pub fn ai_has_provider_key(app: AppHandle, provider: String) -> Value {
 
 #[tauri::command]
 pub async fn ai_test_provider_key(app: AppHandle, provider: String) -> Value {
+    let provider_client = match resolve_by_name(&provider, None) {
+        Ok(p) => p,
+        Err(e) => return json!({ "success": false, "error": e }),
+    };
     let api_key = match get_provider_key(&app, &provider) {
         Some(k) => k,
         None => return json!({ "success": false, "error": "No API key found" }),
     };
-
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
     {
         Ok(c) => c,
-        Err(e) => return json!({ "success": false, "error": format!("Failed to create client: {}", e) }),
+        Err(e) => {
+            return json!({ "success": false, "error": format!("Failed to create client: {}", e) })
+        }
     };
 
-    match provider_for(&provider).test_key(&client, &api_key).await {
+    match provider_client.test_key(&client, &api_key).await {
         Ok(()) => json!({ "success": true }),
         Err(e) => json!({ "success": false, "error": e }),
     }
@@ -104,11 +142,14 @@ pub async fn ai_test_provider_key(app: AppHandle, provider: String) -> Value {
 
 #[tauri::command]
 pub async fn ai_list_provider_models(app: AppHandle, provider: String) -> Value {
+    let provider_client = match resolve_by_name(&provider, None) {
+        Ok(p) => p,
+        Err(_) => return json!([]),
+    };
     let api_key = match get_provider_key(&app, &provider) {
         Some(k) => k,
         None => return json!([]),
     };
-
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
@@ -117,14 +158,13 @@ pub async fn ai_list_provider_models(app: AppHandle, provider: String) -> Value 
         Err(_) => return json!([]),
     };
 
-    json!(provider_for(&provider).list_models(&client, &api_key).await)
+    json!(provider_client.list_models(&client, &api_key).await)
 }
 
+/// Local (Ollama) model list — powers the model picker's "Ollama (Local)"
+/// section. Cloud models come from `ai_list_provider_models`.
 #[tauri::command]
 pub async fn ai_list_models() -> Value {
-    let base = std::env::var("OLLAMA_HOST")
-        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
-
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()
@@ -132,36 +172,11 @@ pub async fn ai_list_models() -> Value {
         Ok(c) => c,
         Err(_) => return json!([]),
     };
-
-    let resp = match client.get(format!("{base}/api/tags")).send().await {
-        Ok(r) if r.status().is_success() => r,
-        _ => return json!([]),
-    };
-
-    let body: serde_json::Value = match resp.json().await {
-        Ok(v) => v,
-        Err(_) => return json!([]),
-    };
-
-    let models: Vec<serde_json::Value> = body
-        .get("models")
-        .and_then(|m| m.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|m| m.get("name").and_then(|n| n.as_str()))
-                .map(|name| json!({ "name": name }))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    json!(models)
+    json!(ollama::list_tag_models(&client).await)
 }
 
 #[tauri::command]
 pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
-    let base = std::env::var("OLLAMA_HOST")
-        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
-
     let job_id = uuid_v4();
     app.state::<Mutex<JobTracker>>()
         .lock()
@@ -171,8 +186,7 @@ pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
     let app_clone = app.clone();
 
     tauri::async_runtime::spawn(async move {
-        let result = pull_ollama_model(&app_clone, &base, &job_id_clone, &model).await;
-        match result {
+        match ollama::pull(&app_clone, &job_id_clone, &model).await {
             Ok(()) => {
                 app_clone
                     .state::<Mutex<JobTracker>>()
@@ -191,92 +205,20 @@ pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
     json!({ "jobId": job_id })
 }
 
-async fn pull_ollama_model(
-    app: &AppHandle,
-    base: &str,
-    job_id: &str,
-    model: &str,
-) -> Result<(), String> {
-    let mut response = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3600))
-        .build()
-        .map_err(|e| e.to_string())?
-        .post(format!("{base}/api/pull"))
-        .json(&json!({ "model": model, "stream": true }))
-        .send()
-        .await
-        .map_err(|e| format!("Ollama unreachable: {e}"))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("Ollama {status}: {body}"));
-    }
-
-    let mut line_buf = String::new();
-
-    while let Some(bytes) = response.chunk().await.map_err(|e| e.to_string())? {
-        line_buf.push_str(&String::from_utf8_lossy(&bytes));
-
-        while let Some(nl) = line_buf.find('\n') {
-            let line = line_buf[..nl].trim().to_string();
-            line_buf = line_buf[nl + 1..].to_string();
-            if line.is_empty() {
-                continue;
-            }
-            let event: Value = match serde_json::from_str(&line) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-
-            let status = event.get("status").and_then(|s| s.as_str()).unwrap_or("");
-            let completed = event.get("completed").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let total = event.get("total").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let digest = event.get("digest").and_then(|v| v.as_str()).unwrap_or("");
-            let p = if total > 0.0 { completed / total } else { 0.0 };
-
-            let _ = app.emit("jobs:event", json!({ "type": "job.stream", "jobId": job_id, "data": { "status": status, "p": p, "completed": completed, "total": total, "digest": digest } }));
-
-            if status == "success" {
-                return Ok(());
-            }
-        }
-    }
-    Ok(())
-}
-
 #[tauri::command]
 pub fn ai_unload_model(_model: String) -> Value {
     json!({ "success": true })
 }
 
+/// Embed text. Embeddings remain Ollama-only pending the embeddings migration;
+/// this is isolated inside the Ollama provider module.
 #[tauri::command]
 pub async fn ai_embed(req: AiEmbedRequest) -> Value {
-    let base = std::env::var("OLLAMA_HOST")
-        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
-
-    let model = req.model.as_deref().unwrap_or("nomic-embed-text");
-    let body = json!({ "model": model, "prompt": req.text });
-
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return json!(null),
-    };
-
-    let resp = match client.post(format!("{base}/api/embeddings")).json(&body).send().await {
-        Ok(r) if r.status().is_success() => r,
-        _ => return json!(null),
-    };
-
-    let data: Value = match resp.json().await {
-        Ok(v) => v,
-        Err(_) => return json!(null),
-    };
-
-    let vector = data.get("embedding").cloned().unwrap_or(json!([]));
-    let dim = vector.as_array().map(|a| a.len()).unwrap_or(0);
-    json!({ "vector": vector, "dim": dim })
+    match ollama::embed(&req.text).await {
+        Some(vector) => {
+            let dim = vector.len();
+            json!({ "vector": vector, "dim": dim })
+        }
+        None => json!(null),
+    }
 }
