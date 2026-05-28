@@ -202,6 +202,75 @@ impl AiProvider for AnthropicClient {
         Ok(())
     }
 
+    async fn complete(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> Result<String, String> {
+        let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
+        let endpoint = format!("{BASE}/messages");
+        let trace = RequestTrace::begin(ProviderId::Anthropic, model, "/messages", BASE, false);
+
+        let mut body = json!({
+            "model": model,
+            "max_tokens": 4096,
+            "messages": [ { "role": "user", "content": user } ],
+            "temperature": temperature.unwrap_or(0.7),
+        });
+        if !system.is_empty() {
+            body["system"] = json!(system);
+        }
+
+        let resp = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .map_err(|e| e.to_string())?
+            .post(&endpoint)
+            .header("x-api-key", &api_key)
+            .header("anthropic-version", VERSION)
+            .json(&body)
+            .send()
+            .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                return Err(format!("Anthropic unreachable: {e}"));
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            return Err(friendly_api_error(ProviderId::Anthropic, status, &body_text));
+        }
+        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        trace.end(Some(status.as_u16()), true);
+        // Concatenate all text blocks in the content array.
+        data.get("content")
+            .and_then(|c| c.as_array())
+            .map(|blocks| {
+                blocks
+                    .iter()
+                    .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "Anthropic: unexpected response shape".to_string())
+    }
+
+    async fn embed(&self, _app: &AppHandle, _model: &str, _text: &str) -> Result<Vec<f64>, String> {
+        Err("Anthropic has no embeddings API. Use OpenAI, Gemini, or Ollama for embeddings.".to_string())
+    }
+
+    fn default_embedding_model(&self) -> Option<&'static str> {
+        None
+    }
+
     async fn list_models(&self, client: &reqwest::Client, api_key: &str) -> Vec<Value> {
         let resp = client
             .get(format!("{BASE}/models"))

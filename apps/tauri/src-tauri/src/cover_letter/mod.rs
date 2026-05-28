@@ -1,6 +1,5 @@
 pub mod cache;
 pub mod leakage;
-pub mod llm;
 pub mod research;
 
 use parking_lot::Mutex;
@@ -9,9 +8,8 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager};
 
 use cache::CompanyBriefCache;
-use llm::{
-    anthropic::AnthropicProvider, ollama::OllamaProvider, openai::OpenAiProvider, LlmProvider,
-};
+
+use crate::commands::ai_provider::{resolve, AiProvider, ProviderId};
 
 // ── Request / response types ──────────────────────────────────────────────────
 
@@ -90,75 +88,53 @@ fn build_user_prompt(
     )
 }
 
-// ── LLM provider factory ──────────────────────────────────────────────────────
+// ── Centralized completion binding ──────────────────────────────────────────────
 
-type ProviderPair = (Box<dyn LlmProvider>, Box<dyn LlmProvider>);
+/// Binds the active provider + model + app handle so the pipeline's passes
+/// (generation, company-brief synthesis, leakage validation) can call a simple
+/// `complete(system, user)` while routing through the *centralized* provider
+/// layer — same `resolve()`, auth, capabilities, and request tracing as chat.
+/// There is no separate "fast" model tier: ancillary passes reuse the selected
+/// model so no provider-specific model names are hard-coded here.
+pub struct Completer {
+    app: AppHandle,
+    provider: Box<dyn AiProvider>,
+    model: String,
+}
 
-/// Resolve the provider name and build the concrete `LlmProvider`.
-/// API keys are read directly from the OS keychain via `CredentialStore` —
-/// they never travel through the frontend.
-fn resolve_provider(
-    app: &AppHandle,
-    provider_hint: Option<&str>,
-    model: Option<&str>,
-    base_url: Option<&str>,
-) -> Result<ProviderPair, String> {
-    let get_key = |name: &str| -> Option<String> {
-        app.state::<Mutex<crate::credentials::CredentialStore>>()
-            .lock()
-            .get_decrypted(&format!("ai:{name}"))
-            .map(|(_, k)| k)
-    };
-
-    // Determine provider: use hint, or auto-select from what has a key
-    let provider = provider_hint
-        .map(String::from)
-        .or_else(|| {
-            for p in &["anthropic", "openai", "gemini", "openai-compatible"] {
-                if get_key(p).is_some() {
-                    return Some(p.to_string());
-                }
-            }
-            None
-        })
-        .unwrap_or_else(|| "ollama".to_string());
-
-    match provider.as_str() {
-        "anthropic" => {
-            let key = get_key("anthropic")
-                .ok_or_else(|| "anthropic API key not set — add it in Settings".to_string())?;
-            // gen uses the caller's model choice (or Sonnet); fast uses Haiku for ancillary calls
-            let gen = AnthropicProvider::new(key.clone(), model.map(String::from))?;
-            let fast = AnthropicProvider::new(
-                key,
-                Some("claude-haiku-4-5-20251001".to_string()),
-            )?;
-            Ok((Box::new(gen), Box::new(fast)))
-        }
-        "openai" | "openai-compatible" => {
-            let key = get_key(&provider)
-                .ok_or_else(|| format!("{provider} API key not set — add it in Settings"))?;
-            let gen = OpenAiProvider::new(
-                key.clone(),
-                model.map(String::from),
-                base_url.map(String::from),
-            )?;
-            // gpt-4o-mini for research briefs and validation
-            let fast = OpenAiProvider::new(
-                key,
-                Some("gpt-4o-mini".to_string()),
-                base_url.map(String::from),
-            )?;
-            Ok((Box::new(gen), Box::new(fast)))
-        }
-        _ => {
-            // Ollama — local, no key needed; same model for all passes
-            let m = model.unwrap_or("llama3.2").to_string();
-            let gen = OllamaProvider::new(m.clone())?;
-            let fast = OllamaProvider::new(m)?;
-            Ok((Box::new(gen), Box::new(fast)))
-        }
+impl Completer {
+    pub async fn complete(&self, system: &str, user: &str) -> Result<String, String> {
+        self.provider
+            .complete(&self.app, &self.model, system, user, Some(0.4))
+            .await
     }
+}
+
+/// Resolve the request's provider/model into a `Completer`.
+/// The provider is **required and validated** — unknown/missing providers and
+/// model/provider mismatches are hard errors, never a silent Ollama fallback.
+/// API keys are resolved inside the provider client from the OS keychain.
+fn resolve_completer(app: &AppHandle, req: &CoverLetterRequest) -> Result<Completer, String> {
+    let provider_str = req
+        .provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "No AI provider selected. Choose a provider in Settings → AI.".to_string())?;
+    let provider_id = ProviderId::parse(provider_str)?;
+    let model = req
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "No model selected for the active provider.".to_string())?;
+    provider_id.validate_model(model)?;
+
+    Ok(Completer {
+        app: app.clone(),
+        provider: resolve(provider_id, req.base_url.clone()),
+        model: model.to_string(),
+    })
 }
 
 // ── Emit helpers ──────────────────────────────────────────────────────────────
@@ -180,14 +156,8 @@ pub async fn run_pipeline(
     let mode = req.mode.as_deref().unwrap_or("recruiter");
     let locale = req.locale.as_deref().unwrap_or("en");
 
-    // Build providers (gen-quality + fast for ancillary calls)
-    let (gen_llm, fast_llm) = resolve_provider(
-        &app,
-        req.provider.as_deref(),
-        req.model.as_deref(),
-        req.base_url.as_deref(),
-    )
-    .map_err(|e| {
+    // Resolve the active provider + model through the centralized layer.
+    let completer = resolve_completer(&app, &req).map_err(|e| {
         tracing::error!("cover_letter: provider resolution failed: {e}");
         e
     })?;
@@ -210,13 +180,7 @@ pub async fn run_pipeline(
     let (research_result, resume_summary) = tokio::join!(
         async {
             if enable_research {
-                research::run(
-                    fast_llm.as_ref(),
-                    &job_ad_clone,
-                    cache_ref,
-                    brave_key.as_deref(),
-                )
-                .await
+                research::run(&completer, &job_ad_clone, cache_ref, brave_key.as_deref()).await
             } else {
                 (String::new(), String::new())
             }
@@ -253,7 +217,7 @@ pub async fn run_pipeline(
             locale,
         );
 
-        text = gen_llm
+        text = completer
             .complete(COVER_LETTER_SYSTEM, &user_prompt)
             .await
             .map_err(|e| {
@@ -281,7 +245,7 @@ pub async fn run_pipeline(
             json!({ "attempt": attempt }),
         );
 
-        match leakage::validate(fast_llm.as_ref(), &req.resume, &req.job_ad, &text).await {
+        match leakage::validate(&completer, &req.resume, &req.job_ad, &text).await {
             Ok(result) => {
                 let verdict = result.verdict.clone();
                 tracing::info!(

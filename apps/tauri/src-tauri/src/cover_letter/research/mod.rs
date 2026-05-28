@@ -3,7 +3,7 @@ pub mod extractor;
 pub mod search;
 
 use super::cache::CompanyBriefCache;
-use super::llm::LlmProvider;
+use super::Completer;
 
 /// Full research pipeline: extract → cache-check → search → brief → cache-store.
 ///
@@ -12,7 +12,7 @@ use super::llm::LlmProvider;
 /// The caller treats an empty brief as graceful degradation — generation still
 /// proceeds without the extra context.
 pub async fn run(
-    llm: &dyn LlmProvider,
+    llm: &Completer,
     job_ad: &str,
     cache: &CompanyBriefCache,
     brave_key: Option<&str>,

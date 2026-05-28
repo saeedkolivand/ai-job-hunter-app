@@ -1,5 +1,5 @@
-use crate::cover_letter::llm::LlmProvider;
 use crate::cover_letter::research::search::SearchResult;
+use crate::cover_letter::Completer;
 
 const SYSTEM: &str = "\
 You are a company research assistant. \
@@ -8,7 +8,7 @@ Return ONLY the brief — no headers, no caveats, no markdown.";
 
 /// Synthesise search snippets into a ~150-word company brief using the fast LLM.
 pub async fn synthesise(
-    llm: &dyn LlmProvider,
+    llm: &Completer,
     company: &str,
     role: &str,
     results: &[SearchResult],

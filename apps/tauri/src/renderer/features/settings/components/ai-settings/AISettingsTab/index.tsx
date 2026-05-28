@@ -24,6 +24,7 @@ import { useAIModel, useAiProviderConfig, usePreferencesStore } from '@/store/pr
 import type { Model } from '@/types';
 
 import { ActiveProviderSwitcher } from '../ActiveProviderSwitcher';
+import { EmbeddingsSettings } from '../EmbeddingsSettings';
 import { PROVIDER_ORDER, PROVIDERS } from '../provider-meta';
 import { ProviderDebugBadge } from '../ProviderDebugBadge';
 import { ProviderRow } from '../ProviderRow';
@@ -87,11 +88,21 @@ export function AISettingsTab() {
     providerConfig?.providers?.['openai-compatible']?.baseUrl ?? ''
   );
 
+  // Custom base URL only applies to the OpenAI-compatible provider. Prefer the
+  // in-progress edit, fall back to what's saved in config.
+  const baseUrlFor = (p: AiProvider): string | undefined =>
+    p === 'openai-compatible'
+      ? baseUrlInput.trim() ||
+        providerConfig?.providers?.['openai-compatible']?.baseUrl ||
+        undefined
+      : undefined;
+
   // Models for the expanded cloud provider
   const expandedIsCloud = expanded !== null && expanded !== 'ollama';
   const { data: expandedModelsRaw = [] } = useListProviderModels(
     expanded ?? 'openai',
-    expandedIsCloud && (keyStatus[expanded ?? 'openai'] ?? false)
+    expandedIsCloud && (keyStatus[expanded ?? 'openai'] ?? false),
+    baseUrlFor(expanded ?? 'openai')
   );
   const expandedModels = expandedModelsRaw as Array<{ name: string }>;
 
@@ -114,7 +125,7 @@ export function AISettingsTab() {
       await setProviderKey.mutateAsync({ provider, apiKey: apiKeyInput.trim() });
       setApiKeyInput('');
       try {
-        const models = await api.ai.listProviderModels({ provider });
+        const models = await api.ai.listProviderModels({ provider, baseUrl: baseUrlFor(provider) });
         const count = Array.isArray(models) ? models.length : 0;
         notify(
           count > 0
@@ -144,7 +155,7 @@ export function AISettingsTab() {
     const meta = PROVIDERS[provider];
     setTestingKey(provider);
     try {
-      const result = await testProviderKey.mutateAsync({ provider });
+      const result = await testProviderKey.mutateAsync({ provider, baseUrl: baseUrlFor(provider) });
       if (result.success) {
         notify(`${meta.label} API key is valid!`, 'success');
       } else {
@@ -290,6 +301,9 @@ export function AISettingsTab() {
           })}
         </div>
       </GlassCard>
+
+      {/* Embeddings — provider/model for matching & search, with re-indexing */}
+      <EmbeddingsSettings />
     </motion.div>
   );
 }

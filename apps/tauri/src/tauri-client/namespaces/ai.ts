@@ -20,8 +20,19 @@ export const ai = {
     invoke('ai_remove_provider_key', { provider }),
   hasProviderKey: ({ provider }: { provider: string }) =>
     invoke('ai_has_provider_key', { provider }),
-  testProviderKey: ({ provider }: { provider: string }) =>
-    invoke('ai_test_provider_key', { provider }),
-  listProviderModels: ({ provider }: { provider: string }) =>
-    invoke('ai_list_provider_models', { provider }),
+  testProviderKey: ({ provider, baseUrl }: { provider: string; baseUrl?: string }) =>
+    invoke('ai_test_provider_key', { provider, baseUrl }),
+  listProviderModels: ({ provider, baseUrl }: { provider: string; baseUrl?: string }) =>
+    invoke('ai_list_provider_models', { provider, baseUrl }),
+  embeddingStatus: () => invoke('ai_embedding_status'),
+  setEmbeddingConfig: ({
+    provider,
+    model,
+    baseUrl,
+  }: {
+    provider: string;
+    model?: string;
+    baseUrl?: string;
+  }) => invoke('ai_set_embedding_config', { provider, model, baseUrl }),
+  reembedAll: () => invoke('ai_reembed_all'),
 };

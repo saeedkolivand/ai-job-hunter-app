@@ -1,4 +1,4 @@
-use crate::cover_letter::llm::LlmProvider;
+use crate::cover_letter::Completer;
 
 const SYSTEM: &str = "\
 You are a leakage detector. \
@@ -24,7 +24,7 @@ pub struct LeakageResult {
 /// Returns `Ok(LeakageResult)` on success. Returns `Err` only on hard
 /// LLM/network failures — a FAIL verdict is returned as `Ok(...)`, not `Err`.
 pub async fn validate(
-    llm: &dyn LlmProvider,
+    llm: &Completer,
     resume: &str,
     job_ad: &str,
     generated: &str,

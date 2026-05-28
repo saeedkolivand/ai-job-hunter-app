@@ -65,6 +65,13 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       hasProviderKey: async () => ({ has: false }),
       testProviderKey: async () => ({ success: true }),
       listProviderModels: emptyList,
+      embeddingStatus: async () => ({
+        active: { provider: 'ollama', model: 'nomic-embed-text' },
+        spaces: [],
+        documents: { total: 0, indexedInActiveSpace: 0, stale: 0 },
+      }),
+      setEmbeddingConfig: async () => ({ success: true }),
+      reembedAll: async () => ({ jobId: 'mock-reembed' }),
     },
 
     aiGenerations: {

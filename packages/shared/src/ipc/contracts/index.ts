@@ -110,7 +110,13 @@ export const PROTOCOL_VERSION = '1.0.0';
 
 // Re-export individual namespace contracts for direct imports if needed
 
-export { AI_CHANNELS, type AiContract } from './ai.js';
+export {
+  AI_CHANNELS,
+  type AiContract,
+  type EmbeddingConfig,
+  type EmbeddingSpaceInfo,
+  type EmbeddingStatus,
+} from './ai.js';
 export {
   AI_GENERATIONS_CHANNELS,
   type AiGenerationRecord,

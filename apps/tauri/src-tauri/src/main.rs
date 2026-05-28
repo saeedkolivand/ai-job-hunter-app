@@ -257,6 +257,9 @@ fn main() {
             commands::ai::ai_has_provider_key,
             commands::ai::ai_test_provider_key,
             commands::ai::ai_list_provider_models,
+            commands::ai::ai_embedding_status,
+            commands::ai::ai_set_embedding_config,
+            commands::ai::ai_reembed_all,
             // resume extraction
             extraction::extract_resume,
             // documents

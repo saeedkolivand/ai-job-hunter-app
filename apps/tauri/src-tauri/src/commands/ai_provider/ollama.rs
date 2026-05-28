@@ -63,6 +63,61 @@ impl AiProvider for OllamaClient {
         stream_chat(app, job_id, req).await
     }
 
+    async fn complete(
+        &self,
+        _app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> Result<String, String> {
+        let base = host();
+        let endpoint = format!("{base}/api/chat");
+        let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat", &base, false);
+
+        let mut body = json!({
+            "model": model,
+            "stream": false,
+            "messages": [
+                { "role": "system", "content": system },
+                { "role": "user", "content": user },
+            ],
+        });
+        if let Some(t) = temperature {
+            body["options"] = json!({ "temperature": t });
+        }
+
+        let client = build_client(300).ok_or_else(|| "Failed to build Ollama client".to_string())?;
+        let resp = match client.post(&endpoint).json(&body).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                return Err(format!("Ollama unreachable: {e}"));
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            return Err(format!("Ollama {status}: {body_text}"));
+        }
+        let data: Value = resp.json().await.map_err(|e| format!("Ollama parse: {e}"))?;
+        trace.end(Some(status.as_u16()), true);
+        data.get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+            .map(String::from)
+            .ok_or_else(|| "Ollama: unexpected response shape".to_string())
+    }
+
+    async fn embed(&self, _app: &AppHandle, model: &str, text: &str) -> Result<Vec<f64>, String> {
+        embed_with(model, text).await
+    }
+
+    fn default_embedding_model(&self) -> Option<&'static str> {
+        Some(EMBED_MODEL)
+    }
+
     async fn list_models(&self, client: &reqwest::Client, _api_key: &str) -> Vec<Value> {
         list_tag_models(client).await
     }
@@ -121,24 +176,30 @@ pub async fn reachable_model() -> (bool, Option<String>) {
     }
 }
 
-/// Embed `text` with the local embedding model. Returns `None` if Ollama is
-/// unreachable. (Embeddings remain Ollama-only until the embeddings migration.)
-pub async fn embed(text: &str) -> Option<Vec<f64>> {
-    let client = build_client(15)?;
-    let truncated = &text[..text.len().min(8000)];
-    let body = json!({ "model": EMBED_MODEL, "prompt": truncated });
+/// Embed `text` with a specific Ollama embedding model. Returns a clear error
+/// (not `None`) so callers can surface why embedding failed.
+pub async fn embed_with(model: &str, text: &str) -> Result<Vec<f64>, String> {
+    let client = build_client(15).ok_or_else(|| "Failed to build Ollama client".to_string())?;
+    // Char-boundary-safe truncation (avoids panics on multi-byte input).
+    let truncated: String = text.chars().take(8000).collect();
+    let body = json!({ "model": model, "prompt": truncated });
     let resp = client
         .post(format!("{}/api/embeddings", host()))
         .json(&body)
         .send()
         .await
-        .ok()?;
-    if !resp.status().is_success() {
-        return None;
+        .map_err(|e| format!("Ollama unreachable: {e}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body_text = resp.text().await.unwrap_or_default();
+        return Err(format!("Ollama {status}: {body_text}"));
     }
-    let data: Value = resp.json().await.ok()?;
-    let arr = data.get("embedding")?.as_array()?;
-    Some(arr.iter().filter_map(|v| v.as_f64()).collect())
+    let data: Value = resp.json().await.map_err(|e| format!("Ollama parse: {e}"))?;
+    let arr = data
+        .get("embedding")
+        .and_then(|e| e.as_array())
+        .ok_or_else(|| "Ollama: missing embedding in response".to_string())?;
+    Ok(arr.iter().filter_map(|v| v.as_f64()).collect())
 }
 
 /// Stream a model pull, emitting `jobs:event` progress. Returns when complete.
