@@ -19,8 +19,6 @@ pub mod enrichment;
 pub mod retry;
 pub mod validation;
 
-use std::time::Instant;
-
 use async_trait::async_trait;
 use tauri::AppHandle;
 
@@ -128,28 +126,24 @@ impl<C> Pipeline<C> {
 
 // ── Stage tracing ───────────────────────────────────────────────────────────────
 
-/// Structured per-stage log, mirroring the provider `RequestTrace` style:
+/// Structured per-stage log over the shared [`crate::observability::Span`]:
 /// `[pipeline:cover_letter] → stage=research` / `← stage=research duration=..ms ok=true`.
 struct StageTrace {
-    pipeline: &'static str,
-    stage: &'static str,
-    start: Instant,
+    span: crate::observability::Span,
 }
 
 impl StageTrace {
     fn begin(pipeline: &'static str, stage: &'static str) -> Self {
-        log::info!("[pipeline:{pipeline}] → stage={stage}");
-        Self { pipeline, stage, start: Instant::now() }
+        Self {
+            span: crate::observability::Span::begin(
+                format!("pipeline:{pipeline}"),
+                format!("stage={stage}"),
+            ),
+        }
     }
 
     fn end(&self, ok: bool) {
-        log::info!(
-            "[pipeline:{}] ← stage={} duration={}ms ok={}",
-            self.pipeline,
-            self.stage,
-            self.start.elapsed().as_millis(),
-            ok
-        );
+        self.span.end(ok);
     }
 }
 

@@ -111,6 +111,7 @@ impl ScraperEngine {
             on_item,
         };
 
+        let span = crate::observability::Span::begin("scrape", format!("board={board} job={job_id}"));
         let result = match board {
             "ycombinator" => Scraper::search(&YCombinatorScraper, input, ctx).await,
             "remotive" => Scraper::search(&RemotiveScraper, input, ctx).await,
@@ -137,6 +138,11 @@ impl ScraperEngine {
 
         // Always clear the token slot, even on error.
         self.jobs.lock().await.remove(&job_id);
+
+        match &result {
+            Ok(items) => span.end_with(&format!("count={}", items.len()), true),
+            Err(_) => span.end(false),
+        }
         result
     }
 
