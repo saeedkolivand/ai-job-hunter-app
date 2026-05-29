@@ -9,6 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue)](https://www.typescriptlang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-2.x-purple)](https://tauri.app)
+[![Live site](https://img.shields.io/badge/Live-site-e24b4a)](https://saeedkolivand.github.io/ai-job-hunter-assistant-app/)
 
 ---
 
