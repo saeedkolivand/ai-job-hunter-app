@@ -34,6 +34,7 @@ mod export;
 mod ipc_contracts;
 mod job_preferences;
 mod jobs;
+mod model;
 mod net;
 mod observability;
 mod pipeline;
