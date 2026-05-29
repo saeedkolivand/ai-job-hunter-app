@@ -71,3 +71,42 @@ fn split_urls_prefers_markdown_links_over_bare_urls() {
         Span::Text(_) => panic!("expected a link span"),
     }
 }
+
+#[test]
+fn split_urls_labels_arbitrary_website_with_bare_domain() {
+    // A non-platform personal site / portfolio URL must survive with a bare-domain
+    // label (mirrors the TS "Website" admission for the contact line).
+    let spans = split_urls("portfolio: https://janedoe.dev/work today");
+    let link = spans
+        .iter()
+        .find_map(|s| match s {
+            Span::Link { label, url } => Some((label.clone(), url.clone())),
+            Span::Text(_) => None,
+        })
+        .expect("expected a link span");
+    assert_eq!(link.0, "janedoe.dev");
+    assert_eq!(link.1, "https://janedoe.dev/work");
+}
+
+#[test]
+fn url_label_matches_ts_url_to_friendly_label_fixture() {
+    // Cross-language parity guard: this exact fixture is also asserted by the TS
+    // urlToFriendlyLabel() test in packages/prompts/src/generate.test.ts. Both read
+    // the same file, so the two implementations can never silently drift.
+    #[derive(serde::Deserialize)]
+    struct Case {
+        url: String,
+        label: String,
+    }
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../packages/prompts/src/fixtures/url-labels.json");
+    let raw = std::fs::read_to_string(&path)
+        .expect("read url-labels parity fixture (packages/prompts/src/fixtures/url-labels.json)");
+    let cases: Vec<Case> = serde_json::from_str(&raw).expect("parse url-labels parity fixture");
+
+    assert!(!cases.is_empty(), "url-labels parity fixture must not be empty");
+    for c in &cases {
+        assert_eq!(url_label(&c.url), c.label, "url_label drift for {}", c.url);
+    }
+}
