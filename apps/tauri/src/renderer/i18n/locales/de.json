@@ -78,7 +78,9 @@
       "risks": "ATS-Formatierungsrisiken werden geprüft…",
       "writing": "Perspektive des Personalers wird verfasst…",
       "finalising": "Urteil wird finalisiert…",
-      "almostDone": "Fast fertig…"
+      "almostDone": "Fast fertig…",
+      "takingLonger": "dauert länger als gewöhnlich…",
+      "slowHint": "Claude Code und lokale Modelle können ein bis zwei Minuten dauern — das ist normal."
     },
     "languageMismatch": "Sprachkonflikt erkannt",
     "languageMismatchBody": "Lebenslauf: {{resume}} — Stellenanzeige: {{jobAd}}. ATS-Systeme könnten Sie niedriger bewerten. Siehe Sprachempfehlungen unten.",

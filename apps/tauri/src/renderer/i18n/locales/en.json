@@ -78,7 +78,9 @@
       "risks": "Checking ATS formatting risks…",
       "writing": "Writing recruiter perspective…",
       "finalising": "Finalising verdict…",
-      "almostDone": "almost done…"
+      "almostDone": "almost done…",
+      "takingLonger": "taking longer than usual…",
+      "slowHint": "Claude Code and local models can take a minute or two — this is normal."
     },
     "languageMismatch": "Language Mismatch Detected",
     "languageMismatchBody": "Resume: {{resume}} — Job Ad: {{jobAd}}. ATS systems may rank you lower. See Language Recommendations below.",
