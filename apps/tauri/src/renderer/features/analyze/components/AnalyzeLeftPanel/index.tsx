@@ -177,7 +177,9 @@ export function AnalyzeLeftPanel({
               : !canUseAI
                 ? aiReason === 'addApiKey'
                   ? t('analyze.addApiKey')
-                  : t('analyze.selectModel')
+                  : aiReason === 'installCli'
+                    ? t('analyze.installCli')
+                    : t('analyze.selectModel')
                 : !canRun
                   ? t('analyze.pasteContent')
                   : t('analyze.run')}

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { DocumentRecord } from '@ajh/shared';
 
 import { PageTransition } from '@/components/layout/PageTransition';
-import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
+import { useCanUseAI, useSelectedModel, useSelectedProvider } from '@/components/ui/ModelSelector';
 import { AnalysisATSRisks } from '@/features/analyze/components/AnalysisATSRisks';
 import { AnalysisLanguageMismatch } from '@/features/analyze/components/AnalysisLanguageMismatch';
 import { AnalysisLanguageRecommendations } from '@/features/analyze/components/AnalysisLanguageRecommendations';
@@ -22,9 +22,11 @@ import { AnalyzeLeftPanel } from '@/features/analyze/components/AnalyzeLeftPanel
 import { ACCEPTED_EXTS, MAX_BYTES } from '@/features/analyze/constants';
 import { useAnalysisRun } from '@/features/analyze/hooks/useAnalysisRun';
 import { useAnalyzeState } from '@/features/analyze/hooks/useAnalyzeState';
+import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useTranslation } from '@/lib/i18n';
 import type { AnalysisResult } from '@/lib/resume-ai';
 import { useDocuments, useExtractText } from '@/services';
+import type { AiProvider } from '@/store/preferences-schema';
 import { usePreferencesStore, usePromptQuality } from '@/store/preferences-store';
 
 function AnalyzePage() {
@@ -37,6 +39,12 @@ function AnalyzePage() {
   const [uploading, setUploading] = useState<'resume' | 'jobAd' | null>(null);
   const selectedModel = useSelectedModel();
   const { canUse: canUseAI, reason: aiReason } = useCanUseAI();
+  // Provider-aware progress estimate: CLI agents & local models are much slower
+  // than cloud APIs, so the progress bar/ETA shouldn't promise ~50s for them.
+  const activeProvider = useSelectedProvider();
+  const providerKind = PROVIDERS[activeProvider as AiProvider]?.kind ?? 'local-server';
+  const analysisEstimateMs = providerKind === 'cloud' ? 35_000 : 90_000;
+  const slowProvider = providerKind !== 'cloud';
   const promptQuality = usePromptQuality();
   const setPromptQuality = usePreferencesStore((s) => s.setPromptQuality);
   const extractTextMutation = useExtractText();
@@ -180,6 +188,8 @@ function AnalyzePage() {
                     modelLoading={modelLoading}
                     tokenCount={tokenCount}
                     tokenStartMs={tokenStartRef.current}
+                    estimatedMs={analysisEstimateMs}
+                    slow={slowProvider}
                     t={t}
                   />
                 </div>

@@ -95,5 +95,6 @@ export const useGenerateConfig = () => {
     provider: activeProvider,
     model: settings?.model ?? '',
     baseUrl: settings?.baseUrl,
+    effort: settings?.effort,
   };
 };
