@@ -169,22 +169,28 @@ No `// eslint-disable`, no `@ts-ignore`. Add scoped overrides to `eslint.config.
 
 ## Quick Reference
 
-| What                   | Where                                                       |
-| ---------------------- | ----------------------------------------------------------- |
-| IPC contract           | `packages/shared/src/ipc/contracts.ts`                      |
-| Tauri commands         | `apps/tauri/src-tauri/src/commands.rs`                      |
-| Tauri client (TS)      | `apps/tauri/src/tauri-client.ts`                            |
-| Service hooks          | `apps/tauri/src/renderer/services/`                         |
-| UI package             | `packages/ui/src/index.ts` → `@ajh/ui`                      |
-| Motion tokens          | `packages/ui/src/lib/motion.ts` (import via `@/lib/motion`) |
-| State machines         | `apps/tauri/src/renderer/lib/machines/`                     |
-| Design tokens          | `packages/ui/src/css/tokens.css`                            |
-| i18n wrapper           | `apps/tauri/src/renderer/lib/i18n.ts`                       |
-| Architecture status    | `docs/ARCHITECTURE_STATUS.md`                               |
-| Architecture (general) | `docs/ARCHITECTURE.md`                                      |
-| Patterns               | `docs/PATTERNS.md`                                          |
-| Design system          | `docs/DESIGN_SYSTEM.md`                                     |
-| Dev setup              | `docs/DEVELOPMENT.md`                                       |
+| What                    | Where                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------- |
+| IPC contract            | `packages/shared/src/ipc/contracts.ts`                                          |
+| Tauri commands          | `apps/tauri/src-tauri/src/commands.rs`                                          |
+| Tauri client (TS)       | `apps/tauri/src/tauri-client.ts`                                                |
+| Service hooks           | `apps/tauri/src/renderer/services/`                                             |
+| UI package              | `packages/ui/src/index.ts` → `@ajh/ui`                                          |
+| Motion tokens           | `packages/ui/src/lib/motion.ts` (import via `@/lib/motion`)                     |
+| State machines          | `apps/tauri/src/renderer/lib/machines/`                                         |
+| Design tokens           | `packages/ui/src/css/tokens.css`                                                |
+| i18n wrapper            | `apps/tauri/src/renderer/lib/i18n.ts`                                           |
+| Config / paths (Rust)   | `apps/tauri/src-tauri/src/platform/config.rs` (`data_dir()`)                    |
+| HTTP client (Rust)      | `apps/tauri/src-tauri/src/net/http.rs` (`shared()` / `build_client()`)          |
+| Errors (Rust)           | `apps/tauri/src-tauri/src/error.rs` (`AppError` / `AppResult`)                  |
+| Trace spans (Rust)      | `apps/tauri/src-tauri/src/observability.rs` (`Span`)                            |
+| Board registries        | `scraping/boards/mod.rs` (`SCRAPERS`) · `applying/registry/mod.rs` (`APPLIERS`) |
+| Architecture principles | `docs/PATTERNS.md` §13                                                          |
+| Architecture status     | `docs/ARCHITECTURE_STATUS.md`                                                   |
+| Architecture (general)  | `docs/ARCHITECTURE.md`                                                          |
+| Patterns                | `docs/PATTERNS.md`                                                              |
+| Design system           | `docs/DESIGN_SYSTEM.md`                                                         |
+| Dev setup               | `docs/DEVELOPMENT.md`                                                           |
 
 ## Release Pipeline
 

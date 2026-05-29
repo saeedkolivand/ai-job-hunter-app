@@ -602,7 +602,7 @@ jobs:
           cargo clippy --all-targets --all-features -- -D warnings
           echo "::endgroup::"
 
-      # Architecture guardrail (see docs/ARCHITECTURE_ROADMAP.md, Phase 1).
+      # Architecture guardrail (see docs/PATTERNS.md §13).
       # The data-dir env var + path fallback must live ONLY in platform/config.rs.
       - name: 🚧 Architecture Guardrail — centralized data dir
         working-directory: apps/tauri/src-tauri/src
@@ -617,7 +617,7 @@ jobs:
           echo "OK — AJH_DATA_DIR is owned solely by platform/config.rs"
           echo "::endgroup::"
 
-      # Architecture guardrail (see docs/ARCHITECTURE_ROADMAP.md, Phase 2).
+      # Architecture guardrail (see docs/PATTERNS.md §13).
       # reqwest clients must be built ONLY in net/http.rs; everything else
       # composes net::http::shared() / build_client().
       - name: 🚧 Architecture Guardrail — centralized HTTP client
@@ -633,7 +633,7 @@ jobs:
           echo "OK — reqwest clients are built solely in net/http.rs"
           echo "::endgroup::"
 
-      # Architecture guardrail (see docs/ARCHITECTURE_ROADMAP.md, Phase 3).
+      # Architecture guardrail (see docs/PATTERNS.md §13).
       # Internal fallible code uses AppResult/AppError, not Result<_, String>.
       # (Test files and error.rs are exempt.)
       - name: 🚧 Architecture Guardrail — typed errors
