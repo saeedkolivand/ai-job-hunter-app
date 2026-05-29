@@ -68,3 +68,4 @@ Read these files for full details before making structural changes:
 **Release:** Never manually tag releases or edit CHANGELOG.md/versions.
 Releases are automated via semantic-release on push to main.
 feat → minor, fix/perf → patch, BREAKING CHANGE → major.
+Commit subject must be lowercase (commitlint subject-case) — lowercase acronyms too (url, api, docx). Subject ≤ 100 chars; body lines ≤ 200.
