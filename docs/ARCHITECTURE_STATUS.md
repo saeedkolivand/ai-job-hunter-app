@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-05-28
+Last updated: 2026-05-29
 
 ---
 
@@ -18,27 +18,29 @@ Last updated: 2026-05-28
 
 ## Infrastructure
 
-| Component                        | Status | Notes                                                              |
-| -------------------------------- | ------ | ------------------------------------------------------------------ |
-| Tauri 2.x shell                  | ✅     | Window, tray, menus, IPC                                           |
-| pnpm monorepo + Turbo            | ✅     | All packages wired                                                 |
-| TypeScript 6 across all packages | ✅     | Strict mode enabled                                                |
-| Vite + HMR for renderer          | ✅     |                                                                    |
-| TanStack Router (file-based)     | ✅     | All 9 routes                                                       |
-| TanStack Query + service hooks   | ✅     | All 21 namespaces                                                  |
-| Zustand stores                   | ✅     | preferences-store, others                                          |
-| AppClient / mock transport       | ✅     | Tauri + mock implementations                                       |
-| ESLint + Prettier                | ✅     | Enforced in CI                                                     |
-| Husky + commitlint               | ✅     | Pre-commit hooks                                                   |
-| Semantic release pipeline        | ✅     | Auto-versioning on main                                            |
-| Auto-updater                     | ✅     | GitHub Releases integration                                        |
-| Data backup / restore            | ✅     | `DataStore` trait → full export/import bundle (Settings → Privacy) |
+| Component                        | Status | Notes                                                                                                                                                 |
+| -------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tauri 2.x shell                  | ✅     | Window, tray, menus, IPC                                                                                                                              |
+| pnpm monorepo + Turbo            | ✅     | All packages wired                                                                                                                                    |
+| TypeScript 6 across all packages | ✅     | Strict mode enabled                                                                                                                                   |
+| Vite + HMR for renderer          | ✅     |                                                                                                                                                       |
+| TanStack Router (file-based)     | ✅     | All 9 routes                                                                                                                                          |
+| TanStack Query + service hooks   | ✅     | All 21 namespaces                                                                                                                                     |
+| Zustand stores                   | ✅     | preferences-store, others                                                                                                                             |
+| AppClient / mock transport       | ✅     | Tauri + mock implementations                                                                                                                          |
+| ESLint + Prettier                | ✅     | Enforced in CI                                                                                                                                        |
+| Husky + commitlint               | ✅     | Pre-commit hooks                                                                                                                                      |
+| Semantic release pipeline        | ✅     | Auto-versioning on main                                                                                                                               |
+| Auto-updater                     | ✅     | GitHub Releases integration                                                                                                                           |
+| Data backup / restore            | ✅     | `DataStore` trait → full export/import bundle (Settings → Privacy)                                                                                    |
+| Shared platform layers           | ✅     | `platform::config`, `net::http`, `error::AppError`, `observability::Span` + provider/board registries (Phases 1–6 — see `ARCHITECTURE_ROADMAP.md`)    |
+| Architecture CI guardrails       | ✅     | grep bans: `std::env::var` outside `platform/config.rs`; `reqwest::Client::new/builder` outside `net/http.rs`; `Result<_, String>` outside `error.rs` |
 
 ---
 
 ## AI & Data (Rust core)
 
-AI generation (`commands/ai_provider.rs`) and data/document handling
+AI generation (`commands/ai_provider/`) and data/document handling
 (`documents/`, `jobs/`, SQLite via `rusqlite`) now live in the Rust core; the
 former `packages/ai` and `packages/data` Node packages were removed.
 

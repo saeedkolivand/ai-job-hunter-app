@@ -34,6 +34,13 @@ graph TB
         Autopilot["autopilot/\n(workflow + scheduler)"]
     end
 
+    subgraph Shared["Shared Infra (composed by every module)"]
+        Config["platform::config\n(env + paths)"]
+        Net["net::http\n(pooled rustls client)"]
+        Err["error::AppError"]
+        Obs["observability::Span"]
+    end
+
     subgraph External["External (local + network)"]
         Ollama["Ollama\n(chat + embeddings)"]
         Cloud["Cloud Providers\n(OpenAI / Anthropic / Gemini)"]
@@ -56,6 +63,10 @@ graph TB
     Scraping --> Browser
     Commands --> Keychain
     Commands --> Updater
+    AiProvider --> Net
+    Scraping --> Net
+    AiProvider --> Obs
+    Scraping --> Config
 ```
 
 ---
@@ -68,22 +79,26 @@ The Tauri app is split into two processes:
 
 **Rust core (`src-tauri/`)** — thin orchestration layer:
 
-| Module             | Responsibility                                                          |
-| ------------------ | ----------------------------------------------------------------------- |
-| `commands/`        | IPC endpoint handlers; routes invocations to the appropriate runtime    |
-| `scraping/`        | 18 board-specific Playwright scrapers                                   |
-| `documents/`       | Document import, OCR dispatch, SQLite storage                           |
-| `jobs/`            | Job tracker state machine (queued → running → done/failed)              |
-| `credentials/`     | OS keychain CRUD via Tauri keychain plugin                              |
-| `conversations/`   | Chat history persistence                                                |
-| `autopilot/`       | Workflow engine + step scheduler                                        |
-| `apply_helpers/`   | Form-filling logic for auto-apply                                       |
-| `ai_generations/`  | Metadata tracking for generated documents                               |
-| `export/`          | DOCX/PDF rendering using docx + jsPDF                                   |
-| `updater/`         | Auto-update state (check, download, install)                            |
-| `browser/`         | System browser detection and launch                                     |
-| `data_store.rs`    | `DataStore` trait (export/import) implemented by every persistent store |
-| `commands/data.rs` | Full backup/restore — one versioned bundle across all stores            |
+| Module               | Responsibility                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `commands/`          | IPC endpoint handlers; routes invocations to the appropriate runtime                                                      |
+| `platform::config`   | **Sole owner** of env vars + data-dir / filesystem path resolution                                                        |
+| `net::http`          | **Sole owner** of `reqwest::Client` construction — one pooled rustls client; per-request timeouts                         |
+| `error` (`AppError`) | Unified typed error hierarchy (`AppResult`); serializes to its message string                                             |
+| `observability`      | Shared timed trace `Span`s (`→`/`←` + duration) for AI, scraping, apply, autopilot                                        |
+| `scraping/`          | Board scrapers (chromiumoxide for browser boards, HTTP for API boards) via a single `SCRAPERS` registry + `Scraper` trait |
+| `documents/`         | Document import, OCR dispatch, SQLite storage                                                                             |
+| `jobs/`              | Job tracker state machine (queued → running → done/failed)                                                                |
+| `credentials/`       | OS keychain CRUD via Tauri keychain plugin                                                                                |
+| `conversations/`     | Chat history persistence                                                                                                  |
+| `autopilot/`         | Workflow engine + step scheduler                                                                                          |
+| `apply_helpers/`     | Form-filling logic for auto-apply                                                                                         |
+| `ai_generations/`    | Metadata tracking for generated documents                                                                                 |
+| `export/`            | DOCX/PDF rendering using docx + jsPDF                                                                                     |
+| `updater/`           | Auto-update state (check, download, install)                                                                              |
+| `browser/`           | System browser detection and launch                                                                                       |
+| `data_store.rs`      | `DataStore` trait (export/import) implemented by every persistent store                                                   |
+| `commands/data.rs`   | Full backup/restore — one versioned bundle across all stores                                                              |
 
 **React renderer (`src/renderer/`)** — feature-scoped UI:
 
@@ -395,19 +410,25 @@ Rather than XState, the app uses a micro state machine implementation (`lib/mach
 
 Every persistent store (documents, AI generations, job preferences, autopilots, conversations, interactions) is store-per-domain and implements a single `DataStore` trait (`data_store.rs`): `export() -> Value` and `import(&Value)` with REPLACE semantics. `commands/data.rs` assembles one versioned bundle (`{ version, exportedAt, stores }`) for backup and restores it on import. Secrets (OS-keychain credentials), ephemeral caches, and the transient job log are intentionally excluded. **Cloud sync is deferred** — there is no remote backend; this bundle and trait are the substrate a future sync feature would build on.
 
+### 9. Shared Platform Infrastructure
+
+The Rust core composes a small set of **single-owner** infrastructure modules instead of re-rolling cross-cutting logic per feature: `platform::config` (env + paths), `net::http` (one pooled rustls client; per-request timeouts), `error::AppError` / `AppResult` (typed errors that serialize to their message string), and `observability::Span` (timed `→`/`←` trace logging). Expandable subsystems use registries that derive dispatch + catalogs from one list via traits — `commands::ai_provider` (`ProviderId` → `resolve`), `scraping::boards` (`SCRAPERS`), `applying::registry` (`APPLIERS`). CI grep guardrails keep ownership intact (e.g. `std::env::var` only in `platform/config.rs`, `reqwest::Client::new/builder` only in `net/http.rs`, no `Result<_, String>` outside `error.rs`). Paginated scrapers isolate per-page failures (partial results instead of aborting the board). See [ARCHITECTURE_ROADMAP.md](ARCHITECTURE_ROADMAP.md) for the full program (Phases 1–6, shipped) and [PATTERNS.md](PATTERNS.md) §13 for the module-ownership table.
+
 ---
 
 ## External Integrations
 
-| Integration      | Protocol                 | Auth                         | Purpose                      |
-| ---------------- | ------------------------ | ---------------------------- | ---------------------------- |
-| Ollama           | HTTP (undici)            | None (local)                 | Chat generation + embeddings |
-| OpenAI           | HTTPS (REST)             | API key (keychain)           | Cloud generation fallback    |
-| Anthropic        | HTTPS (REST)             | API key (keychain)           | Extended thinking generation |
-| Google Gemini    | HTTPS (REST)             | API key (keychain)           | Multilingual generation      |
-| LM Studio        | HTTP (OpenAI-compatible) | Optional                     | Local cloud-replacement      |
-| Job boards (18+) | Playwright browser       | Board credentials (keychain) | Scraping                     |
-| OS Keychain      | Tauri plugin             | OS auth                      | Credential encryption        |
+All HTTP goes through the shared `net::http` client (rustls).
+
+| Integration     | Protocol                                           | Auth                         | Purpose                      |
+| --------------- | -------------------------------------------------- | ---------------------------- | ---------------------------- |
+| Ollama          | HTTP (`net::http`, local)                          | None (local)                 | Chat generation + embeddings |
+| OpenAI          | HTTPS (REST)                                       | API key (keychain)           | Cloud generation fallback    |
+| Anthropic       | HTTPS (REST)                                       | API key (keychain)           | Extended thinking generation |
+| Google Gemini   | HTTPS (REST)                                       | API key (keychain)           | Multilingual generation      |
+| LM Studio       | HTTP (OpenAI-compatible)                           | Optional                     | Local cloud-replacement      |
+| Job boards (20) | chromiumoxide (browser) / `net::http` (API boards) | Board credentials (keychain) | Scraping                     |
+| OS Keychain     | Tauri plugin                                       | OS auth                      | Credential encryption        |
 
 ---
 
