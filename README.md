@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/banner.png" alt="AI Job Hunter" width="100%">
+</p>
+
 # AI Job Hunter
 
 > Your local-first, AI-native desktop assistant for intelligent job searching, resume generation, and automated applications — run it fully offline with Ollama, or plug in your own OpenAI, Anthropic, or Gemini key.
