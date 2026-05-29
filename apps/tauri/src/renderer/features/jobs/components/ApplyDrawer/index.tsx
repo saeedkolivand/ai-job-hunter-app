@@ -1,117 +1,26 @@
 import { AlertCircle, CheckCircle2, Send, ShieldAlert, X } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
-import { useRef, useState } from 'react';
+import { AnimatePresence } from 'motion/react';
+import { useState } from 'react';
 
-import { Button, cn, GlassCard, TextArea } from '@ajh/ui';
+import { Button, GlassCard, TextArea } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
-import { useApplyJob, useCancelJob, useJobEvents } from '@/services';
 
 import { MatchScoreCard } from '../MatchScoreCard';
-
-interface Posting {
-  id: string;
-  source: string;
-  externalId: string;
-  url: string;
-  title: string;
-  company: string;
-  location?: string;
-  remote?: boolean;
-  description: string;
-  postedAt?: number;
-  capturedAt: number;
-  interactions?: { interactionType: string }[];
-}
-
-interface ApplyStep {
-  ts: number;
-  stage: string;
-  ok: boolean;
-  note?: string;
-  kind: 'step' | 'progress';
-  p?: number;
-}
+import { StepRow } from './StepRow';
+import type { Posting } from './types';
+import { useApplyRun } from './useApplyRun';
 
 interface ApplyDrawerProps {
   posting: Posting;
   onClose: () => void;
 }
 
-const APPLIABLE = new Set(['linkedin', 'indeed', 'greenhouse', 'workday', 'xing', 'glassdoor']);
-
 export function ApplyDrawer({ posting, onClose }: ApplyDrawerProps) {
   const { t } = useTranslation();
   const [autoSubmit, setAutoSubmit] = useState(false);
   const [coverLetter, setCoverLetter] = useState('');
-  const [running, setRunning] = useState(false);
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [steps, setSteps] = useState<ApplyStep[]>([]);
-  const [outcome, setOutcome] = useState<{ ok: boolean; submitted: boolean; note?: string } | null>(
-    null
-  );
-  const jobRef = useRef<string | null>(null);
-  const applyJob = useApplyJob();
-  const cancelJobMutation = useCancelJob();
-
-  jobRef.current = jobId;
-
-  useJobEvents((raw: unknown) => {
-    const ev = raw as { type: string; jobId: string; data?: unknown; ts: number };
-    if (ev.jobId !== jobRef.current) return;
-    if (ev.type === 'job.stream') {
-      const data = ev.data as ApplyStep;
-      setSteps((prev) =>
-        [
-          ...prev,
-          {
-            ts: ev.ts,
-            stage: data.stage,
-            ok: 'ok' in data ? data.ok : true,
-            ...('note' in data && data.note ? { note: data.note } : {}),
-            kind: data.kind,
-            ...(data.kind === 'progress' ? { p: data.p } : {}),
-          },
-        ].slice(-40)
-      );
-    } else if (ev.type === 'job.completed') {
-      const r = ev.data as { ok: boolean; submitted: boolean; note?: string };
-      setOutcome(r);
-      setRunning(false);
-    } else if (ev.type === 'job.failed' || ev.type === 'job.cancelled') {
-      setOutcome({ ok: false, submitted: false, note: String(ev.data ?? 'failed') });
-      setRunning(false);
-    }
-  });
-
-  const start = async () => {
-    setSteps([]);
-    setOutcome(null);
-    setRunning(true);
-    try {
-      const res = (await applyJob.mutateAsync({
-        board: posting.source,
-        url: posting.url,
-        ...(coverLetter.trim() ? { coverLetter: coverLetter.trim() } : {}),
-        autoSubmit,
-      })) as { jobId: string };
-      jobRef.current = res.jobId;
-      setJobId(res.jobId);
-    } catch (err) {
-      setOutcome({
-        ok: false,
-        submitted: false,
-        note: err instanceof Error ? err.message : String(err),
-      });
-      setRunning(false);
-    }
-  };
-
-  const cancel = async () => {
-    if (jobId) await cancelJobMutation.mutateAsync(jobId);
-  };
-
-  const canApply = APPLIABLE.has(posting.source);
+  const { steps, outcome, running, start, cancel, canApply } = useApplyRun(posting);
 
   return (
     <div className="flex h-full flex-col">
@@ -247,7 +156,7 @@ export function ApplyDrawer({ posting, onClose }: ApplyDrawerProps) {
             <Button
               size="md"
               variant={running ? 'ghost' : 'glass'}
-              onClick={() => void start()}
+              onClick={() => void start({ coverLetter, autoSubmit })}
               disabled={running}
               loading={running}
               className="transition-all duration-150 ease-out"
@@ -259,46 +168,5 @@ export function ApplyDrawer({ posting, onClose }: ApplyDrawerProps) {
         </>
       )}
     </div>
-  );
-}
-
-function StepRow({ step }: { step: ApplyStep }) {
-  if (step.kind === 'progress') {
-    return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="rounded-md bg-white/[0.02] px-2.5 py-1.5"
-      >
-        <div className="mb-1 flex items-center justify-between text-[11px]">
-          <span className="text-foreground/65">{step.stage}</span>
-          <span className="text-foreground/45">{Math.round((step.p ?? 0) * 100)}%</span>
-        </div>
-        <div className="h-1 overflow-hidden rounded-full bg-white/5">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-brand to-primary"
-            style={{ width: `${(step.p ?? 0) * 100}%` }}
-          />
-        </div>
-      </motion.div>
-    );
-  }
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: 6 }}
-      animate={{ opacity: 1, x: 0 }}
-      className="flex items-start gap-2 text-[12px]"
-    >
-      <span
-        className={cn(
-          'mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full shadow-[0_0_8px_currentColor]',
-          step.ok ? 'bg-emerald-400' : 'bg-amber-400'
-        )}
-      />
-      <div className="flex-1">
-        <span className="text-foreground/85">{step.stage}</span>
-        {step.note && <div className="text-[11px] text-foreground/45">{step.note}</div>}
-      </div>
-    </motion.div>
   );
 }

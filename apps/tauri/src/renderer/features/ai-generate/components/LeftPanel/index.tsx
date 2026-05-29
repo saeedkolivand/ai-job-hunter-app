@@ -6,7 +6,7 @@ import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import { ModelSelector } from '@/components/ui/ModelSelector';
 import { GenerationConfig } from '@/features/ai-generate/components/GenerationConfig';
 import { GenerationMetadata } from '@/features/ai-generate/components/GenerationMetadata';
-import type { GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate-ai';
+import type { GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 
 interface Props {

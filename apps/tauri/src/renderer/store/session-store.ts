@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 import type { WizardState } from '@/features/autopilot/types';
-import type { GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate-ai';
+import type { GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate';
 import type { AnalysisResult } from '@/lib/resume-ai';
 
 // ─── Per-route state shapes ───────────────────────────────────────────────────

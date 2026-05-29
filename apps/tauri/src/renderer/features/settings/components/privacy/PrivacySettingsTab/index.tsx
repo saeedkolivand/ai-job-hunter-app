@@ -1,7 +1,7 @@
 import { Download, LogOut, RotateCcw, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, cn, ConfirmModal, useNotification } from '@ajh/ui';
+import { ConfirmModal, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import {
@@ -12,91 +12,9 @@ import {
   useSignOutAll,
 } from '@/services';
 
+import { ActionCard, type ActionCardProps } from './ActionCard';
+
 type ConfirmAction = 'signOut' | 'clearInteractions' | 'resetApp';
-
-interface ActionCardProps {
-  icon: React.ElementType;
-  iconBg: string;
-  iconColor: string;
-  glowColor: string;
-  title: string;
-  description: string;
-  buttonLabel: string;
-  buttonBorder: string;
-  buttonText: string;
-  buttonGlow: string;
-  loading?: boolean;
-  onClick: () => void;
-}
-
-function ActionCard({
-  icon: Icon,
-  iconBg,
-  iconColor,
-  glowColor,
-  title,
-  description,
-  buttonLabel,
-  buttonBorder,
-  buttonText,
-  buttonGlow,
-  loading,
-  onClick,
-}: ActionCardProps) {
-  return (
-    <div
-      className="relative flex items-center gap-4 overflow-hidden rounded-xl border border-white/[0.07] px-4 py-3.5"
-      style={{
-        background:
-          'linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)',
-      }}
-    >
-      {/* Ambient glow behind icon */}
-      <div
-        className="pointer-events-none absolute -bottom-4 -left-4 h-24 w-24 rounded-full blur-2xl"
-        style={{ background: glowColor }}
-      />
-
-      {/* Icon */}
-      <div
-        className={cn(
-          'relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-md',
-          iconBg
-        )}
-      >
-        <Icon size={18} className={iconColor} strokeWidth={1.75} />
-      </div>
-
-      {/* Text */}
-      <div className="relative min-w-0 flex-1">
-        <div className="text-sm font-semibold text-white/90">{title}</div>
-        <div className="text-xs text-white/40 leading-snug mt-0.5">{description}</div>
-      </div>
-
-      {/* Outlined action button */}
-      <Button
-        onClick={onClick}
-        disabled={loading}
-        className={cn(
-          'relative shrink-0 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-150 h-auto',
-          'disabled:pointer-events-none disabled:opacity-40',
-          buttonBorder,
-          buttonText
-        )}
-        style={{ boxShadow: loading ? 'none' : buttonGlow }}
-      >
-        {loading ? (
-          <>
-            <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
-            {buttonLabel}
-          </>
-        ) : (
-          buttonLabel
-        )}
-      </Button>
-    </div>
-  );
-}
 
 export function PrivacySettingsTab() {
   const { t } = useTranslation();
@@ -214,71 +132,74 @@ export function PrivacySettingsTab() {
 
   const cfg = CONFIRM_CONFIG[confirm.action];
 
+  const cards: (ActionCardProps & { key: string })[] = [
+    {
+      key: 'export',
+      icon: Download,
+      iconBg: 'bg-emerald-600',
+      iconColor: 'text-white',
+      glowColor: 'rgba(16,185,129,0.18)',
+      title: t('settings.privacy.exportData'),
+      description: t('settings.privacy.exportDataDescription'),
+      buttonLabel: t('settings.privacy.export'),
+      buttonBorder: 'border-emerald-500/50',
+      buttonText: 'text-emerald-400',
+      buttonGlow: '0 0 16px rgba(16,185,129,0.15)',
+      loading: !!busy.export,
+      onClick: () => void handleExport(),
+    },
+    {
+      key: 'import',
+      icon: Upload,
+      iconBg: 'bg-blue-600',
+      iconColor: 'text-white',
+      glowColor: 'rgba(59,130,246,0.18)',
+      title: t('settings.privacy.importData'),
+      description: t('settings.privacy.importDataDescription'),
+      buttonLabel: t('settings.privacy.import'),
+      buttonBorder: 'border-blue-500/50',
+      buttonText: 'text-blue-400',
+      buttonGlow: '0 0 16px rgba(59,130,246,0.15)',
+      loading: !!busy.import,
+      onClick: () => void handleImport(),
+    },
+    {
+      key: 'signOut',
+      icon: LogOut,
+      iconBg: 'bg-amber-600',
+      iconColor: 'text-white',
+      glowColor: 'rgba(245,158,11,0.18)',
+      title: t('settings.privacy.signOutAll'),
+      description: t('settings.privacy.signOutAllDescription'),
+      buttonLabel: t('settings.privacy.signOut'),
+      buttonBorder: 'border-amber-500/50',
+      buttonText: 'text-amber-400',
+      buttonGlow: '0 0 16px rgba(245,158,11,0.15)',
+      loading: !!busy.signOut,
+      onClick: () => setConfirm({ open: true, action: 'signOut' }),
+    },
+    {
+      key: 'clearInteractions',
+      icon: Trash2,
+      iconBg: 'bg-red-600',
+      iconColor: 'text-white',
+      glowColor: 'rgba(239,68,68,0.18)',
+      title: t('settings.privacy.clearHistory'),
+      description: t('settings.privacy.clearHistoryDescription'),
+      buttonLabel: t('settings.privacy.clear'),
+      buttonBorder: 'border-red-500/50',
+      buttonText: 'text-red-400',
+      buttonGlow: '0 0 16px rgba(239,68,68,0.15)',
+      loading: !!busy.clearInteractions,
+      onClick: () => setConfirm({ open: true, action: 'clearInteractions' }),
+    },
+  ];
+
   return (
     <div className="space-y-3">
-      {/* Export */}
-      <ActionCard
-        icon={Download}
-        iconBg="bg-emerald-600"
-        iconColor="text-white"
-        glowColor="rgba(16,185,129,0.18)"
-        title={t('settings.privacy.exportData')}
-        description={t('settings.privacy.exportDataDescription')}
-        buttonLabel={t('settings.privacy.export')}
-        buttonBorder="border-emerald-500/50"
-        buttonText="text-emerald-400"
-        buttonGlow="0 0 16px rgba(16,185,129,0.15)"
-        loading={!!busy.export}
-        onClick={() => void handleExport()}
-      />
-
-      {/* Import */}
-      <ActionCard
-        icon={Upload}
-        iconBg="bg-blue-600"
-        iconColor="text-white"
-        glowColor="rgba(59,130,246,0.18)"
-        title={t('settings.privacy.importData')}
-        description={t('settings.privacy.importDataDescription')}
-        buttonLabel={t('settings.privacy.import')}
-        buttonBorder="border-blue-500/50"
-        buttonText="text-blue-400"
-        buttonGlow="0 0 16px rgba(59,130,246,0.15)"
-        loading={!!busy.import}
-        onClick={() => void handleImport()}
-      />
-
-      {/* Sign Out */}
-      <ActionCard
-        icon={LogOut}
-        iconBg="bg-amber-600"
-        iconColor="text-white"
-        glowColor="rgba(245,158,11,0.18)"
-        title={t('settings.privacy.signOutAll')}
-        description={t('settings.privacy.signOutAllDescription')}
-        buttonLabel={t('settings.privacy.signOut')}
-        buttonBorder="border-amber-500/50"
-        buttonText="text-amber-400"
-        buttonGlow="0 0 16px rgba(245,158,11,0.15)"
-        loading={!!busy.signOut}
-        onClick={() => setConfirm({ open: true, action: 'signOut' })}
-      />
-
-      {/* Clear History */}
-      <ActionCard
-        icon={Trash2}
-        iconBg="bg-red-600"
-        iconColor="text-white"
-        glowColor="rgba(239,68,68,0.18)"
-        title={t('settings.privacy.clearHistory')}
-        description={t('settings.privacy.clearHistoryDescription')}
-        buttonLabel={t('settings.privacy.clear')}
-        buttonBorder="border-red-500/50"
-        buttonText="text-red-400"
-        buttonGlow="0 0 16px rgba(239,68,68,0.15)"
-        loading={!!busy.clearInteractions}
-        onClick={() => setConfirm({ open: true, action: 'clearInteractions' })}
-      />
+      {cards.map(({ key, ...card }) => (
+        <ActionCard key={key} {...card} />
+      ))}
 
       {/* ── Danger Zone ─────────────────────────────────────────────── */}
       <div className="mt-2 rounded-xl border border-rose-700/40 bg-rose-950/20 p-3">

@@ -6,7 +6,7 @@ import {
   generateResume,
   type GenerationMeta,
   type GenerationMode,
-} from '@/lib/generate-ai';
+} from '@/lib/generate';
 
 type AIGenerateStage = 'idle' | 'extracting' | 'configuring' | 'generating' | 'done';
 

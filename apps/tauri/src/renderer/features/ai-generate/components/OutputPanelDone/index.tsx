@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 
 import { Button, cn, TextArea } from '@ajh/ui';
 
-import { buildFilename, type GenerationMeta, MODES, type TemplateId } from '@/lib/generate-ai';
+import { buildFilename, type GenerationMeta, MODES, type TemplateId } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 
 import { ExportModal } from '../ExportModal';
