@@ -435,16 +435,17 @@ enforces ownership (e.g. `AJH_DATA_DIR` is grep-banned outside `platform/config.
 
 ## Anti-Patterns to Avoid
 
-| Anti-Pattern                                     | Correct Approach                                                      |
-| ------------------------------------------------ | --------------------------------------------------------------------- |
-| `useState + useEffect` for IPC data              | React Query service hook                                              |
-| `window.__TAURI_INVOKE__` directly               | `useAppClient()` service hook                                         |
-| `import { useTranslation } from "react-i18next"` | `import { useTranslation } from "@/lib/i18n"`                         |
-| Cross-feature imports                            | Only import from `@ajh/ui`, `services/`, `lib/`                       |
-| `// eslint-disable` comment                      | Fix the underlying issue or add a scoped `eslint.config.mjs` override |
-| Inline `{ duration: 0.2, ease: "easeOut" }`      | `transition.fast` from `@/lib/motion`                                 |
-| Hardcoded colors in className                    | `text-brand`, `bg-brand`, etc.                                        |
-| Storing credentials in SQLite                    | OS keychain via `client.credentials`                                  |
-| Reading `AJH_DATA_DIR` / rebuilding `~/.ajh`     | `platform::config::data_dir()`                                        |
-| `reqwest::Client::new()` / `::builder()`         | `net::http::shared()` or `net::http::build_client()`                  |
-| `Result<_, String>` for fallible internals       | `AppResult<_>` / `AppError` from `crate::error`                       |
+| Anti-Pattern                                     | Correct Approach                                                                              |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `useState + useEffect` for IPC data              | React Query service hook                                                                      |
+| `window.__TAURI_INVOKE__` directly               | `useAppClient()` service hook                                                                 |
+| `import { useTranslation } from "react-i18next"` | `import { useTranslation } from "@/lib/i18n"`                                                 |
+| Cross-feature imports                            | Only import from `@ajh/ui`, `services/`, `lib/`                                               |
+| `// eslint-disable` comment                      | Fix the underlying issue or add a scoped `eslint.config.mjs` override                         |
+| Inline `{ duration: 0.2, ease: "easeOut" }`      | `transition.fast` from `@/lib/motion`                                                         |
+| Hardcoded colors in className                    | `text-brand`, `bg-brand`, etc.                                                                |
+| Storing credentials in SQLite                    | OS keychain via `client.credentials`                                                          |
+| Reading `AJH_DATA_DIR` / rebuilding `~/.ajh`     | `platform::config::data_dir()`                                                                |
+| Per-page `?` that aborts a partial scrape        | First-page error propagates as `Err`; a later page logs + `break`s, keeping the partial (P10) |
+| `reqwest::Client::new()` / `::builder()`         | `net::http::shared()` or `net::http::build_client()`                                          |
+| `Result<_, String>` for fallible internals       | `AppResult<_>` / `AppError` from `crate::error`                                               |

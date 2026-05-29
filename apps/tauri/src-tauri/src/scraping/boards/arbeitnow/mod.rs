@@ -61,12 +61,20 @@ impl Scraper for ArbeitnowScraper {
                 break;
             }
 
-            let data = fetch_json::<Resp>(
+            let data = match fetch_json::<Resp>(
                 &format!("https://www.arbeitnow.com/api/job-board-api?page={}", page),
                 Default::default(),
                 ctx.signal.clone(),
             )
-            .await?;
+            .await
+            {
+                Ok(d) => d,
+                Err(e) if out.is_empty() => return Err(e),
+                Err(e) => {
+                    log::warn!("[arbeitnow] page {page} failed: {e}; returning {} collected", out.len());
+                    break;
+                }
+            };
 
             let (jobs, has_next) = match data {
                 Some(d) => (d.data, d.links.and_then(|l| l.next).is_some()),

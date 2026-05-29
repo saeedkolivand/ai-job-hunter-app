@@ -1,6 +1,6 @@
 # Architecture Standardization Roadmap — AI Job Hunter
 
-Status: **Proposed** · Owner: core · Last updated: 2026-05-28
+Status: **Phases 1–6 shipped** · Owner: core · Last updated: 2026-05-29
 
 This document is the source of truth for transforming the codebase from a set of
 independently-built features into a **platform architecture**: centralized
@@ -283,6 +283,16 @@ retriable}` IPC envelope + normalizing the `-> Value`+`{error}` command contract
   must compile-fail until registered (exhaustive match on `BoardId`).
 
 ### Phase 6 — Failure-domain isolation audit (M, medium risk)
+
+> **Status: in review** (branch `refactor/phase6-failure-isolation`). Audit:
+> per-board scrape jobs, the autopilot apply loop, and per-item ingestion were
+> already isolated. Fixed the real gap — every paginated scraper aborted the whole
+> board on one page's `?` (discarding already-collected/streamed pages). Now each
+> page loop propagates a first-page error (genuine failure) but logs + breaks with
+> the partial on a later-page error; arbeitsagentur/workday also skip (not abort)
+> on a single job's detail-fetch failure. 8 scrapers updated. No automated test
+> (needs an HTTP/browser mock harness); convention documented in PATTERNS.md.
+> **This completes the program (Phases 1–6).**
 
 - **Goal:** guarantee one unit failing never aborts a batch (P10).
 - **Scope:** audit multi-board search, autopilot batch apply, ingestion/parsing
