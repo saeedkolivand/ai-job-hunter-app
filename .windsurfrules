@@ -102,4 +102,4 @@ Renderer → main: `window.api.*` only (via `AppClient` context → service hook
 ## Commit conventions
 
 `feat:` → minor release · `fix:`/`perf:` → patch · `BREAKING CHANGE` footer → major
-`refactor:`, `docs:`, `chore:`, `ci:`, `test:` → no release. Subject must be lowercase.
+`refactor:`, `docs:`, `chore:`, `ci:`, `test:` → no release. Subject must be lowercase (commitlint `subject-case`) — lowercase acronyms too (`url`, `api`, `docx`); subject ≤ 100 chars, body lines ≤ 200.
