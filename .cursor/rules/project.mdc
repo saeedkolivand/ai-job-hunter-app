@@ -89,4 +89,4 @@ If branch gone: `rtk git checkout main && rtk git pull origin main`.
 ## Commit conventions
 
 `feat:` minor · `fix:`/`perf:` patch · `BREAKING CHANGE` major · everything else: no release.
-Subject must be lowercase. Never tag manually or edit CHANGELOG.md.
+Subject must be lowercase (commitlint `subject-case`) — lowercase acronyms too (`url`, `api`, `docx`); subject ≤ 100 chars, body lines ≤ 200. Never tag manually or edit CHANGELOG.md.
