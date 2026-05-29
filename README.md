@@ -7,7 +7,7 @@
 > Your local-first, AI-native desktop assistant for intelligent job searching, resume generation, and automated applications — run it fully offline with Ollama, or plug in your own OpenAI, Anthropic, or Gemini key.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v0.23.1-e24b4a)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases)
+[![Release](https://img.shields.io/badge/release-v0.23.2-e24b4a)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases)
 [![Live site](https://img.shields.io/badge/Live-site-e24b4a)](https://saeedkolivand.github.io/ai-job-hunter-assistant-app/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/pulls)
