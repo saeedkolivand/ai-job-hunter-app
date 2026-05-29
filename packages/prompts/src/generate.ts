@@ -151,8 +151,9 @@ function isProfileUrl(url: string): boolean {
 /**
  * Derive a friendly label from a URL — mirrors the Rust url_label() in links.rs.
  * Used when a PDF annotation stores the raw URL as its anchor text instead of a label.
+ * Exported for the cross-language parity test against Rust url_label().
  */
-function urlToFriendlyLabel(url: string): string {
+export function urlToFriendlyLabel(url: string): string {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
     if (host.startsWith('linkedin.com')) return 'LinkedIn';
@@ -170,8 +171,10 @@ function urlToFriendlyLabel(url: string): string {
     if (host.startsWith('figma.com')) return 'Figma';
     if (host.startsWith('npmjs.com')) return 'npm';
     if (host.startsWith('crates.io')) return 'crates.io';
-    // Unknown: use bare domain without TLD as fallback label
-    return host.split('.')[0] ?? host;
+    // Unknown domain: the bare host (www-stripped, no path). Mirrors the Rust
+    // url_label() fallback exactly so the two implementations cannot drift — see
+    // the parity test (fixtures/url-labels.json, cargo test export::links).
+    return host;
   } catch {
     return url;
   }
@@ -184,25 +187,74 @@ interface ParsedResumeLinks {
   cleanEmail: string;
 }
 
+/** Generic label for a single non-platform personal site / portfolio URL. */
+const WEBSITE_LABEL = 'Website';
+
+interface LinkBlockEntry {
+  anchor: string;
+  url: string;
+}
+
 /**
- * Build a label→url map for all profile links in the extracted reference block.
- * Used for post-processing: replacing plain labels with [label](url) markdown.
+ * Parse the `\n---\n` markdown reference block (appended by the Rust extractor)
+ * into raw `[anchor](url)` entries, in document order. Returns [] when absent.
  */
-export function getLinkMap(resume: string): Record<string, string> {
+function parseLinkBlock(resume: string): LinkBlockEntry[] {
   const sep = resume.lastIndexOf('\n---\n');
-  if (sep === -1) return {};
+  if (sep === -1) return [];
   const block = resume.slice(sep + 5);
-  const map: Record<string, string> = {};
+  const entries: LinkBlockEntry[] = [];
   for (const l of block.split('\n')) {
     if (!l.startsWith('- [')) continue;
     const m = l.match(/^- \[([^\]]+)\]\(([^)]+)\)$/);
     if (!m) continue;
     const anchor = m[1] ?? '';
-    const url = m[2];
-    if (!anchor || !url || url.startsWith('mailto:') || !isProfileUrl(url)) continue;
-    // Normalise: PDFs often store the raw URL as the anchor text instead of a label.
-    // Derive a friendly label (e.g. "LinkedIn") so injection matches what the AI writes.
-    const label = /^https?:\/\//i.test(anchor) ? urlToFriendlyLabel(anchor) : anchor;
+    const url = m[2] ?? '';
+    if (anchor && url) entries.push({ anchor, url });
+  }
+  return entries;
+}
+
+/**
+ * Resolve the reference block into ordered contact links for the header line.
+ *
+ * Every known platform link keeps its brand label. In addition, the FIRST
+ * non-platform http(s) URL is admitted ONCE under a generic "Website" label —
+ * this is the website/portfolio fix: previously such URLs were dropped wholesale
+ * by the PROFILE_DOMAINS allowlist. Subsequent non-platform URLs are still
+ * dropped, so a single header-scoped site is surfaced without letting arbitrary
+ * inline body URLs leak in. `mailto:` is excluded here (handled separately as the
+ * clean email).
+ *
+ * Both getLinkMap() (post-generation injection) and parseLinksFromResume()
+ * (prompt instruction) build on this, so the label the AI is told to write and
+ * the label injection later looks for can never drift.
+ */
+function resolveContactLinks(resume: string): { label: string; url: string }[] {
+  const out: { label: string; url: string }[] = [];
+  let websiteAdmitted = false;
+  for (const { anchor, url } of parseLinkBlock(resume)) {
+    if (url.startsWith('mailto:')) continue;
+    if (isProfileUrl(url)) {
+      // PDFs often store the raw URL as the anchor; derive the friendly label
+      // (e.g. "LinkedIn") so injection matches what the AI writes.
+      const label = /^https?:\/\//i.test(anchor) ? urlToFriendlyLabel(anchor) : anchor;
+      out.push({ label, url });
+    } else if (!websiteAdmitted && /^https?:\/\//i.test(url)) {
+      out.push({ label: WEBSITE_LABEL, url });
+      websiteAdmitted = true;
+    }
+  }
+  return out;
+}
+
+/**
+ * Build a label→url map for the contact links in the extracted reference block.
+ * Used for post-processing: replacing plain labels with [label](url) markdown.
+ */
+export function getLinkMap(resume: string): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const { label, url } of resolveContactLinks(resume)) {
     map[label] = url;
   }
   return map;
@@ -242,27 +294,15 @@ export function injectLinksIntoGeneratedText(
  * post-generation by injectLinksIntoGeneratedText().
  */
 export function parseLinksFromResume(resume: string): ParsedResumeLinks {
-  const sep = resume.lastIndexOf('\n---\n');
-  if (sep === -1) return { block: '', cleanEmail: '' };
-  const block = resume.slice(sep + 5);
-  const lines = block.split('\n').filter((l) => l.startsWith('- ['));
+  const entries = parseLinkBlock(resume);
+  if (!entries.length) return { block: '', cleanEmail: '' };
 
-  let cleanEmail = '';
-  const labelEntries: string[] = [];
+  const mailto = entries.find((e) => e.url.startsWith('mailto:'));
+  const cleanEmail = mailto ? mailto.url.slice('mailto:'.length) : '';
 
-  for (const l of lines) {
-    const m = l.match(/^- \[([^\]]+)\]\(([^)]+)\)$/);
-    if (!m) continue;
-    const anchor = m[1] ?? '';
-    const url = m[2];
-    if (!url) continue;
-    if (url.startsWith('mailto:')) {
-      cleanEmail = url.slice('mailto:'.length);
-      continue;
-    }
-    if (!isProfileUrl(url)) continue;
-    labelEntries.push(anchor);
-  }
+  // Exactly the labels (platform brands + one "Website") getLinkMap() will inject,
+  // so the AI is instructed to write the same short labels we later hyperlink.
+  const labelEntries = resolveContactLinks(resume).map((e) => e.label);
 
   if (!labelEntries.length && !cleanEmail) return { block: '', cleanEmail: '' };
 
@@ -274,7 +314,7 @@ export function parseLinksFromResume(resume: string): ParsedResumeLinks {
     parts.push(
       `CANDIDATE PROFILE LINKS — write ONLY these short labels in the contact line (NOT the full URL):\n` +
         labelEntries.join(', ') +
-        `\nExample: Haarlem, Netherlands | milanbehnam97@gmail.com | +31... | LinkedIn | GitHub`
+        `\nExample: Haarlem, Netherlands | name@example.com | +31... | LinkedIn | GitHub | Website`
     );
   }
 
