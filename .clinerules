@@ -37,6 +37,8 @@ git push origin HEAD
 
 Conventional commit prefixes: `feat:` `fix:` `perf:` `refactor:` `docs:` `chore:` `ci:` `test:`
 
+Commit subject must be lowercase (commitlint `subject-case`) — lowercase acronyms too (`url`, `api`, `docx`). Subject ≤ 100 chars; body lines ≤ 200.
+
 **Before starting any work, verify the current branch still exists on the remote:**
 ```bash
 git fetch origin
