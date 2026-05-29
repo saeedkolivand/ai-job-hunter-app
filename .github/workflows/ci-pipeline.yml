@@ -344,6 +344,8 @@ jobs:
 
       - name: 🦀 Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - name: 🐧 Install Linux Dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
@@ -357,13 +359,38 @@ jobs:
           workspaces: apps/tauri/src-tauri
           cache-on-failure: true
 
-      - name: 🧪 Run Tests
+      - name: 🧪 Run Tests + Coverage
         id: js-tests
         continue-on-error: true
         run: |
-          echo "::group::Running tests"
-          pnpm test
+          echo "::group::Running tests with coverage"
+          set -o pipefail
+          pnpm test:coverage 2>&1 | tee coverage-output.txt
           echo "::endgroup::"
+
+      - name: 📊 Coverage Table → Job Summary
+        if: always()
+        run: |
+          {
+            echo "## 🧪 Test Coverage"
+            echo ""
+            if [ -f coverage-output.txt ]; then
+              # Compact summary (Statements/Branches/Functions/Lines totals).
+              echo '```'
+              awk '/Coverage summary/{p=1} p; /^={10,}$/{if(p)c++} c>=2{exit}' coverage-output.txt
+              echo '```'
+              echo ""
+              echo "<details><summary>Per-file coverage report</summary>"
+              echo ""
+              echo '```'
+              awk '/Coverage report from v8/{p=1} p && /\|/' coverage-output.txt
+              echo '```'
+              echo ""
+              echo "</details>"
+            else
+              echo "_Coverage report not generated._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 🦀 Cargo Test
         id: rust-tests
@@ -374,10 +401,36 @@ jobs:
           cargo test --all-features
           echo "::endgroup::"
 
+      # Coverage reporting only — never gates the build (test pass/fail is owned
+      # by the Cargo Test step above).
+      - name: 🦀 Install cargo-llvm-cov
+        if: always()
+        continue-on-error: true
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: 📊 Rust Coverage → Job Summary
+        if: always()
+        continue-on-error: true
+        working-directory: apps/tauri/src-tauri
+        run: |
+          if cargo llvm-cov --all-features --summary-only 2>&1 | tee rust-coverage.txt; then
+            {
+              echo "## 🦀 Rust Coverage"
+              echo ""
+              echo '```'
+              cat rust-coverage.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "_Rust coverage report unavailable._" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: ❌ Check for Test Failures
         if: steps.js-tests.outcome == 'failure' || steps.rust-tests.outcome == 'failure'
         run: |
-          echo "::error::Tests failed. Run 'pnpm test' locally to reproduce."
+          echo "::error::Tests or coverage thresholds failed. Run 'pnpm test:coverage' locally to reproduce."
           echo "::error::Check the test output above for specific failures."
           exit 1
 
