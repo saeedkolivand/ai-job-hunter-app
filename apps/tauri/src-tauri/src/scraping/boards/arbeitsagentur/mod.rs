@@ -112,7 +112,7 @@ impl Scraper for ArbeitsagenturScraper {
                 .collect::<Vec<_>>()
                 .join("&");
 
-            let list = fetch_json::<ListResp>(
+            let list = match fetch_json::<ListResp>(
                 &format!("{}/jobs?{}", API_BASE, query_string),
                 super::super::http::FetchOptions {
                     headers: Some(vec![
@@ -124,7 +124,15 @@ impl Scraper for ArbeitsagenturScraper {
                 },
                 ctx.signal.clone(),
             )
-            .await?;
+            .await
+            {
+                Ok(l) => l,
+                Err(e) if out.is_empty() => return Err(e),
+                Err(e) => {
+                    log::warn!("[arbeitsagentur] page {page} failed: {e}; returning {} collected", out.len());
+                    break;
+                }
+            };
 
             let items = list.and_then(|l| l.stellenangebote).unwrap_or_default();
 
@@ -145,7 +153,7 @@ impl Scraper for ArbeitsagenturScraper {
 
                 let hash = j.hash_id.clone().unwrap_or_else(|| self.to_base64_url(&j.refnr));
 
-                let detail = fetch_json::<DetailResp>(
+                let detail = match fetch_json::<DetailResp>(
                     &format!("{}/jobdetails/{}", API_BASE, urlencoding::encode(&hash)),
                     super::super::http::FetchOptions {
                         headers: Some(vec![
@@ -156,7 +164,15 @@ impl Scraper for ArbeitsagenturScraper {
                     },
                     ctx.signal.clone(),
                 )
-                .await?;
+                .await
+                {
+                    Ok(d) => d,
+                    // One job's detail fetch failing must not abort the batch — skip it.
+                    Err(e) => {
+                        log::warn!("[arbeitsagentur] detail {} failed: {e}; skipping", j.refnr);
+                        continue;
+                    }
+                };
 
                 let description = detail.as_ref()
                     .and_then(|d| {

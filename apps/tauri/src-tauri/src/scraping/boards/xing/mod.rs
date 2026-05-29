@@ -47,12 +47,25 @@ impl Scraper for XingScraper {
                 page + 1
             );
 
-            let res = client.get(&url).send().await?;
-            if !res.status().is_success() {
-                break;
+            let html = match async {
+                let res = client.get(&url).send().await?;
+                if !res.status().is_success() {
+                    // Non-success status → stop paginating (not an error).
+                    return anyhow::Ok(None);
+                }
+                board_login::touch_session(&data_dir, "xing");
+                anyhow::Ok(Some(res.text().await?))
             }
-            board_login::touch_session(&data_dir, "xing");
-            let html = res.text().await?;
+            .await
+            {
+                Ok(Some(html)) => html,
+                Ok(None) => break,
+                Err(e) if out.is_empty() => return Err(e),
+                Err(e) => {
+                    log::warn!("[xing] page {page} failed: {e}; returning {} collected", out.len());
+                    break;
+                }
+            };
 
             // Sync parse — `scraper::Html` is !Send.
             let page_postings = parse_xing_page(&html, &mut seen);

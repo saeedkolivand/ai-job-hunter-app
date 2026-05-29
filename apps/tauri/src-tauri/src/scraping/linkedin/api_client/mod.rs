@@ -247,7 +247,19 @@ impl LinkedInJobsApiClient {
             let mut search_params = params.clone();
             search_params.start = start;
 
-            let jobs = self.search_guest(&search_params, signal).await?;
+            let jobs = match self.search_guest(&search_params, signal).await {
+                Ok(jobs) => jobs,
+                // First page failed → nothing collected → propagate as a real failure.
+                Err(e) if all_jobs.is_empty() => return Err(e),
+                // A later page failed → keep the pages we already have (and streamed).
+                Err(e) => {
+                    log::warn!(
+                        "[linkedin] page {page} failed: {e}; returning {} collected",
+                        all_jobs.len()
+                    );
+                    break;
+                }
+            };
 
             for job in &jobs {
                 let job_id = job.external_id.clone().unwrap_or_else(|| job.id.clone());
