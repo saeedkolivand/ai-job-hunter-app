@@ -226,3 +226,92 @@ fn centered_template_resume_pdf_is_generated() {
         bytes.len()
     );
 }
+
+/// Dev tool (ignored): write legacy-vs-engine sample resume PDFs for every
+/// template to `target/sample_pdfs/`, so the canonical layout engine's output
+/// can be eyeballed against the legacy renderer before the `layout_pdf` flag is
+/// flipped to default. Both backends are compiled regardless of the feature, so
+/// no special build is needed. Run with:
+///
+/// ```text
+/// cargo test -p ajh-tauri -- --ignored dump_sample_resume_pdfs --nocapture
+/// ```
+///
+/// Output files: `<template>_legacy.pdf` / `<template>_engine.pdf` (+ an ATS pair
+/// for the two-column template) under `apps/tauri/src-tauri/target/sample_pdfs/`.
+#[test]
+#[ignore = "dev tool: writes sample PDFs to target/sample_pdfs for visual review"]
+fn dump_sample_resume_pdfs() {
+    use std::fs;
+    use std::path::Path;
+
+    use super::super::types::TemplateId;
+
+    const SAMPLE: &str = "\
+Jane Doe
+jane@example.com | +1 555 0100 | [LinkedIn](https://linkedin.com/in/janedoe) | https://janedoe.dev
+
+Senior software engineer with a decade building reliable, user-facing web
+applications end to end across startups and scale-ups.
+
+EXPERIENCE
+Acme Corp  2020 - Present
+Senior Software Engineer
+- Led a team of five engineers delivering the core billing platform
+- Shipped three major features that grew activation by 24%
+- Cut p95 API latency from 800ms to 180ms via caching and query work
+
+Globex Inc  2017 - 2020
+Software Engineer
+- Built the public REST API now serving two million requests per day
+- Mentored four junior engineers through onboarding
+
+SKILLS
+- Rust, TypeScript, React, PostgreSQL
+- AWS, Docker, Kubernetes, CI/CD
+
+EDUCATION
+State University  2013 - 2017
+BSc Computer Science
+
+LANGUAGES
+- English (native), Spanish (professional)
+";
+
+    let templates = [
+        TemplateId::Classic,
+        TemplateId::Modern,
+        TemplateId::Executive,
+        TemplateId::EditorialSerif,
+        TemplateId::SwissMinimal,
+        TemplateId::TwoColumn,
+        TemplateId::MonoTechnical,
+        TemplateId::RefinedExecutive,
+        TemplateId::Academic,
+    ];
+
+    let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/sample_pdfs");
+    fs::create_dir_all(&out).expect("create target/sample_pdfs");
+
+    for id in templates {
+        let template = Template::get(id);
+        let slug = format!("{id:?}").to_lowercase();
+
+        let legacy = generate_resume_pdf(SAMPLE, None, &template, false).expect("legacy pdf");
+        fs::write(out.join(format!("{slug}_legacy.pdf")), &legacy).expect("write legacy pdf");
+
+        let engine = crate::export::layout_pdf::generate_resume_pdf(SAMPLE, None, &template, false)
+            .expect("engine pdf");
+        fs::write(out.join(format!("{slug}_engine.pdf")), &engine).expect("write engine pdf");
+    }
+
+    // One ATS pair on the two-column template to show single-column linearization.
+    let tc = Template::get(TemplateId::TwoColumn);
+    let legacy_ats = generate_resume_pdf(SAMPLE, None, &tc, true).expect("legacy ats pdf");
+    fs::write(out.join("twocolumn_legacy_ats.pdf"), &legacy_ats).expect("write legacy ats pdf");
+    let engine_ats = crate::export::layout_pdf::generate_resume_pdf(SAMPLE, None, &tc, true)
+        .expect("engine ats pdf");
+    fs::write(out.join("twocolumn_engine_ats.pdf"), &engine_ats).expect("write engine ats pdf");
+
+    eprintln!("wrote sample PDFs to apps/tauri/src-tauri/target/sample_pdfs/");
+}
