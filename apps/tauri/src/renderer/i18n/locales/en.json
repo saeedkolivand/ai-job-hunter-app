@@ -1295,6 +1295,7 @@
       "skipWarning": "AI features won't work without a model",
       "localTab": "Local (Ollama)",
       "cloudTab": "Cloud AI",
+      "cliTab": "CLI agents",
       "readyBadge": "Ollama ready",
       "systemPerformance": "System Performance",
       "ramLabel": "RAM",

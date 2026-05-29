@@ -12,11 +12,12 @@ import type { AiProvider } from '@/store/preferences-schema';
 import { useAIModel, usePreferencesStore } from '@/store/preferences-store';
 
 import { OnboardingStepWrapper } from '../../components/OnboardingStepWrapper';
+import { CliAgentPanel } from '../ollama/CliAgentPanel';
 import { CloudProviderPanel } from '../ollama/CloudProviderPanel';
 import { ModelSelectionPanel } from '../ollama/ModelSelectionPanel';
 import { OllamaCheckingState } from '../ollama/OllamaCheckingState';
 import { OllamaNotInstalled } from '../ollama/OllamaNotInstalled';
-import { TabSwitcher } from '../ollama/TabSwitcher';
+import { type TabMode, TabSwitcher } from '../ollama/TabSwitcher';
 
 const CLOUD_DEFAULT_MODELS: Record<string, string> = {
   openai: 'gpt-4o',
@@ -39,8 +40,10 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
   const setAiProviderConfig = usePreferencesStore((s) => s.setAiProviderConfig);
   const currentAIModel = useAIModel();
 
-  const [mode, setMode] = useState<'local' | 'cloud'>('local');
+  const [mode, setMode] = useState<TabMode>('local');
   const [cloudProvider, setCloudProvider] = useState<AiProvider>('openai');
+  const [cliProvider, setCliProvider] = useState<AiProvider>('claude-code');
+  const [cliModel, setCliModel] = useState<string>('');
   const [skipping, setSkipping] = useState(false);
 
   const { data: health, isLoading: healthLoading } = useSystemHealth();
@@ -50,7 +53,8 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
     [modelsRaw]
   );
 
-  const ollamaReady = (health as { ai?: { ready: boolean } } | undefined)?.ai?.ready ?? false;
+  const ollamaReady = health?.ai.ready ?? false;
+  const cliDetected = health?.cliAgents?.[cliProvider]?.detected ?? false;
 
   const [selectedModel, setSelectedModel] = useState<string>(
     currentAIModel?.defaultModel ?? getRecommended(8).name
@@ -87,6 +91,12 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
         activeProvider: cloudProvider,
         providers: { [cloudProvider]: { model: CLOUD_DEFAULT_MODELS[cloudProvider] ?? '' } },
       });
+    } else if (mode === 'cli') {
+      // CLI agents are keyless; an empty model uses the tool's own default.
+      setAiProviderConfig({
+        activeProvider: cliProvider,
+        providers: { [cliProvider]: { model: cliModel.trim() } },
+      });
     } else if (selectedModel) {
       setAIModel({ defaultModel: selectedModel, temperature: 0.7, maxTokens: 2048 });
       setAiProviderConfig({
@@ -107,7 +117,12 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
     queryClient.invalidateQueries({ queryKey: keys.ai.models });
   };
 
-  const canContinue = mode === 'cloud' ? true : ollamaReady && selectedInstalled && !tooHeavy;
+  const canContinue =
+    mode === 'cloud'
+      ? true
+      : mode === 'cli'
+        ? cliDetected
+        : ollamaReady && selectedInstalled && !tooHeavy;
 
   return (
     <OnboardingStepWrapper
@@ -153,6 +168,19 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
               key="cloud-panel"
               selectedProvider={cloudProvider}
               onProviderChange={setCloudProvider}
+            />
+          )}
+
+          {mode === 'cli' && (
+            <CliAgentPanel
+              key="cli-panel"
+              selectedProvider={cliProvider}
+              onProviderChange={(p) => {
+                setCliProvider(p);
+                setCliModel('');
+              }}
+              selectedModel={cliModel}
+              onModelChange={setCliModel}
             />
           )}
 

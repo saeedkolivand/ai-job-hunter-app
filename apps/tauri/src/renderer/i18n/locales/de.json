@@ -1295,6 +1295,7 @@
       "skipWarning": "KI-Funktionen sind ohne Modell nicht verfügbar",
       "localTab": "Lokal (Ollama)",
       "cloudTab": "Cloud-KI",
+      "cliTab": "CLI-Agenten",
       "readyBadge": "Ollama bereit",
       "systemPerformance": "Systemleistung",
       "ramLabel": "RAM",
