@@ -74,7 +74,7 @@ sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 pdf-extract = "0.10"
 zip = "8"
-docx-rs = "0.4.19"
+docx-rs = "0.4.20"
 printpdf = "0.9.1"
 lopdf = "0.40"
 
