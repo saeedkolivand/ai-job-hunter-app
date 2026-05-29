@@ -7,9 +7,19 @@
 > Your local-first, AI-native desktop assistant for intelligent job searching, resume generation, and automated applications — run it fully offline with Ollama, or plug in your own OpenAI, Anthropic, or Gemini key.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue)](https://www.typescriptlang.org/)
-[![Tauri](https://img.shields.io/badge/Tauri-2.x-purple)](https://tauri.app)
+[![Release](https://img.shields.io/github/v/release/saeedkolivand/ai-job-hunter-assistant-app?color=e24b4a)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases)
 [![Live site](https://img.shields.io/badge/Live-site-e24b4a)](https://saeedkolivand.github.io/ai-job-hunter-assistant-app/)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/pulls)
+
+[![Tauri](https://img.shields.io/badge/Tauri-2.x-24C8DB?logo=tauri&logoColor=white)](https://tauri.app)
+[![Rust](https://img.shields.io/badge/Rust-stable-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
+[![TailwindCSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![pnpm](https://img.shields.io/badge/pnpm-11-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
+[![Ollama](https://img.shields.io/badge/Ollama-local-000000?logo=ollama&logoColor=white)](https://ollama.com/)
 
 ---
 
