@@ -17,6 +17,7 @@
  *   apps/tauri/src-tauri/Cargo.toml       — [package] version
  *   apps/tauri/package.json               — version
  *   package.json                          — version
+ *   README.md                             — static release badge version
  */
 
 'use strict';
@@ -63,3 +64,21 @@ const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, 'utf8'));
 rootPkg.version = version;
 fs.writeFileSync(rootPkgPath, JSON.stringify(rootPkg, null, 2) + '\n');
 console.log(`package.json → version=${version}`);
+
+// ── README.md release badge ──────────────────────────────────────────────────
+//
+// The release badge is a STATIC shields.io badge (img.shields.io/badge/...) so
+// it never calls the GitHub API — the dynamic /github/v/release endpoint
+// intermittently renders "Unable to select next GitHub token from pool" when
+// shields' shared token pool is rate-limited. We keep it accurate by rewriting
+// the version here on every release. Matches: release-v<version>-<6-hex-color>.
+
+const readmePath = path.join(root, 'README.md');
+const readme = fs.readFileSync(readmePath, 'utf8');
+const badgeRe = /(img\.shields\.io\/badge\/release-v)[0-9][0-9.]*(-[0-9a-fA-F]{6})/;
+if (badgeRe.test(readme)) {
+  fs.writeFileSync(readmePath, readme.replace(badgeRe, `$1${version}$2`));
+  console.log(`README.md → release badge v${version}`);
+} else {
+  console.warn('README.md → release badge not found (skipped)');
+}
