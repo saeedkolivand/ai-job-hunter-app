@@ -602,8 +602,21 @@ pub fn generate_pdf(request: &ExportRequest) -> Result<Vec<u8>> {
         DocumentType::Resume => {
             let text = extract_section(&request.text, "### CANDIDATE RESUME ###", Some("### JOB ADVERTISEMENT ###"));
             let text = if text.is_empty() { &request.text } else { text };
-            generate_resume_pdf(text, request.meta.as_ref(), &template, request.ats_mode)
-                .context("Failed to generate resume PDF")
+            // Strangler-fig switch: the canonical layout engine path is gated behind
+            // the `layout_pdf` feature (on under --all-features / CI), the legacy
+            // renderer stays the default until snapshot parity is locked. Both arms
+            // are compiled so neither path rots.
+            let result = if cfg!(feature = "layout_pdf") {
+                super::layout_pdf::generate_resume_pdf(
+                    text,
+                    request.meta.as_ref(),
+                    &template,
+                    request.ats_mode,
+                )
+            } else {
+                generate_resume_pdf(text, request.meta.as_ref(), &template, request.ats_mode)
+            };
+            result.context("Failed to generate resume PDF")
         }
         DocumentType::CoverLetter => {
             let text = extract_section(&request.text, "### COMPLETE COVER LETTER ###", None);

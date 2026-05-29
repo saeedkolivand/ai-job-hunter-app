@@ -45,6 +45,9 @@ body::after{
 .dood-fill{fill:var(--line,#e7ecf3); stroke:none}
 .doodle{position:relative; filter:drop-shadow(2px 3px 0 rgba(0,0,0,.18))}
 .doodle svg{width:100%; height:auto; overflow:visible}
+/* Poking the guys (each click pops a speech bubble) must never highlight the SVG
+   or bubble text — disable selection on every doodle and its bubble. */
+.doodle, .bubble, .dc-text{user-select:none; -webkit-user-select:none; -webkit-touch-callout:none}
 
 /* speech bubble for clickable doodles */
 .bubble{

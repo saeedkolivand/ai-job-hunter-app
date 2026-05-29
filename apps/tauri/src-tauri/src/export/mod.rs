@@ -11,6 +11,7 @@
  */
 
 pub mod links;
+pub mod layout_pdf;
 pub mod parser;
 pub mod docx;
 pub mod docx_renderer;
