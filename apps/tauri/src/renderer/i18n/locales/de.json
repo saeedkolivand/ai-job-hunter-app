@@ -55,6 +55,7 @@
     "reAnalyse": "Erneut analysieren",
     "selectModel": "Bitte zuerst ein Modell auswählen",
     "addApiKey": "API-Schlüssel in Einstellungen hinzufügen",
+    "installCli": "CLI-Agent installieren",
     "pasteContent": "Lebenslauf & Stellenanzeige einfügen",
     "idleTitle": "Lebenslauf-Analysator",
     "idleSubtitle": "Lebenslauf und Stellenanzeige einfügen für eine vollständige KI-Analyse",
@@ -408,6 +409,7 @@
     "generating": "Generierung…",
     "selectModel": "Wählen Sie zuerst ein Modell",
     "addApiKey": "API-Schlüssel in Einstellungen hinzufügen",
+    "installCli": "CLI-Agent installieren",
     "pasteResumeJob": "Lebenslauf & Stellenanzeige einfügen",
     "continue": "Weiter",
     "yourAICareerCopilot": "Ihr KI-Karriere-Copilot",
@@ -492,6 +494,7 @@
       "copied": "Kopiert",
       "selectModel": "Wählen Sie zuerst ein KI-Modell",
       "addApiKey": "Fügen Sie zuerst einen API-Schlüssel hinzu",
+      "installCli": "CLI-Agent installieren",
       "failed": "Generierung fehlgeschlagen",
       "target": {
         "resume": "Lebenslauf",

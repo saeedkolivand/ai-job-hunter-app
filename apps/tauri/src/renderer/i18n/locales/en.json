@@ -55,6 +55,7 @@
     "reAnalyse": "Re-analyse",
     "selectModel": "Select a model first",
     "addApiKey": "Add API key in Settings",
+    "installCli": "Install the CLI agent",
     "pasteContent": "Paste resume & job ad",
     "idleTitle": "Resume Analyser",
     "idleSubtitle": "Paste your resume and a job ad to get a full AI analysis",
@@ -408,6 +409,7 @@
     "generating": "Generating…",
     "selectModel": "Select a model first",
     "addApiKey": "Add API key in Settings",
+    "installCli": "Install the CLI agent",
     "pasteResumeJob": "Paste resume & job ad",
     "continue": "Continue",
     "yourAICareerCopilot": "Your AI career copilot",
@@ -492,6 +494,7 @@
       "copied": "Copied",
       "selectModel": "Select an AI model first",
       "addApiKey": "Add an API key first",
+      "installCli": "Install the CLI agent",
       "failed": "Generation failed",
       "target": {
         "resume": "Resume",

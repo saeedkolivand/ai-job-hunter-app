@@ -2,13 +2,13 @@ import { Bot, CheckCircle2, Key, Loader2, RefreshCw, WifiOff } from 'lucide-reac
 
 import { Button } from '@ajh/ui';
 
+import type { ProviderMeta } from '@/lib/ai-providers/provider-meta';
 import type { AiProvider } from '@/store/preferences-schema';
 import type { Model } from '@/types';
 
 import { CliAgentConfig } from '../CliAgentConfig';
 import { CloudProviderConfig } from '../CloudProviderConfig';
 import { OllamaConfig } from '../OllamaConfig';
-import type { ProviderMeta } from '../provider-meta';
 
 interface Props {
   provider: AiProvider;

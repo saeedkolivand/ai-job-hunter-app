@@ -1,9 +1,8 @@
 import { Radio } from 'lucide-react';
 
+import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import type { AiProvider } from '@/store/preferences-schema';
 import { useAiProviderConfig } from '@/store/preferences-store';
-
-import { PROVIDERS } from '../provider-meta';
 
 /**
  * Surfaces the *actual* routing the backend will use — active provider, model,

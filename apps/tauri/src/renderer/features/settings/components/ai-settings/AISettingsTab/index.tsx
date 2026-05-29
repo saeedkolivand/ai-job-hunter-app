@@ -2,11 +2,11 @@ import { motion } from 'motion/react';
 
 import { GlassCard, transition } from '@ajh/ui';
 
+import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useTranslation } from '@/lib/i18n';
 
 import { ActiveProviderSwitcher } from '../ActiveProviderSwitcher';
 import { EmbeddingsSettings } from '../EmbeddingsSettings';
-import { PROVIDER_ORDER, PROVIDERS } from '../provider-meta';
 import { ProviderDebugBadge } from '../ProviderDebugBadge';
 import { ProviderRow } from '../ProviderRow';
 import { OllamaResourcesPanel } from './OllamaResourcesPanel';

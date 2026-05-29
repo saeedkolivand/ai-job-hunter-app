@@ -2,11 +2,10 @@ import { ExternalLink, Loader2 } from 'lucide-react';
 
 import { Button, Dropdown } from '@ajh/ui';
 
+import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useTranslation } from '@/lib/i18n';
 import type { AiProvider } from '@/store/preferences-schema';
 import { useAiProviderConfig, usePreferencesStore } from '@/store/preferences-store';
-
-import { PROVIDERS } from '../provider-meta';
 
 interface Props {
   provider: AiProvider;

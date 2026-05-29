@@ -3,6 +3,7 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 
 import { useNotification } from '@ajh/ui';
 
+import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useAppClient } from '@/providers/AppClientProvider';
 import {
   useAIModels,
@@ -18,8 +19,6 @@ import { keys } from '@/services/query-client';
 import type { AiProvider } from '@/store/preferences-schema';
 import { useAIModel, useAiProviderConfig, usePreferencesStore } from '@/store/preferences-store';
 import type { Model } from '@/types';
-
-import { PROVIDER_ORDER, PROVIDERS } from '../provider-meta';
 
 /** Provider key/model management for AISettingsTab: status, editing state, handlers. */
 export function useProviderKeys() {
