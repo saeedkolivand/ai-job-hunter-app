@@ -14,29 +14,29 @@
  */
 import type { AppClient } from '@/lib/app-client';
 
-import { ai } from './namespaces/ai.js';
-import { aiGenerations } from './namespaces/aiGenerations.js';
-import { apply } from './namespaces/apply.js';
-import { autopilot } from './namespaces/autopilot.js';
-import { boards } from './namespaces/boards.js';
-import { conversations } from './namespaces/conversations.js';
-import { credentials } from './namespaces/credentials.js';
-import { data } from './namespaces/data.js';
-import { dialog } from './namespaces/dialog.js';
-import { documents } from './namespaces/documents.js';
-import { geocode } from './namespaces/geocode.js';
-import { jobPreferences } from './namespaces/jobPreferences.js';
-import { jobs } from './namespaces/jobs.js';
-import { linkedin } from './namespaces/linkedin.js';
-import { match } from './namespaces/match.js';
-import { privacy } from './namespaces/privacy.js';
-import { resume } from './namespaces/resume.js';
-import { scrape } from './namespaces/scrape.js';
-import { search } from './namespaces/search.js';
-import { shortcuts } from './namespaces/shortcuts.js';
-import { support } from './namespaces/support.js';
-import { system } from './namespaces/system.js';
-import { updater } from './namespaces/updater.js';
+import { ai } from './namespaces/ai/index.js';
+import { aiGenerations } from './namespaces/aiGenerations/index.js';
+import { apply } from './namespaces/apply/index.js';
+import { autopilot } from './namespaces/autopilot/index.js';
+import { boards } from './namespaces/boards/index.js';
+import { conversations } from './namespaces/conversations/index.js';
+import { credentials } from './namespaces/credentials/index.js';
+import { data } from './namespaces/data/index.js';
+import { dialog } from './namespaces/dialog/index.js';
+import { documents } from './namespaces/documents/index.js';
+import { geocode } from './namespaces/geocode/index.js';
+import { jobPreferences } from './namespaces/jobPreferences/index.js';
+import { jobs } from './namespaces/jobs/index.js';
+import { linkedin } from './namespaces/linkedin/index.js';
+import { match } from './namespaces/match/index.js';
+import { privacy } from './namespaces/privacy/index.js';
+import { resume } from './namespaces/resume/index.js';
+import { scrape } from './namespaces/scrape/index.js';
+import { search } from './namespaces/search/index.js';
+import { shortcuts } from './namespaces/shortcuts/index.js';
+import { support } from './namespaces/support/index.js';
+import { system } from './namespaces/system/index.js';
+import { updater } from './namespaces/updater/index.js';
 
 export function createTauriInvokeClient(): AppClient {
   return {

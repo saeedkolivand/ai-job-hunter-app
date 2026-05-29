@@ -31,6 +31,12 @@ export default defineConfig({
       { find: '@ajh/shared/utils', replacement: resolve(sharedSrc, 'utils.ts') },
       { find: '@ajh/shared/ai-models', replacement: resolve(sharedSrc, 'ai-models.ts') },
       { find: '@ajh/shared', replacement: resolve(sharedSrc, 'index.ts') },
+      { find: '@ajh/prompts/generate', replacement: resolve(promptsSrc, 'generate.ts') },
+      { find: '@ajh/prompts/analyze', replacement: resolve(promptsSrc, 'analyze.ts') },
+      {
+        find: '@ajh/prompts/context-manager',
+        replacement: resolve(promptsSrc, 'context-manager.ts'),
+      },
       { find: '@ajh/prompts', replacement: resolve(promptsSrc, 'index.ts') },
       { find: '@ajh/ui', replacement: resolve(uiSrc, 'index.ts') },
       { find: '@', replacement: resolve(__dirname, 'src/renderer') },
