@@ -130,3 +130,6 @@ pub fn split_urls(text: &str) -> Vec<Span> {
 
     spans
 }
+
+#[cfg(test)]
+mod test;
