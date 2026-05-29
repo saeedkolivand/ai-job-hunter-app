@@ -266,3 +266,99 @@ fn every_template_lays_out_without_panicking() {
         );
     }
 }
+
+// ─── Two-column layout ────────────────────────────────────────────────────────
+
+/// First PlacedText anywhere in the document whose text equals `needle`.
+fn find_text<'a>(doc: &'a LaidOutDoc, needle: &str) -> Option<&'a PlacedText> {
+    doc.pages
+        .iter()
+        .flat_map(|p| p.texts.iter())
+        .find(|t| t.text == needle)
+}
+
+fn two_column_geometry() -> (f32, f32, Rgb) {
+    let t = Template::get(TemplateId::TwoColumn);
+    let tc = t.two_column.as_ref().unwrap();
+    let margin = t.margin_in * 25.4;
+    let content_w = 210.0 - 2.0 * margin;
+    let sidebar_w = content_w * tc.sidebar_width_ratio;
+    let main_left = margin + sidebar_w + 5.0; // COLUMN_GAP_MM
+    (margin, main_left, tc.sidebar_bg_color)
+}
+
+#[test]
+fn two_column_splits_sections_between_columns() {
+    let doc = sample_doc(TemplateId::TwoColumn);
+    let (margin, main_left, _) = two_column_geometry();
+
+    // EXPERIENCE is a main-column section → right of the gap.
+    let exp = find_text(&doc, "EXPERIENCE").expect("experience heading");
+    assert!(
+        exp.x_mm >= main_left - 0.5,
+        "experience should sit in the main column (>= {main_left}), got {}",
+        exp.x_mm
+    );
+
+    // SKILLS is a sidebar section (theme::placement_for) → left of the gap.
+    let skills = find_text(&doc, "SKILLS").expect("skills heading");
+    assert!(
+        skills.x_mm < main_left && skills.x_mm >= margin,
+        "skills should sit in the sidebar band, got {}",
+        skills.x_mm
+    );
+}
+
+#[test]
+fn two_column_draws_a_sidebar_band_at_the_left_margin() {
+    let doc = sample_doc(TemplateId::TwoColumn);
+    let (margin, _, bg) = two_column_geometry();
+    let band = doc.pages[0]
+        .fills
+        .iter()
+        .find(|f| f.color == bg)
+        .expect("sidebar band fill");
+    assert!(band.width_mm > 0.0 && band.height_mm > 0.0);
+    assert!(
+        (band.x_mm - margin).abs() < 0.01,
+        "band should start at the left margin ({margin}), got {}",
+        band.x_mm
+    );
+}
+
+#[test]
+fn two_column_header_spans_full_width_with_links() {
+    let doc = sample_doc(TemplateId::TwoColumn);
+    // Header (name + contact) is on page 0, full width.
+    assert!(find_text(&doc, "Jane Doe").is_some(), "name in header");
+    let urls: Vec<&str> = doc.pages[0].links.iter().map(|l| l.url.as_str()).collect();
+    assert!(urls.contains(&"https://linkedin.com/in/jane"), "{urls:?}");
+    assert!(urls.contains(&"mailto:jane@example.com"), "{urls:?}");
+}
+
+#[test]
+fn two_column_paginates_with_a_band_on_every_page() {
+    // Long main-column content forces multiple pages; each must carry a band.
+    let mut text = String::from("Jane Doe\njane@example.com\n\nEXPERIENCE\n");
+    for i in 0..70 {
+        text.push_str(&format!(
+            "Company {i}  2010 - 2020\nRole {i}\n- A sufficiently long bullet line describing the work done in detail here\n"
+        ));
+    }
+    text.push_str("\nSKILLS\n- Rust\n- TypeScript\n");
+    let model = model_from_resume_text(&text);
+    let doc = lay(&model, TemplateId::TwoColumn);
+
+    assert!(
+        doc.pages.len() >= 2,
+        "long two-column resume should paginate, got {} page(s)",
+        doc.pages.len()
+    );
+    let (_, _, bg) = two_column_geometry();
+    for (i, page) in doc.pages.iter().enumerate() {
+        assert!(
+            page.fills.iter().any(|f| f.color == bg),
+            "page {i} is missing its sidebar band"
+        );
+    }
+}

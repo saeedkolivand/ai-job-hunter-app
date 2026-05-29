@@ -8,19 +8,25 @@
 //! dates, link-rect placement — uses real glyph advances from [`MeasureText`]
 //! (the `measure/` layer), never a character-count estimate.
 //!
-//! Phase 2c introduces the engine for the **single-column** path with no
-//! consumer yet (additive, behind the module's `dead_code` allow, like the other
-//! migration foundations). True multi-page two-column layout is layered on in
-//! the next phase; the PDF backend is wired onto this — behind a feature flag,
-//! with golden-snapshot parity — after that.
+//! Both single-column and **true multi-page two-column** layouts are built from
+//! one shared [`Flow`] (a paginating column cursor): a single-column document is
+//! one full-width flow; a two-column document lays the header full width, then
+//! runs an independent sidebar flow and main flow and merges their pages,
+//! drawing the sidebar background band per page. Section → column assignment is
+//! the canonical [`theme::placement_for`] decision.
+//!
+//! There is no consumer yet (additive, behind the module's `dead_code` allow,
+//! like the other migration foundations). The PDF backend is wired onto this —
+//! behind a feature flag, with golden-snapshot parity — in the next phase.
 #![allow(dead_code)]
 
 use crate::export::templates::{SectionStyle, Template};
 use crate::export::types::FontFamily;
 use crate::locale::PageGeometry;
 use crate::measure::MeasureText;
-use crate::model::document::{Block, DocumentModel, EntryBlock, HeaderBlock, Section};
+use crate::model::document::{Block, DocumentModel, EntryBlock, HeaderBlock, Placement, Section};
 use crate::model::rich::{RichText, TextRun};
+use crate::theme;
 
 /// PostScript points per millimetre.
 const PT_PER_MM: f32 = 2.834_645_7;
@@ -35,6 +41,12 @@ const CONTACT_PT: f32 = 9.0;
 
 /// Right-aligned entry date font size (pt).
 const DATE_PT: f32 = 9.0;
+
+/// Gap between the sidebar and main columns, in mm.
+const COLUMN_GAP_MM: f32 = 5.0;
+
+/// Horizontal padding inside the sidebar band, in mm.
+const SIDEBAR_PAD_MM: f32 = 3.0;
 
 fn pt_to_mm(pt: f32) -> f32 {
     pt / PT_PER_MM
@@ -97,6 +109,16 @@ pub struct Page {
     pub rules: Vec<RuleLine>,
     pub texts: Vec<PlacedText>,
     pub links: Vec<LinkRect>,
+}
+
+impl Page {
+    /// Move every item from `other` into this page (used to merge column flows).
+    fn absorb(&mut self, other: Page) {
+        self.fills.extend(other.fills);
+        self.rules.extend(other.rules);
+        self.texts.extend(other.texts);
+        self.links.extend(other.links);
+    }
 }
 
 /// A fully laid-out document: fixed page geometry plus one display list per page.
@@ -257,31 +279,97 @@ fn place_line(
     }
 }
 
-// ─── The engine ───────────────────────────────────────────────────────────────
+// ─── Header (full width, page 0 only) ─────────────────────────────────────────
 
-/// Lay a resume [`DocumentModel`] onto `geom` using `template`'s styling and real
-/// font metrics, producing a single-column [`LaidOutDoc`].
-pub fn layout_document(
-    model: &DocumentModel,
-    template: &Template,
+/// A horizontal band a flow lays into: `left`..`right` on a page of `geom`.
+#[derive(Debug, Clone, Copy)]
+struct Frame {
+    left: f32,
+    right: f32,
     geom: PageGeometry,
-    m: &dyn MeasureText,
-) -> LaidOutDoc {
-    let mut engine = Engine::new(template, geom, m);
-    engine.lay_header(&model.header);
-    for section in &model.sections {
-        engine.lay_section(section);
-    }
-    engine.finish()
 }
 
-struct Engine<'a> {
+impl Frame {
+    fn width(&self) -> f32 {
+        self.right - self.left
+    }
+}
+
+fn rule_thickness(t: &Template) -> f32 {
+    if t.rule_thickness > 0.0 {
+        t.rule_thickness
+    } else {
+        0.5
+    }
+}
+
+/// Lay the header (name, contact line, accent rule) into `page`, advancing `y`.
+/// Spans the full content width (`frame`), so it is identical for single- and
+/// two-column layouts. Returns nothing; `*y` ends just below the rule.
+fn lay_header(
+    page: &mut Page,
+    y: &mut f32,
+    h: &HeaderBlock,
+    t: &Template,
+    frame: Frame,
+    m: &dyn MeasureText,
+) {
+    if !h.name.is_empty() {
+        let adv = m.advance_mm(&h.name, t.fonts.name_family, true, t.name_pt);
+        let x = if t.name_centered {
+            (frame.geom.width_mm - adv) / 2.0
+        } else {
+            frame.left
+        };
+        page.texts.push(PlacedText {
+            x_mm: x,
+            baseline_y_mm: *y,
+            text: h.name.clone(),
+            family: t.fonts.name_family,
+            bold: true,
+            italic: false,
+            size_pt: t.name_pt,
+            color: t.name_color,
+        });
+        *y += pt_to_mm(t.name_pt) * 1.2;
+    }
+
+    if !h.contact.is_empty() {
+        let fam = t.fonts.body_family;
+        let total = line_width(&h.contact, fam, CONTACT_PT, m);
+        let x = if t.name_centered {
+            (frame.geom.width_mm - total) / 2.0
+        } else {
+            frame.left
+        };
+        let style = LineStyle {
+            family: fam,
+            size_pt: CONTACT_PT,
+            normal: t.date_color,
+            bold: t.date_color,
+        };
+        place_line(page, &h.contact, x, *y, style, m);
+        *y += pt_to_mm(CONTACT_PT) * 1.2;
+    }
+
+    page.rules.push(RuleLine {
+        x1_mm: frame.left,
+        x2_mm: frame.right,
+        y_mm: *y,
+        thickness_pt: rule_thickness(t),
+        color: t.rule_color,
+    });
+    *y += pt_to_mm(9.0);
+}
+
+// ─── Flow: a paginating column cursor ─────────────────────────────────────────
+
+/// A single paginating column. Block-laying logic lives here so single-column
+/// (one full-width flow) and two-column (a sidebar flow + a main flow) share it.
+struct Flow<'a> {
     t: &'a Template,
     m: &'a dyn MeasureText,
-    geom: PageGeometry,
-    content_left: f32,
-    content_right: f32,
-    content_width: f32,
+    frame: Frame,
     top_baseline: f32,
     bottom_limit: f32,
     pages: Vec<Page>,
@@ -290,31 +378,27 @@ struct Engine<'a> {
     y: f32,
 }
 
-impl<'a> Engine<'a> {
-    fn new(t: &'a Template, geom: PageGeometry, m: &'a dyn MeasureText) -> Self {
+impl<'a> Flow<'a> {
+    /// New flow over `frame`, first baseline at `start_y`. `cur` is the page the
+    /// caller may have already drawn into (e.g. the header on page 0).
+    fn new(t: &'a Template, m: &'a dyn MeasureText, frame: Frame, start_y: f32, cur: Page) -> Self {
         let margin = t.margin_in * 25.4;
-        let top_baseline = pt_to_mm(TOP_MARGIN_PT);
         Self {
             t,
             m,
-            geom,
-            content_left: margin,
-            content_right: geom.width_mm - margin,
-            content_width: geom.width_mm - 2.0 * margin,
-            top_baseline,
-            bottom_limit: geom.height_mm - margin,
+            frame,
+            top_baseline: pt_to_mm(TOP_MARGIN_PT),
+            bottom_limit: frame.geom.height_mm - margin,
             pages: Vec::new(),
-            cur: Page::default(),
-            y: top_baseline,
+            cur,
+            y: start_y,
         }
     }
 
-    /// One body line's vertical advance in mm (point size × line spacing).
     fn body_line(&self) -> f32 {
         pt_to_mm(self.t.body_pt) * self.t.line_spacing
     }
 
-    /// True when placing `needed` more mm would cross the bottom margin.
     fn would_overflow(&self, needed: f32) -> bool {
         self.y + needed > self.bottom_limit
     }
@@ -324,64 +408,10 @@ impl<'a> Engine<'a> {
         self.y = self.top_baseline;
     }
 
-    fn rule_thickness(&self) -> f32 {
-        if self.t.rule_thickness > 0.0 {
-            self.t.rule_thickness
-        } else {
-            0.5
+    fn lay_sections(&mut self, sections: &[&Section]) {
+        for s in sections {
+            self.lay_section(s);
         }
-    }
-
-    fn lay_header(&mut self, h: &HeaderBlock) {
-        let t = self.t;
-        let m = self.m;
-
-        if !h.name.is_empty() {
-            let adv = m.advance_mm(&h.name, t.fonts.name_family, true, t.name_pt);
-            let x = if t.name_centered {
-                (self.geom.width_mm - adv) / 2.0
-            } else {
-                self.content_left
-            };
-            self.cur.texts.push(PlacedText {
-                x_mm: x,
-                baseline_y_mm: self.y,
-                text: h.name.clone(),
-                family: t.fonts.name_family,
-                bold: true,
-                italic: false,
-                size_pt: t.name_pt,
-                color: t.name_color,
-            });
-            self.y += pt_to_mm(t.name_pt) * 1.2;
-        }
-
-        if !h.contact.is_empty() {
-            let fam = t.fonts.body_family;
-            let total = line_width(&h.contact, fam, CONTACT_PT, m);
-            let x = if t.name_centered {
-                (self.geom.width_mm - total) / 2.0
-            } else {
-                self.content_left
-            };
-            let style = LineStyle {
-                family: fam,
-                size_pt: CONTACT_PT,
-                normal: t.date_color,
-                bold: t.date_color,
-            };
-            place_line(&mut self.cur, &h.contact, x, self.y, style, m);
-            self.y += pt_to_mm(CONTACT_PT) * 1.2;
-        }
-
-        self.cur.rules.push(RuleLine {
-            x1_mm: self.content_left,
-            x2_mm: self.content_right,
-            y_mm: self.y,
-            thickness_pt: self.rule_thickness(),
-            color: t.rule_color,
-        });
-        self.y += pt_to_mm(9.0);
     }
 
     fn lay_section(&mut self, s: &Section) {
@@ -417,7 +447,7 @@ impl<'a> Engine<'a> {
         };
 
         self.cur.texts.push(PlacedText {
-            x_mm: self.content_left,
+            x_mm: self.frame.left,
             baseline_y_mm: self.y,
             text,
             family: t.fonts.heading_family,
@@ -431,10 +461,10 @@ impl<'a> Engine<'a> {
         match t.section_style {
             SectionStyle::RuledBottom | SectionStyle::Underline => {
                 self.cur.rules.push(RuleLine {
-                    x1_mm: self.content_left,
-                    x2_mm: self.content_right,
+                    x1_mm: self.frame.left,
+                    x2_mm: self.frame.right,
                     y_mm: self.y,
-                    thickness_pt: self.rule_thickness(),
+                    thickness_pt: rule_thickness(t),
                     color: t.rule_color,
                 });
             }
@@ -456,11 +486,11 @@ impl<'a> Engine<'a> {
             normal: t.body_color,
             bold: t.emphasis_color,
         };
-        for line in wrap_runs(rt, self.content_width, fam, t.body_pt, m) {
+        for line in wrap_runs(rt, self.frame.width(), fam, t.body_pt, m) {
             if self.would_overflow(self.body_line()) {
                 self.new_page();
             }
-            place_line(&mut self.cur, &line, self.content_left, self.y, style, m);
+            place_line(&mut self.cur, &line, self.frame.left, self.y, style, m);
             self.y += self.body_line();
         }
         self.y += pt_to_mm(4.0);
@@ -471,8 +501,8 @@ impl<'a> Engine<'a> {
         let m = self.m;
         let fam = t.fonts.body_family;
         let indent = 4.0_f32;
-        let text_x = self.content_left + indent;
-        let wrap_w = (self.content_right - text_x).max(10.0);
+        let text_x = self.frame.left + indent;
+        let wrap_w = (self.frame.right - text_x).max(10.0);
         let style = LineStyle {
             family: fam,
             size_pt: t.body_pt,
@@ -485,7 +515,7 @@ impl<'a> Engine<'a> {
             }
             if i == 0 {
                 self.cur.texts.push(PlacedText {
-                    x_mm: self.content_left + 1.3,
+                    x_mm: self.frame.left + 1.3,
                     baseline_y_mm: self.y,
                     text: "•".to_string(),
                     family: fam,
@@ -517,11 +547,11 @@ impl<'a> Engine<'a> {
             normal: t.body_color,
             bold: t.emphasis_color,
         };
-        place_line(&mut self.cur, &e.title, self.content_left, self.y, style, m);
+        place_line(&mut self.cur, &e.title, self.frame.left, self.y, style, m);
         if let Some(date) = &e.date {
             let adv = m.advance_mm(date, fam, false, DATE_PT);
             self.cur.texts.push(PlacedText {
-                x_mm: self.content_right - adv,
+                x_mm: self.frame.right - adv,
                 baseline_y_mm: self.y,
                 text: date.clone(),
                 family: fam,
@@ -539,7 +569,7 @@ impl<'a> Engine<'a> {
             }
             let sub_text: String = sub.iter().map(|r| r.text.as_str()).collect();
             self.cur.texts.push(PlacedText {
-                x_mm: self.content_left,
+                x_mm: self.frame.left,
                 baseline_y_mm: self.y,
                 text: sub_text,
                 family: fam,
@@ -557,13 +587,159 @@ impl<'a> Engine<'a> {
         self.y += pt_to_mm(3.0);
     }
 
-    fn finish(mut self) -> LaidOutDoc {
-        self.pages.push(self.cur);
-        LaidOutDoc {
-            page_width_mm: self.geom.width_mm,
-            page_height_mm: self.geom.height_mm,
-            pages: self.pages,
+    /// Flush the in-progress page and return every page this flow produced.
+    fn into_pages(mut self) -> Vec<Page> {
+        self.pages.push(std::mem::take(&mut self.cur));
+        self.pages
+    }
+}
+
+// ─── Entry points ─────────────────────────────────────────────────────────────
+
+/// Lay a resume [`DocumentModel`] onto `geom` using `template`'s styling and real
+/// font metrics, producing a [`LaidOutDoc`]. Two-column when the template defines
+/// a two-column config, otherwise single-column.
+pub fn layout_document(
+    model: &DocumentModel,
+    template: &Template,
+    geom: PageGeometry,
+    m: &dyn MeasureText,
+) -> LaidOutDoc {
+    if template.two_column.is_some() {
+        layout_two_column(model, template, geom, m)
+    } else {
+        layout_single_column(model, template, geom, m)
+    }
+}
+
+fn layout_single_column(
+    model: &DocumentModel,
+    t: &Template,
+    geom: PageGeometry,
+    m: &dyn MeasureText,
+) -> LaidOutDoc {
+    let margin = t.margin_in * 25.4;
+    let frame = Frame {
+        left: margin,
+        right: geom.width_mm - margin,
+        geom,
+    };
+
+    let mut page0 = Page::default();
+    let mut y = pt_to_mm(TOP_MARGIN_PT);
+    lay_header(&mut page0, &mut y, &model.header, t, frame, m);
+
+    let mut flow = Flow::new(t, m, frame, y, page0);
+    for s in &model.sections {
+        flow.lay_section(s);
+    }
+
+    LaidOutDoc {
+        page_width_mm: geom.width_mm,
+        page_height_mm: geom.height_mm,
+        pages: flow.into_pages(),
+    }
+}
+
+fn layout_two_column(
+    model: &DocumentModel,
+    t: &Template,
+    geom: PageGeometry,
+    m: &dyn MeasureText,
+) -> LaidOutDoc {
+    let tc = t
+        .two_column
+        .as_ref()
+        .expect("layout_two_column requires a two-column config");
+    let margin = t.margin_in * 25.4;
+    let content_w = geom.width_mm - 2.0 * margin;
+    let sidebar_w = content_w * tc.sidebar_width_ratio;
+    let sidebar_left = margin;
+    let main_left = margin + sidebar_w + COLUMN_GAP_MM;
+
+    let full_frame = Frame {
+        left: margin,
+        right: geom.width_mm - margin,
+        geom,
+    };
+
+    // Header spans the full width on page 0.
+    let mut page0 = Page::default();
+    let mut y = pt_to_mm(TOP_MARGIN_PT);
+    lay_header(&mut page0, &mut y, &model.header, t, full_frame, m);
+    let header_bottom = y;
+
+    // Split sections by the canonical placement decision.
+    let mut main_sections: Vec<&Section> = Vec::new();
+    let mut sidebar_sections: Vec<&Section> = Vec::new();
+    for s in &model.sections {
+        match theme::placement_for(&s.id) {
+            Placement::Sidebar => sidebar_sections.push(s),
+            Placement::Main => main_sections.push(s),
         }
+    }
+
+    let sidebar_frame = Frame {
+        left: sidebar_left + SIDEBAR_PAD_MM,
+        right: sidebar_left + sidebar_w - SIDEBAR_PAD_MM,
+        geom,
+    };
+    let main_frame = Frame {
+        left: main_left,
+        right: geom.width_mm - margin,
+        geom,
+    };
+
+    let mut sidebar_flow = Flow::new(t, m, sidebar_frame, header_bottom, Page::default());
+    sidebar_flow.lay_sections(&sidebar_sections);
+    let sidebar_pages = sidebar_flow.into_pages();
+
+    let mut main_flow = Flow::new(t, m, main_frame, header_bottom, Page::default());
+    main_flow.lay_sections(&main_sections);
+    let main_pages = main_flow.into_pages();
+
+    // Merge page-for-page, drawing the sidebar band behind each page's columns.
+    let bottom_limit = geom.height_mm - margin;
+    let n = sidebar_pages.len().max(main_pages.len());
+    let mut main_it = main_pages.into_iter();
+    let mut side_it = sidebar_pages.into_iter();
+    let mut pages = Vec::with_capacity(n);
+
+    for i in 0..n {
+        let mut page = if i == 0 {
+            std::mem::take(&mut page0)
+        } else {
+            Page::default()
+        };
+        let band_top = if i == 0 {
+            header_bottom - pt_to_mm(t.body_pt)
+        } else {
+            pt_to_mm(TOP_MARGIN_PT) - pt_to_mm(t.body_pt)
+        };
+        // Band first so it sits behind the column text.
+        page.fills.insert(
+            0,
+            FillRect {
+                x_mm: sidebar_left,
+                y_top_mm: band_top,
+                width_mm: sidebar_w,
+                height_mm: (bottom_limit - band_top).max(0.0),
+                color: tc.sidebar_bg_color,
+            },
+        );
+        if let Some(mp) = main_it.next() {
+            page.absorb(mp);
+        }
+        if let Some(sp) = side_it.next() {
+            page.absorb(sp);
+        }
+        pages.push(page);
+    }
+
+    LaidOutDoc {
+        page_width_mm: geom.width_mm,
+        page_height_mm: geom.height_mm,
+        pages,
     }
 }
 
