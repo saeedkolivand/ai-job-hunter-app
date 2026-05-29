@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import urlLabels from './fixtures/url-labels.json';
 import {
   buildCoverLetterPrompt,
   buildCoverLetterSystemPrompt,
@@ -12,6 +13,7 @@ import {
   injectLinksIntoGeneratedText,
   MODES,
   parseLinksFromResume,
+  urlToFriendlyLabel,
   validateMetadata,
 } from './generate';
 
@@ -49,12 +51,31 @@ describe('MODES', () => {
 });
 
 describe('getLinkMap', () => {
-  it('maps profile labels to URLs and skips email + non-profile links', () => {
+  it('maps profile labels to URLs, drops email, and admits one Website link', () => {
     const map = getLinkMap(RESUME_WITH_LINKS);
     expect(map.LinkedIn).toBe('https://linkedin.com/in/johndoe');
     expect(map.GitHub).toBe('https://github.com/johndoe');
     expect(map.Email).toBeUndefined();
+    // The single non-platform URL is admitted under a generic "Website" label —
+    // never under its raw anchor text.
+    expect(map.Website).toBe('https://not-a-profile.example.com');
     expect(map.Personal).toBeUndefined();
+  });
+
+  it('admits exactly one Website link and drops later non-platform URLs', () => {
+    const resume = [
+      'Body',
+      '---',
+      '- [LinkedIn](https://linkedin.com/in/jane)',
+      '- [Portfolio](https://janedoe.dev)',
+      '- [Blog](https://janeblog.example)',
+      '- [Email](mailto:jane@example.com)',
+    ].join('\n');
+    const map = getLinkMap(resume);
+    expect(map.LinkedIn).toBe('https://linkedin.com/in/jane');
+    expect(map.Website).toBe('https://janedoe.dev'); // first non-platform wins
+    expect(Object.values(map)).not.toContain('https://janeblog.example'); // 2nd dropped
+    expect(Object.values(map)).not.toContain('mailto:jane@example.com'); // mailto dropped
   });
 
   it('returns an empty map when there is no reference block', () => {
@@ -89,18 +110,41 @@ describe('injectLinksIntoGeneratedText', () => {
     const out = injectLinksIntoGeneratedText(text, { LinkedIn: 'https://linkedin.com/in/x' });
     expect(out).toBe(text);
   });
+
+  it('injects a Website link in the contact line', () => {
+    const text = `Jane Doe\nDesigner\nBerlin | jane@example.com | Website | GitHub\n\nSUMMARY`;
+    const out = injectLinksIntoGeneratedText(text, {
+      Website: 'https://janedoe.dev',
+      GitHub: 'https://github.com/jd',
+    });
+    expect(out).toContain('[Website](https://janedoe.dev)');
+    expect(out).toContain('[GitHub](https://github.com/jd)');
+  });
 });
 
 describe('parseLinksFromResume', () => {
-  it('extracts a clean email and profile labels', () => {
+  it('extracts a clean email, profile labels, and the Website label', () => {
     const { block, cleanEmail } = parseLinksFromResume(RESUME_WITH_LINKS);
     expect(cleanEmail).toBe('john@example.com');
     expect(block).toContain('LinkedIn');
     expect(block).toContain('GitHub');
+    expect(block).toContain('Website'); // non-platform URL surfaced for the AI to write
   });
 
   it('returns empty result when there is no reference block', () => {
     expect(parseLinksFromResume('No block here')).toEqual({ block: '', cleanEmail: '' });
+  });
+});
+
+describe('urlToFriendlyLabel ↔ Rust url_label parity', () => {
+  // Shared source of truth with `cargo test export::links` — both suites read
+  // fixtures/url-labels.json so the two implementations can never silently drift.
+  it('matches the shared fixture for every URL', () => {
+    const cases = urlLabels as { url: string; label: string }[];
+    expect(cases.length).toBeGreaterThan(0);
+    for (const { url, label } of cases) {
+      expect(urlToFriendlyLabel(url)).toBe(label);
+    }
   });
 });
 
