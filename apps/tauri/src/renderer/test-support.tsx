@@ -1,7 +1,7 @@
-import { type ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import { expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, type RenderHookOptions, waitFor } from '@testing-library/react';
-import { expect, vi } from 'vitest';
 
 import type { AppClient } from '@/lib/app-client';
 import { AppClientProvider } from '@/providers/AppClientProvider';
@@ -13,7 +13,9 @@ import { AppClientProvider } from '@/providers/AppClientProvider';
  * returned across accesses, allowing call assertions.
  */
 export function createMockClient(
-  overrides: Record<string, (...args: unknown[]) => unknown> = {}
+  // `never[]` params so any concrete mock signature (e.g. an event subscriber
+  // taking a typed handler) is assignable here.
+  overrides: Record<string, (...args: never[]) => unknown> = {}
 ): AppClient {
   const namespaceCache = new Map<string, Record<string, unknown>>();
 
