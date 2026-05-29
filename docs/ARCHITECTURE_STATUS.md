@@ -33,7 +33,7 @@ Last updated: 2026-05-29
 | Semantic release pipeline        | ✅     | Auto-versioning on main                                                                                                                               |
 | Auto-updater                     | ✅     | GitHub Releases integration                                                                                                                           |
 | Data backup / restore            | ✅     | `DataStore` trait → full export/import bundle (Settings → Privacy)                                                                                    |
-| Shared platform layers           | ✅     | `platform::config`, `net::http`, `error::AppError`, `observability::Span` + provider/board registries (Phases 1–6 — see `ARCHITECTURE_ROADMAP.md`)    |
+| Shared platform layers           | ✅     | `platform::config`, `net::http`, `error::AppError`, `observability::Span` + provider/board registries (Phases 1–6 — see PATTERNS.md §13)              |
 | Architecture CI guardrails       | ✅     | grep bans: `std::env::var` outside `platform/config.rs`; `reqwest::Client::new/builder` outside `net/http.rs`; `Result<_, String>` outside `error.rs` |
 
 ---

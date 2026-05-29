@@ -412,11 +412,28 @@ Never swallow errors silently. If caught by boundary, log via the Pino logger an
 
 ---
 
-## 13. Module Ownership Pattern (Rust core)
+## 13. Architecture Principles & Module Ownership (Rust core)
 
-Cross-cutting concerns have exactly **one owning module**. No other module may
-reconstruct that concern's logic — this prevents the duplication and hidden
-coupling the [architecture roadmap](ARCHITECTURE_ROADMAP.md) is eliminating.
+The Rust core is a **platform architecture**, not a bag of features: shared
+infrastructure exists once, each module owns one concern, and expandable systems
+use registries. The reference is `commands::ai_provider` + `pipeline`. The ten
+principles and how each is enforced:
+
+| #   | Principle                  | Enforcement                                                                          |
+| --- | -------------------------- | ------------------------------------------------------------------------------------ |
+| 1   | Single responsibility      | one module owns one concern (table below) + review                                   |
+| 2   | Centralized infrastructure | shared modules (`platform::config`, `net::http`, `observability`) + CI grep bans     |
+| 3   | Strict module boundaries   | path / schema / endpoint knowledge stays inside the owning module                    |
+| 4   | No hidden fallbacks        | typed errors; `parse()`-style hard-fail constructors; no silent defaults             |
+| 5   | Strong typing over strings | enums / discriminated unions / capability structs over magic strings                 |
+| 6   | Registry-based systems     | one registration site per registry (no parallel catalog + match)                     |
+| 7   | Capability-driven          | gate on capability flags, not identity (`caps.supports_x`, not `id.starts_with(..)`) |
+| 8   | Unified flows              | shared HTTP / retry / timeout / trace primitives composed everywhere                 |
+| 9   | Observability              | one `observability::Span` for timed `→`/`←` logging                                  |
+| 10  | Isolated failure domains   | per-unit `Result`; one board/provider/parser failure never aborts the batch          |
+
+**Module ownership** — each cross-cutting concern has exactly **one** owner; no
+other module may reconstruct its logic:
 
 | Concern                              | Sole owner                                | Use instead of rolling your own                                                                                                          |
 | ------------------------------------ | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
@@ -428,8 +445,16 @@ coupling the [architecture roadmap](ARCHITECTURE_ROADMAP.md) is eliminating.
 | error types                          | `error::AppError`                         | return `AppResult<T>` from fallible internals — never `Result<_, String>` (domain enums like `ExtractionError` add `From`)               |
 | workflow orchestration               | `pipeline`                                | compose `Stage`/`Pipeline`                                                                                                               |
 
-This table grows one row per roadmap phase. Where practical, a CI guardrail
-enforces ownership (e.g. `AJH_DATA_DIR` is grep-banned outside `platform/config.rs`).
+**Adding capability is uniform** — one implementation file + one registration:
+
+- New AI provider → 1 client module + 1 `ProviderId` arm + 1 `resolve` arm.
+- New job board → 1 scraper/applier module + 1 line in the `SCRAPERS` / `APPLIERS` list.
+- New exporter / parser / integration → register in its registry; compose
+  `net::http`, `error::AppError`, `observability::Span`, `platform::config`.
+
+CI grep guardrails (the quality-checks job) keep ownership intact: `std::env::var`
+only in `platform/config.rs`; `reqwest::Client::new/builder` only in `net/http.rs`;
+no `Result<_, String>` outside `error.rs`.
 
 ---
 
