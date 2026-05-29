@@ -83,3 +83,6 @@ pub async fn generate_validated(
 
     Ok(ValidatedDraft { text, report, retries })
 }
+
+#[cfg(test)]
+mod test;
