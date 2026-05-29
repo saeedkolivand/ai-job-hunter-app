@@ -26,6 +26,10 @@ export const AiProviderSchema = z.enum([
   'anthropic',
   'gemini',
   'openai-compatible',
+  // CLI agents — locally-installed headless tools (no API key; own login).
+  'claude-code',
+  'codex',
+  'gemini-cli',
 ]);
 
 // Per-provider settings (model choice, optional base URL)

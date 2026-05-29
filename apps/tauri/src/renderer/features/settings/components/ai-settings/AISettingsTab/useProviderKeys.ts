@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 
 import { useNotification } from '@ajh/ui';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 import {
   useAIModels,
-  useHasProviderKey,
   useListProviderModels,
   useOpenExternal,
   usePullModel,
@@ -36,9 +35,10 @@ export function useProviderKeys() {
 
   const activeProvider: AiProvider = providerConfig?.activeProvider ?? 'ollama';
 
-  // Ollama
+  // Ollama (local server) + CLI-agent detection both come from the health probe.
   const { data: health } = useSystemHealth();
-  const ollamaReady = (health as { ai?: { ready: boolean } } | undefined)?.ai?.ready ?? false;
+  const ollamaReady = health?.ai.ready ?? false;
+  const cliAgentStatus = health?.cliAgents ?? {};
   const { data: ollamaModelsRaw = [], isFetching: loadingOllama } = useAIModels();
   const ollamaModels = ollamaModelsRaw as Model[];
   const pullModel = usePullModel();
@@ -47,19 +47,29 @@ export function useProviderKeys() {
 
   const selectedOllamaModel = providerConfig?.providers?.ollama?.model || aiModel?.defaultModel;
 
-  // Key status for every cloud provider (hooks must be called unconditionally)
-  const openaiKey = useHasProviderKey('openai');
-  const anthropicKey = useHasProviderKey('anthropic');
-  const geminiKey = useHasProviderKey('gemini');
-  const compatKey = useHasProviderKey('openai-compatible');
+  // Cloud providers authenticate with a stored key — query each one's presence.
+  // Driven off the registry so adding a cloud provider needs no new hook line.
+  const cloudProviders = PROVIDER_ORDER.filter((p) => PROVIDERS[p].kind === 'cloud');
+  const cloudKeyQueries = useQueries({
+    queries: cloudProviders.map((p) => ({
+      queryKey: [...keys.ai.models, 'provider-key', p],
+      queryFn: () => api.ai.hasProviderKey({ provider: p }),
+      staleTime: 30_000,
+    })),
+  });
 
-  const keyStatus: Record<string, boolean> = {
-    ollama: ollamaReady,
-    openai: openaiKey.data?.has ?? false,
-    anthropic: anthropicKey.data?.has ?? false,
-    gemini: geminiKey.data?.has ?? false,
-    'openai-compatible': compatKey.data?.has ?? false,
-  };
+  // Connection status by provider kind: cloud → stored key; local server → Ollama
+  // health; CLI agent → binary detected.
+  const keyStatus: Record<string, boolean> = Object.fromEntries(
+    PROVIDER_ORDER.map((p): [string, boolean] => {
+      const kind = PROVIDERS[p].kind;
+      if (kind === 'cloud') {
+        return [p, cloudKeyQueries[cloudProviders.indexOf(p)]?.data?.has ?? false];
+      }
+      if (kind === 'cli-agent') return [p, cliAgentStatus[p]?.detected ?? false];
+      return [p, ollamaReady]; // local-server (Ollama)
+    })
+  );
 
   const setProviderKey = useSetProviderKey();
   const removeProviderKey = useRemoveProviderKey();
@@ -85,7 +95,7 @@ export function useProviderKeys() {
       : undefined;
 
   // Models for the expanded cloud provider
-  const expandedIsCloud = expanded !== null && expanded !== 'ollama';
+  const expandedIsCloud = expanded !== null && PROVIDERS[expanded].kind === 'cloud';
   const { data: expandedModelsRaw = [] } = useListProviderModels(
     expanded ?? 'openai',
     expandedIsCloud && (keyStatus[expanded ?? 'openai'] ?? false),

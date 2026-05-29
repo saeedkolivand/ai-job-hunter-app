@@ -19,11 +19,14 @@ use super::{
 
 const DEFAULT_BASE: &str = "https://api.openai.com/v1";
 
-/// OpenAI reasoning families (o1/o3/o4) reject `temperature` and require
-/// `max_completion_tokens` instead of `max_tokens`.
+/// OpenAI reasoning families (the `o`-series: o1, o3, o4, … and future `o`N)
+/// reject `temperature` and require `max_completion_tokens` instead of
+/// `max_tokens`. Matched by the `o`+digit convention so new o-series models are
+/// handled without a code change.
 fn is_reasoning_model(model: &str) -> bool {
     let m = model.to_ascii_lowercase();
-    m.starts_with("o1") || m.starts_with("o3") || m.starts_with("o4")
+    let mut bytes = m.bytes();
+    matches!((bytes.next(), bytes.next()), (Some(b'o'), Some(d)) if d.is_ascii_digit())
 }
 
 pub struct OpenAiClient {
@@ -273,10 +276,18 @@ impl AiProvider for OpenAiClient {
         Some("text-embedding-3-small")
     }
 
-    async fn list_models(&self, client: &reqwest::Client, api_key: &str) -> Vec<Value> {
+    async fn list_models(&self, app: &AppHandle) -> Vec<Value> {
+        let api_key = match get_provider_key(app, self.id.credential_key()) {
+            Some(k) => k,
+            None => return vec![],
+        };
+        let client = match super::probe_client() {
+            Ok(c) => c,
+            Err(_) => return vec![],
+        };
         let resp = client
             .get(format!("{}/models", self.base_url))
-            .bearer_auth(api_key)
+            .bearer_auth(&api_key)
             .send()
             .await;
         if let Ok(r) = resp {
@@ -303,10 +314,13 @@ impl AiProvider for OpenAiClient {
         vec![]
     }
 
-    async fn test_key(&self, client: &reqwest::Client, api_key: &str) -> AppResult<()> {
+    async fn test_key(&self, app: &AppHandle) -> AppResult<()> {
+        let api_key = get_provider_key(app, self.id.credential_key())
+            .ok_or_else(|| AppError::Config("No API key found".to_string()))?;
+        let client = super::probe_client()?;
         let resp = client
             .get(format!("{}/models", self.base_url))
-            .bearer_auth(api_key)
+            .bearer_auth(&api_key)
             .send()
             .await
             .map_err(|e| format!("Request failed: {e}"))?;
@@ -314,6 +328,21 @@ impl AiProvider for OpenAiClient {
             Ok(())
         } else {
             Err(AppError::Provider(format!("API returned status: {}", resp.status())))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_reasoning_model;
+
+    #[test]
+    fn detects_o_series_including_future_models() {
+        for m in ["o1", "o1-mini", "o3", "o3-mini", "o4-mini", "o5", "o9-pro"] {
+            assert!(is_reasoning_model(m), "{m} should be a reasoning model");
+        }
+        for m in ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo", "omni", "chatgpt-4o"] {
+            assert!(!is_reasoning_model(m), "{m} should not be a reasoning model");
         }
     }
 }

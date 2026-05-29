@@ -1,6 +1,9 @@
 import { Radio } from 'lucide-react';
 
+import type { AiProvider } from '@/store/preferences-schema';
 import { useAiProviderConfig } from '@/store/preferences-store';
+
+import { PROVIDERS } from '../provider-meta';
 
 /**
  * Surfaces the *actual* routing the backend will use — active provider, model,
@@ -8,6 +11,8 @@ import { useAiProviderConfig } from '@/store/preferences-store';
  * The endpoints mirror the backend provider clients (commands/ai_provider/*).
  */
 function chatEndpoint(provider: string, model: string, baseUrl?: string): string {
+  // CLI agents shell out to a local binary — there's no HTTP endpoint to show.
+  if (PROVIDERS[provider as AiProvider]?.kind === 'cli-agent') return `${provider} (cli)`;
   switch (provider) {
     case 'ollama':
       return 'http://127.0.0.1:11434/api/chat';

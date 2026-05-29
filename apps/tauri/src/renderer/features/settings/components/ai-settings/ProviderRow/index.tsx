@@ -5,6 +5,7 @@ import { Button } from '@ajh/ui';
 import type { AiProvider } from '@/store/preferences-schema';
 import type { Model } from '@/types';
 
+import { CliAgentConfig } from '../CliAgentConfig';
 import { CloudProviderConfig } from '../CloudProviderConfig';
 import { OllamaConfig } from '../OllamaConfig';
 import type { ProviderMeta } from '../provider-meta';
@@ -91,11 +92,11 @@ export function ProviderRow({
           </div>
           <div className="mt-0.5 text-[11px] text-foreground/35">{meta.description}</div>
         </div>
-        {/* Status badge */}
-        {provider === 'ollama' ? (
+        {/* Status badge — local providers (Ollama / CLI agents) are detected, not keyed */}
+        {meta.kind !== 'cloud' ? (
           connected ? (
             <span className="flex items-center gap-1 text-[10px] text-emerald-400/80">
-              <CheckCircle2 size={10} /> Running
+              <CheckCircle2 size={10} /> {meta.kind === 'local-server' ? 'Running' : 'Detected'}
             </span>
           ) : (
             <span className="flex items-center gap-1 text-[10px] text-amber-400/60">
@@ -127,7 +128,7 @@ export function ProviderRow({
       {/* Expanded config */}
       {isExpanded && (
         <div className="border-t border-white/[0.06] px-4 pb-4 pt-3 space-y-3">
-          {provider === 'ollama' ? (
+          {meta.kind === 'local-server' ? (
             <OllamaConfig
               connected={connected}
               models={ollamaModels}
@@ -143,6 +144,18 @@ export function ProviderRow({
             >
               {children}
             </OllamaConfig>
+          ) : meta.kind === 'cli-agent' ? (
+            <CliAgentConfig
+              label={meta.label}
+              connected={connected}
+              models={meta.models}
+              providerModel={providerModel}
+              onSelect={(m) => onSelectModel(provider, m)}
+              onSetActive={onSetActive}
+              isActive={isActive}
+              onInstall={onOpenDocs}
+              onRecheck={onRecheck}
+            />
           ) : (
             <CloudProviderConfig
               provider={provider}
