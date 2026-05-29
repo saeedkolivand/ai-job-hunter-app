@@ -26,10 +26,15 @@ export const AiGenerateRequestSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().int().min(1).max(32768).optional(),
   stream: z.boolean().optional(),
-  /** AI backend — 'ollama' (default), 'openai', 'openai-compatible', 'anthropic', 'gemini'. */
+  /**
+   * AI backend — 'ollama' (default), 'openai', 'openai-compatible', 'anthropic',
+   * 'gemini', or a CLI agent ('claude-code', …). Validated server-side.
+   */
   provider: z.string().optional(),
   /** Base URL override for openai-compatible providers. */
   baseUrl: z.string().optional(),
+  /** Reasoning effort for CLI agents that support it (e.g. Codex: low/medium/high). */
+  effort: z.string().optional(),
 });
 
 export const DocumentImportRequestSchema = z.object({

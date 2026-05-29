@@ -130,6 +130,12 @@ export interface MatchScore {
 
 export interface RuntimeHealth {
   ai: { ready: boolean; model?: string; memoryMB?: number };
+  /**
+   * CLI-agent availability, keyed by provider id (e.g. `'claude-code'`).
+   * `detected` = the agent's binary is installed; `version` is its reported
+   * version when known. Populated by looping the backend CLI-agent registry.
+   */
+  cliAgents?: Record<string, { detected: boolean; version?: string | null }>;
   data: { ready: boolean; sqlite: boolean; vector: boolean };
   workers: { active: number; idle: number; max: number };
 }
