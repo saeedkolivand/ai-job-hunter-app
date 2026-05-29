@@ -146,7 +146,8 @@ jobs:
             package.json \
             apps/tauri/package.json \
             apps/tauri/src-tauri/Cargo.toml \
-            apps/tauri/src-tauri/tauri.conf.json; then
+            apps/tauri/src-tauri/tauri.conf.json \
+            README.md; then
             echo "Version files are already synced."
             exit 0
           fi
@@ -155,7 +156,8 @@ jobs:
             package.json \
             apps/tauri/package.json \
             apps/tauri/src-tauri/Cargo.toml \
-            apps/tauri/src-tauri/tauri.conf.json
+            apps/tauri/src-tauri/tauri.conf.json \
+            README.md
           git commit -m "chore: sync version files to v${{ needs.release.outputs.version }} [skip ci]"
           git push git@github.com:saeedkolivand/ai-job-hunter-assistant-app.git HEAD:main
 
