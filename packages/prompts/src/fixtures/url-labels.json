@@ -1,0 +1,23 @@
+[
+  { "url": "https://www.linkedin.com/in/jane", "label": "LinkedIn" },
+  { "url": "http://github.com/jane", "label": "GitHub" },
+  { "url": "https://gitlab.com/jane", "label": "GitLab" },
+  { "url": "https://twitter.com/jane", "label": "Twitter" },
+  { "url": "https://x.com/jane", "label": "Twitter" },
+  { "url": "https://www.behance.net/jane", "label": "Behance" },
+  { "url": "https://dribbble.com/jane", "label": "Dribbble" },
+  { "url": "https://medium.com/@jane", "label": "Medium" },
+  { "url": "https://stackoverflow.com/users/1/jane", "label": "Stack Overflow" },
+  { "url": "https://dev.to/jane", "label": "Dev.to" },
+  { "url": "https://codepen.io/jane", "label": "CodePen" },
+  { "url": "https://www.youtube.com/@jane", "label": "YouTube" },
+  { "url": "https://youtu.be/abc123", "label": "YouTube" },
+  { "url": "https://notion.so/jane", "label": "Notion" },
+  { "url": "https://figma.com/@jane", "label": "Figma" },
+  { "url": "https://npmjs.com/~jane", "label": "npm" },
+  { "url": "https://crates.io/crates/serde", "label": "crates.io" },
+  { "url": "https://www.example.com/path/to/page", "label": "example.com" },
+  { "url": "http://my-portfolio.dev", "label": "my-portfolio.dev" },
+  { "url": "https://janedoe.dev/work", "label": "janedoe.dev" },
+  { "url": "https://solo.to/jane", "label": "solo.to" }
+]
