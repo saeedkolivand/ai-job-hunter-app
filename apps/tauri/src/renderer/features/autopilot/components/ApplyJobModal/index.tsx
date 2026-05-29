@@ -1,29 +1,17 @@
-import { Check, Copy, Download, ExternalLink, Loader2, Sparkles, Wand2, X } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { Loader2, Sparkles, Wand2, X } from 'lucide-react';
+import { useState } from 'react';
 
 import type { AutopilotFoundJob } from '@ajh/shared';
 import { Button, cn, ModalShell } from '@ajh/ui';
 
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
-import {
-  buildFilename,
-  exportDOCX,
-  exportPDF,
-  exportTXT,
-  extractMetadata,
-  generateCoverLetter,
-  generateResume,
-  type GenerationMeta,
-  type GenerationMode,
-  type TemplateId,
-} from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
-import { useExtractText, useOpenExternal, useResolveJobUrl } from '@/services';
+import { useExtractText, useResolveJobUrl } from '@/services';
 
-type Target = 'resume' | 'cover' | 'both';
-const TEMPLATE: TemplateId = 'modern';
-const MODE: GenerationMode = 'ats';
+import { GenerationOutput } from './GenerationOutput';
+import { JobDescriptionPanel } from './JobDescriptionPanel';
+import { type TailorTarget, useTailorGeneration } from './useTailorGeneration';
 
 interface Props {
   job: AutopilotFoundJob;
@@ -41,21 +29,10 @@ export function ApplyJobModal({ job, resumeText, onClose }: Props) {
   const model = useSelectedModel();
   const { canUse, reason } = useCanUseAI();
   const extractTextMutation = useExtractText();
-  const openExternal = useOpenExternal();
 
   const [resume, setResume] = useState(resumeText ?? '');
-  const [target, setTarget] = useState<Target>('cover');
-  const [generating, setGenerating] = useState(false);
-  const [phase, setPhase] = useState<'idle' | 'analyzing' | 'resume' | 'cover'>('idle');
-  const [resumeOut, setResumeOut] = useState('');
-  const [coverOut, setCoverOut] = useState('');
-  const [activeOut, setActiveOut] = useState<'resume' | 'cover'>('cover');
-  const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [target, setTarget] = useState<TailorTarget>('cover');
   const [uploading, setUploading] = useState(false);
-  const [meta, setMeta] = useState<GenerationMeta | null>(null);
-  const [exportOpen, setExportOpen] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
 
   // Fetch the description on demand when the board's list scrape omitted it.
   const initialDesc = (job.description ?? '').trim();
@@ -64,10 +41,11 @@ export function ApplyJobModal({ job, resumeText, onClose }: Props) {
   const jobDesc = initialDesc || fetchedDesc;
   const hasDesc = jobDesc.length > 0;
   const fetchingDesc = !initialDesc && resolved.isLoading;
-  const output = activeOut === 'resume' ? resumeOut : coverOut;
+
+  const gen = useTailorGeneration({ jobDesc, model, canUse, hasDesc });
 
   const close = () => {
-    abortRef.current?.abort();
+    gen.abort();
     onClose();
   };
 
@@ -86,95 +64,7 @@ export function ApplyJobModal({ job, resumeText, onClose }: Props) {
     }
   };
 
-  const handleGenerate = async () => {
-    if (!canUse || !hasDesc || generating || !resume.trim()) return;
-    setError(null);
-    setGenerating(true);
-    setPhase('analyzing');
-    setResumeOut('');
-    setCoverOut('');
-    const controller = new AbortController();
-    abortRef.current = controller;
-    try {
-      const detected = await extractMetadata(resume, jobDesc, model);
-      setMeta(detected);
-      if (target === 'resume' || target === 'both') {
-        setActiveOut('resume');
-        setPhase('resume');
-        const r = await generateResume(
-          resume,
-          jobDesc,
-          detected,
-          MODE,
-          model,
-          (tok) => setResumeOut((p) => p + tok),
-          'en',
-          controller.signal
-        );
-        setResumeOut(r);
-      }
-      if (target === 'cover' || target === 'both') {
-        setActiveOut('cover');
-        setPhase('cover');
-        const c = await generateCoverLetter(
-          resume,
-          jobDesc,
-          detected,
-          MODE,
-          model,
-          (tok) => setCoverOut((p) => p + tok),
-          'en',
-          controller.signal
-        );
-        setCoverOut(c);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('autopilot.apply.failed'));
-    } finally {
-      setGenerating(false);
-      setPhase('idle');
-      abortRef.current = null;
-    }
-  };
-
-  const phaseLabel =
-    phase === 'analyzing'
-      ? t('autopilot.apply.analyzing')
-      : phase === 'resume'
-        ? t('autopilot.apply.writingResume')
-        : phase === 'cover'
-          ? t('autopilot.apply.writingCover')
-          : '';
-
-  const handleCopy = async () => {
-    if (!output) return;
-    await navigator.clipboard.writeText(output);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-
-  const handleExport = async (fmt: 'pdf' | 'docx' | 'txt') => {
-    setExportOpen(false);
-    if (!output) return;
-    const docType = activeOut === 'resume' ? 'resume' : 'cover-letter';
-    const fileMeta: GenerationMeta = meta ?? {
-      candidateName: '',
-      jobTitle: '',
-      companyName: '',
-      resumeLanguage: 'en',
-      jobAdLanguage: 'en',
-      mismatch: false,
-      targetLanguage: 'en',
-      topRequirements: [],
-    };
-    const name = buildFilename(fileMeta, docType, fmt);
-    if (fmt === 'pdf') await exportPDF(output, name, docType, meta ?? undefined, TEMPLATE, false);
-    else if (fmt === 'docx')
-      await exportDOCX(output, name, docType, meta ?? undefined, TEMPLATE, false);
-    else exportTXT(output, name);
-  };
-
-  const targets: { id: Target; label: string }[] = [
+  const targets: { id: TailorTarget; label: string }[] = [
     { id: 'cover', label: t('autopilot.apply.target.cover') },
     { id: 'resume', label: t('autopilot.apply.target.resume') },
     { id: 'both', label: t('autopilot.apply.target.both') },
@@ -205,38 +95,12 @@ export function ApplyJobModal({ job, resumeText, onClose }: Props) {
 
         {/* Body */}
         <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
-          {/* Job description */}
-          <div>
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/35">
-              {t('autopilot.apply.jobDescription')}
-            </div>
-            {fetchingDesc ? (
-              <div className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] text-foreground/40">
-                <Loader2 size={12} className="animate-spin" />
-                {t('autopilot.apply.fetchingDescription')}
-              </div>
-            ) : hasDesc ? (
-              <div className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] leading-relaxed text-foreground/60">
-                {jobDesc}
-              </div>
-            ) : job.url ? (
-              <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-[11px] text-amber-200/80">
-                {t('autopilot.apply.loadFailed')}{' '}
-                <button
-                  type="button"
-                  onClick={() => void openExternal.mutate(job.url)}
-                  className="inline-flex items-center gap-0.5 font-medium text-brand-soft hover:underline"
-                >
-                  {t('autopilot.viewJob')}
-                  <ExternalLink size={10} />
-                </button>
-              </div>
-            ) : (
-              <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-[11px] text-amber-200/80">
-                {t('autopilot.apply.noDescription')}
-              </div>
-            )}
-          </div>
+          <JobDescriptionPanel
+            jobDesc={jobDesc}
+            hasDesc={hasDesc}
+            fetchingDesc={fetchingDesc}
+            jobUrl={job.url}
+          />
 
           {/* Resume input */}
           <ResumeInputCard
@@ -271,12 +135,12 @@ export function ApplyJobModal({ job, resumeText, onClose }: Props) {
             <Button
               variant="glass"
               size="sm"
-              loading={generating}
-              disabled={!canUse || !hasDesc || generating || !resume.trim()}
-              onClick={() => void handleGenerate()}
+              loading={gen.generating}
+              disabled={!canUse || !hasDesc || gen.generating || !resume.trim()}
+              onClick={() => void gen.generate(resume, target)}
             >
-              {!generating && <Sparkles size={13} />}
-              {generating ? t('autopilot.apply.generating') : t('autopilot.apply.generate')}
+              {!gen.generating && <Sparkles size={13} />}
+              {gen.generating ? t('autopilot.apply.generating') : t('autopilot.apply.generate')}
             </Button>
           </div>
 
@@ -287,96 +151,34 @@ export function ApplyJobModal({ job, resumeText, onClose }: Props) {
                 : t('autopilot.apply.selectModel')}
             </p>
           )}
-          {error && <p className="text-[11px] text-red-300/80">{error}</p>}
+          {gen.error && <p className="text-[11px] text-red-300/80">{gen.error}</p>}
 
           {/* Generation progress */}
-          {generating && (
+          {gen.generating && (
             <div className="flex items-center gap-2 rounded-lg border border-brand/20 bg-brand/5 px-3 py-2 text-[11px] text-brand-soft">
               <Loader2 size={12} className="animate-spin" />
-              {phaseLabel}
-              {target === 'both' && phase !== 'analyzing' && (
-                <span className="text-foreground/40">· {phase === 'resume' ? '1/2' : '2/2'}</span>
+              {gen.phaseLabel}
+              {target === 'both' && gen.phase !== 'analyzing' && (
+                <span className="text-foreground/40">
+                  · {gen.phase === 'resume' ? '1/2' : '2/2'}
+                </span>
               )}
             </div>
           )}
 
           {/* Output */}
-          {(resumeOut || coverOut) && (
-            <div className="rounded-lg border border-white/[0.06] bg-white/[0.02]">
-              <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
-                {target === 'both' ? (
-                  <div className="flex items-center gap-1">
-                    {(['resume', 'cover'] as const).map((o) => (
-                      <button
-                        key={o}
-                        type="button"
-                        onClick={() => setActiveOut(o)}
-                        className={cn(
-                          'rounded px-2 py-0.5 text-[10px] font-medium transition-colors',
-                          activeOut === o
-                            ? 'bg-brand/15 text-brand-soft'
-                            : 'text-foreground/40 hover:text-foreground/70'
-                        )}
-                      >
-                        {o === 'resume'
-                          ? t('autopilot.apply.target.resume')
-                          : t('autopilot.apply.target.cover')}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/35">
-                    {activeOut === 'resume'
-                      ? t('autopilot.apply.target.resume')
-                      : t('autopilot.apply.target.cover')}
-                  </span>
-                )}
-                <div className="flex items-center gap-3">
-                  <Button
-                    onClick={() => void handleCopy()}
-                    disabled={!output}
-                    className="flex h-auto items-center gap-1 border-transparent bg-transparent p-0 text-[10px] text-foreground/40 hover:text-foreground/70"
-                  >
-                    {copied ? <Check size={11} /> : <Copy size={11} />}
-                    {copied ? t('autopilot.apply.copied') : t('autopilot.apply.copy')}
-                  </Button>
-                  <div className="relative">
-                    <Button
-                      onClick={() => setExportOpen((o) => !o)}
-                      disabled={!output}
-                      className="flex h-auto items-center gap-1 border-transparent bg-transparent p-0 text-[10px] text-brand-soft hover:text-brand-soft/80"
-                    >
-                      <Download size={11} />
-                      {t('aiGenerate.export')}
-                    </Button>
-                    {exportOpen && (
-                      <>
-                        <div
-                          className="fixed inset-0 z-[650]"
-                          onClick={() => setExportOpen(false)}
-                        />
-                        <div className="absolute right-0 top-full z-[700] mt-1.5 w-32 overflow-hidden rounded-lg border border-white/10 bg-secondary shadow-2xl">
-                          {(['pdf', 'docx', 'txt'] as const).map((fmt) => (
-                            <button
-                              key={fmt}
-                              type="button"
-                              onClick={() => void handleExport(fmt)}
-                              className="flex w-full items-center gap-2 px-3 py-2 text-[11px] text-foreground/65 transition-colors hover:bg-white/[0.05] hover:text-foreground"
-                            >
-                              <Download size={10} />
-                              {t('aiGenerate.download', { fmt: fmt.toUpperCase() })}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="max-h-56 overflow-y-auto whitespace-pre-wrap px-3 py-2 text-[11px] leading-relaxed text-foreground/75">
-                {output || '…'}
-              </div>
-            </div>
+          {(gen.resumeOut || gen.coverOut) && (
+            <GenerationOutput
+              target={target}
+              activeOut={gen.activeOut}
+              setActiveOut={gen.setActiveOut}
+              output={gen.output}
+              copied={gen.copied}
+              onCopy={gen.copy}
+              exportOpen={gen.exportOpen}
+              setExportOpen={gen.setExportOpen}
+              onExport={gen.exportAs}
+            />
           )}
         </div>
       </div>
