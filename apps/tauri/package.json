@@ -11,7 +11,10 @@
     "dev:frontend": "vite --port 5174",
     "build:frontend": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
     "@ajh/prompts": "workspace:*",
@@ -35,6 +38,7 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/router-vite-plugin": "^1.167.11",
     "@tauri-apps/cli": "^2.11.2",

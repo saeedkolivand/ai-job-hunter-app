@@ -1,0 +1,62 @@
+name: 🎭 E2E
+
+# Browser end-to-end tests: drive the renderer in Chromium against the in-memory
+# mock client (no Tauri/native build required). Kept separate from the main CI
+# pipeline so a browser regression is easy to spot and does not slow type/lint.
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: 🎭 Playwright (mock UI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 📥 Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: 🔨 Build Shared Packages
+        run: pnpm build:packages
+
+      - name: 🎭 Install Playwright Chromium
+        run: pnpm --filter @ajh/tauri exec playwright install --with-deps chromium
+
+      - name: 🎭 Run E2E Tests
+        run: pnpm --filter @ajh/tauri test:e2e
+
+      - name: 📊 Upload Playwright Report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: apps/tauri/playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
