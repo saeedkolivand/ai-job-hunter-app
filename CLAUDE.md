@@ -202,3 +202,12 @@ Automated via semantic-release on push to `main`. Do not manually tag or bump ve
 | `fix:`, `perf:`                                | patch (1.0.x) |
 | `BREAKING CHANGE` footer                       | major (x.0.0) |
 | `refactor:`, `docs:`, `chore:`, `ci:`, `test:` | no release    |
+
+### Commit messages — enforced by commitlint (`commit-msg` hook)
+
+Violations **fail the commit**. See `commitlint.config.mjs`.
+
+- **Subject MUST be lower-case** (`subject-case`). `fix: admit website links` ✅ — `fix: Admit Website URLs` ❌ (capitalized words and acronyms like `URL`/`API`/`DOCX` are rejected in the subject; reword or lowercase them).
+- **Subject ≤ 100 chars**; **body lines ≤ 200 chars**; blank line between subject and body.
+- **Type** is one of: `feat`, `fix`, `perf`, `refactor`, `ui`, `style`, `test`, `docs`, `build`, `ci`, `chore`, `revert` (`type-enum`). Only the types in the table above affect releases.
+- Imperative mood, no trailing period in the subject.
