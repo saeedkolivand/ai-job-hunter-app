@@ -34,6 +34,7 @@ mod export;
 mod ipc_contracts;
 mod job_preferences;
 mod jobs;
+mod layout;
 mod locale;
 mod measure;
 mod model;
