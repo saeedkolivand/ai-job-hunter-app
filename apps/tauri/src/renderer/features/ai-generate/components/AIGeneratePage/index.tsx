@@ -18,7 +18,7 @@ import {
   exportTXT,
   type GenerationMode,
   type TemplateId,
-} from '@/lib/generate-ai';
+} from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 import { useExtractText } from '@/services';
 import { useSaveAiGeneration } from '@/services/use-ai-generations';

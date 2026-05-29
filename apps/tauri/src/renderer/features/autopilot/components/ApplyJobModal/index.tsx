@@ -17,7 +17,7 @@ import {
   type GenerationMeta,
   type GenerationMode,
   type TemplateId,
-} from '@/lib/generate-ai';
+} from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 import { useExtractText, useOpenExternal, useResolveJobUrl } from '@/services';
 

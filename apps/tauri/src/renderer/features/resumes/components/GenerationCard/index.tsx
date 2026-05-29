@@ -15,13 +15,7 @@ import { useState } from 'react';
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
 import { Button, cn, transition } from '@ajh/ui';
 
-import {
-  buildFilename,
-  exportDOCX,
-  exportPDF,
-  exportTXT,
-  type TemplateId,
-} from '@/lib/generate-ai';
+import { buildFilename, exportDOCX, exportPDF, exportTXT, type TemplateId } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 import { useRemoveAiGeneration } from '@/services/use-ai-generations';
 

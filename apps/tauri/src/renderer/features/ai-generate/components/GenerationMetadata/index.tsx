@@ -1,7 +1,7 @@
 import { Globe } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
-import type { GenerationMeta } from '@/lib/generate-ai';
+import type { GenerationMeta } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 
 interface GenerationMetadataProps {

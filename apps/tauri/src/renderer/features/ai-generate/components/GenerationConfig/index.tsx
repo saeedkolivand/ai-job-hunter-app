@@ -12,7 +12,7 @@ import { motion } from 'motion/react';
 
 import { Button, cn } from '@ajh/ui';
 
-import { type GenerationMode, MODES, type TemplateId, TEMPLATES } from '@/lib/generate-ai';
+import { type GenerationMode, MODES, type TemplateId, TEMPLATES } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 import type { PromptQuality } from '@/store/preferences-schema';
 import { usePreferencesStore, usePromptQuality } from '@/store/preferences-store';
