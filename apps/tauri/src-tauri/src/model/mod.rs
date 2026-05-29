@@ -9,6 +9,7 @@
 //! this once the backends consume the model.
 #![allow(dead_code)]
 
+pub mod adapter;
 pub mod document;
 pub mod rich;
 pub mod transform;
