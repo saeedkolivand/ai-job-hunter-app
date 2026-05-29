@@ -1,9 +1,10 @@
-use anyhow::Context;
-use printpdf::*;
 use crate::export::{
     templates::{CoverLetterHeader, SectionStyle, Template},
     types::{FontFamily, GenerationMeta, TextSegment},
 };
+use crate::measure::{FontMetrics, MeasureText};
+use anyhow::Context;
+use printpdf::*;
 
 // ─── Font loading ─────────────────────────────────────────────────────────────
 
@@ -110,10 +111,7 @@ pub fn load_all_fonts(doc: &mut PdfDocument) -> anyhow::Result<LoadedFontSet> {
 }
 
 /// Resolve the (regular, bold, italic_opt) font IDs for a given family.
-pub fn resolve_fonts(
-    set: &LoadedFontSet,
-    fam: FontFamily,
-) -> (&FontId, &FontId, Option<&FontId>) {
+pub fn resolve_fonts(set: &LoadedFontSet, fam: FontFamily) -> (&FontId, &FontId, Option<&FontId>) {
     let f = set.family(fam);
     (&f.regular, &f.bold, f.italic.as_ref())
 }
@@ -226,6 +224,62 @@ pub fn pt_to_mm(pt: f32) -> f32 {
     pt / 2.834_645_7
 }
 
+// ─── Exact text geometry (real font metrics) ─────────────────────────────────
+// These replace the legacy `len() * pt_to_mm(size) * k` character-count width
+// estimates (the `× 0.52` / `× 0.3` hacks) with true glyph advances from the
+// bundled fonts, so centered text is actually centered and link-annotation rects
+// overlap their rendered labels. Source of truth: `crate::measure`.
+
+/// Visible-text advance width in mm for a family / weight / size, via real metrics.
+fn text_advance_mm(text: &str, family: FontFamily, bold: bool, size_pt: f32) -> f32 {
+    FontMetrics.advance_mm(text, family, bold, size_pt)
+}
+
+/// Left x (mm) that horizontally centers `advance_mm`-wide content on the page.
+fn centered_x(page_width: f32, advance_mm: f32) -> f32 {
+    (page_width - advance_mm) / 2.0
+}
+
+/// A clickable link rectangle in page millimetres (x measured from the page left).
+pub(crate) struct ContactLinkRect {
+    pub x_left_mm: f32,
+    pub width_mm: f32,
+    pub url: String,
+}
+
+/// Exact clickable rects for every link in a contact line. Walks the line's spans
+/// accumulating the *visible* text, so each link's left edge is the real advance of
+/// everything drawn before it and its width is the real advance of the label —
+/// overlapping the glyphs the PDF engine actually paints. Replaces the per-character
+/// `× 0.52` estimate, which also mis-measured multi-byte text (it counted bytes).
+pub(crate) fn contact_link_rects(
+    text: &str,
+    x_start_mm: f32,
+    family: FontFamily,
+    font_size: f32,
+    m: &dyn MeasureText,
+) -> Vec<ContactLinkRect> {
+    use crate::export::links::{split_urls, Span};
+    let mut out = Vec::new();
+    let mut visible = String::new();
+    for span in split_urls(text) {
+        match span {
+            Span::Text(t) => visible.push_str(&t),
+            Span::Link { label, url } => {
+                let x_left_mm = x_start_mm + m.advance_mm(&visible, family, false, font_size);
+                let width_mm = m.advance_mm(&label, family, false, font_size);
+                out.push(ContactLinkRect {
+                    x_left_mm,
+                    width_mm,
+                    url,
+                });
+                visible.push_str(&label);
+            }
+        }
+    }
+    out
+}
+
 /// Setup color palette from template.
 pub fn setup_colors(template: &Template) -> ColorPalette {
     ColorPalette {
@@ -280,8 +334,14 @@ pub fn build_line(x1: f32, y1: f32, x2: f32, color: Color, thickness: f32) -> Ve
     }
     let line = Line {
         points: vec![
-            LinePoint { p: Point::new(Mm(x1), Mm(y1)), bezier: false },
-            LinePoint { p: Point::new(Mm(x2), Mm(y1)), bezier: false },
+            LinePoint {
+                p: Point::new(Mm(x1), Mm(y1)),
+                bezier: false,
+            },
+            LinePoint {
+                p: Point::new(Mm(x2), Mm(y1)),
+                bezier: false,
+            },
         ],
         is_closed: false,
     };
@@ -293,7 +353,12 @@ pub fn build_line(x1: f32, y1: f32, x2: f32, color: Color, thickness: f32) -> Ve
 }
 
 /// Draw the sidebar background rectangle from header_bottom_y to the bottom margin.
-pub fn draw_sidebar_bg(layout: &LayoutConfig, bg_color: (u8, u8, u8), header_bottom_y: f32, bottom_margin: f32) -> Vec<Op> {
+pub fn draw_sidebar_bg(
+    layout: &LayoutConfig,
+    bg_color: (u8, u8, u8),
+    header_bottom_y: f32,
+    bottom_margin: f32,
+) -> Vec<Op> {
     let color = rgb_to_color(bg_color);
     let rect_x = layout.margin_left;
     let rect_y = bottom_margin;
@@ -303,19 +368,30 @@ pub fn draw_sidebar_bg(layout: &LayoutConfig, bg_color: (u8, u8, u8), header_bot
         return Vec::new();
     }
     let polygon = Polygon {
-        rings: vec![PolygonRing { points: vec![
-            LinePoint { p: Point::new(Mm(rect_x), Mm(rect_y)), bezier: false },
-            LinePoint { p: Point::new(Mm(rect_x + rect_w), Mm(rect_y)), bezier: false },
-            LinePoint { p: Point::new(Mm(rect_x + rect_w), Mm(rect_y + rect_h)), bezier: false },
-            LinePoint { p: Point::new(Mm(rect_x), Mm(rect_y + rect_h)), bezier: false },
-        ]}],
+        rings: vec![PolygonRing {
+            points: vec![
+                LinePoint {
+                    p: Point::new(Mm(rect_x), Mm(rect_y)),
+                    bezier: false,
+                },
+                LinePoint {
+                    p: Point::new(Mm(rect_x + rect_w), Mm(rect_y)),
+                    bezier: false,
+                },
+                LinePoint {
+                    p: Point::new(Mm(rect_x + rect_w), Mm(rect_y + rect_h)),
+                    bezier: false,
+                },
+                LinePoint {
+                    p: Point::new(Mm(rect_x), Mm(rect_y + rect_h)),
+                    bezier: false,
+                },
+            ],
+        }],
         mode: PaintMode::Fill,
         winding_order: WindingOrder::EvenOdd,
     };
-    vec![
-        Op::SetFillColor { col: color },
-        Op::DrawPolygon { polygon },
-    ]
+    vec![Op::SetFillColor { col: color }, Op::DrawPolygon { polygon }]
 }
 
 // ─── Text building helpers ────────────────────────────────────────────────────
@@ -335,17 +411,33 @@ pub fn build_text_ops(segments: &[TextSegment], config: TextOpsConfig) -> Vec<Op
         return Vec::new();
     }
     let mut ops = Vec::new();
-    let text_pos = Point { x: Mm(config.x).into(), y: Mm(config.y).into() };
+    let text_pos = Point {
+        x: Mm(config.x).into(),
+        y: Mm(config.y).into(),
+    };
     ops.push(Op::StartTextSection);
     ops.push(Op::SetTextCursor { pos: text_pos });
 
     for segment in segments {
-        let font_id = if segment.bold { config.font_bold.clone() } else { config.font_regular.clone() };
-        let color = if segment.bold { config.bold_color.clone() } else { config.normal_color.clone() };
+        let font_id = if segment.bold {
+            config.font_bold.clone()
+        } else {
+            config.font_regular.clone()
+        };
+        let color = if segment.bold {
+            config.bold_color.clone()
+        } else {
+            config.normal_color.clone()
+        };
 
         ops.push(Op::SetFillColor { col: color });
-        ops.push(Op::SetFont { font: PdfFontHandle::External(font_id), size: Pt(config.font_size) });
-        ops.push(Op::ShowText { items: vec![TextItem::Text(segment.text.clone())] });
+        ops.push(Op::SetFont {
+            font: PdfFontHandle::External(font_id),
+            size: Pt(config.font_size),
+        });
+        ops.push(Op::ShowText {
+            items: vec![TextItem::Text(segment.text.clone())],
+        });
     }
     ops.push(Op::EndTextSection);
     ops
@@ -353,7 +445,11 @@ pub fn build_text_ops(segments: &[TextSegment], config: TextOpsConfig) -> Vec<Op
 
 fn push_word_to_segs(segs: &mut Vec<TextSegment>, word: &str, bold: bool, space_before: bool) {
     let is_punct_start = word.starts_with([',', '.', '!', '?', ';', ':', '-']);
-    let text = if space_before && !is_punct_start { format!(" {}", word) } else { word.to_string() };
+    let text = if space_before && !is_punct_start {
+        format!(" {}", word)
+    } else {
+        word.to_string()
+    };
     if let Some(last) = segs.last_mut() {
         if last.bold == bold {
             last.text.push_str(&text);
@@ -439,17 +535,30 @@ pub fn render_letterhead(
         CoverLetterHeader::Compact => {
             // Name only — single bold line, no contact, no rule
             let x = if template.name_centered {
-                layout.page_width / 2.0 - (name.len() as f32 * pt_to_mm(template.name_pt) * 0.3)
+                centered_x(
+                    layout.page_width,
+                    text_advance_mm(name, template.fonts.name_family, true, template.name_pt),
+                )
             } else {
                 layout.margin_left
             };
-            let text_pos = Point { x: Mm(x).into(), y: Mm(current_y).into() };
+            let text_pos = Point {
+                x: Mm(x).into(),
+                y: Mm(current_y).into(),
+            };
             ops.extend([
                 Op::StartTextSection,
-                Op::SetFillColor { col: colors.name.clone() },
+                Op::SetFillColor {
+                    col: colors.name.clone(),
+                },
                 Op::SetTextCursor { pos: text_pos },
-                Op::SetFont { font: PdfFontHandle::External(name_bold.clone()), size: Pt(template.name_pt) },
-                Op::ShowText { items: vec![TextItem::Text(name.to_string())] },
+                Op::SetFont {
+                    font: PdfFontHandle::External(name_bold.clone()),
+                    size: Pt(template.name_pt),
+                },
+                Op::ShowText {
+                    items: vec![TextItem::Text(name.to_string())],
+                },
                 Op::EndTextSection,
             ]);
             current_y -= pt_to_mm(template.name_pt) * 1.2;
@@ -457,14 +566,27 @@ pub fn render_letterhead(
 
         CoverLetterHeader::Centered => {
             // Name centered in display type, no rule
-            let x = layout.page_width / 2.0 - (name.len() as f32 * pt_to_mm(template.name_pt) * 0.3);
-            let text_pos = Point { x: Mm(x).into(), y: Mm(current_y).into() };
+            let x = centered_x(
+                layout.page_width,
+                text_advance_mm(name, template.fonts.name_family, true, template.name_pt),
+            );
+            let text_pos = Point {
+                x: Mm(x).into(),
+                y: Mm(current_y).into(),
+            };
             ops.extend([
                 Op::StartTextSection,
-                Op::SetFillColor { col: colors.name.clone() },
+                Op::SetFillColor {
+                    col: colors.name.clone(),
+                },
                 Op::SetTextCursor { pos: text_pos },
-                Op::SetFont { font: PdfFontHandle::External(name_bold.clone()), size: Pt(template.name_pt) },
-                Op::ShowText { items: vec![TextItem::Text(name.to_string())] },
+                Op::SetFont {
+                    font: PdfFontHandle::External(name_bold.clone()),
+                    size: Pt(template.name_pt),
+                },
+                Op::ShowText {
+                    items: vec![TextItem::Text(name.to_string())],
+                },
                 Op::EndTextSection,
             ]);
             current_y -= pt_to_mm(template.name_pt) * 1.2;
@@ -473,40 +595,72 @@ pub fn render_letterhead(
         CoverLetterHeader::Matched | CoverLetterHeader::Letterhead => {
             // Full block: name + contact line + hairline rule
             let name_x = if template.name_centered {
-                layout.page_width / 2.0 - (name.len() as f32 * pt_to_mm(template.name_pt) * 0.3)
+                centered_x(
+                    layout.page_width,
+                    text_advance_mm(name, template.fonts.name_family, true, template.name_pt),
+                )
             } else {
                 layout.margin_left
             };
-            let text_pos = Point { x: Mm(name_x).into(), y: Mm(current_y).into() };
+            let text_pos = Point {
+                x: Mm(name_x).into(),
+                y: Mm(current_y).into(),
+            };
             ops.extend([
                 Op::StartTextSection,
-                Op::SetFillColor { col: colors.name.clone() },
+                Op::SetFillColor {
+                    col: colors.name.clone(),
+                },
                 Op::SetTextCursor { pos: text_pos },
-                Op::SetFont { font: PdfFontHandle::External(name_bold.clone()), size: Pt(template.name_pt) },
-                Op::ShowText { items: vec![TextItem::Text(name.to_string())] },
+                Op::SetFont {
+                    font: PdfFontHandle::External(name_bold.clone()),
+                    size: Pt(template.name_pt),
+                },
+                Op::ShowText {
+                    items: vec![TextItem::Text(name.to_string())],
+                },
                 Op::EndTextSection,
             ]);
             current_y -= pt_to_mm(template.name_pt) * 1.2;
 
             if !contact_line.is_empty() {
                 let font_size = 9.0_f32;
-                let char_w = pt_to_mm(font_size) * 0.52;
                 let visible_contact = crate::export::links::display_text(contact_line);
                 let contact_x = if template.name_centered {
-                    layout.page_width / 2.0 - (visible_contact.len() as f32 * char_w * 0.5)
+                    centered_x(
+                        layout.page_width,
+                        text_advance_mm(
+                            &visible_contact,
+                            template.fonts.body_family,
+                            false,
+                            font_size,
+                        ),
+                    )
                 } else {
                     layout.margin_left
                 };
-                render_contact_text_with_links(contact_line, ContactSpanCtx {
-                    x_start: contact_x, y: current_y, font_size,
-                    page_height: layout.page_height, reg_id: body_reg,
-                    fill_color: colors.date.clone(),
-                }, &mut ops);
+                render_contact_text_with_links(
+                    contact_line,
+                    ContactSpanCtx {
+                        x_start: contact_x,
+                        y: current_y,
+                        font_size,
+                        page_height: layout.page_height,
+                        reg_id: body_reg,
+                        fill_color: colors.date.clone(),
+                        family: template.fonts.body_family,
+                    },
+                    &mut ops,
+                );
                 current_y -= pt_to_mm(font_size) * 1.2;
             }
 
             // Hairline rule — thickness from template (e.g. 0.25 pt for Editorial Serif)
-            let rule_thickness = if template.rule_thickness > 0.0 { template.rule_thickness } else { 0.5 };
+            let rule_thickness = if template.rule_thickness > 0.0 {
+                template.rule_thickness
+            } else {
+                0.5
+            };
             ops.extend(build_line(
                 layout.margin_left,
                 current_y,
@@ -541,37 +695,67 @@ pub fn render_signature(
 
     match template.cover_letter.signature_block {
         SignatureStyle::TypedOnly => {
-            let pos = Point { x: Mm(layout.margin_left).into(), y: Mm(current_y).into() };
+            let pos = Point {
+                x: Mm(layout.margin_left).into(),
+                y: Mm(current_y).into(),
+            };
             ops.extend([
                 Op::StartTextSection,
-                Op::SetFillColor { col: colors.body.clone() },
+                Op::SetFillColor {
+                    col: colors.body.clone(),
+                },
                 Op::SetTextCursor { pos },
-                Op::SetFont { font: PdfFontHandle::External(body_reg.clone()), size: Pt(template.body_pt) },
-                Op::ShowText { items: vec![TextItem::Text(name.to_string())] },
+                Op::SetFont {
+                    font: PdfFontHandle::External(body_reg.clone()),
+                    size: Pt(template.body_pt),
+                },
+                Op::ShowText {
+                    items: vec![TextItem::Text(name.to_string())],
+                },
                 Op::EndTextSection,
             ]);
             current_y -= pt_to_mm(template.body_pt) * 1.2;
         }
 
         SignatureStyle::NameAndTitle => {
-            let pos = Point { x: Mm(layout.margin_left).into(), y: Mm(current_y).into() };
+            let pos = Point {
+                x: Mm(layout.margin_left).into(),
+                y: Mm(current_y).into(),
+            };
             ops.extend([
                 Op::StartTextSection,
-                Op::SetFillColor { col: colors.body.clone() },
+                Op::SetFillColor {
+                    col: colors.body.clone(),
+                },
                 Op::SetTextCursor { pos },
-                Op::SetFont { font: PdfFontHandle::External(body_bold.clone()), size: Pt(template.body_pt) },
-                Op::ShowText { items: vec![TextItem::Text(name.to_string())] },
+                Op::SetFont {
+                    font: PdfFontHandle::External(body_bold.clone()),
+                    size: Pt(template.body_pt),
+                },
+                Op::ShowText {
+                    items: vec![TextItem::Text(name.to_string())],
+                },
                 Op::EndTextSection,
             ]);
             current_y -= pt_to_mm(template.body_pt) * 1.2;
             if let Some(t) = title {
-                let tpos = Point { x: Mm(layout.margin_left).into(), y: Mm(current_y).into() };
+                let tpos = Point {
+                    x: Mm(layout.margin_left).into(),
+                    y: Mm(current_y).into(),
+                };
                 ops.extend([
                     Op::StartTextSection,
-                    Op::SetFillColor { col: colors.date.clone() },
+                    Op::SetFillColor {
+                        col: colors.date.clone(),
+                    },
                     Op::SetTextCursor { pos: tpos },
-                    Op::SetFont { font: PdfFontHandle::External(body_reg.clone()), size: Pt(9.0) },
-                    Op::ShowText { items: vec![TextItem::Text(t.to_string())] },
+                    Op::SetFont {
+                        font: PdfFontHandle::External(body_reg.clone()),
+                        size: Pt(9.0),
+                    },
+                    Op::ShowText {
+                        items: vec![TextItem::Text(t.to_string())],
+                    },
                     Op::EndTextSection,
                 ]);
                 current_y -= pt_to_mm(9.0) * 1.2;
@@ -581,24 +765,44 @@ pub fn render_signature(
         SignatureStyle::ScriptStyle => {
             // Use name_family italic if available, else fall back to TypedOnly
             let font_id = name_italic_opt.unwrap_or(name_reg);
-            let pos = Point { x: Mm(layout.margin_left).into(), y: Mm(current_y).into() };
+            let pos = Point {
+                x: Mm(layout.margin_left).into(),
+                y: Mm(current_y).into(),
+            };
             ops.extend([
                 Op::StartTextSection,
-                Op::SetFillColor { col: colors.body.clone() },
+                Op::SetFillColor {
+                    col: colors.body.clone(),
+                },
                 Op::SetTextCursor { pos },
-                Op::SetFont { font: PdfFontHandle::External(font_id.clone()), size: Pt(template.body_pt + 2.0) },
-                Op::ShowText { items: vec![TextItem::Text(name.to_string())] },
+                Op::SetFont {
+                    font: PdfFontHandle::External(font_id.clone()),
+                    size: Pt(template.body_pt + 2.0),
+                },
+                Op::ShowText {
+                    items: vec![TextItem::Text(name.to_string())],
+                },
                 Op::EndTextSection,
             ]);
             current_y -= pt_to_mm(template.body_pt + 2.0) * 1.2;
             if let Some(t) = title {
-                let tpos = Point { x: Mm(layout.margin_left).into(), y: Mm(current_y).into() };
+                let tpos = Point {
+                    x: Mm(layout.margin_left).into(),
+                    y: Mm(current_y).into(),
+                };
                 ops.extend([
                     Op::StartTextSection,
-                    Op::SetFillColor { col: colors.date.clone() },
+                    Op::SetFillColor {
+                        col: colors.date.clone(),
+                    },
                     Op::SetTextCursor { pos: tpos },
-                    Op::SetFont { font: PdfFontHandle::External(body_reg.clone()), size: Pt(9.0) },
-                    Op::ShowText { items: vec![TextItem::Text(t.to_string())] },
+                    Op::SetFont {
+                        font: PdfFontHandle::External(body_reg.clone()),
+                        size: Pt(9.0),
+                    },
+                    Op::ShowText {
+                        items: vec![TextItem::Text(t.to_string())],
+                    },
                     Op::EndTextSection,
                 ]);
                 current_y -= pt_to_mm(9.0) * 1.2;
@@ -628,18 +832,36 @@ pub fn render_name_line(
         .unwrap_or(text);
 
     let x = if template.name_centered {
-        layout.page_width / 2.0 - (name_text.len() as f32 * pt_to_mm(template.name_pt) * 0.3)
+        centered_x(
+            layout.page_width,
+            text_advance_mm(
+                name_text,
+                template.fonts.name_family,
+                true,
+                template.name_pt,
+            ),
+        )
     } else {
         layout.margin_left
     };
 
-    let text_pos = Point { x: Mm(x).into(), y: Mm(y).into() };
+    let text_pos = Point {
+        x: Mm(x).into(),
+        y: Mm(y).into(),
+    };
     let ops = vec![
         Op::StartTextSection,
-        Op::SetFillColor { col: colors.name.clone() },
+        Op::SetFillColor {
+            col: colors.name.clone(),
+        },
         Op::SetTextCursor { pos: text_pos },
-        Op::SetFont { font: PdfFontHandle::External(bold_id.clone()), size: Pt(template.name_pt) },
-        Op::ShowText { items: vec![TextItem::Text(name_text.to_string())] },
+        Op::SetFont {
+            font: PdfFontHandle::External(bold_id.clone()),
+            size: Pt(template.name_pt),
+        },
+        Op::ShowText {
+            items: vec![TextItem::Text(name_text.to_string())],
+        },
         Op::EndTextSection,
     ];
 
@@ -647,11 +869,12 @@ pub fn render_name_line(
     (ops, new_y)
 }
 
-/// Render contact text as a single text op (PDF handles glyph spacing) and append
-/// clickable link annotations using approximate char-width positions.
+/// Render a contact line as one text op (so the PDF engine positions every glyph
+/// correctly) plus a clickable annotation rect over each link label.
 ///
-/// Splitting into per-span ops with a manual cursor causes visible gaps because the
-/// `char_w` estimate is too wide for narrow glyphs like `|` and space.  Emitting one
+/// The single `ShowText` avoids the visible gaps a manual per-span cursor would
+/// create; the rects are placed with [`contact_link_rects`] using real glyph
+/// advances, so they overlap the rendered labels precisely.
 struct ContactSpanCtx<'a> {
     x_start: f32,
     y: f32,
@@ -659,60 +882,65 @@ struct ContactSpanCtx<'a> {
     page_height: f32,
     reg_id: &'a FontId,
     fill_color: Color,
+    family: FontFamily,
 }
 
-/// `ShowText` lets the PDF engine position every glyph correctly; annotations are
-/// slightly approximate but reliably overlap the link label.
 fn render_contact_text_with_links(text: &str, ctx: ContactSpanCtx<'_>, ops: &mut Vec<Op>) {
-    let ContactSpanCtx { x_start, y, font_size, page_height, reg_id, fill_color } = ctx;
-    use crate::export::links::{display_text, split_urls, Span};
-    let char_w = pt_to_mm(font_size) * 0.52;
-    let display = display_text(text);
+    let ContactSpanCtx {
+        x_start,
+        y,
+        font_size,
+        page_height,
+        reg_id,
+        fill_color,
+        family,
+    } = ctx;
+    let display = crate::export::links::display_text(text);
 
     // One text section for the whole line — PDF handles proportional glyph spacing.
-    let text_pos = Point { x: Mm(x_start).into(), y: Mm(y).into() };
+    let text_pos = Point {
+        x: Mm(x_start).into(),
+        y: Mm(y).into(),
+    };
     ops.extend([
         Op::StartTextSection,
         Op::SetFillColor { col: fill_color },
         Op::SetTextCursor { pos: text_pos },
-        Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(font_size) },
-        Op::ShowText { items: vec![TextItem::Text(display.into_owned())] },
+        Op::SetFont {
+            font: PdfFontHandle::External(reg_id.clone()),
+            size: Pt(font_size),
+        },
+        Op::ShowText {
+            items: vec![TextItem::Text(display.into_owned())],
+        },
         Op::EndTextSection,
     ]);
 
-    // Annotation rects: scan spans in the original (markdown) text, track display
-    // character offset to approximate the x position of each link label.
+    // Clickable rects, positioned by real glyph advances (not a char-count guess).
     let page_h_pt = page_height * 2.834_645_7;
     let rect_y_bottom = page_h_pt - (y * 2.834_645_7);
     let rect_y_top = rect_y_bottom + font_size * 1.1;
-    let mut display_chars = 0usize;
 
-    for span in split_urls(text) {
-        match span {
-            Span::Text(t) => display_chars += t.len(),
-            Span::Link { label, url } => {
-                let x_left = (x_start + display_chars as f32 * char_w) * 2.834_645_7;
-                let x_right = x_left + label.len() as f32 * char_w * 2.834_645_7;
-                let rect = Rect {
-                    x: Pt(x_left),
-                    y: Pt(rect_y_bottom),
-                    width: Pt(x_right - x_left),
-                    height: Pt(rect_y_top - rect_y_bottom),
-                    mode: None,
-                    winding_order: None,
-                };
-                ops.push(Op::LinkAnnotation {
-                    link: LinkAnnotation::new(
-                        rect,
-                        Actions::Uri(url),
-                        Some(BorderArray::Solid([0.0, 0.0, 0.0])),
-                        Some(ColorArray::Transparent),
-                        None,
-                    ),
-                });
-                display_chars += label.len();
-            }
-        }
+    for link in contact_link_rects(text, x_start, family, font_size, &FontMetrics) {
+        let x_left = link.x_left_mm * 2.834_645_7;
+        let width = link.width_mm * 2.834_645_7;
+        let rect = Rect {
+            x: Pt(x_left),
+            y: Pt(rect_y_bottom),
+            width: Pt(width),
+            height: Pt(rect_y_top - rect_y_bottom),
+            mode: None,
+            winding_order: None,
+        };
+        ops.push(Op::LinkAnnotation {
+            link: LinkAnnotation::new(
+                rect,
+                Actions::Uri(link.url),
+                Some(BorderArray::Solid([0.0, 0.0, 0.0])),
+                Some(ColorArray::Transparent),
+                None,
+            ),
+        });
     }
 }
 
@@ -729,23 +957,38 @@ pub fn render_contact_line(
 ) -> (Vec<Op>, f32) {
     let (reg_id, _, _) = resolve_fonts(fonts, template.fonts.body_family);
     let font_size = 9.0_f32;
-    let char_w = pt_to_mm(font_size) * 0.52;
 
     let visible = crate::export::links::display_text(text);
     let x_start = if template.name_centered {
-        layout.page_width / 2.0 - (visible.len() as f32 * char_w * 0.5)
+        centered_x(
+            layout.page_width,
+            text_advance_mm(&visible, template.fonts.body_family, false, font_size),
+        )
     } else {
         layout.margin_left
     };
 
     let mut ops = Vec::new();
-    render_contact_text_with_links(text, ContactSpanCtx {
-        x_start, y, font_size, page_height: layout.page_height,
-        reg_id, fill_color: colors.date.clone(),
-    }, &mut ops);
+    render_contact_text_with_links(
+        text,
+        ContactSpanCtx {
+            x_start,
+            y,
+            font_size,
+            page_height: layout.page_height,
+            reg_id,
+            fill_color: colors.date.clone(),
+            family: template.fonts.body_family,
+        },
+        &mut ops,
+    );
 
     let y_after_text = y - pt_to_mm(font_size) * 1.2;
-    let rule_thickness = if template.rule_thickness > 0.0 { template.rule_thickness } else { 0.5 };
+    let rule_thickness = if template.rule_thickness > 0.0 {
+        template.rule_thickness
+    } else {
+        0.5
+    };
     ops.extend(build_line(
         layout.margin_left,
         y_after_text,
@@ -779,13 +1022,23 @@ pub fn render_section_header(
         (text.to_string(), template.section_pt)
     };
 
-    let text_pos = Point { x: Mm(layout.margin_left).into(), y: Mm(y_before).into() };
+    let text_pos = Point {
+        x: Mm(layout.margin_left).into(),
+        y: Mm(y_before).into(),
+    };
     let mut ops = vec![
         Op::StartTextSection,
-        Op::SetFillColor { col: colors.section.clone() },
+        Op::SetFillColor {
+            col: colors.section.clone(),
+        },
         Op::SetTextCursor { pos: text_pos },
-        Op::SetFont { font: PdfFontHandle::External(bold_id.clone()), size: Pt(effective_pt) },
-        Op::ShowText { items: vec![TextItem::Text(header_text)] },
+        Op::SetFont {
+            font: PdfFontHandle::External(bold_id.clone()),
+            size: Pt(effective_pt),
+        },
+        Op::ShowText {
+            items: vec![TextItem::Text(header_text)],
+        },
         Op::EndTextSection,
     ];
 
@@ -793,7 +1046,11 @@ pub fn render_section_header(
 
     match template.section_style {
         SectionStyle::RuledBottom | SectionStyle::Underline => {
-            let thickness = if template.rule_thickness > 0.0 { template.rule_thickness } else { 0.5 };
+            let thickness = if template.rule_thickness > 0.0 {
+                template.rule_thickness
+            } else {
+                0.5
+            };
             ops.extend(build_line(
                 layout.margin_left,
                 y_after_header,
@@ -835,14 +1092,26 @@ pub fn render_job_entry(
     );
 
     if let Some(date) = date {
-        let date_x = layout.page_width - layout.margin_right - (date.len() as f32 * pt_to_mm(9.0) * 0.3);
-        let text_pos = Point { x: Mm(date_x).into(), y: Mm(y).into() };
+        let date_x = layout.page_width
+            - layout.margin_right
+            - text_advance_mm(date, template.fonts.body_family, false, 9.0);
+        let text_pos = Point {
+            x: Mm(date_x).into(),
+            y: Mm(y).into(),
+        };
         ops.extend([
             Op::StartTextSection,
-            Op::SetFillColor { col: colors.date.clone() },
+            Op::SetFillColor {
+                col: colors.date.clone(),
+            },
             Op::SetTextCursor { pos: text_pos },
-            Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(9.0) },
-            Op::ShowText { items: vec![TextItem::Text(date.to_string())] },
+            Op::SetFont {
+                font: PdfFontHandle::External(reg_id.clone()),
+                size: Pt(9.0),
+            },
+            Op::ShowText {
+                items: vec![TextItem::Text(date.to_string())],
+            },
             Op::EndTextSection,
         ]);
     }
@@ -861,15 +1130,29 @@ pub fn render_job_title(
     y: f32,
 ) -> (Vec<Op>, f32) {
     let (reg_id, _, italic_opt) = resolve_fonts(fonts, template.fonts.body_family);
-    let font_id = if template.job_title_italic { italic_opt.unwrap_or(reg_id) } else { reg_id };
+    let font_id = if template.job_title_italic {
+        italic_opt.unwrap_or(reg_id)
+    } else {
+        reg_id
+    };
 
-    let text_pos = Point { x: Mm(layout.main_x).into(), y: Mm(y).into() };
+    let text_pos = Point {
+        x: Mm(layout.main_x).into(),
+        y: Mm(y).into(),
+    };
     let ops = vec![
         Op::StartTextSection,
-        Op::SetFillColor { col: colors.date.clone() },
+        Op::SetFillColor {
+            col: colors.date.clone(),
+        },
         Op::SetTextCursor { pos: text_pos },
-        Op::SetFont { font: PdfFontHandle::External(font_id.clone()), size: Pt(template.body_pt - 0.5) },
-        Op::ShowText { items: vec![TextItem::Text(text.to_string())] },
+        Op::SetFont {
+            font: PdfFontHandle::External(font_id.clone()),
+            size: Pt(template.body_pt - 0.5),
+        },
+        Op::ShowText {
+            items: vec![TextItem::Text(text.to_string())],
+        },
         Op::EndTextSection,
     ];
 
@@ -889,13 +1172,23 @@ pub fn render_bullet_line(
 
     let mut ops = Vec::new();
 
-    let bullet_pos = Point { x: Mm(layout.main_x + 1.3).into(), y: Mm(y).into() };
+    let bullet_pos = Point {
+        x: Mm(layout.main_x + 1.3).into(),
+        y: Mm(y).into(),
+    };
     ops.extend([
         Op::StartTextSection,
-        Op::SetFillColor { col: colors.body.clone() },
+        Op::SetFillColor {
+            col: colors.body.clone(),
+        },
         Op::SetTextCursor { pos: bullet_pos },
-        Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(template.body_pt) },
-        Op::ShowText { items: vec![TextItem::Text("•".to_string())] },
+        Op::SetFont {
+            font: PdfFontHandle::External(reg_id.clone()),
+            size: Pt(template.body_pt),
+        },
+        Op::ShowText {
+            items: vec![TextItem::Text("•".to_string())],
+        },
         Op::EndTextSection,
     ]);
 
@@ -963,8 +1256,15 @@ pub fn estimate_paragraph_height(
     line_height: f32,
     first_line_indent_mm: f32,
 ) -> f32 {
-    let segs = vec![TextSegment { text: text.to_string(), bold: false }];
-    let wrapped_width = if first_line_indent_mm > 0.0 { content_width - first_line_indent_mm } else { content_width };
+    let segs = vec![TextSegment {
+        text: text.to_string(),
+        bold: false,
+    }];
+    let wrapped_width = if first_line_indent_mm > 0.0 {
+        content_width - first_line_indent_mm
+    } else {
+        content_width
+    };
     // First line at reduced width, rest at full width
     let wrapped = wrap_segments(&segs, content_width.min(wrapped_width), font_size_pt);
     wrapped.len() as f32 * line_height
@@ -998,7 +1298,11 @@ pub fn render_cover_letter_paragraph(
     let last_idx = wrapped.len().saturating_sub(1);
 
     for (i, seg_line) in wrapped.into_iter().enumerate() {
-        let line_x = if i == 0 { x_offset + first_line_indent } else { x_offset };
+        let line_x = if i == 0 {
+            x_offset + first_line_indent
+        } else {
+            x_offset
+        };
         ops.extend(build_text_ops(
             &seg_line,
             TextOpsConfig {
@@ -1014,7 +1318,9 @@ pub fn render_cover_letter_paragraph(
 
         let extra = if i == last_idx {
             match template.cover_letter.paragraph_indent {
-                ParagraphIndent::BlockNoIndent => pt_to_mm(template.cover_letter.paragraph_spacing_pt),
+                ParagraphIndent::BlockNoIndent => {
+                    pt_to_mm(template.cover_letter.paragraph_spacing_pt)
+                }
                 ParagraphIndent::FirstLine => 0.0,
             }
         } else {
@@ -1025,7 +1331,6 @@ pub fn render_cover_letter_paragraph(
 
     (ops, current_y)
 }
-
 
 #[cfg(test)]
 mod test;

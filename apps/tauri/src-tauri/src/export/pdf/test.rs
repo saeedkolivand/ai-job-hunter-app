@@ -136,7 +136,8 @@ fn test_generate_pdf_resume_with_section_markers() {
 
 #[test]
 fn test_generate_pdf_cover_letter_with_section_markers() {
-    let text = "Some header\n### COMPLETE COVER LETTER ###\nDear Hiring Manager,\n\nI am writing...";
+    let text =
+        "Some header\n### COMPLETE COVER LETTER ###\nDear Hiring Manager,\n\nI am writing...";
     let request = ExportRequest {
         text: text.to_string(),
         format: super::super::types::ExportFormat::Pdf,
@@ -147,4 +148,81 @@ fn test_generate_pdf_cover_letter_with_section_markers() {
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
+}
+
+/// Recursively collect every `/URI` action target in a parsed PDF (link
+/// annotations store the URL nested under the annotation's `/A` action dict).
+fn collect_uris(doc: &lopdf::Document) -> Vec<String> {
+    fn from_dict(d: &lopdf::Dictionary, out: &mut Vec<String>) {
+        if let Ok(u) = d.get(b"URI") {
+            if let Ok(bytes) = u.as_str() {
+                out.push(String::from_utf8_lossy(bytes).into_owned());
+            }
+        }
+        for (_, v) in d.iter() {
+            from_obj(v, out);
+        }
+    }
+    fn from_obj(o: &lopdf::Object, out: &mut Vec<String>) {
+        match o {
+            lopdf::Object::Dictionary(d) => from_dict(d, out),
+            lopdf::Object::Stream(s) => from_dict(&s.dict, out),
+            lopdf::Object::Array(a) => a.iter().for_each(|v| from_obj(v, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for obj in doc.objects.values() {
+        from_obj(obj, &mut out);
+    }
+    out
+}
+
+#[test]
+fn resume_pdf_embeds_contact_link_annotations() {
+    // A real resume export must emit clickable annotations for the contact line's
+    // links (markdown link → its URL; bare email → mailto:). End-to-end check that
+    // the exact-metrics rects are wired through, not just unit-tested in isolation.
+    let text = "Jane Doe\njane@example.com | [LinkedIn](https://linkedin.com/in/jane)";
+    let request = ExportRequest {
+        text: text.to_string(),
+        format: super::super::types::ExportFormat::Pdf,
+        document_type: DocumentType::Resume,
+        template_id: super::super::types::TemplateId::Modern,
+        meta: None,
+        ats_mode: false,
+    };
+    let bytes = generate_pdf(&request).expect("resume pdf");
+    let doc = lopdf::Document::load_mem(&bytes).expect("parse generated pdf");
+    let uris = collect_uris(&doc);
+
+    assert!(
+        uris.iter().any(|u| u == "https://linkedin.com/in/jane"),
+        "expected LinkedIn link annotation, found {uris:?}"
+    );
+    assert!(
+        uris.iter().any(|u| u == "mailto:jane@example.com"),
+        "expected mailto annotation for the email, found {uris:?}"
+    );
+}
+
+#[test]
+fn centered_template_resume_pdf_is_generated() {
+    // Executive centers the name (name_centered = true) — exercise the exact-advance
+    // centering path end-to-end and confirm a non-empty PDF is produced.
+    let request = ExportRequest {
+        text: "Alexander Hamilton\nalex@example.com\n\nEXPERIENCE\nTreasury  2020 - Present\nSecretary"
+            .to_string(),
+        format: super::super::types::ExportFormat::Pdf,
+        document_type: DocumentType::Resume,
+        template_id: super::super::types::TemplateId::Executive,
+        meta: None,
+        ats_mode: false,
+    };
+    let bytes = generate_pdf(&request).expect("executive resume pdf");
+    assert!(
+        bytes.len() > 1000,
+        "expected a non-trivial PDF, got {} bytes",
+        bytes.len()
+    );
 }
