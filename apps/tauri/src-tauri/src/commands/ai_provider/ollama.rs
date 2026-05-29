@@ -117,12 +117,16 @@ impl AiProvider for OllamaClient {
         Some(EMBED_MODEL)
     }
 
-    async fn list_models(&self, client: &reqwest::Client, _api_key: &str) -> Vec<Value> {
-        list_tag_models(client).await
+    async fn list_models(&self, _app: &AppHandle) -> Vec<Value> {
+        match super::probe_client() {
+            Ok(client) => list_tag_models(&client).await,
+            Err(_) => vec![],
+        }
     }
 
-    async fn test_key(&self, client: &reqwest::Client, _api_key: &str) -> AppResult<()> {
+    async fn test_key(&self, _app: &AppHandle) -> AppResult<()> {
         // Ollama needs no key — a reachable host counts as healthy.
+        let client = super::probe_client()?;
         match client.get(format!("{}/api/tags", host())).send().await {
             Ok(r) if r.status().is_success() => Ok(()),
             Ok(r) => Err(AppError::Provider(format!("Ollama returned status: {}", r.status()))),

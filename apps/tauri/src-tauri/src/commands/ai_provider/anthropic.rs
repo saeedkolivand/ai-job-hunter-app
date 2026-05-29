@@ -271,10 +271,18 @@ impl AiProvider for AnthropicClient {
         None
     }
 
-    async fn list_models(&self, client: &reqwest::Client, api_key: &str) -> Vec<Value> {
+    async fn list_models(&self, app: &AppHandle) -> Vec<Value> {
+        let api_key = match get_provider_key(app, self.id().credential_key()) {
+            Some(k) => k,
+            None => return vec![],
+        };
+        let client = match super::probe_client() {
+            Ok(c) => c,
+            Err(_) => return vec![],
+        };
         let resp = client
             .get(format!("{BASE}/models"))
-            .header("x-api-key", api_key)
+            .header("x-api-key", &api_key)
             .header("anthropic-version", VERSION)
             .send()
             .await;
@@ -293,10 +301,13 @@ impl AiProvider for AnthropicClient {
         vec![]
     }
 
-    async fn test_key(&self, client: &reqwest::Client, api_key: &str) -> AppResult<()> {
+    async fn test_key(&self, app: &AppHandle) -> AppResult<()> {
+        let api_key = get_provider_key(app, self.id().credential_key())
+            .ok_or_else(|| AppError::Config("No API key found".to_string()))?;
+        let client = super::probe_client()?;
         let resp = client
             .post(format!("{BASE}/messages"))
-            .header("x-api-key", api_key)
+            .header("x-api-key", &api_key)
             .header("anthropic-version", VERSION)
             .header("content-type", "application/json")
             .json(&json!({

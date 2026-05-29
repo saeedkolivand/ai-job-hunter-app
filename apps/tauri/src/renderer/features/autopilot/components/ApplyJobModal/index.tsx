@@ -148,7 +148,9 @@ export function ApplyJobModal({ job, resumeText, onClose }: Props) {
             <p className="text-[11px] text-amber-300/70">
               {reason === 'addApiKey'
                 ? t('autopilot.apply.addApiKey')
-                : t('autopilot.apply.selectModel')}
+                : reason === 'installCli'
+                  ? t('autopilot.apply.installCli')
+                  : t('autopilot.apply.selectModel')}
             </p>
           )}
           {gen.error && <p className="text-[11px] text-red-300/80">{gen.error}</p>}

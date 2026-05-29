@@ -1,3 +1,4 @@
+import { Clock } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -12,11 +13,12 @@ interface AnalysisProgressProps {
   modelLoading?: boolean;
   tokenCount?: number;
   tokenStartMs?: number | null;
+  /** Expected duration (ms) for the active provider — drives the bar + ETA. */
+  estimatedMs?: number;
+  /** Slow provider (CLI agent / local) — show an up-front "this can take a while" hint. */
+  slow?: boolean;
   t: (key: string) => string;
 }
-
-// Estimated total duration in ms — progress bar reaches 90% at this point then waits
-const ESTIMATED_MS = 50_000;
 
 export function AnalysisProgress({
   running,
@@ -25,6 +27,8 @@ export function AnalysisProgress({
   modelLoading,
   tokenCount,
   tokenStartMs,
+  estimatedMs,
+  slow,
   t,
 }: AnalysisProgressProps) {
   const PROGRESS_MESSAGES = [
@@ -42,6 +46,11 @@ export function AnalysisProgress({
     t('analyze.progress.finalising'),
   ];
 
+  // Expected duration for the active provider; the bar eases to 90% by here, then
+  // crawls. Provider-aware so a slow CLI/local run doesn't read "almost done" for
+  // minutes.
+  const estMs = estimatedMs ?? 50_000;
+
   const [progress, setProgress] = useState(0); // 0–100
   const [elapsed, setElapsed] = useState(0); // seconds
   const [msgIdx, setMsgIdx] = useState(0);
@@ -58,10 +67,10 @@ export function AnalysisProgress({
     const tick = setInterval(() => {
       const ms = Date.now() - startRef.current;
       setElapsed(Math.floor(ms / 1000));
-      // Ease toward 90% over ESTIMATED_MS, then crawl slowly after
-      const t = Math.min(ms / ESTIMATED_MS, 1);
-      const eased = t < 1 ? 90 * (1 - Math.pow(1 - t, 3)) : 90 + (ms - ESTIMATED_MS) / 3000;
-      setProgress(Math.min(eased, 99));
+      // Ease toward 90% over estMs, then crawl slowly after (capped below 100%).
+      const ratio = Math.min(ms / estMs, 1);
+      const eased = ratio < 1 ? 90 * (1 - Math.pow(1 - ratio, 3)) : 90 + (ms - estMs) / 4000;
+      setProgress(Math.min(eased, 97));
     }, 400);
 
     const msgTick = setInterval(() => {
@@ -72,16 +81,22 @@ export function AnalysisProgress({
       clearInterval(tick);
       clearInterval(msgTick);
     };
-  }, [running, PROGRESS_MESSAGES.length]);
+  }, [running, estMs, PROGRESS_MESSAGES.length]);
 
   const mins = Math.floor(elapsed / 60);
   const secs = elapsed % 60;
   const timer = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+  const estSec = Math.round(estMs / 1000);
+  const fmtLeft = (s: number) =>
+    s >= 60 ? `~${Math.floor(s / 60)}m ${s % 60}s left` : `~${s}s left`;
+  // Honest ETA: count down toward the estimate, then admit it's running long
+  // rather than showing a stuck "almost done".
   const eta =
-    elapsed > 5 && progress < 90
-      ? `~${Math.max(1, Math.round(ESTIMATED_MS / 1000 - elapsed))}s left`
-      : progress >= 90
-        ? t('analyze.progress.almostDone')
+    elapsed >= estSec
+      ? t('analyze.progress.takingLonger')
+      : elapsed > 5
+        ? fmtLeft(Math.max(1, estSec - elapsed))
         : '';
 
   return (
@@ -99,6 +114,14 @@ export function AnalysisProgress({
           <span>{timer}</span>
         </div>
       </div>
+
+      {/* Up-front expectation for slow providers (CLI agents / local models) */}
+      {slow && (
+        <div className="flex items-center gap-1.5 text-[10px] text-foreground/35">
+          <Clock size={11} className="text-brand-soft/50" />
+          {t('analyze.progress.slowHint')}
+        </div>
+      )}
 
       {/* Rotating message */}
       <div className="relative h-6 overflow-hidden">
@@ -155,8 +178,8 @@ export function AnalysisProgress({
       {tokenCount != null &&
         tokenCount > 0 &&
         (() => {
-          const elapsed = tokenStartMs ? (Date.now() - tokenStartMs) / 1000 : 0;
-          const tokPerSec = elapsed > 2 ? Math.round(tokenCount / elapsed) : null;
+          const tokElapsed = tokenStartMs ? (Date.now() - tokenStartMs) / 1000 : 0;
+          const tokPerSec = tokElapsed > 2 ? Math.round(tokenCount / tokElapsed) : null;
           return (
             <div className="text-[10px] text-foreground/25 text-right">
               {tokenCount.toLocaleString()} tokens{tokPerSec ? ` · ~${tokPerSec} tok/s` : ''}
