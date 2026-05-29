@@ -8,7 +8,7 @@ This document covers every major architectural decision in the project — the r
 
 ### 30-Second Version (recruiter / HR screen)
 
-> "AI Job Hunter is a full-stack desktop application I built with Tauri, React, and Rust. It automates the mechanical parts of job searching — scraping 18+ job boards, scoring postings against your resume using vector embeddings, generating tailored cover letters, and auto-applying. Everything runs locally on your machine with no cloud backend. I designed it as a production-grade monorepo with a strict ports-and-adapters architecture, a typed IPC contract layer, a custom component library, and automated releases."
+> "AI Job Hunter is a full-stack desktop application I built with Tauri, React, and Rust. It automates the mechanical parts of job searching — scraping 18+ job boards, scoring postings against your resume using vector embeddings, and generating tailored cover letters — with autonomous auto-apply (Autopilot) on the roadmap. Everything runs locally on your machine with no cloud backend. I designed it as a production-grade monorepo with a strict ports-and-adapters architecture, a typed IPC contract layer, a custom component library, and automated releases."
 
 ### 2-Minute Version (technical interview)
 

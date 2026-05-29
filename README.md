@@ -25,21 +25,22 @@
 
 ## What It Does
 
-AI Job Hunter is a desktop application built with Tauri that brings the full power of AI-driven job hunting to your local machine. It scrapes 18+ job boards, semantically matches postings to your resume, generates tailored cover letters and resumes using your AI provider of choice, and can autonomously apply to jobs on your behalf — all while keeping your data and credentials stored locally on your device.
+AI Job Hunter is a desktop application built with Tauri that brings the full power of AI-driven job hunting to your local machine. It scrapes 18+ job boards, semantically matches postings to your resume, and generates tailored cover letters and resumes using your AI provider of choice — all while keeping your data and credentials stored locally on your device. Autonomous job application (**Autopilot**) is **coming soon**.
 
 ### AI Provider Flexibility
 
 Choose how you want to run the AI — you can switch providers at any time in Settings → AI:
 
-| Provider              | Models                                           | Notes                                        |
-| --------------------- | ------------------------------------------------ | -------------------------------------------- |
-| **Ollama** (local)    | mistral, llama3.2, neural-chat, any Ollama model | No API key needed; fully offline             |
-| **OpenAI**            | GPT-4o, GPT-4 Turbo, GPT-3.5 Turbo               | Requires API key                             |
-| **Anthropic**         | Claude 3.5 Sonnet, Claude 3 Opus                 | Requires API key; supports extended thinking |
-| **Google Gemini**     | Gemini 1.5 Pro, Gemini 1.5 Flash                 | Requires API key                             |
-| **OpenAI-compatible** | Any (LM Studio, remote Ollama, etc.)             | Custom base URL                              |
+| Provider               | Models                                           | Notes                                                                      |
+| ---------------------- | ------------------------------------------------ | -------------------------------------------------------------------------- |
+| **Ollama** (local)     | mistral, llama3.2, neural-chat, any Ollama model | No API key needed; fully offline                                           |
+| **OpenAI**             | GPT-4o, GPT-4 Turbo, GPT-3.5 Turbo               | Requires API key                                                           |
+| **Anthropic**          | Claude 3.5 Sonnet, Claude 3 Opus                 | Requires API key; supports extended thinking                               |
+| **Google Gemini**      | Gemini 1.5 Pro, Gemini 1.5 Flash                 | Requires API key                                                           |
+| **OpenAI-compatible**  | Any (LM Studio, remote Ollama, etc.)             | Custom base URL                                                            |
+| **CLI agents** (local) | Claude Code, Codex, Gemini CLI                   | Run headless via the installed CLI — no API key (uses the CLI's own login) |
 
-API keys are stored encrypted in the OS keychain — never in plain text or config files.
+API keys are stored encrypted in the OS keychain — never in plain text or config files. CLI agents run as a headless subprocess and reuse whatever login that CLI already has, so they need no key in the app.
 
 ### Why It Exists
 
@@ -53,9 +54,9 @@ Modern job searching is repetitive, time-consuming, and emotionally draining. AI
 - **AI resume & cover letter generation** — Streaming generation with 9 professional templates, DOCX/PDF export, ATS-safe formatting
 - **Semantic job matching** — Hybrid vector + keyword search powered by LanceDB; scores each posting against your resume
 - **Resume analysis** — ATS scoring, skill gap detection, language mismatch warnings, and improvement recommendations
-- **Autopilot** — Define a workflow (board, schedule, resume, message) and let the app apply to jobs automatically
+- **Autopilot** _(coming soon)_ — Define a workflow (board, schedule, resume, message) and let the app apply to jobs automatically
 - **Document processing** — Import PDF, DOCX, TXT, images (OCR via Tesseract); extract and chunk for embedding
-- **Multi-provider AI** — Ollama (local), OpenAI, Anthropic (extended thinking), Gemini, LM Studio
+- **Multi-provider AI** — Ollama (local), OpenAI, Anthropic (extended thinking), Gemini, LM Studio, plus headless **CLI agents** (Claude Code, Codex, Gemini CLI)
 - **Multilingual** — UI and generation in 11 languages: en, de, fr, es, it, tr, pt, ru, zh, ja, ko
 - **Privacy-first** — Credentials in OS keychain; all data in local SQLite/LanceDB; zero telemetry
 
@@ -170,7 +171,9 @@ const { data } = useSearch({
 });
 ```
 
-### Set up Autopilot
+### Set up Autopilot _(coming soon)_
+
+> ⏳ Autopilot / auto-apply is under active development and not yet available in released builds. The planned flow:
 
 ```
 1. Navigate to Autopilot → New Workflow
