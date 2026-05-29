@@ -18,11 +18,13 @@ use crate::error::{AppError, AppResult};
 pub use crate::ipc_contracts::ai::AiGenerateRequest;
 
 mod anthropic;
+pub mod cli_agent; // pub: its registry/detection back the CLI-agent health probe
 mod gemini;
 pub mod ollama; // pub: its Ollama-only helpers back the local model list / health / embeddings
 mod openai;
 
 use anthropic::AnthropicClient;
+use cli_agent::CliAgentClient;
 use gemini::GeminiClient;
 use ollama::OllamaClient;
 use openai::OpenAiClient;
@@ -40,6 +42,15 @@ pub enum ProviderId {
     OpenAiCompatible,
     Anthropic,
     Gemini,
+    /// Anthropic Claude Code CLI run headless (a [`cli_agent`] backend). Local +
+    /// keyless: authenticates with the user's own Claude Code login.
+    ClaudeCode,
+    /// OpenAI Codex CLI run headless (a [`cli_agent`] backend). Keyless: uses the
+    /// user's ChatGPT login or `OPENAI_API_KEY`.
+    Codex,
+    /// Google Gemini CLI run headless (a [`cli_agent`] backend) — distinct from the
+    /// cloud [`Gemini`](Self::Gemini) API. Keyless: uses the user's Google login.
+    GeminiCli,
 }
 
 impl ProviderId {
@@ -51,6 +62,9 @@ impl ProviderId {
             "openai-compatible" => Ok(Self::OpenAiCompatible),
             "anthropic" => Ok(Self::Anthropic),
             "gemini" => Ok(Self::Gemini),
+            "claude-code" => Ok(Self::ClaudeCode),
+            "codex" => Ok(Self::Codex),
+            "gemini-cli" => Ok(Self::GeminiCli),
             other => Err(AppError::Config(format!(
                 "Unknown AI provider '{other}'. Select a configured provider in Settings → AI."
             ))),
@@ -64,6 +78,9 @@ impl ProviderId {
             Self::OpenAiCompatible => "openai-compatible",
             Self::Anthropic => "anthropic",
             Self::Gemini => "gemini",
+            Self::ClaudeCode => "claude-code",
+            Self::Codex => "codex",
+            Self::GeminiCli => "gemini-cli",
         }
     }
 
@@ -72,18 +89,30 @@ impl ProviderId {
         self.as_str()
     }
 
-    /// Whether this provider runs locally (no API key, no outbound cloud call).
+    /// Whether this provider runs locally (no API key, no outbound cloud call):
+    /// the Ollama server or any CLI agent.
     #[allow(dead_code)]
     pub fn is_local(&self) -> bool {
-        matches!(self, Self::Ollama)
+        matches!(self, Self::Ollama) || self.is_cli_agent()
     }
 
-    /// Reject obvious provider/model mismatches server-side (do not trust the UI).
-    /// Lenient for Ollama and OpenAI-compatible servers, where model names are
-    /// arbitrary; strict for the native cloud providers with namespaced models.
+    /// Whether this provider is a headless CLI agent (Claude Code, …).
+    pub fn is_cli_agent(&self) -> bool {
+        cli_agent::backend_for(*self).is_some()
+    }
+
+    /// Guard against picking a model that clearly belongs to a *different*
+    /// provider (a likely UI mistake). Deliberately permissive otherwise:
+    /// **unknown / newly-released model names are allowed**, so the app adopts new
+    /// models with no code change. Ollama, OpenAI-compatible (OpenRouter serves
+    /// `anthropic/…` and `google/…` models!), and CLI agents accept any name.
     pub fn validate_model(&self, model: &str) -> AppResult<()> {
         let m = model.trim().to_ascii_lowercase();
         if m.is_empty() {
+            // CLI agents fall back to the tool's own configured default model.
+            if self.is_cli_agent() {
+                return Ok(());
+            }
             return Err(AppError::Config(
                 "No model selected for the active provider.".to_string(),
             ));
@@ -96,21 +125,21 @@ impl ProviderId {
             || m.starts_with("o3")
             || m.starts_with("o4");
 
-        let mismatch = |family: &str| {
+        let mismatch = || {
             Err(AppError::Validation(format!(
-                "Model '{model}' looks like a {family} model, but the active provider is {}. \
+                "Model '{model}' looks like another provider's model, but the active provider is {}. \
                  Pick a matching model or switch providers.",
                 self.as_str()
             )))
         };
 
+        // Only reject a model that unambiguously belongs to a *different* native
+        // cloud family — never reject a merely-unrecognized name, so new releases
+        // work without a code change.
         match self {
-            Self::Anthropic if !looks_anthropic => mismatch("non-Anthropic"),
-            Self::Gemini if !looks_gemini => mismatch("non-Gemini"),
-            Self::OpenAi if looks_anthropic => mismatch("Anthropic"),
-            Self::OpenAi if looks_gemini => mismatch("Gemini"),
-            Self::OpenAi if !looks_openai => mismatch("non-OpenAI"),
-            // Ollama / OpenAI-compatible: any model name is allowed.
+            Self::Anthropic if looks_openai || looks_gemini => mismatch(),
+            Self::Gemini if looks_anthropic || looks_openai => mismatch(),
+            Self::OpenAi if looks_anthropic || looks_gemini => mismatch(),
             _ => Ok(()),
         }
     }
@@ -184,15 +213,34 @@ pub trait AiProvider: Send + Sync {
     /// The provider's default embedding model, or `None` if it has no embeddings API.
     fn default_embedding_model(&self) -> Option<&'static str>;
 
-    /// List models this provider exposes for the given key.
-    async fn list_models(&self, client: &reqwest::Client, api_key: &str) -> Vec<Value>;
+    /// List the models this provider exposes. Resolves its own credentials/client
+    /// (exactly like `chat_stream`/`complete`), so no HTTP/key transport detail
+    /// leaks into the trait — a CLI agent has neither and just lists its aliases.
+    async fn list_models(&self, app: &AppHandle) -> Vec<Value>;
 
-    /// Validate the stored API key — Ok(()) when the provider is reachable/authed.
-    async fn test_key(&self, client: &reqwest::Client, api_key: &str) -> AppResult<()>;
+    /// Validate that the provider is usable: cloud → the stored key authenticates;
+    /// local server / CLI agent → reachable / installed. Resolves its own deps from
+    /// `app`, returning a clear error when nothing is configured.
+    async fn test_key(&self, app: &AppHandle) -> AppResult<()>;
+}
+
+/// A short-timeout HTTP client for the `list_models` / `test_key` probes. Built on
+/// the shared rustls/pool base via [`crate::net::http`].
+pub(crate) fn probe_client() -> AppResult<reqwest::Client> {
+    crate::net::http::build_client(crate::net::http::ClientConfig {
+        timeout: Some(std::time::Duration::from_secs(10)),
+        ..Default::default()
+    })
+    .map_err(|e| AppError::Network(format!("Failed to create HTTP client: {e}")))
 }
 
 /// Single routing point. `base_url` only applies to OpenAI-compatible servers.
 pub fn resolve(id: ProviderId, base_url: Option<String>) -> Box<dyn AiProvider> {
+    // CLI agents are routed entirely by the registry — adding one never touches
+    // this match.
+    if let Some(backend) = cli_agent::backend_for(id) {
+        return Box::new(CliAgentClient::new(backend));
+    }
     match id {
         ProviderId::Ollama => Box::new(OllamaClient),
         ProviderId::OpenAi => Box::new(OpenAiClient::new(ProviderId::OpenAi, None)),
@@ -201,6 +249,11 @@ pub fn resolve(id: ProviderId, base_url: Option<String>) -> Box<dyn AiProvider> 
         }
         ProviderId::Anthropic => Box::new(AnthropicClient),
         ProviderId::Gemini => Box::new(GeminiClient),
+        // Routed by the registry above; listed only to keep this match exhaustive
+        // (so a new *non*-CLI provider still fails to compile until handled here).
+        ProviderId::ClaudeCode | ProviderId::Codex | ProviderId::GeminiCli => {
+            unreachable!("CLI agents are resolved via cli_agent::backend_for")
+        }
     }
 }
 
@@ -394,4 +447,72 @@ pub fn emit_stream_error(app: &AppHandle, job_id: &str, message: &str) {
             "error": { "code": "GENERATION_FAILED", "message": message },
         }),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provider_id_round_trips() {
+        for id in [
+            ProviderId::Ollama,
+            ProviderId::OpenAi,
+            ProviderId::OpenAiCompatible,
+            ProviderId::Anthropic,
+            ProviderId::Gemini,
+            ProviderId::ClaudeCode,
+            ProviderId::Codex,
+            ProviderId::GeminiCli,
+        ] {
+            assert_eq!(ProviderId::parse(id.as_str()).unwrap(), id);
+        }
+        assert!(ProviderId::parse("nope").is_err());
+    }
+
+    #[test]
+    fn claude_code_is_a_local_cli_agent() {
+        assert!(ProviderId::ClaudeCode.is_cli_agent());
+        assert!(ProviderId::ClaudeCode.is_local());
+        assert!(!ProviderId::Anthropic.is_cli_agent());
+    }
+
+    #[test]
+    fn validate_model_allows_unknown_new_names() {
+        // A model the code has never heard of must still be accepted, so newly
+        // released models work with no code change.
+        assert!(ProviderId::OpenAi.validate_model("gpt-6-ultra").is_ok());
+        assert!(ProviderId::OpenAi.validate_model("o9-pro").is_ok());
+        assert!(ProviderId::Anthropic.validate_model("claude-5-haiku").is_ok());
+        assert!(ProviderId::Gemini.validate_model("gemini-9-ultra").is_ok());
+    }
+
+    #[test]
+    fn validate_model_blocks_clear_cross_provider_mistakes() {
+        assert!(ProviderId::Anthropic.validate_model("gpt-4o").is_err());
+        assert!(ProviderId::OpenAi.validate_model("claude-opus-4-7").is_err());
+        assert!(ProviderId::Gemini.validate_model("claude-3").is_err());
+    }
+
+    #[test]
+    fn validate_model_openai_compatible_accepts_any_family() {
+        // OpenRouter (openai-compatible) serves anthropic/* and google/* models.
+        assert!(ProviderId::OpenAiCompatible
+            .validate_model("anthropic/claude-3.5-sonnet")
+            .is_ok());
+        assert!(ProviderId::OpenAiCompatible
+            .validate_model("google/gemini-2.0-flash")
+            .is_ok());
+    }
+
+    #[test]
+    fn validate_model_cli_agent_allows_empty_and_aliases() {
+        assert!(ProviderId::ClaudeCode.validate_model("").is_ok());
+        assert!(ProviderId::ClaudeCode.validate_model("sonnet").is_ok());
+    }
+
+    #[test]
+    fn validate_model_cloud_requires_a_model() {
+        assert!(ProviderId::OpenAi.validate_model("").is_err());
+    }
 }

@@ -165,7 +165,9 @@ export function LeftPanel({
             {!canUseAI
               ? aiReason === 'addApiKey'
                 ? t('aiGenerate.addApiKey')
-                : t('aiGenerate.selectModel')
+                : aiReason === 'installCli'
+                  ? t('aiGenerate.installCli')
+                  : t('aiGenerate.selectModel')
               : !canProceed
                 ? t('aiGenerate.pasteResumeJob')
                 : t('aiGenerate.continue')}

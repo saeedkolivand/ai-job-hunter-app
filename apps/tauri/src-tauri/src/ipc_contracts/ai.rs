@@ -15,6 +15,7 @@ pub struct AiGenerateRequest {
     pub stream: Option<bool>,
     pub provider: Option<String>,
     pub base_url: Option<String>,
+    pub effort: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

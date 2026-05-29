@@ -123,25 +123,13 @@ pub async fn ai_test_provider_key(
     provider: String,
     base_url: Option<String>,
 ) -> Value {
+    // The provider resolves its own credentials/transport (keychain key + client,
+    // or a CLI binary check) — this command just dispatches.
     let provider_client = match resolve_by_name(&provider, base_url) {
         Ok(p) => p,
         Err(e) => return json!({ "success": false, "error": e }),
     };
-    let api_key = match get_provider_key(&app, &provider) {
-        Some(k) => k,
-        None => return json!({ "success": false, "error": "No API key found" }),
-    };
-    let client = match crate::net::http::build_client(crate::net::http::ClientConfig {
-        timeout: Some(std::time::Duration::from_secs(10)),
-        ..Default::default()
-    }) {
-        Ok(c) => c,
-        Err(e) => {
-            return json!({ "success": false, "error": format!("Failed to create client: {}", e) })
-        }
-    };
-
-    match provider_client.test_key(&client, &api_key).await {
+    match provider_client.test_key(&app).await {
         Ok(()) => json!({ "success": true }),
         Err(e) => json!({ "success": false, "error": e }),
     }
@@ -157,19 +145,7 @@ pub async fn ai_list_provider_models(
         Ok(p) => p,
         Err(_) => return json!([]),
     };
-    let api_key = match get_provider_key(&app, &provider) {
-        Some(k) => k,
-        None => return json!([]),
-    };
-    let client = match crate::net::http::build_client(crate::net::http::ClientConfig {
-        timeout: Some(std::time::Duration::from_secs(10)),
-        ..Default::default()
-    }) {
-        Ok(c) => c,
-        Err(_) => return json!([]),
-    };
-
-    json!(provider_client.list_models(&client, &api_key).await)
+    json!(provider_client.list_models(&app).await)
 }
 
 /// Local (Ollama) model list — powers the model picker's "Ollama (Local)"

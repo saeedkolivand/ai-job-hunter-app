@@ -1,5 +1,6 @@
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use tauri::{AppHandle, Manager};
+use crate::commands::ai_provider::cli_agent;
 use crate::error::{AppError, AppResult};
 use crate::scraping::ScraperEngine;
 
@@ -11,11 +12,23 @@ pub async fn system_health(app: AppHandle) -> Value {
     // Local (Ollama) availability + running model, via the Ollama provider module.
     let (ai_ready, ai_model) = crate::commands::ai_provider::ollama::reachable_model().await;
 
+    // CLI agents (Claude Code, …): "detected" = their binary is installed. Looped
+    // from the registry so new agents appear here automatically.
+    let mut cli_agents = Map::new();
+    for backend in cli_agent::all() {
+        let (detected, version) = cli_agent::detect(&backend.binary()).await;
+        cli_agents.insert(
+            backend.id().as_str().to_string(),
+            json!({ "detected": detected, "version": version }),
+        );
+    }
+
     json!({
         "status": "ok",
         "shell": "tauri",
         "scraper": { "mode": scraper_health.mode, "ready": scraper_health.ready, "scrapers": scraper_health.scrapers },
         "ai": { "ready": ai_ready, "model": ai_model },
+        "cliAgents": Value::Object(cli_agents),
         "data": { "ready": true, "sqlite": true, "vector": true },
         "workers": { "active": 0, "idle": 1, "max": 1 }
     })

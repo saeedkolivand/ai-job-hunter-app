@@ -55,6 +55,7 @@
     "reAnalyse": "Re-analyse",
     "selectModel": "Select a model first",
     "addApiKey": "Add API key in Settings",
+    "installCli": "Install the CLI agent",
     "pasteContent": "Paste resume & job ad",
     "idleTitle": "Resume Analyser",
     "idleSubtitle": "Paste your resume and a job ad to get a full AI analysis",
@@ -77,7 +78,9 @@
       "risks": "Checking ATS formatting risks…",
       "writing": "Writing recruiter perspective…",
       "finalising": "Finalising verdict…",
-      "almostDone": "almost done…"
+      "almostDone": "almost done…",
+      "takingLonger": "taking longer than usual…",
+      "slowHint": "CLI agents and local models can take a minute or two — this is normal."
     },
     "languageMismatch": "Language Mismatch Detected",
     "languageMismatchBody": "Resume: {{resume}} — Job Ad: {{jobAd}}. ATS systems may rank you lower. See Language Recommendations below.",
@@ -261,7 +264,9 @@
       "saveKey": "Save",
       "baseUrl": "Base URL",
       "saveUrl": "Save",
-      "activeProvider": "Active Provider"
+      "activeProvider": "Active Provider",
+      "reasoningEffort": "Reasoning Effort",
+      "effortDefault": "Default"
     },
     "aiModel": {
       "title": "AI Model",
@@ -406,6 +411,7 @@
     "generating": "Generating…",
     "selectModel": "Select a model first",
     "addApiKey": "Add API key in Settings",
+    "installCli": "Install the CLI agent",
     "pasteResumeJob": "Paste resume & job ad",
     "continue": "Continue",
     "yourAICareerCopilot": "Your AI career copilot",
@@ -490,6 +496,7 @@
       "copied": "Copied",
       "selectModel": "Select an AI model first",
       "addApiKey": "Add an API key first",
+      "installCli": "Install the CLI agent",
       "failed": "Generation failed",
       "target": {
         "resume": "Resume",
@@ -1295,6 +1302,7 @@
       "skipWarning": "AI features won't work without a model",
       "localTab": "Local (Ollama)",
       "cloudTab": "Cloud AI",
+      "cliTab": "CLI agents",
       "readyBadge": "Ollama ready",
       "systemPerformance": "System Performance",
       "ramLabel": "RAM",

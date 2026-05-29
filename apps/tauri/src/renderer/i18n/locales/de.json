@@ -55,6 +55,7 @@
     "reAnalyse": "Erneut analysieren",
     "selectModel": "Bitte zuerst ein Modell auswählen",
     "addApiKey": "API-Schlüssel in Einstellungen hinzufügen",
+    "installCli": "CLI-Agent installieren",
     "pasteContent": "Lebenslauf & Stellenanzeige einfügen",
     "idleTitle": "Lebenslauf-Analysator",
     "idleSubtitle": "Lebenslauf und Stellenanzeige einfügen für eine vollständige KI-Analyse",
@@ -77,7 +78,9 @@
       "risks": "ATS-Formatierungsrisiken werden geprüft…",
       "writing": "Perspektive des Personalers wird verfasst…",
       "finalising": "Urteil wird finalisiert…",
-      "almostDone": "Fast fertig…"
+      "almostDone": "Fast fertig…",
+      "takingLonger": "dauert länger als gewöhnlich…",
+      "slowHint": "CLI-Agenten und lokale Modelle können ein bis zwei Minuten dauern — das ist normal."
     },
     "languageMismatch": "Sprachkonflikt erkannt",
     "languageMismatchBody": "Lebenslauf: {{resume}} — Stellenanzeige: {{jobAd}}. ATS-Systeme könnten Sie niedriger bewerten. Siehe Sprachempfehlungen unten.",
@@ -261,7 +264,9 @@
       "saveKey": "Speichern",
       "baseUrl": "Basis-URL",
       "saveUrl": "Speichern",
-      "activeProvider": "Aktiver Anbieter"
+      "activeProvider": "Aktiver Anbieter",
+      "reasoningEffort": "Denkaufwand",
+      "effortDefault": "Standard"
     },
     "aiModel": {
       "title": "KI-Modell",
@@ -406,6 +411,7 @@
     "generating": "Generierung…",
     "selectModel": "Wählen Sie zuerst ein Modell",
     "addApiKey": "API-Schlüssel in Einstellungen hinzufügen",
+    "installCli": "CLI-Agent installieren",
     "pasteResumeJob": "Lebenslauf & Stellenanzeige einfügen",
     "continue": "Weiter",
     "yourAICareerCopilot": "Ihr KI-Karriere-Copilot",
@@ -490,6 +496,7 @@
       "copied": "Kopiert",
       "selectModel": "Wählen Sie zuerst ein KI-Modell",
       "addApiKey": "Fügen Sie zuerst einen API-Schlüssel hinzu",
+      "installCli": "CLI-Agent installieren",
       "failed": "Generierung fehlgeschlagen",
       "target": {
         "resume": "Lebenslauf",
@@ -1295,6 +1302,7 @@
       "skipWarning": "KI-Funktionen sind ohne Modell nicht verfügbar",
       "localTab": "Lokal (Ollama)",
       "cloudTab": "Cloud-KI",
+      "cliTab": "CLI-Agenten",
       "readyBadge": "Ollama bereit",
       "systemPerformance": "Systemleistung",
       "ramLabel": "RAM",
