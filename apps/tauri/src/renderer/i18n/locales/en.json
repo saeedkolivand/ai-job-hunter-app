@@ -261,7 +261,9 @@
       "saveKey": "Save",
       "baseUrl": "Base URL",
       "saveUrl": "Save",
-      "activeProvider": "Active Provider"
+      "activeProvider": "Active Provider",
+      "reasoningEffort": "Reasoning Effort",
+      "effortDefault": "Default"
     },
     "aiModel": {
       "title": "AI Model",

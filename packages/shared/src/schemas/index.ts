@@ -33,6 +33,8 @@ export const AiGenerateRequestSchema = z.object({
   provider: z.string().optional(),
   /** Base URL override for openai-compatible providers. */
   baseUrl: z.string().optional(),
+  /** Reasoning effort for CLI agents that support it (e.g. Codex: low/medium/high). */
+  effort: z.string().optional(),
 });
 
 export const DocumentImportRequestSchema = z.object({

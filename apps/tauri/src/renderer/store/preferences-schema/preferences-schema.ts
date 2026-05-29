@@ -32,10 +32,12 @@ export const AiProviderSchema = z.enum([
   'gemini-cli',
 ]);
 
-// Per-provider settings (model choice, optional base URL)
+// Per-provider settings (model choice, optional base URL, optional CLI effort)
 export const PerProviderSettingsSchema = z.object({
   model: z.string().default(''),
   baseUrl: z.string().optional(),
+  // Reasoning effort for CLI agents that support it (e.g. Codex: low/medium/high).
+  effort: z.string().optional(),
 });
 
 // Multi-provider config: each provider stores its own settings independently;

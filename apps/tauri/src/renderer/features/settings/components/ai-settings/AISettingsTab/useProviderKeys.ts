@@ -94,11 +94,13 @@ export function useProviderKeys() {
         undefined
       : undefined;
 
-  // Models for the expanded cloud provider
-  const expandedIsCloud = expanded !== null && PROVIDERS[expanded].kind === 'cloud';
+  // Models for the expanded non-local provider (cloud key-based, or CLI agents
+  // which "list" their aliases through the same IPC path). Ollama uses its own
+  // local model list, so it's excluded.
+  const expandedFetchesModels = expanded !== null && PROVIDERS[expanded].kind !== 'local-server';
   const { data: expandedModelsRaw = [] } = useListProviderModels(
     expanded ?? 'openai',
-    expandedIsCloud && (keyStatus[expanded ?? 'openai'] ?? false),
+    expandedFetchesModels && (keyStatus[expanded ?? 'openai'] ?? false),
     baseUrlFor(expanded ?? 'openai')
   );
   const expandedModels = expandedModelsRaw as Array<{ name: string }>;

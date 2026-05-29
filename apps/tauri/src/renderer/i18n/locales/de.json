@@ -261,7 +261,9 @@
       "saveKey": "Speichern",
       "baseUrl": "Basis-URL",
       "saveUrl": "Speichern",
-      "activeProvider": "Aktiver Anbieter"
+      "activeProvider": "Aktiver Anbieter",
+      "reasoningEffort": "Denkaufwand",
+      "effortDefault": "Standard"
     },
     "aiModel": {
       "title": "KI-Modell",

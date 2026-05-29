@@ -1,7 +1,7 @@
 import { Bot, CheckCircle2, ExternalLink, Terminal, WifiOff } from 'lucide-react';
 import { motion } from 'motion/react';
 
-import { Button, Input, transition } from '@ajh/ui';
+import { Button, transition } from '@ajh/ui';
 
 import { useOpenExternal, useSystemHealth } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
@@ -11,7 +11,6 @@ interface CliAgent {
   label: string;
   docsUrl: string;
   color: string;
-  models: string[];
 }
 
 // Mirrors the cli-agent entries in the settings provider-meta. Kept local because
@@ -22,37 +21,31 @@ const CLI_AGENTS: CliAgent[] = [
     label: 'Claude Code',
     docsUrl: 'https://docs.anthropic.com/en/docs/claude-code',
     color: 'text-orange-400',
-    models: ['sonnet', 'opus', 'haiku'],
   },
   {
     id: 'codex',
     label: 'OpenAI Codex',
     docsUrl: 'https://developers.openai.com/codex/cli',
     color: 'text-green-400',
-    models: ['gpt-5-codex', 'o4-mini'],
   },
   {
     id: 'gemini-cli',
     label: 'Gemini CLI',
     docsUrl: 'https://github.com/google-gemini/gemini-cli',
     color: 'text-blue-400',
-    models: ['gemini-2.5-pro', 'gemini-2.5-flash'],
   },
 ];
 
 interface CliAgentPanelProps {
   selectedProvider: AiProvider;
   onProviderChange: (provider: AiProvider) => void;
-  selectedModel: string;
-  onModelChange: (model: string) => void;
 }
 
-export function CliAgentPanel({
-  selectedProvider,
-  onProviderChange,
-  selectedModel,
-  onModelChange,
-}: CliAgentPanelProps) {
+/**
+ * Onboarding panel for CLI agents: pick the agent and confirm it's detected. Model
+ * selection is intentionally deferred to Settings → AI after onboarding.
+ */
+export function CliAgentPanel({ selectedProvider, onProviderChange }: CliAgentPanelProps) {
   const openExternal = useOpenExternal();
   const { data: health } = useSystemHealth();
   const cliAgents = health?.cliAgents ?? {};
@@ -60,7 +53,6 @@ export function CliAgentPanel({
   const meta = CLI_AGENTS.find((a) => a.id === selectedProvider) ?? CLI_AGENTS[0];
   const label = meta?.label ?? '';
   const docsUrl = meta?.docsUrl ?? '';
-  const models = meta?.models ?? [];
   const detected = cliAgents[selectedProvider]?.detected ?? false;
 
   return (
@@ -74,7 +66,7 @@ export function CliAgentPanel({
     >
       <p className="flex items-center gap-1.5 text-xs text-foreground/40">
         <Terminal size={12} /> Run a coding agent you already have installed — uses its own login,
-        no API key.
+        no API key. You'll pick a model later in Settings.
       </p>
 
       {/* Agent selector */}
@@ -116,32 +108,8 @@ export function CliAgentPanel({
         })}
       </div>
 
-      {/* Model picker (detected) or install hint (not detected) */}
-      {detected ? (
-        <div className="space-y-1.5">
-          <Input
-            value={selectedModel}
-            onChange={(e) => onModelChange(e.target.value)}
-            placeholder="Model (optional) — leave blank for the CLI's default…"
-            className="w-full text-sm"
-          />
-          <div className="flex flex-wrap gap-1.5">
-            {models.map((m) => (
-              <button
-                key={m}
-                onClick={() => onModelChange(m)}
-                className={`rounded-md border px-2 py-0.5 text-[11px] transition-colors ${
-                  selectedModel === m
-                    ? 'border-brand/40 bg-brand/10 text-brand-soft'
-                    : 'border-white/[0.08] bg-white/[0.02] text-foreground/50 hover:text-foreground/80'
-                }`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : (
+      {/* Install hint when the selected agent isn't found */}
+      {!detected && (
         <div className="space-y-2 rounded-xl border border-amber-400/15 bg-amber-400/[0.04] px-4 py-3">
           <p className="text-xs text-foreground/50">
             {label} CLI not detected. Install it and sign in once, then continue.

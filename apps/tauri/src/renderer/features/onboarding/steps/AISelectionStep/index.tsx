@@ -43,7 +43,6 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
   const [mode, setMode] = useState<TabMode>('local');
   const [cloudProvider, setCloudProvider] = useState<AiProvider>('openai');
   const [cliProvider, setCliProvider] = useState<AiProvider>('claude-code');
-  const [cliModel, setCliModel] = useState<string>('');
   const [skipping, setSkipping] = useState(false);
 
   const { data: health, isLoading: healthLoading } = useSystemHealth();
@@ -92,10 +91,11 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
         providers: { [cloudProvider]: { model: CLOUD_DEFAULT_MODELS[cloudProvider] ?? '' } },
       });
     } else if (mode === 'cli') {
-      // CLI agents are keyless; an empty model uses the tool's own default.
+      // CLI agents are keyless; model selection is deferred to Settings, so an
+      // empty model here uses the tool's own default until the user picks one.
       setAiProviderConfig({
         activeProvider: cliProvider,
-        providers: { [cliProvider]: { model: cliModel.trim() } },
+        providers: { [cliProvider]: { model: '' } },
       });
     } else if (selectedModel) {
       setAIModel({ defaultModel: selectedModel, temperature: 0.7, maxTokens: 2048 });
@@ -175,12 +175,7 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
             <CliAgentPanel
               key="cli-panel"
               selectedProvider={cliProvider}
-              onProviderChange={(p) => {
-                setCliProvider(p);
-                setCliModel('');
-              }}
-              selectedModel={cliModel}
-              onModelChange={setCliModel}
+              onProviderChange={setCliProvider}
             />
           )}
 

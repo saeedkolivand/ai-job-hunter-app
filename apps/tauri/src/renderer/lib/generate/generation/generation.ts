@@ -83,6 +83,8 @@ async function streamGenerate(
     // not fall back to Ollama. baseUrl only applies to OpenAI-compatible servers.
     provider: activeProvider,
     baseUrl: providerSettings?.baseUrl,
+    // Reasoning effort for CLI agents that support it (e.g. Codex).
+    effort: providerSettings?.effort,
   } as Parameters<typeof api.ai.generatePipeline>[0])) as { jobId: string };
 
   const jobId = res.jobId;

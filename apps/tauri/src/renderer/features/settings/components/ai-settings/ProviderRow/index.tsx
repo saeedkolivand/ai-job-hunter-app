@@ -146,9 +146,9 @@ export function ProviderRow({
             </OllamaConfig>
           ) : meta.kind === 'cli-agent' ? (
             <CliAgentConfig
-              label={meta.label}
+              provider={provider}
               connected={connected}
-              models={meta.models}
+              expandedModels={expandedModels}
               providerModel={providerModel}
               onSelect={(m) => onSelectModel(provider, m)}
               onSetActive={onSetActive}

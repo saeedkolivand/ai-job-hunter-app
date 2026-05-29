@@ -89,10 +89,11 @@ pub trait CliAgentBackend: Send + Sync {
     /// Model aliases offered in the UI (e.g. `["sonnet", "opus", "haiku"]`).
     fn models(&self) -> &'static [&'static str];
 
-    /// Args for a streaming generation (model/system already resolved).
-    fn stream_invocation(&self, model: &str, system: &str) -> CliInvocation;
+    /// Args for a streaming generation (model/system already resolved). `effort` is
+    /// the optional reasoning effort for agents that support it (Codex); others ignore it.
+    fn stream_invocation(&self, model: &str, system: &str, effort: Option<&str>) -> CliInvocation;
     /// Args for a one-shot, non-streaming generation.
-    fn complete_invocation(&self, model: &str, system: &str) -> CliInvocation;
+    fn complete_invocation(&self, model: &str, system: &str, effort: Option<&str>) -> CliInvocation;
 
     /// Map one raw stdout line to a [`CliEvent`], or `None` to ignore it.
     fn parse_stream_line(&self, line: &str) -> Option<CliEvent>;
@@ -180,7 +181,16 @@ impl AiProvider for CliAgentClient {
     ) -> AppResult<()> {
         let system = system_text(req);
         let prompt = user_prompt(req);
-        run_stream(app, job_id, self.backend.as_ref(), &req.model, &system, &prompt).await
+        run_stream(
+            app,
+            job_id,
+            self.backend.as_ref(),
+            &req.model,
+            &system,
+            &prompt,
+            req.effort.as_deref(),
+        )
+        .await
     }
 
     async fn complete(
@@ -251,10 +261,11 @@ async fn run_stream(
     model: &str,
     system: &str,
     prompt: &str,
+    effort: Option<&str>,
 ) -> AppResult<()> {
     let binary = backend.binary();
     let label = backend.id().as_str();
-    let inv = backend.stream_invocation(model, system);
+    let inv = backend.stream_invocation(model, system, effort);
     let prompt = effective_prompt(backend, system, prompt);
     let trace = RequestTrace::begin(backend.id(), model, "cli:stream", &binary, true);
 
@@ -374,7 +385,9 @@ async fn run_complete(
     let _ = app; // CLI agents resolve everything from the binary; no managed state needed.
     let binary = backend.binary();
     let label = backend.id().as_str();
-    let inv = backend.complete_invocation(model, system);
+    // The non-streaming path runs at the agent's default effort (the request
+    // carries no effort for `complete`).
+    let inv = backend.complete_invocation(model, system, None);
     let prompt = effective_prompt(backend, system, user);
     let trace = RequestTrace::begin(backend.id(), model, "cli:complete", &binary, false);
 

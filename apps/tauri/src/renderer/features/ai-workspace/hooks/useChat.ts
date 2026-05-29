@@ -38,7 +38,11 @@ export function useChat() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedModel = useRef('');
-  const generateConfig = useRef({ provider: 'ollama', baseUrl: '' as string | undefined });
+  const generateConfig = useRef({
+    provider: 'ollama',
+    baseUrl: '' as string | undefined,
+    effort: undefined as string | undefined,
+  });
 
   const getOrCreateConversation = useGetOrCreateConversation();
   const extractText = useExtractText();
@@ -187,6 +191,7 @@ export function useChat() {
         // Always send the active provider — backend routes strictly, no fallback.
         provider: generateConfig.current.provider,
         baseUrl: generateConfig.current.baseUrl,
+        effort: generateConfig.current.effort,
       })) as { jobId: string };
 
       activeJobRef.current = res.jobId;
@@ -222,8 +227,16 @@ export function useChat() {
     setSelectedModel: (model: string) => {
       selectedModel.current = model;
     },
-    setGenerateConfig: (config: { provider: string; baseUrl: string | undefined }) => {
-      generateConfig.current = config;
+    setGenerateConfig: (config: {
+      provider: string;
+      baseUrl: string | undefined;
+      effort?: string | undefined;
+    }) => {
+      generateConfig.current = {
+        provider: config.provider,
+        baseUrl: config.baseUrl,
+        effort: config.effort,
+      };
     },
 
     // Actions

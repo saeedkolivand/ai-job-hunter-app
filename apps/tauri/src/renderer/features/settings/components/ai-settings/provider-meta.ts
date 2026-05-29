@@ -17,6 +17,8 @@ export interface ProviderMeta {
   docsUrl: string;
   color: string;
   models: string[];
+  /** Reasoning-effort levels this provider supports (CLI agents only, e.g. Codex). */
+  efforts?: string[];
 }
 
 export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
@@ -75,6 +77,7 @@ export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
     docsUrl: 'https://developers.openai.com/codex/cli',
     color: 'text-green-400',
     models: ['gpt-5-codex', 'o4-mini'],
+    efforts: ['low', 'medium', 'high'],
   },
   'gemini-cli': {
     kind: 'cli-agent',

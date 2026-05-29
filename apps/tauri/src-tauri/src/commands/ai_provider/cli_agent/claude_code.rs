@@ -40,7 +40,8 @@ impl CliAgentBackend for ClaudeCodeAgent {
         MODELS
     }
 
-    fn stream_invocation(&self, model: &str, system: &str) -> CliInvocation {
+    // Claude Code has no headless reasoning-effort flag — `effort` is ignored.
+    fn stream_invocation(&self, model: &str, system: &str, _effort: Option<&str>) -> CliInvocation {
         let mut args = vec![
             "-p".to_string(),
             "--output-format".to_string(),
@@ -54,7 +55,7 @@ impl CliAgentBackend for ClaudeCodeAgent {
         CliInvocation { args, prompt: PromptDelivery::Stdin }
     }
 
-    fn complete_invocation(&self, model: &str, system: &str) -> CliInvocation {
+    fn complete_invocation(&self, model: &str, system: &str, _effort: Option<&str>) -> CliInvocation {
         let mut args = vec![
             "-p".to_string(),
             "--output-format".to_string(),
@@ -199,7 +200,7 @@ mod tests {
 
     #[test]
     fn stream_invocation_includes_model_and_system() {
-        let inv = ClaudeCodeAgent.stream_invocation("sonnet", "be brief");
+        let inv = ClaudeCodeAgent.stream_invocation("sonnet", "be brief", None);
         assert!(inv.args.iter().any(|a| a == "stream-json"));
         assert!(inv.args.windows(2).any(|w| w[0] == "--model" && w[1] == "sonnet"));
         assert!(inv
@@ -211,7 +212,7 @@ mod tests {
 
     #[test]
     fn empty_model_omits_flag() {
-        let inv = ClaudeCodeAgent.stream_invocation("", "");
+        let inv = ClaudeCodeAgent.stream_invocation("", "", None);
         assert!(!inv.args.iter().any(|a| a == "--model"));
         assert!(!inv.args.iter().any(|a| a == "--append-system-prompt"));
     }
