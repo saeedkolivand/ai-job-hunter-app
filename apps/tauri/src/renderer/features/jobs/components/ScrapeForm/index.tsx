@@ -1,78 +1,31 @@
-import { Info, Loader2, Search, X } from 'lucide-react';
+import { Loader2, Search, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
-import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
-import { Button, cn, GlassCard, Input, LocationInput, SelectDropdown, transition } from '@ajh/ui';
+import { Button, cn, GlassCard, Input, transition } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 
+import { AuthHint } from './AuthHint';
+import { AuthModeBadge } from './AuthModeBadge';
+import { AUTH_BENEFITS, BOARDS, type ScrapeFormState } from './constants';
+import { ScrapeFilters } from './ScrapeFilters';
+
 interface ScrapeFormProps {
   show: boolean;
-  form: {
-    board: string;
-    query: string;
-    location: string;
-    pages: number;
-    dateFilter: '' | (typeof DATE_FILTER_OPTIONS)[number];
-    locale: string;
-  };
+  form: ScrapeFormState;
   scraping: boolean;
   scrapeOutcome: { ok: boolean; note?: string } | null;
   boardConnected: boolean;
   connectPending: boolean;
   disconnectPending: boolean;
   onToggle: () => void;
-  onFormChange: (updates: Partial<ScrapeFormProps['form']>) => void;
+  onFormChange: (updates: Partial<ScrapeFormState>) => void;
   onStart: () => void;
   onCancel: () => void;
   onConnect: () => void;
   onDisconnect: () => void;
   onGeocode: (query: string) => Promise<{ display: string }[]>;
 }
-
-const AUTH_BENEFITS = new Set(['linkedin', 'indeed', 'xing']);
-
-const BOARDS = [
-  { id: 'linkedin', labelKey: 'jobs.boards.linkedin' },
-  { id: 'indeed', labelKey: 'jobs.boards.indeed' },
-  { id: 'stepstone', labelKey: 'jobs.boards.stepstone' },
-  { id: 'xing', labelKey: 'jobs.boards.xing' },
-  { id: 'arbeitsagentur', labelKey: 'jobs.boards.arbeitsagentur' },
-  { id: 'berlinstartupjobs', labelKey: 'jobs.boards.berlinstartupjobs' },
-  { id: 'germantechjobs', labelKey: 'jobs.boards.germantechjobs' },
-  { id: 'greenhouse', labelKey: 'jobs.boards.greenhouse' },
-  { id: 'lever', labelKey: 'jobs.boards.lever' },
-  { id: 'ashby', labelKey: 'jobs.boards.ashby' },
-  { id: 'workday', labelKey: 'jobs.boards.workday' },
-  { id: 'smartrecruiters', labelKey: 'jobs.boards.smartrecruiters' },
-  { id: 'recruitee', labelKey: 'jobs.boards.recruitee' },
-  { id: 'personio', labelKey: 'jobs.boards.personio' },
-  { id: 'remoteok', labelKey: 'jobs.boards.remoteok' },
-  { id: 'remotive', labelKey: 'jobs.boards.remotive' },
-  { id: 'arbeitnow', labelKey: 'jobs.boards.arbeitnow' },
-  { id: 'wwr', labelKey: 'jobs.boards.wwr' },
-  { id: 'ycombinator', labelKey: 'jobs.boards.ycombinator' },
-] as const;
-
-const REGIONS = [
-  { value: 'us', labelKey: 'jobs.regions.us' },
-  { value: 'de', labelKey: 'jobs.regions.de' },
-  { value: 'uk', labelKey: 'jobs.regions.uk' },
-  { value: 'fr', labelKey: 'jobs.regions.fr' },
-  { value: 'at', labelKey: 'jobs.regions.at' },
-  { value: 'ch', labelKey: 'jobs.regions.ch' },
-  { value: 'au', labelKey: 'jobs.regions.au' },
-  { value: 'ca', labelKey: 'jobs.regions.ca' },
-  { value: 'nl', labelKey: 'jobs.regions.nl' },
-  { value: 'be', labelKey: 'jobs.regions.be' },
-  { value: 'es', labelKey: 'jobs.regions.es' },
-  { value: 'it', labelKey: 'jobs.regions.it' },
-  { value: 'pl', labelKey: 'jobs.regions.pl' },
-  { value: 'br', labelKey: 'jobs.regions.br' },
-  { value: 'in', labelKey: 'jobs.regions.in' },
-  { value: 'sg', labelKey: 'jobs.regions.sg' },
-  { value: 'jp', labelKey: 'jobs.regions.jp' },
-] as const;
 
 export function ScrapeForm({
   show,
@@ -167,158 +120,23 @@ export function ScrapeForm({
               </div>
             </div>
 
-            {/* Auth mode badge */}
-            <AnimatePresence>
-              {showAuthBadge && (
-                <motion.div
-                  key={`mode-${form.board}-${boardConnected ? 'auth' : 'guest'}`}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={transition.fast}
-                  className="mb-3 flex items-center gap-1.5"
-                >
-                  {boardConnected ? (
-                    <>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                        {t('jobs.modeAuthenticated')}
-                      </span>
-                      <span className="text-[10px] text-foreground/35">
-                        {t('jobs.modeAuthNote')}
-                      </span>
-                      <button
-                        type="button"
-                        disabled={disconnectPending}
-                        onClick={onDisconnect}
-                        className="ml-auto shrink-0 text-[10px] text-red-400/70 underline-offset-2 hover:text-red-400 hover:underline disabled:opacity-50"
-                      >
-                        {disconnectPending ? (
-                          <Loader2 size={10} className="animate-spin" />
-                        ) : (
-                          t('jobs.disconnect')
-                        )}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-400">
-                        <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                        {t('jobs.modeGuest')}
-                      </span>
-                      <span className="text-[10px] text-foreground/35">
-                        {t('jobs.modeGuestNote')}
-                      </span>
-                    </>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <AuthModeBadge
+              show={showAuthBadge}
+              board={form.board}
+              boardConnected={boardConnected}
+              disconnectPending={disconnectPending}
+              onDisconnect={onDisconnect}
+            />
 
-            {/* Auth hint */}
-            <AnimatePresence>
-              {showAuthHint && (
-                <motion.div
-                  key="auth-hint"
-                  initial={{ opacity: 0, height: 0, marginBottom: 0 }}
-                  animate={{ opacity: 1, height: 'auto', marginBottom: 16 }}
-                  exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-                  transition={transition.fast}
-                  className="overflow-hidden"
-                >
-                  <div className="flex items-center gap-2 rounded-lg border border-blue-400/15 bg-blue-400/5 px-3 py-2 text-[11px] text-blue-200/75">
-                    <Info size={12} className="shrink-0 text-blue-400/60" />
-                    <span>{t('jobs.authHint')}</span>
-                    <button
-                      type="button"
-                      disabled={connectPending}
-                      onClick={onConnect}
-                      className="ml-auto shrink-0 text-brand-soft underline-offset-2 hover:underline disabled:opacity-50"
-                    >
-                      {connectPending ? (
-                        <Loader2 size={11} className="animate-spin" />
-                      ) : (
-                        t('jobs.authHintLink')
-                      )}
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <AuthHint show={showAuthHint} connectPending={connectPending} onConnect={onConnect} />
 
-            {/* Filters row */}
-            <div className="mb-4 grid grid-cols-4 gap-2">
-              <div className="col-span-2">
-                <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.18em] text-foreground/35">
-                  {t('jobs.location')}
-                </label>
-                <LocationInput
-                  value={form.location}
-                  onChange={(v) => onFormChange({ location: v })}
-                  placeholder={t('jobs.locationPlaceholder')}
-                  disabled={scraping}
-                  onFetchSuggestions={onGeocode}
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.18em] text-foreground/35">
-                  {t('jobs.posted')}
-                </label>
-                <SelectDropdown
-                  options={[
-                    { value: '', label: t('jobs.anyTime') },
-                    ...(AUTH_BENEFITS.has(form.board) && boardConnected
-                      ? [
-                          { value: '30m', label: t('jobs.past30m') },
-                          { value: '1h', label: t('jobs.past1h') },
-                          { value: '2h', label: t('jobs.past2h') },
-                          { value: '4h', label: t('jobs.past4h') },
-                          { value: '8h', label: t('jobs.past8h') },
-                        ]
-                      : []),
-                    { value: '24h', label: t('jobs.past24h') },
-                    { value: 'week', label: t('jobs.pastWeek') },
-                    { value: 'month', label: t('jobs.pastMonth') },
-                  ]}
-                  value={form.dateFilter}
-                  onChange={(value) =>
-                    onFormChange({ dateFilter: value as '' | (typeof DATE_FILTER_OPTIONS)[number] })
-                  }
-                  disabled={scraping}
-                  placeholder={t('jobs.anyTime')}
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.18em] text-foreground/35">
-                  {t('jobs.pages')}
-                </label>
-                <Input
-                  type="number"
-                  min="1"
-                  max="20"
-                  value={form.pages}
-                  onChange={(e) => onFormChange({ pages: parseInt(e.target.value) || 1 })}
-                  disabled={scraping}
-                  className="w-full bg-white/[0.03] text-xs text-foreground disabled:opacity-50"
-                />
-              </div>
-
-              {/* Indeed region */}
-              {form.board === 'indeed' && (
-                <div className="col-span-4">
-                  <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.18em] text-foreground/35">
-                    {t('jobs.region')}
-                  </label>
-                  <SelectDropdown
-                    options={REGIONS.map((r) => ({ value: r.value, label: t(r.labelKey) }))}
-                    value={form.locale}
-                    onChange={(value) => onFormChange({ locale: value })}
-                    disabled={scraping}
-                    placeholder={t('jobs.selectRegion')}
-                  />
-                </div>
-              )}
-            </div>
+            <ScrapeFilters
+              form={form}
+              scraping={scraping}
+              boardConnected={boardConnected}
+              onFormChange={onFormChange}
+              onGeocode={onGeocode}
+            />
 
             {/* Progress bar */}
             {scraping && (
