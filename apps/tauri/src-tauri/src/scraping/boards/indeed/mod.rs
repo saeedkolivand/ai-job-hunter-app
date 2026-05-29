@@ -74,13 +74,28 @@ impl Scraper for IndeedScraper {
                 page * 10
             );
 
-            let res = client.get(&url).send().await?;
-            if !res.status().is_success() {
-                break;
+            let html = match async {
+                let res = client.get(&url).send().await?;
+                if !res.status().is_success() {
+                    // Non-success status → stop paginating (not an error).
+                    return anyhow::Ok(None);
+                }
+                // Successful authenticated response → refresh session timestamp.
+                board_login::touch_session(&data_dir, "indeed");
+                anyhow::Ok(Some(res.text().await?))
             }
-            // Successful authenticated response → refresh session timestamp.
-            board_login::touch_session(&data_dir, "indeed");
-            let html = res.text().await?;
+            .await
+            {
+                Ok(Some(html)) => html,
+                Ok(None) => break,
+                // First page failed → nothing collected → propagate.
+                Err(e) if out.is_empty() => return Err(e),
+                // Later page failed → keep the pages we already have (and streamed).
+                Err(e) => {
+                    log::warn!("[indeed] page {page} failed: {e}; returning {} collected", out.len());
+                    break;
+                }
+            };
 
             // Parse synchronously — `scraper::Html` is !Send so it must not
             // live across an await point.

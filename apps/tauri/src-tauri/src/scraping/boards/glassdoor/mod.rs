@@ -68,11 +68,23 @@ impl Scraper for GlassdoorScraper {
                 )
             };
 
-            page.goto(&url).await?;
-            page.wait_for_navigation().await?;
-            tokio::time::sleep(Duration::from_secs(3)).await;
-
-            let html = page.content().await?;
+            let html = match async {
+                page.goto(&url).await?;
+                page.wait_for_navigation().await?;
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                anyhow::Ok(page.content().await?)
+            }
+            .await
+            {
+                Ok(html) => html,
+                // First page failed → nothing collected → propagate.
+                Err(e) if results.is_empty() => return Err(e),
+                // Later page failed → keep the pages we already have.
+                Err(e) => {
+                    log::warn!("[glassdoor] page {p} failed: {e}; returning {} collected", results.len());
+                    break;
+                }
+            };
             
             // Parse and extract in a scope to drop doc before await
             {

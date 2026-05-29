@@ -82,7 +82,7 @@ impl Scraper for StepStoneScraper {
                 )
             };
 
-            let res = fetch_text(
+            let res = match fetch_text(
                 &url,
                 super::super::http::FetchOptions {
                     headers: Some(vec![("accept-language".to_string(), "de-DE,de;q=0.9,en;q=0.7".to_string())]),
@@ -90,7 +90,15 @@ impl Scraper for StepStoneScraper {
                 },
                 ctx.signal.clone(),
             )
-            .await?;
+            .await
+            {
+                Ok(r) => r,
+                Err(e) if out.is_empty() => return Err(e),
+                Err(e) => {
+                    log::warn!("[stepstone] page {p} failed: {e}; returning {} collected", out.len());
+                    break;
+                }
+            };
 
             if res.status_code != 200 {
                 break;

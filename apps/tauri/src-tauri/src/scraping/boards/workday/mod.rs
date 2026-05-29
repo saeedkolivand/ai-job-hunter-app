@@ -111,7 +111,7 @@ impl Scraper for WorkdayScraper {
                 "offset": p * limit
             });
 
-            let data = fetch_json::<JobsResp>(
+            let data = match fetch_json::<JobsResp>(
                 &format!("{}/jobs", base),
                 super::super::http::FetchOptions {
                     method: Some(reqwest::Method::POST),
@@ -121,7 +121,15 @@ impl Scraper for WorkdayScraper {
                 },
                 ctx.signal.clone(),
             )
-            .await?;
+            .await
+            {
+                Ok(d) => d,
+                Err(e) if out.is_empty() => return Err(e),
+                Err(e) => {
+                    log::warn!("[workday] page {p} failed: {e}; returning {} collected", out.len());
+                    break;
+                }
+            };
 
             let job_postings = match data {
                 Some(d) => d.job_postings,
@@ -138,12 +146,20 @@ impl Scraper for WorkdayScraper {
                     continue;
                 }
 
-                let detail = fetch_json::<DetailResp>(
+                let detail = match fetch_json::<DetailResp>(
                     &format!("{}{}", base, j.external_path),
                     Default::default(),
                     ctx.signal.clone(),
                 )
-                .await?;
+                .await
+                {
+                    Ok(d) => d,
+                    // One job's detail fetch failing must not abort the batch — skip it.
+                    Err(e) => {
+                        log::warn!("[workday] detail {external_id} failed: {e}; skipping");
+                        continue;
+                    }
+                };
 
                 let description = detail
                     .and_then(|d| d.job_posting_info)
