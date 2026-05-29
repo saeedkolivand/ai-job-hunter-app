@@ -344,6 +344,8 @@ jobs:
 
       - name: 🦀 Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - name: 🐧 Install Linux Dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
@@ -398,6 +400,32 @@ jobs:
           echo "::group::Running cargo tests"
           cargo test --all-features
           echo "::endgroup::"
+
+      # Coverage reporting only — never gates the build (test pass/fail is owned
+      # by the Cargo Test step above).
+      - name: 🦀 Install cargo-llvm-cov
+        if: always()
+        continue-on-error: true
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: 📊 Rust Coverage → Job Summary
+        if: always()
+        continue-on-error: true
+        working-directory: apps/tauri/src-tauri
+        run: |
+          if cargo llvm-cov --all-features --summary-only 2>&1 | tee rust-coverage.txt; then
+            {
+              echo "## 🦀 Rust Coverage"
+              echo ""
+              echo '```'
+              cat rust-coverage.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "_Rust coverage report unavailable._" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: ❌ Check for Test Failures
         if: steps.js-tests.outcome == 'failure' || steps.rust-tests.outcome == 'failure'

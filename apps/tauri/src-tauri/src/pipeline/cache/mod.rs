@@ -65,3 +65,6 @@ fn now_secs() -> i64 {
         .unwrap_or_default()
         .as_secs() as i64
 }
+
+#[cfg(test)]
+mod test;
