@@ -34,6 +34,8 @@ mod export;
 mod ipc_contracts;
 mod job_preferences;
 mod jobs;
+mod locale;
+mod measure;
 mod model;
 mod net;
 mod observability;
@@ -42,6 +44,7 @@ mod platform;
 mod postings;
 mod profile_import;
 mod scraping;
+mod theme;
 mod updater;
 
 use parking_lot::Mutex;

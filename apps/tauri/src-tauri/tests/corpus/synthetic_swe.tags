@@ -1,0 +1,10 @@
+# synthetic fixture — no real PII
+name: Alex Carter
+email: alex.carter@example.test
+phone: +49 30 0000000
+section: Professional Summary
+section: Work Experience
+section: Skills
+section: Education
+link: LinkedIn
+link: GitHub

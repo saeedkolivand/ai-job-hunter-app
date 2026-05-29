@@ -43,6 +43,11 @@ chromiumoxide = { version = "0.9", features = ["fetcher", "zip8"] }
 
 futures = "0.3"
 regex = "1"
+# Font metrics for the canonical text-measurement layer (measure/): real glyph
+# advances/line-heights from the bundled TTFs — the future replacement for the
+# `× 0.52` char-width estimate in the PDF renderer. Pinned to match the version
+# already present transitively so the tree carries a single ttf-parser.
+ttf-parser = "0.25"
 anyhow = "1"
 thiserror = "2"
 chrono = "0.4"

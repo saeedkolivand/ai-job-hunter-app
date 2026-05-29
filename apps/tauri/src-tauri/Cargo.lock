@@ -61,7 +61,7 @@ dependencies = [
 
 [[package]]
 name = "ajh-tauri"
-version = "0.23.0"
+version = "0.23.2"
 dependencies = [
  "anyhow",
  "apple-native-keyring-store",
@@ -103,6 +103,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "ttf-parser",
  "urlencoding",
  "uuid",
  "windows-native-keyring-store",

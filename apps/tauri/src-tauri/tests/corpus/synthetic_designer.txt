@@ -1,0 +1,22 @@
+Jordan Lee
+Product Designer
+Amsterdam, Netherlands | jordan.lee@example.com | Portfolio
+
+SUMMARY
+Product designer focused on design systems and accessibility, partnering with
+engineering to ship cohesive, inclusive interfaces.
+
+EXPERIENCE
+Product Designer, Initech (2019 – 2024)
+• Shipped a cross-platform design system adopted by six product squads
+• Ran usability studies that lifted onboarding activation 18%
+• Established accessibility audits as a release gate
+
+Junior Designer, Hooli (2017 – 2019)
+• Redesigned the checkout flow, reducing drop-off 12%
+
+SKILLS
+Figma, prototyping, design systems, accessibility, user research
+
+EDUCATION
+BA Design, Art Academy (2014 – 2018)
