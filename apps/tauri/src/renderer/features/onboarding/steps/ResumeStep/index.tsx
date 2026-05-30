@@ -147,7 +147,11 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
         transition={{ delay: 0.15 }}
         className="mb-5"
       >
-        <ProfileUrlImport />
+        <ProfileUrlImport
+          onImported={({ id }) => {
+            if (id) setResume({ defaultId: id, autoIndex: true, autoParse: true });
+          }}
+        />
       </motion.div>
 
       {/* Footer */}

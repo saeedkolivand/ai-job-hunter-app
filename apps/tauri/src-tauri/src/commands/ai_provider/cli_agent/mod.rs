@@ -258,10 +258,22 @@ fn detect_cache() -> &'static Mutex<HashMap<String, Detected>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Base command for a CLI agent: console window hidden on Windows, and an augmented
+/// `PATH` so a GUI-launched macOS/Linux app can find the binary (Finder/Dock apps
+/// inherit only a minimal `PATH`, missing npm/nvm/Homebrew/native installs).
+fn cli_command(binary: &str) -> Command {
+    let mut cmd = Command::new(binary);
+    cmd.no_window();
+    if let Some(path) = crate::platform::cli_path() {
+        cmd.env("PATH", path);
+    }
+    cmd
+}
+
 /// Whether the binary is installed (`<binary> --version` succeeds), plus its
 /// reported version. Mirrors `ollama::reachable_model()` as the health signal.
 pub async fn detect(binary: &str) -> (bool, Option<String>) {
-    let fut = Command::new(binary).arg("--version").no_window().output();
+    let fut = cli_command(binary).arg("--version").output();
     match tokio::time::timeout(Duration::from_secs(5), fut).await {
         Ok(Ok(out)) if out.status.success() => {
             let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -477,7 +489,7 @@ fn spawn(binary: &str, inv: &CliInvocation, prompt: &str) -> std::io::Result<tok
     if matches!(inv.prompt, PromptDelivery::Arg) {
         args.push(prompt.to_string());
     }
-    Command::new(binary)
+    cli_command(binary)
         .args(&args)
         // Neutral cwd: we only want text generation, never side effects in the
         // user's project (backends also disable tools where the CLI supports it).
@@ -486,7 +498,6 @@ fn spawn(binary: &str, inv: &CliInvocation, prompt: &str) -> std::io::Result<tok
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
-        .no_window()
         .spawn()
 }
 

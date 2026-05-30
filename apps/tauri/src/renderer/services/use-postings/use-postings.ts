@@ -44,6 +44,13 @@ export const useResolveJobUrl = (url: string, enabled = true) => {
   });
 };
 
+/** Button-triggered variant of {@link useResolveJobUrl}: import a posting's full
+ *  description from a pasted job URL (LinkedIn, Greenhouse, Lever, …). */
+export const useImportJobUrl = () => {
+  const api = useAppClient();
+  return useMutation({ mutationFn: (url: string) => api.scrape.resolveUrl({ url }) });
+};
+
 export const useClearPostings = () => {
   const api = useAppClient();
   const qc = useQueryClient();

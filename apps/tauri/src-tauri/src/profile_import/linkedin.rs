@@ -50,7 +50,8 @@ pub async fn import(url: &str) -> AppResult<ProfileData> {
 
     if name.is_none() && experience.is_empty() && skills.is_empty() {
         return Err(AppError::Parse(
-            "could not extract profile data — the page may require LinkedIn login".to_string(),
+            "could not extract profile data — the profile may be private; log in to import it"
+                .to_string(),
         ));
     }
 
@@ -69,7 +70,14 @@ pub async fn import(url: &str) -> AppResult<ProfileData> {
 // ── HTTP ─────────────────────────────────────────────────────────────────────
 
 async fn fetch_page(url: &str) -> AppResult<String> {
-    let resp = crate::net::http::shared()
+    // Use the connected LinkedIn session when available so a private profile
+    // becomes importable after the user logs in. With no session the cookie jar
+    // is empty, so public profiles still import with no login required.
+    let data_dir = crate::platform::config::data_dir();
+    let client = crate::scraping::board_login::build_authed_client(&data_dir, "linkedin")
+        .unwrap_or_else(|_| crate::net::http::shared());
+
+    let resp = client
         .get(url)
         .timeout(std::time::Duration::from_secs(15))
         .header("Accept-Language", "en-US,en;q=0.9")
@@ -80,7 +88,7 @@ async fn fetch_page(url: &str) -> AppResult<String> {
     if !resp.status().is_success() {
         let status = resp.status();
         return Err(AppError::Provider(format!(
-            "linkedin returned {status} — you may need to log in first"
+            "linkedin returned {status} — the profile may be private; log in first"
         )));
     }
 
