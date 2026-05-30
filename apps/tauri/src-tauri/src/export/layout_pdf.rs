@@ -21,7 +21,7 @@ use crate::export::pdf_renderer::{
 use crate::export::templates::Template;
 use crate::export::types::GenerationMeta;
 use crate::layout::{layout_document, FillRect, LaidOutDoc, LinkRect, PlacedText, RuleLine};
-use crate::locale::PageSize;
+use crate::locale::LocaleProfile;
 use crate::measure::FontMetrics;
 use crate::model::adapter::model_from_resume_text;
 use crate::model::transform;
@@ -57,8 +57,10 @@ pub(crate) fn generate_resume_pdf(
         transform::linearize(&mut model);
     }
 
-    // Page geometry: A4, matching the legacy renderer (locale-driven in a later phase).
-    let geom = PageSize::A4.geometry();
+    // Page geometry from the active locale profile (defaults to A4), the same
+    // source the legacy renderer and DOCX read. Per-request locale sizing arrives
+    // in a later phase.
+    let geom = LocaleProfile::default().page_geometry();
     let laid = layout_document(&model, &effective_template, geom, &FontMetrics);
     emit_pdf(&laid)
 }

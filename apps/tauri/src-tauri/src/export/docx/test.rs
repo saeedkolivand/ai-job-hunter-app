@@ -1,5 +1,95 @@
+use std::io::{Cursor, Read};
+
 use super::*;
-use crate::export::types::TemplateId;
+use crate::export::types::{ExportFormat, TemplateId};
+
+/// Unzip a generated DOCX and return its `word/document.xml` (where the body
+/// runs and the section's `pgSz` live).
+fn document_xml(bytes: &[u8]) -> String {
+    let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).expect("docx is a zip archive");
+    let mut file = zip
+        .by_name("word/document.xml")
+        .expect("docx contains word/document.xml");
+    let mut xml = String::new();
+    file.read_to_string(&mut xml).expect("read document.xml");
+    xml
+}
+
+fn resume_request(template_id: TemplateId) -> ExportRequest {
+    ExportRequest {
+        // Name + contact + section + entry + bullet exercise name/heading/body fonts.
+        text: "Jane Doe\njane@example.com\n\nEXPERIENCE\nAcme Corp  2020 - Present\nSenior Engineer\n- Built things that mattered".to_string(),
+        format: ExportFormat::Docx,
+        document_type: DocumentType::Resume,
+        template_id,
+        meta: None,
+        ats_mode: false,
+    }
+}
+
+#[test]
+fn resume_docx_declares_a4_page_size() {
+    let bytes = generate_docx(&resume_request(TemplateId::Modern)).expect("docx");
+    let xml = document_xml(&bytes);
+    // A4 in dxa, set explicitly from LocaleProfile rather than inherited.
+    assert!(
+        xml.contains(r#"w:w="11906""#) && xml.contains(r#"w:h="16838""#),
+        "resume DOCX should declare an explicit A4 page size, got sectPr in: {xml}"
+    );
+}
+
+#[test]
+fn cover_letter_docx_declares_a4_page_size() {
+    let request = ExportRequest {
+        text: "Dear Hiring Manager,\n\nI am writing to apply.\n\nSincerely,\nJane Doe".to_string(),
+        format: ExportFormat::Docx,
+        document_type: DocumentType::CoverLetter,
+        template_id: TemplateId::Classic,
+        meta: None,
+        ats_mode: false,
+    };
+    let bytes = generate_docx(&request).expect("docx");
+    let xml = document_xml(&bytes);
+    assert!(
+        xml.contains(r#"w:w="11906""#) && xml.contains(r#"w:h="16838""#),
+        "cover-letter DOCX should declare an explicit A4 page size"
+    );
+}
+
+#[test]
+fn resume_docx_uses_fallback_fonts_not_bundled_names() {
+    // MonoTechnical: name/heading JetBrains Mono → Consolas, body Inter → Calibri.
+    let bytes = generate_docx(&resume_request(TemplateId::MonoTechnical)).expect("docx");
+    let xml = document_xml(&bytes);
+    assert!(xml.contains(r#"w:ascii="Consolas""#), "JetBrains Mono should fall back to Consolas");
+    assert!(xml.contains(r#"w:ascii="Calibri""#), "Inter should fall back to Calibri");
+    // Both ranges are set so accented Latin renders in the same face.
+    assert!(xml.contains(r#"w:hAnsi="Consolas""#), "fallback must also cover the high-ANSI range");
+    for bundled in ["JetBrains Mono", "Inter"] {
+        assert!(
+            !xml.contains(&format!(r#""{bundled}""#)),
+            "un-embedded bundled font {bundled:?} must not be referenced in the DOCX"
+        );
+    }
+}
+
+#[test]
+fn serif_and_display_templates_fall_back_predictably() {
+    // Academic: Source Serif 4 → Georgia.
+    let academic = document_xml(&generate_docx(&resume_request(TemplateId::Academic)).expect("docx"));
+    assert!(academic.contains(r#"w:ascii="Georgia""#), "Source Serif 4 should fall back to Georgia");
+    assert!(!academic.contains(r#""Source Serif 4""#), "bundled Source Serif 4 must not leak");
+
+    // RefinedExecutive: name Playfair Display → Cambria.
+    let refined = document_xml(&generate_docx(&resume_request(TemplateId::RefinedExecutive)).expect("docx"));
+    assert!(refined.contains(r#"w:ascii="Cambria""#), "Playfair Display should fall back to Cambria");
+    assert!(!refined.contains(r#""Playfair Display""#), "bundled Playfair Display must not leak");
+
+    // SwissMinimal: Manrope → Calibri.
+    let swiss = document_xml(&generate_docx(&resume_request(TemplateId::SwissMinimal)).expect("docx"));
+    assert!(swiss.contains(r#"w:ascii="Calibri""#), "Manrope should fall back to Calibri");
+    assert!(!swiss.contains(r#""Manrope""#), "bundled Manrope must not leak");
+}
 
 #[test]
 fn test_generate_simple_resume() {
