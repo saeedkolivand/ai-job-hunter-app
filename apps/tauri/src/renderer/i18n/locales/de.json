@@ -389,7 +389,13 @@
       "install": "Neu starten & installieren",
       "error": "Prüfung fehlgeschlagen",
       "whatsNew": "Neu in",
-      "downloadFromGitHub": "Von GitHub herunterladen"
+      "downloadFromGitHub": "Von GitHub herunterladen",
+      "viewChangelog": "Änderungsprotokoll anzeigen",
+      "hideChangelog": "Änderungsprotokoll ausblenden",
+      "current": "Aktuell",
+      "loadingChangelog": "Änderungsprotokoll wird geladen…",
+      "changelogError": "Änderungsprotokoll konnte nicht geladen werden.",
+      "changelogEmpty": "Keine Releases gefunden."
     }
   },
   "aiGenerate": {

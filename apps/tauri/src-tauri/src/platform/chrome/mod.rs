@@ -29,6 +29,8 @@ pub fn detect_system_chrome() -> Option<std::path::PathBuf> {
 fn detect_chrome_windows() -> Option<std::path::PathBuf> {
     use std::process::Command;
 
+    use crate::platform::NoWindow;
+
     // Query Windows registry for Chrome or Edge.
     for key in &[
         r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe",
@@ -36,6 +38,7 @@ fn detect_chrome_windows() -> Option<std::path::PathBuf> {
     ] {
         let output = Command::new("reg")
             .args(&["query", key, "/ve"])
+            .no_window()
             .output();
         if let Ok(out) = output {
             if out.status.success() {

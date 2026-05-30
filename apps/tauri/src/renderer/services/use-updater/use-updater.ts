@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 import {
   calculateDownloadSpeed,
@@ -9,6 +10,8 @@ import {
 } from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
+
+import { keys } from '../query-client';
 
 export type UpdateStatus =
   | { state: 'idle' }
@@ -107,4 +110,20 @@ export function useUpdater() {
     timeRemaining,
     formatBytes,
   };
+}
+
+/**
+ * Recent release history (current + previous versions) for the in-app changelog.
+ * Fetched lazily — pass `enabled` so the GitHub round-trip only happens once the
+ * user expands the changelog. Release data changes rarely, so it stays fresh for
+ * 10 minutes.
+ */
+export function useChangelog(enabled: boolean) {
+  const api = useAppClient();
+  return useQuery({
+    queryKey: keys.updater.changelog,
+    queryFn: () => api.updater.changelog(),
+    enabled,
+    staleTime: 10 * 60_000,
+  });
 }
