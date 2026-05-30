@@ -6,6 +6,7 @@ import { Button, cn, TextArea } from '@ajh/ui';
 import type { SetFn, WizardState } from '@/features/autopilot/types';
 import { useTranslation } from '@/lib/i18n';
 
+import { ComingSoonBadge } from '../ComingSoonBadge';
 import { WizardField } from '../WizardField';
 
 interface StepActionProps {
@@ -49,25 +50,35 @@ export function StepAction({ form, set }: StepActionProps) {
       </div>
 
       <div className="space-y-2">
-        {actionOptions.map(({ id, label, desc, icon: Icon, color }) => (
-          <Button
-            key={id}
-            onClick={() => set('action', id)}
-            className={cn(
-              'w-full flex items-start gap-3 rounded-xl border px-4 py-3 text-left transition-all h-auto',
-              form.action === id
-                ? 'border-brand/35 bg-brand/08'
-                : 'border-white/[0.05] hover:border-white/[0.08]'
-            )}
-          >
-            <Icon size={15} className={cn('mt-0.5 shrink-0', color)} />
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-semibold text-foreground/80">{label}</div>
-              <div className="text-[10px] text-foreground/40 mt-0.5">{desc}</div>
-            </div>
-            {form.action === id && <Check size={13} className="text-brand-soft shrink-0 mt-0.5" />}
-          </Button>
-        ))}
+        {actionOptions.map(({ id, label, desc, icon: Icon, color }) => {
+          // Applying isn't available yet — only "save" is selectable for now.
+          const disabled = id !== 'save';
+          return (
+            <Button
+              key={id}
+              disabled={disabled}
+              onClick={disabled ? undefined : () => set('action', id)}
+              className={cn(
+                'w-full flex items-start gap-3 rounded-xl border px-4 py-3 text-left transition-all h-auto',
+                form.action === id
+                  ? 'border-brand/35 bg-brand/08'
+                  : 'border-white/[0.05] hover:border-white/[0.08]'
+              )}
+            >
+              <Icon size={15} className={cn('mt-0.5 shrink-0', color)} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-foreground/80">{label}</span>
+                  {disabled && <ComingSoonBadge />}
+                </div>
+                <div className="text-[10px] text-foreground/40 mt-0.5">{desc}</div>
+              </div>
+              {form.action === id && (
+                <Check size={13} className="text-brand-soft shrink-0 mt-0.5" />
+              )}
+            </Button>
+          );
+        })}
       </div>
 
       {form.action !== 'save' && (

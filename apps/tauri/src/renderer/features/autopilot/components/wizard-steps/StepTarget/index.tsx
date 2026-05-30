@@ -5,6 +5,7 @@ import type { Prefilled, SetFn, WizardState } from '@/features/autopilot/types';
 import { useTranslation } from '@/lib/i18n';
 import { useAppClient } from '@/providers/AppClientProvider';
 
+import { ComingSoonBadge } from '../ComingSoonBadge';
 import { PrefilledBadge } from '../PrefilledBadge';
 import { WizardField } from '../WizardField';
 
@@ -84,17 +85,17 @@ export function StepTarget({ form, set, prefilled }: StepTargetProps) {
         </WizardField>
       </div>
 
-      <WizardField label={t('autopilot.wizard.target.workType')}>
+      <WizardField label={t('autopilot.wizard.target.workType')} badge={<ComingSoonBadge />}>
         <div className="grid grid-cols-4 gap-1.5">
           {(['any', 'remote', 'hybrid', 'on-site'] as const).map((opt) => (
             <Button
               key={opt}
-              onClick={() => set('workType', opt)}
+              disabled
               className={cn(
                 'rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-all h-auto',
                 form.workType === opt
                   ? 'border-brand/40 bg-brand/10 text-brand-soft'
-                  : 'border-white/[0.06] text-foreground/40 hover:border-white/10 hover:text-foreground/65'
+                  : 'border-white/[0.06] text-foreground/40'
               )}
             >
               {opt}
