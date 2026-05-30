@@ -278,25 +278,44 @@ fn extract_section<'a>(text: &'a str, start_marker: &str, end_marker: Option<&st
 // ─── Public entry point ───────────────────────────────────────────────────────
 
 pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
-    // Two-column is PDF-only — DOCX always linearizes to single column.
-    let effective_id = request.template_id;
-    let mut template = Template::get(effective_id);
-    if matches!(effective_id, TemplateId::TwoColumn) {
-        template.two_column = None;
-        template.margin_in = 1.0;
-    }
+    let template = Template::get(request.template_id);
+
+    // The legacy DOCX path can't lay out columns, so it collapses two-column
+    // templates to a single column. The model path renders a real two-column
+    // table, so it keeps the config.
+    let single_column = || {
+        let mut t = template.clone();
+        if matches!(request.template_id, TemplateId::TwoColumn) {
+            t.two_column = None;
+            t.margin_in = 1.0;
+        }
+        t
+    };
 
     let docx = match request.document_type {
         DocumentType::Resume => {
             let text = extract_section(&request.text, "### CANDIDATE RESUME ###", Some("### JOB ADVERTISEMENT ###"));
             let text = if text.is_empty() { request.text.as_str() } else { text };
-            generate_resume_docx(text, request.meta.as_ref(), &template)
+            // Strangler-fig switch: the canonical model backend renders resume DOCX
+            // by default; `--no-default-features` falls back to the legacy renderer.
+            // Both arms compile via `cfg!` so neither path rots.
+            if cfg!(feature = "model_docx") {
+                crate::export::model_docx::generate_resume_docx(
+                    text,
+                    request.meta.as_ref(),
+                    &template,
+                    request.ats_mode,
+                )
                 .context("Failed to generate resume DOCX")?
+            } else {
+                generate_resume_docx(text, request.meta.as_ref(), &single_column())
+                    .context("Failed to generate resume DOCX")?
+            }
         }
         DocumentType::CoverLetter => {
             let text = extract_section(&request.text, "### COMPLETE COVER LETTER ###", None);
             let text = if text.is_empty() { request.text.as_str() } else { text };
-            generate_cover_letter_docx(text, request.meta.as_ref(), &template)
+            generate_cover_letter_docx(text, request.meta.as_ref(), &single_column())
                 .context("Failed to generate cover letter DOCX")?
         }
     };
