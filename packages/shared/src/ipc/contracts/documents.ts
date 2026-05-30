@@ -113,12 +113,36 @@ export interface StructuredResume {
   warnings: string[];
 }
 
+/** Signals the recommender reads — a subset of the generation metadata. */
+export interface TemplateRecommendSignals {
+  jobTitle?: string;
+  /** `junior | mid | senior | lead | executive` */
+  candidateSeniority?: string;
+  topRequirements?: string[];
+  resumeLanguage?: string;
+  jobAdLanguage?: string;
+  /** Job ad's target country/market (`us`, `de`, `gb`, …); wins over language. */
+  targetCountry?: string;
+}
+
+/** A template + locale suggestion with a printed reason. Always overridable. */
+export interface TemplateRecommendation {
+  templateId: TemplateId;
+  /** Market id (`us`, `dach`, `en`, …). */
+  locale: string;
+  atsSuggested: boolean;
+  rationale: string;
+}
+
 export interface DocumentsContract {
   list(): Promise<DocumentRecord[]>;
 
   import(
     req: DocumentImportRequest
   ): Promise<{ id: string; success: boolean; review?: StructuredResume }>;
+
+  /** Suggest a template + locale from the generation metadata signals. */
+  recommendTemplate(req: TemplateRecommendSignals): Promise<TemplateRecommendation>;
 
   remove(id: string): Promise<void>;
 
@@ -134,6 +158,7 @@ export interface DocumentsContract {
 export const DOCUMENTS_CHANNELS = {
   list: 'documents:list',
   import: 'documents:import',
+  recommendTemplate: 'documents:recommend_template',
   remove: 'documents:remove',
   exportDocument: 'documents:export_document',
   exportAndSave: 'documents:export_and_save',

@@ -6,6 +6,7 @@ import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import { ModelSelector } from '@/components/ui/ModelSelector';
 import { GenerationConfig } from '@/features/ai-generate/components/GenerationConfig';
 import { GenerationMetadata } from '@/features/ai-generate/components/GenerationMetadata';
+import { TemplateRecommendation } from '@/features/ai-generate/components/TemplateRecommendation';
 import type { GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 
@@ -132,6 +133,17 @@ export function LeftPanel({
 
       {/* Detected metadata — shown after extraction */}
       <GenerationMetadata meta={meta} />
+
+      {/* Template + locale suggestion from the detected metadata */}
+      <TemplateRecommendation
+        meta={meta}
+        templateId={templateId}
+        onApply={(id, atsSuggested) => {
+          setTemplateId(id);
+          if (atsSuggested && id === 'two-column') setAtsMode(true);
+          else if (id !== 'two-column') setAtsMode(false);
+        }}
+      />
 
       {/* Config — target + mode */}
       <GenerationConfig

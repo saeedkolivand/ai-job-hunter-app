@@ -395,6 +395,9 @@
   "aiGenerate": {
     "title": "AI Generate",
     "subtitle": "Upload your resume and target job ad to generate tailored, ATS-optimized documents.",
+    "recommendationTitle": "Suggested template",
+    "applyRecommendation": "Apply suggestion",
+    "recommendationApplied": "Applied",
     "resumeLabel": "Resume",
     "jobAdLabel": "Job Advertisement",
     "detectedContext": "Detected Context",
