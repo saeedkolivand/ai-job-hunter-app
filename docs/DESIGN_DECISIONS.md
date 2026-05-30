@@ -47,7 +47,7 @@ The app has clear, enforced package boundaries:
 ```
 packages/shared    ← IPC contracts, Zod schemas (no React, no Node)
 packages/ui        ← component library (no IPC, no state management)
-packages/prompts   ← AI prompt templates (pure TypeScript)
+packages/prompts   ← AI prompt templates, provider-aware + locale-driven (pure TypeScript)
 ```
 
 (The heavy work — scraping, AI, documents, embeddings — lives in the Rust core under `apps/tauri/src-tauri/`. Earlier Node packages for a sidecar runtime were removed once that work moved to Rust.)

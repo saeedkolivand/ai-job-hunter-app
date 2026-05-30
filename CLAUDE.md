@@ -41,7 +41,7 @@ Local-first desktop app in a pnpm monorepo. **Tauri is the shell.**
 ```
 packages/shared       ← IPC contracts, Zod schemas, shared types (no UI, no Node)
 packages/ui           ← React component library + design system (no app logic)
-packages/prompts      ← AI prompt templates (pure TS, zero deps)
+packages/prompts      ← AI prompt templates — provider-aware + locale-driven (pure TS, zero deps)
 apps/tauri            ← Tauri app: Rust core (scraping, login, documents, AI) + React renderer
 ```
 
