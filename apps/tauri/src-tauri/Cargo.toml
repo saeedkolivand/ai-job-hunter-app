@@ -6,7 +6,7 @@ description = "AI Job Hunter — Tauri desktop shell"
 authors = ["Saeed Kolivand"]
 
 [features]
-default = ["layout_pdf"]
+default = ["layout_pdf", "model_docx"]
 
 # Render resumes through the canonical layout engine (model → LaidOutDoc → PDF)
 # instead of the legacy renderer. On by default now that gap-by-gap snapshot
@@ -14,6 +14,13 @@ default = ["layout_pdf"]
 # path stays compiled — it is the parity reference and still renders cover
 # letters — so `--no-default-features` falls back to it.
 layout_pdf = []
+
+# Render resume DOCX from the canonical document model (real two-column table,
+# native ats_mode) instead of the legacy line-based renderer. On by default;
+# locked by golden invariants in `export::model_docx::test`. The legacy DOCX
+# path stays compiled (it still renders cover letters), so `--no-default-features`
+# falls back to it.
+model_docx = []
 
 [profile.dev]
 incremental = true
