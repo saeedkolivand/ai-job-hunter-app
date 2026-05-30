@@ -1389,6 +1389,23 @@
       "next": "KI einrichten"
     }
   },
+  "resumeReview": {
+    "title": "Extrahierten Lebenslauf prüfen",
+    "subtitle": "Prüfe die erkannten Angaben vor der Generierung. Es wird nichts blockiert — nur ein Hinweis.",
+    "notDetected": "Nicht erkannt",
+    "name": "Name",
+    "email": "E-Mail",
+    "phone": "Telefon",
+    "location": "Ort",
+    "links": "Links",
+    "sections": "Abschnitte",
+    "dismiss": "Sieht gut aus",
+    "confidence": {
+      "high": "Hoch",
+      "medium": "Mittel",
+      "low": "Niedrig"
+    }
+  },
   "resumeInput": {
     "label": "Lebenslauf",
     "saved": "Gespeichert",

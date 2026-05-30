@@ -60,7 +60,7 @@ export function useResumeInput({ value, onChange, onUpload }: Params) {
   const { data: rawDocsUnknown = [] } = useDocuments();
   const rawDocs = rawDocsUnknown as unknown as RawDoc[];
   const docs = rawDocs.map(normalise);
-  const { importFile } = useImportWithOcr();
+  const { importFile, review, clearReview } = useImportWithOcr();
   const setDefaultDocument = useSetDefaultDocument();
   const profileImport = useProfileImport();
 
@@ -208,5 +208,7 @@ export function useResumeInput({ value, onChange, onUpload }: Params) {
     handleFileChange,
     handleProfileUrlSubmit,
     toggleUrlInput,
+    review,
+    clearReview,
   };
 }

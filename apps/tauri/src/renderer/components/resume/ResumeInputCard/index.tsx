@@ -19,12 +19,13 @@ import { Button, cn, TextArea } from '@ajh/ui';
 import { useTranslation } from '@/lib/i18n';
 
 import { ProfileUrlInput } from '../ProfileUrlInput';
+import { ResumeReviewPanel } from '../ResumeReviewPanel';
 import { SaveActions } from '../SaveActions';
 import { SavedResumeMenu } from '../SavedResumeMenu';
 import { UploadZone } from '../UploadZone';
 import { useResumeInput } from './useResumeInput';
 
-const ACCEPT = '.pdf,.docx,.txt,.md,.markdown';
+const ACCEPT = '.pdf,.docx,.txt,.md,.markdown,.html,.htm,.rtf';
 
 interface Props {
   /** Extracted resume text — controlled by parent */
@@ -77,6 +78,8 @@ export function ResumeInputCard({
     handleFileChange,
     handleProfileUrlSubmit,
     toggleUrlInput,
+    review,
+    clearReview,
   } = useResumeInput({ value, onChange, onUpload });
 
   return (
@@ -266,6 +269,13 @@ export function ResumeInputCard({
           onSaveToLibrary={() => void handleSaveToLibrary(false)}
           onSetDefault={() => void handleSaveToLibrary(true)}
         />
+      )}
+
+      {/* Structured-extraction review — shown when a saved import needs a look */}
+      {review?.reviewRequired && (
+        <div className="px-3 pb-3">
+          <ResumeReviewPanel review={review} onDismiss={clearReview} />
+        </div>
       )}
     </div>
   );

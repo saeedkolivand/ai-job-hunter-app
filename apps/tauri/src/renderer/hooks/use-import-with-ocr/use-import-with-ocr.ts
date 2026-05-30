@@ -1,10 +1,19 @@
 import i18n from 'i18next';
 import { useState } from 'react';
 
+import type { StructuredResume } from '@ajh/shared';
+
 import { ocrFile } from '@/lib/ocr';
 import { useImportDocument } from '@/services';
 
 export type ImportWithOcrStatus = 'idle' | 'importing' | 'ocr' | 'retrying';
+
+type ImportResult = {
+  id?: string;
+  success?: boolean;
+  error?: string;
+  review?: StructuredResume;
+};
 
 /**
  * Wraps useImportDocument with a Tesseract.js fallback for scanned PDFs.
@@ -15,8 +24,11 @@ export type ImportWithOcrStatus = 'idle' | 'importing' | 'ocr' | 'retrying';
 export function useImportWithOcr() {
   const importDocument = useImportDocument();
   const [status, setStatus] = useState<ImportWithOcrStatus>('idle');
+  // Structured-extraction review from the most recent import (per-field
+  // confidence + missing-field warnings); surfaced when `reviewRequired`.
+  const [review, setReview] = useState<StructuredResume | null>(null);
 
-  const importFile = async (file: File) => {
+  const importFile = async (file: File): Promise<ImportResult> => {
     setStatus('importing');
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -24,9 +36,10 @@ export function useImportWithOcr() {
         name: file.name,
         bytes,
         title: file.name,
-      })) as { id?: string; success?: boolean; error?: string };
+      })) as ImportResult;
 
       if (result?.error !== 'scanned_pdf') {
+        setReview(result?.review ?? null);
         return result;
       }
 
@@ -41,11 +54,13 @@ export function useImportWithOcr() {
       setStatus('retrying');
       const ocrBytes = new TextEncoder().encode(text);
       const baseName = file.name.replace(/\.[^.]+$/, '');
-      return await importDocument.mutateAsync({
+      const retried = (await importDocument.mutateAsync({
         name: `${baseName}.txt`,
         bytes: new Uint8Array(ocrBytes),
         title: file.name,
-      });
+      })) as ImportResult;
+      setReview(retried?.review ?? null);
+      return retried;
     } finally {
       setStatus('idle');
     }
@@ -56,5 +71,7 @@ export function useImportWithOcr() {
     status,
     isPending: status !== 'idle',
     isOcr: status === 'ocr',
+    review,
+    clearReview: () => setReview(null),
   };
 }
