@@ -1,7 +1,8 @@
 /** Cover-letter generation — system prompt (brief / task / full) + user prompt. */
 
+import { truncateResume } from '../context-manager/index.js';
 import { type PromptTarget, resolveProfile } from '../provider/index.js';
-import { buildEmphasisBlock } from './emphasis.js';
+import { buildEmphasisBlock, buildGroundingBlock } from './emphasis.js';
 import { parseLinksFromResume, stripLinkBlock } from './links.js';
 import { type GenerationMeta, type GenerationMode, MODES } from './modes.js';
 
@@ -109,7 +110,7 @@ export function buildCoverLetterPrompt(
   _mode: GenerationMode,
   target: PromptTarget = 'large'
 ): string {
-  const { resumeChars, jobAdChars } = resolveProfile(target);
+  const { jobAdChars, truncation } = resolveProfile(target);
   // Date in the target language's convention, following the job-ad locale.
   const today = new Date().toLocaleDateString(meta.targetLanguage || 'en', {
     day: 'numeric',
@@ -121,12 +122,16 @@ export function buildCoverLetterPrompt(
     ? `Write entirely in ${meta.targetLanguage}. Use native phrasing and professional conventions for that market. Do NOT translate literally.`
     : `Write in ${meta.targetLanguage}.`;
 
-  const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? []);
   const { block: linksBlock } = parseLinksFromResume(resume);
-  const resumeBody = stripLinkBlock(resume);
+  // Section-aware truncation: keep the whole résumé when it fits the budget,
+  // else preserve high-value sections instead of cutting the tail.
+  const resumeBody = truncateResume(stripLinkBlock(resume), truncation);
+
+  const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? []);
+  const groundingBlock = buildGroundingBlock(resumeBody, meta.topRequirements ?? []);
 
   return `${linksBlock ? `${linksBlock}\n\n` : ''}<candidate_resume>
-${resumeBody.slice(0, resumeChars)}
+${resumeBody}
 </candidate_resume>
 
 <job_ad>
@@ -153,7 +158,7 @@ Role: ${meta.jobTitle || 'this role'} at ${meta.companyName || 'this company'}
 Today: ${today}
 ${langNote}
 ${emphasisBlock}
-
+${groundingBlock ? `\n${groundingBlock}\n` : ''}
 ### WRITING PROCESS (internal — do NOT output any of this) ###
 
 Think through the following privately before writing:

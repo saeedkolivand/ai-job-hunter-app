@@ -121,8 +121,13 @@ export function resolveProfile(target: PromptTarget = 'large'): ResolvedProfile 
     includeRewrites: schema === 'full',
     structuredOutput,
     truncation: resolveTruncation(profile, tier),
+    // resumeChars is retained for backward-compat / callers that still slice;
+    // the generation builders now feed the résumé via `truncation` +
+    // truncateResume() instead, which preserves whole high-value sections.
     resumeChars: depth === 'brief' ? 2500 : profile.kind === 'cloud' ? 8000 : 5000,
-    jobAdChars: depth === 'brief' ? 1500 : 3000,
+    // Job ads are not the candidate's data and often bury requirements late, so
+    // give the extractor/generator more of the ad to read.
+    jobAdChars: depth === 'brief' ? 2500 : profile.kind === 'cloud' ? 6000 : 5000,
   };
 }
 

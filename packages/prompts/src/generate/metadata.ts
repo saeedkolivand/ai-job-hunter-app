@@ -27,7 +27,7 @@ ${resumeBody.slice(0, 3000)}
 </candidate_resume>
 
 <job_ad>
-${jobAd.slice(0, 2000)}
+${jobAd.slice(0, 4000)}
 </job_ad>
 
 Return this exact JSON (no other text):
