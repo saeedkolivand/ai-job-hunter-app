@@ -7,9 +7,10 @@
 //! link rects) all comes from the engine.
 //!
 //! It is wired into [`super::pdf::generate_pdf`] behind the `layout_pdf` Cargo
-//! feature: the default build keeps the legacy renderer, while `--all-features`
-//! (used by CI and the pre-push gate) exercises this path. The two stay
-//! side-by-side until snapshot parity is locked, then the default flips.
+//! feature, which is **on by default** now that gap-by-gap snapshot parity with
+//! the legacy renderer is locked (see the parity gate in [`crate::layout`]'s
+//! tests). `--no-default-features` falls back to the legacy renderer, which stays
+//! as the parity reference. The two remain side-by-side so neither path rots.
 
 use anyhow::Result;
 use printpdf::*;
