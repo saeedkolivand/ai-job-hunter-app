@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { DocumentImportRequest, ResumeExtractTextRequest } from '@ajh/shared';
+import type {
+  DocumentImportRequest,
+  ResumeExtractTextRequest,
+  TemplateRecommendation,
+  TemplateRecommendSignals,
+} from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
@@ -42,5 +47,12 @@ export const useExtractText = () => {
   const api = useAppClient();
   return useMutation({
     mutationFn: (req: ResumeExtractTextRequest) => api.resume.extractText(req),
+  });
+};
+
+export const useRecommendTemplate = () => {
+  const api = useAppClient();
+  return useMutation<TemplateRecommendation, Error, TemplateRecommendSignals>({
+    mutationFn: (req: TemplateRecommendSignals) => api.documents.recommendTemplate(req),
   });
 };

@@ -84,6 +84,12 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     documents: {
       list: emptyList,
       import: noop,
+      recommendTemplate: async () => ({
+        templateId: 'modern',
+        locale: 'en',
+        atsSuggested: false,
+        rationale: 'Mock recommendation.',
+      }),
       remove: noop,
       setDefault: noop,
       exportDocument: async () => ({ data: [], mimeType: 'text/plain', filename: 'mock.txt' }),
