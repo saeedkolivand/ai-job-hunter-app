@@ -15,6 +15,7 @@ pub mod layout_pdf;
 pub mod parser;
 pub mod docx;
 pub mod docx_renderer;
+pub mod model_docx;
 pub mod pdf;
 pub mod pdf_renderer;
 pub mod templates;
