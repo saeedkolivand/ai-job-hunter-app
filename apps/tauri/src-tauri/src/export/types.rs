@@ -74,10 +74,15 @@ pub struct ExportRequest {
 
 /// Export result (binary data)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExportResult {
     pub data: Vec<u8>,
     pub mime_type: String,
     pub filename: String,
+    /// Pre-export validation report (PDF/DOCX). `None` for TXT, which has no
+    /// layout to validate. Optional on the wire so older frontends keep working.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub report: Option<crate::validate::ExportReport>,
 }
 
 /// Line kind in parsed document

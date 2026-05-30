@@ -47,6 +47,7 @@ mod profile_import;
 mod scraping;
 mod theme;
 mod updater;
+mod validate;
 
 use parking_lot::Mutex;
 
