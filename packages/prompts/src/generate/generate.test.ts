@@ -4,6 +4,7 @@ import urlLabels from '../fixtures/url-labels.json';
 import {
   buildCoverLetterPrompt,
   buildCoverLetterSystemPrompt,
+  buildGroundingBlock,
   buildMetadataPrompt,
   buildResumePrompt,
   buildResumeSystemPrompt,
@@ -13,6 +14,7 @@ import {
   injectLinksIntoGeneratedText,
   MODES,
   parseLinksFromResume,
+  resumeMentions,
   urlToFriendlyLabel,
   validateMetadata,
 } from './index';
@@ -193,6 +195,87 @@ describe('buildResumePrompt', () => {
       'ats'
     );
     expect(prompt).toContain('Rewrite entirely');
+  });
+});
+
+const RESUME_FOR_GROUNDING = `Jane Dev
+Senior Engineer
+jane@example.com
+
+PROFESSIONAL SUMMARY
+Backend engineer who ships React apps written in TypeScript.
+
+WORK EXPERIENCE
+Acme — Engineer (2020 - Present)
+Built services in TypeScript and React with PostgreSQL.
+
+SKILLS
+React, TypeScript, PostgreSQL`;
+
+describe('resumeMentions', () => {
+  it('matches single tokens on word boundaries (not substrings)', () => {
+    expect(resumeMentions('Built React apps', 'React')).toBe(true);
+    expect(resumeMentions('Worked in the category team', 'Go')).toBe(false);
+    expect(resumeMentions('Wrote services in Go', 'Go')).toBe(true);
+  });
+
+  it('matches punctuated / multi-word terms as substrings', () => {
+    expect(resumeMentions('Built with Node.js', 'node.js')).toBe(true);
+    expect(resumeMentions('Designed a REST API for payments', 'REST API')).toBe(true);
+    expect(resumeMentions('No cloud here', 'AWS')).toBe(false);
+  });
+});
+
+describe('buildGroundingBlock', () => {
+  it('splits requirements into résumé-backed present vs absent', () => {
+    const block = buildGroundingBlock(RESUME_FOR_GROUNDING, [
+      'React',
+      'TypeScript',
+      'AWS',
+      'Kubernetes',
+    ]);
+    expect(block).toContain('PRESENT');
+    expect(block).toContain('React');
+    expect(block).toContain('TypeScript');
+    expect(block).toContain('ABSENT');
+    expect(block).toContain('AWS');
+    expect(block).toContain('Kubernetes');
+  });
+
+  it('returns empty string when there are no requirements', () => {
+    expect(buildGroundingBlock(RESUME_FOR_GROUNDING, [])).toBe('');
+  });
+});
+
+describe('résumé context wiring', () => {
+  it('embeds the grounding split in the résumé prompt', () => {
+    const prompt = buildResumePrompt(RESUME_FOR_GROUNDING, 'Job ad', META, 'ats');
+    expect(prompt).toContain('SKILL GROUNDING');
+    expect(prompt).toContain('PRESENT');
+  });
+
+  it('embeds the grounding split in the cover-letter prompt', () => {
+    const prompt = buildCoverLetterPrompt(RESUME_FOR_GROUNDING, 'Job ad', META, 'recruiter');
+    expect(prompt).toContain('SKILL GROUNDING');
+  });
+
+  it('no longer hard-cuts the résumé tail at 2500 chars for local tiers', () => {
+    const tail = 'UNIQUE_TAIL_MARKER';
+    const longResume = [
+      'Jane Dev',
+      'Senior Engineer',
+      'jane@example.com',
+      '',
+      'PROFESSIONAL SUMMARY',
+      'Experienced engineer. '.repeat(150), // ~3.3k chars, well past the old 2500 cap
+      '',
+      'SKILLS',
+      `${tail} React, TypeScript`,
+    ].join('\n');
+    // 'medium' resolves to the brief depth that previously sliced at 2500 chars;
+    // the résumé fits the section-aware token budget, so the tail survives.
+    const prompt = buildResumePrompt(longResume, 'Job ad', META, 'ats', 'medium');
+    expect(prompt).toContain(tail);
   });
 });
 
