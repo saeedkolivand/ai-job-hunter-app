@@ -160,3 +160,45 @@ fn test_parse_relative_time_large_number() {
     let result = parse_relative_time("100 days ago");
     assert!(result.is_some());
 }
+
+#[test]
+fn test_parse_relative_time_minutes_not_months() {
+    // Regression: "minutes" must NOT be matched as "months" via the "m" stem.
+    // Capture `now` AFTER the call so the measured elapsed is not fractionally
+    // short of the parsed duration (which would truncate down).
+    let result = parse_relative_time("30 minutes ago").expect("should parse minutes");
+    let mins = chrono::Utc::now().signed_duration_since(result).num_minutes();
+    assert!((29..=31).contains(&mins), "expected ~30 minutes, got {mins}");
+}
+
+#[test]
+fn test_parse_relative_time_hours_value() {
+    let result = parse_relative_time("5 hours ago").expect("should parse hours");
+    let mins = chrono::Utc::now().signed_duration_since(result).num_minutes();
+    assert!((299..=301).contains(&mins), "expected ~300 minutes, got {mins}");
+}
+
+#[test]
+fn test_parse_relative_time_months_value() {
+    let result = parse_relative_time("3 months ago").expect("should parse months");
+    let days = chrono::Utc::now().signed_duration_since(result).num_days();
+    assert_eq!(days, 90, "expected 90 days (3*30), got {days}");
+}
+
+#[test]
+fn test_parse_iso_date_bare() {
+    let result = parse_iso_date("2024-01-15").expect("should parse YYYY-MM-DD");
+    assert_eq!(result.format("%Y-%m-%d").to_string(), "2024-01-15");
+}
+
+#[test]
+fn test_parse_iso_date_rfc3339() {
+    let result = parse_iso_date("2024-01-15T10:30:00Z").expect("should parse RFC3339");
+    assert_eq!(result.format("%Y-%m-%d").to_string(), "2024-01-15");
+}
+
+#[test]
+fn test_parse_iso_date_invalid() {
+    assert!(parse_iso_date("not a date").is_none());
+    assert!(parse_iso_date("1 hour ago").is_none());
+}
