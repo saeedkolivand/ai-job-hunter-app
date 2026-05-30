@@ -14,6 +14,7 @@ pub fn extract(bytes: &[u8]) -> Result<ExtractedResume, ExtractionError> {
     let document_xml = read_zip_entry(&mut archive, "word/document.xml")?;
 
     let (text, links) = parse_document(&document_xml, &relationships);
+    let text = crate::extraction::clean::strip_icon_glyphs(&text);
     let confidence = crate::extraction::confidence::score(&text, SourceFormat::Docx);
 
     Ok(ExtractedResume {

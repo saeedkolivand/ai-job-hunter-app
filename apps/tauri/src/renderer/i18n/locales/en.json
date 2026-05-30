@@ -1396,6 +1396,23 @@
     "downloadButton": "Download",
     "installButton": "Restart & Install"
   },
+  "resumeReview": {
+    "title": "Review extracted resume",
+    "subtitle": "Check the detected details before generating. Nothing is blocked — this is just a heads-up.",
+    "notDetected": "Not detected",
+    "name": "Name",
+    "email": "Email",
+    "phone": "Phone",
+    "location": "Location",
+    "links": "Links",
+    "sections": "Sections",
+    "dismiss": "Looks good",
+    "confidence": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    }
+  },
   "resumeInput": {
     "label": "Resume",
     "saved": "Saved",

@@ -6,6 +6,7 @@ use crate::extraction::types::{ExtractionError, ExtractedResume, Link, SourceFor
 pub fn extract(bytes: &[u8]) -> Result<ExtractedResume, ExtractionError> {
     let text = pdf_extract::extract_text_from_mem(bytes)
         .map_err(|e| ExtractionError::PdfError(e.to_string()))?;
+    let text = crate::extraction::clean::strip_icon_glyphs(&text);
 
     let links = extract_links(bytes);
     let text = inline_links(&text, &links);

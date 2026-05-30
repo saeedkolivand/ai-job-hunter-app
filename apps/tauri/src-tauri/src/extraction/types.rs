@@ -23,6 +23,8 @@ pub enum SourceFormat {
     Docx,
     Image,
     PlainText,
+    Html,
+    Rtf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
