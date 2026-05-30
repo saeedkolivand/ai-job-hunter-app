@@ -188,6 +188,7 @@ No `// eslint-disable`, no `@ts-ignore`. Add scoped overrides to `eslint.config.
 | Architecture principles | `docs/PATTERNS.md` §13                                                          |
 | Architecture status     | `docs/ARCHITECTURE_STATUS.md`                                                   |
 | Architecture (general)  | `docs/ARCHITECTURE.md`                                                          |
+| Export templates        | `docs/EXPORT_TEMPLATES.md` (9-template + backend contract)                      |
 | Patterns                | `docs/PATTERNS.md`                                                              |
 | Design system           | `docs/DESIGN_SYSTEM.md`                                                         |
 | Dev setup               | `docs/DEVELOPMENT.md`                                                           |
