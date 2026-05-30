@@ -5,7 +5,7 @@ import {
   buildAnalysisPrompt,
   buildSystemPrompt,
   validateAndRepair,
-} from './analyze';
+} from './index';
 
 describe('buildSystemPrompt', () => {
   it('returns the full three-perspective prompt for large models', () => {
