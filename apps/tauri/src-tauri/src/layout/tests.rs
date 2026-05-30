@@ -60,6 +60,17 @@ fn lays_out_a_single_page_with_the_name() {
 }
 
 #[test]
+fn letter_geometry_widens_the_page() {
+    // A US-locale export uses Letter geometry; the engine honors it.
+    let model = model_from_resume_text(SAMPLE);
+    let t = Template::get(TemplateId::Modern);
+    let doc = layout_document(&model, &t, PageSize::Letter.geometry(), &FontMetrics);
+    assert_eq!(doc.page_width_mm, 215.9);
+    assert_eq!(doc.page_height_mm, 279.4);
+    assert!(all_text(&doc).contains("Jane Doe"));
+}
+
+#[test]
 fn name_is_left_aligned_for_classic() {
     let doc = sample_doc(TemplateId::Classic);
     let t = Template::get(TemplateId::Classic);

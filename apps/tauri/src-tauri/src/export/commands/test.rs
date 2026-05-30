@@ -23,6 +23,7 @@ fn test_generate_filename() {
             target_language: None,
         }),
         ats_mode: false,
+        locale: None,
     };
 
     let filename = generate_filename(&request, "docx");

@@ -21,19 +21,39 @@ use crate::export::pdf_renderer::{
 use crate::export::templates::Template;
 use crate::export::types::GenerationMeta;
 use crate::layout::{layout_document, FillRect, LaidOutDoc, LinkRect, PlacedText, RuleLine};
-use crate::locale::LocaleProfile;
+use crate::locale::PageGeometry;
 use crate::measure::FontMetrics;
 use crate::model::adapter::model_from_resume_text;
 use crate::model::transform;
 
 const PT_PER_MM: f32 = 2.834_645_7;
 
-/// Render a resume to PDF bytes via the canonical layout engine.
+/// Render a resume to PDF bytes via the canonical layout engine, on the default
+/// (international A4) page geometry. A test convenience — the export command uses
+/// [`generate_resume_pdf_in`] with the request's locale geometry.
+#[cfg(test)]
 pub(crate) fn generate_resume_pdf(
     text: &str,
     meta: Option<&GenerationMeta>,
     template: &Template,
     ats_mode: bool,
+) -> Result<Vec<u8>> {
+    generate_resume_pdf_in(
+        text,
+        meta,
+        template,
+        ats_mode,
+        crate::locale::LocaleProfile::default().page_geometry(),
+    )
+}
+
+/// Render a resume to PDF bytes on a specific page geometry (locale-driven).
+pub(crate) fn generate_resume_pdf_in(
+    text: &str,
+    meta: Option<&GenerationMeta>,
+    template: &Template,
+    ats_mode: bool,
+    geom: PageGeometry,
 ) -> Result<Vec<u8>> {
     let mut model = model_from_resume_text(text);
 
@@ -57,10 +77,6 @@ pub(crate) fn generate_resume_pdf(
         transform::linearize(&mut model);
     }
 
-    // Page geometry from the active locale profile (defaults to A4), the same
-    // source the legacy renderer and DOCX read. Per-request locale sizing arrives
-    // in a later phase.
-    let geom = LocaleProfile::default().page_geometry();
     let laid = layout_document(&model, &effective_template, geom, &FontMetrics);
     emit_pdf(&laid)
 }

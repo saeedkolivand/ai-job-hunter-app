@@ -27,6 +27,8 @@ interface BaseExportRequest {
   meta?: ExportMeta;
   /** Linearize two-column layouts for ATS parsers. Only affects two-column template. */
   atsMode?: boolean;
+  /** Target market id (`us`, `de`, …); drives the page size (US → Letter, else A4). */
+  locale?: string;
 }
 
 export type ExportIssueSeverity = 'critical' | 'warning';

@@ -31,6 +31,7 @@ interface Props {
   setTarget: (v: 'resume' | 'cover' | 'both') => void;
   setTemplateId: (v: TemplateId) => void;
   setAtsMode: (v: boolean) => void;
+  setLocale: (v: string) => void;
   onUpload: (target: 'resume' | 'jobAd', file: File) => Promise<void>;
   onReset: () => void;
   onAnalyze: () => void;
@@ -59,6 +60,7 @@ export function LeftPanel({
   setTarget,
   setTemplateId,
   setAtsMode,
+  setLocale,
   onUpload,
   onReset,
   onAnalyze,
@@ -138,8 +140,9 @@ export function LeftPanel({
       <TemplateRecommendation
         meta={meta}
         templateId={templateId}
-        onApply={(id, atsSuggested) => {
+        onApply={(id, atsSuggested, recommendedLocale) => {
           setTemplateId(id);
+          setLocale(recommendedLocale);
           if (atsSuggested && id === 'two-column') setAtsMode(true);
           else if (id !== 'two-column') setAtsMode(false);
         }}

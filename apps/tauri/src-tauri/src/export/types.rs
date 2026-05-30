@@ -70,6 +70,18 @@ pub struct ExportRequest {
     /// Defaults to false so existing frontends that omit it keep working.
     #[serde(default)]
     pub ats_mode: bool,
+    /// Target market id (`us`, `uk`, `de`, …) resolved by
+    /// [`crate::locale::LocaleProfile::get`]; drives the page size (US → Letter,
+    /// the rest → A4). Optional so frontends that omit it keep the A4 default.
+    #[serde(default)]
+    pub locale: Option<String>,
+}
+
+impl ExportRequest {
+    /// Page geometry for this request's locale (international A4 by default).
+    pub fn page_geometry(&self) -> crate::locale::PageGeometry {
+        crate::locale::LocaleProfile::get(self.locale.as_deref().unwrap_or("en")).page_geometry()
+    }
 }
 
 /// Export result (binary data)
