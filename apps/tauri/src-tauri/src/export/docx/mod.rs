@@ -300,11 +300,12 @@ pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
             // by default; `--no-default-features` falls back to the legacy renderer.
             // Both arms compile via `cfg!` so neither path rots.
             if cfg!(feature = "model_docx") {
-                crate::export::model_docx::generate_resume_docx(
+                crate::export::model_docx::generate_resume_docx_in(
                     text,
                     request.meta.as_ref(),
                     &template,
                     request.ats_mode,
+                    request.page_geometry(),
                 )
                 .context("Failed to generate resume DOCX")?
             } else {

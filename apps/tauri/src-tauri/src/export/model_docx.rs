@@ -21,7 +21,7 @@ use crate::export::docx_renderer::{
 };
 use crate::export::templates::Template;
 use crate::export::types::{FontFamily, GenerationMeta};
-use crate::locale::LocaleProfile;
+use crate::locale::PageGeometry;
 use crate::model::adapter::model_from_resume_text;
 use crate::model::document::{Block, DocumentModel, EntryBlock, HeaderBlock, Placement, Section};
 use crate::model::rich::RichText;
@@ -39,12 +39,32 @@ struct Ctx<'a> {
     right_align_date: bool,
 }
 
-/// Render a resume to a `Docx` via the canonical document model.
+/// Render a resume to a `Docx` via the canonical document model, on the default
+/// (international A4) page geometry. A test convenience — the export command uses
+/// [`generate_resume_docx_in`] with the request's locale geometry.
+#[cfg(test)]
 pub(crate) fn generate_resume_docx(
     text: &str,
     meta: Option<&GenerationMeta>,
     template: &Template,
     ats_mode: bool,
+) -> Result<Docx> {
+    generate_resume_docx_in(
+        text,
+        meta,
+        template,
+        ats_mode,
+        crate::locale::LocaleProfile::default().page_geometry(),
+    )
+}
+
+/// Render a resume to a `Docx` on a specific page geometry (locale-driven).
+pub(crate) fn generate_resume_docx_in(
+    text: &str,
+    meta: Option<&GenerationMeta>,
+    template: &Template,
+    ats_mode: bool,
+    geom: PageGeometry,
 ) -> Result<Docx> {
     let mut model = model_from_resume_text(text);
 
@@ -68,13 +88,13 @@ pub(crate) fn generate_resume_docx(
     docx = add_header(docx, &model.header, template, &colors);
 
     if two_column {
-        docx = add_two_column_body(docx, &model, template, &colors);
+        docx = add_two_column_body(docx, &model, template, &colors, geom);
     } else {
         let ctx = Ctx {
             template,
             colors: &colors,
             link: theme::link_style(template.id),
-            width_dxa: content_width_dxa(template),
+            width_dxa: content_width_dxa(template, geom),
             right_align_date: true,
         };
         for section in &model.sections {
@@ -84,7 +104,6 @@ pub(crate) fn generate_resume_docx(
         }
     }
 
-    let geom = LocaleProfile::default().page_geometry();
     let page_margin = PageMargin::new()
         .top(inch_to_dxa(0.9))
         .bottom(inch_to_dxa(0.9))
@@ -98,9 +117,8 @@ pub(crate) fn generate_resume_docx(
     Ok(docx)
 }
 
-/// Printable width (page minus both margins) in dxa.
-fn content_width_dxa(template: &Template) -> usize {
-    let geom = LocaleProfile::default().page_geometry();
+/// Printable width (page minus both margins) in dxa for the given geometry.
+fn content_width_dxa(template: &Template, geom: PageGeometry) -> usize {
     let page = mm_to_dxa(geom.width_mm) as i64;
     let margin = inch_to_dxa(template.margin_in) as i64;
     (page - 2 * margin).max(1) as usize
@@ -158,13 +176,14 @@ fn add_two_column_body(
     model: &DocumentModel,
     template: &Template,
     colors: &DocxColors,
+    geom: PageGeometry,
 ) -> Docx {
     let tc = template
         .two_column
         .as_ref()
         .expect("add_two_column_body requires a two-column config");
 
-    let content = content_width_dxa(template);
+    let content = content_width_dxa(template, geom);
     let sidebar_w = (content as f32 * tc.sidebar_width_ratio) as usize;
     let main_w = content.saturating_sub(sidebar_w).max(1);
 

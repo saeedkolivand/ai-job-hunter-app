@@ -794,11 +794,12 @@ pub fn generate_pdf(request: &ExportRequest) -> Result<Vec<u8>> {
             // which also stays the parity reference. Both arms compile via `cfg!`
             // so neither path rots.
             let result = if cfg!(feature = "layout_pdf") {
-                super::layout_pdf::generate_resume_pdf(
+                super::layout_pdf::generate_resume_pdf_in(
                     text,
                     request.meta.as_ref(),
                     &template,
                     request.ats_mode,
+                    request.page_geometry(),
                 )
             } else {
                 generate_resume_pdf(text, request.meta.as_ref(), &template, request.ats_mode)

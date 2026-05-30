@@ -24,6 +24,7 @@ fn resume_request(template_id: TemplateId) -> ExportRequest {
         template_id,
         meta: None,
         ats_mode: false,
+        locale: None,
     }
 }
 
@@ -39,6 +40,22 @@ fn resume_docx_declares_a4_page_size() {
 }
 
 #[test]
+fn us_locale_drives_letter_page_size() {
+    let mut request = resume_request(TemplateId::Modern);
+    request.locale = Some("us".to_string());
+    let xml = document_xml(&generate_docx(&request).expect("docx"));
+    // US Letter in dxa (12240 × 15840), not the A4 default.
+    assert!(
+        xml.contains(r#"w:w="12240""#) && xml.contains(r#"w:h="15840""#),
+        "US locale should yield a Letter page size"
+    );
+
+    // No locale → international A4.
+    let a4 = document_xml(&generate_docx(&resume_request(TemplateId::Modern)).expect("docx"));
+    assert!(a4.contains(r#"w:w="11906""#), "default stays A4");
+}
+
+#[test]
 fn cover_letter_docx_declares_a4_page_size() {
     let request = ExportRequest {
         text: "Dear Hiring Manager,\n\nI am writing to apply.\n\nSincerely,\nJane Doe".to_string(),
@@ -47,6 +64,7 @@ fn cover_letter_docx_declares_a4_page_size() {
         template_id: TemplateId::Classic,
         meta: None,
         ats_mode: false,
+        locale: None,
     };
     let bytes = generate_docx(&request).expect("docx");
     let xml = document_xml(&bytes);
@@ -100,6 +118,7 @@ fn test_generate_simple_resume() {
         template_id: TemplateId::Modern,
         meta: None,
         ats_mode: false,
+        locale: None,
     };
 
     let result = generate_docx(&request);
@@ -151,6 +170,7 @@ fn test_generate_cover_letter() {
         template_id: TemplateId::Classic,
         meta: None,
         ats_mode: false,
+        locale: None,
     };
 
     let result = generate_docx(&request);
@@ -172,6 +192,7 @@ fn test_generate_resume_with_meta() {
             target_language: None,
         }),
         ats_mode: false,
+        locale: None,
     };
 
     let result = generate_docx(&request);

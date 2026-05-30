@@ -81,6 +81,7 @@ fn test_generate_pdf_resume_basic() {
         template_id: super::super::types::TemplateId::Classic,
         meta: None,
         ats_mode: false,
+        locale: None,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -95,6 +96,7 @@ fn test_generate_pdf_cover_letter_basic() {
         template_id: super::super::types::TemplateId::Modern,
         meta: None,
         ats_mode: false,
+        locale: None,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -114,6 +116,7 @@ fn test_generate_pdf_resume_with_meta() {
             target_language: None,
         }),
         ats_mode: false,
+        locale: None,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -129,6 +132,7 @@ fn test_generate_pdf_resume_with_section_markers() {
         template_id: super::super::types::TemplateId::Classic,
         meta: None,
         ats_mode: false,
+        locale: None,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -145,6 +149,7 @@ fn test_generate_pdf_cover_letter_with_section_markers() {
         template_id: super::super::types::TemplateId::Modern,
         meta: None,
         ats_mode: false,
+        locale: None,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -191,6 +196,7 @@ fn resume_pdf_embeds_contact_link_annotations() {
         template_id: super::super::types::TemplateId::Modern,
         meta: None,
         ats_mode: false,
+        locale: None,
     };
     let bytes = generate_pdf(&request).expect("resume pdf");
     let doc = lopdf::Document::load_mem(&bytes).expect("parse generated pdf");
@@ -218,6 +224,7 @@ fn centered_template_resume_pdf_is_generated() {
         template_id: super::super::types::TemplateId::Executive,
         meta: None,
         ats_mode: false,
+        locale: None,
     };
     let bytes = generate_pdf(&request).expect("executive resume pdf");
     assert!(

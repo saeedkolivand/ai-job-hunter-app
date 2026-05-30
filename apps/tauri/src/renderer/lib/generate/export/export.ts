@@ -70,7 +70,8 @@ export async function exportDOCX(
   type: 'resume' | 'cover-letter' = 'resume',
   meta?: GenerationMeta,
   templateId: TemplateId = 'modern',
-  atsMode = false
+  atsMode = false,
+  locale?: string
 ): Promise<void> {
   try {
     if (!text || text.trim().length === 0) {
@@ -92,6 +93,7 @@ export async function exportDOCX(
       documentType: type,
       templateId,
       atsMode,
+      locale,
       meta: meta
         ? {
             candidateName: meta.candidateName,
@@ -116,7 +118,8 @@ export async function exportPDF(
   type: 'resume' | 'cover-letter' = 'resume',
   meta?: GenerationMeta,
   templateId: TemplateId = 'modern',
-  atsMode = false
+  atsMode = false,
+  locale?: string
 ): Promise<void> {
   try {
     if (!text || text.trim().length === 0) {
@@ -138,6 +141,7 @@ export async function exportPDF(
       documentType: type,
       templateId,
       atsMode,
+      locale,
       meta: meta
         ? {
             candidateName: meta.candidateName,

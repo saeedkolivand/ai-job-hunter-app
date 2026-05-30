@@ -39,6 +39,7 @@ export function AIGeneratePage() {
     target,
     templateId,
     atsMode,
+    locale,
     resumeOut,
     coverOut,
     activeOut,
@@ -52,6 +53,7 @@ export function AIGeneratePage() {
   const setTarget = (v: GenTarget) => setAIGenerate({ target: v });
   const setTemplateId = (v: TemplateId) => setAIGenerate({ templateId: v });
   const setAtsMode = (v: boolean) => setAIGenerate({ atsMode: v });
+  const setLocale = (v: string) => setAIGenerate({ locale: v });
   const setResumeOut = (v: string | ((p: string) => string)) =>
     setAIGenerate({ resumeOut: typeof v === 'function' ? v(resumeOut) : v });
   const setCoverOut = (v: string | ((p: string) => string)) =>
@@ -162,10 +164,10 @@ export function AIGeneratePage() {
       fmt
     );
     if (fmt === 'pdf') {
-      await exportPDF(text, name, type, meta ?? undefined, templateId, atsMode);
+      await exportPDF(text, name, type, meta ?? undefined, templateId, atsMode, locale);
     }
     if (fmt === 'docx') {
-      await exportDOCX(text, name, type, meta ?? undefined, templateId, atsMode);
+      await exportDOCX(text, name, type, meta ?? undefined, templateId, atsMode, locale);
     }
     if (fmt === 'txt') {
       exportTXT(text, name);
@@ -198,6 +200,7 @@ export function AIGeneratePage() {
           setTarget={setTarget}
           setTemplateId={setTemplateId}
           setAtsMode={setAtsMode}
+          setLocale={setLocale}
           onUpload={handleUpload}
           onReset={reset}
           onAnalyze={handleAnalyze}
