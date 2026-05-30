@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
-use crate::autopilot::{AutopilotStatus, AutopilotStore, FoundJob};
+use crate::autopilot::{AutopilotFilter, AutopilotStatus, AutopilotStore, FoundJob};
 use crate::autopilot_helpers::autopilot_scrape;
 use crate::scraping::{JobPosting, ScraperEngine};
 use serde_json::{json, Value};
@@ -109,99 +109,68 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         }
     };
 
-    let total_found = postings.len();
-    emit_step(&app, &job_id, "scrape_done", &format!("Found {} postings", total_found));
+    // Apply the user's keyword filters to the scraped postings — must-include
+    // (all keywords present) + exclude (any keyword present drops it). These were
+    // dead config before; now they actually shape the fetched results.
+    let postings: Vec<JobPosting> = postings
+        .into_iter()
+        .filter(|p| matches_keyword_filters(p, &filter))
+        .collect();
 
-    // Snapshot every scraped posting so the user can review what was found,
-    // before `postings` is consumed by ranking.
+    let total_found = postings.len();
+    emit_step(&app, &job_id, "scrape_done", &format!("Found {total_found} postings after filters"));
+
+    // Snapshot each posting, scored 0–100 against the resume when one is set, then
+    // sorted highest-first. Applying is deferred (coming soon) — a run only fetches
+    // and saves results for the user to review.
+    let resume = autopilot.resume_text.as_deref().unwrap_or("");
     let found_at = now_ms();
     let mut found_jobs: Vec<FoundJob> = postings
         .iter()
-        .map(|p| FoundJob {
-            title: p.title.clone(),
-            company: p.company.clone(),
-            url: p.url.clone(),
-            location: p.location.clone(),
-            description: p.description.clone(),
-            score: None,
-            found_at,
+        .map(|p| {
+            let score = match &p.description {
+                Some(desc) if !resume.is_empty() && !desc.is_empty() => {
+                    Some(simple_similarity(resume, desc))
+                }
+                _ => None,
+            };
+            FoundJob {
+                title: p.title.clone(),
+                company: p.company.clone(),
+                url: p.url.clone(),
+                location: p.location.clone(),
+                description: p.description.clone(),
+                score,
+                found_at,
+            }
         })
         .collect();
 
-    let scored = autopilot_rank(
-        postings,
-        autopilot.resume_text.as_deref(),
-        filter.min_match_score,
-        &cancel_token,
-    ).await;
+    // Highest score first; unscored postings sort to the end.
+    found_jobs.sort_by(|a, b| {
+        b.score
+            .unwrap_or(-1.0)
+            .partial_cmp(&a.score.unwrap_or(-1.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
-    // Annotate the matched postings with their score.
-    for (score, posting) in &scored {
-        if let Some(fj) = found_jobs.iter_mut().find(|f| f.url == posting.url) {
-            fj.score = Some(*score);
-        }
-    }
-
-    let top_n = target.top_n.max(1) as usize;
-    let candidates: Vec<_> = scored.into_iter().take(top_n).collect();
-
-    emit_step(
-        &app,
-        &job_id,
-        "rank_done",
-        &format!("{} candidates above min_match_score {}", candidates.len(), filter.min_match_score),
-    );
-
-    let mut applied = 0u32;
-    for (i, (score, posting)) in candidates.iter().enumerate() {
-        if cancel_token.is_cancelled() {
-            emit_step(&app, &job_id, "cancelled", "Autopilot cancelled by user");
-            break;
-        }
-
-        emit_step(
-            &app,
-            &job_id,
-            "apply_start",
-            &format!("[{}/{}] Applying to {} (score {score})", i + 1, candidates.len(), posting.title),
-        );
-
-        let apply_req = crate::ipc_contracts::apply::ApplyStartRequest {
-            board: target.board.clone(),
-            url: posting.url.clone(),
-            cover_letter: autopilot.cover_letter.clone(),
-            resume_path: None,
-            auto_submit: Some(autopilot.auto_submit),
-        };
-        let apply_result = crate::commands::apply::apply_start(app.clone(), apply_req).await;
-
-        let ok = apply_result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
-        if ok {
-            applied += 1;
-        }
-
-        emit_step(
-            &app,
-            &job_id,
-            "apply_done",
-            &format!("[{}/{}] {} — ok={ok}", i + 1, candidates.len(), posting.title),
-        );
-    }
+    let scored_count = found_jobs.iter().filter(|f| f.score.is_some()).count();
+    emit_step(&app, &job_id, "rank_done", &format!("Scored {scored_count} of {total_found} jobs"));
 
     store(&app)
         .lock()
-        .record_run(&autopilot_id, total_found as u32, applied, found_jobs);
+        .record_run(&autopilot_id, total_found as u32, 0, found_jobs);
 
     engine.unregister_token(&job_id).await;
 
     app.state::<Mutex<crate::jobs::JobTracker>>()
         .lock()
-        .complete(&job_id, json!({ "found": total_found, "applied": applied }));
+        .complete(&job_id, json!({ "found": total_found, "applied": 0 }));
 
-    emit_step(&app, &job_id, "complete", &format!("Found {total_found}, applied to {applied}"));
+    emit_step(&app, &job_id, "complete", &format!("Found {total_found}, saved for review"));
 
-    span.end_with(&format!("found={total_found} applied={applied}"), true);
-    json!({ "jobId": job_id, "found": total_found, "applied": applied })
+    span.end_with(&format!("found={total_found} applied=0"), true);
+    json!({ "jobId": job_id, "found": total_found, "applied": 0 })
 }
 
 #[tauri::command]
@@ -218,35 +187,42 @@ pub fn autopilot_resume(app: AppHandle, autopilot_id: String) -> Value {
 
 // Helper functions
 
-pub async fn autopilot_rank(
-    postings: Vec<JobPosting>,
-    resume_text: Option<&str>,
-    min_match_score: f64,
-    cancel_token: &CancellationToken,
-) -> Vec<(f64, JobPosting)> {
-    let resume_text = resume_text.unwrap_or("");
-    let mut scored = Vec::new();
+/// Whether a posting passes the autopilot's keyword filters: it must contain
+/// **all** must-include keywords and **none** of the exclude keywords, matched
+/// case-insensitively against the title + description. Empty/absent lists are
+/// no-ops.
+fn matches_keyword_filters(posting: &JobPosting, filter: &AutopilotFilter) -> bool {
+    let haystack = format!(
+        "{} {}",
+        posting.title.to_lowercase(),
+        posting.description.as_deref().unwrap_or_default().to_lowercase()
+    );
 
-    for posting in postings {
-        if cancel_token.is_cancelled() {
-            break;
-        }
-
-        let score = if let Some(description) = &posting.description {
-            simple_similarity(resume_text, description)
-        } else {
-            0.0
-        };
-
-        if score >= min_match_score {
-            scored.push((score, posting));
+    if let Some(excludes) = &filter.exclude_keywords {
+        let hits_excluded = excludes.iter().any(|k| {
+            let k = k.trim().to_lowercase();
+            !k.is_empty() && haystack.contains(&k)
+        });
+        if hits_excluded {
+            return false;
         }
     }
 
-    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    scored
+    if let Some(keywords) = &filter.keywords {
+        let all_present = keywords.iter().all(|k| {
+            let k = k.trim().to_lowercase();
+            k.is_empty() || haystack.contains(&k)
+        });
+        if !all_present {
+            return false;
+        }
+    }
+
+    true
 }
 
+/// Word-overlap (Jaccard) similarity of a resume and a job description, scaled to
+/// **0–100** to match the UI's percentage display and the `minMatchScore` range.
 fn simple_similarity(resume: &str, description: &str) -> f64 {
     let resume_lower = resume.to_lowercase();
     let desc_lower = description.to_lowercase();
@@ -271,6 +247,75 @@ fn simple_similarity(resume: &str, description: &str) -> f64 {
     if union == 0 {
         0.0
     } else {
-        (intersection as f64) / (union as f64)
+        ((intersection as f64) / (union as f64) * 100.0).round()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn posting(title: &str, description: Option<&str>) -> JobPosting {
+        JobPosting {
+            id: "id".into(),
+            external_id: None,
+            title: title.into(),
+            company: "co".into(),
+            location: None,
+            url: "https://example.com/job".into(),
+            source: "test".into(),
+            description: description.map(String::from),
+            requirements: None,
+            posted_at: None,
+            captured_at: 0,
+            extra: HashMap::new(),
+        }
+    }
+
+    fn filter(keywords: Option<&[&str]>, exclude: Option<&[&str]>) -> AutopilotFilter {
+        AutopilotFilter {
+            min_match_score: 0.0,
+            keywords: keywords.map(|v| v.iter().map(|s| s.to_string()).collect()),
+            exclude_keywords: exclude.map(|v| v.iter().map(|s| s.to_string()).collect()),
+        }
+    }
+
+    #[test]
+    fn no_filters_keep_everything() {
+        let p = posting("Rust Engineer", Some("We use Rust and Go"));
+        assert!(matches_keyword_filters(&p, &filter(None, None)));
+        // Empty lists are also a no-op.
+        assert!(matches_keyword_filters(&p, &filter(Some(&[]), Some(&[]))));
+    }
+
+    #[test]
+    fn must_include_requires_all_keywords() {
+        let p = posting("Rust Engineer", Some("We use Rust and Kubernetes"));
+        assert!(matches_keyword_filters(&p, &filter(Some(&["rust", "kubernetes"]), None)));
+        // Missing one required keyword → dropped.
+        assert!(!matches_keyword_filters(&p, &filter(Some(&["rust", "elixir"]), None)));
+    }
+
+    #[test]
+    fn exclude_drops_on_any_match() {
+        let p = posting("Senior PHP Developer", Some("Legacy PHP codebase"));
+        assert!(!matches_keyword_filters(&p, &filter(None, Some(&["php"]))));
+        assert!(matches_keyword_filters(&p, &filter(None, Some(&["python"]))));
+    }
+
+    #[test]
+    fn matching_is_case_insensitive_over_title_and_description() {
+        let p = posting("Backend Role", Some("Postgres and REDIS"));
+        // "Backend" only in title, "redis" only in description, different cases.
+        assert!(matches_keyword_filters(&p, &filter(Some(&["Backend", "redis"]), None)));
+    }
+
+    #[test]
+    fn similarity_is_scaled_0_to_100() {
+        assert_eq!(simple_similarity("rust kubernetes docker", "rust kubernetes docker"), 100.0);
+        assert_eq!(simple_similarity("rust", "java"), 0.0);
+        let partial = simple_similarity("rust kubernetes", "rust docker");
+        assert!(partial > 0.0 && partial < 100.0);
     }
 }
