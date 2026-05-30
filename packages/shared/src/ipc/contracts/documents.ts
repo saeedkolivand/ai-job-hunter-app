@@ -29,6 +29,32 @@ interface BaseExportRequest {
   atsMode?: boolean;
 }
 
+export type ExportIssueSeverity = 'critical' | 'warning';
+
+/** A single problem found while re-reading an exported document. */
+export interface ExportIssue {
+  severity: ExportIssueSeverity;
+  /** Stable machine code (e.g. `section_order`, `missing_section`). */
+  code: string;
+  /** Plain-language explanation for the user. */
+  message: string;
+}
+
+/**
+ * Pre-export validation report. Present for PDF/DOCX, absent for TXT. The
+ * backend auto-fixes a two-column layout that doesn't survive extraction and
+ * blocks the export only when a critical issue survives, so `ok` is `false`
+ * only on a hard failure the user must address.
+ */
+export interface ExportReport {
+  ok: boolean;
+  /** Whether the returned bytes were rendered in ATS (single-column) mode. */
+  atsMode: boolean;
+  issues: ExportIssue[];
+  /** Human-readable description of each auto-fix that was applied. */
+  fixed: string[];
+}
+
 export interface CoverLetterExportRequest {
   templateId: TemplateId;
   /** Recipient first/last name — used for salutation. */
@@ -57,7 +83,7 @@ export interface DocumentsContract {
 
   exportDocument(
     req: BaseExportRequest
-  ): Promise<{ data: number[]; mimeType: string; filename: string }>;
+  ): Promise<{ data: number[]; mimeType: string; filename: string; report?: ExportReport }>;
 
   exportAndSave(req: BaseExportRequest): Promise<string>;
 }

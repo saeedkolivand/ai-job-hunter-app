@@ -7,6 +7,7 @@ use super::{
     types::{ExportFormat, ExportRequest, ExportResult},
 };
 use crate::error::{AppError, AppResult};
+use crate::validate::{validate_and_fix, ExportReport, Severity};
 
 /// Tauri command to export resume or cover letter
 #[command]
@@ -22,27 +23,37 @@ pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<
     // as replacement boxes in PDF/DOCX output.
     request.text = super::parser::normalize_unicode(&request.text);
 
-    // Generate based on format
-    let (data, mime_type, extension) = match request.format {
+    // Generate based on format. PDF/DOCX run through the validation gate, which
+    // re-extracts the bytes, auto-fixes a two-column layout that doesn't survive
+    // extraction, and reports what it found.
+    let (data, mime_type, extension, report) = match request.format {
         ExportFormat::Docx => {
-            let bytes = generate_docx(&request)
+            let (bytes, report) = validate_and_fix(request.clone(), |r| generate_docx(r))
                 .map_err(|e| format!("DOCX generation failed: {}", e))?;
             (
                 bytes,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document".to_string(),
                 "docx",
+                Some(report),
             )
         }
         ExportFormat::Pdf => {
-            let bytes = generate_pdf(&request)
+            let (bytes, report) = validate_and_fix(request.clone(), |r| generate_pdf(r))
                 .map_err(|e| format!("PDF generation failed: {}", e))?;
-            (bytes, "application/pdf".to_string(), "pdf")
+            (bytes, "application/pdf".to_string(), "pdf", Some(report))
         }
         ExportFormat::Txt => {
             let text = super::parser::strip_md(&request.text);
-            (text.into_bytes(), "text/plain".to_string(), "txt")
+            (text.into_bytes(), "text/plain".to_string(), "txt", None)
         }
     };
+
+    // Block only when a critical defect survived auto-fix.
+    if let Some(report) = &report {
+        if !report.ok {
+            return Err(AppError::Validation(blocking_reason(report)));
+        }
+    }
 
     // Generate filename
     let filename = generate_filename(&request, extension);
@@ -51,7 +62,24 @@ pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<
         data,
         mime_type,
         filename,
+        report,
     })
+}
+
+/// Plain-language reason an export was blocked, from its critical issues.
+fn blocking_reason(report: &ExportReport) -> String {
+    let reasons = report
+        .issues
+        .iter()
+        .filter(|i| i.severity == Severity::Critical)
+        .map(|i| i.message.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if reasons.is_empty() {
+        "Export blocked: the document failed validation.".to_string()
+    } else {
+        format!("Export blocked: {reasons}")
+    }
 }
 
 /// Tauri command to export and save document with file dialog
