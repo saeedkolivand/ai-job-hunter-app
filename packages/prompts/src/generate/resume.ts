@@ -1,8 +1,9 @@
 /** Resume generation — system prompt (brief / task / full) + user prompt. */
 
+import { truncateResume } from '../context-manager/index.js';
 import { resumeConventions } from '../locale/index.js';
 import { type PromptTarget, resolveProfile } from '../provider/index.js';
-import { buildEmphasisBlock } from './emphasis.js';
+import { buildEmphasisBlock, buildGroundingBlock } from './emphasis.js';
 import { parseLinksFromResume, stripLinkBlock } from './links.js';
 import { type GenerationMeta, type GenerationMode, MODES } from './modes.js';
 
@@ -202,7 +203,7 @@ export function buildResumePrompt(
   _mode: GenerationMode,
   target: PromptTarget = 'large'
 ): string {
-  const { resumeChars, jobAdChars } = resolveProfile(target);
+  const { jobAdChars, truncation } = resolveProfile(target);
   // Section headers + date format follow the JOB-AD locale, not a fixed market.
   const conv = resumeConventions(meta.jobAdLanguage ?? meta.targetLanguage);
 
@@ -211,12 +212,17 @@ export function buildResumePrompt(
     : `Write in ${meta.targetLanguage}.`;
   const conventionsNote = `CONVENTIONS (target market: ${meta.targetLanguage}): use these section headers — ${conv.headers.summary} / ${conv.headers.experience} / ${conv.headers.education} / ${conv.headers.skills}; and one consistent date format like ${conv.dateExample}.`;
 
-  const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? []);
   const { block: linksBlock } = parseLinksFromResume(resume);
-  const resumeBody = stripLinkBlock(resume);
+  // Section-aware truncation: keep the whole résumé when it fits the model's
+  // token budget, otherwise preserve high-value sections (Experience, Skills)
+  // instead of blindly cutting the tail.
+  const resumeBody = truncateResume(stripLinkBlock(resume), truncation);
+
+  const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? []);
+  const groundingBlock = buildGroundingBlock(resumeBody, meta.topRequirements ?? []);
 
   return `${linksBlock ? `${linksBlock}\n\n` : ''}<candidate_resume>
-${resumeBody.slice(0, resumeChars)}
+${resumeBody}
 </candidate_resume>
 
 <job_ad>
@@ -232,7 +238,7 @@ Company: ${meta.companyName || 'Unknown'}
 ${langNote}
 ${conventionsNote}
 ${emphasisBlock}
-
+${groundingBlock ? `\n${groundingBlock}\n` : ''}
 EXAMPLE — MISSING SKILLS (follow this exactly):
 
 Resume mentions: Python, PostgreSQL, AWS
