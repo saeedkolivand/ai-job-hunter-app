@@ -65,6 +65,23 @@ const SECTION_HEAD_TRAIL_PT: f32 = 10.0;
 const ENTRY_TITLE_NUDGE_PT: f32 = 2.0;
 /// Trailing gap after the header rule before the first section/paragraph.
 const HEADER_TRAIL_PT: f32 = 9.0;
+/// Folded structural spacer (points) added before each section heading. The
+/// legacy renderer drew a ~7pt blank-line spacer (3pt explicit + 4pt after-gap)
+/// between a section and the content above it; the canonical model carries no
+/// presentation blanks, so that height is folded in here deterministically to
+/// keep the rendered space-before-section-header equal to legacy (~30pt).
+const SECTION_SPACER_PT: f32 = 7.0;
+/// Folded structural spacer (points) added between consecutive entries (the
+/// legacy inter-entry blank line), so a job/education block is separated from the
+/// previous one. Tuned so the engine's rendered inter-entry baseline gap equals
+/// the legacy renderer's exactly: at a 2pt spacer the engine measured a uniform
+/// 3pt short of legacy across all single-column templates, hence 5pt.
+const ENTRY_SPACER_PT: f32 = 5.0;
+/// Nudge (points) between the name and contact lines, matching legacy.
+const NAME_CONTACT_NUDGE_PT: f32 = 2.0;
+/// Nudge (points) between the contact line / header rule and the first content
+/// line (summary), matching legacy.
+const CONTACT_SUMMARY_NUDGE_PT: f32 = 3.0;
 /// Bullet glyph horizontal offset from the content left, in mm.
 const BULLET_GLYPH_DX_MM: f32 = 1.3;
 /// Bullet text indent from the content left, in mm.
@@ -353,7 +370,7 @@ fn lay_header(
             size_pt: t.name_pt,
             color: t.name_color,
         });
-        *y += pt_to_mm(t.name_pt) * 1.2;
+        *y += pt_to_mm(t.name_pt) * 1.2 + pt_to_mm(NAME_CONTACT_NUDGE_PT);
     }
 
     if !h.contact.is_empty() {
@@ -381,7 +398,7 @@ fn lay_header(
         thickness_pt: rule_thickness(t),
         color: t.rule_color,
     });
-    *y += pt_to_mm(HEADER_TRAIL_PT);
+    *y += pt_to_mm(HEADER_TRAIL_PT) + pt_to_mm(CONTACT_SUMMARY_NUDGE_PT);
 }
 
 // ─── Flow: a paginating column cursor ─────────────────────────────────────────
@@ -492,7 +509,10 @@ impl<'a> Flow<'a> {
         if self.single_col {
             // Legacy: 12pt before-gap, then `y_before = y - 4`, header, rule,
             // then `-10`, then 3pt after-gap.
-            let (before, after) = self.gaps_mm(LineKind::SectionHeader);
+            let (before_base, after) = self.gaps_mm(LineKind::SectionHeader);
+            // Fold the legacy blank-line spacer into the deterministic before-gap
+            // so the rendered space-before-section-header matches legacy (~30pt).
+            let before = before_base + pt_to_mm(SECTION_SPACER_PT);
             let lead = pt_to_mm(SECTION_HEAD_LEAD_PT);
             let trail = pt_to_mm(SECTION_HEAD_TRAIL_PT);
             // Orphan guard: keep the heading with at least two body lines below it.
@@ -646,7 +666,16 @@ impl<'a> Flow<'a> {
 
         // Entry title (legacy JobEntry: before 6/8, advance line_height - 2, after 1).
         let (before, after) = if self.single_col {
-            self.gaps_mm(LineKind::JobEntry)
+            let (b, a) = self.gaps_mm(LineKind::JobEntry);
+            // Inter-entry: fold the legacy blank-line spacer when this entry
+            // follows another entry's content (its bullets / subtitle), so the
+            // rendered inter-entry gap matches legacy (~18pt). The first entry
+            // after a section heading (prev = SectionHeader) gets no extra spacer.
+            let spacer = match self.prev_kind {
+                Some(LineKind::Bullet) | Some(LineKind::JobTitle) => pt_to_mm(ENTRY_SPACER_PT),
+                _ => 0.0,
+            };
+            (b + spacer, a)
         } else {
             (0.0, 0.0)
         };

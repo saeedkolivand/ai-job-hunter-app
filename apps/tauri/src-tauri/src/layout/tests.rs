@@ -363,17 +363,16 @@ fn two_column_paginates_with_a_band_on_every_page() {
     }
 }
 
-// Parity gate: single-column vertical spacing must match the legacy rhythm.
+// Parity gate: single-column vertical rhythm must match the legacy renderer.
 //
-// The engine regressed by dropping the legacy `calculate_spacing` before-gaps
-// and the section-header lead/trail offsets, compressing single-column resumes
-// into the top of the page (section-before gaps collapsed to roughly a bare
-// line). These tests compare the engine against the legacy renderer for the
-// same resume (non-circular). Primary checks are component-level (section
-// before-gaps + per-template scale); the total-span check is only a loose
-// gross-blowup backstop, because the engine is intentionally a few percent more
-// compact than legacy: the canonical model does not carry the blank source
-// lines the legacy renderer turns into ~3pt spacers.
+// The canonical model drops the blank source lines the legacy renderer turned
+// into whitespace, so the engine folds those structural spacers back in as
+// deterministic constants (see `SECTION_SPACER_PT`, `ENTRY_SPACER_PT`, and the
+// header nudges in `layout::mod`). These tests render BOTH backends for the same
+// resume and compare their actual page-1 baseline gaps (read back from the PDF
+// `Td` operators), asserting every gap is within ±5% of legacy — a true
+// pixel-baseline comparison, not config-to-config. `assert_gap` carries a 0.5pt
+// absolute floor so sub-pt rounding on small gaps never trips the relative bound.
 
 const PARITY_RESUME: &str = "\
 Jane Doe
@@ -445,91 +444,129 @@ fn render_pair(id: TemplateId) -> (Vec<f32>, Vec<f32>) {
     (l, e)
 }
 
-/// Gap (mm) from the content line just above each section heading to the heading
-/// baseline, on the engine's structured page-1 layout. Isolates the section
-/// before-spacing the regression collapsed.
-fn engine_section_before_gaps(id: TemplateId) -> Vec<(String, f32)> {
-    let t = Template::get(id);
-    let model = model_from_resume_text(PARITY_RESUME);
-    let doc = layout_document(&model, &t, a4(), &FontMetrics);
-    let rows = &doc.pages[0].texts;
-    let mut out = Vec::new();
-    for (i, row) in rows.iter().enumerate() {
-        let up = row.text.to_uppercase();
-        if (up == "EXPERIENCE" || up == "SKILLS" || up == "EDUCATION") && i > 0 {
-            out.push((up, row.baseline_y_mm - rows[i - 1].baseline_y_mm));
+/// Collapse near-equal baselines (one visual line drawn as several runs — name +
+/// link, bullet glyph + text, title + right-aligned date) into a single entry,
+/// preserving top→bottom order, so positional indexing lines up between the two
+/// renderers.
+fn distinct_ys(ys: &[f32]) -> Vec<f32> {
+    let mut out: Vec<f32> = Vec::new();
+    for &y in ys {
+        let is_dup = matches!(out.last(), Some(&p) if (p - y).abs() <= 0.5);
+        if !is_dup {
+            out.push(y);
         }
     }
     out
 }
 
-#[test]
-fn single_column_first_ink_matches_legacy() {
-    // Name baseline (highest y) identical to legacy: top margin + name block were
-    // never the problem; the drift accumulated below them.
-    for id in SINGLE_COLUMN {
-        let (l, e) = render_pair(id);
-        assert!(
-            (l[0] - e[0]).abs() < 2.0,
-            "{id:?}: first ink moved {:.1} -> {:.1}pt",
-            l[0],
-            e[0]
-        );
-    }
+/// Consecutive top→bottom baseline gaps (pt) between a page's distinct lines.
+fn line_gaps(ys: &[f32]) -> Vec<f32> {
+    distinct_ys(ys).windows(2).map(|w| w[0] - w[1]).collect()
+}
+
+/// Legacy and engine rendered page-1 line gaps (pt) for one template, paired by
+/// index (short fixture lines never wrap, so both renderers emit the same visual
+/// lines in the same order).
+fn gap_pair(id: TemplateId) -> (Vec<f32>, Vec<f32>) {
+    let (l, e) = render_pair(id);
+    (line_gaps(&l), line_gaps(&e))
+}
+
+/// Assert the engine's gap is within ±5% of legacy's, with a 0.5pt absolute floor
+/// so sub-pt rounding on small gaps never trips the relative bound.
+fn assert_gap(id: TemplateId, label: &str, legacy: f32, engine: f32) {
+    let tol = (legacy.abs() * 0.05).max(0.5);
+    assert!(
+        (engine - legacy).abs() <= tol,
+        "{id:?}: {label} gap {engine:.2}pt vs legacy {legacy:.2}pt \
+         (Δ{:+.2}pt, allowed ±{tol:.2})",
+        engine - legacy
+    );
 }
 
 #[test]
-fn single_column_inserts_real_section_spacing() {
-    // The precise regression guard. The bug zeroed the before-gap above section
-    // headings; with the legacy 12pt before-gap + 4pt heading lead restored, every
-    // section-before gap must exceed a bare body line by a clear margin.
+fn rendered_gaps_match_legacy() {
+    // Match-legacy parity (primary gate). Every page-1 baseline gap the engine
+    // renders must sit within ±5% of the legacy renderer's same gap, for every
+    // single-column template. One sweep covers both the gaps that were tuned by
+    // folding the dropped blank-line spacers (name→contact, contact→summary,
+    // space-before-section, inter-entry) and the gaps that were already correct
+    // (space-after-section, intra-entry, bullet-to-bullet, body line-height).
     for id in SINGLE_COLUMN {
-        let t = Template::get(id);
-        let body_line = (t.body_pt / 2.834_645_7) * t.line_spacing;
-        let min_gap = body_line + 10.0 / 2.834_645_7;
-        let gaps = engine_section_before_gaps(id);
-        assert!(
-            gaps.len() >= 3,
-            "{id:?}: expected EXPERIENCE/SKILLS/EDUCATION gaps, got {gaps:?}"
+        let (lg, eg) = gap_pair(id);
+        assert_eq!(
+            eg.len(),
+            lg.len(),
+            "{id:?}: engine emitted {} lines, legacy {} — counts must match for \
+             gap-by-gap parity",
+            eg.len() + 1,
+            lg.len() + 1
         );
-        for (heading, gap) in gaps {
-            assert!(
-                gap >= min_gap,
-                "{id:?}: gap before {heading} is {gap:.1}mm, expected >= {min_gap:.1}mm \
-                 (section spacing collapsed)"
-            );
+        for (i, (&l, &e)) in lg.iter().zip(&eg).enumerate() {
+            assert_gap(id, &format!("g[{i}]"), l, e);
         }
     }
 }
 
 #[test]
-fn single_column_honors_per_template_spacing_scale() {
-    // Each template's own scale must be honored, not a global value: an airier
-    // template (Swiss Minimal, line_spacing 1.3) produces a taller content block
-    // than a tight one (Academic, 1.1) for the same resume.
-    let (_, swiss) = render_pair(TemplateId::SwissMinimal);
-    let (_, academic) = render_pair(TemplateId::Academic);
+fn rendered_named_gaps_match_legacy() {
+    // Diagnostic restatement on a representative template, naming each structural
+    // gap so a regression points at the offender. PARITY_RESUME lays out as a
+    // fixed line sequence (short lines never wrap, so legacy and engine emit the
+    // same visual lines): 0 name · 1 contact · 2 summary · 3 EXPERIENCE ·
+    // 4 Acme(+date) · 5 Senior Engineer · 6 bullet · 7 bullet · 8 Globex(+date) ·
+    // 9 Engineer · 10 bullet · 11 SKILLS · 12 bullet · 13 bullet · 14 EDUCATION ·
+    // 15 State University(+date) · 16 BSc. g[i] is the gap from line i to line i+1.
+    let id = TemplateId::Classic;
+    let (lg, eg) = gap_pair(id);
+
+    // The four gaps tuned to match legacy (folded blank-line spacers / nudges).
+    for (i, label) in [
+        (0usize, "name→contact"),
+        (1, "contact→summary"),
+        (2, "space-before-section (EXPERIENCE)"),
+        (10, "space-before-section (SKILLS)"),
+        (13, "space-before-section (EDUCATION)"),
+        (7, "inter-entry (last bullet→next entry)"),
+    ] {
+        assert_gap(id, label, lg[i], eg[i]);
+    }
+
+    // The four gaps left untouched — must still equal legacy (unchanged by the fix).
+    for (i, label) in [
+        (3usize, "space-after-section header"),
+        (4, "intra-entry (title→subtitle)"),
+        (6, "bullet→bullet (body line-height)"),
+        (12, "bullet→bullet (body line-height)"),
+    ] {
+        assert_gap(id, label, lg[i], eg[i]);
+    }
+}
+
+#[test]
+fn legacy_section_before_is_in_a_sane_band() {
+    // External anchor so the engine-vs-legacy match isn't silently tracking a
+    // broken legacy baseline: the legacy space-before-section gap should land in a
+    // human-sane band (~30–48pt baseline-to-baseline on A4 for this fixture).
+    let (lg, _) = gap_pair(TemplateId::Classic);
+    let g = lg[2];
     assert!(
-        span_pt(&swiss) > span_pt(&academic),
-        "swiss-minimal span {:.1}pt should exceed academic {:.1}pt",
-        span_pt(&swiss),
-        span_pt(&academic)
+        (30.0..=48.0).contains(&g),
+        "legacy section-before gap {g:.1}pt outside sane band 30–48pt — legacy \
+         baseline may have regressed"
     );
 }
 
 #[test]
-fn single_column_span_backstop_vs_legacy() {
-    // Loose gross-blowup guard only (not the primary metric): rejects a total span
-    // that has collapsed or ballooned far outside the legacy ballpark. The engine
-    // runs a few percent more compact by design (no blank-line spacers).
+fn rendered_total_span_matches_legacy() {
+    // Gross-blowup backstop: total first-ink→last-ink span within ±5% of legacy.
     for id in SINGLE_COLUMN {
         let (l, e) = render_pair(id);
-        let rel = (span_pt(&e) - span_pt(&l)) / span_pt(&l);
+        let (ls, es) = (span_pt(&l), span_pt(&e));
+        let rel = (es - ls) / ls;
         assert!(
-            rel.abs() <= 0.12,
-            "{id:?}: engine span {:.1}pt vs legacy {:.1}pt = {:+.1}% (allowed +/-12%)",
-            span_pt(&e),
-            span_pt(&l),
+            rel.abs() <= 0.05,
+            "{id:?}: engine span {es:.1}pt vs legacy {ls:.1}pt = {:+.1}% (allowed ±5%)",
             rel * 100.0
         );
     }
