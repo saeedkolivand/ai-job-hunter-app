@@ -14,7 +14,7 @@ import {
   MEDIUM_MODEL_STRATEGY,
   SMALL_MODEL_STRATEGY,
   truncateResume,
-} from './context-manager';
+} from './index';
 
 const RESUME = `John Doe
 john@example.com | +1 555 0100
@@ -91,22 +91,32 @@ describe('detectModelSize / getModelTier', () => {
     }
   });
 
-  it('defaults unrecognised local names to medium', () => {
+  it('parses the parameter size from the tag across styles', () => {
     expect(detectModelSize('llama3.1:8b')).toBe('medium');
-    expect(detectModelSize('some-random-model')).toBe('medium');
+    expect(detectModelSize('llama-3.2-1b')).toBe('small');
+    expect(detectModelSize('qwen2.5:0.5b')).toBe('small');
+    expect(detectModelSize('llama3:70b')).toBe('large');
+    // hyphen + quantization / instruct suffixes don't swallow the size
+    expect(detectModelSize('llama3.1:8b-instruct-q4_K_M')).toBe('medium');
+    expect(detectModelSize('mistral:7b-instruct')).toBe('medium');
+  });
+
+  it('defaults unknown local models to small (safer prompt)', () => {
+    expect(detectModelSize('some-random-model')).toBe('small');
+    expect(detectModelSize('mistral')).toBe('small');
   });
 
   it('getModelTier mirrors detectModelSize', () => {
     expect(getModelTier('gpt-4')).toBe('large');
     expect(getModelTier('phi-3')).toBe('small');
-    expect(getModelTier('mistral')).toBe('medium');
+    expect(getModelTier('mistral')).toBe('small');
   });
 });
 
 describe('getStrategyForModel', () => {
   it('returns the matching strategy per tier', () => {
     expect(getStrategyForModel('gpt-4')).toBe(LARGE_MODEL_STRATEGY);
-    expect(getStrategyForModel('mistral')).toBe(MEDIUM_MODEL_STRATEGY);
+    expect(getStrategyForModel('llama3.1:8b')).toBe(MEDIUM_MODEL_STRATEGY);
     expect(getStrategyForModel('phi-3')).toBe(SMALL_MODEL_STRATEGY);
   });
 });

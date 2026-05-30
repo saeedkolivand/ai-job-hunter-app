@@ -161,7 +161,14 @@ A standalone React component library with no routing, IPC, or state management d
 
 ### `packages/prompts` — Prompt Templates
 
-Pure-TypeScript AI prompt templates (zero dependencies). Imported by the renderer's generation helpers.
+Pure-TypeScript AI prompt templates (zero dependencies). Builds prompt strings and repairs model output; it never calls an LLM or the network. Imported by the renderer's generation helpers.
+
+It is **provider-aware** and **locale-driven**:
+
+- **`provider.ts`** — `ProviderProfile` (`{ kind: 'ollama' | 'cloud' | 'cli', model?, contextWindow?, supportsStructuredOutput?, sizeHint? }`) and `resolveProfile()`. Every builder accepts this **additively** (a legacy `'large' | 'medium' | 'small'` tier string still works). It picks prompt **depth** (`brief` / `full` / `task` brief), schema variant, truncation budget, and structured-output metadata per provider class: ollama → shortest imperative prompts + compact schema + aggressive truncation; cloud → full multi-perspective prompt + rich schema + native JSON-schema metadata (`structuredOutputFor`) + minimal truncation; cli agents → a self-verifying **task brief** with explicit acceptance checks.
+- **`locale.ts`** — section-header lexicons, resume conventions (headers + date format), and per-locale token factors. All market behaviour follows the **job-ad's detected locale**, not a fixed US/German style.
+- **Modular folders** — every concern (`analyze/`, `generate/`, `context-manager/`, `provider/`, `locale/`, `workspace/`) is a folder with an `index.ts` barrel (the `@ajh/prompts/<name>` subpath entry) plus focused submodules and a colocated test. `context-manager/model-size.ts` parses a model's parameter size generically from its tag and defaults unknown local models to the smaller/safer prompt; CLI-agent / hosted model names (sonnet/opus/haiku/codex/gpt/claude/gemini) are treated as capable.
+- **Validators** (`validateAndRepair`, `validateMetadata`) remain the universal fallback for every provider.
 
 > The heavy work (scraping, document extraction, AI generation, embeddings) runs natively in the Rust core under `apps/tauri/src-tauri/` — see the Component Breakdown above. Earlier Node packages (`@ajh/core`, `@ajh/ai`, `@ajh/data`, `@ajh/workers`) implemented this for a now-removed sidecar and have been deleted.
 

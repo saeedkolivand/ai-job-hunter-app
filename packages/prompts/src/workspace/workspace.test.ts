@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildWorkspaceSystemPrompt } from './workspace';
+import { buildWorkspaceSystemPrompt } from './index';
 
 describe('buildWorkspaceSystemPrompt', () => {
   it('instructs the assistant to reply in the requested locale', () => {
