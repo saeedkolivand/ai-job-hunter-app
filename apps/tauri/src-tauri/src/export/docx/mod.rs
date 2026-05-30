@@ -9,7 +9,6 @@ use super::{
 use crate::locale::LocaleProfile;
 
 use super::docx_renderer::*;
-use super::links::{split_urls, Span};
 
 /// Page size (in DOCX `dxa`) for the active locale. Defaults to the `en` profile
 /// (A4), keeping DOCX on the same page geometry as the PDF backends. Set
@@ -181,39 +180,21 @@ fn generate_cover_letter_docx(
             continue;
         }
 
-        // Contact/address lines — render `[label](url)` markdown, bare URLs and
-        // emails as clickable hyperlinks (mirrors the résumé path's
-        // render_contact_line and the PDF letterhead). Use the raw `trimmed`
-        // line, not strip_md's `clean`, so link syntax survives. Kept
-        // left-aligned to match the cover-letter name above it.
+        // Contact/address lines
         if !header_done && (clean.contains('@') || clean.contains('|') || clean.contains('·')
             || clean.chars().filter(|c| c.is_numeric()).count() > 5)
         {
-            let mut para = Paragraph::new();
-            for span in split_urls(trimmed) {
-                match span {
-                    Span::Text(t) => {
-                        para = para.add_run(
-                            Run::new()
-                                .add_text(&t)
-                                .size(pt_to_dxa(9.0))
-                                .color(&colors.date)
-                                .fonts(docx_run_fonts(body_family)),
-                        );
-                    }
-                    Span::Link { label, url } => {
-                        let link_run = Run::new()
-                            .add_text(&label)
+            docx = docx.add_paragraph(
+                Paragraph::new()
+                    .add_run(
+                        Run::new()
+                            .add_text(&clean)
                             .size(pt_to_dxa(9.0))
                             .color(&colors.date)
-                            .fonts(docx_run_fonts(body_family));
-                        para = para.add_hyperlink(
-                            Hyperlink::new(&url, HyperlinkType::External).add_run(link_run),
-                        );
-                    }
-                }
-            }
-            docx = docx.add_paragraph(para.line_spacing(LineSpacing::new().after(40)));
+                            .fonts(docx_run_fonts(body_family)),
+                    )
+                    .line_spacing(LineSpacing::new().after(40)),
+            );
             continue;
         }
 

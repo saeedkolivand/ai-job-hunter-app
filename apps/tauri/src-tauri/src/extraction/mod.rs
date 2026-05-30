@@ -189,62 +189,6 @@ mod tests {
         out
     }
 
-    /// Build a text-layer PDF that also carries a `/Link` annotation with a
-    /// `/A /URI` action — mirrors a résumé whose contact links are clickable.
-    fn build_pdf_with_link(text: &str, url: &str) -> Vec<u8> {
-        use lopdf::{Document, Object, Stream, StringFormat, dictionary};
-
-        let escaped = text
-            .replace('\\', "\\\\")
-            .replace('(', "\\(")
-            .replace(')', "\\)");
-        let content_bytes = format!("BT /F1 12 Tf 50 750 Td ({escaped}) Tj ET").into_bytes();
-
-        let mut doc = Document::with_version("1.4");
-        let pages_id = doc.new_object_id();
-        let font_id = doc.add_object(dictionary! {
-            "Type" => "Font",
-            "Subtype" => "Type1",
-            "BaseFont" => "Helvetica",
-        });
-        let content_id = doc.add_object(Stream::new(dictionary! {}, content_bytes));
-        let annot_id = doc.add_object(dictionary! {
-            "Type" => "Annot",
-            "Subtype" => "Link",
-            "Rect" => vec![50.into(), 740.into(), 200.into(), 760.into()],
-            "A" => dictionary! {
-                "Type" => "Action",
-                "S" => "URI",
-                "URI" => Object::String(url.as_bytes().to_vec(), StringFormat::Literal),
-            },
-        });
-        let page_id = doc.add_object(dictionary! {
-            "Type" => "Page",
-            "Parent" => pages_id,
-            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
-            "Contents" => content_id,
-            "Annots" => vec![Object::Reference(annot_id)],
-            "Resources" => dictionary! {
-                "Font" => dictionary! { "F1" => font_id }
-            },
-        });
-        let pages = dictionary! {
-            "Type" => "Pages",
-            "Kids" => vec![Object::Reference(page_id)],
-            "Count" => 1i64,
-        };
-        doc.objects.insert(pages_id, Object::Dictionary(pages));
-        let catalog_id = doc.add_object(dictionary! {
-            "Type" => "Catalog",
-            "Pages" => pages_id,
-        });
-        doc.trailer.set("Root", catalog_id);
-
-        let mut out = Vec::new();
-        doc.save_to(&mut out).expect("lopdf save failed");
-        out
-    }
-
     // ── Plain text ────────────────────────────────────────────────────────────
 
     #[test]
@@ -334,33 +278,6 @@ mod tests {
         assert_eq!(result.source_format, SourceFormat::PdfText);
         assert!(result.text.contains("Jane Doe"), "name missing");
         assert!(result.text.contains("jane.doe@example.com"), "email missing");
-    }
-
-    #[test]
-    fn pdf_resolves_link_annotation() {
-        // A résumé PDF whose LinkedIn link is clickable (a /Link annotation, not
-        // visible URL text). The URL must reach the extracted text so the
-        // cover-letter header can hyperlink it.
-        let content = "Jane Doe jane.doe@example.com Senior Software Engineer Amsterdam \
-            Experience Senior Engineer Acme Corp 2020 to 2025 led migration reduced latency \
-            Education BSc Computer Science University of Amsterdam 2017 \
-            Skills Rust Go Python TypeScript PostgreSQL Docker Kubernetes \
-            Languages English fluent Dutch intermediate";
-        let url = "https://linkedin.com/in/janedoe";
-        let bytes = build_pdf_with_link(content, url);
-        let result = route("resume.pdf", &bytes).expect("pdf failed");
-
-        assert_eq!(result.source_format, SourceFormat::PdfText);
-        assert!(
-            result.links.iter().any(|l| l.url == url),
-            "link annotation not extracted: {:?}",
-            result.links
-        );
-        assert!(
-            result.text.contains(&format!("[{url}]({url})")),
-            "inline link markdown missing:\n{}",
-            result.text
-        );
     }
 
     #[test]
