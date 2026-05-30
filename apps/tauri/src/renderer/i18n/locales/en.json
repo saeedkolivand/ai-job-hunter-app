@@ -1399,6 +1399,13 @@
       "next": "Set up AI"
     }
   },
+  "jobUrlImport": {
+    "link": "Link",
+    "placeholder": "Paste a LinkedIn job URL…",
+    "import": "Import",
+    "notFound": "Couldn't read that job posting — paste the description manually.",
+    "failed": "Import failed. Check the URL and try again."
+  },
   "updater": {
     "available": "v{{version}} is available",
     "downloading": "Downloading update… {{percent}}%",
@@ -1441,6 +1448,9 @@
     "profileUrlImport": "Import",
     "profileImported": "Profile imported",
     "profileImportFailed": "Import failed",
+    "profileLoginRequired": "This profile may be private. Connect your LinkedIn account in Settings → Accounts, then try again.",
+    "importFromLinkedin": "Import from LinkedIn",
+    "linkedinProfileTitle": "LinkedIn Profile",
     "profileUrlUnsupported": "Only LinkedIn profile URLs are supported right now",
     "modeUpload": "Upload",
     "modePaste": "Paste text",

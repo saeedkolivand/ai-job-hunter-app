@@ -18,4 +18,5 @@ export const LINKEDIN_CHANNELS = {
   connect: 'linkedin:connect',
   disconnect: 'linkedin:disconnect',
   getStatus: 'linkedin:getStatus',
+  importProfileFromUrl: 'linkedin:importProfileFromUrl',
 } as const;

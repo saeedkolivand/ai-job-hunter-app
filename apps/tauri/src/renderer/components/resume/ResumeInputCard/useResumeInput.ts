@@ -7,6 +7,8 @@ import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
 import { useTranslation } from '@/lib/i18n';
 import { useDocuments, useProfileImport, useSetDefaultDocument } from '@/services';
 
+import { isProfileAuthError, isSupportedProfileUrl } from '../profile-url';
+
 const MAX_BYTES = 25 * 1024 * 1024;
 
 type RawDoc = Omit<DocumentRecord, 'id' | 'importedAt'> & {
@@ -150,7 +152,6 @@ export function useResumeInput({ value, onChange, onUpload }: Params) {
     await onUpload(file);
   };
 
-  const isSupportedProfileUrl = (u: string) => u.toLowerCase().includes('linkedin.com/in/');
   const profileUrlValid = isSupportedProfileUrl(profileUrl);
 
   const handleProfileUrlSubmit = async () => {
@@ -159,7 +160,10 @@ export function useResumeInput({ value, onChange, onUpload }: Params) {
     try {
       const result = await profileImport.mutateAsync(url);
       if ('error' in result) {
-        notify(result.error, 'error');
+        notify(
+          isProfileAuthError(result.error) ? t('resumeInput.profileLoginRequired') : result.error,
+          'error'
+        );
         return;
       }
       onChange(result.text);
