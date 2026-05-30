@@ -526,6 +526,7 @@
     "wizard": {
       "title": "New Autopilot",
       "editTitle": "Edit Autopilot",
+      "comingSoon": "Coming soon",
       "steps": ["Target", "Filter", "Action", "Schedule"],
       "cancel": "Cancel",
       "back": "Back",
