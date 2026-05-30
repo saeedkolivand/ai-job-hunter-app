@@ -1399,6 +1399,12 @@
       "next": "Set up AI"
     }
   },
+  "jobUrlImport": {
+    "placeholder": "Paste a LinkedIn job URL…",
+    "import": "Import",
+    "notFound": "Couldn't read that job posting — paste the description manually.",
+    "failed": "Import failed. Check the URL and try again."
+  },
   "updater": {
     "available": "v{{version}} is available",
     "downloading": "Downloading update… {{percent}}%",

@@ -10,6 +10,7 @@ import {
 
 import { Button, cn, CollapsibleFileInput } from '@ajh/ui';
 
+import { JobUrlImport } from '@/components/job/JobUrlImport';
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import { ModelSelector } from '@/components/ui/ModelSelector';
 import type { Stage } from '@/features/analyze/constants';
@@ -138,6 +139,7 @@ export function AnalyzeLeftPanel({
           disabled={stage === 'running'}
           placeholder={t('analyze.resumePlaceholder')}
         />
+        <JobUrlImport onImport={setJobAd} disabled={stage === 'running'} />
         <CollapsibleFileInput
           label={t('analyze.jobAd')}
           icon={Briefcase}

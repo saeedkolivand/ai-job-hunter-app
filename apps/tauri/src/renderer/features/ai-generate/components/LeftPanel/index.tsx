@@ -2,6 +2,7 @@ import { AlertCircle, ArrowRight, Briefcase, RefreshCw, Wand2 } from 'lucide-rea
 
 import { Button, CollapsibleFileInput } from '@ajh/ui';
 
+import { JobUrlImport } from '@/components/job/JobUrlImport';
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import { ModelSelector } from '@/components/ui/ModelSelector';
 import { GenerationConfig } from '@/features/ai-generate/components/GenerationConfig';
@@ -111,6 +112,7 @@ export function LeftPanel({
         />
 
         {/* Job ad input */}
+        <JobUrlImport onImport={setJobAd} disabled={stage !== 'idle'} />
         <CollapsibleFileInput
           label={t('aiGenerate.jobAdLabel')}
           icon={Briefcase}

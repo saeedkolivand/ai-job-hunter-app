@@ -1399,6 +1399,12 @@
       "next": "KI einrichten"
     }
   },
+  "jobUrlImport": {
+    "placeholder": "LinkedIn-Job-URL einfügen…",
+    "import": "Importieren",
+    "notFound": "Diese Stellenanzeige konnte nicht gelesen werden — Beschreibung manuell einfügen.",
+    "failed": "Import fehlgeschlagen. URL prüfen und erneut versuchen."
+  },
   "resumeReview": {
     "title": "Extrahierten Lebenslauf prüfen",
     "subtitle": "Prüfe die erkannten Angaben vor der Generierung. Es wird nichts blockiert — nur ein Hinweis.",
