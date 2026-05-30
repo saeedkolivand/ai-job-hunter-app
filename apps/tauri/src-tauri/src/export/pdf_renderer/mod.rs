@@ -297,26 +297,32 @@ pub fn setup_layout(template: &Template) -> LayoutConfig {
     const MM_PER_INCH: f32 = 25.4;
     const PT_PER_MM: f32 = 2.834_645_7;
 
+    // Page geometry from the active locale profile (defaults to A4), so the legacy
+    // renderer, the layout engine, and DOCX all read one source of truth.
+    let geom = crate::locale::LocaleProfile::default().page_geometry();
+    let page_width = geom.width_mm;
+    let page_height = geom.height_mm;
+
     let margin_left = template.margin_in * MM_PER_INCH;
     let margin_right = template.margin_in * MM_PER_INCH;
     let line_height = (template.body_pt / PT_PER_MM) * template.line_spacing;
 
     let (sidebar_width, main_x, main_width) = if let Some(tc) = &template.two_column {
-        let content_w = 210.0 - margin_left - margin_right;
+        let content_w = page_width - margin_left - margin_right;
         let sb = content_w * tc.sidebar_width_ratio;
         let gap = 5.0; // mm gap between columns
         let mx = margin_left + sb + gap;
-        let mw = 210.0 - margin_right - mx;
+        let mw = page_width - margin_right - mx;
         (sb, mx, mw)
     } else {
-        (0.0, margin_left, 210.0 - margin_left - margin_right)
+        (0.0, margin_left, page_width - margin_left - margin_right)
     };
 
     LayoutConfig {
         margin_left,
         margin_right,
-        page_width: 210.0,
-        page_height: 297.0,
+        page_width,
+        page_height,
         line_height,
         top_margin_pt: 54.0, // 0.75 inch
         margin_in: template.margin_in,
