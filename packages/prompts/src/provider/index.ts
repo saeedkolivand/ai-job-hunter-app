@@ -14,7 +14,7 @@ import {
   MEDIUM_MODEL_STRATEGY,
   SMALL_MODEL_STRATEGY,
   type TruncationStrategy,
-} from './context-manager.js';
+} from '../context-manager/index.js';
 
 export type ProviderKind = 'ollama' | 'cloud' | 'cli';
 export type PromptTier = 'large' | 'medium' | 'small';
@@ -136,7 +136,7 @@ const SECTION_SCORE = {
 
 const ENUM_PRIORITY = { type: 'string', enum: ['high', 'medium', 'low'] } as const;
 
-/** JSON Schema for {@link AnalysisResult} — mirrors the analyze.ts `SCHEMA`. */
+/** JSON Schema for the analysis result — mirrors the `SCHEMA` in analyze/schema.ts. */
 export const ANALYSIS_JSON_SCHEMA = {
   type: 'object',
   properties: {

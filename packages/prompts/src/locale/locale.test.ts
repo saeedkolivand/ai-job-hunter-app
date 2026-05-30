@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { detectSections, estimateTokens } from './context-manager';
-import { charsPerToken, resumeConventions } from './locale';
+import { detectSections, estimateTokens } from '../context-manager';
+import { charsPerToken, resumeConventions } from './index';
 
 const GERMAN_RESUME = `Max Mustermann
 max@example.de

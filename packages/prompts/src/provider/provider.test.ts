@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildSystemPrompt } from './analyze';
-import { resolveProfile, structuredOutputFor } from './provider';
+import { buildSystemPrompt } from '../analyze';
+import { resolveProfile, structuredOutputFor } from './index';
 
 describe('resolveProfile — provider → prompt depth', () => {
   it('ollama small → brief, compact schema, no rewrites/structured output', () => {

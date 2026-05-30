@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import urlLabels from './fixtures/url-labels.json';
+import urlLabels from '../fixtures/url-labels.json';
 import {
   buildCoverLetterPrompt,
   buildCoverLetterSystemPrompt,
@@ -15,7 +15,7 @@ import {
   parseLinksFromResume,
   urlToFriendlyLabel,
   validateMetadata,
-} from './generate';
+} from './index';
 
 const RESUME_WITH_LINKS = `John Doe
 Senior Engineer

@@ -14,7 +14,7 @@ import {
   MEDIUM_MODEL_STRATEGY,
   SMALL_MODEL_STRATEGY,
   truncateResume,
-} from './context-manager';
+} from './index';
 
 const RESUME = `John Doe
 john@example.com | +1 555 0100
