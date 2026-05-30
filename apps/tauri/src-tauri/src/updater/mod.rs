@@ -20,8 +20,10 @@
 /// The Update object is stored across commands so the download URL and signature
 /// are never re-fetched, avoiding race conditions and unnecessary network calls.
 use std::sync::Arc;
+use std::time::Duration;
 use parking_lot::Mutex;
 
+use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::{Update, UpdaterExt};
@@ -181,6 +183,76 @@ pub async fn updater_install(app: AppHandle) -> Value {
             emit_status(&app, json!({ "state": "error", "message": msg }));
             json!({ "error": msg })
         }
+    }
+}
+
+// ── Changelog (release history) ────────────────────────────────────────────────
+
+/// Most recent releases to surface in the in-app changelog.
+const CHANGELOG_LIMIT: u32 = 15;
+
+/// GitHub Releases API for this repo. The renderer's CSP forbids talking to GitHub
+/// directly, so the changelog is fetched here (Rust is not bound by the webview
+/// CSP) and returned over IPC, reusing the shared HTTP client.
+fn releases_api_url() -> String {
+    format!(
+        "https://api.github.com/repos/saeedkolivand/ai-job-hunter-assistant-app/releases?per_page={CHANGELOG_LIMIT}"
+    )
+}
+
+/// Subset of the GitHub release payload we surface.
+#[derive(Deserialize)]
+struct GithubRelease {
+    tag_name: String,
+    name: Option<String>,
+    body: Option<String>,
+    published_at: Option<String>,
+    html_url: String,
+    #[serde(default)]
+    prerelease: bool,
+    #[serde(default)]
+    draft: bool,
+}
+
+/// Recent release history (newest first) for the in-app changelog. Returns
+/// `{ releases: [...] }` or `{ error }` — never throws, so the UI can render a
+/// friendly empty/error state instead of only linking out to GitHub.
+#[tauri::command]
+pub async fn updater_changelog() -> Value {
+    let resp = crate::net::http::shared()
+        .get(releases_api_url())
+        .header("Accept", "application/vnd.github+json")
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await;
+
+    let resp = match resp {
+        Ok(r) if r.status().is_success() => r,
+        Ok(r) => {
+            return json!({ "error": format!("Changelog unavailable (HTTP {}).", r.status().as_u16()) })
+        }
+        Err(e) => return json!({ "error": format!("Could not reach GitHub: {e}") }),
+    };
+
+    match resp.json::<Vec<GithubRelease>>().await {
+        Ok(releases) => {
+            let items: Vec<Value> = releases
+                .into_iter()
+                .filter(|r| !r.draft)
+                .map(|r| {
+                    json!({
+                        "version": r.tag_name.trim_start_matches('v'),
+                        "name": r.name,
+                        "body": r.body,
+                        "publishedAt": r.published_at,
+                        "url": r.html_url,
+                        "prerelease": r.prerelease,
+                    })
+                })
+                .collect();
+            json!({ "releases": items })
+        }
+        Err(e) => json!({ "error": format!("Could not parse changelog: {e}") }),
     }
 }
 
