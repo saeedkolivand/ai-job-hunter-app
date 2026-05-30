@@ -69,6 +69,13 @@ pub async fn documents_import(app: AppHandle, req: DocumentsImportRequest) -> Va
     }
 }
 
+/// Recommend a template + locale from the metadata signals (job title,
+/// seniority, top requirements, languages). Rules-based; always overridable.
+#[tauri::command]
+pub fn documents_recommend_template(req: crate::recommend::RecommendSignals) -> Value {
+    serde_json::to_value(crate::recommend::recommend(&req)).unwrap_or(json!(null))
+}
+
 #[tauri::command]
 pub async fn documents_remove(app: AppHandle, id: String) -> Value {
     let store = app.state::<crate::documents::DocumentStore>();

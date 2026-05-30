@@ -44,6 +44,7 @@ mod pipeline;
 mod platform;
 mod postings;
 mod profile_import;
+mod recommend;
 mod scraping;
 mod theme;
 mod updater;
@@ -270,6 +271,7 @@ fn main() {
             // documents
             commands::documents::documents_list,
             commands::documents::documents_import,
+            commands::documents::documents_recommend_template,
             commands::documents::documents_remove,
             commands::documents::documents_set_default,
             commands::documents::documents_embed_text,

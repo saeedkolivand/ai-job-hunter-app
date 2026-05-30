@@ -395,6 +395,9 @@
   "aiGenerate": {
     "title": "KI-Generierung",
     "subtitle": "Laden Sie Ihren Lebenslauf und die Stellenanzeige hoch, um maßgeschneiderte, ATS-optimierte Dokumente zu erstellen.",
+    "recommendationTitle": "Empfohlene Vorlage",
+    "applyRecommendation": "Vorschlag übernehmen",
+    "recommendationApplied": "Übernommen",
     "resumeLabel": "Lebenslauf",
     "jobAdLabel": "Stellenanzeige",
     "detectedContext": "Erkannter Kontext",
