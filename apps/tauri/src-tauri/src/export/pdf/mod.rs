@@ -13,7 +13,10 @@ use super::pdf_renderer::PageState;
 
 // ─── Resume PDF (single-column) ───────────────────────────────────────────────
 
-fn generate_resume_pdf(
+/// Legacy resume renderer. `pub(crate)` so the layout-engine parity gate
+/// (`layout::tests`) can compare its output against the new backend regardless
+/// of the `layout_pdf` feature; the public entry point stays [`generate_pdf`].
+pub(crate) fn generate_resume_pdf(
     text: &str,
     meta: Option<&GenerationMeta>,
     template: &Template,
@@ -56,7 +59,13 @@ fn generate_resume_pdf(
 
             LineKind::Name => {
                 let (line_ops, new_y) = render_name_line(
-                    &line.text, meta, &effective_template, &layout, &colors, &fonts, page_state.y,
+                    &line.text,
+                    meta,
+                    &effective_template,
+                    &layout,
+                    &colors,
+                    &fonts,
+                    page_state.y,
                 );
                 page_state.current_ops.extend(line_ops);
                 page_state.y = new_y;
@@ -64,7 +73,12 @@ fn generate_resume_pdf(
 
             LineKind::Contact => {
                 let (line_ops, new_y) = render_contact_line(
-                    &line.text, &effective_template, &layout, &colors, &fonts, page_state.y,
+                    &line.text,
+                    &effective_template,
+                    &layout,
+                    &colors,
+                    &fonts,
+                    page_state.y,
                 );
                 page_state.current_ops.extend(line_ops);
                 page_state.y = new_y;
@@ -72,9 +86,18 @@ fn generate_resume_pdf(
 
             LineKind::SectionHeader => {
                 // Orphan guard: need at least 3 lines below the header
-                maybe_break_before(&mut page_state, pt_to_mm(effective_template.section_pt) * 1.5, three_line_gap);
+                maybe_break_before(
+                    &mut page_state,
+                    pt_to_mm(effective_template.section_pt) * 1.5,
+                    three_line_gap,
+                );
                 let (line_ops, new_y) = render_section_header(
-                    &line.text, &effective_template, &layout, &colors, &fonts, page_state.y,
+                    &line.text,
+                    &effective_template,
+                    &layout,
+                    &colors,
+                    &fonts,
+                    page_state.y,
                 );
                 page_state.current_ops.extend(line_ops);
                 page_state.y = new_y;
@@ -98,7 +121,12 @@ fn generate_resume_pdf(
             LineKind::JobTitle => {
                 maybe_break_before(&mut page_state, layout.line_height, 0.0);
                 let (line_ops, new_y) = render_job_title(
-                    &line.text, &effective_template, &layout, &colors, &fonts, page_state.y,
+                    &line.text,
+                    &effective_template,
+                    &layout,
+                    &colors,
+                    &fonts,
+                    page_state.y,
                 );
                 page_state.current_ops.extend(line_ops);
                 page_state.y = new_y;
@@ -109,7 +137,12 @@ fn generate_resume_pdf(
                     page_state.new_page();
                 }
                 let (line_ops, new_y) = render_bullet_line(
-                    &line.segments, &effective_template, &layout, &colors, &fonts, page_state.y,
+                    &line.segments,
+                    &effective_template,
+                    &layout,
+                    &colors,
+                    &fonts,
+                    page_state.y,
                 );
                 page_state.current_ops.extend(line_ops);
                 page_state.y = new_y;
@@ -120,7 +153,12 @@ fn generate_resume_pdf(
                     page_state.new_page();
                 }
                 let (line_ops, new_y) = render_text_line(
-                    &line.segments, &effective_template, &layout, &colors, &fonts, page_state.y,
+                    &line.segments,
+                    &effective_template,
+                    &layout,
+                    &colors,
+                    &fonts,
+                    page_state.y,
                 );
                 page_state.current_ops.extend(line_ops);
                 page_state.y = new_y;
@@ -148,7 +186,10 @@ fn generate_two_column_resume_pdf(
     meta: Option<&GenerationMeta>,
     template: &Template,
 ) -> Result<Vec<u8>> {
-    let tc = template.two_column.as_ref().expect("two_column config required");
+    let tc = template
+        .two_column
+        .as_ref()
+        .expect("two_column config required");
     let parsed = parse_resume(text);
     let mut doc = PdfDocument::new("Resume");
     let fonts = load_all_fonts(&mut doc)?;
@@ -196,16 +237,14 @@ fn generate_two_column_resume_pdf(
     for line in &header_lines {
         match line.kind {
             LineKind::Name => {
-                let (line_ops, new_y) = render_name_line(
-                    &line.text, meta, template, &layout, &colors, &fonts, y,
-                );
+                let (line_ops, new_y) =
+                    render_name_line(&line.text, meta, template, &layout, &colors, &fonts, y);
                 ops.extend(line_ops);
                 y = new_y;
             }
             LineKind::Contact => {
-                let (line_ops, new_y) = render_contact_line(
-                    &line.text, template, &layout, &colors, &fonts, y,
-                );
+                let (line_ops, new_y) =
+                    render_contact_line(&line.text, template, &layout, &colors, &fonts, y);
                 ops.extend(line_ops);
                 y = new_y;
             }
@@ -216,7 +255,12 @@ fn generate_two_column_resume_pdf(
     let header_bottom_y = y - pt_to_mm(2.0);
 
     // Draw sidebar background
-    ops.extend(draw_sidebar_bg(&layout, tc.sidebar_bg_color, header_bottom_y, layout.margin_in * 25.4));
+    ops.extend(draw_sidebar_bg(
+        &layout,
+        tc.sidebar_bg_color,
+        header_bottom_y,
+        layout.margin_in * 25.4,
+    ));
 
     // Render main column (experience etc.)
     let main_layout = LayoutConfig {
@@ -230,26 +274,63 @@ fn generate_two_column_resume_pdf(
         main_y -= pt_to_mm(spacing.0);
         match line.kind {
             LineKind::SectionHeader => {
-                let (lo, ny) = render_section_header(&line.text, template, &main_layout, &colors, &fonts, main_y);
-                ops.extend(lo); main_y = ny;
+                let (lo, ny) = render_section_header(
+                    &line.text,
+                    template,
+                    &main_layout,
+                    &colors,
+                    &fonts,
+                    main_y,
+                );
+                ops.extend(lo);
+                main_y = ny;
             }
             LineKind::JobEntry => {
-                let (lo, ny) = render_job_entry(&line.segments, line.right_text.as_deref(), template, &main_layout, &colors, &fonts, main_y);
-                ops.extend(lo); main_y = ny;
+                let (lo, ny) = render_job_entry(
+                    &line.segments,
+                    line.right_text.as_deref(),
+                    template,
+                    &main_layout,
+                    &colors,
+                    &fonts,
+                    main_y,
+                );
+                ops.extend(lo);
+                main_y = ny;
             }
             LineKind::JobTitle => {
-                let (lo, ny) = render_job_title(&line.text, template, &main_layout, &colors, &fonts, main_y);
-                ops.extend(lo); main_y = ny;
+                let (lo, ny) =
+                    render_job_title(&line.text, template, &main_layout, &colors, &fonts, main_y);
+                ops.extend(lo);
+                main_y = ny;
             }
             LineKind::Bullet => {
-                let (lo, ny) = render_bullet_line(&line.segments, template, &main_layout, &colors, &fonts, main_y);
-                ops.extend(lo); main_y = ny;
+                let (lo, ny) = render_bullet_line(
+                    &line.segments,
+                    template,
+                    &main_layout,
+                    &colors,
+                    &fonts,
+                    main_y,
+                );
+                ops.extend(lo);
+                main_y = ny;
             }
             LineKind::Text => {
-                let (lo, ny) = render_text_line(&line.segments, template, &main_layout, &colors, &fonts, main_y);
-                ops.extend(lo); main_y = ny;
+                let (lo, ny) = render_text_line(
+                    &line.segments,
+                    template,
+                    &main_layout,
+                    &colors,
+                    &fonts,
+                    main_y,
+                );
+                ops.extend(lo);
+                main_y = ny;
             }
-            LineKind::Blank => { main_y -= pt_to_mm(3.0); }
+            LineKind::Blank => {
+                main_y -= pt_to_mm(3.0);
+            }
             _ => {}
         }
         main_y -= pt_to_mm(spacing.1);
@@ -267,18 +348,44 @@ fn generate_two_column_resume_pdf(
         sidebar_y -= pt_to_mm(spacing.0);
         match line.kind {
             LineKind::SectionHeader => {
-                let (lo, ny) = render_section_header(&line.text, template, &sidebar_layout, &colors, &fonts, sidebar_y);
-                ops.extend(lo); sidebar_y = ny;
+                let (lo, ny) = render_section_header(
+                    &line.text,
+                    template,
+                    &sidebar_layout,
+                    &colors,
+                    &fonts,
+                    sidebar_y,
+                );
+                ops.extend(lo);
+                sidebar_y = ny;
             }
             LineKind::Bullet => {
-                let (lo, ny) = render_bullet_line(&line.segments, template, &sidebar_layout, &colors, &fonts, sidebar_y);
-                ops.extend(lo); sidebar_y = ny;
+                let (lo, ny) = render_bullet_line(
+                    &line.segments,
+                    template,
+                    &sidebar_layout,
+                    &colors,
+                    &fonts,
+                    sidebar_y,
+                );
+                ops.extend(lo);
+                sidebar_y = ny;
             }
             LineKind::Text | LineKind::JobTitle => {
-                let (lo, ny) = render_text_line(&line.segments, template, &sidebar_layout, &colors, &fonts, sidebar_y);
-                ops.extend(lo); sidebar_y = ny;
+                let (lo, ny) = render_text_line(
+                    &line.segments,
+                    template,
+                    &sidebar_layout,
+                    &colors,
+                    &fonts,
+                    sidebar_y,
+                );
+                ops.extend(lo);
+                sidebar_y = ny;
             }
-            LineKind::Blank => { sidebar_y -= pt_to_mm(3.0); }
+            LineKind::Blank => {
+                sidebar_y -= pt_to_mm(3.0);
+            }
             _ => {}
         }
         sidebar_y -= pt_to_mm(spacing.1);
@@ -317,7 +424,8 @@ fn generate_cover_letter_pdf(
 
     // Parse a contact line: join all lines that look like contact info
     let raw_lines: Vec<&str> = text.lines().collect();
-    let contact_line: String = raw_lines.iter()
+    let contact_line: String = raw_lines
+        .iter()
         .take(4)
         .filter(|l| {
             let c = strip_md(l.trim());
@@ -328,7 +436,12 @@ fn generate_cover_letter_pdf(
         .join(" · ");
 
     // Render letterhead
-    let render_ctx = RenderCtx { template, layout: &layout, colors: &colors, fonts: &fonts };
+    let render_ctx = RenderCtx {
+        template,
+        layout: &layout,
+        colors: &colors,
+        fonts: &fonts,
+    };
     let (lh_ops, new_y) = render_letterhead(
         &render_ctx,
         name_text,
@@ -356,7 +469,9 @@ fn generate_cover_letter_pdf(
         let clean = strip_md(trimmed);
 
         // Skip lines that were part of the header (name + contact)
-        if skip_lines < 3 && (clean.is_empty() || trimmed == name_text || contact_line.contains(&clean)) {
+        if skip_lines < 3
+            && (clean.is_empty() || trimmed == name_text || contact_line.contains(&clean))
+        {
             skip_lines += 1;
             continue;
         }
@@ -432,27 +547,48 @@ fn generate_cover_letter_pdf(
         match cl.date_position {
             DatePosition::TopRight | DatePosition::AboveSalutation => {
                 let (reg_id, _, _) = resolve_fonts(&fonts, template.fonts.body_family);
-                let date_x = layout.page_width - layout.margin_right
+                let date_x = layout.page_width
+                    - layout.margin_right
                     - (date.len() as f32 * pt_to_mm(10.0) * 0.5);
-                let pos = Point { x: Mm(date_x).into(), y: Mm(page_state.y).into() };
+                let pos = Point {
+                    x: Mm(date_x).into(),
+                    y: Mm(page_state.y).into(),
+                };
                 page_state.current_ops.extend([
                     Op::StartTextSection,
-                    Op::SetFillColor { col: colors.date.clone() },
+                    Op::SetFillColor {
+                        col: colors.date.clone(),
+                    },
                     Op::SetTextCursor { pos },
-                    Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(10.0) },
-                    Op::ShowText { items: vec![TextItem::Text(date.clone())] },
+                    Op::SetFont {
+                        font: PdfFontHandle::External(reg_id.clone()),
+                        size: Pt(10.0),
+                    },
+                    Op::ShowText {
+                        items: vec![TextItem::Text(date.clone())],
+                    },
                     Op::EndTextSection,
                 ]);
             }
             DatePosition::BelowHeader => {
                 let (reg_id, _, _) = resolve_fonts(&fonts, template.fonts.body_family);
-                let pos = Point { x: Mm(x).into(), y: Mm(page_state.y).into() };
+                let pos = Point {
+                    x: Mm(x).into(),
+                    y: Mm(page_state.y).into(),
+                };
                 page_state.current_ops.extend([
                     Op::StartTextSection,
-                    Op::SetFillColor { col: colors.date.clone() },
+                    Op::SetFillColor {
+                        col: colors.date.clone(),
+                    },
                     Op::SetTextCursor { pos },
-                    Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(10.0) },
-                    Op::ShowText { items: vec![TextItem::Text(date.clone())] },
+                    Op::SetFont {
+                        font: PdfFontHandle::External(reg_id.clone()),
+                        size: Pt(10.0),
+                    },
+                    Op::ShowText {
+                        items: vec![TextItem::Text(date.clone())],
+                    },
                     Op::EndTextSection,
                 ]);
                 page_state.y -= line_height + pt_to_mm(2.0);
@@ -466,13 +602,23 @@ fn generate_cover_letter_pdf(
         page_state.y -= pt_to_mm(6.0);
         let (reg_id, _, _) = resolve_fonts(&fonts, template.fonts.body_family);
         for rline in &recipient_lines {
-            let pos = Point { x: Mm(x).into(), y: Mm(page_state.y).into() };
+            let pos = Point {
+                x: Mm(x).into(),
+                y: Mm(page_state.y).into(),
+            };
             page_state.current_ops.extend([
                 Op::StartTextSection,
-                Op::SetFillColor { col: colors.body.clone() },
+                Op::SetFillColor {
+                    col: colors.body.clone(),
+                },
                 Op::SetTextCursor { pos },
-                Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(template.body_pt) },
-                Op::ShowText { items: vec![TextItem::Text(rline.clone())] },
+                Op::SetFont {
+                    font: PdfFontHandle::External(reg_id.clone()),
+                    size: Pt(template.body_pt),
+                },
+                Op::ShowText {
+                    items: vec![TextItem::Text(rline.clone())],
+                },
                 Op::EndTextSection,
             ]);
             page_state.y -= line_height;
@@ -481,18 +627,27 @@ fn generate_cover_letter_pdf(
     }
 
     // Salutation
-    let sal = salutation_line
-        .unwrap_or_else(|| cl.closing_phrase_default.to_string()); // fallback
+    let sal = salutation_line.unwrap_or_else(|| cl.closing_phrase_default.to_string()); // fallback
     {
         page_state.y -= pt_to_mm(4.0);
         let (reg_id, _, _) = resolve_fonts(&fonts, template.fonts.body_family);
-        let pos = Point { x: Mm(x).into(), y: Mm(page_state.y).into() };
+        let pos = Point {
+            x: Mm(x).into(),
+            y: Mm(page_state.y).into(),
+        };
         page_state.current_ops.extend([
             Op::StartTextSection,
-            Op::SetFillColor { col: colors.body.clone() },
+            Op::SetFillColor {
+                col: colors.body.clone(),
+            },
             Op::SetTextCursor { pos },
-            Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(template.body_pt) },
-            Op::ShowText { items: vec![TextItem::Text(sal)] },
+            Op::SetFont {
+                font: PdfFontHandle::External(reg_id.clone()),
+                size: Pt(template.body_pt),
+            },
+            Op::ShowText {
+                items: vec![TextItem::Text(sal)],
+            },
             Op::EndTextSection,
         ]);
         page_state.y -= line_height + pt_to_mm(4.0);
@@ -505,35 +660,48 @@ fn generate_cover_letter_pdf(
             content_width,
             template.body_pt,
             line_height,
-            if cl.paragraph_indent == ParagraphIndent::FirstLine { 6.35 } else { 0.0 },
+            if cl.paragraph_indent == ParagraphIndent::FirstLine {
+                6.35
+            } else {
+                0.0
+            },
         );
         // Widow/orphan: push whole paragraph to next page if < 2 lines would fit
         let min_tail = line_height * 2.0;
-        maybe_break_before(&mut page_state, estimated_h.min(line_height * 2.0), min_tail);
-
-        let (para_ops, new_y) = render_cover_letter_paragraph(
-            &render_ctx,
-            para_text,
-            page_state.y, content_width, x,
+        maybe_break_before(
+            &mut page_state,
+            estimated_h.min(line_height * 2.0),
+            min_tail,
         );
+
+        let (para_ops, new_y) =
+            render_cover_letter_paragraph(&render_ctx, para_text, page_state.y, content_width, x);
         page_state.current_ops.extend(para_ops);
         page_state.y = new_y;
     }
 
     // Closing phrase
-    let closing = closing_line
-        .as_deref()
-        .unwrap_or(cl.closing_phrase_default);
+    let closing = closing_line.as_deref().unwrap_or(cl.closing_phrase_default);
     {
         page_state.y -= pt_to_mm(8.0);
         let (reg_id, _, _) = resolve_fonts(&fonts, template.fonts.body_family);
-        let pos = Point { x: Mm(x).into(), y: Mm(page_state.y).into() };
+        let pos = Point {
+            x: Mm(x).into(),
+            y: Mm(page_state.y).into(),
+        };
         page_state.current_ops.extend([
             Op::StartTextSection,
-            Op::SetFillColor { col: colors.body.clone() },
+            Op::SetFillColor {
+                col: colors.body.clone(),
+            },
             Op::SetTextCursor { pos },
-            Op::SetFont { font: PdfFontHandle::External(reg_id.clone()), size: Pt(template.body_pt) },
-            Op::ShowText { items: vec![TextItem::Text(closing.to_string())] },
+            Op::SetFont {
+                font: PdfFontHandle::External(reg_id.clone()),
+                size: Pt(template.body_pt),
+            },
+            Op::ShowText {
+                items: vec![TextItem::Text(closing.to_string())],
+            },
             Op::EndTextSection,
         ]);
         // 3 baselines of gap — room for a real signature
@@ -546,8 +714,12 @@ fn generate_cover_letter_pdf(
         .map(|s| s.as_str())
         .unwrap_or(name_text);
     let (sig_ops, new_y) = render_signature(
-        template, &layout, &colors, &fonts,
-        sig_name, signature_title.as_deref(),
+        template,
+        &layout,
+        &colors,
+        &fonts,
+        sig_name,
+        signature_title.as_deref(),
         page_state.y,
     );
     page_state.current_ops.extend(sig_ops);
@@ -565,7 +737,11 @@ static DATE_PATTERN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::ne
     ).unwrap()
 });
 
-fn assemble_pdf(mut doc: PdfDocument, page_state: PageState, layout: &LayoutConfig) -> Result<Vec<u8>> {
+fn assemble_pdf(
+    mut doc: PdfDocument,
+    page_state: PageState,
+    layout: &LayoutConfig,
+) -> Result<Vec<u8>> {
     let all_page_ops = page_state.finish();
     let pages: Vec<PdfPage> = all_page_ops
         .into_iter()
@@ -581,12 +757,18 @@ fn assemble_pdf(mut doc: PdfDocument, page_state: PageState, layout: &LayoutConf
 fn extract_section<'a>(text: &'a str, start_marker: &str, end_marker: Option<&str>) -> &'a str {
     let start = if let Some(idx) = text.find(start_marker) {
         let after = &text[idx + start_marker.len()..];
-        after.find('\n').map(|i| idx + start_marker.len() + i + 1).unwrap_or(idx + start_marker.len())
+        after
+            .find('\n')
+            .map(|i| idx + start_marker.len() + i + 1)
+            .unwrap_or(idx + start_marker.len())
     } else {
         return text;
     };
     let end = if let Some(em) = end_marker {
-        text[start..].find(em).map(|i| start + i).unwrap_or(text.len())
+        text[start..]
+            .find(em)
+            .map(|i| start + i)
+            .unwrap_or(text.len())
     } else {
         text.len()
     };
@@ -600,7 +782,11 @@ pub fn generate_pdf(request: &ExportRequest) -> Result<Vec<u8>> {
 
     match request.document_type {
         DocumentType::Resume => {
-            let text = extract_section(&request.text, "### CANDIDATE RESUME ###", Some("### JOB ADVERTISEMENT ###"));
+            let text = extract_section(
+                &request.text,
+                "### CANDIDATE RESUME ###",
+                Some("### JOB ADVERTISEMENT ###"),
+            );
             let text = if text.is_empty() { &request.text } else { text };
             // Strangler-fig switch: the canonical layout engine path is gated behind
             // the `layout_pdf` feature (on under --all-features / CI), the legacy

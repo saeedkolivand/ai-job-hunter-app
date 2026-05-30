@@ -8,20 +8,27 @@
 //! dates, link-rect placement — uses real glyph advances from [`MeasureText`]
 //! (the `measure/` layer), never a character-count estimate.
 //!
-//! Both single-column and **true multi-page two-column** layouts are built from
-//! one shared [`Flow`] (a paginating column cursor): a single-column document is
-//! one full-width flow; a two-column document lays the header full width, then
-//! runs an independent sidebar flow and main flow and merges their pages,
-//! drawing the sidebar background band per page. Section → column assignment is
-//! the canonical [`theme::placement_for`] decision.
+//! Vertical rhythm matches the legacy renderer exactly. The single-column path
+//! reproduces `templates::calculate_spacing` (the shared before/after gaps keyed
+//! on line kind) plus the legacy render functions' internal offsets (the gap
+//! above a section heading, between its rule and the first line, the entry
+//! nudge), so each template keeps its intended spacing — the airiness comes from
+//! the template's `line_spacing` flowing through the line height, exactly as
+//! before. The two-column path keeps its own (newly written, reviewed) spacing.
 //!
-//! There is no consumer yet (additive, behind the module's `dead_code` allow,
-//! like the other migration foundations). The PDF backend is wired onto this —
-//! behind a feature flag, with golden-snapshot parity — in the next phase.
+//! Both single-column and true multi-page two-column layouts are built from one
+//! shared [`Flow`] (a paginating column cursor): a single-column document is one
+//! full-width flow; a two-column document lays the header full width, then runs
+//! an independent sidebar flow and main flow and merges their pages, drawing the
+//! sidebar background band per page. Section → column assignment is the canonical
+//! [`theme::placement_for`] decision.
+//!
+//! There is no consumer of this module's output by default; the PDF backend
+//! (`export::layout_pdf`) renders through it under the `layout_pdf` feature.
 #![allow(dead_code)]
 
-use crate::export::templates::{SectionStyle, Template};
-use crate::export::types::FontFamily;
+use crate::export::templates::{calculate_spacing, SectionStyle, Template};
+use crate::export::types::{FontFamily, LineKind};
 use crate::locale::PageGeometry;
 use crate::measure::MeasureText;
 use crate::model::document::{Block, DocumentModel, EntryBlock, HeaderBlock, Placement, Section};
@@ -47,6 +54,38 @@ const COLUMN_GAP_MM: f32 = 5.0;
 
 /// Horizontal padding inside the sidebar band, in mm.
 const SIDEBAR_PAD_MM: f32 = 3.0;
+
+// Legacy single-column internal offsets (points), mirrored from the legacy
+// `pdf_renderer` render functions so the engine reproduces their vertical rhythm.
+/// Extra gap above a section heading's baseline (legacy `y_before = y - 4`).
+const SECTION_HEAD_LEAD_PT: f32 = 4.0;
+/// Gap below a section heading's rule before the first content line.
+const SECTION_HEAD_TRAIL_PT: f32 = 10.0;
+/// Entry title nudge — legacy advances `line_height - 2pt` after a job entry.
+const ENTRY_TITLE_NUDGE_PT: f32 = 2.0;
+/// Trailing gap after the header rule before the first section/paragraph.
+const HEADER_TRAIL_PT: f32 = 9.0;
+/// Folded structural spacer (points) added before each section heading. The
+/// legacy renderer drew a ~7pt blank-line spacer (3pt explicit + 4pt after-gap)
+/// between a section and the content above it; the canonical model carries no
+/// presentation blanks, so that height is folded in here deterministically to
+/// keep the rendered space-before-section-header equal to legacy (~30pt).
+const SECTION_SPACER_PT: f32 = 7.0;
+/// Folded structural spacer (points) added between consecutive entries (the
+/// legacy inter-entry blank line), so a job/education block is separated from the
+/// previous one. Tuned so the engine's rendered inter-entry baseline gap equals
+/// the legacy renderer's exactly: at a 2pt spacer the engine measured a uniform
+/// 3pt short of legacy across all single-column templates, hence 5pt.
+const ENTRY_SPACER_PT: f32 = 5.0;
+/// Nudge (points) between the name and contact lines, matching legacy.
+const NAME_CONTACT_NUDGE_PT: f32 = 2.0;
+/// Nudge (points) between the contact line / header rule and the first content
+/// line (summary), matching legacy.
+const CONTACT_SUMMARY_NUDGE_PT: f32 = 3.0;
+/// Bullet glyph horizontal offset from the content left, in mm.
+const BULLET_GLYPH_DX_MM: f32 = 1.3;
+/// Bullet text indent from the content left, in mm.
+const BULLET_TEXT_DX_MM: f32 = 4.0;
 
 fn pt_to_mm(pt: f32) -> f32 {
     pt / PT_PER_MM
@@ -331,7 +370,7 @@ fn lay_header(
             size_pt: t.name_pt,
             color: t.name_color,
         });
-        *y += pt_to_mm(t.name_pt) * 1.2;
+        *y += pt_to_mm(t.name_pt) * 1.2 + pt_to_mm(NAME_CONTACT_NUDGE_PT);
     }
 
     if !h.contact.is_empty() {
@@ -359,39 +398,55 @@ fn lay_header(
         thickness_pt: rule_thickness(t),
         color: t.rule_color,
     });
-    *y += pt_to_mm(9.0);
+    *y += pt_to_mm(HEADER_TRAIL_PT) + pt_to_mm(CONTACT_SUMMARY_NUDGE_PT);
 }
 
 // ─── Flow: a paginating column cursor ─────────────────────────────────────────
 
 /// A single paginating column. Block-laying logic lives here so single-column
 /// (one full-width flow) and two-column (a sidebar flow + a main flow) share it.
+///
+/// `single_col` selects the vertical-spacing model: the single-column path
+/// reproduces the legacy `calculate_spacing` gaps + internal offsets (so output
+/// matches the legacy renderer); two-column keeps its own reviewed spacing.
 struct Flow<'a> {
     t: &'a Template,
     m: &'a dyn MeasureText,
     frame: Frame,
+    single_col: bool,
     top_baseline: f32,
     bottom_limit: f32,
     pages: Vec<Page>,
     cur: Page,
     /// Current baseline, mm from page top.
     y: f32,
+    /// Previous line kind, for `calculate_spacing` (single-column only).
+    prev_kind: Option<LineKind>,
 }
 
 impl<'a> Flow<'a> {
     /// New flow over `frame`, first baseline at `start_y`. `cur` is the page the
     /// caller may have already drawn into (e.g. the header on page 0).
-    fn new(t: &'a Template, m: &'a dyn MeasureText, frame: Frame, start_y: f32, cur: Page) -> Self {
+    fn new(
+        t: &'a Template,
+        m: &'a dyn MeasureText,
+        frame: Frame,
+        single_col: bool,
+        start_y: f32,
+        cur: Page,
+    ) -> Self {
         let margin = t.margin_in * 25.4;
         Self {
             t,
             m,
             frame,
+            single_col,
             top_baseline: pt_to_mm(TOP_MARGIN_PT),
             bottom_limit: frame.geom.height_mm - margin,
             pages: Vec::new(),
             cur,
             y: start_y,
+            prev_kind: None,
         }
     }
 
@@ -406,6 +461,19 @@ impl<'a> Flow<'a> {
     fn new_page(&mut self) {
         self.pages.push(std::mem::take(&mut self.cur));
         self.y = self.top_baseline;
+    }
+
+    /// `calculate_spacing` (before, after) gaps in mm for `kind`, using the
+    /// previous kind. Two-column passes `None` (matching the legacy two-column
+    /// loop, which never tracked the previous kind).
+    fn gaps_mm(&self, kind: LineKind) -> (f32, f32) {
+        let prev = if self.single_col {
+            self.prev_kind.as_ref()
+        } else {
+            None
+        };
+        let (before, after) = calculate_spacing(&kind, prev);
+        (pt_to_mm(before), pt_to_mm(after))
     }
 
     fn lay_sections(&mut self, sections: &[&Section]) {
@@ -429,15 +497,6 @@ impl<'a> Flow<'a> {
 
     fn lay_heading(&mut self, heading: &str) {
         let t = self.t;
-        let before = pt_to_mm(t.section_spacing_before);
-        // Orphan guard: keep the heading with at least two body lines below it.
-        let needed = before + pt_to_mm(t.section_pt) * 1.2 + self.body_line() * 2.0;
-        if self.would_overflow(needed) && !self.cur.texts.is_empty() {
-            self.new_page();
-        } else {
-            self.y += before;
-        }
-
         let (text, size) = if t.section_small_caps {
             (heading.to_uppercase(), t.section_pt * 0.85)
         } else if t.section_all_caps {
@@ -445,19 +504,65 @@ impl<'a> Flow<'a> {
         } else {
             (heading.to_string(), t.section_pt)
         };
+        let head_h = pt_to_mm(size) * 1.2;
 
+        if self.single_col {
+            // Legacy: 12pt before-gap, then `y_before = y - 4`, header, rule,
+            // then `-10`, then 3pt after-gap.
+            let (before_base, after) = self.gaps_mm(LineKind::SectionHeader);
+            // Fold the legacy blank-line spacer into the deterministic before-gap
+            // so the rendered space-before-section-header matches legacy (~30pt).
+            let before = before_base + pt_to_mm(SECTION_SPACER_PT);
+            let lead = pt_to_mm(SECTION_HEAD_LEAD_PT);
+            let trail = pt_to_mm(SECTION_HEAD_TRAIL_PT);
+            // Orphan guard: keep the heading with at least two body lines below it.
+            let needed = lead + head_h + trail + self.body_line() * 2.0;
+            if self.would_overflow(before + needed) && !self.cur.texts.is_empty() {
+                self.new_page();
+            } else {
+                self.y += before;
+            }
+            self.y += lead;
+            self.place_heading(&text, size);
+            self.y += head_h;
+            self.push_heading_rule();
+            self.y += trail + after;
+            self.prev_kind = Some(LineKind::SectionHeader);
+        } else {
+            // Two-column: reviewed spacing — template gap before, 6pt after.
+            let before = pt_to_mm(t.section_spacing_before);
+            let needed = before + head_h + self.body_line() * 2.0;
+            if self.would_overflow(needed) && !self.cur.texts.is_empty() {
+                self.new_page();
+            } else {
+                self.y += before;
+            }
+            self.place_heading(&text, size);
+            self.y += head_h;
+            self.push_heading_rule();
+            self.y += pt_to_mm(6.0);
+        }
+    }
+
+    /// Emit the heading text at the current baseline.
+    fn place_heading(&mut self, text: &str, size: f32) {
+        let t = self.t;
         self.cur.texts.push(PlacedText {
             x_mm: self.frame.left,
             baseline_y_mm: self.y,
-            text,
+            text: text.to_string(),
             family: t.fonts.heading_family,
             bold: true,
             italic: false,
             size_pt: size,
             color: t.section_color,
         });
-        self.y += pt_to_mm(size) * 1.2;
+    }
 
+    /// Emit the section underline rule at the current baseline if the template
+    /// uses one.
+    fn push_heading_rule(&mut self) {
+        let t = self.t;
         match t.section_style {
             SectionStyle::RuledBottom | SectionStyle::Underline => {
                 self.cur.rules.push(RuleLine {
@@ -470,7 +575,6 @@ impl<'a> Flow<'a> {
             }
             SectionStyle::BoldOnly => {}
         }
-        self.y += pt_to_mm(6.0);
     }
 
     fn lay_paragraph(&mut self, rt: &RichText) {
@@ -486,6 +590,13 @@ impl<'a> Flow<'a> {
             normal: t.body_color,
             bold: t.emphasis_color,
         };
+        // Text kind: legacy (0, 4); the two-column path is the same trailing 4pt.
+        let (before, after) = if self.single_col {
+            self.gaps_mm(LineKind::Text)
+        } else {
+            (0.0, pt_to_mm(4.0))
+        };
+        self.y += before;
         for line in wrap_runs(rt, self.frame.width(), fam, t.body_pt, m) {
             if self.would_overflow(self.body_line()) {
                 self.new_page();
@@ -493,15 +604,17 @@ impl<'a> Flow<'a> {
             place_line(&mut self.cur, &line, self.frame.left, self.y, style, m);
             self.y += self.body_line();
         }
-        self.y += pt_to_mm(4.0);
+        self.y += after;
+        if self.single_col {
+            self.prev_kind = Some(LineKind::Text);
+        }
     }
 
     fn lay_bullet(&mut self, rt: &RichText) {
         let t = self.t;
         let m = self.m;
         let fam = t.fonts.body_family;
-        let indent = 4.0_f32;
-        let text_x = self.frame.left + indent;
+        let text_x = self.frame.left + BULLET_TEXT_DX_MM;
         let wrap_w = (self.frame.right - text_x).max(10.0);
         let style = LineStyle {
             family: fam,
@@ -509,13 +622,19 @@ impl<'a> Flow<'a> {
             normal: t.body_color,
             bold: t.emphasis_color,
         };
+        let (before, after) = if self.single_col {
+            self.gaps_mm(LineKind::Bullet)
+        } else {
+            (0.0, pt_to_mm(2.0))
+        };
+        self.y += before;
         for (i, line) in wrap_runs(rt, wrap_w, fam, t.body_pt, m).iter().enumerate() {
             if self.would_overflow(self.body_line()) {
                 self.new_page();
             }
             if i == 0 {
                 self.cur.texts.push(PlacedText {
-                    x_mm: self.frame.left + 1.3,
+                    x_mm: self.frame.left + BULLET_GLYPH_DX_MM,
                     baseline_y_mm: self.y,
                     text: "•".to_string(),
                     family: fam,
@@ -528,25 +647,44 @@ impl<'a> Flow<'a> {
             place_line(&mut self.cur, line, text_x, self.y, style, m);
             self.y += self.body_line();
         }
-        self.y += pt_to_mm(2.0);
+        self.y += after;
+        if self.single_col {
+            self.prev_kind = Some(LineKind::Bullet);
+        }
     }
 
     fn lay_entry(&mut self, e: &EntryBlock) {
         let t = self.t;
         let m = self.m;
         let fam = t.fonts.body_family;
-
-        // Keep the title with at least its subtitle / first bullet.
-        if self.would_overflow(self.body_line() * 2.0) && !self.cur.texts.is_empty() {
-            self.new_page();
-        }
-
         let style = LineStyle {
             family: fam,
             size_pt: t.body_pt,
             normal: t.body_color,
             bold: t.emphasis_color,
         };
+
+        // Entry title (legacy JobEntry: before 6/8, advance line_height - 2, after 1).
+        let (before, after) = if self.single_col {
+            let (b, a) = self.gaps_mm(LineKind::JobEntry);
+            // Inter-entry: fold the legacy blank-line spacer when this entry
+            // follows another entry's content (its bullets / subtitle), so the
+            // rendered inter-entry gap matches legacy (~18pt). The first entry
+            // after a section heading (prev = SectionHeader) gets no extra spacer.
+            let spacer = match self.prev_kind {
+                Some(LineKind::Bullet) | Some(LineKind::JobTitle) => pt_to_mm(ENTRY_SPACER_PT),
+                _ => 0.0,
+            };
+            (b + spacer, a)
+        } else {
+            (0.0, 0.0)
+        };
+        // Keep the title with at least its subtitle / first bullet.
+        if self.would_overflow(before + self.body_line() * 2.0) && !self.cur.texts.is_empty() {
+            self.new_page();
+        } else {
+            self.y += before;
+        }
         place_line(&mut self.cur, &e.title, self.frame.left, self.y, style, m);
         if let Some(date) = &e.date {
             let adv = m.advance_mm(date, fam, false, DATE_PT);
@@ -561,9 +699,20 @@ impl<'a> Flow<'a> {
                 color: t.date_color,
             });
         }
-        self.y += self.body_line();
+        if self.single_col {
+            self.y += self.body_line() - pt_to_mm(ENTRY_TITLE_NUDGE_PT) + after;
+            self.prev_kind = Some(LineKind::JobEntry);
+        } else {
+            self.y += self.body_line();
+        }
 
         if let Some(sub) = &e.subtitle {
+            let (sb, sa) = if self.single_col {
+                self.gaps_mm(LineKind::JobTitle)
+            } else {
+                (0.0, 0.0)
+            };
+            self.y += sb;
             if self.would_overflow(self.body_line()) {
                 self.new_page();
             }
@@ -578,13 +727,21 @@ impl<'a> Flow<'a> {
                 size_pt: t.body_pt - 0.5,
                 color: t.date_color,
             });
-            self.y += self.body_line();
+            self.y += self.body_line() + sa;
+            if self.single_col {
+                self.prev_kind = Some(LineKind::JobTitle);
+            }
         }
 
         for bullet in &e.bullets {
             self.lay_bullet(bullet);
         }
-        self.y += pt_to_mm(3.0);
+
+        // Two-column keeps its reviewed trailing gap after an entry; single-column
+        // relies on the next element's before-gap (matching legacy).
+        if !self.single_col {
+            self.y += pt_to_mm(3.0);
+        }
     }
 
     /// Flush the in-progress page and return every page this flow produced.
@@ -629,7 +786,7 @@ fn layout_single_column(
     let mut y = pt_to_mm(TOP_MARGIN_PT);
     lay_header(&mut page0, &mut y, &model.header, t, frame, m);
 
-    let mut flow = Flow::new(t, m, frame, y, page0);
+    let mut flow = Flow::new(t, m, frame, true, y, page0);
     for s in &model.sections {
         flow.lay_section(s);
     }
@@ -690,11 +847,11 @@ fn layout_two_column(
         geom,
     };
 
-    let mut sidebar_flow = Flow::new(t, m, sidebar_frame, header_bottom, Page::default());
+    let mut sidebar_flow = Flow::new(t, m, sidebar_frame, false, header_bottom, Page::default());
     sidebar_flow.lay_sections(&sidebar_sections);
     let sidebar_pages = sidebar_flow.into_pages();
 
-    let mut main_flow = Flow::new(t, m, main_frame, header_bottom, Page::default());
+    let mut main_flow = Flow::new(t, m, main_frame, false, header_bottom, Page::default());
     main_flow.lay_sections(&main_sections);
     let main_pages = main_flow.into_pages();
 
