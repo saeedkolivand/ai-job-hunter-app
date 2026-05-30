@@ -5,14 +5,17 @@
  * Uses intelligent chunking, summarization, and priority-based context selection.
  */
 
+import { charsPerToken, SECTION_LEXICON } from './locale.js';
+
 // ─── Token Estimation ─────────────────────────────────────────────────────────
 
 /**
- * Estimate token count (rough approximation: 1 token ≈ 4 characters)
- * More accurate than word count for LLM context limits.
+ * Estimate token count (rough approximation: 1 token ≈ N characters, where N is
+ * locale-dependent — `length / 4` under-counts languages like German, so pass the
+ * job-ad/resume `locale` to use its character-per-token factor).
  */
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+export function estimateTokens(text: string, locale?: string): number {
+  return Math.ceil(text.length / charsPerToken(locale));
 }
 
 /**
@@ -35,104 +38,80 @@ export interface ResumeSection {
 }
 
 /**
- * Detect resume sections using common headers
+ * Detect resume sections using locale-aware header lexicons (en, de, fr, es, it,
+ * nl, pt). Detection matches against the combined lexicon, so a resume in a
+ * different language than the UI still segments correctly instead of collapsing
+ * into one blob. `locale` is used for per-language token estimation.
  */
-export function detectSections(resume: string): ResumeSection[] {
+export function detectSections(resume: string, locale?: string): ResumeSection[] {
   const sections: ResumeSection[] = [];
-
-  // Common section headers (case-insensitive, with variations)
-  const sectionPatterns = [
-    {
-      pattern: /^(professional\s+summary|summary|profile|objective|about\s+me)/im,
-      name: 'Summary',
-      priority: 9,
-    },
-    {
-      pattern:
-        /^(work\s+experience|experience|employment\s+history|career|professional\s+experience)/im,
-      name: 'Experience',
-      priority: 10,
-    },
-    {
-      pattern: /^(education|academic\s+background|qualifications)/im,
-      name: 'Education',
-      priority: 8,
-    },
-    {
-      pattern: /^(skills|technical\s+skills|core\s+competencies|expertise)/im,
-      name: 'Skills',
-      priority: 9,
-    },
-    { pattern: /^(certifications|certificates|licenses)/im, name: 'Certifications', priority: 7 },
-    { pattern: /^(projects|portfolio|key\s+projects)/im, name: 'Projects', priority: 6 },
-    { pattern: /^(publications|research|papers)/im, name: 'Publications', priority: 5 },
-    { pattern: /^(awards|honors|achievements)/im, name: 'Awards', priority: 5 },
-    { pattern: /^(languages|language\s+skills)/im, name: 'Languages', priority: 4 },
-    { pattern: /^(volunteer|volunteering|community)/im, name: 'Volunteer', priority: 3 },
-    { pattern: /^(interests|hobbies)/im, name: 'Interests', priority: 2 },
-  ];
-
   const lines = resume.split('\n');
-  let currentSection: ResumeSection | null = null;
-  let currentContent: string[] = [];
+  let current: ResumeSection | null = null;
+  let content: string[] = [];
+
+  const finalize = (endIndex: number) => {
+    if (!current) return;
+    current.content = content.join('\n').trim();
+    current.endIndex = endIndex;
+    current.tokenCount = estimateTokens(current.content, locale);
+    sections.push(current);
+  };
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]?.trim() ?? '';
+    const line = (lines[i] ?? '').trim();
+    const header = line ? detectHeader(line) : null;
 
-    // Check if this line is a section header
-    let foundSection = false;
-    for (const { pattern, name, priority } of sectionPatterns) {
-      if (pattern.test(line)) {
-        // Save previous section
-        if (currentSection) {
-          currentSection.content = currentContent.join('\n').trim();
-          currentSection.endIndex = i - 1;
-          currentSection.tokenCount = estimateTokens(currentSection.content);
-          sections.push(currentSection);
-        }
-
-        // Start new section
-        currentSection = {
-          name,
-          content: '',
-          startIndex: i,
-          endIndex: i,
-          priority,
-          tokenCount: 0,
-        };
-        currentContent = [];
-        foundSection = true;
-        break;
-      }
-    }
-
-    if (!foundSection && currentSection) {
-      currentContent.push(line);
-    } else if (!foundSection && !currentSection) {
-      // Content before first section (usually contact info)
-      if (!sections.length) {
-        currentSection = {
-          name: 'Header',
-          content: '',
-          startIndex: 0,
-          endIndex: 0,
-          priority: 10,
-          tokenCount: 0,
-        };
-        currentContent = [line];
-      }
+    if (header) {
+      finalize(i - 1);
+      current = {
+        name: header.name,
+        content: '',
+        startIndex: i,
+        endIndex: i,
+        priority: header.priority,
+        tokenCount: 0,
+      };
+      content = [];
+    } else if (current) {
+      content.push(line);
+    } else {
+      // Content before the first detected header (usually contact info).
+      current = {
+        name: 'Header',
+        content: '',
+        startIndex: i,
+        endIndex: i,
+        priority: 10,
+        tokenCount: 0,
+      };
+      content = [line];
     }
   }
 
-  // Save last section
-  if (currentSection) {
-    currentSection.content = currentContent.join('\n').trim();
-    currentSection.endIndex = lines.length - 1;
-    currentSection.tokenCount = estimateTokens(currentSection.content);
-    sections.push(currentSection);
-  }
-
+  finalize(lines.length - 1);
   return sections;
+}
+
+/** Whether `lowerLine` begins with one of `terms` as a whole header word. */
+function matchesHeaderTerm(lowerLine: string, terms: string[]): boolean {
+  for (const term of terms) {
+    if (lowerLine === term) return true;
+    if (lowerLine.startsWith(term)) {
+      const next = lowerLine.charAt(term.length);
+      if (next === ' ' || next === ':' || next === '\t' || next === '|' || next === '-')
+        return true;
+    }
+  }
+  return false;
+}
+
+/** Classify a line as a section header via the multi-locale lexicon. */
+function detectHeader(line: string): { name: string; priority: number } | null {
+  const lower = line.toLowerCase();
+  for (const { name, priority, terms } of SECTION_LEXICON) {
+    if (matchesHeaderTerm(lower, terms)) return { name, priority };
+  }
+  return null;
 }
 
 // ─── Smart Truncation Strategies ──────────────────────────────────────────────
@@ -287,16 +266,22 @@ function summarizeSection(section: ResumeSection): string {
 }
 
 /**
- * Detect model size from model name.
- * Unknown / cloud provider names default to 'large' so they always
- * receive the full prompt — never the compact small-model variant.
+ * Detect model size from a model name / Ollama tag.
+ *
+ * Hosted cloud models are always `large`. For local models the **parameter size**
+ * is parsed generically from the tag (`:1b`, `-3.2-1b`, `:7b`, `70b`, with quant /
+ * `-instruct` suffixes) → `<4B small · 4–14B medium · >14B large`. An unrecognised
+ * LOCAL model (no size, not a known cloud name) defaults to the smaller/safer
+ * `small` prompt — never the full one.
  */
 export function detectModelSize(modelName: string): 'large' | 'medium' | 'small' {
   const name = modelName.toLowerCase();
 
-  // Cloud / large models — always full prompt
+  // Hosted cloud / large models — always the full prompt.
   if (
     name.includes('gpt-') ||
+    name.includes('gpt4') ||
+    /\bo[134]\b/.test(name) ||
     name.includes('claude') ||
     name.includes('gemini') ||
     name.includes('command-r') ||
@@ -308,31 +293,29 @@ export function detectModelSize(modelName: string): 'large' | 'medium' | 'small'
     return 'large';
   }
 
-  // Confirmed small local models (sub-7B, limited context)
-  if (
-    name.includes('llama3.2:1b') ||
-    name.includes('llama3.2:3b') ||
-    name.includes('llama3.1:1b') ||
-    name.includes('phi-3') ||
-    name.includes('phi3') ||
-    name.includes('gemma:2b') ||
-    name.includes('gemma2:2b') ||
-    name.includes('qwen2:0.5b') ||
-    name.includes('qwen2:1.5b') ||
-    name.includes('qwen2.5:0.5b') ||
-    name.includes('qwen2.5:1.5b') ||
-    name.includes('qwen2.5:3b') ||
-    name.includes('tinyllama') ||
-    name.includes('stablelm') ||
-    name.includes('smollm') ||
-    name.includes('deepseek-r1:1.5b') ||
-    name.includes('deepseek-r1:7b')
-  ) {
-    return 'small';
+  const size = parseParamSize(name);
+  if (size !== null) {
+    if (size < 4) return 'small';
+    if (size <= 14) return 'medium';
+    return 'large';
   }
 
-  // Medium models (7B-13B local) — full prompt, default for unrecognised local names
-  return 'medium';
+  // Unknown local model — safer to under-prompt than to over-prompt a tiny model.
+  return 'small';
+}
+
+/**
+ * Parse the parameter count (in billions) from a model tag. Normalizes separators
+ * so `llama3.2:1b`, `llama-3.2-1b`, and `qwen2.5:0.5b` all parse, and ignores
+ * version tokens (the `3` in `llama3`) and quant suffixes (`-q4`, `:q4_K_M`).
+ */
+function parseParamSize(name: string): number | null {
+  const normalized = name.replace(/[_:]/g, '-');
+  // A number directly followed by 'b' (billions), bounded so quant codes and
+  // version numbers don't match: e.g. 0.5b, 1b, 7b, 70b.
+  const matches = [...normalized.matchAll(/(?:^|[^0-9.])(\d+(?:\.\d+)?)\s*b(?![a-z0-9])/g)];
+  const sizes = matches.map((m) => parseFloat(m[1] ?? '')).filter((n) => !Number.isNaN(n));
+  return sizes.length ? Math.max(...sizes) : null;
 }
 
 /**

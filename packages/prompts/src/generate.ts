@@ -11,6 +11,9 @@
  * as literal asterisks.
  */
 
+import { resumeConventions } from './locale.js';
+import { type PromptTarget, resolveProfile } from './provider.js';
+
 export type GenerationMode =
   | 'ats' // Conservative ATS Optimization
   | 'recruiter' // Recruiter-Friendly Rewrite
@@ -335,11 +338,11 @@ function stripLinkBlock(resume: string): string {
 export function buildMetadataPrompt(
   resume: string,
   jobAd: string,
-  tier: 'large' | 'medium' | 'small' = 'large'
+  target: PromptTarget = 'large'
 ): { system: string; user: string } {
-  // One-shot example appended for small models — dramatically improves JSON compliance
+  // One-shot example for brief (small / unknown-local) targets — boosts JSON compliance.
   const oneShot =
-    tier === 'small'
+    resolveProfile(target).depth === 'brief'
       ? `\nExample output:\n{"candidateName":"Jane Smith","jobTitle":"Senior Frontend Engineer","companyName":"Acme Corp","resumeLanguage":"en","jobAdLanguage":"en","topRequirements":["React","TypeScript","GraphQL"],"candidateSeniority":"senior"}\n`
       : '';
 
@@ -377,13 +380,15 @@ Return ONLY the JSON object.`,
 
 export function buildResumeSystemPrompt(
   mode: GenerationMode,
-  tier: 'large' | 'medium' | 'small' = 'large'
+  target: PromptTarget = 'large'
 ): string {
+  const { depth } = resolveProfile(target);
   const modeInstr = MODES[mode].toneInstruction;
+  if (depth === 'task') return buildResumeSystemTaskBrief(mode, modeInstr);
+  if (depth !== 'brief') return buildResumeSystemFull(mode, modeInstr);
 
-  if (tier === 'small') {
-    const emphasisNote = `Wrap important job-ad keywords in **double asterisks** when they appear naturally (e.g. **React**, **TypeScript**). Max 2–3 bolded terms per bullet.`;
-    return `You are an expert resume writer. Rewrite the candidate's resume for the target job.
+  const emphasisNote = `Wrap important job-ad keywords in **double asterisks** when they appear naturally (e.g. **React**, **TypeScript**). Max 2–3 bolded terms per bullet.`;
+  return `You are an expert resume writer. Rewrite the candidate's resume for the target job.
 
 NEVER BREAK THESE RULES:
 1. NEVER invent skills, technologies, employers, dates, or achievements not in the original resume
@@ -408,8 +413,30 @@ OUTPUT: Plain text. Standard section headers. Bullets start with •. No markdow
 FINAL CHECK — read your output and confirm:
 ✓ No skill appears that is not in the original resume
 ✓ No phrase was copied from the job ad verbatim`;
-  }
+}
 
+function buildResumeSystemTaskBrief(mode: GenerationMode, modeInstr: string): string {
+  return `You are a resume-rewriting agent working a TASK. You may plan, draft, self-review, and revise before finalizing.
+
+GOAL: rewrite the candidate's resume tailored to the target job, in the target language, ready to pass ATS and impress a recruiter.
+
+HARD CONSTRAINTS (never violate):
+- Use only facts from the candidate's resume — never invent skills, employers, titles, dates, or numbers.
+- Only weave in job-ad keywords where they fit an EXISTING true statement.
+- Every bullet: action verb + what + technology + a measurable result that already exists in the source.
+
+ACCEPTANCE CHECKS — verify and revise until all pass:
+- Output is the rewritten resume only (no commentary), in the target language, using that market's standard section headers and one consistent date format.
+- No skill or phrase was copied from the job ad as if the candidate did it.
+- Keyword emphasis uses **double asterisks**, max 2–3 per bullet.
+
+MODE: ${MODES[mode].label}
+${modeInstr}
+
+OUTPUT: the finished resume (may be written to a file or returned).`;
+}
+
+function buildResumeSystemFull(mode: GenerationMode, modeInstr: string): string {
   return `You are an expert Resume Writer with deep knowledge of ATS systems, recruiter behavior, and modern hiring practices.
 
 Your resume rewrites achieve 90%+ ATS pass rates and 3x higher callback rates.
@@ -424,21 +451,16 @@ CORE RULES — NEVER BREAK (violations = instant failure):
 
 ATS OPTIMIZATION RULES (CRITICAL - 40% of success):
 
-**Section Headers (must be EXACTLY these):**
-- "Professional Summary" (NOT "About Me", "Profile", "Objective")
-- "Work Experience" (NOT "Employment History", "Career", "Experience")
-- "Education" (NOT "Academic Background", "Qualifications")
-- "Skills" (NOT "Technical Skills", "Competencies", "Expertise")
-- "Certifications" (if applicable)
-- "Projects" (if applicable)
-
-Why: ATS systems search for these exact headers. Creative names cause parsing failures.
+**Section Headers (use the target market's standard headers, consistently):**
+- Use the conventional resume section headers for the OUTPUT LANGUAGE / MARKET — the task provides the exact headers to use (the local equivalents of Summary, Work Experience, Education, Skills).
+- Never invent creative section names ("Career Journey") — ATS parsers rely on standard headers.
+- Apply the same header set consistently throughout.
 
 **Date Format (must be consistent):**
-- Use: "January 2021 – March 2023" OR "Jan 2021 – Mar 2023" OR "01/2021 – 03/2023"
+- Use ONE date format conventional for the target market throughout (the task provides an example).
 - NEVER mix formats in the same resume
 - Always use en-dash (–) not hyphen (-) for date ranges
-- Current roles: "January 2021 – Present"
+- Current roles: use the target language's word for "Present"
 
 **Bullet Point Rules:**
 - Start with strong past-tense action verb (Architected, Engineered, Led, Optimized, Delivered)
@@ -509,10 +531,9 @@ Write: "Optimized **Node.js** backend with **Redis** caching and **database inde
 The keywords must be woven into the natural sentence — not tacked on.
 
 **Quantification Rules:**
-- Always include numbers when possible: percentages, time saved, users served, revenue impact
-- If original resume has vague scale, infer reasonable metrics: "team" → "team of 5", "users" → "10k+ users"
-- Use ranges if exact numbers unknown: "50-100k users", "$1M-$5M revenue"
-- Common metrics: response time, load time, uptime, throughput, cost savings, revenue, user growth, team size
+- Surface numbers that ALREADY exist in the source resume: percentages, time saved, users served, revenue impact.
+- NEVER invent or estimate metrics — if a bullet has no number in the original, keep it qualitative rather than fabricating "team of 5" or "$1M–$5M".
+- Common metrics to surface when present: response time, load time, uptime, throughput, cost savings, revenue, user growth, team size.
 
 MODE: ${MODES[mode].label}
 ${modeInstr}
@@ -553,22 +574,27 @@ export function buildResumePrompt(
   jobAd: string,
   meta: GenerationMeta,
   _mode: GenerationMode,
-  _tier: 'large' | 'medium' | 'small' = 'large'
+  target: PromptTarget = 'large'
 ): string {
+  const { resumeChars, jobAdChars } = resolveProfile(target);
+  // Section headers + date format follow the JOB-AD locale, not a fixed market.
+  const conv = resumeConventions(meta.jobAdLanguage ?? meta.targetLanguage);
+
   const langNote = meta.mismatch
     ? `IMPORTANT: The resume is in ${meta.resumeLanguage} but the job ad is in ${meta.jobAdLanguage}. Rewrite entirely in ${meta.targetLanguage} using job market terminology native to that market.`
     : `Write in ${meta.targetLanguage}.`;
+  const conventionsNote = `CONVENTIONS (target market: ${meta.targetLanguage}): use these section headers — ${conv.headers.summary} / ${conv.headers.experience} / ${conv.headers.education} / ${conv.headers.skills}; and one consistent date format like ${conv.dateExample}.`;
 
   const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? []);
   const { block: linksBlock } = parseLinksFromResume(resume);
   const resumeBody = stripLinkBlock(resume);
 
   return `${linksBlock ? `${linksBlock}\n\n` : ''}<candidate_resume>
-${resumeBody.slice(0, 5000)}
+${resumeBody.slice(0, resumeChars)}
 </candidate_resume>
 
 <job_ad>
-${jobAd.slice(0, 2500)}
+${jobAd.slice(0, jobAdChars)}
 </job_ad>
 
 Every skill, job title, company, date, achievement, and responsibility in your output MUST come from <candidate_resume>.
@@ -578,6 +604,7 @@ Candidate: ${meta.candidateName || 'Unknown'}
 Target Role: ${meta.jobTitle || 'Unknown'}
 Company: ${meta.companyName || 'Unknown'}
 ${langNote}
+${conventionsNote}
 ${emphasisBlock}
 
 EXAMPLE — MISSING SKILLS (follow this exactly):
@@ -636,16 +663,16 @@ Line 2: Job title (plain text)
 Line 3: City, Country | email | phone | LinkedIn | GitHub
 Use the short label names from CANDIDATE PROFILE LINKS (e.g. "LinkedIn", "GitHub"). Do NOT write full URLs on this line.
 (blank line)
-PROFESSIONAL SUMMARY
+${conv.headers.summary.toUpperCase()}
 (summary paragraph)
 (blank line)
-WORK EXPERIENCE
+${conv.headers.experience.toUpperCase()}
 (blank line)
-Role Title, Company Name (Mon Year – Mon Year)
+Role Title, Company Name (${conv.dateExample})
 • Bullet using CAR format with **bolded tech**
 • ...
 (blank line)
-SKILLS
+${conv.headers.skills.toUpperCase()}
 Category: Skill1, **Skill2**, Skill3
 ...
 
@@ -656,12 +683,14 @@ Start the resume now:`;
 
 export function buildCoverLetterSystemPrompt(
   mode: GenerationMode,
-  tier: 'large' | 'medium' | 'small' = 'large'
+  target: PromptTarget = 'large'
 ): string {
+  const { depth } = resolveProfile(target);
   const modeInstr = MODES[mode].toneInstruction;
+  if (depth === 'task') return buildCoverLetterSystemTaskBrief(mode, modeInstr);
+  if (depth !== 'brief') return buildCoverLetterSystemFull(mode, modeInstr);
 
-  if (tier === 'small') {
-    return `You are a cover letter writer. Write a focused, specific cover letter.
+  return `You are a cover letter writer. Write a focused, specific cover letter.
 
 Rules:
 1. Total body: 200–300 words
@@ -675,8 +704,27 @@ MODE: ${MODES[mode].label}
 ${modeInstr}
 
 OUTPUT: Complete cover letter with header, salutation, 4 paragraphs, sign-off. Use **bold** for keywords. Output the letter only.`;
-  }
+}
 
+function buildCoverLetterSystemTaskBrief(mode: GenerationMode, modeInstr: string): string {
+  return `You are a cover-letter agent working a TASK. Plan, draft, self-review, and revise before finalizing.
+
+GOAL: a specific, non-generic cover letter (200–300 words) in the target language that connects this candidate's real achievements to this job's top requirements.
+
+HARD CONSTRAINTS: never claim skills/experience not in the resume; use the real company name and job title; don't copy job-ad phrases as the candidate's own work.
+
+ACCEPTANCE CHECKS — verify and revise until all pass:
+- First sentence is specific value, not "I am excited/writing to apply".
+- Body 200–300 words; at least one concrete achievement/metric from the resume; at least one job-ad requirement addressed with a **bolded** keyword.
+- Written in the target language with that market's letter conventions.
+
+MODE: ${MODES[mode].label}
+${modeInstr}
+
+OUTPUT: the finished letter (may be written to a file or returned).`;
+}
+
+function buildCoverLetterSystemFull(mode: GenerationMode, modeInstr: string): string {
   return `You are a cover letter specialist who writes letters that get read — not filtered out.
 
 WHAT KILLS COVER LETTERS (never do these):
@@ -737,9 +785,11 @@ export function buildCoverLetterPrompt(
   jobAd: string,
   meta: GenerationMeta,
   _mode: GenerationMode,
-  _tier: 'large' | 'medium' | 'small' = 'large'
+  target: PromptTarget = 'large'
 ): string {
-  const today = new Date().toLocaleDateString('en-GB', {
+  const { resumeChars, jobAdChars } = resolveProfile(target);
+  // Date in the target language's convention, following the job-ad locale.
+  const today = new Date().toLocaleDateString(meta.targetLanguage || 'en', {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
@@ -754,11 +804,11 @@ export function buildCoverLetterPrompt(
   const resumeBody = stripLinkBlock(resume);
 
   return `${linksBlock ? `${linksBlock}\n\n` : ''}<candidate_resume>
-${resumeBody.slice(0, 4000)}
+${resumeBody.slice(0, resumeChars)}
 </candidate_resume>
 
 <job_ad>
-${jobAd.slice(0, 2500)}
+${jobAd.slice(0, jobAdChars)}
 </job_ad>
 
 Every factual claim about the candidate MUST be traceable to a line in <candidate_resume>. Never claim skills or experience from <job_ad> alone.

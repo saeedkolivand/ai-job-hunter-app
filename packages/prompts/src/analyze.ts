@@ -7,13 +7,9 @@
  * - Output validator with JSON repair
  */
 
-import {
-  estimateTokens,
-  getModelTier,
-  getResumeStats,
-  getStrategyForModel,
-  truncateResume,
-} from './context-manager';
+import { estimateTokens, getModelTier, truncateResume } from './context-manager';
+import { resumeConventions } from './locale.js';
+import { type PromptTarget, resolveProfile } from './provider.js';
 
 // ─── Output schema types ────────────────────────────────────────────────────
 
@@ -145,9 +141,34 @@ OUTPUT: Return ONLY the JSON object matching the schema. No markdown. No code bl
 
 // ─── System prompt ───────────────────────────────────────────────────────────
 
-export function buildSystemPrompt(tier: 'large' | 'medium' | 'small' = 'large'): string {
-  if (tier === 'small') return buildSystemPromptCompact();
+export function buildSystemPrompt(target: PromptTarget = 'large'): string {
+  const { depth } = resolveProfile(target);
+  if (depth === 'brief') return buildSystemPromptCompact();
+  if (depth === 'task') return buildSystemPromptTaskBrief();
+  return buildSystemPromptFull();
+}
 
+// ─── CLI task-brief system prompt (agentic, self-verifying) ──────────────────
+
+function buildSystemPromptTaskBrief(): string {
+  return `You are a resume-analysis agent working a TASK, not answering a single prompt. You may gather and expand context, reason in multiple steps, and self-correct before finalizing.
+
+GOAL: produce a rigorous, honest resume-vs-job-ad analysis as one JSON object matching the schema you are given.
+
+Apply three lenses at once: ATS parser (exact keyword match, parse-safety, standard section headers), senior recruiter (7-second scan, quantified impact, red/green flags), and career strategist (gap analysis, impact-ranked fixes).
+
+ACCEPTANCE CHECKS — verify before finalizing, and revise until all pass:
+- Output is exactly one JSON object conforming to the schema: every required field present, correct types, all scores integers 0–100.
+- Every statement is grounded in the provided resume / job-ad text — never invent skills, employers, titles, dates, or numbers.
+- A keyword is "missing" only if it explicitly appears in the job ad.
+- Hard score rules hold: 5+ missing required keywords → ats & keywordCoverage < 65; any ATS-breaking format (tables, multi-column) → ats < 60; wrong seniority → jobMatch < 70; language/market mismatch → languageAlignment < 50.
+
+You may validate your draft against the schema (and a JSON parser) and iterate. OUTPUT: the final JSON object only — it may be written to a file or returned. No prose outside it.`;
+}
+
+// ─── Full multi-perspective system prompt (cloud / large local) ──────────────
+
+function buildSystemPromptFull(): string {
   return `You are a senior hiring expert with three simultaneous perspectives:
 
 PERSPECTIVE 1 — ATS ENGINE (CRITICAL - 40% weight)
@@ -426,11 +447,13 @@ export function buildAnalysisPrompt(
   resume: string,
   jobAd: string,
   meta: PromptMeta = {},
-  tier?: 'large' | 'medium' | 'small'
+  target?: PromptTarget
 ): string {
-  // Resolve tier from explicit arg, meta.modelName, or default to large
-  const resolvedTier = tier ?? (meta.modelName ? getModelTier(meta.modelName) : 'large');
-  const isSmall = resolvedTier === 'small';
+  const resolved = resolveProfile(
+    target ?? (meta.modelName ? getModelTier(meta.modelName) : 'large')
+  );
+  const { depth, schema, truncation, jobAdChars } = resolved;
+  const schemaStr = schema === 'compact' ? SCHEMA_COMPACT : SCHEMA;
 
   const toneNote = meta.outputTone ? `Write all feedback text in a ${meta.outputTone} tone.` : '';
   const langNote =
@@ -450,31 +473,19 @@ export function buildAnalysisPrompt(
 Use these pre-detected languages for your analysis. DO NOT perform your own language detection.`
       : '';
 
-  // Smart truncation based on model tier
-  const resumeTokens = estimateTokens(resume);
-  const stats = getResumeStats(resume);
+  // Section headers + date conventions follow the JOB-AD locale, not a fixed market.
+  const conv = resumeConventions(meta.jobAdLanguage ?? meta.targetLocale);
+  const marketNote = `
+### MARKET CONVENTIONS (job-ad locale: ${meta.jobAdLanguage ?? meta.targetLocale ?? 'unknown'})
+Standard section headers for this market: ${conv.headers.summary} / ${conv.headers.experience} / ${conv.headers.education} / ${conv.headers.skills}. Treat these and their direct English equivalents as ATS-standard — do not penalize a resume for using them. Judge date formatting against this market's convention (e.g. ${conv.dateExample}), not a fixed US or German style.`;
 
-  // Get appropriate strategy based on model size
-  const strategy = meta.modelName
-    ? getStrategyForModel(meta.modelName)
-    : getStrategyForModel('gpt-4');
-  const modelType = strategy.modelType || 'large';
+  // Truncate the resume per the resolved strategy; cap the job ad by chars.
+  const resumeTokens = estimateTokens(resume, meta.jobAdLanguage);
+  const r = resumeTokens > truncation.maxTokens ? truncateResume(resume, truncation) : resume;
+  const j = jobAd.slice(0, jobAdChars);
 
-  let r: string;
-
-  if (resumeTokens > strategy.maxTokens) {
-    console.warn(
-      `Resume/model mismatch: ${stats.estimatedPages} pages (${resumeTokens} tokens) for ${modelType} model (limit: ${strategy.maxTokens})`
-    );
-    r = truncateResume(resume, strategy);
-  } else {
-    r = resume;
-  }
-
-  const j = jobAd.slice(0, isSmall ? 1500 : 3000);
-
-  // Compact prompt for small models — fewer steps, simpler instructions
-  if (isSmall) {
+  // Compact prompt for small / unknown-local models — fewer steps.
+  if (depth === 'brief') {
     return `<candidate_resume>
 ${r}
 </candidate_resume>
@@ -483,6 +494,7 @@ ${r}
 ${j}
 </job_ad>
 ${langDetectionNote}
+${marketNote}
 
 ${toneNote}
 ${langNote}
@@ -499,9 +511,32 @@ Steps:
 7. Write an honest recruiter reaction in 2 sentences
 
 Return EXACTLY this JSON and nothing else:
-${SCHEMA_COMPACT}
+${schemaStr}
 
 Return ONLY the JSON.`;
+  }
+
+  // CLI agent — frame as a self-verifying task brief, not a single-shot prompt.
+  if (depth === 'task') {
+    return `<candidate_resume>
+${r}
+</candidate_resume>
+
+<job_ad>
+${j}
+</job_ad>
+${langDetectionNote}
+${marketNote}
+
+${toneNote}
+${langNote}
+
+TASK: analyze the resume against the job ad through your three lenses (ATS, recruiter, strategist). Extract the job requirements, map each to the resume (semantic match), audit ATS formatting and achievement quality, then score every dimension honestly per your acceptance checks. Draft the JSON, validate it against the schema, and revise until every acceptance check passes.
+
+Return a JSON object matching this schema:
+${schemaStr}
+
+Return only the JSON object.`;
   }
 
   return `### RESUME TEXT ###
@@ -510,6 +545,7 @@ ${r}
 ### JOB ADVERTISEMENT ###
 ${j}
 ${langDetectionNote}
+${marketNote}
 
 ### ANALYSIS STEPS ###
 
@@ -613,7 +649,7 @@ ${toneNote}
 ${langNote}
 
 Return EXACTLY this JSON structure:
-${SCHEMA}
+${schemaStr}
 
 Return ONLY the JSON. Nothing else.`;
 }

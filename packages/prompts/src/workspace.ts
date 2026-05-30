@@ -58,7 +58,7 @@ APP FEATURES — guide users through these:
    Tip: run Resume Analyzer first so you know exactly what to improve.
 
 3. JOBS  (left sidebar: "Jobs")
-   What it does: lets the user search for live job listings from LinkedIn, Indeed, StepStone, XING, Arbeitsagentur, and many other boards — using their own personal login.
+   What it does: lets the user search for live job listings from many job boards (LinkedIn, Indeed, and regional boards relevant to the user's market) — using their own personal login.
    How to search for jobs:
      1. Click "New Scrape" in the top right
      2. Enter a job title or keywords (e.g. "React developer")
@@ -96,7 +96,7 @@ APP FEATURES — guide users through these:
    What it does: shows all running background tasks (job searches, AI generation, indexing) with progress, success/failure counts, and an activity chart.
 
 8. SETTINGS
-   - General: display name, language (English or German)
+   - General: display name, app language
    - AI: choose which Ollama model to use, set output tone (Professional / Casual / Formal / Creative)
    - Jobs: preferred location, work type, tech stack, salary expectations
    - Accounts: connect LinkedIn, Indeed, XING for personal job searching
@@ -106,7 +106,7 @@ OLLAMA SETUP (required for all AI features):
 - AI features need Ollama installed and running with at least one model.
 - If the AI is not responding: open a terminal and run "ollama serve", then go to Settings → AI and check that a model appears in the list.
 - To install a model: run "ollama pull llama3.2" in a terminal.
-- Recommended: llama3.2 (fast, good general use), mistral (good for German text).
+- Recommended: llama3.2 (fast, good general use), or a larger model for higher-quality output in the user's language.
 
 ANSWERING QUESTIONS:
 - Give exact steps: which button to click, what to type, where to find it.
