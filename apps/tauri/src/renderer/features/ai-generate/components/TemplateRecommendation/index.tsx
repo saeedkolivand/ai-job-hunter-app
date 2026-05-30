@@ -11,7 +11,7 @@ import { useRecommendTemplate } from '@/services';
 interface Props {
   meta: GenerationMeta | null;
   templateId: TemplateId;
-  onApply: (templateId: TemplateId, atsSuggested: boolean) => void;
+  onApply: (templateId: TemplateId, atsSuggested: boolean, locale: string) => void;
 }
 
 /**
@@ -64,7 +64,7 @@ export function TemplateRecommendation({ meta, templateId, onApply }: Props) {
               size="sm"
               variant="ghost"
               className="h-6 px-2 text-[11px] text-brand-soft hover:text-brand"
-              onClick={() => onApply(rec.templateId, rec.atsSuggested)}
+              onClick={() => onApply(rec.templateId, rec.atsSuggested, rec.locale)}
             >
               {t('aiGenerate.applyRecommendation')}
             </Button>

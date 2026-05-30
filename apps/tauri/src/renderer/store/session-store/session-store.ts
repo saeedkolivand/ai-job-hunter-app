@@ -18,6 +18,8 @@ interface AIGenerateSlice {
   target: AIGenerateTarget;
   templateId: TemplateId;
   atsMode: boolean;
+  /** Target market id (`us`, `de`, …); drives export page size. */
+  locale: string;
   resumeOut: string;
   coverOut: string;
   activeOut: 'resume' | 'cover';
@@ -77,6 +79,7 @@ const AI_GENERATE_DEFAULTS: AIGenerateSlice = {
   target: 'both',
   templateId: 'modern',
   atsMode: false,
+  locale: 'en',
   resumeOut: '',
   coverOut: '',
   activeOut: 'resume',
