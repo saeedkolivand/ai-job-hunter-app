@@ -389,7 +389,13 @@
       "install": "Restart & install",
       "error": "Check failed",
       "whatsNew": "What's new in",
-      "downloadFromGitHub": "Download from GitHub"
+      "downloadFromGitHub": "Download from GitHub",
+      "viewChangelog": "View changelog",
+      "hideChangelog": "Hide changelog",
+      "current": "Current",
+      "loadingChangelog": "Loading changelog…",
+      "changelogError": "Couldn't load the changelog.",
+      "changelogEmpty": "No releases found."
     }
   },
   "aiGenerate": {

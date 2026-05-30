@@ -60,4 +60,5 @@ export const keys = {
   conversations: { detail: (id: string) => ['conversations', id] as const },
   apply: { catalog: ['apply', 'catalog'] as const },
   aiGenerations: { all: ['aiGenerations'] as const },
+  updater: { changelog: ['updater', 'changelog'] as const },
 } as const;

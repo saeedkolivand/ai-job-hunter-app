@@ -1,10 +1,19 @@
-import { CheckCircle2, Download, ExternalLink, Loader2, Sparkles } from 'lucide-react';
+import {
+  CheckCircle2,
+  ChevronDown,
+  Download,
+  ExternalLink,
+  History,
+  Loader2,
+  Sparkles,
+} from 'lucide-react';
+import { useState } from 'react';
 
-import { Button, GlassCard, IconBadge, RefreshButton, SectionLabel } from '@ajh/ui';
+import { Button, cn, GlassCard, IconBadge, RefreshButton, SectionLabel } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { useAppVersion, useOpenExternal } from '@/services';
-import { useUpdater } from '@/services/use-updater';
+import { useChangelog, useUpdater } from '@/services/use-updater';
 
 const NO_RELEASE_PATTERNS = [
   'valid release json',
@@ -29,6 +38,9 @@ export function UpdateSection() {
     : '';
   const { status, check, download, install } = useUpdater();
   const openExternal = useOpenExternal();
+  const [showChangelog, setShowChangelog] = useState(false);
+  const changelog = useChangelog(showChangelog);
+  const currentVersion = String(versionRaw).replace(/^v/, '');
 
   const noRelease = status.state === 'error' && isNoReleaseError(status.message);
   const GITHUB_RELEASES_URL =
@@ -107,7 +119,7 @@ export function UpdateSection() {
         </div>
       )}
 
-      {/* Changelog */}
+      {/* What's new in the available update */}
       {(status.state === 'available' ||
         status.state === 'downloading' ||
         status.state === 'downloaded') &&
@@ -122,6 +134,81 @@ export function UpdateSection() {
             </div>
           </div>
         )}
+
+      {/* Changelog history (current + previous versions) */}
+      <div className="mt-4 border-t border-white/[0.05] pt-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowChangelog((v) => !v)}
+          className="gap-2 text-xs text-foreground/50 hover:text-foreground/80"
+        >
+          <History size={12} />
+          {showChangelog ? t('settings.update.hideChangelog') : t('settings.update.viewChangelog')}
+          <ChevronDown
+            size={12}
+            className={cn('transition-transform', showChangelog && 'rotate-180')}
+          />
+        </Button>
+
+        {showChangelog && (
+          <div className="mt-3 max-h-80 space-y-4 overflow-y-auto pr-1">
+            {changelog.isPending && (
+              <div className="flex items-center gap-2 text-xs text-foreground/40">
+                <Loader2 size={13} className="animate-spin" />
+                {t('settings.update.loadingChangelog')}
+              </div>
+            )}
+
+            {changelog.data?.error && (
+              <div className="space-y-2 text-xs text-foreground/50">
+                <p>{t('settings.update.changelogError')}</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => openExternal.mutate(GITHUB_RELEASES_URL)}
+                  className="gap-2 text-foreground/50 hover:text-foreground/80"
+                >
+                  <ExternalLink size={12} />
+                  {t('settings.update.downloadFromGitHub')}
+                </Button>
+              </div>
+            )}
+
+            {!changelog.isPending &&
+              !changelog.data?.error &&
+              changelog.data?.releases?.length === 0 && (
+                <p className="text-xs text-foreground/40">{t('settings.update.changelogEmpty')}</p>
+              )}
+
+            {changelog.data?.releases?.map((release) => {
+              const isCurrent = release.version === currentVersion;
+              return (
+                <div key={release.version} className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-foreground/80">v{release.version}</span>
+                    {isCurrent && (
+                      <span className="rounded-full bg-brand/15 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-brand-soft">
+                        {t('settings.update.current')}
+                      </span>
+                    )}
+                    {release.publishedAt && (
+                      <span className="text-[10px] text-foreground/30">
+                        {new Date(release.publishedAt).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                  {release.body && (
+                    <div className="whitespace-pre-wrap rounded-lg border border-white/[0.05] bg-white/[0.02] p-3 text-xs leading-relaxed text-foreground/50">
+                      {release.body}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </GlassCard>
   );
 }

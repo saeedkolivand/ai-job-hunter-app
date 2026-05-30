@@ -162,6 +162,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       check: noop,
       download: noop,
       install: noop,
+      changelog: () => Promise.resolve({ releases: [] }),
       onStatus: unsub,
     },
 

@@ -17,14 +17,17 @@
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::process::Stdio;
-use std::time::Duration;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
 use crate::error::{AppError, AppResult};
 use crate::jobs::JobTracker;
+use crate::platform::NoWindow;
 
 use super::{
     AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace, TokenParam,
@@ -239,10 +242,26 @@ impl AiProvider for CliAgentClient {
 
 // ── Detection ────────────────────────────────────────────────────────────────────
 
+/// How long a `<binary> --version` result is trusted before re-probing. Install
+/// status changes rarely, so [`detect_cached`] collapses the 5 s health poll from
+/// a subprocess spawn per tick to at most one per binary per TTL.
+const DETECT_TTL: Duration = Duration::from_secs(300);
+
+struct Detected {
+    ok: bool,
+    version: Option<String>,
+    at: Instant,
+}
+
+fn detect_cache() -> &'static Mutex<HashMap<String, Detected>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Detected>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 /// Whether the binary is installed (`<binary> --version` succeeds), plus its
 /// reported version. Mirrors `ollama::reachable_model()` as the health signal.
 pub async fn detect(binary: &str) -> (bool, Option<String>) {
-    let fut = Command::new(binary).arg("--version").output();
+    let fut = Command::new(binary).arg("--version").no_window().output();
     match tokio::time::timeout(Duration::from_secs(5), fut).await {
         Ok(Ok(out)) if out.status.success() => {
             let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -250,6 +269,26 @@ pub async fn detect(binary: &str) -> (bool, Option<String>) {
         }
         _ => (false, None),
     }
+}
+
+/// Cached [`detect`]: re-probes a binary at most once per [`DETECT_TTL`], so the
+/// recurring `system_health` poll stops spawning a subprocess every few seconds.
+/// The lock is released before the `.await`, never held across it.
+pub async fn detect_cached(binary: &str) -> (bool, Option<String>) {
+    {
+        let cache = detect_cache().lock();
+        if let Some(d) = cache.get(binary) {
+            if d.at.elapsed() < DETECT_TTL {
+                return (d.ok, d.version.clone());
+            }
+        }
+    }
+    let (ok, version) = detect(binary).await;
+    detect_cache().lock().insert(
+        binary.to_string(),
+        Detected { ok, version: version.clone(), at: Instant::now() },
+    );
+    (ok, version)
 }
 
 // ── Streaming engine ─────────────────────────────────────────────────────────────
@@ -447,6 +486,7 @@ fn spawn(binary: &str, inv: &CliInvocation, prompt: &str) -> std::io::Result<tok
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
+        .no_window()
         .spawn()
 }
 
@@ -546,5 +586,20 @@ mod tests {
         let (ok, version) = detect("ajh-definitely-not-a-real-binary-x9z").await;
         assert!(!ok);
         assert!(version.is_none());
+    }
+
+    #[tokio::test]
+    async fn detect_cached_serves_cached_result_within_ttl() {
+        let bin = "ajh-cache-probe-binary-not-real-q7w";
+        // First call probes (binary missing) and caches the negative result.
+        assert_eq!(detect_cached(bin).await, (false, None));
+        // Poison the cache with a value a real probe could never produce, then
+        // confirm the next call returns it — proving it read the cache, not the
+        // binary (i.e. no re-spawn within the TTL).
+        detect_cache().lock().insert(
+            bin.to_string(),
+            Detected { ok: true, version: Some("9.9.9".into()), at: Instant::now() },
+        );
+        assert_eq!(detect_cached(bin).await, (true, Some("9.9.9".to_string())));
     }
 }

@@ -360,6 +360,7 @@ fn main() {
             updater::updater_check,
             updater::updater_download,
             updater::updater_install,
+            updater::updater_changelog,
         ])
         .run(tauri::generate_context!())
         .expect("error running tauri application");

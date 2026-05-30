@@ -16,7 +16,7 @@ pub async fn system_health(app: AppHandle) -> Value {
     // from the registry so new agents appear here automatically.
     let mut cli_agents = Map::new();
     for backend in cli_agent::all() {
-        let (detected, version) = cli_agent::detect(&backend.binary()).await;
+        let (detected, version) = cli_agent::detect_cached(&backend.binary()).await;
         cli_agents.insert(
             backend.id().as_str().to_string(),
             json!({ "detected": detected, "version": version }),

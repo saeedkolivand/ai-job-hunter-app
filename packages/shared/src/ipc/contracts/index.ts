@@ -157,4 +157,9 @@ export { SEARCH_CHANNELS, type SearchContract } from './search.js';
 export { SHORTCUTS_CHANNELS, type ShortcutsContract } from './shortcuts.js';
 export { SUPPORT_CHANNELS, type SupportContract } from './support.js';
 export { SYSTEM_CHANNELS, type SystemContract } from './system.js';
-export { UPDATER_CHANNELS, type UpdaterContract } from './updater.js';
+export {
+  type ChangelogRelease,
+  type ChangelogResult,
+  UPDATER_CHANNELS,
+  type UpdaterContract,
+} from './updater.js';
