@@ -44,6 +44,12 @@ pub async fn documents_import(app: AppHandle, req: DocumentsImportRequest) -> Va
         tracing::warn!(warning = %w, file = %req.name, "extraction warning");
     }
 
+    // Structured review: per-field confidence + missing/low-confidence flags the
+    // renderer surfaces before generation. Computed before `extraction.text` is
+    // moved into the record.
+    let review = serde_json::to_value(crate::extraction::structured::structure(&extraction))
+        .unwrap_or(json!(null));
+
     let store = app.state::<crate::documents::DocumentStore>();
     let doc_id = crate::documents::make_doc_id();
     let record = crate::documents::DocumentRecord {
@@ -58,7 +64,7 @@ pub async fn documents_import(app: AppHandle, req: DocumentsImportRequest) -> Va
         is_default: false,
     };
     match store.insert(&record) {
-        Ok(()) => json!({ "id": doc_id, "success": true }),
+        Ok(()) => json!({ "id": doc_id, "success": true, "review": review }),
         Err(e) => json!({ "error": e.to_string() }),
     }
 }

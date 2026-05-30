@@ -134,7 +134,15 @@ export { CONVERSATIONS_CHANNELS, type ConversationsContract } from './conversati
 export { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js';
 export { DATA_CHANNELS, type DataContract } from './data.js';
 export { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
-export { DOCUMENTS_CHANNELS, type DocumentsContract } from './documents.js';
+export {
+  type ConfidenceLevel,
+  DOCUMENTS_CHANNELS,
+  type DocumentsContract,
+  type ResumeField,
+  type SectionSummary,
+  type SourceSpan,
+  type StructuredResume,
+} from './documents.js';
 export { GEOCODE_CHANNELS, type GeocodeContract } from './geocode.js';
 export { JOB_PREFERENCES_CHANNELS, type JobPreferencesContract } from './jobPreferences.js';
 export { JOBS_CHANNELS, type JobsContract } from './jobs.js';

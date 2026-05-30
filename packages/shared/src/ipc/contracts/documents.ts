@@ -72,10 +72,53 @@ export interface CoverLetterExportRequest {
   locale?: 'en' | 'de';
 }
 
+export type ConfidenceLevel = 'high' | 'medium' | 'low';
+
+/** Byte span `[start, end)` into the extracted source text. */
+export interface SourceSpan {
+  start: number;
+  end: number;
+}
+
+/** One structured-extraction field: value, confidence, and where it was found. */
+export interface ResumeField<T> {
+  value: T;
+  confidence: ConfidenceLevel;
+  sourceSpan?: SourceSpan;
+}
+
+/** A detected section in the review inventory. */
+export interface SectionSummary {
+  heading: string;
+  /** Canonical kind: `experience`, `skills`, `custom`, … */
+  kind: string;
+  confidence: ConfidenceLevel;
+}
+
+/**
+ * Typed view of an imported resume with per-field confidence. Returned by
+ * `import` so the renderer can surface low-confidence / missing fields for
+ * review before generation. `reviewRequired` flags (never blocks).
+ */
+export interface StructuredResume {
+  name: ResumeField<string>;
+  email?: ResumeField<string>;
+  phone?: ResumeField<string>;
+  location?: ResumeField<string>;
+  links: ResumeField<string>[];
+  sections: SectionSummary[];
+  /** Whole-document confidence (the fast gate). */
+  overall: ConfidenceLevel;
+  reviewRequired: boolean;
+  warnings: string[];
+}
+
 export interface DocumentsContract {
   list(): Promise<DocumentRecord[]>;
 
-  import(req: DocumentImportRequest): Promise<{ id: string; success: boolean }>;
+  import(
+    req: DocumentImportRequest
+  ): Promise<{ id: string; success: boolean; review?: StructuredResume }>;
 
   remove(id: string): Promise<void>;
 

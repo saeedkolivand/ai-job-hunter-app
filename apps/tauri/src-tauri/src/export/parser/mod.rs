@@ -52,6 +52,11 @@ pub fn normalize_unicode(text: &str) -> String {
             '\u{2116}' => "No.",
             '\u{2020}' | '\u{2021}' => "*",                               // daggers
             '\u{00B7}' => ".",                                             // middle dot
+            // Private Use Area + icon-font glyphs + replacement char: these render
+            // as boxes/garbage (or nothing) in the bundled fonts — drop them.
+            c if is_private_use(c) || c == '\u{FFFD}' => "",
+            // C0/C1 control characters other than the whitespace we keep.
+            c if c.is_control() && c != '\n' && c != '\r' && c != '\t' => "",
             _ => {
                 out.push(ch);
                 continue;
@@ -60,6 +65,16 @@ pub fn normalize_unicode(text: &str) -> String {
         out.push_str(replacement);
     }
     out
+}
+
+/// Unicode Private Use Area code points (BMP + planes 15/16). Icon fonts
+/// (Font Awesome, etc.) map glyphs here, so extracted/pasted text often contains
+/// PUA code points that are meaningless without the original font.
+pub fn is_private_use(c: char) -> bool {
+    matches!(
+        c as u32,
+        0xE000..=0xF8FF | 0xF_0000..=0xF_FFFD | 0x10_0000..=0x10_FFFD
+    )
 }
 
 // Lazy-initialized regexes for performance

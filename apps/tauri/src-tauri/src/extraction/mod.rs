@@ -1,7 +1,12 @@
+pub mod clean;
 pub mod confidence;
 pub mod docx;
+pub mod html;
 pub mod pdf;
 pub mod plain;
+pub mod registry;
+pub mod rtf;
+pub mod structured;
 pub mod types;
 
 use std::path::Path;
@@ -9,7 +14,7 @@ use std::path::Path;
 use tracing::{instrument, warn};
 
 use crate::error::{AppError, AppResult};
-use types::{ExtractionError, ExtractedResume, SourceFormat};
+use types::{ExtractionError, ExtractedResume};
 
 const MAX_BYTES: usize = 10 * 1024 * 1024; // 10 MB
 
@@ -36,6 +41,9 @@ pub async fn extract_resume(path: String) -> AppResult<ExtractedResume> {
 }
 
 /// Pure (non-async) router — easier to unit-test without a Tauri runtime.
+///
+/// Dispatch is data-driven: the extension is resolved against the
+/// [`registry`], so adding a format never touches this function.
 pub fn route(path: &str, bytes: &[u8]) -> Result<ExtractedResume, ExtractionError> {
     if bytes.len() > MAX_BYTES {
         return Err(ExtractionError::FileTooLarge { size: bytes.len() });
@@ -47,49 +55,10 @@ pub fn route(path: &str, bytes: &[u8]) -> Result<ExtractedResume, ExtractionErro
         .unwrap_or("")
         .to_lowercase();
 
-    match ext.as_str() {
-        "pdf" => route_pdf(bytes),
-        "docx" => docx::extract(bytes),
-        "txt" | "md" | "markdown" => plain::extract(bytes),
-        "png" | "jpg" | "jpeg" | "webp" => route_image(bytes),
-        "doc" => Err(ExtractionError::LegacyDoc),
-        other => Err(ExtractionError::UnsupportedFormat {
-            ext: other.to_string(),
-        }),
+    match registry::extractor_for(&ext) {
+        Some(extractor) => extractor.extract(bytes),
+        None => Err(ExtractionError::UnsupportedFormat { ext }),
     }
-}
-
-fn route_pdf(bytes: &[u8]) -> Result<ExtractedResume, ExtractionError> {
-    let result = pdf::extract(bytes)?;
-
-    let word_count = result.text.split_whitespace().count();
-    if word_count >= 30 && result.text.len() >= 200 {
-        return Ok(result);
-    }
-
-    warn!(
-        word_count,
-        chars = result.text.len(),
-        "PDF direct extraction yielded sparse text"
-    );
-
-    if word_count == 0 {
-        return Err(ExtractionError::ScannedPdfWithoutOcr);
-    }
-
-    let mut out = result;
-    out.warnings.push(
-        "Extracted text is sparse. The PDF may contain scanned pages."
-            .to_string(),
-    );
-    out.source_format = SourceFormat::PdfScanned;
-    Ok(out)
-}
-
-fn route_image(_bytes: &[u8]) -> Result<ExtractedResume, ExtractionError> {
-    Err(ExtractionError::OcrError(
-        "Image extraction is not supported in this build.".to_string(),
-    ))
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
