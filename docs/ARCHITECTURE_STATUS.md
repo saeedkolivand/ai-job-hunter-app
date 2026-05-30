@@ -79,19 +79,19 @@ former `packages/ai` and `packages/data` Node packages were removed.
 
 ## AI Generation (`apps/tauri/src/renderer/features/ai-generate/`)
 
-| Feature                       | Status | Notes                        |
-| ----------------------------- | ------ | ---------------------------- |
-| Cover letter generation       | ✅     | Streaming                    |
-| Resume generation             | ✅     | Streaming                    |
-| Email generation              | ✅     |                              |
-| Summary generation            | ✅     |                              |
-| Bold keyword extraction       | ✅     | Post-processes output        |
-| DOCX export                   | ✅     | All 9 templates              |
-| PDF export                    | ✅     |                              |
-| ATS-safe linearization        | ✅     | Two-column → single for ATS  |
-| Extended thinking (Anthropic) | ✅     | ThinkingBubble UI            |
-| Locale-aware prompts          | ✅     | 11 languages                 |
-| Template preview              | ✅     | OptionTile with live preview |
+| Feature                       | Status | Notes                                              |
+| ----------------------------- | ------ | -------------------------------------------------- |
+| Cover letter generation       | ✅     | Streaming                                          |
+| Resume generation             | ✅     | Streaming                                          |
+| Email generation              | ✅     |                                                    |
+| Summary generation            | ✅     |                                                    |
+| Bold keyword extraction       | ✅     | Post-processes output                              |
+| DOCX export                   | ✅     | All 9 templates                                    |
+| PDF export                    | ✅     | Canonical layout engine (default); legacy fallback |
+| ATS-safe linearization        | ✅     | Two-column → single for ATS                        |
+| Extended thinking (Anthropic) | ✅     | ThinkingBubble UI                                  |
+| Locale-aware prompts          | ✅     | 11 languages                                       |
+| Template preview              | ✅     | OptionTile with live preview                       |
 
 ---
 
