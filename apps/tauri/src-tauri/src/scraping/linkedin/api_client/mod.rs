@@ -8,34 +8,48 @@ use std::collections::HashSet;
 
 const PAGE_SIZE: usize = 25;
 
-/// Parse relative time strings like "1 hour ago", "2 weeks ago" into a DateTime
+/// Parse LinkedIn's `<time datetime="…">` attribute into a `DateTime`.
+///
+/// This is the accurate posting date. It is usually a bare ISO date
+/// (`YYYY-MM-DD`); full RFC 3339 timestamps are accepted too. Preferred over the
+/// element's visible text, which reflects the repost/refresh time.
+fn parse_iso_date(value: &str) -> Option<chrono::DateTime<chrono::FixedOffset>> {
+    let value = value.trim();
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(value) {
+        return Some(dt);
+    }
+    let date = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()?;
+    Some(date.and_hms_opt(0, 0, 0)?.and_utc().into())
+}
+
+/// Parse relative time strings like "1 hour ago", "30 minutes ago", "2 weeks ago".
+///
+/// Fallback only — used when the `<time>` element has no `datetime` attribute.
+/// Stems are checked most-specific-first so "minute" is not swallowed by the "m"
+/// in "month".
 fn parse_relative_time(text: &str) -> Option<chrono::DateTime<chrono::FixedOffset>> {
     let now = chrono::Utc::now();
     let text = text.to_lowercase();
-    
-    // Parse patterns like "1 hour ago", "2 hours ago", "1h ago", etc.
-    if let Some(num_str) = text.split_whitespace().next() {
-        if let Ok(num) = num_str.parse::<i64>() {
-            let duration = if text.contains("hour") || text.contains("h") {
-                chrono::Duration::hours(num)
-            } else if text.contains("day") || text.contains("d") {
-                chrono::Duration::days(num)
-            } else if text.contains("week") || text.contains("w") {
-                chrono::Duration::weeks(num)
-            } else if text.contains("month") || text.contains("m") {
-                chrono::Duration::days(num * 30)
-            } else if text.contains("minute") || text.contains("min") {
-                chrono::Duration::minutes(num)
-            } else {
-                return None;
-            };
-            
-            let posted = now - duration;
-            return Some(posted.into());
-        }
-    }
-    
-    None
+
+    let num: i64 = text.split_whitespace().next()?.parse().ok()?;
+
+    let duration = if text.contains("minute") || text.contains("min") {
+        chrono::Duration::minutes(num)
+    } else if text.contains("hour") || text.contains("hr") {
+        chrono::Duration::hours(num)
+    } else if text.contains("day") {
+        chrono::Duration::days(num)
+    } else if text.contains("week") {
+        chrono::Duration::weeks(num)
+    } else if text.contains("month") {
+        chrono::Duration::days(num * 30)
+    } else if text.contains("year") {
+        chrono::Duration::days(num * 365)
+    } else {
+        return None;
+    };
+
+    Some((now - duration).into())
 }
 
 #[derive(Debug, Clone)]
@@ -195,8 +209,18 @@ impl LinkedInJobsApiClient {
                 .to_string();
 
             let posted_at = element.select(&time_selector).next().and_then(|el| {
-                let text = el.text().collect::<String>().trim().to_lowercase();
-                parse_relative_time(&text)
+                // Prefer the ISO date in the `datetime` attribute. LinkedIn's
+                // visible text ("1 hour ago") reflects when the listing was last
+                // reposted/refreshed, not when it was originally posted — so an
+                // old job that was recently refreshed shows "1h ago". Fall back to
+                // the relative text only when the attribute is missing.
+                el.value()
+                    .attr("datetime")
+                    .and_then(parse_iso_date)
+                    .or_else(|| {
+                        let text = el.text().collect::<String>().trim().to_lowercase();
+                        parse_relative_time(&text)
+                    })
             });
 
             let job = JobPosting {
