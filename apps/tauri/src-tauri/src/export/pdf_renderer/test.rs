@@ -45,6 +45,11 @@ fn test_setup_colors() {
 fn test_setup_layout() {
     let template = Template::get(crate::export::types::TemplateId::Modern);
     let layout = setup_layout(&template);
+    // Page geometry is sourced from the locale profile (A4 by default), the same
+    // source the layout engine and DOCX read.
+    let geom = crate::locale::LocaleProfile::default().page_geometry();
+    assert_eq!(layout.page_width, geom.width_mm);
+    assert_eq!(layout.page_height, geom.height_mm);
     assert_eq!(layout.page_width, 210.0);
     assert_eq!(layout.page_height, 297.0);
     assert!(layout.line_height > 0.0);

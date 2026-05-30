@@ -215,3 +215,7 @@ CHANGELOG.md
 .cargo
 target/llvm-cov/
 .mcp.json
+graphify-out/
+
+post-checkout
+post-commit

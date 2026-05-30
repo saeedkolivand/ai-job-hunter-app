@@ -6,8 +6,19 @@ use super::{
     templates::{calculate_spacing, Template},
     types::{DocumentType, ExportRequest, GenerationMeta, LineKind, TemplateId},
 };
+use crate::locale::LocaleProfile;
 
 use super::docx_renderer::*;
+
+/// Page size (in DOCX `dxa`) for the active locale. Defaults to the `en` profile
+/// (A4), keeping DOCX on the same page geometry as the PDF backends. Set
+/// explicitly rather than relying on the docx-rs default so the source of truth
+/// is `LocaleProfile`/`PageGeometry`; per-request locale sizing arrives in a
+/// later phase.
+fn page_size_dxa() -> (u32, u32) {
+    let geom = LocaleProfile::default().page_geometry();
+    (mm_to_dxa(geom.width_mm), mm_to_dxa(geom.height_mm))
+}
 
 // ─── Resume DOCX ──────────────────────────────────────────────────────────────
 
@@ -22,7 +33,6 @@ fn generate_resume_docx(text: &str, meta: Option<&GenerationMeta>, template: &Te
         .right(inch_to_dxa(template.margin_in));
 
     let colors = setup_colors(template);
-    let _font_name = docx_font_name(template.fonts.body_family);
 
     let mut name_written = false;
     let mut previous_kind: Option<LineKind> = None;
@@ -97,9 +107,11 @@ fn generate_resume_docx(text: &str, meta: Option<&GenerationMeta>, template: &Te
 
     let (abstract_num, num) = create_bullet_numbering();
 
+    let (page_w, page_h) = page_size_dxa();
     docx = docx
         .add_abstract_numbering(abstract_num)
         .add_numbering(num)
+        .page_size(page_w, page_h)
         .page_margin(page_margin);
 
     Ok(docx)
@@ -121,8 +133,8 @@ fn generate_cover_letter_docx(
         .right(inch_to_dxa(template.margin_in + 0.15));
 
     let colors = setup_colors(template);
-    let font_name = docx_font_name(template.fonts.body_family);
-    let name_font = docx_font_name(template.fonts.name_family);
+    let body_family = template.fonts.body_family;
+    let name_family = template.fonts.name_family;
 
     let lines: Vec<&str> = text.lines().collect();
     let mut header_done = false;
@@ -161,7 +173,7 @@ fn generate_cover_letter_docx(
                             .size(pt_to_dxa(template.name_pt))
                             .bold()
                             .color(&colors.name)
-                            .fonts(RunFonts::new().ascii(name_font)),
+                            .fonts(docx_run_fonts(name_family)),
                     )
                     .line_spacing(LineSpacing::new().after(60)),
             );
@@ -179,7 +191,7 @@ fn generate_cover_letter_docx(
                             .add_text(&clean)
                             .size(pt_to_dxa(9.0))
                             .color(&colors.date)
-                            .fonts(RunFonts::new().ascii(font_name)),
+                            .fonts(docx_run_fonts(body_family)),
                     )
                     .line_spacing(LineSpacing::new().after(40)),
             );
@@ -197,7 +209,7 @@ fn generate_cover_letter_docx(
                             .add_text(&clean)
                             .size(pt_to_dxa(template.body_pt))
                             .color(&colors.body)
-                            .fonts(RunFonts::new().ascii(font_name)),
+                            .fonts(docx_run_fonts(body_family)),
                     )
                     .line_spacing(LineSpacing::new().before(160).after(160)),
             );
@@ -213,7 +225,7 @@ fn generate_cover_letter_docx(
                             .add_text(&clean)
                             .size(pt_to_dxa(template.body_pt))
                             .color(&colors.body)
-                            .fonts(RunFonts::new().ascii(font_name)),
+                            .fonts(docx_run_fonts(body_family)),
                     )
                     .line_spacing(LineSpacing::new().before(240).after(480)),
             );
@@ -229,7 +241,7 @@ fn generate_cover_letter_docx(
                             .add_text(&clean)
                             .size(pt_to_dxa(template.body_pt))
                             .color(&colors.date)
-                            .fonts(RunFonts::new().ascii(font_name)),
+                            .fonts(docx_run_fonts(body_family)),
                     )
                     .line_spacing(LineSpacing::new().after(40)),
             );
@@ -237,11 +249,12 @@ fn generate_cover_letter_docx(
         }
 
         // Body paragraphs — use proper spacing via pPr, no blank-paragraph spacers
-        let para = render_cover_letter_paragraph(&clean, template, &colors, font_name);
+        let para = render_cover_letter_paragraph(&clean, template, &colors, body_family);
         docx = docx.add_paragraph(para);
     }
 
-    docx = docx.page_margin(page_margin);
+    let (page_w, page_h) = page_size_dxa();
+    docx = docx.page_size(page_w, page_h).page_margin(page_margin);
     Ok(docx)
 }
 

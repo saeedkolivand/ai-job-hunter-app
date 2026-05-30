@@ -15,21 +15,42 @@ pub fn inch_to_dxa(inch: f32) -> i32 {
     (inch * 1440.0) as i32
 }
 
+/// Convert millimetres to twentieths of a point (the DOCX `dxa` unit used for
+/// page geometry). `1 in = 25.4 mm = 1440 dxa`, so A4's 210 × 297 mm becomes
+/// 11906 × 16838 dxa — the same page size Word writes for A4.
+pub fn mm_to_dxa(mm: f32) -> u32 {
+    (mm * 1440.0 / 25.4).round() as u32
+}
+
 /// Convert RGB tuple to hex string.
 pub fn rgb_to_hex(rgb: (u8, u8, u8)) -> String {
     format!("{:02X}{:02X}{:02X}", rgb.0, rgb.1, rgb.2)
 }
 
-/// Map FontFamily to the font name string used in DOCX run properties.
-pub fn docx_font_name(family: FontFamily) -> &'static str {
+/// Map a bundled [`FontFamily`] to a widely-available system font.
+///
+/// The bundled TTFs (Inter, Source Serif 4, Manrope, …) are **not** embedded in
+/// the DOCX yet — true font embedding is deferred to Phase 5 — so a reader that
+/// lacks them would silently substitute an arbitrary face. Referencing these
+/// common fallbacks instead (present on Windows/Office, with close cross-platform
+/// equivalents) keeps the output predictable everywhere.
+pub fn docx_fallback_font(family: FontFamily) -> &'static str {
     match family {
         FontFamily::Calibri => "Calibri",
-        FontFamily::Inter => "Inter",
-        FontFamily::SourceSerif4 => "Source Serif 4",
-        FontFamily::Manrope => "Manrope",
-        FontFamily::JetBrainsMono => "JetBrains Mono",
-        FontFamily::PlayfairDisplay => "Playfair Display",
+        FontFamily::Inter => "Calibri",
+        FontFamily::Manrope => "Calibri",
+        FontFamily::SourceSerif4 => "Georgia",
+        FontFamily::PlayfairDisplay => "Cambria",
+        FontFamily::JetBrainsMono => "Consolas",
     }
+}
+
+/// Run fonts for a bundled family, resolved to its predictable DOCX fallback and
+/// applied to both the ASCII and high-ANSI ranges so accented Latin characters
+/// (common in DACH names) render in the same face, not the reader's default.
+pub fn docx_run_fonts(family: FontFamily) -> RunFonts {
+    let name = docx_fallback_font(family);
+    RunFonts::new().ascii(name).hi_ansi(name)
 }
 
 /// Color palette for DOCX rendering.
@@ -53,13 +74,13 @@ pub fn setup_colors(template: &Template) -> DocxColors {
 }
 
 /// Create text runs from segments with bold formatting.
-/// Uses the template's body_family font name.
+/// Uses the predictable DOCX fallback for the given bundled family.
 pub fn create_runs(
     segments: &[TextSegment],
     font_size: usize,
     color: &str,
     bold_color: Option<&str>,
-    font_name: &str,
+    family: FontFamily,
 ) -> Vec<Run> {
     segments
         .iter()
@@ -67,7 +88,7 @@ pub fn create_runs(
             let mut run = Run::new()
                 .add_text(&seg.text)
                 .size(font_size)
-                .fonts(RunFonts::new().ascii(font_name));
+                .fonts(docx_run_fonts(family));
 
             if seg.bold {
                 run = run.bold();
@@ -97,8 +118,6 @@ pub fn render_name_line(
         .map(|s| s.as_str())
         .unwrap_or(text);
 
-    let font_name = docx_font_name(template.fonts.name_family);
-
     let mut para = Paragraph::new()
         .add_run(
             Run::new()
@@ -106,7 +125,7 @@ pub fn render_name_line(
                 .size(pt_to_dxa(template.name_pt))
                 .bold()
                 .color(&colors.name)
-                .fonts(RunFonts::new().ascii(font_name)),
+                .fonts(docx_run_fonts(template.fonts.name_family)),
         );
 
     if template.name_centered {
@@ -122,7 +141,7 @@ pub fn render_contact_line(
     template: &Template,
     colors: &DocxColors,
 ) -> Paragraph {
-    let font_name = docx_font_name(template.fonts.body_family);
+    let family = template.fonts.body_family;
     let spans = split_urls(text);
 
     let mut para = Paragraph::new();
@@ -135,7 +154,7 @@ pub fn render_contact_line(
                         .add_text(&t)
                         .size(pt_to_dxa(9.0))
                         .color(&colors.date)
-                        .fonts(RunFonts::new().ascii(font_name)),
+                        .fonts(docx_run_fonts(family)),
                 );
             }
             Span::Link { label, url } => {
@@ -143,7 +162,7 @@ pub fn render_contact_line(
                     .add_text(&label)
                     .size(pt_to_dxa(9.0))
                     .color(&colors.date)
-                    .fonts(RunFonts::new().ascii(font_name));
+                    .fonts(docx_run_fonts(family));
                 let hyperlink = Hyperlink::new(&url, HyperlinkType::External).add_run(link_run);
                 para = para.add_hyperlink(hyperlink);
             }
@@ -163,8 +182,6 @@ pub fn render_section_header(
     template: &Template,
     colors: &DocxColors,
 ) -> Paragraph {
-    let font_name = docx_font_name(template.fonts.heading_family);
-
     let (header_text, effective_pt) = if template.section_small_caps {
         (text.to_uppercase(), template.section_pt * 0.85)
     } else if template.section_all_caps {
@@ -182,7 +199,7 @@ pub fn render_section_header(
                 .size(pt_to_dxa(effective_pt))
                 .bold()
                 .color(&colors.section)
-                .fonts(RunFonts::new().ascii(font_name))
+                .fonts(docx_run_fonts(template.fonts.heading_family))
                 .character_spacing(char_spacing),
         );
 
@@ -197,13 +214,13 @@ pub fn render_job_entry(
     template: &Template,
     colors: &DocxColors,
 ) -> Paragraph {
-    let font_name = docx_font_name(template.fonts.body_family);
+    let family = template.fonts.body_family;
     let runs = create_runs(
         segments,
         pt_to_dxa(template.body_pt),
         &colors.body,
         Some(&colors.emphasis),
-        font_name,
+        family,
     );
 
     let mut para = Paragraph::new();
@@ -220,7 +237,7 @@ pub fn render_job_entry(
                     .add_text(date)
                     .size(pt_to_dxa(9.5))
                     .color(&colors.date)
-                    .fonts(RunFonts::new().ascii(font_name)),
+                    .fonts(docx_run_fonts(family)),
             );
     }
 
@@ -239,13 +256,13 @@ pub fn render_job_title(
     template: &Template,
     colors: &DocxColors,
 ) -> Paragraph {
-    let font_name = docx_font_name(template.fonts.body_family);
+    let family = template.fonts.body_family;
     let runs = create_runs(
         segments,
         pt_to_dxa(template.body_pt - 0.5),
         &colors.date,
         Some(&colors.emphasis),
-        font_name,
+        family,
     );
 
     let mut para = Paragraph::new();
@@ -264,13 +281,13 @@ pub fn render_bullet_line(
     template: &Template,
     colors: &DocxColors,
 ) -> Paragraph {
-    let font_name = docx_font_name(template.fonts.body_family);
+    let family = template.fonts.body_family;
     let runs = create_runs(
         segments,
         pt_to_dxa(template.body_pt),
         &colors.body,
         Some(&colors.emphasis),
-        font_name,
+        family,
     );
 
     let mut para = Paragraph::new()
@@ -295,13 +312,13 @@ pub fn render_text_line(
     template: &Template,
     colors: &DocxColors,
 ) -> Paragraph {
-    let font_name = docx_font_name(template.fonts.body_family);
+    let family = template.fonts.body_family;
     let runs = create_runs(
         segments,
         pt_to_dxa(template.body_pt),
         &colors.body,
         Some(&colors.emphasis),
-        font_name,
+        family,
     );
 
     let mut para = Paragraph::new();
@@ -319,7 +336,7 @@ pub fn render_cover_letter_paragraph(
     text: &str,
     template: &Template,
     colors: &DocxColors,
-    font_name: &str,
+    family: FontFamily,
 ) -> Paragraph {
     use crate::export::templates::ParagraphIndent;
 
@@ -329,7 +346,7 @@ pub fn render_cover_letter_paragraph(
         pt_to_dxa(template.body_pt),
         &colors.body,
         Some(&colors.emphasis),
-        font_name,
+        family,
     );
 
     // spacing_after in twentieths-of-a-point (1pt = 20 dxa)
@@ -374,4 +391,30 @@ pub fn create_bullet_numbering() -> (AbstractNumbering, Numbering) {
     let num = Numbering::new(1, 1);
 
     (abstract_num, num)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mm_to_dxa_matches_word_a4_and_letter() {
+        // Word writes A4 as 11906 × 16838 dxa and US Letter as 12240 × 15840.
+        assert_eq!(mm_to_dxa(210.0), 11906);
+        assert_eq!(mm_to_dxa(297.0), 16838);
+        assert_eq!(mm_to_dxa(215.9), 12240);
+        assert_eq!(mm_to_dxa(279.4), 15840);
+    }
+
+    #[test]
+    fn fallback_fonts_are_common_system_faces() {
+        // Every bundled family resolves to a face present on Windows/Office so the
+        // reader never has to silently substitute an un-embedded bundled font.
+        assert_eq!(docx_fallback_font(FontFamily::Calibri), "Calibri");
+        assert_eq!(docx_fallback_font(FontFamily::Inter), "Calibri");
+        assert_eq!(docx_fallback_font(FontFamily::Manrope), "Calibri");
+        assert_eq!(docx_fallback_font(FontFamily::SourceSerif4), "Georgia");
+        assert_eq!(docx_fallback_font(FontFamily::PlayfairDisplay), "Cambria");
+        assert_eq!(docx_fallback_font(FontFamily::JetBrainsMono), "Consolas");
+    }
 }
