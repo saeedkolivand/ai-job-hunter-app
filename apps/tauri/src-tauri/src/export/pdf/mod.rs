@@ -788,10 +788,11 @@ pub fn generate_pdf(request: &ExportRequest) -> Result<Vec<u8>> {
                 Some("### JOB ADVERTISEMENT ###"),
             );
             let text = if text.is_empty() { &request.text } else { text };
-            // Strangler-fig switch: the canonical layout engine path is gated behind
-            // the `layout_pdf` feature (on under --all-features / CI), the legacy
-            // renderer stays the default until snapshot parity is locked. Both arms
-            // are compiled so neither path rots.
+            // Strangler-fig switch: the canonical layout engine renders resumes by
+            // default now that snapshot parity is locked (`layout_pdf` is a default
+            // feature). `--no-default-features` falls back to the legacy renderer,
+            // which also stays the parity reference. Both arms compile via `cfg!`
+            // so neither path rots.
             let result = if cfg!(feature = "layout_pdf") {
                 super::layout_pdf::generate_resume_pdf(
                     text,
