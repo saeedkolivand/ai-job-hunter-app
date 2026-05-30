@@ -1400,6 +1400,7 @@
     }
   },
   "jobUrlImport": {
+    "link": "Link",
     "placeholder": "Paste a LinkedIn job URL…",
     "import": "Import",
     "notFound": "Couldn't read that job posting — paste the description manually.",

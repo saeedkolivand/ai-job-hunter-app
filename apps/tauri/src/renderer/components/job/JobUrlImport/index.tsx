@@ -48,6 +48,7 @@ export function JobUrlImport({ onImport, disabled }: Props) {
     <div className="space-y-1.5">
       <div className="flex gap-1.5">
         <Input
+          autoFocus
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => {

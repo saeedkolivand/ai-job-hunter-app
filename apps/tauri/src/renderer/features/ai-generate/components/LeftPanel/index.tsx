@@ -1,8 +1,8 @@
-import { AlertCircle, ArrowRight, Briefcase, RefreshCw, Wand2 } from 'lucide-react';
+import { AlertCircle, ArrowRight, RefreshCw, Wand2 } from 'lucide-react';
 
-import { Button, CollapsibleFileInput } from '@ajh/ui';
+import { Button } from '@ajh/ui';
 
-import { JobUrlImport } from '@/components/job/JobUrlImport';
+import { JobAdField } from '@/components/job/JobAdField';
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import { ModelSelector } from '@/components/ui/ModelSelector';
 import { GenerationConfig } from '@/features/ai-generate/components/GenerationConfig';
@@ -112,20 +112,15 @@ export function LeftPanel({
         />
 
         {/* Job ad input */}
-        <JobUrlImport onImport={setJobAd} disabled={stage !== 'idle'} />
-        <CollapsibleFileInput
+        <JobAdField
           label={t('aiGenerate.jobAdLabel')}
-          icon={Briefcase}
           value={jobAd}
           onChange={setJobAd}
           uploading={uploading === 'jobAd'}
           onUpload={(f: File) => onUpload('jobAd', f)}
-          accept=".pdf,.docx,.txt,.md,.markdown"
           placeholder={t('aiGenerate.placeholder').replace('…', '')}
-          disabled={stage !== 'idle'}
           uploadText={t('aiGenerate.upload')}
-          textareaHeight={140}
-          showCheckmark
+          disabled={stage !== 'idle'}
         />
 
         {uploadError && (

@@ -1,16 +1,8 @@
-import {
-  AlertCircle,
-  AlertTriangle,
-  Briefcase,
-  RefreshCw,
-  ScanSearch,
-  Sparkles,
-  Zap,
-} from 'lucide-react';
+import { AlertCircle, AlertTriangle, RefreshCw, ScanSearch, Sparkles, Zap } from 'lucide-react';
 
-import { Button, cn, CollapsibleFileInput } from '@ajh/ui';
+import { Button, cn } from '@ajh/ui';
 
-import { JobUrlImport } from '@/components/job/JobUrlImport';
+import { JobAdField } from '@/components/job/JobAdField';
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import { ModelSelector } from '@/components/ui/ModelSelector';
 import type { Stage } from '@/features/analyze/constants';
@@ -139,20 +131,15 @@ export function AnalyzeLeftPanel({
           disabled={stage === 'running'}
           placeholder={t('analyze.resumePlaceholder')}
         />
-        <JobUrlImport onImport={setJobAd} disabled={stage === 'running'} />
-        <CollapsibleFileInput
+        <JobAdField
           label={t('analyze.jobAd')}
-          icon={Briefcase}
           value={jobAd}
           onChange={setJobAd}
           uploading={uploading === 'jobAd'}
           onUpload={(f: File) => onUpload('jobAd', f)}
-          accept=".pdf,.docx,.txt,.md,.markdown"
           placeholder={t('analyze.jobAdPlaceholder')}
-          disabled={stage === 'running'}
           uploadText={t('analyze.uploadButton')}
-          textareaHeight={140}
-          showCheckmark
+          disabled={stage === 'running'}
         />
         {uploadError && (
           <div className="flex items-center gap-2 rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs text-amber-200/80">

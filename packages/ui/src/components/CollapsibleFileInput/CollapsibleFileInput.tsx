@@ -32,6 +32,8 @@ export interface CollapsibleFileInputProps {
   textareaHeight?: number;
   /** Whether to show the checkmark when value is present */
   showCheckmark?: boolean;
+  /** Optional action rendered in the header, next to the upload button. */
+  headerAction?: React.ReactNode;
   /** Additional class names */
   className?: string;
 }
@@ -49,6 +51,7 @@ export function CollapsibleFileInput({
   uploadText = 'Upload',
   textareaHeight = 140,
   showCheckmark = true,
+  headerAction,
   className,
 }: CollapsibleFileInputProps) {
   const ref = useRef<HTMLInputElement>(null);
@@ -93,6 +96,7 @@ export function CollapsibleFileInput({
                 <Upload size={10} className={uploading ? 'animate-pulse' : ''} />
                 {uploading ? '…' : uploadText}
               </Button>
+              {headerAction}
             </>
           )}
           <Button
