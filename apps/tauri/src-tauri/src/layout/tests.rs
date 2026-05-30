@@ -362,3 +362,175 @@ fn two_column_paginates_with_a_band_on_every_page() {
         );
     }
 }
+
+// Parity gate: single-column vertical spacing must match the legacy rhythm.
+//
+// The engine regressed by dropping the legacy `calculate_spacing` before-gaps
+// and the section-header lead/trail offsets, compressing single-column resumes
+// into the top of the page (section-before gaps collapsed to roughly a bare
+// line). These tests compare the engine against the legacy renderer for the
+// same resume (non-circular). Primary checks are component-level (section
+// before-gaps + per-template scale); the total-span check is only a loose
+// gross-blowup backstop, because the engine is intentionally a few percent more
+// compact than legacy: the canonical model does not carry the blank source
+// lines the legacy renderer turns into ~3pt spacers.
+
+const PARITY_RESUME: &str = "\
+Jane Doe
+jane@example.com | [LinkedIn](https://linkedin.com/in/jane)
+
+Senior engineer with a decade building reliable web applications end to end.
+
+EXPERIENCE
+Acme Corp  2020 - Present
+Senior Engineer
+- Led a team of five engineers delivering the core platform
+- Shipped three major features that grew revenue
+
+Globex Inc  2017 - 2020
+Engineer
+- Built the public API serving millions of requests
+
+SKILLS
+- Rust, TypeScript, React
+- AWS, Docker, Kubernetes
+
+EDUCATION
+State University  2013 - 2017
+BSc Computer Science
+";
+
+const SINGLE_COLUMN: [TemplateId; 8] = [
+    TemplateId::Classic,
+    TemplateId::Modern,
+    TemplateId::Executive,
+    TemplateId::EditorialSerif,
+    TemplateId::SwissMinimal,
+    TemplateId::MonoTechnical,
+    TemplateId::RefinedExecutive,
+    TemplateId::Academic,
+];
+
+/// Page-1 text baseline Y positions (points from page bottom) from the `Td` ops,
+/// sorted top-of-page first (descending y).
+fn baseline_ys(bytes: &[u8]) -> Vec<f32> {
+    let doc = lopdf::Document::load_mem(bytes).expect("parse pdf");
+    let first = *doc.get_pages().values().next().expect("a page");
+    let content = doc.get_page_content(first).expect("page content");
+    let decoded = lopdf::content::Content::decode(&content).expect("decode stream");
+    let mut ys: Vec<f32> = decoded
+        .operations
+        .iter()
+        .filter(|op| op.operator == "Td")
+        .filter_map(|op| op.operands.get(1).and_then(|o| o.as_float().ok()))
+        .collect();
+    ys.sort_by(|a, b| b.partial_cmp(a).unwrap());
+    ys
+}
+
+/// Content span (top baseline minus bottom baseline) in points.
+fn span_pt(ys: &[f32]) -> f32 {
+    match (ys.first(), ys.last()) {
+        (Some(t), Some(b)) => t - b,
+        _ => 0.0,
+    }
+}
+
+fn render_pair(id: TemplateId) -> (Vec<f32>, Vec<f32>) {
+    use crate::export::layout_pdf::generate_resume_pdf as engine;
+    use crate::export::pdf::generate_resume_pdf as legacy;
+    let t = Template::get(id);
+    let l = baseline_ys(&legacy(PARITY_RESUME, None, &t, false).expect("legacy pdf"));
+    let e = baseline_ys(&engine(PARITY_RESUME, None, &t, false).expect("engine pdf"));
+    (l, e)
+}
+
+/// Gap (mm) from the content line just above each section heading to the heading
+/// baseline, on the engine's structured page-1 layout. Isolates the section
+/// before-spacing the regression collapsed.
+fn engine_section_before_gaps(id: TemplateId) -> Vec<(String, f32)> {
+    let t = Template::get(id);
+    let model = model_from_resume_text(PARITY_RESUME);
+    let doc = layout_document(&model, &t, a4(), &FontMetrics);
+    let rows = &doc.pages[0].texts;
+    let mut out = Vec::new();
+    for (i, row) in rows.iter().enumerate() {
+        let up = row.text.to_uppercase();
+        if (up == "EXPERIENCE" || up == "SKILLS" || up == "EDUCATION") && i > 0 {
+            out.push((up, row.baseline_y_mm - rows[i - 1].baseline_y_mm));
+        }
+    }
+    out
+}
+
+#[test]
+fn single_column_first_ink_matches_legacy() {
+    // Name baseline (highest y) identical to legacy: top margin + name block were
+    // never the problem; the drift accumulated below them.
+    for id in SINGLE_COLUMN {
+        let (l, e) = render_pair(id);
+        assert!(
+            (l[0] - e[0]).abs() < 2.0,
+            "{id:?}: first ink moved {:.1} -> {:.1}pt",
+            l[0],
+            e[0]
+        );
+    }
+}
+
+#[test]
+fn single_column_inserts_real_section_spacing() {
+    // The precise regression guard. The bug zeroed the before-gap above section
+    // headings; with the legacy 12pt before-gap + 4pt heading lead restored, every
+    // section-before gap must exceed a bare body line by a clear margin.
+    for id in SINGLE_COLUMN {
+        let t = Template::get(id);
+        let body_line = (t.body_pt / 2.834_645_7) * t.line_spacing;
+        let min_gap = body_line + 10.0 / 2.834_645_7;
+        let gaps = engine_section_before_gaps(id);
+        assert!(
+            gaps.len() >= 3,
+            "{id:?}: expected EXPERIENCE/SKILLS/EDUCATION gaps, got {gaps:?}"
+        );
+        for (heading, gap) in gaps {
+            assert!(
+                gap >= min_gap,
+                "{id:?}: gap before {heading} is {gap:.1}mm, expected >= {min_gap:.1}mm \
+                 (section spacing collapsed)"
+            );
+        }
+    }
+}
+
+#[test]
+fn single_column_honors_per_template_spacing_scale() {
+    // Each template's own scale must be honored, not a global value: an airier
+    // template (Swiss Minimal, line_spacing 1.3) produces a taller content block
+    // than a tight one (Academic, 1.1) for the same resume.
+    let (_, swiss) = render_pair(TemplateId::SwissMinimal);
+    let (_, academic) = render_pair(TemplateId::Academic);
+    assert!(
+        span_pt(&swiss) > span_pt(&academic),
+        "swiss-minimal span {:.1}pt should exceed academic {:.1}pt",
+        span_pt(&swiss),
+        span_pt(&academic)
+    );
+}
+
+#[test]
+fn single_column_span_backstop_vs_legacy() {
+    // Loose gross-blowup guard only (not the primary metric): rejects a total span
+    // that has collapsed or ballooned far outside the legacy ballpark. The engine
+    // runs a few percent more compact by design (no blank-line spacers).
+    for id in SINGLE_COLUMN {
+        let (l, e) = render_pair(id);
+        let rel = (span_pt(&e) - span_pt(&l)) / span_pt(&l);
+        assert!(
+            rel.abs() <= 0.12,
+            "{id:?}: engine span {:.1}pt vs legacy {:.1}pt = {:+.1}% (allowed +/-12%)",
+            span_pt(&e),
+            span_pt(&l),
+            rel * 100.0
+        );
+    }
+}
