@@ -1,0 +1,4109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Job Hunter — Architecture Map</title>
+    <style>
+      :root {
+        --bg: #0f0f0f;
+        --panel: #161616;
+        --panel-2: #1c1c1c;
+        --border: #2a2a2a;
+        --text: #e8e8e8;
+        --muted: #8a8a8a;
+        --client: #4ea1ff;
+        --hooks: #7bd389;
+        --prompts: #f5b942;
+        --contract: #c792ea;
+        --command: #ff7a45;
+        --domain: #5ec8c8;
+        --scraper: #7bd389;
+        --provider: #c792ea;
+        --data: #ffb86b;
+        --external: #ff6b9d;
+        --infra: #9aa7b3;
+        --critical: #ff3860;
+        --api: #ff7a45;
+        --db: #ffb86b;
+        --mount: #4ea1ff;
+        --normal: #3a3a3a;
+        --accent: #f5b942;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          13px/1.5 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
+      }
+      #app {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+        flex: 0 0 auto;
+        flex-wrap: wrap;
+      }
+      header h1 {
+        font-size: 14px;
+        margin: 0;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+      }
+      header .meta {
+        color: var(--muted);
+        font-size: 11.5px;
+      }
+      .chips {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-left: auto;
+      }
+      .chip {
+        padding: 4px 10px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--panel-2);
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 11.5px;
+        user-select: none;
+        white-space: nowrap;
+      }
+      .chip:hover {
+        border-color: #3d3d3d;
+        color: var(--text);
+      }
+      .chip.active {
+        background: var(--accent);
+        color: #161616;
+        border-color: var(--accent);
+        font-weight: 600;
+      }
+      .chip.bugchip.active {
+        background: var(--critical);
+        color: #fff;
+        border-color: var(--critical);
+      }
+      main {
+        flex: 1 1 auto;
+        display: flex;
+        min-height: 0;
+      }
+      #stage {
+        position: relative;
+        flex: 1 1 auto;
+        overflow: hidden;
+        cursor: grab;
+        background: radial-gradient(circle at 30% 20%, #141414 0, var(--bg) 60%);
+      }
+      #stage.panning {
+        cursor: grabbing;
+      }
+      svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      .clusterBox {
+        fill-opacity: 0.05;
+        stroke-opacity: 0.3;
+        stroke-width: 1.2;
+        rx: 14;
+      }
+      .clusterLabel {
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+      }
+      .clusterLabel.count {
+        font-size: 10.5px;
+        font-weight: 500;
+        text-transform: none;
+        letter-spacing: 0;
+      }
+      .node {
+        cursor: pointer;
+      }
+      .node rect.box {
+        fill: var(--panel);
+        stroke-width: 1.4;
+        rx: 8;
+        transition: opacity 0.12s;
+      }
+      .node.crit rect.box {
+        stroke-width: 2.4;
+      }
+      .node text.lbl {
+        fill: var(--text);
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .node text.sub {
+        fill: var(--muted);
+        font-size: 10px;
+      }
+      .node text.dead {
+        fill: var(--critical);
+        font-size: 9.5px;
+        font-weight: 700;
+      }
+      .edge {
+        fill: none;
+        stroke-width: 1.4;
+      }
+      .edge.kind-critical {
+        stroke: var(--critical);
+        stroke-width: 2.2;
+      }
+      .edge.kind-api {
+        stroke: var(--api);
+        stroke-dasharray: 1 0;
+      }
+      .edge.kind-db {
+        stroke: var(--db);
+      }
+      .edge.kind-mount {
+        stroke: var(--mount);
+        stroke-opacity: 0.7;
+      }
+      .edge.kind-normal {
+        stroke: var(--normal);
+      }
+      .edgeLabel {
+        fill: #9b9b9b;
+        font-size: 9.5px;
+      }
+      .edgeLabel.crit {
+        fill: #ff8095;
+      }
+      .badge text {
+        font-size: 9px;
+        font-weight: 700;
+        fill: #0c0c0c;
+      }
+      .dim {
+        opacity: 0.12 !important;
+      }
+      .hide {
+        display: none;
+      }
+      /* sidebar */
+      #side {
+        flex: 0 0 360px;
+        max-width: 42vw;
+        border-left: 1px solid var(--border);
+        background: var(--panel);
+        overflow: auto;
+        padding: 16px 16px 40px;
+      }
+      #side h2 {
+        font-size: 14px;
+        margin: 0 0 2px;
+      }
+      #side .role {
+        color: var(--text);
+        margin: 6px 0;
+      }
+      #side .plain {
+        color: #bfd7c9;
+        background: #13261c;
+        border: 1px solid #1d3a2a;
+        border-radius: 8px;
+        padding: 8px 10px;
+        margin: 8px 0;
+      }
+      #side .path {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11px;
+        color: #8fb8e6;
+        word-break: break-all;
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 6px 8px;
+      }
+      #side .k {
+        color: var(--muted);
+        text-transform: uppercase;
+        font-size: 10px;
+        letter-spacing: 0.5px;
+        margin: 14px 0 4px;
+      }
+      #side ul {
+        margin: 4px 0;
+        padding-left: 16px;
+      }
+      #side li {
+        margin: 2px 0;
+        color: #cfcfcf;
+      }
+      #side .tag {
+        display: inline-block;
+        font-size: 10px;
+        color: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        padding: 1px 6px;
+        margin: 2px 4px 2px 0;
+      }
+      #side .fix,
+      #side .bug {
+        border-radius: 8px;
+        padding: 7px 9px;
+        margin: 6px 0;
+        font-size: 12px;
+      }
+      #side .fix {
+        background: #10240f;
+        border: 1px solid #1f3d1d;
+        color: #bfe6b5;
+      }
+      #side .bug {
+        background: #2a1014;
+        border: 1px solid #4a1c24;
+        color: #ffb3c0;
+      }
+      #side .sev {
+        font-weight: 700;
+        text-transform: uppercase;
+        font-size: 9.5px;
+        margin-right: 6px;
+      }
+      #side .edgepair {
+        font-size: 11.5px;
+        color: #cfcfcf;
+        margin: 2px 0;
+      }
+      #side .edgepair b {
+        color: #fff;
+        font-weight: 600;
+      }
+      #side .findings li {
+        margin: 6px 0;
+      }
+      .controls {
+        position: absolute;
+        right: 14px;
+        bottom: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .controls button {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        color: var(--text);
+        font-size: 16px;
+        cursor: pointer;
+      }
+      .controls button:hover {
+        border-color: #444;
+      }
+      .legend {
+        position: absolute;
+        left: 14px;
+        bottom: 14px;
+        background: rgba(20, 20, 20, 0.82);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 9px 11px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .legend .row {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin: 2px 0;
+      }
+      .legend .sw {
+        width: 22px;
+        height: 0;
+        border-top: 3px solid;
+        display: inline-block;
+      }
+      .legend .dot {
+        width: 11px;
+        height: 11px;
+        border-radius: 3px;
+        display: inline-block;
+        border: 1.4px solid;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>
+          AI Job Hunter
+          <span class="meta"
+            >— interactive architecture map · local-first Tauri 2 monorepo (v0.33.0)</span
+          >
+        </h1>
+        <div class="chips" id="chips"></div>
+      </header>
+      <main>
+        <div id="stage">
+          <svg id="svg" viewBox="0 0 3060 1330" preserveAspectRatio="xMidYMid meet">
+            <defs>
+              <marker
+                id="ar-critical"
+                markerWidth="9"
+                markerHeight="9"
+                refX="7.5"
+                refY="3"
+                orient="auto"
+              >
+                <path d="M0,0 L7,3 L0,6 Z" fill="#ff3860" />
+              </marker>
+              <marker
+                id="ar-api"
+                markerWidth="9"
+                markerHeight="9"
+                refX="7.5"
+                refY="3"
+                orient="auto"
+              >
+                <path d="M0,0 L7,3 L0,6 Z" fill="#ff7a45" />
+              </marker>
+              <marker id="ar-db" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto">
+                <path d="M0,0 L7,3 L0,6 Z" fill="#ffb86b" />
+              </marker>
+              <marker
+                id="ar-mount"
+                markerWidth="9"
+                markerHeight="9"
+                refX="7.5"
+                refY="3"
+                orient="auto"
+              >
+                <path d="M0,0 L7,3 L0,6 Z" fill="#4ea1ff" />
+              </marker>
+              <marker
+                id="ar-normal"
+                markerWidth="9"
+                markerHeight="9"
+                refX="7.5"
+                refY="3"
+                orient="auto"
+              >
+                <path d="M0,0 L7,3 L0,6 Z" fill="#3a3a3a" />
+              </marker>
+            </defs>
+            <g id="vp">
+              <g id="gClusters"></g>
+              <g id="gEdges"></g>
+              <g id="gNodes"></g>
+            </g>
+          </svg>
+          <div class="controls">
+            <button id="zin" title="Zoom in">+</button>
+            <button id="zout" title="Zoom out">−</button>
+            <button id="fit" title="Fit" style="font-size: 11px">Fit</button>
+          </div>
+          <div class="legend" id="legend"></div>
+        </div>
+        <aside id="side"></aside>
+      </main>
+    </div>
+
+    <script>
+      /* ============================================================================
+       * AI Job Hunter — architecture map data.
+       * Hand-editable: every node has an explicit x,y,w,h; edit freely.
+       *   N(id, cluster, label, sub, x, y, w, h, color, opts)
+       * Coordinates use a per-column grid:  y = 96 + row*64 ;  column x constants below.
+       * ==========================================================================*/
+
+      const clusters = [
+        {
+          id: 'client',
+          label: 'Client / Renderer',
+          x: 20,
+          y: 20,
+          w: 250,
+          h: 1120,
+          color: 'client',
+        },
+        { id: 'hooks', label: 'Service Hooks', x: 300, y: 20, w: 250, h: 1120, color: 'hooks' },
+        {
+          id: 'prompts',
+          label: 'Prompts (LLM assembly)',
+          x: 580,
+          y: 20,
+          w: 250,
+          h: 1120,
+          color: 'prompts',
+        },
+        {
+          id: 'contract',
+          label: 'Shared Contracts',
+          x: 860,
+          y: 20,
+          w: 250,
+          h: 1120,
+          color: 'contract',
+        },
+        {
+          id: 'command',
+          label: 'Rust Commands',
+          x: 1140,
+          y: 20,
+          w: 250,
+          h: 1120,
+          color: 'command',
+        },
+        { id: 'domain', label: 'Rust Domains', x: 1420, y: 20, w: 250, h: 1120, color: 'domain' },
+        {
+          id: 'scraper',
+          label: 'Scrapers (SCRAPERS · 20)',
+          x: 1700,
+          y: 20,
+          w: 472,
+          h: 1120,
+          color: 'scraper',
+        },
+        {
+          id: 'provapp',
+          label: 'AI Providers · Appliers',
+          x: 2220,
+          y: 20,
+          w: 250,
+          h: 1120,
+          color: 'provider',
+        },
+        { id: 'data', label: 'Data', x: 2500, y: 20, w: 250, h: 1120, color: 'data' },
+        { id: 'external', label: 'External', x: 2780, y: 20, w: 256, h: 1120, color: 'external' },
+        {
+          id: 'infra',
+          label: 'Platform Infra (single-owner · composed everywhere)',
+          x: 1140,
+          y: 1170,
+          w: 1330,
+          h: 130,
+          color: 'infra',
+        },
+      ];
+
+      const N = (id, cluster, label, sub, x, y, w, h, color, opts = {}) => ({
+        id,
+        cluster,
+        label,
+        sub,
+        x,
+        y,
+        w,
+        h,
+        color,
+        ...opts,
+      });
+
+      const nodes = [
+        // ── Client / Renderer (x 29) ───────────────────────────────────────────────
+        N('c-main', 'client', 'main.tsx', 'renderer bootstrap', 29, 96, 232, 46, 'client', {
+          role: 'React entry point: mounts the app inside AppClientProvider + CapabilityProvider and boots the router.',
+          plain:
+            'The very first code that runs when the window opens — it switches the lights on for the whole interface.',
+          path: 'apps/tauri/src/renderer/main.tsx',
+          notes: [
+            'Wraps app in <AppClientProvider> (transport) + <CapabilityProvider>',
+            'Registers the Tauri invoke client',
+          ],
+          tag: ['overview', 'all'],
+        }),
+        N('c-root', 'client', '__root.tsx', 'router shell', 29, 160, 232, 46, 'client', {
+          role: 'Root route: persistent app chrome (Sidebar, Titlebar, StatusBar) wrapping <Outlet/>.',
+          plain:
+            'The frame that stays put — the sidebar and title bar — while the centre swaps between screens.',
+          path: 'apps/tauri/src/renderer/routes/__root.tsx',
+          notes: ['Hosts the 11 feature routes', 'TanStack Router, file-based'],
+          tag: ['overview', 'all'],
+        }),
+        N('c-dash', 'client', 'index.tsx', 'Dashboard route', 29, 224, 232, 46, 'client', {
+          role: 'Dashboard: pipeline overview, AI insights, recent activity.',
+          plain: 'The home screen — a quick snapshot of where your job hunt stands.',
+          path: 'apps/tauri/src/renderer/routes/index.tsx',
+          notes: ['Aggregates jobs + AI status'],
+          tag: ['overview', 'dashboard', 'all'],
+        }),
+        N('c-aigen', 'client', 'ai-generate.tsx', 'AI Generate route', 29, 288, 232, 46, 'client', {
+          role: 'AI Generate page: resume + cover-letter generation UI with streaming output.',
+          plain:
+            'The screen where you paste a job ad and your resume, and the AI writes a tailored resume and cover letter live.',
+          path: 'apps/tauri/src/renderer/routes/ai-generate.tsx',
+          notes: [
+            'Headline feature — the red spine starts here',
+            'Drives the ai-generate state machine',
+          ],
+          tag: ['overview', 'aigenerate', 'all'],
+          critical: true,
+        }),
+        N('c-analyze', 'client', 'analyze.tsx', 'Analyze route', 29, 352, 232, 46, 'client', {
+          role: 'Resume analysis page: ATS score, skill gaps, language mismatch, rewrites.',
+          plain: 'A screen that grades your resume against a job and tells you what to fix.',
+          path: 'apps/tauri/src/renderer/routes/analyze.tsx',
+          notes: ['11 analysis panels'],
+          tag: ['analyze', 'all'],
+        }),
+        N('c-autopilot', 'client', 'autopilot.tsx', 'Autopilot route', 29, 416, 232, 46, 'client', {
+          role: 'Autopilot page: workflow builder wizard + run monitor.',
+          plain:
+            'The "do the hunt for me" screen — set up a workflow that searches and applies on a schedule.',
+          path: 'apps/tauri/src/renderer/routes/autopilot.tsx',
+          notes: ['3-step wizard → scheduled runner'],
+          tag: ['autopilot', 'all'],
+        }),
+        N('c-jobs', 'client', 'jobs.tsx', 'Jobs route', 29, 480, 232, 46, 'client', {
+          role: 'Jobs list: scraped postings, filters, interaction history.',
+          plain: 'A list of every job the app has found, with notes on what you did with each.',
+          path: 'apps/tauri/src/renderer/routes/jobs.tsx',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N('c-search', 'client', 'search.tsx', 'Search route', 29, 544, 232, 46, 'client', {
+          role: 'Hybrid semantic search over scraped jobs.',
+          plain: 'A smart search box that understands meaning, not just keywords.',
+          path: 'apps/tauri/src/renderer/routes/search.tsx',
+          notes: ['Backed by a Rust search command (currently a stub)'],
+          tag: ['scrape', 'all'],
+        }),
+        N('c-settings', 'client', 'settings.tsx', 'Settings route', 29, 608, 232, 46, 'client', {
+          role: 'Settings: AI providers, accounts, preferences, privacy/backup.',
+          plain: 'Where you choose your AI engine, log in to job boards, and tune the app.',
+          path: 'apps/tauri/src/renderer/routes/settings.tsx',
+          notes: ['AI provider switcher lives here'],
+          tag: ['settings', 'all'],
+        }),
+        N(
+          'c-appclient',
+          'client',
+          'app-client.ts',
+          'AppClient · useAppClient',
+          29,
+          672,
+          232,
+          46,
+          'client',
+          {
+            role: 'The single transport abstraction (= IpcContract) between renderer and backend; getClient() for use outside React.',
+            plain:
+              'The one doorway the interface uses to talk to the engine. Everything goes through it, so the UI can be tested without the real backend.',
+            path: 'apps/tauri/src/renderer/lib/app-client/app-client.ts:24',
+            notes: [
+              'God node — ~167 graph edges (not all drawn)',
+              'Swappable: Tauri client in prod, mock client in tests',
+            ],
+            tag: ['overview', 'aigenerate', 'autopilot', 'scrape', 'all'],
+            critical: true,
+          }
+        ),
+        N(
+          'c-tauriclient',
+          'client',
+          'tauri-client',
+          'createTauriInvokeClient',
+          29,
+          736,
+          232,
+          46,
+          'client',
+          {
+            role: 'Concrete AppClient backed by Tauri invoke() + event listeners.',
+            plain:
+              'The real wiring behind the doorway — it forwards each request to the Rust engine.',
+            path: 'apps/tauri/src/tauri-client/index.ts',
+            notes: [
+              "CLAUDE.md cites 'src/tauri-client.ts' — it is now a folder module",
+              'Implements every IPC namespace',
+            ],
+            tag: ['overview', 'aigenerate', 'autopilot', 'scrape', 'all'],
+            critical: true,
+          }
+        ),
+        N(
+          'c-machine-aigen',
+          'client',
+          'ai-generate.machine',
+          'generation FSM',
+          29,
+          800,
+          232,
+          46,
+          'client',
+          {
+            role: 'Finite-state machine for the generation flow (idle → extracting → generating → done).',
+            plain: 'The small brain that tracks which step the AI writing is on.',
+            path: 'apps/tauri/src/renderer/lib/machines/ai-generate.machine/ai-generate.machine.ts',
+            notes: ['~80-line micro state machine, not XState'],
+            tag: ['overview', 'aigenerate', 'all'],
+            critical: true,
+          }
+        ),
+        N(
+          'c-machine-autorun',
+          'client',
+          'autopilot-run.machine',
+          'run FSM',
+          29,
+          864,
+          232,
+          46,
+          'client',
+          {
+            role: 'Autopilot run state machine (queued → running → paused/completed/failed).',
+            plain: 'Tracks an autopilot run as it works through its steps.',
+            path: 'apps/tauri/src/renderer/lib/machines/autopilot-run.machine/autopilot-run.machine.ts',
+            notes: [],
+            tag: ['autopilot', 'all'],
+          }
+        ),
+        N(
+          'c-prefstore',
+          'client',
+          'preferences-store',
+          'Zustand prefs',
+          29,
+          928,
+          232,
+          46,
+          'client',
+          {
+            role: 'Zustand store: active AI provider/model config, prompt quality, UI prefs.',
+            plain: 'Remembers your choices — which AI to use, how detailed the prompts should be.',
+            path: 'apps/tauri/src/renderer/store/preferences-store.ts',
+            notes: ['aiProviderConfig drives generation routing'],
+            tag: ['settings', 'aigenerate', 'all'],
+          }
+        ),
+        N('c-cn', 'client', 'cn()', 'className merge · god', 29, 992, 232, 46, 'client', {
+          role: 'Tailwind class merge utility used across the UI.',
+          plain: 'A tiny helper that combines style names — used almost everywhere on screen.',
+          path: 'packages/ui/src/lib/cn.ts',
+          notes: [
+            'God node — ~191 graph edges (the most-connected symbol; edges omitted for legibility)',
+          ],
+          tag: ['all'],
+        }),
+        N(
+          'c-notify',
+          'client',
+          'useNotification()',
+          'toast hook · god',
+          29,
+          1056,
+          232,
+          46,
+          'client',
+          {
+            role: 'Toast/notification hook used by most features.',
+            plain: 'The pop-up message system the whole app shares.',
+            path: 'apps/tauri/src/renderer/providers',
+            notes: ['God node — ~56 graph edges'],
+            tag: ['all'],
+          }
+        ),
+
+        // ── Service Hooks (x 309) ───────────────────────────────────────────────────
+        N('h-use-ai', 'hooks', 'use-ai', 'React Query · ai', 309, 96, 232, 46, 'hooks', {
+          role: 'Service hook wrapping the ai namespace (generate, models, stream).',
+          plain: 'The bridge the generation screen uses to ask the AI engine to start writing.',
+          path: 'apps/tauri/src/renderer/services/use-ai/use-ai.ts',
+          notes: ['Every IPC call goes through a service hook — never window.api'],
+          tag: ['overview', 'aigenerate', 'all'],
+          critical: true,
+        }),
+        N(
+          'h-use-aigen',
+          'hooks',
+          'use-ai-generations',
+          'saved generations',
+          309,
+          160,
+          232,
+          46,
+          'hooks',
+          {
+            role: 'CRUD hook for stored AI generations.',
+            plain: 'Loads and saves the resumes/cover letters the AI has produced.',
+            path: 'apps/tauri/src/renderer/services/use-ai-generations/use-ai-generations.ts',
+            notes: [],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'h-use-aiprov',
+          'hooks',
+          'use-ai-provider',
+          'provider keys/health',
+          309,
+          224,
+          232,
+          46,
+          'hooks',
+          {
+            role: 'Hook for provider key management + health/model listing.',
+            plain: 'Checks which AI engines are set up and working.',
+            path: 'apps/tauri/src/renderer/services/use-ai-provider/use-ai-provider.ts',
+            notes: [],
+            tag: ['settings', 'all'],
+          }
+        ),
+        N(
+          'h-use-autopilot',
+          'hooks',
+          'use-autopilot',
+          'autopilot runs',
+          309,
+          288,
+          232,
+          46,
+          'hooks',
+          {
+            role: 'Hook for autopilot workflow CRUD + run control + step events.',
+            plain: 'Lets the autopilot screen start, pause and watch automated runs.',
+            path: 'apps/tauri/src/renderer/services/use-autopilot/use-autopilot.ts',
+            notes: [],
+            tag: ['autopilot', 'all'],
+          }
+        ),
+        N('h-use-boards', 'hooks', 'use-boards', 'board catalog', 309, 352, 232, 46, 'hooks', {
+          role: 'Hook for the scraper board catalog + scrape triggers.',
+          plain: 'Knows which job sites can be searched and kicks off a search.',
+          path: 'apps/tauri/src/renderer/services/use-boards/use-boards.ts',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N('h-use-search', 'hooks', 'use-search', 'hybrid search', 309, 416, 232, 46, 'hooks', {
+          role: 'Hook for hybrid (semantic + keyword) search.',
+          plain: 'Sends your search to the engine and returns ranked jobs.',
+          path: 'apps/tauri/src/renderer/services/use-search/use-search.ts',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N('h-use-match', 'hooks', 'use-match', 'resume↔job match', 309, 480, 232, 46, 'hooks', {
+          role: 'Hook for resume-to-job match scoring.',
+          plain: 'Asks the engine how well your resume fits a given job.',
+          path: 'apps/tauri/src/renderer/services/use-match/use-match.ts',
+          notes: ['Backend matcher is currently a Rust stub'],
+          tag: ['scrape', 'all'],
+        }),
+        N(
+          'h-use-documents',
+          'hooks',
+          'use-documents',
+          'document store',
+          309,
+          544,
+          232,
+          46,
+          'hooks',
+          {
+            role: 'Hook for document import/list/default selection.',
+            plain: 'Handles uploading and picking your resume files.',
+            path: 'apps/tauri/src/renderer/services/use-documents/use-documents.ts',
+            notes: [],
+            tag: ['documents', 'all'],
+          }
+        ),
+        N('h-use-jobs', 'hooks', 'use-jobs', 'job tracker', 309, 608, 232, 46, 'hooks', {
+          role: 'Hook for the job tracker (status, interactions).',
+          plain: 'Reads and updates the status of jobs you are tracking.',
+          path: 'apps/tauri/src/renderer/services/use-jobs/use-jobs.ts',
+          notes: [],
+          tag: ['scrape', 'autopilot', 'all'],
+        }),
+        N('h-use-postings', 'hooks', 'use-postings', 'posting cache', 309, 672, 232, 46, 'hooks', {
+          role: 'Hook for the in-memory postings cache (scrape results).',
+          plain: 'Holds the latest batch of scraped jobs for fast display.',
+          path: 'apps/tauri/src/renderer/services/use-postings/use-postings.ts',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N('h-use-conv', 'hooks', 'use-conversations', 'chat history', 309, 736, 232, 46, 'hooks', {
+          role: 'Hook for conversation history persistence.',
+          plain: 'Saves and loads AI chat history.',
+          path: 'apps/tauri/src/renderer/services/use-conversations/use-conversations.ts',
+          notes: [],
+          tag: ['all'],
+        }),
+        N('h-use-cred', 'hooks', 'use-credentials', 'keychain creds', 309, 800, 232, 46, 'hooks', {
+          role: 'Hook for board/provider credential CRUD (OS keychain).',
+          plain: 'Stores your job-board logins safely in the operating system keychain.',
+          path: 'apps/tauri/src/renderer/services/use-credentials/use-credentials.ts',
+          notes: [],
+          tag: ['settings', 'all'],
+        }),
+        N(
+          'h-use-jobprefs',
+          'hooks',
+          'use-job-preferences',
+          'search prefs',
+          309,
+          864,
+          232,
+          46,
+          'hooks',
+          {
+            role: 'Hook for saved search/job preferences.',
+            plain: 'Remembers your usual search filters (location, salary, remote…).',
+            path: 'apps/tauri/src/renderer/services/use-job-preferences/use-job-preferences.ts',
+            notes: [],
+            tag: ['scrape', 'all'],
+          }
+        ),
+        N('h-use-privacy', 'hooks', 'use-privacy', 'privacy/backup', 309, 928, 232, 46, 'hooks', {
+          role: 'Hook for privacy controls + data backup/restore.',
+          plain: 'Controls clearing data and exporting/importing a backup.',
+          path: 'apps/tauri/src/renderer/services/use-privacy/use-privacy.ts',
+          notes: [],
+          tag: ['settings', 'all'],
+        }),
+        N('h-use-support', 'hooks', 'use-support', 'diagnostics', 309, 992, 232, 46, 'hooks', {
+          role: 'Hook for support diagnostics + system health.',
+          plain: 'Feeds the troubleshooting screen with health info.',
+          path: 'apps/tauri/src/renderer/services/use-support/use-support.ts',
+          notes: [],
+          tag: ['support', 'all'],
+        }),
+        N('h-use-system', 'hooks', 'use-system', 'system/resources', 309, 1056, 232, 46, 'hooks', {
+          role: 'Hook for system info + resource metrics.',
+          plain: 'Reads memory/CPU info to show how the app is doing.',
+          path: 'apps/tauri/src/renderer/services/use-system/use-system.ts',
+          notes: [],
+          tag: ['support', 'all'],
+        }),
+
+        // ── Prompts / LLM assembly (x 589) ─────────────────────────────────────────
+        N(
+          'p-generation',
+          'prompts',
+          'generation.ts',
+          'streamGenerate / steps',
+          589,
+          96,
+          232,
+          46,
+          'prompts',
+          {
+            role: 'Orchestrates resume+cover-letter generation: extract metadata → generate resume → generate cover letter, all streamed via ai.generatePipeline.',
+            plain:
+              'The conductor of the AI writing — it asks for the parts in order and stitches the streamed text together.',
+            path: 'apps/tauri/src/renderer/lib/generate/generation/generation.ts:55',
+            notes: [
+              'streamGenerate():55 parses inline <think> blocks',
+              'generateResume():275 · generateCoverLetter():297',
+              'Calls getClient().ai.generatePipeline directly',
+            ],
+            tag: ['overview', 'aigenerate', 'all'],
+            critical: true,
+          }
+        ),
+        N(
+          'p-resume-ai',
+          'prompts',
+          'resume-ai.ts',
+          'structured resume helpers',
+          589,
+          160,
+          232,
+          46,
+          'prompts',
+          {
+            role: 'Renderer helpers for structured resume extraction/shaping.',
+            plain: 'Turns a raw resume into tidy, labelled sections.',
+            path: 'apps/tauri/src/renderer/lib/resume-ai/resume-ai.ts',
+            notes: [],
+            tag: ['aigenerate', 'documents', 'all'],
+          }
+        ),
+        N(
+          'p-export',
+          'prompts',
+          'generate/export',
+          'DOCX/PDF export glue',
+          589,
+          224,
+          232,
+          46,
+          'prompts',
+          {
+            role: 'Renderer-side export orchestration (calls Rust export commands).',
+            plain: 'Sends the finished resume to be turned into a downloadable Word/PDF file.',
+            path: 'apps/tauri/src/renderer/lib/generate/export/export.ts',
+            notes: [],
+            tag: ['documents', 'aigenerate', 'all'],
+          }
+        ),
+        N(
+          'p-templates',
+          'prompts',
+          'generate/templates',
+          '9 export templates',
+          589,
+          288,
+          232,
+          46,
+          'prompts',
+          {
+            role: 'Template catalog + preview data for export.',
+            plain: 'The library of resume looks you can pick from.',
+            path: 'apps/tauri/src/renderer/lib/generate/templates/templates.ts',
+            notes: ['See docs/EXPORT_TEMPLATES.md'],
+            tag: ['documents', 'all'],
+          }
+        ),
+        N(
+          'p-build-resume',
+          'prompts',
+          'buildResumePrompt',
+          '@ajh/prompts',
+          589,
+          352,
+          232,
+          46,
+          'prompts',
+          {
+            role: 'Builds the resume system+user prompt, provider-aware and locale-driven.',
+            plain: 'Writes the exact instructions the AI follows to rewrite your resume.',
+            path: 'packages/prompts/src/generate/resume.ts',
+            notes: ['Depth chosen by ProviderProfile (brief/full/task)'],
+            tag: ['overview', 'aigenerate', 'all'],
+            critical: true,
+          }
+        ),
+        N(
+          'p-build-cover',
+          'prompts',
+          'buildCoverLetterPrompt',
+          '@ajh/prompts',
+          589,
+          416,
+          232,
+          46,
+          'prompts',
+          {
+            role: 'Builds the cover-letter system+user prompt.',
+            plain: 'Writes the instructions the AI follows to draft your cover letter.',
+            path: 'packages/prompts/src/generate/cover-letter.ts',
+            notes: ['Has self-verifying task-brief variant for CLI agents'],
+            tag: ['overview', 'aigenerate', 'all'],
+            critical: true,
+          }
+        ),
+        N(
+          'p-build-meta',
+          'prompts',
+          'buildMetadataPrompt',
+          'name/role/keywords',
+          589,
+          480,
+          232,
+          46,
+          'prompts',
+          {
+            role: 'Prompt that extracts JSON metadata (name, role, company, languages, keywords).',
+            plain: 'A first quick pass that pulls the key facts out of the job ad and resume.',
+            path: 'packages/prompts/src/generate/metadata.ts',
+            notes: [],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'p-validate',
+          'prompts',
+          'validateMetadata',
+          'repair JSON',
+          589,
+          544,
+          232,
+          46,
+          'prompts',
+          {
+            role: 'Validates + repairs model JSON output (universal fallback).',
+            plain: 'Cleans up the AI’s answer if it comes back slightly malformed.',
+            path: 'packages/prompts/src/generate/metadata.ts',
+            notes: ['Fallback for every provider'],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'p-links',
+          'prompts',
+          'generate/links',
+          'inject hyperlinks',
+          589,
+          608,
+          232,
+          46,
+          'prompts',
+          {
+            role: 'Extracts links from the source resume and re-injects them into generated text.',
+            plain: 'Makes sure your portfolio/LinkedIn links survive the rewrite.',
+            path: 'packages/prompts/src/generate/links.ts',
+            notes: ['injectLinksIntoGeneratedText / getLinkMap'],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'p-analyze-prompt',
+          'prompts',
+          'analysis-prompt.ts',
+          '@ajh/prompts/analyze',
+          589,
+          672,
+          232,
+          46,
+          'prompts',
+          {
+            role: 'Builds the resume-analysis prompt + schema.',
+            plain: 'Writes the instructions for grading a resume against a job.',
+            path: 'packages/prompts/src/analyze/analysis-prompt.ts',
+            notes: [],
+            tag: ['analyze', 'all'],
+          }
+        ),
+        N(
+          'p-analyze-validate',
+          'prompts',
+          'validate.ts',
+          'validateAndRepair',
+          589,
+          736,
+          232,
+          46,
+          'prompts',
+          {
+            role: 'Validates + repairs the analysis JSON.',
+            plain: 'Fixes up the grading result if it is malformed.',
+            path: 'packages/prompts/src/analyze/validate.ts',
+            notes: [],
+            tag: ['analyze', 'all'],
+          }
+        ),
+        N(
+          'p-ctx-multipass',
+          'prompts',
+          'context-manager/multi-pass',
+          'chunked passes',
+          589,
+          800,
+          232,
+          46,
+          'prompts',
+          {
+            role: 'Multi-pass context strategy for large inputs.',
+            plain: 'Breaks a very long resume into pieces the AI can handle.',
+            path: 'packages/prompts/src/context-manager/multi-pass.ts',
+            notes: [],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'p-ctx-trunc',
+          'prompts',
+          'context-manager/truncation',
+          'budget trim',
+          589,
+          864,
+          232,
+          46,
+          'prompts',
+          {
+            role: 'Truncates inputs to a per-provider token budget.',
+            plain: 'Trims the text so it fits inside the AI’s memory limit.',
+            path: 'packages/prompts/src/context-manager/truncation.ts',
+            notes: ['Aggressive for Ollama, minimal for cloud'],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'p-ctx-modelsize',
+          'prompts',
+          'context-manager/model-size',
+          'getModelTier()',
+          589,
+          928,
+          232,
+          46,
+          'prompts',
+          {
+            role: 'Parses a model’s parameter size from its name to pick a prompt tier.',
+            plain: 'Guesses how big/capable the chosen AI is so the prompt suits it.',
+            path: 'packages/prompts/src/context-manager/model-size.ts',
+            notes: [
+              'Unknown local models default to the safer/smaller tier',
+              'CLI/hosted names (sonnet/gpt/gemini…) treated as capable',
+            ],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'p-provider',
+          'prompts',
+          'provider/resolveProfile',
+          'ProviderProfile',
+          589,
+          992,
+          232,
+          46,
+          'prompts',
+          {
+            role: 'Resolves a ProviderProfile (kind/model/contextWindow/structured-output) that every builder reads additively.',
+            plain: 'Describes the chosen AI engine so the instructions and limits are tuned to it.',
+            path: 'packages/prompts/src/provider/index.ts',
+            notes: ['ollama | cloud | cli — legacy large/medium/small still works'],
+            tag: ['overview', 'aigenerate', 'all'],
+            critical: true,
+          }
+        ),
+        N('p-locale', 'prompts', 'locale', '11-language lexicons', 589, 1056, 232, 46, 'prompts', {
+          role: 'Section-header lexicons, resume conventions, per-locale token factors.',
+          plain: 'Teaches the AI each market’s resume style and language.',
+          path: 'packages/prompts/src/locale/index.ts',
+          notes: ['Behaviour follows the job-ad’s detected locale'],
+          tag: ['aigenerate', 'all'],
+        }),
+
+        // ── Shared Contracts (x 869) ────────────────────────────────────────────────
+        N(
+          'ct-barrel',
+          'contract',
+          'contracts.ts',
+          '21-namespace barrel',
+          869,
+          96,
+          232,
+          46,
+          'contract',
+          {
+            role: 'Re-exports all 21 typed IPC namespace contracts — the single source of truth.',
+            plain: 'The master list of every request the interface can make to the engine.',
+            path: 'packages/shared/src/ipc/contracts.ts',
+            notes: ['IpcContract = the whole surface'],
+            tag: ['overview', 'all'],
+          }
+        ),
+        N('ct-ai', 'contract', 'ai.ts', 'AiContract', 869, 160, 232, 46, 'contract', {
+          role: 'AI namespace: generate, generatePipeline, onStream, models, embed, provider keys.',
+          plain: 'The agreed shape of every AI request and the streamed reply.',
+          path: 'packages/shared/src/ipc/contracts/ai.ts:4',
+          notes: [
+            'generatePipeline():12 — the resume/cover path',
+            'AI_CHANNELS:87 — ai:generate / ai:stream',
+          ],
+          tag: ['overview', 'aigenerate', 'all'],
+          critical: true,
+        }),
+        N(
+          'ct-autopilot',
+          'contract',
+          'autopilot.ts',
+          'AutopilotContract',
+          869,
+          224,
+          232,
+          46,
+          'contract',
+          {
+            role: 'Autopilot namespace: workflow CRUD, run control, step stream.',
+            plain: 'The contract for setting up and running automated job hunts.',
+            path: 'packages/shared/src/ipc/contracts/autopilot.ts',
+            notes: [],
+            tag: ['autopilot', 'all'],
+          }
+        ),
+        N('ct-scrape', 'contract', 'scrape.ts', 'ScrapeContract', 869, 288, 232, 46, 'contract', {
+          role: 'Scrape namespace: run a board scrape, scrape a single URL.',
+          plain: 'The contract for fetching jobs from a board or a pasted link.',
+          path: 'packages/shared/src/ipc/contracts/scrape.ts',
+          notes: ['scrape.url exists but is not yet wired into AI Generate'],
+          tag: ['scrape', 'all'],
+        }),
+        N('ct-search', 'contract', 'search.ts', 'SearchContract', 869, 352, 232, 46, 'contract', {
+          role: 'Search namespace: hybrid semantic+keyword search.',
+          plain: 'The contract for the smart search box.',
+          path: 'packages/shared/src/ipc/contracts/search.ts',
+          notes: ['Backend handler is a Rust stub'],
+          tag: ['scrape', 'all'],
+        }),
+        N('ct-match', 'contract', 'match.ts', 'MatchContract', 869, 416, 232, 46, 'contract', {
+          role: 'Match namespace: resume↔job similarity scoring.',
+          plain: 'The contract for the resume-fit score.',
+          path: 'packages/shared/src/ipc/contracts/match.ts',
+          notes: ['Backend matcher is a Rust stub'],
+          tag: ['scrape', 'all'],
+        }),
+        N(
+          'ct-documents',
+          'contract',
+          'documents.ts',
+          'DocumentsContract',
+          869,
+          480,
+          232,
+          46,
+          'contract',
+          {
+            role: 'Documents namespace: import, list, default, delete, export.',
+            plain: 'The contract for working with your resume files.',
+            path: 'packages/shared/src/ipc/contracts/documents.ts',
+            notes: [],
+            tag: ['documents', 'all'],
+          }
+        ),
+        N('ct-jobs', 'contract', 'jobs.ts', 'JobsContract', 869, 544, 232, 46, 'contract', {
+          role: 'Jobs namespace: tracker state + interactions; job control (cancel/get).',
+          plain: 'The contract for tracking jobs and long-running tasks.',
+          path: 'packages/shared/src/ipc/contracts/jobs.ts',
+          notes: ['jobs.cancel/get used by streaming'],
+          tag: ['scrape', 'autopilot', 'all'],
+        }),
+        N('ct-apply', 'contract', 'apply.ts', 'ApplyContract', 869, 608, 232, 46, 'contract', {
+          role: 'Apply namespace: auto-apply to a posting via the board applier.',
+          plain: 'The contract for submitting an application for you.',
+          path: 'packages/shared/src/ipc/contracts/apply.ts',
+          notes: [],
+          tag: ['autopilot', 'all'],
+        }),
+        N('ct-boards', 'contract', 'boards.ts', 'BoardsContract', 869, 672, 232, 46, 'contract', {
+          role: 'Boards namespace: catalog of supported boards + login state.',
+          plain: 'The contract listing which job sites are supported.',
+          path: 'packages/shared/src/ipc/contracts/boards.ts',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N(
+          'ct-conv',
+          'contract',
+          'conversations.ts',
+          'ConversationsContract',
+          869,
+          736,
+          232,
+          46,
+          'contract',
+          {
+            role: 'Conversations namespace: chat history persistence.',
+            plain: 'The contract for saving AI chats.',
+            path: 'packages/shared/src/ipc/contracts/conversations.ts',
+            notes: [],
+            tag: ['all'],
+          }
+        ),
+        N(
+          'ct-cred',
+          'contract',
+          'credentials.ts',
+          'CredentialsContract',
+          869,
+          800,
+          232,
+          46,
+          'contract',
+          {
+            role: 'Credentials namespace: keychain-backed board/provider creds.',
+            plain: 'The contract for storing logins securely.',
+            path: 'packages/shared/src/ipc/contracts/credentials.ts',
+            notes: [],
+            tag: ['settings', 'all'],
+          }
+        ),
+        N('ct-resume', 'contract', 'resume.ts', 'ResumeContract', 869, 864, 232, 46, 'contract', {
+          role: 'Resume namespace: structured extraction + review.',
+          plain: 'The contract for reading the structure of a resume.',
+          path: 'packages/shared/src/ipc/contracts/resume.ts',
+          notes: [],
+          tag: ['documents', 'all'],
+        }),
+        N('ct-system', 'contract', 'system.ts', 'SystemContract', 869, 928, 232, 46, 'contract', {
+          role: 'System namespace: GPU/info, locale files, paths.',
+          plain: 'The contract for low-level machine info.',
+          path: 'packages/shared/src/ipc/contracts/system.ts',
+          notes: [],
+          tag: ['support', 'all'],
+        }),
+        N('ct-schemas', 'contract', 'schemas/', 'Zod validation', 869, 992, 232, 46, 'contract', {
+          role: 'Zod schemas validating IPC payloads (AiGenerateRequest, etc.).',
+          plain: 'The rule-checker that makes sure each request is well-formed before it is sent.',
+          path: 'packages/shared/src/schemas/index.ts',
+          notes: ['No React, no Node APIs in this package'],
+          tag: ['overview', 'all'],
+        }),
+        N(
+          'ct-types',
+          'contract',
+          'types/',
+          'JobRecord, MatchScore…',
+          869,
+          1056,
+          232,
+          46,
+          'contract',
+          {
+            role: 'Shared domain types consumed by renderer + (mirrored in) Rust.',
+            plain: 'The shared vocabulary of data shapes used on both sides.',
+            path: 'packages/shared/src/types/index.ts',
+            notes: [],
+            tag: ['overview', 'all'],
+          }
+        ),
+
+        // ── Rust Commands (x 1149) ──────────────────────────────────────────────────
+        N(
+          'cmd-mod',
+          'command',
+          'commands/mod.rs',
+          'invoke_handler registry',
+          1149,
+          96,
+          232,
+          46,
+          'command',
+          {
+            role: 'Registers every #[tauri::command] in one generate_handler! list — the Rust entry surface.',
+            plain:
+              'The switchboard that connects each interface request to the right backend function.',
+            path: 'apps/tauri/src-tauri/src/commands/mod.rs',
+            notes: ['#[tauri::command] only allowed in this shell layer (arch test)'],
+            tag: ['overview', 'all'],
+          }
+        ),
+        N(
+          'cmd-ai',
+          'command',
+          'ai.rs · ai_generate',
+          'stream command',
+          1149,
+          160,
+          232,
+          46,
+          'command',
+          {
+            role: 'ai_generate command: validates provider+model, spawns chat_stream; no silent Ollama fallback.',
+            plain:
+              'The backend door for "start writing" — it checks your AI choice then streams the answer back.',
+            path: 'apps/tauri/src-tauri/src/commands/ai.rs:30',
+            notes: [
+              'Provider required + validated (3 guards)',
+              'Spawns provider.chat_stream on the async runtime',
+            ],
+            tag: ['overview', 'aigenerate', 'all'],
+            critical: true,
+          }
+        ),
+        N(
+          'cmd-pipeline',
+          'command',
+          'pipeline.rs',
+          'generatePipeline command',
+          1149,
+          224,
+          232,
+          46,
+          'command',
+          {
+            role: 'Runs resume/cover-letter generation as a composable Pipeline of stages.',
+            plain:
+              'The backend door the generation screen actually uses — runs the work as reusable steps.',
+            path: 'apps/tauri/src-tauri/src/commands/pipeline.rs',
+            notes: ['Shares one lifecycle across feature generators'],
+            tag: ['overview', 'aigenerate', 'all'],
+            critical: true,
+          }
+        ),
+        N(
+          'cmd-documents',
+          'command',
+          'documents.rs',
+          'import/export',
+          1149,
+          288,
+          232,
+          46,
+          'command',
+          {
+            role: 'Document commands: import, list, default, export to DOCX/PDF.',
+            plain: 'Backend doors for handling and exporting resume files.',
+            path: 'apps/tauri/src-tauri/src/commands/documents.rs',
+            notes: [],
+            tag: ['documents', 'all'],
+          }
+        ),
+        N(
+          'cmd-resume',
+          'command',
+          'resume.rs',
+          'structured extract',
+          1149,
+          352,
+          232,
+          46,
+          'command',
+          {
+            role: 'Resume commands: structured extraction + review.',
+            plain: 'Backend door that reads a resume into labelled sections.',
+            path: 'apps/tauri/src-tauri/src/commands/resume.rs',
+            notes: [],
+            tag: ['documents', 'all'],
+          }
+        ),
+        N(
+          'cmd-cover',
+          'command',
+          'cover_letter.rs',
+          'research + leakage',
+          1149,
+          416,
+          232,
+          46,
+          'command',
+          {
+            role: 'Cover-letter commands incl. research/enrichment + leakage validation.',
+            plain: 'Backend door for cover letters, with checks against leaking made-up facts.',
+            path: 'apps/tauri/src-tauri/src/commands/cover_letter.rs',
+            notes: [],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N('cmd-aigen', 'command', 'ai_generations.rs', 'save/list', 1149, 480, 232, 46, 'command', {
+          role: 'Persist + list generated documents (metadata + content).',
+          plain: 'Backend door that stores each AI result so you can find it later.',
+          path: 'apps/tauri/src-tauri/src/commands/ai_generations.rs',
+          notes: [],
+          tag: ['aigenerate', 'all'],
+        }),
+        N('cmd-search', 'command', 'search.rs', 'hybrid search', 1149, 544, 232, 46, 'command', {
+          role: 'Search command: ANN vector search + keyword filter.',
+          plain: 'Backend door for the smart search.',
+          path: 'apps/tauri/src-tauri/src/commands/search.rs',
+          notes: ['Currently a stub — see Architecture Status'],
+          tag: ['scrape', 'all'],
+        }),
+        N('cmd-boards', 'command', 'boards.rs', 'catalog/login', 1149, 608, 232, 46, 'command', {
+          role: 'Board catalog + login-state commands.',
+          plain: 'Backend door listing job sites and your login status.',
+          path: 'apps/tauri/src-tauri/src/commands/boards.rs',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N(
+          'cmd-scrape',
+          'command',
+          'scrape · scrape_url',
+          'run scrape',
+          1149,
+          672,
+          232,
+          46,
+          'command',
+          {
+            role: 'Scrape commands: run a board scrape, scrape a single URL.',
+            plain: 'Backend door that goes and fetches jobs.',
+            path: 'apps/tauri/src-tauri/src/scraping',
+            notes: ['scrape_url path exists; AI-Generate URL input not yet wired'],
+            tag: ['scrape', 'all'],
+          }
+        ),
+        N('cmd-match', 'command', 'match_resume.rs', 'match score', 1149, 736, 232, 46, 'command', {
+          role: 'Resume↔job match command.',
+          plain: 'Backend door for the resume-fit score.',
+          path: 'apps/tauri/src-tauri/src/commands/match_resume.rs',
+          notes: ['Currently a stub — was ✅ in old TS'],
+          tag: ['scrape', 'all'],
+        }),
+        N(
+          'cmd-autopilot',
+          'command',
+          'autopilot cmds',
+          'workflow/run',
+          1149,
+          800,
+          232,
+          46,
+          'command',
+          {
+            role: 'Autopilot commands: workflow CRUD, trigger, pause/resume.',
+            plain: 'Backend doors for setting up and running automated hunts.',
+            path: 'apps/tauri/src-tauri/src/commands',
+            notes: [],
+            tag: ['autopilot', 'all'],
+          }
+        ),
+        N(
+          'cmd-conv',
+          'command',
+          'conversations.rs',
+          'chat persist',
+          1149,
+          864,
+          232,
+          46,
+          'command',
+          {
+            role: 'Conversation persistence commands.',
+            plain: 'Backend door for saving chats.',
+            path: 'apps/tauri/src-tauri/src/commands/conversations.rs',
+            notes: [],
+            tag: ['all'],
+          }
+        ),
+        N('cmd-support', 'command', 'support.rs', 'diagnostics', 1149, 928, 232, 46, 'command', {
+          role: 'Support/diagnostics + AI runtime health commands.',
+          plain: 'Backend door feeding the troubleshooting screen.',
+          path: 'apps/tauri/src-tauri/src/commands/support.rs',
+          notes: [],
+          tag: ['support', 'all'],
+        }),
+        N(
+          'cmd-profile',
+          'command',
+          'profile_import.rs',
+          'LinkedIn import',
+          1149,
+          992,
+          232,
+          46,
+          'command',
+          {
+            role: 'Import a profile (e.g. LinkedIn) into a structured resume.',
+            plain: 'Backend door that turns a profile into a starter resume.',
+            path: 'apps/tauri/src-tauri/src/commands/profile_import.rs',
+            notes: [],
+            tag: ['documents', 'all'],
+          }
+        ),
+        N('cmd-data', 'command', 'data.rs', 'backup/restore', 1149, 1056, 232, 46, 'command', {
+          role: 'Full backup/restore: one versioned bundle across every DataStore.',
+          plain: 'Backend door that exports or re-imports all your data in one file.',
+          path: 'apps/tauri/src-tauri/src/commands/data.rs',
+          notes: ['Excludes secrets + caches'],
+          tag: ['settings', 'all'],
+        }),
+
+        // ── Rust Domains (x 1429) ───────────────────────────────────────────────────
+        N(
+          'd-aiprovider',
+          'domain',
+          'ai_provider::resolve',
+          'strict provider routing',
+          1429,
+          96,
+          232,
+          46,
+          'domain',
+          {
+            role: 'Single routing point: ProviderId → Box<dyn AiProvider>. Strict, no silent fallback. Also embeddings (embed_text/compare/cosine).',
+            plain:
+              'The traffic controller that hands each AI request to the exact engine you chose.',
+            path: 'apps/tauri/src-tauri/src/commands/ai_provider/mod.rs:238',
+            notes: [
+              'ProviderId enum:37 (8 variants)',
+              'embed_text():294 · compare():342 (space-checked)',
+              'Adding a provider = client module + 1 enum arm + 1 resolve arm',
+            ],
+            tag: ['overview', 'aigenerate', 'all'],
+            critical: true,
+          }
+        ),
+        N(
+          'd-pipeline',
+          'domain',
+          'pipeline::Completer',
+          'stage orchestration',
+          1429,
+          160,
+          232,
+          46,
+          'domain',
+          {
+            role: 'Binds active provider+model+app so any Stage runs a completion through the centralized provider layer.',
+            plain: 'The reusable runner that performs each generation step on shared plumbing.',
+            path: 'apps/tauri/src-tauri/src/pipeline/mod.rs:44',
+            notes: [
+              'Completer.resolve():44 · complete():77',
+              'Stages: retry, validation, enrichment, cache',
+            ],
+            tag: ['overview', 'aigenerate', 'all'],
+            critical: true,
+          }
+        ),
+        N(
+          'd-pipe-retry',
+          'domain',
+          'pipeline/retry',
+          'retry + regenerate',
+          1429,
+          224,
+          232,
+          46,
+          'domain',
+          {
+            role: 'Retry/regeneration stage.',
+            plain: 'Tries again if a generation step fails.',
+            path: 'apps/tauri/src-tauri/src/pipeline/retry',
+            notes: [],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'd-pipe-valid',
+          'domain',
+          'pipeline/validation',
+          'output validation',
+          1429,
+          288,
+          232,
+          46,
+          'domain',
+          {
+            role: 'Validates generated output.',
+            plain: 'Checks the AI’s output before continuing.',
+            path: 'apps/tauri/src-tauri/src/pipeline/validation.rs',
+            notes: [],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'd-pipe-enrich',
+          'domain',
+          'pipeline/enrichment',
+          'cover-letter research',
+          1429,
+          352,
+          232,
+          46,
+          'domain',
+          {
+            role: 'Research/enrichment stage (e.g. cover-letter company research).',
+            plain: 'Gathers extra context to make the cover letter specific.',
+            path: 'apps/tauri/src-tauri/src/pipeline/enrichment.rs',
+            notes: [],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N('d-pipe-cache', 'domain', 'pipeline/cache', 'stage cache', 1429, 416, 232, 46, 'domain', {
+          role: 'Caches stage results.',
+          plain: 'Saves work so repeated steps are instant.',
+          path: 'apps/tauri/src-tauri/src/pipeline/cache',
+          notes: [],
+          tag: ['aigenerate', 'all'],
+        }),
+        N(
+          'd-scraping',
+          'domain',
+          'scraping::engine',
+          'ScraperEngine',
+          1429,
+          480,
+          232,
+          46,
+          'domain',
+          {
+            role: 'Drives a scrape: resolves the board, paginates, isolates per-page failures (partial results).',
+            plain: 'The worker that visits a job site and brings back listings.',
+            path: 'apps/tauri/src-tauri/src/scraping/engine',
+            notes: ['Partial results on a later-page failure instead of aborting'],
+            tag: ['scrape', 'all'],
+          }
+        ),
+        N(
+          'd-scraper-trait',
+          'domain',
+          'scraping::types',
+          'Scraper trait',
+          1429,
+          544,
+          232,
+          46,
+          'domain',
+          {
+            role: 'The Scraper trait — id(), catalog, fetch — that every board implements.',
+            plain: 'The common shape every job-site adapter must follow.',
+            path: 'apps/tauri/src-tauri/src/scraping/types/mod.rs',
+            notes: ['Dispatch + catalog derive from one SCRAPERS list'],
+            tag: ['scrape', 'all'],
+          }
+        ),
+        N(
+          'd-applying',
+          'domain',
+          'applying::form_filler',
+          'auto-apply',
+          1429,
+          608,
+          232,
+          46,
+          'domain',
+          {
+            role: 'Form-filling logic for auto-apply + captcha/error handling.',
+            plain: 'Fills in and submits application forms for you.',
+            path: 'apps/tauri/src-tauri/src/applying/form_filler/mod.rs',
+            notes: ['captcha_handler + error_handler alongside'],
+            tag: ['autopilot', 'all'],
+          }
+        ),
+        N(
+          'd-autopilot',
+          'domain',
+          'autopilot engine',
+          'workflow + scheduler',
+          1429,
+          672,
+          232,
+          46,
+          'domain',
+          {
+            role: 'Autopilot workflow engine + cron-like step scheduler.',
+            plain: 'Runs your saved hunt on a schedule, step by step.',
+            path: 'apps/tauri/src-tauri/src/autopilot/mod.rs',
+            notes: ['Emits autopilot:step events'],
+            tag: ['autopilot', 'all'],
+          }
+        ),
+        N('d-jobs', 'domain', 'jobs::JobTracker', 'SQLite tracker', 1429, 736, 232, 46, 'domain', {
+          role: 'Job tracker state machine (queued → running → done/failed) + long-task registry.',
+          plain: 'Keeps the status of every job and background task.',
+          path: 'apps/tauri/src-tauri/src/jobs/mod.rs',
+          notes: ['Backs streaming cancel/get'],
+          tag: ['scrape', 'autopilot', 'all'],
+        }),
+        N(
+          'd-documents',
+          'domain',
+          'documents store',
+          'import + SQLite',
+          1429,
+          800,
+          232,
+          46,
+          'domain',
+          {
+            role: 'Document import, OCR dispatch, SQLite storage + embedding config.',
+            plain: 'Stores your resume files and their extracted text.',
+            path: 'apps/tauri/src-tauri/src/documents',
+            notes: ['OCR runs in the renderer (Tesseract.js)'],
+            tag: ['documents', 'all'],
+          }
+        ),
+        N(
+          'd-extraction',
+          'domain',
+          'extraction router',
+          'PDF/DOCX/RTF/HTML',
+          1429,
+          864,
+          232,
+          46,
+          'domain',
+          {
+            role: 'Format-detecting extraction router → ExtractedResume.',
+            plain: 'Reads text out of whatever file type you upload.',
+            path: 'apps/tauri/src-tauri/src/extraction',
+            notes: ['Structured extractor + clean/normalize'],
+            tag: ['documents', 'all'],
+          }
+        ),
+        N(
+          'd-export-pdf',
+          'domain',
+          'export/pdf_renderer',
+          'canonical layout',
+          1429,
+          928,
+          232,
+          46,
+          'domain',
+          {
+            role: 'PDF export via the canonical layout engine (two-column + ATS linearization).',
+            plain: 'Turns a resume into a polished PDF.',
+            path: 'apps/tauri/src-tauri/src/export/pdf_renderer/mod.rs',
+            notes: ['Legacy fallback path retained'],
+            tag: ['documents', 'all'],
+          }
+        ),
+        N(
+          'd-export-docx',
+          'domain',
+          'export model/docx',
+          'DOCX + rich model',
+          1429,
+          992,
+          232,
+          46,
+          'domain',
+          {
+            role: 'DOCX export via the canonical document model (real two-column table, A4, font fallback).',
+            plain: 'Turns a resume into an editable Word file.',
+            path: 'apps/tauri/src-tauri/src/export/model_docx.rs',
+            notes: [],
+            tag: ['documents', 'all'],
+          }
+        ),
+        N(
+          'd-conv',
+          'domain',
+          'conversations store',
+          'chat persistence',
+          1429,
+          1056,
+          232,
+          46,
+          'domain',
+          {
+            role: 'Conversation history store (SQLite).',
+            plain: 'Saves AI chat history on disk.',
+            path: 'apps/tauri/src-tauri/src/conversations',
+            notes: [],
+            tag: ['all'],
+          }
+        ),
+
+        // ── Scrapers (colA x 1709, colB x 1945) ─────────────────────────────────────
+        N(
+          'sc-registry',
+          'scraper',
+          'SCRAPERS',
+          'registry · 20 boards',
+          1709,
+          96,
+          210,
+          46,
+          'scraper',
+          {
+            role: 'Static list of every Scraper, in catalog order; both dispatch (get) and the UI catalog (all) derive from it.',
+            plain: 'The one master list of supported job sites.',
+            path: 'apps/tauri/src-tauri/src/scraping/boards/mod.rs:49',
+            notes: ['get(id):78 resolves a board', 'Adding a board = one module + one line here'],
+            tag: ['overview', 'scrape', 'all'],
+          }
+        ),
+        N(
+          'sc-ycombinator',
+          'scraper',
+          'ycombinator',
+          'Scraper · API',
+          1709,
+          160,
+          210,
+          42,
+          'scraper',
+          {
+            role: 'Y Combinator (Work at a Startup) scraper.',
+            plain: 'Reads startup jobs from Y Combinator.',
+            path: 'apps/tauri/src-tauri/src/scraping/boards/ycombinator',
+            notes: [],
+            tag: ['scrape', 'all'],
+          }
+        ),
+        N('sc-remotive', 'scraper', 'remotive', 'Scraper · API', 1709, 212, 210, 42, 'scraper', {
+          role: 'Remotive job board scraper.',
+          plain: 'Reads remote jobs from Remotive.',
+          path: 'apps/tauri/src-tauri/src/scraping/boards/remotive',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N('sc-remoteok', 'scraper', 'remoteok', 'Scraper · API', 1709, 264, 210, 42, 'scraper', {
+          role: 'RemoteOK scraper.',
+          plain: 'Reads remote jobs from RemoteOK.',
+          path: 'apps/tauri/src-tauri/src/scraping/boards/remoteok',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N('sc-wwr', 'scraper', 'wwr', 'WeWorkRemotely · API', 1709, 316, 210, 42, 'scraper', {
+          role: 'WeWorkRemotely scraper.',
+          plain: 'Reads remote jobs from WeWorkRemotely.',
+          path: 'apps/tauri/src-tauri/src/scraping/boards/wwr',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N('sc-arbeitnow', 'scraper', 'arbeitnow', 'Scraper · API', 1709, 368, 210, 42, 'scraper', {
+          role: 'ArbeitNow scraper.',
+          plain: 'Reads jobs from ArbeitNow (DACH).',
+          path: 'apps/tauri/src-tauri/src/scraping/boards/arbeitnow',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N(
+          'sc-berlin',
+          'scraper',
+          'berlinstartupjobs',
+          'Scraper · API',
+          1709,
+          420,
+          210,
+          42,
+          'scraper',
+          {
+            role: 'BerlinStartupJobs scraper.',
+            plain: 'Reads Berlin startup jobs.',
+            path: 'apps/tauri/src-tauri/src/scraping/boards/berlinstartupjobs',
+            notes: [],
+            tag: ['scrape', 'all'],
+          }
+        ),
+        N(
+          'sc-germantech',
+          'scraper',
+          'germantechjobs',
+          'Scraper · API',
+          1709,
+          472,
+          210,
+          42,
+          'scraper',
+          {
+            role: 'GermanTechJobs scraper.',
+            plain: 'Reads German tech jobs.',
+            path: 'apps/tauri/src-tauri/src/scraping/boards/germantechjobs',
+            notes: [],
+            tag: ['scrape', 'all'],
+          }
+        ),
+        N('sc-greenhouse', 'scraper', 'greenhouse', 'ATS · API', 1709, 524, 210, 42, 'scraper', {
+          role: 'Greenhouse ATS scraper.',
+          plain: 'Reads jobs from companies using Greenhouse.',
+          path: 'apps/tauri/src-tauri/src/scraping/boards/greenhouse',
+          notes: ['HTTP API board (no browser)'],
+          tag: ['scrape', 'all'],
+        }),
+        N('sc-lever', 'scraper', 'lever', 'ATS · API', 1709, 576, 210, 42, 'scraper', {
+          role: 'Lever ATS scraper.',
+          plain: 'Reads jobs from companies using Lever.',
+          path: 'apps/tauri/src-tauri/src/scraping/boards/lever',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N(
+          'sc-stepstone',
+          'scraper',
+          'stepstone',
+          'Scraper · browser',
+          1709,
+          628,
+          210,
+          42,
+          'scraper',
+          {
+            role: 'StepStone scraper.',
+            plain: 'Reads jobs from StepStone.',
+            path: 'apps/tauri/src-tauri/src/scraping/boards/stepstone',
+            notes: [],
+            tag: ['scrape', 'all'],
+          }
+        ),
+        N(
+          'sc-smartrecruiters',
+          'scraper',
+          'smartrecruiters',
+          'ATS · API',
+          1945,
+          160,
+          210,
+          42,
+          'scraper',
+          {
+            role: 'SmartRecruiters scraper.',
+            plain: 'Reads jobs from SmartRecruiters.',
+            path: 'apps/tauri/src-tauri/src/scraping/boards/smartrecruiters',
+            notes: [],
+            tag: ['scrape', 'all'],
+          }
+        ),
+        N('sc-personio', 'scraper', 'personio', 'ATS · API', 1945, 212, 210, 42, 'scraper', {
+          role: 'Personio scraper.',
+          plain: 'Reads jobs from Personio.',
+          path: 'apps/tauri/src-tauri/src/scraping/boards/personio',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N('sc-recruitee', 'scraper', 'recruitee', 'ATS · API', 1945, 264, 210, 42, 'scraper', {
+          role: 'Recruitee scraper.',
+          plain: 'Reads jobs from Recruitee.',
+          path: 'apps/tauri/src-tauri/src/scraping/boards/recruitee',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N('sc-workday', 'scraper', 'workday', 'ATS · browser', 1945, 316, 210, 42, 'scraper', {
+          role: 'Workday scraper.',
+          plain: 'Reads jobs from companies using Workday.',
+          path: 'apps/tauri/src-tauri/src/scraping/boards/workday',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N('sc-ashby', 'scraper', 'ashby', 'ATS · API', 1945, 368, 210, 42, 'scraper', {
+          role: 'Ashby scraper.',
+          plain: 'Reads jobs from companies using Ashby.',
+          path: 'apps/tauri/src-tauri/src/scraping/boards/ashby',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N(
+          'sc-arbeitsagentur',
+          'scraper',
+          'arbeitsagentur',
+          'gov · API',
+          1945,
+          420,
+          210,
+          42,
+          'scraper',
+          {
+            role: 'German federal employment agency scraper.',
+            plain: 'Reads jobs from the German government job agency.',
+            path: 'apps/tauri/src-tauri/src/scraping/boards/arbeitsagentur',
+            notes: [],
+            tag: ['scrape', 'all'],
+          }
+        ),
+        N(
+          'sc-linkedin',
+          'scraper',
+          'linkedin',
+          'Scraper · browser',
+          1945,
+          472,
+          210,
+          42,
+          'scraper',
+          {
+            role: 'LinkedIn scraper (chromiumoxide; session cookie required).',
+            plain: 'Reads LinkedIn jobs using a logged-in browser session.',
+            path: 'apps/tauri/src-tauri/src/scraping/boards/linkedin',
+            notes: ['Browser board; LinkedIn API integration is on the roadmap'],
+            tag: ['scrape', 'all'],
+          }
+        ),
+        N('sc-indeed', 'scraper', 'indeed', 'Scraper · browser', 1945, 524, 210, 42, 'scraper', {
+          role: 'Indeed scraper.',
+          plain: 'Reads jobs from Indeed.',
+          path: 'apps/tauri/src-tauri/src/scraping/boards/indeed',
+          notes: ['Browser board'],
+          tag: ['scrape', 'all'],
+        }),
+        N('sc-xing', 'scraper', 'xing', 'DACH · browser', 1945, 576, 210, 42, 'scraper', {
+          role: 'Xing scraper (DACH market).',
+          plain: 'Reads jobs from Xing.',
+          path: 'apps/tauri/src-tauri/src/scraping/boards/xing',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N(
+          'sc-glassdoor',
+          'scraper',
+          'glassdoor',
+          'Scraper · browser',
+          1945,
+          628,
+          210,
+          42,
+          'scraper',
+          {
+            role: 'Glassdoor scraper.',
+            plain: 'Reads jobs from Glassdoor.',
+            path: 'apps/tauri/src-tauri/src/scraping/boards/glassdoor',
+            notes: [],
+            tag: ['scrape', 'all'],
+          }
+        ),
+
+        // ── AI Providers + Appliers (x 2229) ────────────────────────────────────────
+        N('pv-ollama', 'provapp', 'ollama.rs', 'local server', 2229, 96, 232, 46, 'provider', {
+          role: 'Ollama client: chat + embeddings; all /api/* assumptions isolated here.',
+          plain: 'Talks to Ollama, the AI engine running on your own machine.',
+          path: 'apps/tauri/src-tauri/src/commands/ai_provider/ollama.rs',
+          notes: ['Default provider; keyless + local'],
+          tag: ['overview', 'aigenerate', 'all'],
+          critical: true,
+        }),
+        N(
+          'pv-openai',
+          'provapp',
+          'openai.rs',
+          'OpenAI / compatible',
+          2229,
+          160,
+          232,
+          46,
+          'provider',
+          {
+            role: 'OpenAI client (also drives OpenAI-compatible servers).',
+            plain: 'Talks to OpenAI’s cloud models.',
+            path: 'apps/tauri/src-tauri/src/commands/ai_provider/openai.rs',
+            notes: [],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N('pv-anthropic', 'provapp', 'anthropic.rs', 'Claude API', 2229, 224, 232, 46, 'provider', {
+          role: 'Anthropic client (extended thinking supported).',
+          plain: 'Talks to Anthropic’s Claude models.',
+          path: 'apps/tauri/src-tauri/src/commands/ai_provider/anthropic.rs',
+          notes: ['ThinkingBubble UI for extended thinking'],
+          tag: ['aigenerate', 'all'],
+        }),
+        N(
+          'pv-gemini',
+          'provapp',
+          'gemini.rs',
+          'Google Gemini API',
+          2229,
+          288,
+          232,
+          46,
+          'provider',
+          {
+            role: 'Google Gemini client.',
+            plain: 'Talks to Google’s Gemini models.',
+            path: 'apps/tauri/src-tauri/src/commands/ai_provider/gemini.rs',
+            notes: [],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'pv-claudecode',
+          'provapp',
+          'cli_agent/claude_code',
+          'headless CLI',
+          2229,
+          352,
+          232,
+          46,
+          'provider',
+          {
+            role: 'Claude Code CLI run headless — keyless, uses the user’s own login.',
+            plain: 'Uses the Claude Code command-line tool you already have signed in.',
+            path: 'apps/tauri/src-tauri/src/commands/ai_provider/cli_agent/claude_code.rs',
+            notes: ['Local + keyless'],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'pv-codex',
+          'provapp',
+          'cli_agent/codex',
+          'headless CLI',
+          2229,
+          416,
+          232,
+          46,
+          'provider',
+          {
+            role: 'OpenAI Codex CLI run headless.',
+            plain: 'Uses the Codex command-line tool / your ChatGPT login.',
+            path: 'apps/tauri/src-tauri/src/commands/ai_provider/cli_agent/codex.rs',
+            notes: [],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'pv-geminicli',
+          'provapp',
+          'cli_agent/gemini_cli',
+          'headless CLI',
+          2229,
+          480,
+          232,
+          46,
+          'provider',
+          {
+            role: 'Google Gemini CLI run headless (distinct from the cloud API).',
+            plain: 'Uses the Gemini command-line tool / your Google login.',
+            path: 'apps/tauri/src-tauri/src/commands/ai_provider/cli_agent/gemini_cli.rs',
+            notes: [],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'pv-compat',
+          'provapp',
+          'OpenAI-compatible',
+          'LM Studio / vLLM…',
+          2229,
+          544,
+          232,
+          46,
+          'provider',
+          {
+            role: 'Any OpenAI-compatible server via custom base URL (LM Studio, vLLM, OpenRouter, Groq…).',
+            plain: 'Talks to other local/cloud engines that speak OpenAI’s format.',
+            path: 'apps/tauri/src-tauri/src/commands/ai_provider/openai.rs',
+            notes: ['One ProviderId arm; accepts any model family'],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'ap-registry',
+          'provapp',
+          'APPLIERS',
+          'applier registry · 6',
+          2229,
+          608,
+          232,
+          46,
+          'provider',
+          {
+            role: 'Static list of every Applier; dispatch + catalog derive from it via the Applier trait.',
+            plain: 'The master list of job sites the app can auto-apply on.',
+            path: 'apps/tauri/src-tauri/src/applying/registry/mod.rs:14',
+            notes: ['get(board_id):31'],
+            tag: ['autopilot', 'all'],
+          }
+        ),
+        N(
+          'ap-linkedin',
+          'provapp',
+          'LinkedInApplier',
+          'auto-apply',
+          2229,
+          672,
+          232,
+          46,
+          'provider',
+          {
+            role: 'LinkedIn auto-apply (Easy Apply).',
+            plain: 'Submits LinkedIn applications for you.',
+            path: 'apps/tauri/src-tauri/src/applying/boards/linkedin.rs',
+            notes: [],
+            tag: ['autopilot', 'all'],
+          }
+        ),
+        N('ap-indeed', 'provapp', 'IndeedApplier', 'auto-apply', 2229, 736, 232, 46, 'provider', {
+          role: 'Indeed auto-apply.',
+          plain: 'Submits Indeed applications for you.',
+          path: 'apps/tauri/src-tauri/src/applying/boards/indeed.rs',
+          notes: [],
+          tag: ['autopilot', 'all'],
+        }),
+        N(
+          'ap-greenhouse',
+          'provapp',
+          'GreenhouseApplier',
+          'auto-apply',
+          2229,
+          800,
+          232,
+          46,
+          'provider',
+          {
+            role: 'Greenhouse auto-apply.',
+            plain: 'Submits Greenhouse applications for you.',
+            path: 'apps/tauri/src-tauri/src/applying/boards/greenhouse.rs',
+            notes: [],
+            tag: ['autopilot', 'all'],
+          }
+        ),
+        N('ap-workday', 'provapp', 'WorkdayApplier', 'auto-apply', 2229, 864, 232, 46, 'provider', {
+          role: 'Workday auto-apply.',
+          plain: 'Submits Workday applications for you.',
+          path: 'apps/tauri/src-tauri/src/applying/boards/workday.rs',
+          notes: [],
+          tag: ['autopilot', 'all'],
+        }),
+        N('ap-xing', 'provapp', 'XingApplier', 'auto-apply', 2229, 928, 232, 46, 'provider', {
+          role: 'Xing auto-apply.',
+          plain: 'Submits Xing applications for you.',
+          path: 'apps/tauri/src-tauri/src/applying/boards/xing.rs',
+          notes: [],
+          tag: ['autopilot', 'all'],
+        }),
+        N(
+          'ap-glassdoor',
+          'provapp',
+          'GlassdoorApplier',
+          'auto-apply',
+          2229,
+          992,
+          232,
+          46,
+          'provider',
+          {
+            role: 'Glassdoor auto-apply.',
+            plain: 'Submits Glassdoor applications for you.',
+            path: 'apps/tauri/src-tauri/src/applying/boards/glassdoor.rs',
+            notes: [],
+            tag: ['autopilot', 'all'],
+          }
+        ),
+
+        // ── Data (x 2509) ───────────────────────────────────────────────────────────
+        N('db-sqlite', 'data', 'SQLite (rusqlite)', 'migrations', 2509, 96, 232, 46, 'data', {
+          role: 'Bundled SQLite via rusqlite; PRAGMA user_version migration runner.',
+          plain: 'The local database file that holds everything on your machine.',
+          path: 'apps/tauri/src-tauri/src/db.rs',
+          notes: ['run_migrations():18 · column_exists():37'],
+          tag: ['overview', 'all'],
+        }),
+        N('db-datastore', 'data', 'DataStore trait', 'export/import', 2509, 160, 232, 46, 'data', {
+          role: 'Every persistent store implements export()/import() with REPLACE semantics; backed by data.rs bundle.',
+          plain:
+            'The common save/load shape every data store follows — the basis for backups (and future sync).',
+          path: 'apps/tauri/src-tauri/src/data_store.rs',
+          notes: ['Cloud sync deferred — this is the substrate'],
+          tag: ['settings', 'all'],
+        }),
+        N('db-documents', 'data', 'documents table', 'resumes', 2509, 224, 232, 46, 'data', {
+          role: 'documents: id, name, path, format, language, content, pageCount, isDefault.',
+          plain: 'The table of your uploaded resume files.',
+          path: 'apps/tauri/src-tauri/src/documents',
+          notes: [],
+          tag: ['documents', 'all'],
+        }),
+        N('db-jobs', 'data', 'jobs table', 'postings', 2509, 288, 232, 46, 'data', {
+          role: 'jobs: id, boardId, title, company, location, url, status, scrapedAt…',
+          plain: 'The table of every job the app has found.',
+          path: 'apps/tauri/src-tauri/src/jobs',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+        N(
+          'db-interactions',
+          'data',
+          'interactions table',
+          'per-job events',
+          2509,
+          352,
+          232,
+          46,
+          'data',
+          {
+            role: 'interactions: id, jobId, type, createdAt.',
+            plain: 'A log of what you did with each job.',
+            path: 'apps/tauri/src-tauri/src/jobs',
+            notes: [],
+            tag: ['all'],
+          }
+        ),
+        N(
+          'db-aigen',
+          'data',
+          'ai_generations table',
+          'generated docs',
+          2509,
+          416,
+          232,
+          46,
+          'data',
+          {
+            role: 'ai_generations: id, type, documentId, jobId, model, provider, content.',
+            plain: 'The table of resumes/cover letters the AI has written.',
+            path: 'apps/tauri/src-tauri/src/ai_generations/mod.rs',
+            notes: [],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N('db-conv', 'data', 'conversations table', 'chat history', 2509, 480, 232, 46, 'data', {
+          role: 'conversations: id, role, content, model, createdAt.',
+          plain: 'The table of saved AI chats.',
+          path: 'apps/tauri/src-tauri/src/conversations',
+          notes: [],
+          tag: ['all'],
+        }),
+        N(
+          'db-jobprefs',
+          'data',
+          'job_preferences table',
+          'saved searches',
+          2509,
+          544,
+          232,
+          46,
+          'data',
+          {
+            role: 'job_preferences: query, location, boards, salary, remote.',
+            plain: 'The table of your saved search settings.',
+            path: 'apps/tauri/src-tauri/src/job_preferences',
+            notes: [],
+            tag: ['scrape', 'all'],
+          }
+        ),
+        N('db-credentials', 'data', 'credentials', 'keychain index', 2509, 608, 232, 46, 'data', {
+          role: 'credentials: board/provider username index (secrets in OS keychain).',
+          plain: 'A record of which logins you saved (the secrets live in the OS keychain).',
+          path: 'apps/tauri/src-tauri/src/credentials',
+          notes: [],
+          tag: ['settings', 'all'],
+        }),
+        N('db-lance-jobs', 'data', 'LanceDB · jobs', 'vector[1024]', 2509, 672, 232, 46, 'data', {
+          role: 'LanceDB collection of job vectors for semantic search.',
+          plain: 'A math index of jobs so the app can search by meaning.',
+          path: 'apps/tauri/src-tauri/src/documents',
+          notes: ['ANN search'],
+          tag: ['scrape', 'all'],
+        }),
+        N(
+          'db-lance-resumes',
+          'data',
+          'LanceDB · resumes',
+          'vector[1024]',
+          2509,
+          736,
+          232,
+          46,
+          'data',
+          {
+            role: 'LanceDB collection of resume chunk vectors.',
+            plain: 'A math index of resume pieces for similarity.',
+            path: 'apps/tauri/src-tauri/src/documents',
+            notes: [],
+            tag: ['documents', 'all'],
+          }
+        ),
+        N('db-postings', 'data', 'PostingsCache', 'in-memory', 2509, 800, 232, 46, 'data', {
+          role: 'In-memory cache of the latest scrape results.',
+          plain: 'A short-term holding area for freshly scraped jobs.',
+          path: 'apps/tauri/src-tauri/src/postings',
+          notes: [],
+          tag: ['scrape', 'all'],
+        }),
+
+        // ── External (x 2789) ───────────────────────────────────────────────────────
+        N('ex-ollama', 'external', 'Ollama', 'local · HTTP', 2789, 96, 236, 46, 'external', {
+          role: 'Local Ollama server: chat + embeddings.',
+          plain: 'The free AI engine that runs on your own computer.',
+          path: '(localhost)',
+          notes: ['No API key; default engine'],
+          tag: ['overview', 'aigenerate', 'all'],
+        }),
+        N('ex-openai', 'external', 'OpenAI API', 'HTTPS', 2789, 160, 236, 46, 'external', {
+          role: 'OpenAI cloud generation.',
+          plain: 'OpenAI’s paid cloud AI.',
+          path: 'api.openai.com',
+          notes: ['API key in OS keychain'],
+          tag: ['aigenerate', 'all'],
+        }),
+        N('ex-anthropic', 'external', 'Anthropic API', 'HTTPS', 2789, 224, 236, 46, 'external', {
+          role: 'Anthropic Claude cloud generation (extended thinking).',
+          plain: 'Anthropic’s paid cloud AI.',
+          path: 'api.anthropic.com',
+          notes: [],
+          tag: ['aigenerate', 'all'],
+        }),
+        N('ex-gemini', 'external', 'Gemini API', 'HTTPS', 2789, 288, 236, 46, 'external', {
+          role: 'Google Gemini cloud generation.',
+          plain: 'Google’s paid cloud AI.',
+          path: 'generativelanguage.googleapis.com',
+          notes: [],
+          tag: ['aigenerate', 'all'],
+        }),
+        N(
+          'ex-lmstudio',
+          'external',
+          'LM Studio / vLLM',
+          'OpenAI-compat',
+          2789,
+          352,
+          236,
+          46,
+          'external',
+          {
+            role: 'OpenAI-compatible local/self-hosted servers.',
+            plain: 'Other engines that speak OpenAI’s language.',
+            path: '(custom base URL)',
+            notes: [],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'ex-claudecli',
+          'external',
+          'Claude Code CLI',
+          'spawned process',
+          2789,
+          416,
+          236,
+          46,
+          'external',
+          {
+            role: 'Anthropic Claude Code CLI binary.',
+            plain: 'The Claude command-line tool installed on your machine.',
+            path: '(local binary)',
+            notes: [],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'ex-codexcli',
+          'external',
+          'Codex CLI',
+          'spawned process',
+          2789,
+          480,
+          236,
+          46,
+          'external',
+          {
+            role: 'OpenAI Codex CLI binary.',
+            plain: 'The Codex command-line tool.',
+            path: '(local binary)',
+            notes: [],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N(
+          'ex-geminicli',
+          'external',
+          'Gemini CLI',
+          'spawned process',
+          2789,
+          544,
+          236,
+          46,
+          'external',
+          {
+            role: 'Google Gemini CLI binary.',
+            plain: 'The Gemini command-line tool.',
+            path: '(local binary)',
+            notes: [],
+            tag: ['aigenerate', 'all'],
+          }
+        ),
+        N('ex-chromium', 'external', 'Chromium', 'chromiumoxide', 2789, 608, 236, 46, 'external', {
+          role: 'Headless/headful Chromium driven for browser boards + auto-apply.',
+          plain: 'A real web browser the app controls to read sites and submit forms.',
+          path: '(system Chromium)',
+          notes: ['Browser boards + appliers'],
+          tag: ['scrape', 'autopilot', 'all'],
+        }),
+        N(
+          'ex-jobsites',
+          'external',
+          'Job board sites',
+          '20 boards',
+          2789,
+          672,
+          236,
+          46,
+          'external',
+          {
+            role: 'The live job-board websites/APIs scraped by SCRAPERS.',
+            plain: 'The actual job websites out on the internet.',
+            path: '(remote)',
+            notes: [],
+            tag: ['scrape', 'all'],
+          }
+        ),
+        N(
+          'ex-keychainos',
+          'external',
+          'OS Keychain',
+          'Tauri plugin',
+          2789,
+          736,
+          236,
+          46,
+          'external',
+          {
+            role: 'Operating-system keychain storing API keys + board credentials.',
+            plain: 'Your computer’s secure password vault.',
+            path: '(OS keychain)',
+            notes: [],
+            tag: ['settings', 'all'],
+          }
+        ),
+        N(
+          'ex-github',
+          'external',
+          'GitHub Releases',
+          'auto-update',
+          2789,
+          800,
+          236,
+          46,
+          'external',
+          {
+            role: 'GitHub Releases feed for the auto-updater.',
+            plain: 'Where the app checks for and downloads updates.',
+            path: 'github.com (releases)',
+            notes: [],
+            tag: ['all'],
+          }
+        ),
+
+        // ── Platform Infra band (composed everywhere) ───────────────────────────────
+        N(
+          'in-config',
+          'infra',
+          'platform::config',
+          'env + data_dir()',
+          1180,
+          1212,
+          260,
+          46,
+          'infra',
+          {
+            role: 'Sole owner of env-var reads + data-dir/path resolution.',
+            plain: 'The one place that knows where files live and reads environment settings.',
+            path: 'apps/tauri/src-tauri/src/platform/config.rs',
+            notes: ['std::env::var banned elsewhere (arch test)'],
+            tag: ['overview', 'all'],
+          }
+        ),
+        N('in-net', 'infra', 'net::http', 'rustls pooled client', 1500, 1212, 260, 46, 'infra', {
+          role: 'Sole owner of reqwest::Client construction — one pooled rustls client; per-request timeouts.',
+          plain: 'The one shared internet connection used for every web request.',
+          path: 'apps/tauri/src-tauri/src/net/http.rs',
+          notes: ['shared() + build_client(); reqwest::Client::new banned elsewhere'],
+          tag: ['overview', 'all'],
+        }),
+        N('in-error', 'infra', 'error::AppError', 'typed errors', 1820, 1212, 260, 46, 'infra', {
+          role: 'Unified typed error hierarchy (AppResult); serializes to its message string.',
+          plain: 'The one consistent way the engine reports problems.',
+          path: 'apps/tauri/src-tauri/src/error.rs',
+          notes: ['Result<_,String> banned outside here (arch test)'],
+          tag: ['overview', 'all'],
+        }),
+        N(
+          'in-observ',
+          'infra',
+          'observability::Span',
+          'timed traces',
+          2140,
+          1212,
+          260,
+          46,
+          'infra',
+          {
+            role: 'Shared timed trace Spans (→/← + duration); RequestTrace/StageTrace compose it.',
+            plain: 'The shared stopwatch+logger that times AI, scraping and apply steps.',
+            path: 'apps/tauri/src-tauri/src/observability.rs',
+            notes: [],
+            tag: ['overview', 'all'],
+          }
+        ),
+      ];
+
+      const edges = [
+        // ===== AI GENERATE — primary red spine (default overview) =====
+        {
+          from: 'c-aigen',
+          to: 'c-machine-aigen',
+          kind: 'critical',
+          label: '1 · drives',
+          tag: ['overview', 'aigenerate', 'all'],
+        },
+        {
+          from: 'c-machine-aigen',
+          to: 'h-use-ai',
+          kind: 'critical',
+          label: '2 · useAiGenerate',
+          tag: ['overview', 'aigenerate', 'all'],
+        },
+        {
+          from: 'h-use-ai',
+          to: 'p-generation',
+          kind: 'critical',
+          label: '3 · generateResume()',
+          tag: ['overview', 'aigenerate', 'all'],
+        },
+        {
+          from: 'p-generation',
+          to: 'p-build-resume',
+          kind: 'critical',
+          label: 'buildResumePrompt',
+          tag: ['overview', 'aigenerate', 'all'],
+        },
+        {
+          from: 'p-build-resume',
+          to: 'p-provider',
+          kind: 'critical',
+          label: 'ProviderProfile',
+          tag: ['overview', 'aigenerate', 'all'],
+        },
+        {
+          from: 'p-generation',
+          to: 'p-ctx-trunc',
+          kind: 'normal',
+          label: 'truncate',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'p-generation',
+          to: 'p-build-meta',
+          kind: 'normal',
+          label: 'extractMetadata',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'p-generation',
+          to: 'p-build-cover',
+          kind: 'normal',
+          label: 'cover letter',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'p-build-meta',
+          to: 'p-validate',
+          kind: 'normal',
+          label: 'repair JSON',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'p-generation',
+          to: 'c-appclient',
+          kind: 'critical',
+          label: '4 · ai.generatePipeline',
+          tag: ['overview', 'aigenerate', 'all'],
+        },
+        {
+          from: 'c-appclient',
+          to: 'c-tauriclient',
+          kind: 'critical',
+          label: 'invoke adapter',
+          tag: ['overview', 'aigenerate', 'all'],
+        },
+        {
+          from: 'c-tauriclient',
+          to: 'ct-ai',
+          kind: 'critical',
+          label: 'AiContract',
+          tag: ['overview', 'aigenerate', 'all'],
+        },
+        {
+          from: 'ct-ai',
+          to: 'cmd-pipeline',
+          kind: 'critical',
+          label: "5 · invoke('ai_generate')",
+          tag: ['overview', 'aigenerate', 'all'],
+        },
+        {
+          from: 'cmd-pipeline',
+          to: 'd-pipeline',
+          kind: 'critical',
+          label: '6 · Pipeline stages',
+          tag: ['overview', 'aigenerate', 'all'],
+        },
+        {
+          from: 'd-pipeline',
+          to: 'd-aiprovider',
+          kind: 'critical',
+          label: 'Completer.resolve()',
+          tag: ['overview', 'aigenerate', 'all'],
+        },
+        {
+          from: 'd-aiprovider',
+          to: 'pv-ollama',
+          kind: 'critical',
+          label: '7 · resolve(ProviderId)',
+          tag: ['overview', 'aigenerate', 'all'],
+        },
+        {
+          from: 'pv-ollama',
+          to: 'ex-ollama',
+          kind: 'critical',
+          label: '8 · POST /api/chat (stream)',
+          tag: ['overview', 'aigenerate', 'all'],
+        },
+        {
+          from: 'cmd-pipeline',
+          to: 'p-generation',
+          kind: 'critical',
+          label: 'emit ai:stream deltas',
+          tag: ['overview', 'aigenerate', 'all'],
+        },
+        {
+          from: 'd-pipeline',
+          to: 'd-pipe-valid',
+          kind: 'normal',
+          label: 'validate',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'd-pipeline',
+          to: 'd-pipe-retry',
+          kind: 'normal',
+          label: 'retry',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'd-pipe-enrich',
+          to: 'd-aiprovider',
+          kind: 'normal',
+          label: 'research complete()',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'cmd-cover',
+          to: 'd-pipe-enrich',
+          kind: 'normal',
+          label: 'company research',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'cmd-pipeline',
+          to: 'cmd-aigen',
+          kind: 'normal',
+          label: 'persist result',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'cmd-aigen',
+          to: 'db-aigen',
+          kind: 'db',
+          label: 'INSERT',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'cmd-ai',
+          to: 'd-aiprovider',
+          kind: 'normal',
+          label: 'chat_stream (direct)',
+          tag: ['aigenerate', 'all'],
+        },
+        // export
+        {
+          from: 'c-machine-aigen',
+          to: 'p-export',
+          kind: 'normal',
+          label: 'export()',
+          tag: ['aigenerate', 'documents', 'all'],
+        },
+        {
+          from: 'p-export',
+          to: 'p-templates',
+          kind: 'normal',
+          label: 'pick template',
+          tag: ['documents', 'all'],
+        },
+        {
+          from: 'p-export',
+          to: 'cmd-documents',
+          kind: 'normal',
+          label: 'export DOCX/PDF',
+          tag: ['documents', 'all'],
+        },
+        {
+          from: 'cmd-documents',
+          to: 'd-export-pdf',
+          kind: 'normal',
+          label: 'render PDF',
+          tag: ['documents', 'all'],
+        },
+        {
+          from: 'cmd-documents',
+          to: 'd-export-docx',
+          kind: 'normal',
+          label: 'render DOCX',
+          tag: ['documents', 'all'],
+        },
+        {
+          from: 'p-links',
+          to: 'p-generation',
+          kind: 'normal',
+          label: 'inject links',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'p-build-resume',
+          to: 'p-ctx-modelsize',
+          kind: 'normal',
+          label: 'getModelTier',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'p-build-resume',
+          to: 'p-locale',
+          kind: 'normal',
+          label: 'locale lexicon',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'p-ctx-trunc',
+          to: 'p-ctx-multipass',
+          kind: 'normal',
+          label: 'large input',
+          tag: ['aigenerate', 'all'],
+        },
+
+        // provider fan + external (api)
+        {
+          from: 'd-aiprovider',
+          to: 'pv-openai',
+          kind: 'normal',
+          label: 'resolve',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'd-aiprovider',
+          to: 'pv-anthropic',
+          kind: 'normal',
+          label: 'resolve',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'd-aiprovider',
+          to: 'pv-gemini',
+          kind: 'normal',
+          label: 'resolve',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'd-aiprovider',
+          to: 'pv-claudecode',
+          kind: 'normal',
+          label: 'resolve',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'd-aiprovider',
+          to: 'pv-codex',
+          kind: 'normal',
+          label: 'resolve',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'd-aiprovider',
+          to: 'pv-geminicli',
+          kind: 'normal',
+          label: 'resolve',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'd-aiprovider',
+          to: 'pv-compat',
+          kind: 'normal',
+          label: 'resolve',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'pv-openai',
+          to: 'ex-openai',
+          kind: 'api',
+          label: 'HTTPS',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'pv-anthropic',
+          to: 'ex-anthropic',
+          kind: 'api',
+          label: 'HTTPS',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'pv-gemini',
+          to: 'ex-gemini',
+          kind: 'api',
+          label: 'HTTPS',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'pv-compat',
+          to: 'ex-lmstudio',
+          kind: 'api',
+          label: 'HTTP',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'pv-claudecode',
+          to: 'ex-claudecli',
+          kind: 'api',
+          label: 'spawn',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'pv-codex',
+          to: 'ex-codexcli',
+          kind: 'api',
+          label: 'spawn',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'pv-geminicli',
+          to: 'ex-geminicli',
+          kind: 'api',
+          label: 'spawn',
+          tag: ['aigenerate', 'all'],
+        },
+        {
+          from: 'pv-openai',
+          to: 'ex-keychainos',
+          kind: 'normal',
+          label: 'API key',
+          tag: ['aigenerate', 'settings', 'all'],
+        },
+
+        // ===== AUTOPILOT flow =====
+        {
+          from: 'c-autopilot',
+          to: 'c-machine-autorun',
+          kind: 'critical',
+          label: 'drives',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'c-machine-autorun',
+          to: 'h-use-autopilot',
+          kind: 'critical',
+          label: 'useAutopilot',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'h-use-autopilot',
+          to: 'c-appclient',
+          kind: 'critical',
+          label: 'autopilot.*',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'c-appclient',
+          to: 'ct-autopilot',
+          kind: 'critical',
+          label: 'AutopilotContract',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'ct-autopilot',
+          to: 'cmd-autopilot',
+          kind: 'critical',
+          label: 'invoke',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'cmd-autopilot',
+          to: 'd-autopilot',
+          kind: 'critical',
+          label: 'run + schedule',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'd-autopilot',
+          to: 'd-scraping',
+          kind: 'critical',
+          label: 'scrape boards',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'd-autopilot',
+          to: 'd-applying',
+          kind: 'critical',
+          label: 'auto-apply',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'd-applying',
+          to: 'ap-registry',
+          kind: 'critical',
+          label: 'APPLIERS.get(id)',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'd-autopilot',
+          to: 'd-jobs',
+          kind: 'normal',
+          label: 'track status',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'd-autopilot',
+          to: 'c-machine-autorun',
+          kind: 'normal',
+          label: 'autopilot:step',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'ap-registry',
+          to: 'ap-linkedin',
+          kind: 'normal',
+          label: 'dispatch',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'ap-registry',
+          to: 'ap-indeed',
+          kind: 'normal',
+          label: 'dispatch',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'ap-registry',
+          to: 'ap-greenhouse',
+          kind: 'normal',
+          label: 'dispatch',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'ap-registry',
+          to: 'ap-workday',
+          kind: 'normal',
+          label: 'dispatch',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'ap-registry',
+          to: 'ap-xing',
+          kind: 'normal',
+          label: 'dispatch',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'ap-registry',
+          to: 'ap-glassdoor',
+          kind: 'normal',
+          label: 'dispatch',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'ap-linkedin',
+          to: 'ex-chromium',
+          kind: 'api',
+          label: 'fill + submit',
+          tag: ['autopilot', 'all'],
+        },
+        {
+          from: 'ct-apply',
+          to: 'cmd-autopilot',
+          kind: 'normal',
+          label: 'apply()',
+          tag: ['autopilot', 'all'],
+        },
+
+        // ===== SCRAPE → MATCH flow =====
+        {
+          from: 'c-jobs',
+          to: 'h-use-boards',
+          kind: 'critical',
+          label: 'useBoards',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'c-search',
+          to: 'h-use-search',
+          kind: 'critical',
+          label: 'useSearch',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'h-use-boards',
+          to: 'c-appclient',
+          kind: 'critical',
+          label: 'scrape.run',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'c-appclient',
+          to: 'ct-scrape',
+          kind: 'critical',
+          label: 'ScrapeContract',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'ct-scrape',
+          to: 'cmd-scrape',
+          kind: 'critical',
+          label: "invoke('scrape')",
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'cmd-scrape',
+          to: 'd-scraping',
+          kind: 'critical',
+          label: 'ScraperEngine.run',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'd-scraping',
+          to: 'd-scraper-trait',
+          kind: 'normal',
+          label: 'Scraper trait',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'd-scraping',
+          to: 'sc-registry',
+          kind: 'critical',
+          label: 'SCRAPERS.get(id)',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'd-scraping',
+          to: 'ex-chromium',
+          kind: 'api',
+          label: 'browser boards',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'd-scraping',
+          to: 'db-jobs',
+          kind: 'db',
+          label: 'INSERT jobs',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'd-scraping',
+          to: 'db-lance-jobs',
+          kind: 'db',
+          label: 'upsert vectors',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'd-scraping',
+          to: 'db-postings',
+          kind: 'normal',
+          label: 'cache',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'h-use-search',
+          to: 'c-appclient',
+          kind: 'normal',
+          label: 'search.hybrid',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'c-appclient',
+          to: 'ct-search',
+          kind: 'normal',
+          label: 'SearchContract',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'ct-search',
+          to: 'cmd-search',
+          kind: 'normal',
+          label: "invoke('search')",
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'cmd-search',
+          to: 'db-lance-jobs',
+          kind: 'db',
+          label: 'ANN search',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'cmd-search',
+          to: 'db-jobs',
+          kind: 'db',
+          label: 'keyword filter',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'h-use-match',
+          to: 'ct-match',
+          kind: 'normal',
+          label: 'MatchContract',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'ct-match',
+          to: 'cmd-match',
+          kind: 'normal',
+          label: "invoke('match_resume')",
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'cmd-match',
+          to: 'd-aiprovider',
+          kind: 'normal',
+          label: 'embed + cosine',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'sc-registry',
+          to: 'sc-greenhouse',
+          kind: 'normal',
+          label: '',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'sc-registry',
+          to: 'sc-linkedin',
+          kind: 'normal',
+          label: '',
+          tag: ['scrape', 'all'],
+        },
+        { from: 'sc-registry', to: 'sc-indeed', kind: 'normal', label: '', tag: ['scrape', 'all'] },
+        {
+          from: 'sc-registry',
+          to: 'sc-stepstone',
+          kind: 'normal',
+          label: '',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'sc-registry',
+          to: 'sc-remotive',
+          kind: 'normal',
+          label: '',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'sc-greenhouse',
+          to: 'ex-jobsites',
+          kind: 'api',
+          label: 'HTTP API',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'sc-linkedin',
+          to: 'ex-chromium',
+          kind: 'api',
+          label: 'browser',
+          tag: ['scrape', 'all'],
+        },
+
+        // ===== ANALYZE flow =====
+        {
+          from: 'c-analyze',
+          to: 'p-analyze-prompt',
+          kind: 'normal',
+          label: 'analyzeResume',
+          tag: ['analyze', 'all'],
+        },
+        {
+          from: 'p-analyze-prompt',
+          to: 'p-analyze-validate',
+          kind: 'normal',
+          label: 'validateAndRepair',
+          tag: ['analyze', 'all'],
+        },
+        {
+          from: 'p-analyze-prompt',
+          to: 'c-appclient',
+          kind: 'normal',
+          label: 'ai.generatePipeline',
+          tag: ['analyze', 'all'],
+        },
+
+        // ===== DOCUMENTS flow =====
+        {
+          from: 'c-aigen',
+          to: 'h-use-documents',
+          kind: 'normal',
+          label: 'pick resume',
+          tag: ['documents', 'aigenerate', 'all'],
+        },
+        {
+          from: 'h-use-documents',
+          to: 'c-appclient',
+          kind: 'normal',
+          label: 'documents.*',
+          tag: ['documents', 'all'],
+        },
+        {
+          from: 'c-appclient',
+          to: 'ct-documents',
+          kind: 'normal',
+          label: 'DocumentsContract',
+          tag: ['documents', 'all'],
+        },
+        {
+          from: 'ct-documents',
+          to: 'cmd-documents',
+          kind: 'normal',
+          label: 'invoke',
+          tag: ['documents', 'all'],
+        },
+        {
+          from: 'cmd-documents',
+          to: 'd-documents',
+          kind: 'normal',
+          label: 'import',
+          tag: ['documents', 'all'],
+        },
+        {
+          from: 'cmd-documents',
+          to: 'd-extraction',
+          kind: 'normal',
+          label: 'extract text',
+          tag: ['documents', 'all'],
+        },
+        {
+          from: 'd-extraction',
+          to: 'd-documents',
+          kind: 'normal',
+          label: 'ExtractedResume',
+          tag: ['documents', 'all'],
+        },
+        {
+          from: 'd-documents',
+          to: 'db-documents',
+          kind: 'db',
+          label: 'CRUD',
+          tag: ['documents', 'all'],
+        },
+        {
+          from: 'd-documents',
+          to: 'db-lance-resumes',
+          kind: 'db',
+          label: 'embed chunks',
+          tag: ['documents', 'all'],
+        },
+        {
+          from: 'cmd-profile',
+          to: 'd-extraction',
+          kind: 'normal',
+          label: 'profile → resume',
+          tag: ['documents', 'all'],
+        },
+
+        // ===== persistence + data =====
+        {
+          from: 'd-jobs',
+          to: 'db-jobs',
+          kind: 'db',
+          label: 'state',
+          tag: ['scrape', 'autopilot', 'all'],
+        },
+        { from: 'd-jobs', to: 'db-interactions', kind: 'db', label: 'events', tag: ['all'] },
+        { from: 'd-conv', to: 'db-conv', kind: 'db', label: 'persist', tag: ['all'] },
+        { from: 'cmd-conv', to: 'd-conv', kind: 'normal', label: 'save/list', tag: ['all'] },
+        {
+          from: 'h-use-jobprefs',
+          to: 'db-jobprefs',
+          kind: 'normal',
+          label: 'prefs',
+          tag: ['scrape', 'all'],
+        },
+        {
+          from: 'cmd-data',
+          to: 'db-datastore',
+          kind: 'normal',
+          label: 'bundle',
+          tag: ['settings', 'all'],
+        },
+        {
+          from: 'db-datastore',
+          to: 'db-documents',
+          kind: 'db',
+          label: 'export/import',
+          tag: ['settings', 'all'],
+        },
+        {
+          from: 'db-datastore',
+          to: 'db-jobs',
+          kind: 'db',
+          label: 'export/import',
+          tag: ['settings', 'all'],
+        },
+        {
+          from: 'db-datastore',
+          to: 'db-aigen',
+          kind: 'db',
+          label: 'export/import',
+          tag: ['settings', 'all'],
+        },
+        {
+          from: 'h-use-cred',
+          to: 'ct-cred',
+          kind: 'normal',
+          label: 'credentials.*',
+          tag: ['settings', 'all'],
+        },
+        {
+          from: 'ct-cred',
+          to: 'cmd-mod',
+          kind: 'normal',
+          label: 'invoke',
+          tag: ['settings', 'all'],
+        },
+        {
+          from: 'db-credentials',
+          to: 'ex-keychainos',
+          kind: 'api',
+          label: 'OS keychain',
+          tag: ['settings', 'all'],
+        },
+
+        // ===== mounts / wiring =====
+        { from: 'c-main', to: 'c-root', kind: 'mount', label: 'router', tag: ['all'] },
+        { from: 'c-main', to: 'c-appclient', kind: 'mount', label: 'provider', tag: ['all'] },
+        { from: 'c-root', to: 'c-dash', kind: 'mount', label: 'route', tag: ['all'] },
+        { from: 'c-root', to: 'c-aigen', kind: 'mount', label: 'route', tag: ['all'] },
+        { from: 'c-root', to: 'c-analyze', kind: 'mount', label: 'route', tag: ['all'] },
+        { from: 'c-root', to: 'c-autopilot', kind: 'mount', label: 'route', tag: ['all'] },
+        { from: 'c-root', to: 'c-jobs', kind: 'mount', label: 'route', tag: ['all'] },
+        { from: 'c-root', to: 'c-search', kind: 'mount', label: 'route', tag: ['all'] },
+        { from: 'c-root', to: 'c-settings', kind: 'mount', label: 'route', tag: ['all'] },
+        { from: 'cmd-mod', to: 'cmd-ai', kind: 'mount', label: '#[command]', tag: ['all'] },
+        { from: 'cmd-mod', to: 'cmd-pipeline', kind: 'mount', label: '#[command]', tag: ['all'] },
+        { from: 'cmd-mod', to: 'cmd-scrape', kind: 'mount', label: '#[command]', tag: ['all'] },
+        { from: 'cmd-mod', to: 'cmd-autopilot', kind: 'mount', label: '#[command]', tag: ['all'] },
+        { from: 'ct-barrel', to: 'ct-ai', kind: 'mount', label: 're-export', tag: ['all'] },
+        { from: 'ct-barrel', to: 'ct-scrape', kind: 'mount', label: 're-export', tag: ['all'] },
+        { from: 'ct-barrel', to: 'ct-autopilot', kind: 'mount', label: 're-export', tag: ['all'] },
+
+        // ===== platform infra (composed everywhere; representative edges) =====
+        {
+          from: 'd-aiprovider',
+          to: 'in-net',
+          kind: 'normal',
+          label: 'shared() client',
+          tag: ['all'],
+        },
+        { from: 'd-aiprovider', to: 'in-error', kind: 'normal', label: 'AppResult', tag: ['all'] },
+        {
+          from: 'd-aiprovider',
+          to: 'in-observ',
+          kind: 'normal',
+          label: 'RequestTrace',
+          tag: ['all'],
+        },
+        { from: 'd-scraping', to: 'in-net', kind: 'normal', label: 'net::http', tag: ['all'] },
+        { from: 'd-scraping', to: 'in-config', kind: 'normal', label: 'data_dir()', tag: ['all'] },
+        { from: 'd-pipeline', to: 'in-observ', kind: 'normal', label: 'StageTrace', tag: ['all'] },
+        { from: 'pv-ollama', to: 'in-net', kind: 'normal', label: '/api/*', tag: ['all'] },
+        { from: 'db-sqlite', to: 'in-config', kind: 'normal', label: 'data_dir()', tag: ['all'] },
+        {
+          from: 'cmd-support',
+          to: 'in-observ',
+          kind: 'normal',
+          label: 'logs',
+          tag: ['support', 'all'],
+        },
+        { from: 'ex-github', to: 'cmd-mod', kind: 'api', label: 'update check', tag: ['all'] },
+      ];
+
+      /* ── Roadmap (green) + Known bugs (red) — only doc-cited items ──────────────── */
+      const FIXES = {
+        'ct-scrape': [
+          {
+            n: 1,
+            t: 'Wire scrape.url into AI Generate — IPC exists, UI input not yet wired (ARCHITECTURE_STATUS.md:154)',
+          },
+        ],
+        'cmd-scrape': [
+          {
+            n: 1,
+            t: 'Wire scrape.url into AI Generate — IPC exists, UI input not yet wired (ARCHITECTURE_STATUS.md:154)',
+          },
+        ],
+        'c-aigen': [
+          { n: 1, t: 'Add a job-ad URL input that calls scrape.url (ARCHITECTURE_STATUS.md:154)' },
+        ],
+        'sc-linkedin': [
+          {
+            n: 2,
+            t: 'LinkedIn official API integration — currently browser-only (ARCHITECTURE_STATUS.md:155)',
+          },
+        ],
+        'db-datastore': [
+          {
+            n: 3,
+            t: 'Cloud sync deferred — backup bundle + DataStore trait are the substrate (ARCHITECTURE_STATUS.md:159)',
+          },
+        ],
+      };
+      const KNOWN_BUGS = {
+        'cmd-match': [
+          {
+            sev: 'high',
+            ref: 'ARCH_STATUS:47',
+            t: 'Resume-job matcher is a Rust stub — was ✅ in old TS, not yet reimplemented',
+          },
+        ],
+        'ct-match': [
+          { sev: 'high', ref: 'ARCH_STATUS:47', t: 'Matcher contract has no real backend yet' },
+        ],
+        'h-use-match': [
+          { sev: 'high', ref: 'ARCH_STATUS:47', t: 'Match hook calls a stubbed backend' },
+        ],
+        'cmd-search': [
+          {
+            sev: 'high',
+            ref: 'ARCH_STATUS:47',
+            t: 'Hybrid search is a Rust stub — verify before relying on it',
+          },
+        ],
+        'ct-search': [
+          { sev: 'high', ref: 'ARCH_STATUS:47', t: 'Search contract handler is a stub' },
+        ],
+        'd-applying': [
+          { sev: 'med', ref: 'ARCH_STATUS:122', t: 'Auto-apply success rate varies by board (🚧)' },
+        ],
+        'd-autopilot': [
+          { sev: 'med', ref: 'ARCH_STATUS:123', t: 'Batch application throttling is partial (🚧)' },
+        ],
+        'ap-registry': [
+          {
+            sev: 'med',
+            ref: 'ARCH_STATUS:122',
+            t: 'Applier coverage/quality varies by board (🚧)',
+          },
+        ],
+      };
+
+      /* notable findings shown in the default sidebar */
+      const FINDINGS = [
+        'Code↔doc mismatch: the resume-job <b>matcher</b> and <b>hybrid search</b> are Rust stubs, though they were ✅ in the old TypeScript and the status doc still lists features as done (ARCHITECTURE_STATUS.md:47-50). Flagged red on cmd-match / cmd-search.',
+        'Heaviest hot path: <b>AI generation</b> fans through packages/prompts (resume/cover builders + context-manager truncation + ProviderProfile + validators) before a single token streams — the red spine.',
+        'Strong seam: a single-owner <b>platform band</b> (platform::config, net::http, error::AppError, observability::Span) plus three registries — SCRAPERS (20), APPLIERS (6), ProviderId (8). Adding a board/provider is one module + one line; CI arch tests enforce ownership.',
+        'No silent fallback: ai_provider::resolve() routes strictly by ProviderId — an unknown/mismatched provider is a hard error, never a quiet switch to Ollama.',
+        'God nodes (edges intentionally not all drawn): cn() ~191, useAppClient() ~167, Button ~97. They touch nearly everything in their layer.',
+        'tauri-client is a folder module (apps/tauri/src/tauri-client/index.ts); CLAUDE.md still cites the old single-file path.',
+      ];
+
+      /* ===========================================================================
+       * Rendering + interaction engine (vanilla, no libraries)
+       * ===========================================================================*/
+      const COLORS = {
+        client: '#4ea1ff',
+        hooks: '#7bd389',
+        prompts: '#f5b942',
+        contract: '#c792ea',
+        command: '#ff7a45',
+        domain: '#5ec8c8',
+        scraper: '#7bd389',
+        provider: '#c792ea',
+        data: '#ffb86b',
+        external: '#ff6b9d',
+        infra: '#9aa7b3',
+        critical: '#ff3860',
+      };
+      const SVGNS = 'http://www.w3.org/2000/svg';
+      const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
+      const gClusters = document.getElementById('gClusters');
+      const gEdges = document.getElementById('gEdges');
+      const gNodes = document.getElementById('gNodes');
+      const svg = document.getElementById('svg');
+      const stage = document.getElementById('stage');
+      const side = document.getElementById('side');
+
+      function el(tag, attrs = {}, parent) {
+        const e = document.createElementNS(SVGNS, tag);
+        for (const k in attrs) e.setAttribute(k, attrs[k]);
+        if (parent) parent.appendChild(e);
+        return e;
+      }
+
+      // adjacency for selection
+      const adj = {};
+      nodes.forEach((n) => (adj[n.id] = new Set()));
+      edges.forEach((e) => {
+        if (adj[e.from] && adj[e.to]) {
+          adj[e.from].add(e.to);
+          adj[e.to].add(e.from);
+        }
+      });
+
+      // ---- clusters ----
+      clusters.forEach((c) => {
+        const col = COLORS[c.color] || '#888';
+        const r = el(
+          'rect',
+          {
+            x: c.x,
+            y: c.y,
+            width: c.w,
+            height: c.h,
+            rx: 14,
+            fill: col,
+            stroke: col,
+            class: 'clusterBox',
+            'fill-opacity': 0.05,
+            'stroke-opacity': 0.3,
+          },
+          gClusters
+        );
+        const t = el(
+          'text',
+          { x: c.x + 14, y: c.y + 28, class: 'clusterLabel', fill: col, 'fill-opacity': 0.85 },
+          gClusters
+        );
+        t.textContent = c.label;
+      });
+
+      // ---- edges ----
+      const edgeEls = [];
+      function edgePath(a, b) {
+        const x1 = a.x + a.w,
+          y1 = a.y + a.h / 2,
+          x2 = b.x,
+          y2 = b.y + b.h / 2;
+        // if b is to the left (return edge), exit/enter on left/right sensibly
+        let sx = x1,
+          sy = y1,
+          ex = x2,
+          ey = y2;
+        if (b.x < a.x) {
+          sx = a.x;
+          ex = b.x + b.w;
+        }
+        const dx = Math.max(40, Math.abs(ex - sx) * 0.45);
+        const c1x = sx + (ex >= sx ? dx : -dx),
+          c2x = ex - (ex >= sx ? dx : -dx);
+        return {
+          d: `M ${sx} ${sy} C ${c1x} ${sy}, ${c2x} ${ey}, ${ex} ${ey}`,
+          mx: (sx + ex) / 2,
+          my: (sy + ey) / 2,
+        };
+      }
+      edges.forEach((e, i) => {
+        const a = byId[e.from],
+          b = byId[e.to];
+        if (!a || !b) return;
+        const p = edgePath(a, b);
+        const path = el(
+          'path',
+          { d: p.d, class: 'edge kind-' + e.kind, 'marker-end': `url(#ar-${e.kind})` },
+          gEdges
+        );
+        let lbl = null;
+        if (e.label) {
+          lbl = el(
+            'text',
+            {
+              x: p.mx,
+              y: p.my - 3 + ((i % 3) - 1) * 6,
+              class: 'edgeLabel' + (e.kind === 'critical' ? ' crit' : ''),
+              'text-anchor': 'middle',
+            },
+            gEdges
+          );
+          lbl.textContent = e.label;
+        }
+        edgeEls.push({ e, path, lbl, a, b });
+      });
+
+      // ---- nodes ----
+      const nodeEls = {};
+      nodes.forEach((n) => {
+        const col = COLORS[n.color] || '#888';
+        const g = el('g', { class: 'node' + (n.critical ? ' crit' : ''), 'data-id': n.id }, gNodes);
+        el(
+          'rect',
+          { x: n.x, y: n.y, width: n.w, height: n.h, rx: 8, class: 'box', stroke: col },
+          g
+        );
+        const lbl = el(
+          'text',
+          { x: n.x + 12, y: n.y + (n.sub ? n.h / 2 - 1 : n.h / 2 + 4), class: 'lbl' },
+          g
+        );
+        lbl.textContent = n.label;
+        if (n.sub) {
+          const s = el('text', { x: n.x + 12, y: n.y + n.h / 2 + 13, class: 'sub' }, g);
+          s.textContent = n.sub;
+        }
+        // dead-code sub-label
+        if (n.dead) {
+          const d = el('text', { x: n.x + 12, y: n.y + n.h - 5, class: 'dead' }, g);
+          d.textContent = n.dead;
+        }
+        // badges
+        const fixes = FIXES[n.id],
+          bugs = KNOWN_BUGS[n.id];
+        if (fixes) {
+          const bg = el('g', { class: 'badge' }, g);
+          el(
+            'circle',
+            {
+              cx: n.x + n.w - 10,
+              cy: n.y + 10,
+              r: 8,
+              fill: '#5fd96b',
+              stroke: '#0c0c0c',
+              'stroke-width': 1,
+            },
+            bg
+          );
+          const tx = el('text', { x: n.x + n.w - 10, y: n.y + 13, 'text-anchor': 'middle' }, bg);
+          tx.textContent = fixes.length;
+        }
+        if (bugs) {
+          const bg = el('g', { class: 'badge' }, g);
+          el(
+            'circle',
+            {
+              cx: n.x + n.w - (fixes ? 28 : 10),
+              cy: n.y + 10,
+              r: 8,
+              fill: '#ff4d6a',
+              stroke: '#0c0c0c',
+              'stroke-width': 1,
+            },
+            bg
+          );
+          const tx = el(
+            'text',
+            {
+              x: n.x + n.w - (fixes ? 28 : 10),
+              y: n.y + 13,
+              'text-anchor': 'middle',
+              fill: '#fff',
+            },
+            bg
+          );
+          tx.textContent = bugs.length;
+        }
+        g.addEventListener('mouseenter', () => {
+          hover = n.id;
+          applyView();
+          renderSidebar(focusId());
+        });
+        g.addEventListener('mouseleave', () => {
+          hover = null;
+          applyView();
+          renderSidebar(focusId());
+        });
+        g.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          pinned = pinned === n.id ? null : n.id;
+          hover = null;
+          applyView();
+          renderSidebar(pinned);
+        });
+        nodeEls[n.id] = g;
+      });
+
+      /* ---- view state: filter + selection ---- */
+      let filter = 'overview';
+      let pinned = null; // clicked node
+      let hover = null; // hovered node
+      function focusId() {
+        return hover || pinned;
+      }
+
+      function hasBadge(id) {
+        return FIXES[id] || KNOWN_BUGS[id];
+      }
+      function passNodeFilter(n) {
+        if (filter === 'all' || filter === 'overview') return true;
+        if (filter === 'bugs') return !!hasBadge(n.id);
+        return (n.tag || []).includes(filter);
+      }
+      function passEdgeFilter(e) {
+        if (filter === 'all') return true;
+        if (filter === 'overview') return e.kind !== 'normal' || (e.tag || []).includes('overview');
+        if (filter === 'bugs') return false;
+        return (e.tag || []).includes(filter);
+      }
+
+      function applyView() {
+        const sel = focusId();
+        let nbset = null;
+        if (sel) {
+          nbset = new Set(adj[sel]);
+          nbset.add(sel);
+        }
+        nodes.forEach((n) => {
+          const g = nodeEls[n.id];
+          const on = sel ? nbset.has(n.id) : passNodeFilter(n);
+          g.classList.toggle('dim', !on);
+        });
+        edgeEls.forEach(({ e, path, lbl }) => {
+          const show = sel ? e.from === sel || e.to === sel : passEdgeFilter(e);
+          path.classList.toggle('hide', !show);
+          if (lbl) lbl.classList.toggle('hide', !show);
+        });
+      }
+
+      /* ---- sidebar ---- */
+      function esc(s) {
+        return (s == null ? '' : String(s))
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+      function renderSidebar(id) {
+        if (!id) {
+          side.innerHTML = defaultSidebar();
+          return;
+        }
+        const n = byId[id];
+        if (!n) {
+          side.innerHTML = defaultSidebar();
+          return;
+        }
+        const ins = edges.filter((e) => e.to === id),
+          outs = edges.filter((e) => e.from === id);
+        const fixes = FIXES[id],
+          bugs = KNOWN_BUGS[id];
+        let h = '';
+        h += `<h2>${esc(n.label)}</h2>`;
+        if (n.sub)
+          h += `<div style="color:var(--muted);font-size:11px;margin-bottom:6px">${esc(n.sub)}</div>`;
+        if (n.role) h += `<div class="role">${esc(n.role)}</div>`;
+        if (n.plain) h += `<div class="plain">${esc(n.plain)}</div>`;
+        if (n.path) h += `<div class="path">${esc(n.path)}</div>`;
+        if (bugs) {
+          h += `<div class="k">Known bugs</div>`;
+          bugs.forEach(
+            (b) =>
+              (h += `<div class="bug"><span class="sev">${esc(b.sev)}</span>${esc(b.t)}<div style="opacity:.7;font-size:10px;margin-top:3px">${esc(b.ref)}</div></div>`)
+          );
+        }
+        if (fixes) {
+          h += `<div class="k">Roadmap / fixes</div>`;
+          fixes.forEach((f) => (h += `<div class="fix">#${f.n} · ${esc(f.t)}</div>`));
+        }
+        if (n.notes && n.notes.length) {
+          h += `<div class="k">Notes</div><ul>`;
+          n.notes.forEach((x) => (h += `<li>${esc(x)}</li>`));
+          h += `</ul>`;
+        }
+        h += `<div class="k">Wires in (${ins.length})</div>`;
+        ins.forEach(
+          (e) =>
+            (h += `<div class="edgepair">← <b>${esc(byId[e.from]?.label || e.from)}</b> · ${esc(e.label || e.kind)}</div>`)
+        );
+        h += `<div class="k">Wires out (${outs.length})</div>`;
+        outs.forEach(
+          (e) =>
+            (h += `<div class="edgepair">→ <b>${esc(byId[e.to]?.label || e.to)}</b> · ${esc(e.label || e.kind)}</div>`)
+        );
+        if (n.tag) {
+          h += `<div class="k">Tags</div><div>`;
+          n.tag.forEach((t) => (h += `<span class="tag">${esc(t)}</span>`));
+          h += `</div>`;
+        }
+        side.innerHTML = h;
+      }
+      function defaultSidebar() {
+        let h = `<h2>AI Job Hunter — architecture</h2>
+   <div class="role">Local-first Tauri 2 desktop app. The renderer talks to a Rust core only through typed IPC contracts (ports &amp; adapters). Heavy work — scraping, document extraction, AI generation, embeddings — runs natively in-process.</div>
+   <div class="plain">Click any box for its plain-English role, real file path, and what wires into and out of it. Use the chips up top to highlight a feature or a user-flow path. Drag to pan, scroll to zoom.</div>
+   <div class="k">Notable findings from this map</div><ul class="findings">`;
+        FINDINGS.forEach((f) => (h += `<li>${f}</li>`));
+        h += `</ul><div class="k">Counts</div><div style="color:#cfcfcf">${nodes.length} nodes · ${edges.length} edges · ${clusters.length} clusters · 20 boards · 8 AI providers · 6 appliers</div>`;
+        h += `<div class="k">Critical paths</div><div style="color:#cfcfcf">Red = <b>AI Generate</b> (default). Click <b>Autopilot</b> or <b>Scrape → Match</b> to light up the other two flows.</div>`;
+        return h;
+      }
+
+      /* ---- filter chips ---- */
+      const CHIPS = [
+        ['overview', 'Overview'],
+        ['aigenerate', 'AI Generate'],
+        ['autopilot', 'Autopilot'],
+        ['scrape', 'Scrape → Match'],
+        ['analyze', 'Analyze'],
+        ['documents', 'Documents'],
+        ['settings', 'Settings'],
+        ['all', 'Show all wires'],
+        ['bugs', 'Roadmap & bugs'],
+      ];
+      const chipsBox = document.getElementById('chips');
+      CHIPS.forEach(([id, label]) => {
+        const b = document.createElement('button');
+        b.className =
+          'chip' + (id === 'overview' ? ' active' : '') + (id === 'bugs' ? ' bugchip' : '');
+        b.textContent = label;
+        b.dataset.f = id;
+        b.addEventListener('click', () => {
+          filter = id;
+          pinned = null;
+          hover = null;
+          [...chipsBox.children].forEach((c) => c.classList.toggle('active', c.dataset.f === id));
+          renderSidebar(null);
+          applyView();
+        });
+        chipsBox.appendChild(b);
+      });
+
+      /* ---- legend ---- */
+      document.getElementById('legend').innerHTML = `
+  <div class="row"><span class="sw" style="border-color:#ff3860"></span> critical path</div>
+  <div class="row"><span class="sw" style="border-color:#ff7a45"></span> external / API call</div>
+  <div class="row"><span class="sw" style="border-color:#ffb86b"></span> DB read/write</div>
+  <div class="row"><span class="sw" style="border-color:#4ea1ff"></span> mount / register</div>
+  <div class="row"><span class="dot" style="border-color:#5fd96b;background:#10240f"></span> fix count &nbsp; <span class="dot" style="border-color:#ff4d6a;background:#2a1014"></span> bug count</div>`;
+
+      /* ---- pan + zoom ---- */
+      let tx = 0,
+        ty = 0,
+        scale = 1;
+      function applyTransform() {
+        document
+          .getElementById('vp')
+          .setAttribute('transform', `translate(${tx} ${ty}) scale(${scale})`);
+      }
+      function fit() {
+        const vb = { w: 3060, h: 1330 };
+        const r = stage.getBoundingClientRect();
+        scale = Math.min(r.width / vb.w, r.height / vb.h) * 0.98;
+        tx = (r.width - vb.w * scale) / 2;
+        ty = (r.height - vb.h * scale) / 2;
+        applyTransform();
+      }
+      function screenToVB(px, py) {
+        const r = stage.getBoundingClientRect();
+        return { x: px - r.left, y: py - r.top };
+      }
+      stage.addEventListener(
+        'wheel',
+        (ev) => {
+          ev.preventDefault();
+          const f = ev.deltaY < 0 ? 1.12 : 1 / 1.12;
+          const p = screenToVB(ev.clientX, ev.clientY);
+          // zoom anchored at cursor
+          tx = p.x - (p.x - tx) * f;
+          ty = p.y - (p.y - ty) * f;
+          scale *= f;
+          scale = Math.max(0.15, Math.min(4, scale));
+          applyTransform();
+        },
+        { passive: false }
+      );
+      let dragging = false,
+        lx = 0,
+        ly = 0;
+      stage.addEventListener('mousedown', (ev) => {
+        if (ev.button !== 0) return;
+        dragging = true;
+        lx = ev.clientX;
+        ly = ev.clientY;
+        stage.classList.add('panning');
+      });
+      window.addEventListener('mousemove', (ev) => {
+        if (!dragging) return;
+        tx += ev.clientX - lx;
+        ty += ev.clientY - ly;
+        lx = ev.clientX;
+        ly = ev.clientY;
+        applyTransform();
+      });
+      window.addEventListener('mouseup', () => {
+        dragging = false;
+        stage.classList.remove('panning');
+      });
+      stage.addEventListener('click', (ev) => {
+        if (ev.target === stage || ev.target === svg || ev.target.id === 'vp') {
+          pinned = null;
+          hover = null;
+          renderSidebar(null);
+          applyView();
+        }
+      });
+      document.getElementById('zin').onclick = () => {
+        scale = Math.min(4, scale * 1.2);
+        applyTransform();
+      };
+      document.getElementById('zout').onclick = () => {
+        scale = Math.max(0.15, scale / 1.2);
+        applyTransform();
+      };
+      document.getElementById('fit').onclick = fit;
+
+      /* ---- boot ---- */
+      renderSidebar(null);
+      applyView();
+      window.addEventListener('resize', () => {});
+      fit();
+    </script>
+  </body>
+</html>
