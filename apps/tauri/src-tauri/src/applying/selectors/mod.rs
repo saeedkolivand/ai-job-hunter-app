@@ -33,10 +33,7 @@ impl FormSelectors {
                 "button[type='submit']".to_string(),
                 "[data-test='apply-submit']".to_string(),
             ],
-            captcha_detection: vec![
-                "[data-test='captcha']".to_string(),
-                ".captcha".to_string(),
-            ],
+            captcha_detection: vec!["[data-test='captcha']".to_string(), ".captcha".to_string()],
         }
     }
 
@@ -57,10 +54,7 @@ impl FormSelectors {
                 "button[type='submit']".to_string(),
                 "[id='apply-button']".to_string(),
             ],
-            captcha_detection: vec![
-                ".recaptcha".to_string(),
-                "[data-captcha]".to_string(),
-            ],
+            captcha_detection: vec![".recaptcha".to_string(), "[data-captcha]".to_string()],
         }
     }
 
@@ -81,10 +75,7 @@ impl FormSelectors {
                 "button[type='submit']".to_string(),
                 "[id='submit-application']".to_string(),
             ],
-            captcha_detection: vec![
-                ".g-recaptcha".to_string(),
-                "[data-sitekey]".to_string(),
-            ],
+            captcha_detection: vec![".g-recaptcha".to_string(), "[data-sitekey]".to_string()],
         }
     }
 
@@ -105,10 +96,7 @@ impl FormSelectors {
                 "button[type='submit']".to_string(),
                 "[data-automation-id='submit']".to_string(),
             ],
-            captcha_detection: vec![
-                ".captcha".to_string(),
-                "[data-captcha]".to_string(),
-            ],
+            captcha_detection: vec![".captcha".to_string(), "[data-captcha]".to_string()],
         }
     }
 
@@ -129,10 +117,7 @@ impl FormSelectors {
                 "button[type='submit']".to_string(),
                 "[data-qa='submit-button']".to_string(),
             ],
-            captcha_detection: vec![
-                ".recaptcha".to_string(),
-                "[data-captcha]".to_string(),
-            ],
+            captcha_detection: vec![".recaptcha".to_string(), "[data-captcha]".to_string()],
         }
     }
 

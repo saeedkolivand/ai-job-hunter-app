@@ -78,7 +78,10 @@ fn test_glassdoor_href_normalization() {
     } else {
         format!("https://www.glassdoor.com{}", href)
     };
-    assert_eq!(url, "https://www.glassdoor.com/job-listing/job.htm?jobListingId=123");
+    assert_eq!(
+        url,
+        "https://www.glassdoor.com/job-listing/job.htm?jobListingId=123"
+    );
 }
 
 #[test]

@@ -25,9 +25,7 @@ static EMAIL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}").unwrap());
 
 /// Phone numbers: at least 7 digits, optional `+`, spaces, dashes, parens.
-static PHONE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\+?\d[\d\s().\-]{6,}\d").unwrap()
-});
+static PHONE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\+?\d[\d\s().\-]{6,}\d").unwrap());
 
 /// A byte span `[start, end)` into the source text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,7 +47,11 @@ pub struct Field<T> {
 
 impl<T> Field<T> {
     fn new(value: T, confidence: Confidence, source_span: Option<Span>) -> Self {
-        Self { value, confidence, source_span }
+        Self {
+            value,
+            confidence,
+            source_span,
+        }
     }
 }
 
@@ -117,7 +119,9 @@ pub fn structure(extracted: &ExtractedResume) -> StructuredResume {
         warnings.push("No email address was detected.".to_string());
     }
     if sections.len() < 2 {
-        warnings.push("Few resume sections were detected — the layout may be hard to read.".to_string());
+        warnings.push(
+            "Few resume sections were detected — the layout may be hard to read.".to_string(),
+        );
     }
 
     let review_required = matches!(extracted.confidence, Confidence::Low)
@@ -184,7 +188,11 @@ fn reconcile_header(parsed: &HeaderBlock, sr: &StructuredResume) -> HeaderBlock 
         tokenize_rich(&parts.join(" · "))
     };
 
-    HeaderBlock { name, title: parsed.title.clone(), contact }
+    HeaderBlock {
+        name,
+        title: parsed.title.clone(),
+        contact,
+    }
 }
 
 // ── Field extractors ──────────────────────────────────────────────────────────
@@ -199,7 +207,11 @@ fn extract_name(text: &str) -> Field<String> {
     let words = name.split_whitespace().count();
     let looks_like_name =
         words <= 5 && !name.contains('@') && !name.chars().any(|c| c.is_ascii_digit());
-    let confidence = if looks_like_name { Confidence::High } else { Confidence::Medium };
+    let confidence = if looks_like_name {
+        Confidence::High
+    } else {
+        Confidence::Medium
+    };
     let span = find_literal(text, &name);
     Field::new(name, confidence, span)
 }
@@ -216,7 +228,11 @@ fn extract_location(text: &str) -> Option<Field<String>> {
             continue;
         }
         // Two short comma-separated tokens look like "City, Country".
-        let tokens: Vec<&str> = l.split(',').map(str::trim).filter(|t| !t.is_empty()).collect();
+        let tokens: Vec<&str> = l
+            .split(',')
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .collect();
         if tokens.len() == 2 && tokens.iter().all(|t| t.split_whitespace().count() <= 3) {
             let span = find_literal(text, l);
             return Some(Field::new(l.to_string(), Confidence::Low, span));
@@ -269,7 +285,10 @@ fn find_span(text: &str, re: &Regex) -> Option<(String, Span)> {
     re.find(text).map(|m| {
         (
             m.as_str().to_string(),
-            Span { start: m.start(), end: m.end() },
+            Span {
+                start: m.start(),
+                end: m.end(),
+            },
         )
     })
 }
@@ -278,7 +297,10 @@ fn find_literal(text: &str, needle: &str) -> Option<Span> {
     if needle.is_empty() {
         return None;
     }
-    text.find(needle).map(|start| Span { start, end: start + needle.len() })
+    text.find(needle).map(|start| Span {
+        start,
+        end: start + needle.len(),
+    })
 }
 
 #[cfg(test)]

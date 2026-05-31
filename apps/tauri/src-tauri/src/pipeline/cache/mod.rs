@@ -35,7 +35,9 @@ impl KvCache {
         let path = data_dir.join("pipeline_cache.db");
         let conn = Connection::open(&path).map_err(|e| format!("kv cache open: {e}"))?;
         run_migrations(&conn, Self::MIGRATIONS)?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     /// Returns the cached value if present and younger than `ttl_secs`.

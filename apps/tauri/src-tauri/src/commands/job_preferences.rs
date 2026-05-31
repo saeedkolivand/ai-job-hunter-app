@@ -1,7 +1,7 @@
-use tauri::AppHandle;
-use tauri::Manager;
 use serde_json::json;
 use serde_json::Value;
+use tauri::AppHandle;
+use tauri::Manager;
 
 #[tauri::command]
 pub async fn job_preferences_get(app: AppHandle) -> Value {
@@ -14,7 +14,7 @@ pub async fn job_preferences_get(app: AppHandle) -> Value {
 pub async fn job_preferences_set(app: AppHandle, prefs: Value) -> Value {
     let store = app.state::<crate::job_preferences::JobPreferencesStore>();
     let job_prefs: crate::job_preferences::JobPreferences = serde_json::from_value(prefs)
-        .unwrap_or_else(|_| crate::job_preferences::JobPreferences {
+        .unwrap_or(crate::job_preferences::JobPreferences {
             location: None,
             remote: None,
             seniority: None,

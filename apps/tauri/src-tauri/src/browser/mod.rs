@@ -1,13 +1,13 @@
 #![allow(dead_code)]
 
+use chromiumoxide::browser::{Browser, BrowserConfig};
+use chromiumoxide::page::Page;
+use futures::StreamExt;
 /// Browser controller using chromiumoxide (Chrome DevTools Protocol).
 ///
 /// Lazily spawns Chromium on first use, reuses a single context across scrapers,
 /// applies sensible anti-bot defaults, and supports clean shutdown.
 use std::sync::Arc;
-use chromiumoxide::browser::{Browser, BrowserConfig};
-use chromiumoxide::page::Page;
-use futures::StreamExt;
 
 #[derive(Clone)]
 pub struct BrowserControllerOptions {
@@ -73,18 +73,19 @@ impl BrowserController {
         Ok(browser)
     }
 
-    pub async fn with_page<T, F>(
-        &mut self,
-        f: F,
-    ) -> Result<T, Box<dyn std::error::Error>>
+    pub async fn with_page<T, F>(&mut self, f: F) -> Result<T, Box<dyn std::error::Error>>
     where
-        F: FnOnce(Page) -> futures::future::BoxFuture<'static, Result<T, Box<dyn std::error::Error>>>,
+        F: FnOnce(
+            Page,
+        )
+            -> futures::future::BoxFuture<'static, Result<T, Box<dyn std::error::Error>>>,
     {
         let browser = self.ensure().await?;
         let page = browser.new_page("about:blank").await?;
 
         // Set anti-detection headers
-        page.evaluate("Object.defineProperty(navigator, 'webdriver', { get: () => undefined })").await?;
+        page.evaluate("Object.defineProperty(navigator, 'webdriver', { get: () => undefined })")
+            .await?;
 
         let result = f(page).await;
 

@@ -167,15 +167,25 @@ fn test_parse_relative_time_minutes_not_months() {
     // Capture `now` AFTER the call so the measured elapsed is not fractionally
     // short of the parsed duration (which would truncate down).
     let result = parse_relative_time("30 minutes ago").expect("should parse minutes");
-    let mins = chrono::Utc::now().signed_duration_since(result).num_minutes();
-    assert!((29..=31).contains(&mins), "expected ~30 minutes, got {mins}");
+    let mins = chrono::Utc::now()
+        .signed_duration_since(result)
+        .num_minutes();
+    assert!(
+        (29..=31).contains(&mins),
+        "expected ~30 minutes, got {mins}"
+    );
 }
 
 #[test]
 fn test_parse_relative_time_hours_value() {
     let result = parse_relative_time("5 hours ago").expect("should parse hours");
-    let mins = chrono::Utc::now().signed_duration_since(result).num_minutes();
-    assert!((299..=301).contains(&mins), "expected ~300 minutes, got {mins}");
+    let mins = chrono::Utc::now()
+        .signed_duration_since(result)
+        .num_minutes();
+    assert!(
+        (299..=301).contains(&mins),
+        "expected ~300 minutes, got {mins}"
+    );
 }
 
 #[test]

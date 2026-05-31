@@ -69,6 +69,9 @@ pub trait Scraper: Send + Sync {
         ctx: ScrapeContext,
     ) -> Result<Vec<JobPosting>, anyhow::Error>;
 
+    /// Reads as "scrape *from* a URL" — not a constructor, so the `&self` receiver
+    /// is intentional despite the `from_` prefix.
+    #[allow(clippy::wrong_self_convention)]
     async fn from_url(
         &self,
         _url: &str,

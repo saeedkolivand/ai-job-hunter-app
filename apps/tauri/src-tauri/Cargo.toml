@@ -4,6 +4,9 @@ version = "0.33.0"
 edition = "2021"
 description = "AI Job Hunter — Tauri desktop shell"
 authors = ["Saeed Kolivand"]
+# Application crate — never published to a registry. Marks it private so
+# cargo-deny does not require a license field (see deny.toml [licenses].private).
+publish = false
 
 [features]
 default = ["layout_pdf", "model_docx"]

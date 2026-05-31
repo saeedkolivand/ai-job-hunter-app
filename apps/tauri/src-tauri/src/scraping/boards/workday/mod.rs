@@ -2,7 +2,7 @@
 
 /// Workday — per-tenant CXS API
 use super::super::http::{fetch_json, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -51,13 +51,19 @@ impl WorkdayScraper {
 
         if trimmed.contains(':') {
             let parts: Vec<&str> = trimmed.split(':').collect();
-            let tenant = parts.get(0).map(|s| s.to_string())?;
+            let tenant = parts.first().map(|s| s.to_string())?;
             let site = parts.get(1).map(|s| s.to_string())?;
-            let host = parts.get(2).map(|s| s.to_string()).unwrap_or_else(|| "wd1".to_string());
+            let host = parts
+                .get(2)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "wd1".to_string());
             return Some((tenant, site, host));
         }
 
-        let re = regex::Regex::new(r"^https?://([^.]+)\.(wd\d+)\.myworkdayjobs\.com/(?:[a-z-]+/)?([^/?#]+)").unwrap();
+        let re = regex::Regex::new(
+            r"^https?://([^.]+)\.(wd\d+)\.myworkdayjobs\.com/(?:[a-z-]+/)?([^/?#]+)",
+        )
+        .unwrap();
         if let Some(caps) = re.captures(trimmed) {
             let tenant = caps.get(1).map(|m| m.as_str().to_string())?;
             let host = caps.get(2).map(|m| m.as_str().to_string())?;
@@ -93,8 +99,11 @@ impl Scraper for WorkdayScraper {
             None => return Ok(vec![]),
         };
 
-        let base = format!("https://{}.{}.myworkdayjobs.com/wday/cxs/{}/{}", tenant, host, tenant, site);
-        let max_pages = input.pages.min(5).max(1);
+        let base = format!(
+            "https://{}.{}.myworkdayjobs.com/wday/cxs/{}/{}",
+            tenant, host, tenant, site
+        );
+        let max_pages = input.pages.clamp(1, 5);
         let limit = 20;
         let now = chrono::Utc::now().timestamp_millis();
         let mut out = vec![];
@@ -115,7 +124,10 @@ impl Scraper for WorkdayScraper {
                 &format!("{}/jobs", base),
                 super::super::http::FetchOptions {
                     method: Some(reqwest::Method::POST),
-                    headers: Some(vec![("content-type".to_string(), "application/json".to_string())]),
+                    headers: Some(vec![(
+                        "content-type".to_string(),
+                        "application/json".to_string(),
+                    )]),
                     body: Some(body.to_string()),
                     ..Default::default()
                 },
@@ -126,7 +138,10 @@ impl Scraper for WorkdayScraper {
                 Ok(d) => d,
                 Err(e) if out.is_empty() => return Err(e),
                 Err(e) => {
-                    log::warn!("[workday] page {p} failed: {e}; returning {} collected", out.len());
+                    log::warn!(
+                        "[workday] page {p} failed: {e}; returning {} collected",
+                        out.len()
+                    );
                     break;
                 }
             };
@@ -141,7 +156,12 @@ impl Scraper for WorkdayScraper {
             }
 
             for j in &job_postings {
-                let external_id = j.external_path.split('/').last().unwrap_or("").to_string();
+                let external_id = j
+                    .external_path
+                    .split('/')
+                    .next_back()
+                    .unwrap_or("")
+                    .to_string();
                 if external_id.is_empty() {
                     continue;
                 }
@@ -166,7 +186,8 @@ impl Scraper for WorkdayScraper {
                     .and_then(|info| info.job_description)
                     .map(|d| strip_html(&d));
 
-                let posted_at = j.posted_on
+                let posted_at = j
+                    .posted_on
                     .as_ref()
                     .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
                     .map(|dt| dt.timestamp_millis());
@@ -177,7 +198,10 @@ impl Scraper for WorkdayScraper {
                     title: j.title.clone(),
                     company: tenant.clone(),
                     location: j.locations_text.clone(),
-                    url: format!("https://{}.{}.myworkdayjobs.com/en-US/{}{}", tenant, host, site, j.external_path),
+                    url: format!(
+                        "https://{}.{}.myworkdayjobs.com/en-US/{}{}",
+                        tenant, host, site, j.external_path
+                    ),
                     source: self.id().to_string(),
                     description,
                     requirements: None,

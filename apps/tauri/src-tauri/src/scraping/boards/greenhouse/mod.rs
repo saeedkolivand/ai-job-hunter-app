@@ -2,7 +2,7 @@
 
 /// Greenhouse — public per-company JSON board API
 use super::super::http::{fetch_json, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -78,7 +78,10 @@ impl Scraper for GreenhouseScraper {
 
         for j in jobs {
             let description = j.content.map(|c| strip_html(&c));
-            let posted_at = j.updated_at.and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok()).map(|dt| dt.timestamp_millis());
+            let posted_at = j
+                .updated_at
+                .and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok())
+                .map(|dt| dt.timestamp_millis());
 
             let posting = JobPosting {
                 id: format!("{}:{}", self.id(), j.id),

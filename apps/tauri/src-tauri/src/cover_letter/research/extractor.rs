@@ -17,7 +17,11 @@ fn extract_company(text: &str) -> String {
         let lower = line.to_lowercase();
         for prefix in &["company:", "employer:", "organization:", "at "] {
             if let Some(rest) = lower.find(prefix).map(|i| &text[i + prefix.len()..]) {
-                let candidate = rest.split(['|', '\n', ',', '(']).next().unwrap_or("").trim();
+                let candidate = rest
+                    .split(['|', '\n', ',', '('])
+                    .next()
+                    .unwrap_or("")
+                    .trim();
                 if !candidate.is_empty() && candidate.len() < 80 {
                     return candidate.to_string();
                 }
@@ -26,7 +30,13 @@ fn extract_company(text: &str) -> String {
     }
 
     // Priority 2: "X is hiring" / "X is looking for" pattern
-    let patterns = [" is hiring", " is looking for", " are hiring", " seeks a", " seeks an"];
+    let patterns = [
+        " is hiring",
+        " is looking for",
+        " are hiring",
+        " seeks a",
+        " seeks an",
+    ];
     for pat in &patterns {
         if let Some(idx) = text.to_lowercase().find(pat) {
             // Walk backwards to find the start of the company name phrase

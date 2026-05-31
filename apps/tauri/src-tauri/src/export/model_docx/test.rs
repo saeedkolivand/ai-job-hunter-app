@@ -38,7 +38,10 @@ fn build(template_id: TemplateId, ats_mode: bool) -> Vec<u8> {
 fn part(bytes: &[u8], name: &str) -> String {
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).expect("docx zip");
     let mut s = String::new();
-    zip.by_name(name).expect(name).read_to_string(&mut s).expect("read part");
+    zip.by_name(name)
+        .expect(name)
+        .read_to_string(&mut s)
+        .expect("read part");
     s
 }
 
@@ -65,14 +68,20 @@ fn two_column_renders_a_borderless_shaded_table() {
     let xml = part(&build(TemplateId::TwoColumn, false), "word/document.xml");
     assert!(xml.contains("<w:tbl"), "two-column DOCX must use a table");
     // Sidebar tint (240,244,248) → F0F4F8 fill on the sidebar cell.
-    assert!(xml.contains(r#"w:fill="F0F4F8""#), "sidebar cell should carry the template tint");
+    assert!(
+        xml.contains(r#"w:fill="F0F4F8""#),
+        "sidebar cell should carry the template tint"
+    );
 }
 
 #[test]
 fn two_column_splits_sections_between_columns() {
     // SKILLS + EDUCATION are sidebar sections; EXPERIENCE is a main section.
     // All three must survive somewhere in the document.
-    let text = text_of(&part(&build(TemplateId::TwoColumn, false), "word/document.xml"));
+    let text = text_of(&part(
+        &build(TemplateId::TwoColumn, false),
+        "word/document.xml",
+    ));
     for needle in ["EXPERIENCE", "SKILLS", "EDUCATION", "Acme Corp", "Rust"] {
         assert!(text.contains(needle), "two-column lost content: {needle:?}");
     }
@@ -82,20 +91,37 @@ fn two_column_splits_sections_between_columns() {
 fn ats_mode_emits_no_table() {
     // ATS mode linearizes to a single column — no two-column table.
     let xml = part(&build(TemplateId::TwoColumn, true), "word/document.xml");
-    assert!(!xml.contains("<w:tbl"), "ATS mode must not emit a two-column table");
+    assert!(
+        !xml.contains("<w:tbl"),
+        "ATS mode must not emit a two-column table"
+    );
     let text = text_of(&xml);
     for needle in ["EXPERIENCE", "SKILLS", "EDUCATION"] {
-        assert!(text.contains(needle), "ATS linearization dropped {needle:?}");
+        assert!(
+            text.contains(needle),
+            "ATS linearization dropped {needle:?}"
+        );
     }
 }
 
 #[test]
 fn single_column_template_has_no_table() {
     let xml = part(&build(TemplateId::Modern, false), "word/document.xml");
-    assert!(!xml.contains("<w:tbl"), "single-column template must not use a table");
+    assert!(
+        !xml.contains("<w:tbl"),
+        "single-column template must not use a table"
+    );
     let text = text_of(&xml);
-    for needle in ["Jane Doe", "EXPERIENCE", "Rust, TypeScript, React", "BSc Computer Science"] {
-        assert!(text.contains(needle), "single-column lost content: {needle:?}");
+    for needle in [
+        "Jane Doe",
+        "EXPERIENCE",
+        "Rust, TypeScript, React",
+        "BSc Computer Science",
+    ] {
+        assert!(
+            text.contains(needle),
+            "single-column lost content: {needle:?}"
+        );
     }
 }
 
@@ -103,27 +129,51 @@ fn single_column_template_has_no_table() {
 fn contact_links_become_hyperlinks_with_correct_targets() {
     let bytes = build(TemplateId::Modern, false);
     let doc = part(&bytes, "word/document.xml");
-    assert!(doc.contains("<w:hyperlink"), "contact links must render as hyperlinks");
+    assert!(
+        doc.contains("<w:hyperlink"),
+        "contact links must render as hyperlinks"
+    );
 
     // External hyperlink targets live in the relationships part.
     let rels = part(&bytes, "word/_rels/document.xml.rels");
-    assert!(rels.contains("https://linkedin.com/in/jane"), "LinkedIn URL must be a hyperlink target");
-    assert!(rels.contains("mailto:jane@example.com"), "email must be a mailto hyperlink target");
+    assert!(
+        rels.contains("https://linkedin.com/in/jane"),
+        "LinkedIn URL must be a hyperlink target"
+    );
+    assert!(
+        rels.contains("mailto:jane@example.com"),
+        "email must be a mailto hyperlink target"
+    );
 
     // The visible label, not the raw URL, is shown.
     let text = text_of(&doc);
     assert!(text.contains("LinkedIn"), "link label should display");
-    assert!(!text.contains("https://linkedin.com/in/jane"), "raw URL must not be visible text");
+    assert!(
+        !text.contains("https://linkedin.com/in/jane"),
+        "raw URL must not be visible text"
+    );
 }
 
 #[test]
 fn declares_a4_page_size_and_fallback_fonts() {
     // MonoTechnical: name/heading JetBrains Mono → Consolas, body Inter → Calibri.
-    let xml = part(&build(TemplateId::MonoTechnical, false), "word/document.xml");
-    assert!(xml.contains(r#"w:w="11906""#) && xml.contains(r#"w:h="16838""#), "A4 page size");
-    assert!(xml.contains(r#"w:ascii="Consolas""#), "JetBrains Mono → Consolas");
+    let xml = part(
+        &build(TemplateId::MonoTechnical, false),
+        "word/document.xml",
+    );
+    assert!(
+        xml.contains(r#"w:w="11906""#) && xml.contains(r#"w:h="16838""#),
+        "A4 page size"
+    );
+    assert!(
+        xml.contains(r#"w:ascii="Consolas""#),
+        "JetBrains Mono → Consolas"
+    );
     assert!(xml.contains(r#"w:ascii="Calibri""#), "Inter → Calibri");
     for bundled in ["JetBrains Mono", "Inter"] {
-        assert!(!xml.contains(&format!(r#""{bundled}""#)), "bundled font {bundled:?} must not leak");
+        assert!(
+            !xml.contains(&format!(r#""{bundled}""#)),
+            "bundled font {bundled:?} must not leak"
+        );
     }
 }

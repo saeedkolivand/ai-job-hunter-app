@@ -2,7 +2,7 @@
 
 /// Lever — public JSON board API
 use super::super::http::fetch_json;
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use serde::Deserialize;
 

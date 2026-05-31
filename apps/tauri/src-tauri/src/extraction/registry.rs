@@ -27,7 +27,11 @@ impl Extractor for PdfExtractor {
             return Ok(result);
         }
 
-        warn!(word_count, chars = result.text.len(), "PDF direct extraction yielded sparse text");
+        warn!(
+            word_count,
+            chars = result.text.len(),
+            "PDF direct extraction yielded sparse text"
+        );
 
         // Empty text layer → a scanned PDF; the renderer's OCR fallback handles it.
         if word_count == 0 {

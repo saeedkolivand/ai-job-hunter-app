@@ -1,0 +1,14 @@
+# Clippy configuration for ajh-tauri.
+#
+# Lint *levels* are declared in code (`src/main.rs`) and CI runs the strict gate
+# `cargo clippy --all-targets --all-features -- -D warnings` (see
+# docs/architecture-rules.md R10). This file only tunes a few complexity
+# thresholds — the rendering god-objects in analysis finding W-6 are the reason
+# we keep an eye on argument/type complexity.
+
+# Builder-style constructors in the export/scraping layers occasionally take a
+# handful of parameters; 8 (one above the default 7) is the accepted ceiling.
+too-many-arguments-threshold = 8
+
+# Clippy default; pinned explicitly so a future bump is a deliberate decision.
+type-complexity-threshold = 250

@@ -13,7 +13,9 @@ pub struct RetryPolicy {
 
 impl RetryPolicy {
     pub fn new(max_attempts: u8) -> Self {
-        Self { max_attempts: max_attempts.max(1) }
+        Self {
+            max_attempts: max_attempts.max(1),
+        }
     }
 }
 
@@ -74,14 +76,21 @@ pub async fn generate_validated(
                 retries += 1;
             }
             Err(e) => {
-                log::warn!("[pipeline] validator '{}' error (non-fatal): {e}", validator.name());
+                log::warn!(
+                    "[pipeline] validator '{}' error (non-fatal): {e}",
+                    validator.name()
+                );
                 report = Some(ValidationReport::skipped());
                 break;
             }
         }
     }
 
-    Ok(ValidatedDraft { text, report, retries })
+    Ok(ValidatedDraft {
+        text,
+        report,
+        retries,
+    })
 }
 
 #[cfg(test)]

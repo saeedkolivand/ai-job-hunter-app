@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 # Runs before `git push`.
-# Quality gate: matches CI workflow checks (lint, format, typecheck, build, tests, rust clippy).
+# Quality gate: matches CI workflow checks (lint, format, typecheck, build, tests,
+# rust clippy + fmt, architecture boundary tests, cargo-deny, cargo-machete).
 
 if [ -n "$GITHUB_ACTIONS" ]; then
   exit 0
@@ -28,8 +29,28 @@ cd apps/tauri/src-tauri && cargo check --all-targets --all-features
 echo "▶ Running package tests..."
 cd "$GIT_ROOT" && pnpm test
 
-echo "▶ Running Rust tests..."
+echo "▶ Running Rust tests (incl. architecture boundary tests)..."
 cd apps/tauri/src-tauri && cargo test --all-features
 
 echo "▶ Running Rust clippy..."
 cargo clippy --all-targets --all-features -- -D warnings
+
+echo "▶ Checking Rust formatting..."
+cargo fmt --all -- --check
+
+# Supply-chain + unused-dependency gates. CI runs these unconditionally; locally
+# they are best-effort — skipped with a hint if the tool isn't installed, so the
+# hook never blocks a dev who hasn't run the one-time `cargo install`.
+if command -v cargo-deny >/dev/null 2>&1; then
+  echo "▶ Running cargo-deny..."
+  cargo deny check
+else
+  echo "⚠ cargo-deny not installed — skipping (CI enforces it). Install: cargo install cargo-deny --locked"
+fi
+
+if command -v cargo-machete >/dev/null 2>&1; then
+  echo "▶ Running cargo-machete..."
+  cargo machete
+else
+  echo "⚠ cargo-machete not installed — skipping (CI enforces it). Install: cargo install cargo-machete"
+fi

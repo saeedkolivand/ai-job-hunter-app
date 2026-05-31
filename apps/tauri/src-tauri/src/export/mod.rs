@@ -10,15 +10,14 @@
  * - commands.rs: Tauri commands for frontend integration
  */
 
-pub mod links;
-pub mod layout_pdf;
-pub mod parser;
+pub mod commands;
 pub mod docx;
 pub mod docx_renderer;
+pub mod layout_pdf;
+pub mod links;
 pub mod model_docx;
+pub mod parser;
 pub mod pdf;
 pub mod pdf_renderer;
 pub mod templates;
 pub mod types;
-pub mod commands;
-

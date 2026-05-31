@@ -1,9 +1,9 @@
-use crate::applying::types::{ApplyContext, ApplyStep};
 use crate::apply_helpers::{decode_resume_to_temp, setup_apply_job};
+use crate::applying::types::{ApplyContext, ApplyStep};
 use crate::ipc_contracts::apply::ApplyStartRequest;
 use crate::scraping::ScraperEngine;
-use serde_json::{json, Value};
 use parking_lot::Mutex;
+use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio_util::sync::CancellationToken;
 
@@ -43,7 +43,10 @@ pub async fn apply_start(app: AppHandle, req: ApplyStartRequest) -> Value {
     let span = crate::observability::Span::begin("apply", format!("board={board}"));
     let result = applier.apply(url.to_string(), ctx).await;
     match &result {
-        Ok(r) => span.end_with(&format!("stage={} submitted={}", r.stage, r.submitted), r.ok),
+        Ok(r) => span.end_with(
+            &format!("stage={} submitted={}", r.stage, r.submitted),
+            r.ok,
+        ),
         Err(_) => span.end(false),
     }
 
@@ -53,7 +56,8 @@ pub async fn apply_start(app: AppHandle, req: ApplyStartRequest) -> Value {
     let tracker = app.state::<Mutex<crate::jobs::JobTracker>>();
     match result {
         Ok(r) => {
-            { let mut g = tracker.lock();
+            {
+                let mut g = tracker.lock();
                 g.complete(
                     &job_id,
                     json!({
@@ -75,7 +79,8 @@ pub async fn apply_start(app: AppHandle, req: ApplyStartRequest) -> Value {
             })
         }
         Err(e) => {
-            { let mut g = tracker.lock();
+            {
+                let mut g = tracker.lock();
                 g.fail(&job_id, e.to_string());
             }
             json!({ "jobId": job_id, "error": e.to_string() })
@@ -94,10 +99,7 @@ pub async fn apply_catalog(_app: AppHandle) -> Value {
 
 // Helper functions
 
-fn create_step_callback(
-    app: AppHandle,
-    job_id: String,
-) -> Box<dyn Fn(ApplyStep) + Send> {
+fn create_step_callback(app: AppHandle, job_id: String) -> Box<dyn Fn(ApplyStep) + Send> {
     Box::new(move |step: ApplyStep| {
         let _ = app.emit(
             "apply.step",
@@ -111,10 +113,7 @@ fn create_step_callback(
     })
 }
 
-fn create_progress_callback(
-    app: AppHandle,
-    job_id: String,
-) -> Box<dyn Fn(f32, String) + Send> {
+fn create_progress_callback(app: AppHandle, job_id: String) -> Box<dyn Fn(f32, String) + Send> {
     Box::new(move |p: f32, stage: String| {
         let _ = app.emit(
             "apply.progress",
@@ -136,7 +135,9 @@ fn build_apply_context(
             .get("coverLetter")
             .and_then(|v| v.as_str())
             .map(str::to_string),
-        resume_path: temp_resume.as_ref().map(|p| p.to_string_lossy().to_string()),
+        resume_path: temp_resume
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string()),
         auto_submit: req
             .get("autoSubmit")
             .and_then(|v| v.as_bool())

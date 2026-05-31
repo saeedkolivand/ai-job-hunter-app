@@ -26,7 +26,7 @@ fn test_open_store() {
 fn test_insert_document() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
-    
+
     let doc = DocumentRecord {
         id: make_doc_id(),
         title: "Resume".to_string(),
@@ -38,7 +38,7 @@ fn test_insert_document() {
         indexed: false,
         is_default: false,
     };
-    
+
     store.insert(&doc).unwrap();
     let docs = store.list();
     assert_eq!(docs.len(), 1);
@@ -51,7 +51,7 @@ fn test_insert_document() {
 fn test_list_documents() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
-    
+
     let doc1 = DocumentRecord {
         id: make_doc_id(),
         title: "Resume".to_string(),
@@ -63,7 +63,7 @@ fn test_list_documents() {
         indexed: false,
         is_default: false,
     };
-    
+
     let doc2 = DocumentRecord {
         id: make_doc_id(),
         title: "CV".to_string(),
@@ -75,10 +75,10 @@ fn test_list_documents() {
         indexed: false,
         is_default: false,
     };
-    
+
     store.insert(&doc1).unwrap();
     store.insert(&doc2).unwrap();
-    
+
     let docs = store.list();
     assert_eq!(docs.len(), 2);
     // Should be sorted by created_at desc
@@ -90,7 +90,7 @@ fn test_list_documents() {
 fn test_set_indexed() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
-    
+
     let doc = DocumentRecord {
         id: make_doc_id(),
         title: "Resume".to_string(),
@@ -102,10 +102,10 @@ fn test_set_indexed() {
         indexed: false,
         is_default: false,
     };
-    
+
     store.insert(&doc).unwrap();
     store.set_indexed(&doc.id).unwrap();
-    
+
     let docs = store.list();
     assert!(docs[0].indexed);
 }
@@ -114,7 +114,7 @@ fn test_set_indexed() {
 fn test_remove_document() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
-    
+
     let doc = DocumentRecord {
         id: make_doc_id(),
         title: "Resume".to_string(),
@@ -126,10 +126,10 @@ fn test_remove_document() {
         indexed: false,
         is_default: false,
     };
-    
+
     store.insert(&doc).unwrap();
     store.remove(&doc.id).unwrap();
-    
+
     let docs = store.list();
     assert!(docs.is_empty());
 }
@@ -138,7 +138,7 @@ fn test_remove_document() {
 fn test_set_default() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
-    
+
     let doc1 = DocumentRecord {
         id: make_doc_id(),
         title: "Resume".to_string(),
@@ -150,7 +150,7 @@ fn test_set_default() {
         indexed: false,
         is_default: false,
     };
-    
+
     let doc2 = DocumentRecord {
         id: make_doc_id(),
         title: "CV".to_string(),
@@ -162,13 +162,13 @@ fn test_set_default() {
         indexed: false,
         is_default: false,
     };
-    
+
     store.insert(&doc1).unwrap();
     store.insert(&doc2).unwrap();
-    
+
     // Set doc2 as default
     store.set_default(&doc2.id).unwrap();
-    
+
     let docs = store.list();
     assert!(!docs.iter().find(|d| d.id == doc1.id).unwrap().is_default);
     assert!(docs.iter().find(|d| d.id == doc2.id).unwrap().is_default);
@@ -178,7 +178,7 @@ fn test_set_default() {
 fn test_upsert_vector() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
-    
+
     let doc_id = "doc-123";
     let vector = vec![0.1, 0.2, 0.3, 0.4];
 
@@ -187,7 +187,9 @@ fn test_upsert_vector() {
 
     // Update the vector
     let new_vector = vec![0.5, 0.6, 0.7, 0.8];
-    store.upsert_vector(doc_id, &ev(new_vector.clone())).unwrap();
+    store
+        .upsert_vector(doc_id, &ev(new_vector.clone()))
+        .unwrap();
     assert_eq!(store.get_vector(doc_id).map(|e| e.values), Some(new_vector));
 }
 
@@ -195,7 +197,7 @@ fn test_upsert_vector() {
 fn test_get_vector() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
-    
+
     let doc_id = "doc-123";
     let vector = vec![0.1, 0.2, 0.3];
 
@@ -208,7 +210,7 @@ fn test_get_vector() {
 fn test_all_vectors() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
-    
+
     store.upsert_vector("doc-1", &ev(vec![0.1, 0.2])).unwrap();
     store.upsert_vector("doc-2", &ev(vec![0.3, 0.4])).unwrap();
 
@@ -254,10 +256,10 @@ fn test_cosine_similarity_orthogonal() {
 fn test_cosine_similarity_edge_cases() {
     // Empty vectors
     assert_eq!(cosine_similarity(&[], &[]), 0.0);
-    
+
     // Mismatched lengths
     assert_eq!(cosine_similarity(&[1.0], &[1.0, 2.0]), 0.0);
-    
+
     // Zero vectors
     assert_eq!(cosine_similarity(&[0.0, 0.0], &[1.0, 1.0]), 0.0);
 }
@@ -294,7 +296,9 @@ fn test_data_store_export_import_round_trip() {
     store.insert(&a).unwrap();
     store.insert(&b).unwrap();
     store.set_default("doc-b").unwrap();
-    store.upsert_vector("doc-b", &ev(vec![0.1, 0.2, 0.3])).unwrap();
+    store
+        .upsert_vector("doc-b", &ev(vec![0.1, 0.2, 0.3]))
+        .unwrap();
 
     let bundle = store.export();
 
@@ -307,7 +311,10 @@ fn test_data_store_export_import_round_trip() {
     let docs = restored.list();
     assert_eq!(docs.len(), 2);
     // The originally-default doc stays default after restore.
-    assert_eq!(docs.iter().find(|d| d.is_default).map(|d| d.id.as_str()), Some("doc-b"));
+    assert_eq!(
+        docs.iter().find(|d| d.is_default).map(|d| d.id.as_str()),
+        Some("doc-b")
+    );
     // Vectors survive the round trip.
     assert_eq!(
         restored.get_vector("doc-b").map(|e| e.values),

@@ -80,7 +80,7 @@ pub async fn fetch_text(
             Ok(response) => {
                 let status_code = response.status().as_u16();
                 let headers = response.headers().clone();
-                
+
                 // Check content length if available
                 if let Some(content_length) = response.content_length() {
                     if content_length > MAX_BYTES as u64 {
@@ -89,7 +89,7 @@ pub async fn fetch_text(
                 }
 
                 let text = response.text().await?;
-                
+
                 if text.len() > MAX_BYTES {
                     return Err(anyhow::anyhow!("Response too large"));
                 }
@@ -142,14 +142,23 @@ pub async fn fetch_json<T: for<'de> serde::Deserialize<'de>>(
 
 pub fn strip_html(html: &str) -> String {
     let mut result = html.to_string();
-    
+
     // Remove script and style tags
-    result = regex::Regex::new(r"(?i)<script[\s\S]*?</script>").unwrap().replace_all(&result, " ").to_string();
-    result = regex::Regex::new(r"(?i)<style[\s\S]*?</style>").unwrap().replace_all(&result, " ").to_string();
-    
+    result = regex::Regex::new(r"(?i)<script[\s\S]*?</script>")
+        .unwrap()
+        .replace_all(&result, " ")
+        .to_string();
+    result = regex::Regex::new(r"(?i)<style[\s\S]*?</style>")
+        .unwrap()
+        .replace_all(&result, " ")
+        .to_string();
+
     // Remove all HTML tags
-    result = regex::Regex::new(r"<[^>]+>").unwrap().replace_all(&result, " ").to_string();
-    
+    result = regex::Regex::new(r"<[^>]+>")
+        .unwrap()
+        .replace_all(&result, " ")
+        .to_string();
+
     // Decode HTML entities
     result = result.replace("&nbsp;", " ");
     result = result.replace("&amp;", "&");
@@ -157,9 +166,12 @@ pub fn strip_html(html: &str) -> String {
     result = result.replace("&gt;", ">");
     result = result.replace("&quot;", "\"");
     result = result.replace("&#39;", "'");
-    
+
     // Collapse whitespace
-    result = regex::Regex::new(r"\s+").unwrap().replace_all(&result, " ").to_string();
+    result = regex::Regex::new(r"\s+")
+        .unwrap()
+        .replace_all(&result, " ")
+        .to_string();
 
     result.trim().to_string()
 }
@@ -177,9 +189,15 @@ pub fn html_to_text(html: &str) -> String {
         .to_string();
 
     // List items → bullet on their own line.
-    s = regex::Regex::new(r"(?i)<li[^>]*>").unwrap().replace_all(&s, "\n• ").to_string();
+    s = regex::Regex::new(r"(?i)<li[^>]*>")
+        .unwrap()
+        .replace_all(&s, "\n• ")
+        .to_string();
     // Explicit line breaks.
-    s = regex::Regex::new(r"(?i)<br\s*/?>").unwrap().replace_all(&s, "\n").to_string();
+    s = regex::Regex::new(r"(?i)<br\s*/?>")
+        .unwrap()
+        .replace_all(&s, "\n")
+        .to_string();
     // Block-level closers → newline (li excluded; its opener already broke the line).
     s = regex::Regex::new(r"(?i)</(p|div|ul|ol|h[1-6]|tr|section|header|article)>")
         .unwrap()
@@ -187,7 +205,10 @@ pub fn html_to_text(html: &str) -> String {
         .to_string();
 
     // Strip any remaining tags.
-    s = regex::Regex::new(r"<[^>]+>").unwrap().replace_all(&s, "").to_string();
+    s = regex::Regex::new(r"<[^>]+>")
+        .unwrap()
+        .replace_all(&s, "")
+        .to_string();
 
     // Decode common entities.
     s = s
@@ -199,11 +220,23 @@ pub fn html_to_text(html: &str) -> String {
         .replace("&#39;", "'");
 
     // Collapse runs of spaces/tabs, trim each line, cap consecutive blank lines.
-    s = regex::Regex::new(r"[ \t]+").unwrap().replace_all(&s, " ").to_string();
-    s = regex::Regex::new(r" *\n *").unwrap().replace_all(&s, "\n").to_string();
-    s = regex::Regex::new(r"\n{3,}").unwrap().replace_all(&s, "\n\n").to_string();
+    s = regex::Regex::new(r"[ \t]+")
+        .unwrap()
+        .replace_all(&s, " ")
+        .to_string();
+    s = regex::Regex::new(r" *\n *")
+        .unwrap()
+        .replace_all(&s, "\n")
+        .to_string();
+    s = regex::Regex::new(r"\n{3,}")
+        .unwrap()
+        .replace_all(&s, "\n\n")
+        .to_string();
     // Keep bullets tight under their heading — no blank line before a bullet.
-    s = regex::Regex::new(r"\n{2,}•").unwrap().replace_all(&s, "\n•").to_string();
+    s = regex::Regex::new(r"\n{2,}•")
+        .unwrap()
+        .replace_all(&s, "\n•")
+        .to_string();
 
     s.trim().to_string()
 }

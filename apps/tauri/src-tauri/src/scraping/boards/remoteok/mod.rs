@@ -1,11 +1,15 @@
 /// RemoteOK — public JSON feed
 use super::super::http::{fetch_json, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
+// `Job` dwarfs `Legend`, but this is a transient untagged deserialization target
+// (one value per feed item, immediately destructured); boxing the large variant
+// would complicate the serde derive for no practical gain.
+#[allow(clippy::large_enum_variant)]
 enum RemoteOkItem {
     #[serde(rename_all = "camelCase")]
     Job {
@@ -50,7 +54,12 @@ impl Scraper for RemoteOkScraper {
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
         let q = input.query.trim().to_lowercase();
-        let items = fetch_json::<Vec<RemoteOkItem>>("https://remoteok.com/api", Default::default(), ctx.signal).await?;
+        let items = fetch_json::<Vec<RemoteOkItem>>(
+            "https://remoteok.com/api",
+            Default::default(),
+            ctx.signal,
+        )
+        .await?;
 
         let items = match items {
             Some(i) => i,
@@ -61,12 +70,33 @@ impl Scraper for RemoteOkScraper {
         let mut out = vec![];
 
         for it in items {
-            let (id, slug, position, company, location, tags, description, url, apply_url, date) = match it {
-                RemoteOkItem::Job { id, slug, position, company, location, tags, description, url, apply_url, date } => {
-                    (id, slug, position, company, location, tags, description, url, apply_url, date)
-                }
-                RemoteOkItem::Legend { .. } => continue, // skip legend entry
-            };
+            let (id, slug, position, company, location, tags, description, url, apply_url, date) =
+                match it {
+                    RemoteOkItem::Job {
+                        id,
+                        slug,
+                        position,
+                        company,
+                        location,
+                        tags,
+                        description,
+                        url,
+                        apply_url,
+                        date,
+                    } => (
+                        id,
+                        slug,
+                        position,
+                        company,
+                        location,
+                        tags,
+                        description,
+                        url,
+                        apply_url,
+                        date,
+                    ),
+                    RemoteOkItem::Legend { .. } => continue, // skip legend entry
+                };
 
             let id_str = id.map(|i| i.to_string()).unwrap_or_else(|| "".to_string());
             if id_str.is_empty() || position.is_none() {
@@ -77,8 +107,11 @@ impl Scraper for RemoteOkScraper {
                 "{} {} {}",
                 position.as_ref().unwrap_or(&"".to_string()),
                 company.as_ref().unwrap_or(&"".to_string()),
-                tags.as_ref().map(|t| t.join(" ")).unwrap_or_else(|| "".to_string())
-            ).to_lowercase();
+                tags.as_ref()
+                    .map(|t| t.join(" "))
+                    .unwrap_or_else(|| "".to_string())
+            )
+            .to_lowercase();
 
             if !q.is_empty() && !haystack.contains(&q) {
                 continue;
@@ -91,12 +124,17 @@ impl Scraper for RemoteOkScraper {
                 company: company.unwrap_or_else(|| "Unknown".to_string()),
                 location,
                 url: url.or(apply_url).unwrap_or_else(|| {
-                    format!("https://remoteok.com/remote-jobs/{}", slug.unwrap_or_else(|| id_str.clone()))
+                    format!(
+                        "https://remoteok.com/remote-jobs/{}",
+                        slug.unwrap_or_else(|| id_str.clone())
+                    )
                 }),
                 source: self.id().to_string(),
                 description: description.map(|d| strip_html(&d)),
                 requirements: tags,
-                posted_at: date.and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok()).map(|dt| dt.timestamp_millis()),
+                posted_at: date
+                    .and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok())
+                    .map(|dt| dt.timestamp_millis()),
                 captured_at: now,
                 extra: {
                     let mut map = std::collections::HashMap::new();

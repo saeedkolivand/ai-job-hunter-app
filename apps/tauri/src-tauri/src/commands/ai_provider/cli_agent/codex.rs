@@ -42,11 +42,22 @@ impl CliAgentBackend for CodexAgent {
     }
 
     fn stream_invocation(&self, model: &str, _system: &str, effort: Option<&str>) -> CliInvocation {
-        CliInvocation { args: exec_args(model, effort), prompt: PromptDelivery::Arg }
+        CliInvocation {
+            args: exec_args(model, effort),
+            prompt: PromptDelivery::Arg,
+        }
     }
 
-    fn complete_invocation(&self, model: &str, _system: &str, effort: Option<&str>) -> CliInvocation {
-        CliInvocation { args: exec_args(model, effort), prompt: PromptDelivery::Arg }
+    fn complete_invocation(
+        &self,
+        model: &str,
+        _system: &str,
+        effort: Option<&str>,
+    ) -> CliInvocation {
+        CliInvocation {
+            args: exec_args(model, effort),
+            prompt: PromptDelivery::Arg,
+        }
     }
 
     fn parse_stream_line(&self, line: &str) -> Option<CliEvent> {
@@ -92,7 +103,9 @@ impl CliAgentBackend for CodexAgent {
         if let Some(e) = error {
             return Err(AppError::Provider(format!("Codex: {e}")));
         }
-        Err(AppError::Provider("Codex: no response in output".to_string()))
+        Err(AppError::Provider(
+            "Codex: no response in output".to_string(),
+        ))
     }
 }
 
@@ -169,10 +182,19 @@ mod tests {
     fn exec_args_include_sandbox_and_model() {
         let inv = CodexAgent.stream_invocation("o4-mini", "", None);
         assert_eq!(inv.prompt, PromptDelivery::Arg);
-        assert!(inv.args.windows(2).any(|w| w[0] == "--sandbox" && w[1] == "read-only"));
-        assert!(inv.args.windows(2).any(|w| w[0] == "--model" && w[1] == "o4-mini"));
+        assert!(inv
+            .args
+            .windows(2)
+            .any(|w| w[0] == "--sandbox" && w[1] == "read-only"));
+        assert!(inv
+            .args
+            .windows(2)
+            .any(|w| w[0] == "--model" && w[1] == "o4-mini"));
         // No effort → no reasoning-effort override.
-        assert!(!inv.args.iter().any(|a| a.starts_with("model_reasoning_effort=")));
+        assert!(!inv
+            .args
+            .iter()
+            .any(|a| a.starts_with("model_reasoning_effort=")));
     }
 
     #[test]
@@ -184,7 +206,10 @@ mod tests {
             .any(|w| w[0] == "-c" && w[1] == "model_reasoning_effort=high"));
         // Blank effort is treated as none.
         let blank = CodexAgent.stream_invocation("o4-mini", "", Some("  "));
-        assert!(!blank.args.iter().any(|a| a.starts_with("model_reasoning_effort=")));
+        assert!(!blank
+            .args
+            .iter()
+            .any(|a| a.starts_with("model_reasoning_effort=")));
     }
 
     #[test]

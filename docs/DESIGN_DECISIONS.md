@@ -408,7 +408,7 @@ The repo uses `semantic-release` triggered by Conventional Commits:
 | `BREAKING CHANGE` footer       | major (x.0.0) | API break   |
 | `chore:`, `docs:`, `refactor:` | no release    | Maintenance |
 
-On merge to `main`, semantic-release automatically: bumps the version, generates a CHANGELOG, creates a GitHub release, and triggers the Tauri build pipeline.
+On merge to `main`, semantic-release automatically: bumps the version, publishes release notes to the GitHub release, and triggers the Tauri build pipeline.
 
 ### Pre-commit Hooks (Husky + lint-staged)
 

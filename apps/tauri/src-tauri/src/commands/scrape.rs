@@ -1,9 +1,9 @@
-use serde::Deserialize;
-use serde_json::{json, Value};
-use parking_lot::Mutex;
-use tauri::{AppHandle, Emitter, Manager};
 use crate::postings::{InteractionRecord, InteractionStore, PostingsCache};
 use crate::scraping::{BoardSearchInput, ScraperEngine};
+use parking_lot::Mutex;
+use serde::Deserialize;
+use serde_json::{json, Value};
+use tauri::{AppHandle, Emitter, Manager};
 
 // ScrapeBoardRequest and ScrapeUrlRequest are generated from the Zod schemas in
 // packages/shared by `pnpm gen:ipc`. See crate::ipc_contracts::scrape.
@@ -82,7 +82,8 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
             json!({ "jobId": job_id_progress, "progress": p }),
         );
         if let Some(tracker) = app_progress.try_state::<Mutex<crate::jobs::JobTracker>>() {
-            { let mut g = tracker.lock();
+            {
+                let mut g = tracker.lock();
                 g.update_progress(&job_id_progress, p as f64);
             }
         }
@@ -92,16 +93,17 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
     let job_id_item = job_id.clone();
     let on_item = Box::new(move |item: crate::scraping::JobPosting| {
         if let Some(cache) = app_item.try_state::<Mutex<PostingsCache>>() {
-            { let mut guard = cache.lock();
+            {
+                let mut guard = cache.lock();
                 if let Ok(item_json) = serde_json::to_value(&item) {
                     guard.add(item_json);
                 }
             }
         }
-        
+
         let _ = app_item.emit(
             "jobs:event",
-            json!({ "type": "job.stream", "jobId": job_id_item, "data": item, "ts": now_ms() })
+            json!({ "type": "job.stream", "jobId": job_id_item, "data": item, "ts": now_ms() }),
         );
     });
 
@@ -109,13 +111,20 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
     let job_id_clone = job_id.clone();
     tokio::spawn(async move {
         let result = engine
-            .scrape_board(&board, input, job_id_clone.clone(), Some(on_progress), Some(on_item))
+            .scrape_board(
+                &board,
+                input,
+                job_id_clone.clone(),
+                Some(on_progress),
+                Some(on_item),
+            )
             .await;
 
         let tracker = app_clone.state::<Mutex<crate::jobs::JobTracker>>();
         match &result {
             Ok(results) => {
-                { let mut g = tracker.lock();
+                {
+                    let mut g = tracker.lock();
                     g.complete(&job_id_clone, json!({ "count": results.len() }));
                 }
                 let _ = app_clone.emit(
@@ -124,7 +133,8 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
                 );
             }
             Err(e) => {
-                { let mut g = tracker.lock();
+                {
+                    let mut g = tracker.lock();
                     g.fail(&job_id_clone, e.to_string());
                 }
                 let _ = app_clone.emit(
@@ -161,19 +171,21 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
         match result {
             Ok(Some(posting)) => {
                 if let Some(cache) = app_clone.try_state::<Mutex<PostingsCache>>() {
-                    { let mut guard = cache.lock();
+                    {
+                        let mut guard = cache.lock();
                         if let Ok(item_json) = serde_json::to_value(&posting) {
                             guard.add(item_json);
                         }
                     }
                 }
-                
+
                 let _ = app_clone.emit(
                     "jobs:event",
                     json!({ "type": "job.stream", "jobId": job_id_clone, "data": posting, "ts": now_ms() })
                 );
 
-                { let mut g = tracker.lock();
+                {
+                    let mut g = tracker.lock();
                     g.complete(&job_id_clone, json!({ "ok": true }));
                 }
                 let _ = app_clone.emit(
@@ -182,7 +194,8 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
                 );
             }
             Ok(None) => {
-                { let mut g = tracker.lock();
+                {
+                    let mut g = tracker.lock();
                     g.fail(&job_id_clone, "no scraper matched this URL".to_string());
                 }
                 let _ = app_clone.emit(
@@ -191,7 +204,8 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
                 );
             }
             Err(e) => {
-                { let mut g = tracker.lock();
+                {
+                    let mut g = tracker.lock();
                     g.fail(&job_id_clone, e.to_string());
                 }
                 let _ = app_clone.emit(
@@ -217,9 +231,7 @@ pub fn scrape_persist_job(app: AppHandle, req: ScrapePersistJobRequest) -> Value
         source: req.job.source.unwrap_or_default(),
         location: req.job.location.unwrap_or_default(),
     };
-    app.state::<Mutex<InteractionStore>>()
-        .lock()
-        .upsert(record);
+    app.state::<Mutex<InteractionStore>>().lock().upsert(record);
     json!({ "success": true })
 }
 
@@ -246,9 +258,7 @@ pub fn scrape_list_postings(app: AppHandle) -> Value {
 
 #[tauri::command]
 pub fn scrape_clear_postings(app: AppHandle) -> Value {
-    app.state::<Mutex<PostingsCache>>()
-        .lock()
-        .clear_all();
+    app.state::<Mutex<PostingsCache>>().lock().clear_all();
     json!(null)
 }
 
@@ -259,4 +269,3 @@ pub fn scrape_list_interactions(app: AppHandle, filter: Option<ScrapeListFilter>
     let mut store = binding.lock();
     json!(store.list(filter_type.as_deref()))
 }
-

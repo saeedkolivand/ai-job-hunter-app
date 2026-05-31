@@ -344,7 +344,11 @@ mod tests {
     #[test]
     fn non_us_markets_are_a4() {
         for id in ["uk", "de", "fr", "nl", "eu", "intl"] {
-            assert_eq!(LocaleProfile::get(id).page_size, PageSize::A4, "{id} should be A4");
+            assert_eq!(
+                LocaleProfile::get(id).page_size,
+                PageSize::A4,
+                "{id} should be A4"
+            );
         }
     }
 }

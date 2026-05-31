@@ -1,6 +1,6 @@
 /// Personio — public XML feed per company
 use super::super::http::{fetch_text, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 
 const HOSTS: &[&str] = &["jobs.personio.de", "jobs.personio.com"];
@@ -55,7 +55,9 @@ impl Scraper for PersonioScraper {
         let id_re = regex::Regex::new(r"<id>(.*?)</id>").unwrap();
         let name_re = regex::Regex::new(r"<name>(.*?)</name>").unwrap();
         let office_re = regex::Regex::new(r"<office>(.*?)</office>").unwrap();
-        let desc_re = regex::Regex::new(r"<jobDescription>\s*<value>(.*?)</value>\s*</jobDescription>").unwrap();
+        let desc_re =
+            regex::Regex::new(r"<jobDescription>\s*<value>(.*?)</value>\s*</jobDescription>")
+                .unwrap();
         let created_re = regex::Regex::new(r"<createdAt>(.*?)</createdAt>").unwrap();
 
         for position_cap in position_re.captures_iter(&xml) {
@@ -92,7 +94,9 @@ impl Scraper for PersonioScraper {
                     .unwrap_or("");
 
                 let posted_at = if !created.is_empty() {
-                    chrono::DateTime::parse_from_rfc3339(created).ok().map(|dt| dt.timestamp_millis())
+                    chrono::DateTime::parse_from_rfc3339(created)
+                        .ok()
+                        .map(|dt| dt.timestamp_millis())
                 } else {
                     None
                 };
@@ -102,7 +106,11 @@ impl Scraper for PersonioScraper {
                     external_id: Some(id.to_string()),
                     title: title.to_string(),
                     company: company.clone(),
-                    location: if office.is_empty() { None } else { Some(office.to_string()) },
+                    location: if office.is_empty() {
+                        None
+                    } else {
+                        Some(office.to_string())
+                    },
                     url: format!("https://{}.{}/job/{}", company, HOSTS[0], id),
                     source: self.id().to_string(),
                     description: if desc.is_empty() { None } else { Some(desc) },

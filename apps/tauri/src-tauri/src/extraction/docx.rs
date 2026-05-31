@@ -3,7 +3,7 @@ use std::io::Read;
 
 use zip::ZipArchive;
 
-use crate::extraction::types::{ExtractionError, ExtractedResume, Link, SourceFormat};
+use crate::extraction::types::{ExtractedResume, ExtractionError, Link, SourceFormat};
 
 pub fn extract(bytes: &[u8]) -> Result<ExtractedResume, ExtractionError> {
     let cursor = std::io::Cursor::new(bytes);
@@ -65,7 +65,9 @@ fn parse_relationships(xml: &str) -> HashMap<String, String> {
         if let (Some(id), Some(url)) = (id, target) {
             // Only keep external hyperlinks.
             if target_mode.as_deref() == Some("External")
-                && (url.starts_with("http://") || url.starts_with("https://") || url.starts_with("mailto:"))
+                && (url.starts_with("http://")
+                    || url.starts_with("https://")
+                    || url.starts_with("mailto:"))
             {
                 map.insert(id, url);
             }
@@ -192,7 +194,8 @@ fn strip_single_tag(s: &str) -> &str {
 }
 
 fn looks_like_xml_noise(s: &str) -> bool {
-    s.chars().all(|c| c.is_whitespace() || c == '\n' || c == '\r')
+    s.chars()
+        .all(|c| c.is_whitespace() || c == '\n' || c == '\r')
 }
 
 /// Extract an XML attribute value by name from a fragment like `Id="rId1" ...`.

@@ -34,7 +34,9 @@ impl Validator for LeakageValidator {
     }
 
     async fn validate(&self, completer: &Completer, draft: &str) -> AppResult<ValidationReport> {
-        let _ = completer.app().emit("cover_letter:validation:start", json!({}));
+        let _ = completer
+            .app()
+            .emit("cover_letter:validation:start", json!({}));
 
         let user = format!(
             "<original_resume>\n{resume}\n</original_resume>\n\n\

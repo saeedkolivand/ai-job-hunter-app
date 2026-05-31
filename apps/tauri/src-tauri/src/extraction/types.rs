@@ -49,7 +49,9 @@ pub enum ExtractionError {
     #[error("Legacy .doc format is not supported. Please save the file as .docx or PDF.")]
     LegacyDoc,
 
-    #[error("PDF appears to be scanned (no extractable text). Please upload a text-based PDF or DOCX.")]
+    #[error(
+        "PDF appears to be scanned (no extractable text). Please upload a text-based PDF or DOCX."
+    )]
     ScannedPdfWithoutOcr,
 
     #[error("PDF extraction failed: {0}")]
