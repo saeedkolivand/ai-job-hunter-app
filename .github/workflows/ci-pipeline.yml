@@ -12,7 +12,7 @@ name: 🚀 CI Pipeline
 #   - type-check: TypeScript type checking
 #   - tests: JavaScript and Rust test suites
 #   - build-verification: Production build validation
-#   - quality-checks: Rust clippy linting
+#   - quality-checks: Rust fmt, clippy, architecture boundary tests (R1-R8), cargo-deny, cargo-machete
 # ──────────────────────────────────────────────────────────────────────
 
 on:
@@ -634,7 +634,7 @@ jobs:
       - name: 🦀 Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
 
       - name: 🐧 Install Linux Dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
@@ -648,6 +648,10 @@ jobs:
           workspaces: apps/tauri/src-tauri
           cache-on-failure: true
 
+      - name: 🎨 Cargo Format Check
+        working-directory: apps/tauri/src-tauri
+        run: cargo fmt --all -- --check
+
       - name: 🦀 Cargo Clippy
         working-directory: apps/tauri/src-tauri
         run: |
@@ -655,61 +659,47 @@ jobs:
           cargo clippy --all-targets --all-features -- -D warnings
           echo "::endgroup::"
 
-      # Architecture guardrail (see docs/PATTERNS.md §13).
-      # The data-dir env var + path fallback must live ONLY in platform/config.rs.
-      - name: 🚧 Architecture Guardrail — centralized data dir
-        working-directory: apps/tauri/src-tauri/src
+      # Architecture boundary enforcement — docs/architecture-rules.md (R1–R8).
+      # Supersedes the previous ad-hoc grep guardrails: the rules now live in a
+      # versioned Rust test (tests/architecture.rs) with explicit, dead-entry-guarded
+      # allowlists, so drift is blocked and exceptions can't silently rot.
+      - name: 🏛️ Architecture Boundary Tests
+        working-directory: apps/tauri/src-tauri
         run: |
-          echo "::group::Checking AJH_DATA_DIR ownership"
-          matches=$(grep -rn "AJH_DATA_DIR" . --include="*.rs" | grep -v "^./platform/config.rs:" || true)
-          if [ -n "$matches" ]; then
-            echo "::error::AJH_DATA_DIR must only be referenced in platform/config.rs. Use platform::config::data_dir() instead."
-            echo "$matches"
-            exit 1
-          fi
-          echo "OK — AJH_DATA_DIR is owned solely by platform/config.rs"
+          echo "::group::Running architecture boundary tests"
+          cargo test --test architecture
           echo "::endgroup::"
 
-      # Architecture guardrail (see docs/PATTERNS.md §13).
-      # reqwest clients must be built ONLY in net/http.rs; everything else
-      # composes net::http::shared() / build_client().
-      - name: 🚧 Architecture Guardrail — centralized HTTP client
-        working-directory: apps/tauri/src-tauri/src
-        run: |
-          echo "::group::Checking reqwest::Client construction ownership"
-          matches=$(grep -rnE "reqwest::Client::(new|builder)\(" . --include="*.rs" | grep -v "^./net/http.rs:" || true)
-          if [ -n "$matches" ]; then
-            echo "::error::reqwest::Client must only be constructed in net/http.rs. Use net::http::shared() or net::http::build_client() instead."
-            echo "$matches"
-            exit 1
-          fi
-          echo "OK — reqwest clients are built solely in net/http.rs"
-          echo "::endgroup::"
+      - name: 🧰 Install cargo-deny + cargo-machete
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny,cargo-machete
 
-      # Architecture guardrail (see docs/PATTERNS.md §13).
-      # Internal fallible code uses AppResult/AppError, not Result<_, String>.
-      # (Test files and error.rs are exempt.)
-      - name: 🚧 Architecture Guardrail — typed errors
-        working-directory: apps/tauri/src-tauri/src
-        run: |
-          echo "::group::Checking for Result<_, String> outside error.rs"
-          matches=$(grep -rnE "Result<[^=]*, String>" . --include="*.rs" | grep -v "test.rs:" | grep -v "^./error.rs:" || true)
-          if [ -n "$matches" ]; then
-            echo "::error::Use AppResult/AppError (crate::error) instead of Result<_, String>."
-            echo "$matches"
-            exit 1
-          fi
-          echo "OK — no stringly-typed Result outside error.rs"
-          echo "::endgroup::"
+      # Supply-chain policy (advisories, licenses, bans, sources). cargo-deny's
+      # advisory check covers RUSTSEC, gating vulnerabilities on every PR (the
+      # weekly standalone cargo-audit in security.yml stays as a scheduled sweep).
+      - name: 🛡️ Cargo Deny
+        working-directory: apps/tauri/src-tauri
+        run: cargo deny check
+
+      - name: 🧹 Cargo Machete (unused dependencies)
+        working-directory: apps/tauri/src-tauri
+        run: cargo machete
 
       - name: 📝 Job Summary
         if: always()
         run: |
           echo "## 🔬 Quality Checks Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Cargo Clippy | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Tooling |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Formatting | \`cargo fmt --check\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Lints | \`cargo clippy -D warnings\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Architecture boundaries | \`cargo test --test architecture\` (R1–R8) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Supply chain | \`cargo deny check\` (advisories/licenses/bans/sources) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unused deps | \`cargo machete\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "_Architecture rules: docs/architecture-rules.md • analysis: docs/architecture-analysis.md_" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
           echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
