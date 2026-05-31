@@ -25,6 +25,7 @@ fn resume_request(template_id: TemplateId) -> ExportRequest {
         meta: None,
         ats_mode: false,
         locale: None,
+        contact: None,
     }
 }
 
@@ -65,6 +66,7 @@ fn cover_letter_docx_declares_a4_page_size() {
         meta: None,
         ats_mode: false,
         locale: None,
+        contact: None,
     };
     let bytes = generate_docx(&request).expect("docx");
     let xml = document_xml(&bytes);
@@ -149,6 +151,7 @@ fn test_generate_simple_resume() {
         meta: None,
         ats_mode: false,
         locale: None,
+        contact: None,
     };
 
     let result = generate_docx(&request);
@@ -201,6 +204,7 @@ fn test_generate_cover_letter() {
         meta: None,
         ats_mode: false,
         locale: None,
+        contact: None,
     };
 
     let result = generate_docx(&request);
@@ -223,6 +227,7 @@ fn test_generate_resume_with_meta() {
         }),
         ats_mode: false,
         locale: None,
+        contact: None,
     };
 
     let result = generate_docx(&request);

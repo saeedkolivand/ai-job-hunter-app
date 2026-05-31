@@ -19,6 +19,7 @@ describe('IPC_CHANNELS', () => {
         'documents',
         'geocode',
         'jobPreferences',
+        'contactProfile',
         'jobs',
         'linkedin',
         'match',

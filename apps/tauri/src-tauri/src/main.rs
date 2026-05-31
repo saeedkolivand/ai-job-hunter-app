@@ -12,6 +12,7 @@ mod autopilot_helpers;
 mod autopilot_scheduler;
 mod browser;
 mod commands;
+mod contact_profile;
 mod conversations;
 mod cover_letter;
 mod credentials;
@@ -195,6 +196,14 @@ fn main() {
                     log::warn!("[setup] job preferences store failed to open (non-fatal): {e}")
                 }
             }
+            match contact_profile::ContactProfileStore::open(&data_dir) {
+                Ok(store) => {
+                    app.manage(store);
+                }
+                Err(e) => {
+                    log::warn!("[setup] contact profile store failed to open (non-fatal): {e}")
+                }
+            }
             app.manage(Mutex::new(JobTracker::open(&data_dir)));
             app.manage(Mutex::new(PostingsCache::default()));
             app.manage(Mutex::new(InteractionStore::new(&data_dir)));
@@ -295,6 +304,9 @@ fn main() {
             // job preferences
             commands::job_preferences::job_preferences_get,
             commands::job_preferences::job_preferences_set,
+            // contact profile (header source of truth)
+            commands::contact_profile::contact_profile_get,
+            commands::contact_profile::contact_profile_set,
             // search
             commands::search::search_hybrid,
             // scrape

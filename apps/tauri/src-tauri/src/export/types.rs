@@ -75,12 +75,31 @@ pub struct ExportRequest {
     /// the rest → A4). Optional so frontends that omit it keep the A4 default.
     #[serde(default)]
     pub locale: Option<String>,
+    /// User contact profile — the single source of truth for the header contact
+    /// line (name fields → `[Label](url)`), localized per language. When present
+    /// it overrides whatever links the generated text carried, so a personal
+    /// LinkedIn / Website can never be displaced by a company-link. Optional so
+    /// older frontends keep the text-derived header.
+    #[serde(default)]
+    pub contact: Option<crate::contact_profile::ContactProfile>,
 }
 
 impl ExportRequest {
     /// Page geometry for this request's locale (international A4 by default).
     pub fn page_geometry(&self) -> crate::locale::PageGeometry {
         crate::locale::LocaleProfile::get(self.locale.as_deref().unwrap_or("en")).page_geometry()
+    }
+
+    /// Language the document is written in (drives the localized header location).
+    /// Falls back to the request locale, then `en`.
+    pub fn target_lang(&self) -> String {
+        self.meta
+            .as_ref()
+            .and_then(|m| m.target_language.as_deref())
+            .filter(|s| !s.is_empty())
+            .or(self.locale.as_deref())
+            .unwrap_or("en")
+            .to_string()
     }
 }
 
