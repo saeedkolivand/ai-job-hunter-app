@@ -88,7 +88,10 @@ fn sanitize_markdown_strips_stray_emphasis_but_keeps_bold() {
     assert_eq!(sanitize_markdown("*React and AWS*"), "React and AWS");
     assert_eq!(sanitize_markdown("AWS*-Services"), "AWS-Services");
     // Valid bold survives (the renderer turns it into real bold).
-    assert_eq!(sanitize_markdown("Use **React** today"), "Use **React** today");
+    assert_eq!(
+        sanitize_markdown("Use **React** today"),
+        "Use **React** today"
+    );
     // Stray backticks go; in-word underscores (snake_case) are left untouched.
     assert_eq!(sanitize_markdown("a `code` span"), "a code span");
     assert_eq!(sanitize_markdown("create_react_app"), "create_react_app");

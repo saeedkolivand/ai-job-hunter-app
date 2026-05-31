@@ -54,7 +54,7 @@ pub fn normalize_unicode(text: &str) -> String {
             // Other
             '\u{2116}' => "No.",
             '\u{2020}' | '\u{2021}' => "", // daggers — drop (never emit a stray asterisk)
-            '\u{00B7}' => ".",              // middle dot
+            '\u{00B7}' => ".",             // middle dot
             // Private Use Area + icon-font glyphs + replacement char: these render
             // as boxes/garbage (or nothing) in the bundled fonts — drop them.
             c if is_private_use(c) || c == '\u{FFFD}' => "",

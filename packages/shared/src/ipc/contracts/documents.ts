@@ -1,5 +1,6 @@
 import type { DocumentImportRequest } from '../../schemas/index.js';
 import type { DocumentRecord } from '../../types/index.js';
+import type { ContactProfile } from './contactProfile.js';
 
 export type TemplateId =
   | 'classic'
@@ -29,6 +30,12 @@ interface BaseExportRequest {
   atsMode?: boolean;
   /** Target market id (`us`, `de`, …); drives the page size (US → Letter, else A4). */
   locale?: string;
+  /**
+   * Header contact source of truth — named fields rendered as clickable links,
+   * localized per language. When present it overrides whatever links the
+   * generated text carried, so a company link can't displace a personal profile.
+   */
+  contact?: ContactProfile;
 }
 
 export type ExportIssueSeverity = 'critical' | 'warning';

@@ -42,16 +42,25 @@ pub(crate) fn generate_resume_pdf(
         template,
         ats_mode,
         crate::locale::LocaleProfile::default().page_geometry(),
+        None,
+        "en",
     )
 }
 
 /// Render a resume to PDF bytes on a specific page geometry (locale-driven).
+///
+/// `contact` (when present) is the single source of truth for the header contact
+/// line, localized by `lang` — it overrides whatever links the generated text
+/// carried, so the header can never display a company-link in place of the
+/// candidate's own profile / site.
 pub(crate) fn generate_resume_pdf_in(
     text: &str,
     meta: Option<&GenerationMeta>,
     template: &Template,
     ats_mode: bool,
     geom: PageGeometry,
+    contact: Option<&crate::contact_profile::ContactProfile>,
+    lang: &str,
 ) -> Result<Vec<u8>> {
     let mut model = model_from_resume_text(text);
 
@@ -60,6 +69,11 @@ pub(crate) fn generate_resume_pdf_in(
         if !name.is_empty() {
             model.header.name = name.to_string();
         }
+    }
+
+    // Header contact line from the named profile fields (never the company-link pool).
+    if let Some(profile) = contact {
+        profile.apply_to_header(&mut model.header, lang);
     }
 
     // ATS mode: collapse to a single column and put sections in ATS reading order.

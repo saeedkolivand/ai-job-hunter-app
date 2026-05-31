@@ -405,6 +405,8 @@ fn generate_cover_letter_pdf(
     text: &str,
     meta: Option<&GenerationMeta>,
     template: &Template,
+    contact: Option<&crate::contact_profile::ContactProfile>,
+    lang: &str,
 ) -> Result<Vec<u8>> {
     let mut doc = PdfDocument::new("Cover Letter");
     let fonts = load_all_fonts(&mut doc)?;
@@ -422,18 +424,23 @@ fn generate_cover_letter_pdf(
         .map(|s| s.as_str())
         .unwrap_or("");
 
-    // Parse a contact line: join all lines that look like contact info
+    // Contact line: the named profile fields are the source of truth (shared with
+    // the résumé header, so both documents show identical correctly-named links).
+    // Fall back to scraping the generated text only when no profile is supplied.
     let raw_lines: Vec<&str> = text.lines().collect();
-    let contact_line: String = raw_lines
-        .iter()
-        .take(4)
-        .filter(|l| {
-            let c = strip_md(l.trim());
-            c.contains('@') || c.contains('|') || c.contains('·')
-        })
-        .map(|l| strip_md(l.trim()))
-        .collect::<Vec<_>>()
-        .join(" · ");
+    let contact_line: String = match contact {
+        Some(profile) if !profile.is_effectively_empty() => profile.header_markdown(lang),
+        _ => raw_lines
+            .iter()
+            .take(4)
+            .filter(|l| {
+                let c = strip_md(l.trim());
+                c.contains('@') || c.contains('|') || c.contains('·')
+            })
+            .map(|l| strip_md(l.trim()))
+            .collect::<Vec<_>>()
+            .join(" · "),
+    };
 
     // Render letterhead
     let render_ctx = RenderCtx {
@@ -800,6 +807,8 @@ pub fn generate_pdf(request: &ExportRequest) -> Result<Vec<u8>> {
                     &template,
                     request.ats_mode,
                     request.page_geometry(),
+                    request.contact.as_ref(),
+                    &request.target_lang(),
                 )
             } else {
                 generate_resume_pdf(text, request.meta.as_ref(), &template, request.ats_mode)
@@ -809,8 +818,14 @@ pub fn generate_pdf(request: &ExportRequest) -> Result<Vec<u8>> {
         DocumentType::CoverLetter => {
             let text = extract_section(&request.text, "### COMPLETE COVER LETTER ###", None);
             let text = if text.is_empty() { &request.text } else { text };
-            generate_cover_letter_pdf(text, request.meta.as_ref(), &template)
-                .context("Failed to generate cover letter PDF")
+            generate_cover_letter_pdf(
+                text,
+                request.meta.as_ref(),
+                &template,
+                request.contact.as_ref(),
+                &request.target_lang(),
+            )
+            .context("Failed to generate cover letter PDF")
         }
     }
 }

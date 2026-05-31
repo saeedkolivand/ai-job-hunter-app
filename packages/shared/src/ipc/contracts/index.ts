@@ -21,6 +21,7 @@ import { AI_GENERATIONS_CHANNELS, type AiGenerationsContract } from './aiGenerat
 import { APPLY_CHANNELS, type ApplyContract } from './apply.js';
 import { AUTOPILOT_CHANNELS, type AutopilotContract } from './autopilot.js';
 import { BOARDS_CHANNELS, type BoardsContract } from './boards.js';
+import { CONTACT_PROFILE_CHANNELS, type ContactProfileContract } from './contactProfile.js';
 import { CONVERSATIONS_CHANNELS, type ConversationsContract } from './conversations.js';
 import { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js';
 import { DATA_CHANNELS, type DataContract } from './data.js';
@@ -49,6 +50,7 @@ export interface IpcContract {
   ai: AiContract;
   documents: DocumentsContract;
   jobPreferences: JobPreferencesContract;
+  contactProfile: ContactProfileContract;
   search: SearchContract;
   scrape: ScrapeContract;
   match: MatchContract;
@@ -77,6 +79,7 @@ export const IPC_CHANNELS = {
   ai: AI_CHANNELS,
   documents: DOCUMENTS_CHANNELS,
   jobPreferences: JOB_PREFERENCES_CHANNELS,
+  contactProfile: CONTACT_PROFILE_CHANNELS,
   search: SEARCH_CHANNELS,
   scrape: SCRAPE_CHANNELS,
   match: MATCH_CHANNELS,
@@ -130,6 +133,13 @@ export {
   type AutopilotStepEvent,
 } from './autopilot.js';
 export { BOARDS_CHANNELS, type BoardsContract } from './boards.js';
+export {
+  CONTACT_PROFILE_CHANNELS,
+  type ContactLink,
+  type ContactProfile,
+  type ContactProfileContract,
+  type LocalizedText,
+} from './contactProfile.js';
 export { CONVERSATIONS_CHANNELS, type ConversationsContract } from './conversations.js';
 export { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js';
 export { DATA_CHANNELS, type DataContract } from './data.js';
