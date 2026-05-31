@@ -4,6 +4,7 @@ import { IconBadge, transition, variants } from '@ajh/ui';
 
 import { AccountsSettingsTab } from '@/features/settings/components/accounts/AccountsSettingsTab';
 import { AISettingsTab } from '@/features/settings/components/ai-settings/AISettingsTab';
+import { ContactProfileTab } from '@/features/settings/components/contact/ContactProfileTab';
 import { GeneralSection } from '@/features/settings/components/general-section';
 import { DeveloperPreferences } from '@/features/settings/components/preferences/DeveloperPreferences';
 import { JobLocationPreferences } from '@/features/settings/components/preferences/JobLocationPreferences';
@@ -63,6 +64,7 @@ export function SettingsContent({
                 userName={userName}
               />
             )}
+            {activeSection === 'contact' && <ContactProfileTab />}
             {activeSection === 'ai' && (
               <>
                 <AISettingsTab />

@@ -87,6 +87,11 @@ export async function exportDOCX(
 
     const api = getClient();
     const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
+    // The stored contact profile is the source of truth for the header contact
+    // line — passing it lets the backend build the header from named fields
+    // (never the résumé's company-link pool). Missing profile → undefined (the
+    // backend falls back to the text-derived header).
+    const contact = await api.contactProfile.get().catch(() => undefined);
     const _filePath = await api.documents.exportAndSave({
       text: exportText,
       format: 'docx',
@@ -94,6 +99,7 @@ export async function exportDOCX(
       templateId,
       atsMode,
       locale,
+      contact,
       meta: meta
         ? {
             candidateName: meta.candidateName,
@@ -135,6 +141,8 @@ export async function exportPDF(
 
     const api = getClient();
     const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
+    // See exportDOCX: the contact profile is the header source of truth.
+    const contact = await api.contactProfile.get().catch(() => undefined);
     const _filePath = await api.documents.exportAndSave({
       text: exportText,
       format: 'pdf',
@@ -142,6 +150,7 @@ export async function exportPDF(
       templateId,
       atsMode,
       locale,
+      contact,
       meta: meta
         ? {
             candidateName: meta.candidateName,

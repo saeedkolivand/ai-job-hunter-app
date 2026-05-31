@@ -10,6 +10,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::ai_generations::AiGenerationStore;
 use crate::autopilot::AutopilotStore;
+use crate::contact_profile::ContactProfileStore;
 use crate::conversations::ConversationDb;
 use crate::data_store::DataStore;
 use crate::documents::DocumentStore;
@@ -59,6 +60,9 @@ fn build_bundle(app: &AppHandle) -> Value {
         stores.insert(s.key().to_string(), s.export());
     }
     if let Some(s) = app.try_state::<JobPreferencesStore>() {
+        stores.insert(s.key().to_string(), s.export());
+    }
+    if let Some(s) = app.try_state::<ContactProfileStore>() {
         stores.insert(s.key().to_string(), s.export());
     }
     if let Some(s) = app.try_state::<std::sync::Arc<Mutex<AutopilotStore>>>() {
@@ -171,6 +175,9 @@ pub async fn data_import(app: AppHandle) -> Value {
     }
     if let Some(s) = app.try_state::<JobPreferencesStore>() {
         import_into("jobPreferences", s.inner());
+    }
+    if let Some(s) = app.try_state::<ContactProfileStore>() {
+        import_into("contactProfile", s.inner());
     }
     if let Some(s) = app.try_state::<std::sync::Arc<Mutex<AutopilotStore>>>() {
         let guard = s.lock();

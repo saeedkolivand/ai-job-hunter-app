@@ -178,4 +178,25 @@ mod tests {
             0.0
         );
     }
+
+    #[test]
+    fn bundled_faces_contain_en_and_em_dash_glyphs() {
+        // The export pipeline now PRESERVES U+2013 / U+2014 instead of collapsing
+        // them to '-', so every embedded face must actually carry both glyphs or a
+        // sentence-break dash would render as a missing-glyph box.
+        for f in ALL {
+            for bold in [false, true] {
+                let face = FontMetrics::face(f, bold)
+                    .unwrap_or_else(|| panic!("face must parse for {f:?} bold={bold}"));
+                assert!(
+                    face.glyph_index('\u{2013}').is_some(),
+                    "{f:?} bold={bold} is missing the en-dash (U+2013) glyph"
+                );
+                assert!(
+                    face.glyph_index('\u{2014}').is_some(),
+                    "{f:?} bold={bold} is missing the em-dash (U+2014) glyph"
+                );
+            }
+        }
+    }
 }

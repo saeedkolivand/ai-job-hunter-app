@@ -1,7 +1,18 @@
-import { Briefcase, Cpu, FileText, Gauge, Languages, Lock, Shield, Terminal } from 'lucide-react';
+import {
+  Briefcase,
+  Contact,
+  Cpu,
+  FileText,
+  Gauge,
+  Languages,
+  Lock,
+  Shield,
+  Terminal,
+} from 'lucide-react';
 
 export type SectionId =
   | 'general'
+  | 'contact'
   | 'ai'
   | 'job'
   | 'resume'
@@ -31,6 +42,12 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'settings.sections.general.label',
         icon: Languages,
         description: 'settings.sections.general.description',
+      },
+      {
+        id: 'contact',
+        label: 'settings.sections.contact.label',
+        icon: Contact,
+        description: 'settings.sections.contact.description',
       },
       {
         id: 'ai',

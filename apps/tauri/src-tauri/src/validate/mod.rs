@@ -197,7 +197,206 @@ fn run_validators(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> {
     // Column interleaving is only possible for a two-column layout that has not
     // been linearized to a single column.
     let two_column = matches!(request.template_id, TemplateId::TwoColumn) && !request.ats_mode;
-    evaluate(&expected, &extracted, two_column, request.document_type)
+    let mut issues = evaluate(&expected, &extracted, two_column, request.document_type);
+
+    // Render-correctness gates that must hold for EVERY generated document, so the
+    // header-link and stray-markdown defects can't regress for a future résumé.
+    issues.extend(stray_markdown_issues(&extracted));
+    if matches!(request.format, ExportFormat::Pdf) {
+        issues.extend(pdf_render_issues(request, bytes));
+    }
+    issues
+}
+
+/// Reject stray Markdown emphasis (`*`, backtick) that survived sanitization into
+/// the rendered text — the leaked-asterisk symptom. Applies to PDF and DOCX.
+fn stray_markdown_issues(extracted: &str) -> Vec<ExportIssue> {
+    if extracted.contains('*') || extracted.contains('`') {
+        vec![ExportIssue::critical(
+            "stray_markdown",
+            "The exported document contains stray Markdown markers (* or `) that should \
+             have been stripped — emphasis leaked into the visible text.",
+        )]
+    } else {
+        Vec::new()
+    }
+}
+
+/// A link annotation read back from the rendered PDF: its `/Rect` in PDF user
+/// space (points, bottom-up origin) and target URL.
+struct PdfLink {
+    /// `[x0, y0, x1, y1]` — bottom-left and top-right corners in points.
+    rect: [f32; 4],
+    url: String,
+    /// 0-based page index the annotation lives on.
+    page: usize,
+}
+
+/// Render-level checks over the actual PDF bytes (renderer-agnostic, so the modern
+/// résumé engine and the legacy cover-letter path are both covered):
+///   * `empty_anchor_link` — every link rect overlaps rendered text (catches the
+///     header links dumped to the page bottom with no glyphs under them).
+///   * `header_url_mismatch` — when a contact profile is the source of truth, every
+///     header-region link URL must be one of the profile's named fields, and every
+///     profile URL must appear in the header (catches a company-link displacing a
+///     personal profile / site).
+fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> {
+    let doc = match lopdf::Document::load_mem(bytes) {
+        Ok(d) => d,
+        Err(_) => return Vec::new(), // tooling failure never blocks
+    };
+    let page_h_pt = request.page_geometry().height_mm * 2.834_645_7;
+
+    let pages: Vec<(usize, lopdf::ObjectId)> = doc.get_pages().into_values().enumerate().collect();
+    let mut links: Vec<PdfLink> = Vec::new();
+    let mut baselines_by_page: Vec<Vec<f32>> = Vec::new();
+
+    for (idx, page_id) in &pages {
+        baselines_by_page.push(text_baseline_ys(&doc, *page_id));
+        links.extend(page_link_annotations(&doc, *page_id, *idx));
+    }
+
+    let mut issues = Vec::new();
+
+    // (1) Every link must overlap text on its page (no empty-anchor / floating rect).
+    for link in &links {
+        let y0 = link.rect[1].min(link.rect[3]);
+        let y1 = link.rect[1].max(link.rect[3]);
+        let baselines = baselines_by_page
+            .get(link.page)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let anchored = baselines.iter().any(|&y| y >= y0 - 3.0 && y <= y1 + 3.0);
+        if !anchored {
+            issues.push(ExportIssue::critical(
+                "empty_anchor_link",
+                format!(
+                    "A hyperlink to {} has no text beneath it — the clickable area is \
+                     misplaced (likely a coordinate-origin flip).",
+                    link.url
+                ),
+            ));
+        }
+    }
+
+    // (2) Header URL correctness against the contact profile (when supplied).
+    if let Some(profile) = request
+        .contact
+        .as_ref()
+        .filter(|p| !p.is_effectively_empty())
+    {
+        let allowed: std::collections::BTreeSet<String> =
+            profile.header_urls().into_iter().collect();
+        // Header region: the top ~2 inches (144 pt) of the first page.
+        let header_band_bottom = page_h_pt - 144.0;
+        let header_links: Vec<&PdfLink> = links
+            .iter()
+            .filter(|l| l.page == 0 && l.rect[1].max(l.rect[3]) >= header_band_bottom)
+            .collect();
+
+        for link in &header_links {
+            if !allowed.contains(&link.url) {
+                issues.push(ExportIssue::critical(
+                    "header_url_mismatch",
+                    format!(
+                        "Header link {} is not one of the contact profile's fields — a \
+                         body/company link leaked into the header.",
+                        link.url
+                    ),
+                ));
+            }
+        }
+        for url in &allowed {
+            if !header_links.iter().any(|l| &l.url == url) {
+                issues.push(ExportIssue::critical(
+                    "header_url_mismatch",
+                    format!("Contact profile link {url} is missing from the rendered header."),
+                ));
+            }
+        }
+    }
+
+    issues
+}
+
+/// Collect text baseline Y positions (points, bottom-up) from a page's content
+/// stream, from the text-positioning operators the renderers emit.
+fn text_baseline_ys(doc: &lopdf::Document, page_id: lopdf::ObjectId) -> Vec<f32> {
+    let Ok(content) = doc.get_page_content(page_id) else {
+        return Vec::new();
+    };
+    let Ok(decoded) = lopdf::content::Content::decode(&content) else {
+        return Vec::new();
+    };
+    let mut ys = Vec::new();
+    for op in &decoded.operations {
+        let y = match op.operator.as_str() {
+            // `x y Td` / `x y TD` — operand[1] is the baseline y.
+            "Td" | "TD" => op.operands.get(1).and_then(|o| o.as_float().ok()),
+            // `a b c d e f Tm` — operand[5] is the baseline y.
+            "Tm" => op.operands.get(5).and_then(|o| o.as_float().ok()),
+            _ => None,
+        };
+        if let Some(y) = y {
+            ys.push(y);
+        }
+    }
+    ys
+}
+
+/// Collect `/Link` annotations (rect + `/A /URI`) for one page.
+fn page_link_annotations(
+    doc: &lopdf::Document,
+    page_id: lopdf::ObjectId,
+    page_idx: usize,
+) -> Vec<PdfLink> {
+    let Ok(annots) = doc.get_page_annotations(page_id) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for annot in annots {
+        let is_link = annot
+            .get(b"Subtype")
+            .and_then(|v| v.as_name())
+            .map(|n| n == b"Link")
+            .unwrap_or(false);
+        if !is_link {
+            continue;
+        }
+        let Some(rect) = annot
+            .get(b"Rect")
+            .ok()
+            .and_then(|v| v.as_array().ok())
+            .and_then(|a| {
+                let v: Vec<f32> = a.iter().filter_map(|o| o.as_float().ok()).collect();
+                <[f32; 4]>::try_from(v).ok()
+            })
+        else {
+            continue;
+        };
+        let url = annot
+            .get(b"A")
+            .ok()
+            .and_then(|a| match a {
+                lopdf::Object::Dictionary(d) => Some(d.clone()),
+                lopdf::Object::Reference(id) => doc.get_dictionary(*id).ok().cloned(),
+                _ => None,
+            })
+            .and_then(|d| {
+                d.get(b"URI")
+                    .ok()
+                    .and_then(|u| u.as_str().ok())
+                    .map(|b| String::from_utf8_lossy(b).into_owned())
+            });
+        if let Some(url) = url {
+            out.push(PdfLink {
+                rect,
+                url,
+                page: page_idx,
+            });
+        }
+    }
+    out
 }
 
 /// Compare the expected content against the re-extracted text.

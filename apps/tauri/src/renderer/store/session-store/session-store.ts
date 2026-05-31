@@ -48,6 +48,7 @@ interface ResumesSlice {
 
 type SettingsSection =
   | 'general'
+  | 'contact'
   | 'ai'
   | 'job'
   | 'resume'

@@ -129,6 +129,7 @@ fn req(format: ExportFormat, template_id: TemplateId, ats_mode: bool) -> ExportR
         meta: None,
         ats_mode,
         locale: None,
+        contact: None,
     }
 }
 

@@ -996,6 +996,10 @@
           "label": "General",
           "description": "Name, language, appearance"
         },
+        "contact": {
+          "label": "Contact Profile",
+          "description": "Header details & profile links"
+        },
         "ai": {
           "label": "AI",
           "description": "Models, tone, generation"

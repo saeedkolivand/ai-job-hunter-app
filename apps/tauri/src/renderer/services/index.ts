@@ -18,6 +18,7 @@ export * from './use-ai-provider';
 export * from './use-apply';
 export * from './use-autopilot';
 export * from './use-boards';
+export * from './use-contact-profile';
 export * from './use-conversations';
 export * from './use-credentials';
 export * from './use-data';

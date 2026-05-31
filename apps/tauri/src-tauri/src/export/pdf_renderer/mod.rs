@@ -280,6 +280,43 @@ pub(crate) fn contact_link_rects(
     out
 }
 
+/// Build a clickable link annotation `Op` from a rectangle given in **top-down**
+/// millimetres (x, top edge, width, height measured from the page top), doing the
+/// single correct flip into printpdf's bottom-up point space.
+///
+/// Shared by the modern layout engine ([`super::layout_pdf`]) and the legacy
+/// contact / cover-letter path so there is exactly ONE annotation code path — no
+/// per-renderer coordinate math that can diverge (which is what dumped the cover
+/// letter's header links to the page bottom).
+pub fn link_annotation_op(
+    x_mm: f32,
+    y_top_mm: f32,
+    width_mm: f32,
+    height_mm: f32,
+    page_height_mm: f32,
+    url: String,
+) -> Op {
+    const PT_PER_MM: f32 = 2.834_645_7;
+    let y_bottom_pt = (page_height_mm - (y_top_mm + height_mm)) * PT_PER_MM;
+    let rect = Rect {
+        x: Pt(x_mm * PT_PER_MM),
+        y: Pt(y_bottom_pt),
+        width: Pt(width_mm * PT_PER_MM),
+        height: Pt(height_mm * PT_PER_MM),
+        mode: None,
+        winding_order: None,
+    };
+    Op::LinkAnnotation {
+        link: LinkAnnotation::new(
+            rect,
+            Actions::Uri(url),
+            Some(BorderArray::Solid([0.0, 0.0, 0.0])),
+            Some(ColorArray::Transparent),
+            None,
+        ),
+    }
+}
+
 /// Setup color palette from template.
 pub fn setup_colors(template: &Template) -> ColorPalette {
     ColorPalette {
@@ -922,31 +959,25 @@ fn render_contact_text_with_links(text: &str, ctx: ContactSpanCtx<'_>, ops: &mut
         Op::EndTextSection,
     ]);
 
-    // Clickable rects, positioned by real glyph advances (not a char-count guess).
-    let page_h_pt = page_height * 2.834_645_7;
-    let rect_y_bottom = page_h_pt - (y * 2.834_645_7);
-    let rect_y_top = rect_y_bottom + font_size * 1.1;
+    // Clickable rects, anchored to the SAME baseline the text uses. `y` is the
+    // baseline in printpdf bottom-up mm (the text above is drawn at `Mm(y)`), so
+    // the rect's top edge expressed in top-down mm is `(page_height - y) - ascent`.
+    // `link_annotation_op` then performs the single flip into point space. The old
+    // code recomputed `page_height - y` here AND flipped again, which placed every
+    // rect near the page bottom (the cover-letter header-link bug).
+    let ascent_mm = pt_to_mm(font_size * 0.8);
+    let height_mm = pt_to_mm(font_size * 1.1);
+    let y_top_mm = (page_height - y) - ascent_mm;
 
     for link in contact_link_rects(text, x_start, family, font_size, &FontMetrics) {
-        let x_left = link.x_left_mm * 2.834_645_7;
-        let width = link.width_mm * 2.834_645_7;
-        let rect = Rect {
-            x: Pt(x_left),
-            y: Pt(rect_y_bottom),
-            width: Pt(width),
-            height: Pt(rect_y_top - rect_y_bottom),
-            mode: None,
-            winding_order: None,
-        };
-        ops.push(Op::LinkAnnotation {
-            link: LinkAnnotation::new(
-                rect,
-                Actions::Uri(link.url),
-                Some(BorderArray::Solid([0.0, 0.0, 0.0])),
-                Some(ColorArray::Transparent),
-                None,
-            ),
-        });
+        ops.push(link_annotation_op(
+            link.x_left_mm,
+            y_top_mm,
+            link.width_mm,
+            height_mm,
+            page_height,
+            link.url,
+        ));
     }
 }
 

@@ -24,6 +24,7 @@ fn test_generate_filename() {
         }),
         ats_mode: false,
         locale: None,
+        contact: None,
     };
 
     let filename = generate_filename(&request, "docx");

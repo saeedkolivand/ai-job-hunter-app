@@ -49,6 +49,7 @@ export const keys = {
   },
   documents: { all: ['documents'] as const },
   jobPreferences: { all: ['jobPreferences'] as const },
+  contactProfile: { all: ['contactProfile'] as const },
   postings: {
     all: ['postings'] as const,
     interactions: (type?: string) => ['postings', 'interactions', type] as const,

@@ -19,9 +19,13 @@ pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<
         ));
     }
 
-    // Normalize Unicode before any rendering so unsupported glyphs don't appear
-    // as replacement boxes in PDF/DOCX output.
+    // Normalize Unicode, strip stray Markdown the model leaked, and run the dash
+    // typography pass — all before any rendering so unsupported glyphs never appear
+    // as replacement boxes and no `*` / backtick or mangled sentence-break dash
+    // reaches the page.
     request.text = super::parser::normalize_unicode(&request.text);
+    request.text = super::parser::sanitize_markdown(&request.text);
+    request.text = super::parser::typography(&request.text);
 
     // Generate based on format. PDF/DOCX run through the validation gate, which
     // re-extracts the bytes, auto-fixes a two-column layout that doesn't survive

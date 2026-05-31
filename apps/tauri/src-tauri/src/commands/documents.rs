@@ -47,8 +47,25 @@ pub async fn documents_import(app: AppHandle, req: DocumentsImportRequest) -> Va
     // Structured review: per-field confidence + missing/low-confidence flags the
     // renderer surfaces before generation. Computed before `extraction.text` is
     // moved into the record.
-    let review = serde_json::to_value(crate::extraction::structured::structure(&extraction))
-        .unwrap_or(json!(null));
+    let structured = crate::extraction::structured::structure(&extraction);
+    let review = serde_json::to_value(&structured).unwrap_or(json!(null));
+
+    // Seed the contact profile from the résumé's links — but ONLY when the user
+    // has no profile yet, so an existing (edited) profile is never clobbered. The
+    // classifier picks the personal LinkedIn/GitHub/Website by NAME and rejects
+    // company / job-board pages; the user reviews & edits it in settings. This is
+    // what stops a company link from ever reaching the document header.
+    if let Some(cp_store) = app.try_state::<crate::contact_profile::ContactProfileStore>() {
+        if cp_store.get().is_effectively_empty() {
+            let mut suggested = crate::contact_profile::classify_contact_links(&extraction.links);
+            if let Some(email) = structured.email.as_ref().map(|f| f.value.clone()) {
+                suggested.email.get_or_insert(email);
+            }
+            if !suggested.is_effectively_empty() {
+                let _ = cp_store.set(&suggested);
+            }
+        }
+    }
 
     let store = app.state::<crate::documents::DocumentStore>();
     let doc_id = crate::documents::make_doc_id();

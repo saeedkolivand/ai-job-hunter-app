@@ -128,8 +128,17 @@ fn generate_cover_letter_docx(
     text: &str,
     meta: Option<&GenerationMeta>,
     template: &Template,
+    contact: Option<&crate::contact_profile::ContactProfile>,
+    lang: &str,
 ) -> Result<Docx> {
     let mut docx = Docx::new();
+
+    // Named contact profile is the source of truth for the header contact line
+    // (shared with the résumé), emitted as real hyperlinks. When present, the
+    // scraped contact lines from the generated text are skipped.
+    let profile_contact_md: Option<String> = contact
+        .filter(|p| !p.is_effectively_empty())
+        .map(|p| p.header_markdown(lang));
 
     let page_margin = PageMargin::new()
         .top(inch_to_dxa(1.0))
@@ -182,6 +191,15 @@ fn generate_cover_letter_docx(
                     )
                     .line_spacing(LineSpacing::new().after(60)),
             );
+            // Emit the profile-derived contact line right after the name, in place
+            // of the scraped contact lines. `render_contact_line` runs `split_urls`,
+            // so `[LinkedIn](url)` markdown and bare emails become real hyperlinks.
+            if let Some(md) = &profile_contact_md {
+                docx = docx.add_paragraph(
+                    super::docx_renderer::render_contact_line(md, template, &colors)
+                        .line_spacing(LineSpacing::new().after(40)),
+                );
+            }
             continue;
         }
 
@@ -192,6 +210,10 @@ fn generate_cover_letter_docx(
                 || clean.contains('·')
                 || clean.chars().filter(|c| c.is_numeric()).count() > 5)
         {
+            // Profile is the source of truth — drop the scraped contact line.
+            if profile_contact_md.is_some() {
+                continue;
+            }
             docx = docx.add_paragraph(
                 Paragraph::new()
                     .add_run(
@@ -328,6 +350,8 @@ pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
                     &template,
                     request.ats_mode,
                     request.page_geometry(),
+                    request.contact.as_ref(),
+                    &request.target_lang(),
                 )
                 .context("Failed to generate resume DOCX")?
             } else {
@@ -342,8 +366,14 @@ pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
             } else {
                 text
             };
-            generate_cover_letter_docx(text, request.meta.as_ref(), &single_column())
-                .context("Failed to generate cover letter DOCX")?
+            generate_cover_letter_docx(
+                text,
+                request.meta.as_ref(),
+                &single_column(),
+                request.contact.as_ref(),
+                &request.target_lang(),
+            )
+            .context("Failed to generate cover letter DOCX")?
         }
     };
 

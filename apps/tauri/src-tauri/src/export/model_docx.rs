@@ -55,16 +55,24 @@ pub(crate) fn generate_resume_docx(
         template,
         ats_mode,
         crate::locale::LocaleProfile::default().page_geometry(),
+        None,
+        "en",
     )
 }
 
 /// Render a resume to a `Docx` on a specific page geometry (locale-driven).
+///
+/// `contact` (when present) is the single source of truth for the header contact
+/// line, localized by `lang` — shared with the PDF backend so both documents'
+/// headers carry identical, correctly-named links.
 pub(crate) fn generate_resume_docx_in(
     text: &str,
     meta: Option<&GenerationMeta>,
     template: &Template,
     ats_mode: bool,
     geom: PageGeometry,
+    contact: Option<&crate::contact_profile::ContactProfile>,
+    lang: &str,
 ) -> Result<Docx> {
     let mut model = model_from_resume_text(text);
 
@@ -72,6 +80,10 @@ pub(crate) fn generate_resume_docx_in(
         if !name.trim().is_empty() {
             model.header.name = name.to_string();
         }
+    }
+
+    if let Some(profile) = contact {
+        profile.apply_to_header(&mut model.header, lang);
     }
 
     // ATS mode collapses to a single column and reorders sections for reading.

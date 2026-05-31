@@ -101,6 +101,11 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       set: noop,
     },
 
+    contactProfile: {
+      get: async () => ({}),
+      set: async () => ({ success: true }),
+    },
+
     search: {
       hybrid: async () => [] as SearchHit<unknown>[],
     },
