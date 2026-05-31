@@ -1,6 +1,7 @@
 import { AnimatePresence } from 'motion/react';
 import { useRef, useState } from 'react';
 
+import { ContactPromptModal } from '@/components/contact/ContactPromptModal';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { LeftPanel } from '@/features/ai-generate/components/LeftPanel';
@@ -22,6 +23,7 @@ import {
 import { useTranslation } from '@/lib/i18n';
 import { useExtractText } from '@/services';
 import { useSaveAiGeneration } from '@/services/use-ai-generations';
+import { useContactPromptSeen, usePreferencesStore } from '@/store/preferences-store';
 import { useSessionStore } from '@/store/session-store';
 
 type GenTarget = 'resume' | 'cover' | 'both';
@@ -123,6 +125,27 @@ export function AIGeneratePage() {
   const canProceed = resume.trim().length > 50 && jobAd.trim().length > 50;
   const canGenerate = canProceed && canUseAI;
 
+  // First-run nudge: before the very first generation, surface the contact profile
+  // so the document header is complete. Shown once (persisted flag), then never
+  // again — afterwards Generate runs straight through.
+  const contactPromptSeen = useContactPromptSeen();
+  const setContactPromptSeen = usePreferencesStore((s) => s.setContactPromptSeen);
+  const [contactModalOpen, setContactModalOpen] = useState(false);
+
+  const requestGenerate = () => {
+    if (!contactPromptSeen) {
+      setContactPromptSeen();
+      setContactModalOpen(true);
+      return;
+    }
+    void handleGenerate();
+  };
+
+  const continueFromContactPrompt = () => {
+    setContactModalOpen(false);
+    void handleGenerate();
+  };
+
   const reset = () => {
     if (abortControllerRef.current && stage === 'generating') {
       abortControllerRef.current.abort();
@@ -204,7 +227,7 @@ export function AIGeneratePage() {
           onUpload={handleUpload}
           onReset={reset}
           onAnalyze={handleAnalyze}
-          onGenerate={handleGenerate}
+          onGenerate={requestGenerate}
           isGenerating={isGenerating}
         />
 
@@ -257,6 +280,12 @@ export function AIGeneratePage() {
           )}
         </div>
       </div>
+
+      <ContactPromptModal
+        open={contactModalOpen}
+        onClose={() => setContactModalOpen(false)}
+        onContinue={continueFromContactPrompt}
+      />
     </PageTransition>
   );
 }

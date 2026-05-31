@@ -53,6 +53,7 @@ const defaultPreferences: Preferences = {
   promptQuality: 'auto',
   debugMode: false,
   onboardingCompleted: false,
+  contactPromptSeen: false,
   lastUpdated: new Date().toISOString(),
 };
 
@@ -70,6 +71,7 @@ interface PreferencesActions {
   setPromptQuality: (promptQuality: PromptQuality) => void;
   setDebugMode: (enabled: boolean) => void;
   setOnboardingComplete: () => void;
+  setContactPromptSeen: () => void;
   resetPreferences: () => void;
 }
 
@@ -175,6 +177,13 @@ export const usePreferencesStore = create<PreferencesStore>()(
           lastUpdated: new Date().toISOString(),
         })),
 
+      setContactPromptSeen: () =>
+        set((state) => ({
+          ...state,
+          contactPromptSeen: true,
+          lastUpdated: new Date().toISOString(),
+        })),
+
       resetPreferences: () => set(defaultPreferences),
     }),
     {
@@ -196,6 +205,8 @@ export const useAiProviderConfig = () => usePreferencesStore((state) => state.ai
 export const useOutputTone = () => usePreferencesStore((state) => state.outputTone);
 export const useOnboardingCompleted = () =>
   usePreferencesStore((state) => state.onboardingCompleted);
+export const useContactPromptSeen = () =>
+  usePreferencesStore((state) => state.contactPromptSeen ?? false);
 export const useResume = () => usePreferencesStore((state) => state.resume);
 export const usePerformanceMode = () => usePreferencesStore((state) => state.performanceMode);
 export const usePromptQuality = () => usePreferencesStore((state) => state.promptQuality ?? 'auto');
