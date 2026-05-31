@@ -453,25 +453,30 @@ jobs:
       - name: 📊 Tests & Coverage Summary
         if: always()
         run: |
-          # Frontend (Vitest): total tests passed + line coverage (v8 text-summary).
+          # --- Frontend (Vitest, v8 text-summary: Statements/Branches/Functions/Lines) ---
+          covpct() { grep -aiE "^[[:space:]]*$1[[:space:]]*:" coverage-output.txt 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)?%' | head -1; }
           js_pass=$(grep -aoE 'Tests[[:space:]]+[0-9]+ passed' coverage-output.txt 2>/dev/null | grep -oE '[0-9]+' | tail -1)
-          js_cov=$(grep -aiE '^[[:space:]]*Lines[[:space:]]*:' coverage-output.txt 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)?%' | head -1)
-          # Rust (cargo test): sum "N passed" across every test binary (unit + architecture + eval);
-          # line coverage from the cargo-llvm-cov TOTAL row.
+          js_lines=$(covpct Lines); js_branches=$(covpct Branches); js_funcs=$(covpct Functions)
+          # --- Rust (cargo test + cargo-llvm-cov) ---
+          # Sum "N passed" across every test binary (unit + architecture + eval).
           rust_pass=$(grep -aoE 'test result: (ok|FAILED)\. [0-9]+ passed' apps/tauri/src-tauri/rust-test-output.txt 2>/dev/null | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' | awk '{s+=$1} END{if (NR) print s}')
-          rust_cov=$(grep -aE '^TOTAL' apps/tauri/src-tauri/rust-coverage.txt 2>/dev/null | grep -oE '[0-9]+\.[0-9]+%' | tail -1)
-          : "${js_pass:=n/a}" "${js_cov:=n/a}" "${rust_pass:=n/a}" "${rust_cov:=n/a}"
+          # llvm-cov TOTAL row on stable reports three percentages in order: Regions, Functions, Lines.
+          rust_pcts=$(grep -aE '^TOTAL' apps/tauri/src-tauri/rust-coverage.txt 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)?%')
+          rust_funcs=$(echo "$rust_pcts" | sed -n 2p); rust_lines=$(echo "$rust_pcts" | sed -n 3p)
+          rust_branches="—"  # not available from cargo-llvm-cov on stable Rust
+          : "${js_pass:=n/a}" "${js_lines:=n/a}" "${js_branches:=n/a}" "${js_funcs:=n/a}"
+          : "${rust_pass:=n/a}" "${rust_lines:=n/a}" "${rust_funcs:=n/a}"
           js_status="${{ steps.js-tests.outcome == 'success' && '✅ pass' || '❌ fail' }}"
           rust_status="${{ steps.rust-tests.outcome == 'success' && '✅ pass' || '❌ fail' }}"
           {
             echo "## 🧪 Tests & Coverage"
             echo ""
-            echo "| Suite | Status | Tests passed | Coverage (lines) |"
-            echo "| --- | :---: | ---: | ---: |"
-            echo "| 🟢 Frontend (Vitest) | ${js_status} | ${js_pass} | ${js_cov} |"
-            echo "| 🦀 Rust (cargo test) | ${rust_status} | ${rust_pass} | ${rust_cov} |"
+            echo "| Suite | Status | Tests passed | Lines | Branches | Functions |"
+            echo "| --- | :---: | ---: | ---: | ---: | ---: |"
+            echo "| 🟢 Frontend (Vitest) | ${js_status} | ${js_pass} | ${js_lines} | ${js_branches} | ${js_funcs} |"
+            echo "| 🦀 Rust (cargo test) | ${rust_status} | ${rust_pass} | ${rust_lines} | ${rust_branches} | ${rust_funcs} |"
             echo ""
-            echo "<sub>Rust counts are summed across all test binaries; line coverage via cargo-llvm-cov. Per-file breakdowns are in the coverage sections above.</sub>"
+            echo "<sub>Rust counts summed across all test binaries; coverage via cargo-llvm-cov (regions/functions/lines — branch coverage needs nightly, shown as —). Frontend coverage from the v8 reporter. Per-file breakdowns are in the coverage sections above.</sub>"
             echo ""
             echo "**Environment** — Node $(node --version) · Rust $(rustc --version) · pnpm $(pnpm --version)"
           } >> "$GITHUB_STEP_SUMMARY"
