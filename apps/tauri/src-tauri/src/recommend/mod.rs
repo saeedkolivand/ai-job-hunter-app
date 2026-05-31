@@ -52,7 +52,11 @@ enum Field {
 pub fn recommend(signals: &RecommendSignals) -> Recommendation {
     let haystack = haystack(signals);
     let field = detect_field(&haystack);
-    let seniority = signals.candidate_seniority.as_deref().unwrap_or("").to_lowercase();
+    let seniority = signals
+        .candidate_seniority
+        .as_deref()
+        .unwrap_or("")
+        .to_lowercase();
     let senior_exec = matches!(seniority.as_str(), "executive" | "lead");
 
     let (template_id, reason) = pick_template(field, senior_exec, &haystack);
@@ -69,10 +73,18 @@ pub fn recommend(signals: &RecommendSignals) -> Recommendation {
         rationale.push_str(" ATS mode suggested (single column) for reliable parsing.");
     }
     if locale != "en" {
-        rationale.push_str(&format!(" Locale set to {} from the target market.", locale));
+        rationale.push_str(&format!(
+            " Locale set to {} from the target market.",
+            locale
+        ));
     }
 
-    Recommendation { template_id, locale, ats_suggested, rationale }
+    Recommendation {
+        template_id,
+        locale,
+        ats_suggested,
+        rationale,
+    }
 }
 
 fn haystack(signals: &RecommendSignals) -> String {
@@ -86,25 +98,66 @@ fn detect_field(h: &str) -> Field {
     let has = |kws: &[&str]| kws.iter().any(|k| h.contains(k));
 
     if has(&[
-        "professor", "researcher", "phd", "postdoc", "post-doc", "lecturer", "academic",
-        "dissertation", "research scientist",
+        "professor",
+        "researcher",
+        "phd",
+        "postdoc",
+        "post-doc",
+        "lecturer",
+        "academic",
+        "dissertation",
+        "research scientist",
     ]) {
         Field::Academia
     } else if has(&[
-        "lawyer", "attorney", "legal", "paralegal", "accountant", "auditor", "finance",
-        "financial", "compliance", "banker", "investment", "actuary", "government",
-        "public sector", "policy analyst", "tax ",
+        "lawyer",
+        "attorney",
+        "legal",
+        "paralegal",
+        "accountant",
+        "auditor",
+        "finance",
+        "financial",
+        "compliance",
+        "banker",
+        "investment",
+        "actuary",
+        "government",
+        "public sector",
+        "policy analyst",
+        "tax ",
     ]) {
         Field::Conservative
     } else if has(&[
-        "designer", "ux", "ui ", "ux/ui", "creative", "art director", "brand", "graphic",
-        "illustrator", "motion design", "product design",
+        "designer",
+        "ux",
+        "ui ",
+        "ux/ui",
+        "creative",
+        "art director",
+        "brand",
+        "graphic",
+        "illustrator",
+        "motion design",
+        "product design",
     ]) {
         Field::Design
     } else if has(&[
-        "engineer", "developer", "software", "programmer", "data scientist", "data engineer",
-        "devops", "sre", "backend", "frontend", "full stack", "fullstack", "machine learning",
-        "cloud", "architect",
+        "engineer",
+        "developer",
+        "software",
+        "programmer",
+        "data scientist",
+        "data engineer",
+        "devops",
+        "sre",
+        "backend",
+        "frontend",
+        "full stack",
+        "fullstack",
+        "machine learning",
+        "cloud",
+        "architect",
     ]) {
         Field::Software
     } else {
@@ -124,23 +177,41 @@ fn pick_template(field: Field, senior_exec: bool, h: &str) -> (TemplateId, &'sta
         ),
         Field::Design => {
             if senior_exec {
-                (TemplateId::RefinedExecutive, "Senior design leadership → Refined Executive.")
+                (
+                    TemplateId::RefinedExecutive,
+                    "Senior design leadership → Refined Executive.",
+                )
             } else {
-                (TemplateId::TwoColumn, "Design role → Two-Column visual template.")
+                (
+                    TemplateId::TwoColumn,
+                    "Design role → Two-Column visual template.",
+                )
             }
         }
         Field::Software => {
             if senior_exec {
-                (TemplateId::RefinedExecutive, "Senior engineering leadership → Refined Executive.")
+                (
+                    TemplateId::RefinedExecutive,
+                    "Senior engineering leadership → Refined Executive.",
+                )
             } else if is_systems_role(h) {
-                (TemplateId::MonoTechnical, "Systems / low-level role → Mono Technical.")
+                (
+                    TemplateId::MonoTechnical,
+                    "Systems / low-level role → Mono Technical.",
+                )
             } else {
-                (TemplateId::Modern, "Software / engineering role → Modern template.")
+                (
+                    TemplateId::Modern,
+                    "Software / engineering role → Modern template.",
+                )
             }
         }
         Field::General => {
             if senior_exec {
-                (TemplateId::RefinedExecutive, "Senior leadership → Refined Executive.")
+                (
+                    TemplateId::RefinedExecutive,
+                    "Senior leadership → Refined Executive.",
+                )
             } else {
                 (TemplateId::Modern, "General role → Modern template.")
             }
@@ -149,15 +220,28 @@ fn pick_template(field: Field, senior_exec: bool, h: &str) -> (TemplateId, &'sta
 }
 
 fn is_systems_role(h: &str) -> bool {
-    ["embedded", "kernel", "firmware", "compiler", "low-level", "systems programming", "rust", "c++"]
-        .iter()
-        .any(|k| h.contains(k))
+    [
+        "embedded",
+        "kernel",
+        "firmware",
+        "compiler",
+        "low-level",
+        "systems programming",
+        "rust",
+        "c++",
+    ]
+    .iter()
+    .any(|k| h.contains(k))
 }
 
 fn pick_locale(signals: &RecommendSignals) -> String {
     // An explicit target country/market wins — resolved through the locale
     // registry so there's a single source of truth (e.g. `gb` → `uk`).
-    if let Some(country) = signals.target_country.as_deref().map(str::trim).filter(|s| !s.is_empty())
+    if let Some(country) = signals
+        .target_country
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
     {
         return crate::locale::LocaleProfile::get(country).id.to_string();
     }

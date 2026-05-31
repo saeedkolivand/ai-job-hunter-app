@@ -82,7 +82,9 @@ pub(crate) fn generate_resume_docx_in(
 
     let colors = setup_colors(template);
     let (abstract_num, num) = create_bullet_numbering();
-    let mut docx = Docx::new().add_abstract_numbering(abstract_num).add_numbering(num);
+    let mut docx = Docx::new()
+        .add_abstract_numbering(abstract_num)
+        .add_numbering(num);
 
     // Header spans the full width, above any columns.
     docx = add_header(docx, &model.header, template, &colors);
@@ -279,7 +281,11 @@ fn heading_paragraph(heading: &str, ctx: &Ctx) -> Option<Paragraph> {
     } else {
         (heading.to_string(), t.section_pt)
     };
-    let char_spacing = if t.section_small_caps || t.section_all_caps { 30 } else { 0 };
+    let char_spacing = if t.section_small_caps || t.section_all_caps {
+        30
+    } else {
+        0
+    };
 
     Some(
         Paragraph::new()
@@ -304,8 +310,12 @@ fn heading_paragraph(heading: &str, ctx: &Ctx) -> Option<Paragraph> {
 }
 
 fn body_paragraph(rt: &RichText, ctx: &Ctx) -> Paragraph {
-    add_rich(Paragraph::new(), rt, &RunOpts::body(ctx.template, ctx.colors, ctx.link))
-        .keep_lines(true)
+    add_rich(
+        Paragraph::new(),
+        rt,
+        &RunOpts::body(ctx.template, ctx.colors, ctx.link),
+    )
+    .keep_lines(true)
 }
 
 fn bullet_paragraph(rt: &RichText, ctx: &Ctx) -> Paragraph {
@@ -326,7 +336,11 @@ fn entry_paragraphs(e: &EntryBlock, ctx: &Ctx) -> Vec<Paragraph> {
 
     // Title line — bold — with the date either right-aligned (wide flows) or
     // appended inline (the narrow sidebar).
-    let mut title = add_rich(Paragraph::new(), &e.title, &RunOpts::entry_title(t, ctx.colors));
+    let mut title = add_rich(
+        Paragraph::new(),
+        &e.title,
+        &RunOpts::entry_title(t, ctx.colors),
+    );
     if let Some(date) = &e.date {
         if ctx.right_align_date {
             title = title
@@ -353,9 +367,13 @@ fn entry_paragraphs(e: &EntryBlock, ctx: &Ctx) -> Vec<Paragraph> {
     out.push(title.keep_next(true));
 
     if let Some(subtitle) = &e.subtitle {
-        let para = add_rich(Paragraph::new(), subtitle, &RunOpts::subtitle(t, ctx.colors))
-            .line_spacing(LineSpacing::new().after(60))
-            .keep_next(true);
+        let para = add_rich(
+            Paragraph::new(),
+            subtitle,
+            &RunOpts::subtitle(t, ctx.colors),
+        )
+        .line_spacing(LineSpacing::new().after(60))
+        .keep_next(true);
         out.push(para);
     }
 

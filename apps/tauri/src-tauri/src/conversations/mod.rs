@@ -1,6 +1,6 @@
-use rusqlite::{Connection, Result, params};
-use serde_json::{json, Value};
 use parking_lot::Mutex;
+use rusqlite::{params, Connection, Result};
+use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::db::{run_migrations, Migration};
@@ -9,11 +9,10 @@ use crate::error::AppResult;
 pub struct ConversationDb(pub Mutex<Connection>);
 
 impl ConversationDb {
-    const MIGRATIONS: &'static [Migration] = &[
-        Migration {
-            name: "create_conversations_and_messages",
-            up: |conn| {
-                conn.execute_batch(
+    const MIGRATIONS: &'static [Migration] = &[Migration {
+        name: "create_conversations_and_messages",
+        up: |conn| {
+            conn.execute_batch(
                     "PRAGMA journal_mode=WAL;
                     CREATE TABLE IF NOT EXISTS conversations (
                         id TEXT PRIMARY KEY,
@@ -29,15 +28,11 @@ impl ConversationDb {
                     );
                     CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, created_at);",
                 )
-            },
         },
-    ];
+    }];
 
     pub fn open(app: &AppHandle) -> Result<Self> {
-        let data_dir = app
-            .path()
-            .app_data_dir()
-            .expect("no app data dir");
+        let data_dir = app.path().app_data_dir().expect("no app data dir");
         std::fs::create_dir_all(&data_dir).ok();
         let conn = Connection::open(data_dir.join("conversations.db"))?;
         run_migrations(&conn, Self::MIGRATIONS)
@@ -47,7 +42,8 @@ impl ConversationDb {
 
     pub fn clear_all(&self) {
         let conn = self.0.lock();
-        conn.execute_batch("DELETE FROM messages; DELETE FROM conversations;").ok();
+        conn.execute_batch("DELETE FROM messages; DELETE FROM conversations;")
+            .ok();
     }
 }
 
@@ -100,7 +96,9 @@ impl crate::data_store::DataStore for ConversationDb {
                     params![
                         str_field(c, "id"),
                         str_field(c, "title"),
-                        c.get("createdAt").and_then(|v| v.as_i64()).unwrap_or_default(),
+                        c.get("createdAt")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or_default(),
                     ],
                 )
                 .map_err(|e| e.to_string())?;
@@ -117,7 +115,9 @@ impl crate::data_store::DataStore for ConversationDb {
                         str_field(m, "conversationId"),
                         str_field(m, "role"),
                         str_field(m, "content"),
-                        m.get("createdAt").and_then(|v| v.as_i64()).unwrap_or_default(),
+                        m.get("createdAt")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or_default(),
                     ],
                 )
                 .map_err(|e| e.to_string())?;
@@ -144,7 +144,10 @@ fn query_rows(
 }
 
 fn str_field(v: &Value, key: &str) -> String {
-    v.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string()
+    v.get(key)
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
 }
 
 fn now_ms() -> i64 {
@@ -212,7 +215,10 @@ pub fn load_messages(app: &AppHandle, conversation_id: &str) -> Value {
 }
 
 pub fn save_message(app: &AppHandle, req: &Value) -> Value {
-    let conversation_id = req.get("conversationId").and_then(|v| v.as_str()).unwrap_or("default");
+    let conversation_id = req
+        .get("conversationId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("default");
     let role = req.get("role").and_then(|v| v.as_str()).unwrap_or("user");
     let content = req.get("content").and_then(|v| v.as_str()).unwrap_or("");
 

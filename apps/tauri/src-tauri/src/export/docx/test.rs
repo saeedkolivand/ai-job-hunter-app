@@ -79,10 +79,19 @@ fn resume_docx_uses_fallback_fonts_not_bundled_names() {
     // MonoTechnical: name/heading JetBrains Mono → Consolas, body Inter → Calibri.
     let bytes = generate_docx(&resume_request(TemplateId::MonoTechnical)).expect("docx");
     let xml = document_xml(&bytes);
-    assert!(xml.contains(r#"w:ascii="Consolas""#), "JetBrains Mono should fall back to Consolas");
-    assert!(xml.contains(r#"w:ascii="Calibri""#), "Inter should fall back to Calibri");
+    assert!(
+        xml.contains(r#"w:ascii="Consolas""#),
+        "JetBrains Mono should fall back to Consolas"
+    );
+    assert!(
+        xml.contains(r#"w:ascii="Calibri""#),
+        "Inter should fall back to Calibri"
+    );
     // Both ranges are set so accented Latin renders in the same face.
-    assert!(xml.contains(r#"w:hAnsi="Consolas""#), "fallback must also cover the high-ANSI range");
+    assert!(
+        xml.contains(r#"w:hAnsi="Consolas""#),
+        "fallback must also cover the high-ANSI range"
+    );
     for bundled in ["JetBrains Mono", "Inter"] {
         assert!(
             !xml.contains(&format!(r#""{bundled}""#)),
@@ -94,19 +103,40 @@ fn resume_docx_uses_fallback_fonts_not_bundled_names() {
 #[test]
 fn serif_and_display_templates_fall_back_predictably() {
     // Academic: Source Serif 4 → Georgia.
-    let academic = document_xml(&generate_docx(&resume_request(TemplateId::Academic)).expect("docx"));
-    assert!(academic.contains(r#"w:ascii="Georgia""#), "Source Serif 4 should fall back to Georgia");
-    assert!(!academic.contains(r#""Source Serif 4""#), "bundled Source Serif 4 must not leak");
+    let academic =
+        document_xml(&generate_docx(&resume_request(TemplateId::Academic)).expect("docx"));
+    assert!(
+        academic.contains(r#"w:ascii="Georgia""#),
+        "Source Serif 4 should fall back to Georgia"
+    );
+    assert!(
+        !academic.contains(r#""Source Serif 4""#),
+        "bundled Source Serif 4 must not leak"
+    );
 
     // RefinedExecutive: name Playfair Display → Cambria.
-    let refined = document_xml(&generate_docx(&resume_request(TemplateId::RefinedExecutive)).expect("docx"));
-    assert!(refined.contains(r#"w:ascii="Cambria""#), "Playfair Display should fall back to Cambria");
-    assert!(!refined.contains(r#""Playfair Display""#), "bundled Playfair Display must not leak");
+    let refined =
+        document_xml(&generate_docx(&resume_request(TemplateId::RefinedExecutive)).expect("docx"));
+    assert!(
+        refined.contains(r#"w:ascii="Cambria""#),
+        "Playfair Display should fall back to Cambria"
+    );
+    assert!(
+        !refined.contains(r#""Playfair Display""#),
+        "bundled Playfair Display must not leak"
+    );
 
     // SwissMinimal: Manrope → Calibri.
-    let swiss = document_xml(&generate_docx(&resume_request(TemplateId::SwissMinimal)).expect("docx"));
-    assert!(swiss.contains(r#"w:ascii="Calibri""#), "Manrope should fall back to Calibri");
-    assert!(!swiss.contains(r#""Manrope""#), "bundled Manrope must not leak");
+    let swiss =
+        document_xml(&generate_docx(&resume_request(TemplateId::SwissMinimal)).expect("docx"));
+    assert!(
+        swiss.contains(r#"w:ascii="Calibri""#),
+        "Manrope should fall back to Calibri"
+    );
+    assert!(
+        !swiss.contains(r#""Manrope""#),
+        "bundled Manrope must not leak"
+    );
 }
 
 #[test]

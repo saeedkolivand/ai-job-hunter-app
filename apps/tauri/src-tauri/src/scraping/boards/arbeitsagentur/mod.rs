@@ -2,7 +2,7 @@
 
 /// Bundesagentur für Arbeit — official German federal employment agency
 use super::super::http::{fetch_json, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -59,7 +59,7 @@ pub struct ArbeitsagenturScraper;
 
 impl ArbeitsagenturScraper {
     fn to_base64_url(&self, s: &str) -> String {
-        use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
         URL_SAFE_NO_PAD.encode(s.as_bytes())
     }
 }
@@ -84,7 +84,11 @@ impl Scraper for ArbeitsagenturScraper {
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
         let q = input.query.trim();
-        let loc = input.location.as_ref().map(|l| l.trim()).unwrap_or_default();
+        let loc = input
+            .location
+            .as_ref()
+            .map(|l| l.trim())
+            .unwrap_or_default();
         let max_pages = input.pages.clamp(1, 10);
         let size = 25;
         let mut out = vec![];
@@ -129,7 +133,10 @@ impl Scraper for ArbeitsagenturScraper {
                 Ok(l) => l,
                 Err(e) if out.is_empty() => return Err(e),
                 Err(e) => {
-                    log::warn!("[arbeitsagentur] page {page} failed: {e}; returning {} collected", out.len());
+                    log::warn!(
+                        "[arbeitsagentur] page {page} failed: {e}; returning {} collected",
+                        out.len()
+                    );
                     break;
                 }
             };
@@ -151,7 +158,10 @@ impl Scraper for ArbeitsagenturScraper {
 
                 seen.insert(j.refnr.clone());
 
-                let hash = j.hash_id.clone().unwrap_or_else(|| self.to_base64_url(&j.refnr));
+                let hash = j
+                    .hash_id
+                    .clone()
+                    .unwrap_or_else(|| self.to_base64_url(&j.refnr));
 
                 let detail = match fetch_json::<DetailResp>(
                     &format!("{}/jobdetails/{}", API_BASE, urlencoding::encode(&hash)),
@@ -174,19 +184,22 @@ impl Scraper for ArbeitsagenturScraper {
                     }
                 };
 
-                let description = detail.as_ref()
-                    .and_then(|d| {
-                        let desc = vec![
-                            d.stellenbeschreibung.as_deref(),
-                            d.arbeitgeberdarstellung.as_deref(),
-                        ]
-                        .into_iter()
-                        .flatten()
-                        .map(strip_html)
-                        .collect::<Vec<_>>()
-                        .join("\n\n");
-                        if desc.is_empty() { None } else { Some(desc) }
-                    });
+                let description = detail.as_ref().and_then(|d| {
+                    let desc = vec![
+                        d.stellenbeschreibung.as_deref(),
+                        d.arbeitgeberdarstellung.as_deref(),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .map(strip_html)
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+                    if desc.is_empty() {
+                        None
+                    } else {
+                        Some(desc)
+                    }
+                });
 
                 let location = vec![
                     j.arbeitsort.as_ref().and_then(|a| a.ort.as_deref()),
@@ -199,7 +212,8 @@ impl Scraper for ArbeitsagenturScraper {
                 .collect::<Vec<_>>()
                 .join(", ");
 
-                let posted_at = j.aktuelle_veroeffentlichungsdatum
+                let posted_at = j
+                    .aktuelle_veroeffentlichungsdatum
                     .as_ref()
                     .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
                     .map(|dt| dt.timestamp_millis());
@@ -207,9 +221,24 @@ impl Scraper for ArbeitsagenturScraper {
                 let posting = JobPosting {
                     id: format!("{}:{}", self.id(), j.refnr),
                     external_id: Some(j.refnr.clone()),
-                    title: j.titel.as_deref().or(j.beruf.as_deref()).unwrap_or("").trim().to_string(),
-                    company: j.arbeitgeber.as_deref().unwrap_or("Unbekannt").trim().to_string(),
-                    location: if location.is_empty() { None } else { Some(location) },
+                    title: j
+                        .titel
+                        .as_deref()
+                        .or(j.beruf.as_deref())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string(),
+                    company: j
+                        .arbeitgeber
+                        .as_deref()
+                        .unwrap_or("Unbekannt")
+                        .trim()
+                        .to_string(),
+                    location: if location.is_empty() {
+                        None
+                    } else {
+                        Some(location)
+                    },
                     url: j.externe_url.clone().unwrap_or_else(|| {
                         format!(
                             "https://www.arbeitsagentur.de/jobsuche/jobdetail/{}",
@@ -244,7 +273,10 @@ impl Scraper for ArbeitsagenturScraper {
             }
 
             // Rate limiting delay
-            tokio::time::sleep(std::time::Duration::from_millis(700 + (rand::random::<u64>() % 500))).await;
+            tokio::time::sleep(std::time::Duration::from_millis(
+                700 + (rand::random::<u64>() % 500),
+            ))
+            .await;
         }
 
         Ok(out)

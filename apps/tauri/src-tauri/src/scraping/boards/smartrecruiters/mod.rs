@@ -2,7 +2,7 @@
 
 /// SmartRecruiters — public per-company postings API
 use super::super::http::{fetch_json, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -80,7 +80,8 @@ impl Scraper for SmartRecruitersScraper {
             urlencoding::encode(company)
         );
 
-        let list = fetch_json::<ListResp>(&list_url, Default::default(), ctx.signal.clone()).await?;
+        let list =
+            fetch_json::<ListResp>(&list_url, Default::default(), ctx.signal.clone()).await?;
 
         let postings = match list {
             Some(l) => l.content,
@@ -102,7 +103,9 @@ impl Scraper for SmartRecruitersScraper {
                 p.id
             );
 
-            let detail = fetch_json::<DetailResp>(&detail_url, Default::default(), ctx.signal.clone()).await?;
+            let detail =
+                fetch_json::<DetailResp>(&detail_url, Default::default(), ctx.signal.clone())
+                    .await?;
 
             let sections = detail
                 .and_then(|d| d.job_ad)
@@ -132,21 +135,32 @@ impl Scraper for SmartRecruitersScraper {
             .collect::<Vec<_>>()
             .join(", ");
 
-            let posted_at = p.released_date.and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok()).map(|dt| dt.timestamp_millis());
+            let posted_at = p
+                .released_date
+                .and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok())
+                .map(|dt| dt.timestamp_millis());
 
             let posting = JobPosting {
                 id: format!("{}:{}", self.id(), p.id),
                 external_id: Some(p.id.clone()),
                 title: p.name,
                 company: company.to_string(),
-                location: if location.is_empty() { None } else { Some(location) },
+                location: if location.is_empty() {
+                    None
+                } else {
+                    Some(location)
+                },
                 url: format!(
                     "https://jobs.smartrecruiters.com/{}/{}",
                     urlencoding::encode(company),
                     p.id
                 ),
                 source: self.id().to_string(),
-                description: if description.is_empty() { None } else { Some(description) },
+                description: if description.is_empty() {
+                    None
+                } else {
+                    Some(description)
+                },
                 requirements: None,
                 posted_at,
                 captured_at: now,

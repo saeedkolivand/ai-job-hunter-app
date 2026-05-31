@@ -24,7 +24,9 @@ impl CaptchaHandler {
     }
 
     pub fn default() -> Self {
-        Self { max_wait_seconds: 120 } // 2 minutes default
+        Self {
+            max_wait_seconds: 120,
+        } // 2 minutes default
     }
 
     /// Detect if CAPTCHA is present on the page
@@ -49,7 +51,7 @@ impl CaptchaHandler {
         // 1. Show a UI dialog to the user
         // 2. Pause the browser for manual solving
         // 3. Integrate with a CAPTCHA solving service
-        
+
         Ok(CaptchaAction::WaitForUser)
     }
 
@@ -61,17 +63,17 @@ impl CaptchaHandler {
     pub async fn wait_for_user(&self, page: &Page, selectors: &[String]) -> Result<bool> {
         let start = std::time::Instant::now();
         let poll_interval = std::time::Duration::from_secs(2);
-        
+
         while start.elapsed() < std::time::Duration::from_secs(self.max_wait_seconds) {
             // Check if CAPTCHA has been resolved
             if self.is_resolved(page, selectors).await? {
                 return Ok(true);
             }
-            
+
             // Wait before next poll
             tokio::time::sleep(poll_interval).await;
         }
-        
+
         // Timeout occurred
         Ok(false)
     }
@@ -113,13 +115,13 @@ impl CaptchaSolver {
 
         // Step 1: Get CAPTCHA site key from the page
         let site_key = self.extract_site_key(page, selectors).await?;
-        
+
         // Step 2: Send to solving service (2Captcha example)
         let captcha_id = self.create_task(&site_key).await?;
-        
+
         // Step 3: Poll for solution
         let solution = self.wait_for_solution(&captcha_id).await?;
-        
+
         Ok(solution)
     }
 
@@ -131,7 +133,7 @@ impl CaptchaSolver {
                 "(() => {{ const el = document.querySelector('{}'); return el ? el.getAttribute('data-sitekey') : null; }})()",
                 selector
             );
-            
+
             if let Ok(result) = page.evaluate(js.as_str()).await {
                 if let Some(site_key) = result.value().and_then(|v| v.as_str()) {
                     if !site_key.is_empty() {
@@ -152,7 +154,7 @@ impl CaptchaSolver {
         // - method: userrecaptcha
         // - googlekey: site_key
         // - pageurl: current page URL
-        
+
         // For now, return a stub task ID
         Ok("stub_task_id".to_string())
     }
@@ -165,7 +167,7 @@ impl CaptchaSolver {
         // - key: your API key
         // - action: get
         // - id: task_id
-        
+
         // For now, return a stub solution
         Ok("stub_solution".to_string())
     }

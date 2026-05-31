@@ -1,6 +1,6 @@
 /// StepStone (Germany) — public listing pages, parsed with regex/JSON
 use super::super::http::{fetch_text, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -70,7 +70,11 @@ impl Scraper for StepStoneScraper {
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
         let q = input.query.trim();
-        let loc = input.location.as_ref().map(|l| l.trim()).unwrap_or_default();
+        let loc = input
+            .location
+            .as_ref()
+            .map(|l| l.trim())
+            .unwrap_or_default();
         let max_pages = input.pages.clamp(1, 5);
         let mut out = vec![];
         let mut seen = std::collections::HashSet::new();
@@ -82,7 +86,11 @@ impl Scraper for StepStoneScraper {
             }
 
             let url = if loc.is_empty() {
-                format!("https://www.stepstone.de/jobs/{}?page={}", urlencoding::encode(q), p)
+                format!(
+                    "https://www.stepstone.de/jobs/{}?page={}",
+                    urlencoding::encode(q),
+                    p
+                )
             } else {
                 format!(
                     "https://www.stepstone.de/jobs/{}/in-{}?page={}",
@@ -95,7 +103,10 @@ impl Scraper for StepStoneScraper {
             let res = match fetch_text(
                 &url,
                 super::super::http::FetchOptions {
-                    headers: Some(vec![("accept-language".to_string(), "de-DE,de;q=0.9,en;q=0.7".to_string())]),
+                    headers: Some(vec![(
+                        "accept-language".to_string(),
+                        "de-DE,de;q=0.9,en;q=0.7".to_string(),
+                    )]),
                     ..Default::default()
                 },
                 ctx.signal.clone(),
@@ -105,7 +116,10 @@ impl Scraper for StepStoneScraper {
                 Ok(r) => r,
                 Err(e) if out.is_empty() => return Err(e),
                 Err(e) => {
-                    log::warn!("[stepstone] page {p} failed: {e}; returning {} collected", out.len());
+                    log::warn!(
+                        "[stepstone] page {p} failed: {e}; returning {} collected",
+                        out.len()
+                    );
                     break;
                 }
             };
@@ -166,7 +180,8 @@ impl Scraper for StepStoneScraper {
                                 .collect::<Vec<_>>()
                                 .join(", ");
 
-                                let posted_at = job.date_posted
+                                let posted_at = job
+                                    .date_posted
                                     .and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok())
                                     .map(|dt| dt.timestamp_millis());
 
@@ -180,7 +195,11 @@ impl Scraper for StepStoneScraper {
                                         .unwrap_or_else(|| "Unknown".to_string())
                                         .trim()
                                         .to_string(),
-                                    location: if location.is_empty() { None } else { Some(location) },
+                                    location: if location.is_empty() {
+                                        None
+                                    } else {
+                                        Some(location)
+                                    },
                                     url,
                                     source: self.id().to_string(),
                                     description: job.description.map(|d| strip_html(&d)),
@@ -214,7 +233,10 @@ impl Scraper for StepStoneScraper {
             }
 
             // Rate limiting delay
-            tokio::time::sleep(std::time::Duration::from_millis(900 + (rand::random::<u64>() % 600))).await;
+            tokio::time::sleep(std::time::Duration::from_millis(
+                900 + (rand::random::<u64>() % 600),
+            ))
+            .await;
         }
 
         Ok(out)

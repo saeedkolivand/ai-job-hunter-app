@@ -97,5 +97,9 @@ fn test_list_resp_struct() {
         stellenangebote: Some(vec![]),
         max_ergebnisse: Some(100),
     };
-    assert!(resp.stellenangebote.as_ref().map(|v| v.is_empty()).unwrap_or(true));
+    assert!(resp
+        .stellenangebote
+        .as_ref()
+        .map(|v| v.is_empty())
+        .unwrap_or(true));
 }

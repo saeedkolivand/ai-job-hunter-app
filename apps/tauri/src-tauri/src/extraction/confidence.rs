@@ -66,9 +66,36 @@ fn garbage_ratio(text: &str) -> f64 {
 fn is_common_punctuation(c: char) -> bool {
     matches!(
         c,
-        '.' | ',' | ';' | ':' | '!' | '?' | '-' | '_' | '(' | ')' | '[' | ']'
-            | '{' | '}' | '/' | '@' | '#' | '+' | '\'' | '"' | '`' | '~' | '&'
-            | '<' | '>' | '|' | '%' | '*' | '\\' | '\n' | '\r'
+        '.' | ','
+            | ';'
+            | ':'
+            | '!'
+            | '?'
+            | '-'
+            | '_'
+            | '('
+            | ')'
+            | '['
+            | ']'
+            | '{'
+            | '}'
+            | '/'
+            | '@'
+            | '#'
+            | '+'
+            | '\''
+            | '"'
+            | '`'
+            | '~'
+            | '&'
+            | '<'
+            | '>'
+            | '|'
+            | '%'
+            | '*'
+            | '\\'
+            | '\n'
+            | '\r'
     )
 }
 
@@ -128,7 +155,10 @@ mod tests {
 
     #[test]
     fn high_for_rich_direct_pdf() {
-        assert_eq!(score(resume_like(), SourceFormat::PdfText), Confidence::High);
+        assert_eq!(
+            score(resume_like(), SourceFormat::PdfText),
+            Confidence::High
+        );
     }
 
     #[test]

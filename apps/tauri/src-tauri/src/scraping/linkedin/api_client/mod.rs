@@ -139,11 +139,18 @@ impl LinkedInJobsApiClient {
         let html = self.client.get_html(&url, signal).await?;
         let document = Html::parse_document(&html);
         let selector = scraper::Selector::parse("li").unwrap();
-        let link_selector = scraper::Selector::parse("a.base-card__full-link, a.base-search-card__link").unwrap();
+        let link_selector =
+            scraper::Selector::parse("a.base-card__full-link, a.base-search-card__link").unwrap();
         let urn_selector = scraper::Selector::parse("[data-entity-urn]").unwrap();
-        let title_selector = scraper::Selector::parse(".base-search-card__title, .job-card-container__title").unwrap();
-        let company_selector = scraper::Selector::parse(".base-search-card__subtitle, .job-card-container__subtitle").unwrap();
-        let location_selector = scraper::Selector::parse(".job-search-card__location, .job-card-container__location").unwrap();
+        let title_selector =
+            scraper::Selector::parse(".base-search-card__title, .job-card-container__title")
+                .unwrap();
+        let company_selector =
+            scraper::Selector::parse(".base-search-card__subtitle, .job-card-container__subtitle")
+                .unwrap();
+        let location_selector =
+            scraper::Selector::parse(".job-search-card__location, .job-card-container__location")
+                .unwrap();
         let time_selector = scraper::Selector::parse("time").unwrap();
 
         let mut seen = HashSet::new();
@@ -302,8 +309,10 @@ impl LinkedInJobsApiClient {
 
             // Add delay between pages
             if page < max_pages - 1 {
-                tokio::time::sleep(tokio::time::Duration::from_millis(500 + (rand::random::<u64>() % 500)))
-                    .await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(
+                    500 + (rand::random::<u64>() % 500),
+                ))
+                .await;
             }
         }
 

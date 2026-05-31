@@ -20,14 +20,44 @@ use std::path::{Path, PathBuf};
 // ── Layer model (single source of truth; mirrors docs/architecture-rules.md) ────────
 // L0 = shared infra, L1 = domain, L2 = application, L3 = shell/IPC. Dependencies flow
 // downward only (higher layer may use lower; never the reverse).
-const L0: &[&str] = &["error", "observability", "db", "data_store", "net", "platform", "browser"];
-const L1: &[&str] = &[
-    "scraping", "applying", "extraction", "export", "documents", "jobs", "postings",
-    "conversations", "credentials", "job_preferences", "ai_generations", "profile_import",
-    "model", "layout", "measure", "validate", "locale", "theme",
+const L0: &[&str] = &[
+    "error",
+    "observability",
+    "db",
+    "data_store",
+    "net",
+    "platform",
+    "browser",
 ];
-const L2: &[&str] =
-    &["pipeline", "cover_letter", "autopilot", "autopilot_scheduler", "autopilot_helpers", "apply_helpers", "recommend"];
+const L1: &[&str] = &[
+    "scraping",
+    "applying",
+    "extraction",
+    "export",
+    "documents",
+    "jobs",
+    "postings",
+    "conversations",
+    "credentials",
+    "job_preferences",
+    "ai_generations",
+    "profile_import",
+    "model",
+    "layout",
+    "measure",
+    "validate",
+    "locale",
+    "theme",
+];
+const L2: &[&str] = &[
+    "pipeline",
+    "cover_letter",
+    "autopilot",
+    "autopilot_scheduler",
+    "autopilot_helpers",
+    "apply_helpers",
+    "recommend",
+];
 const L3: &[&str] = &["commands", "ipc_contracts", "main", "updater"];
 
 fn layer_of(module: &str) -> Option<u8> {
@@ -69,14 +99,23 @@ fn collect(dir: &Path, root: &Path, out: &mut Vec<RsFile>) {
         if path.is_dir() {
             collect(&path, root, out);
         } else if path.extension().and_then(|s| s.to_str()) == Some("rs") {
-            let rel = path.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
+            let rel = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
             let module = match rel.split_once('/') {
                 Some((head, _)) => head.to_string(),
                 None => rel.trim_end_matches(".rs").to_string(),
             };
             let is_test = rel.ends_with("test.rs") || rel.ends_with("tests.rs");
             let content = fs::read_to_string(&path).unwrap_or_default();
-            out.push(RsFile { rel, module, content, is_test });
+            out.push(RsFile {
+                rel,
+                module,
+                content,
+                is_test,
+            });
         }
     }
 }
@@ -85,7 +124,11 @@ fn sources() -> Vec<RsFile> {
     let root = src_root();
     let mut out = Vec::new();
     collect(&root, &root, &mut out);
-    assert!(!out.is_empty(), "no .rs files found under {}", root.display());
+    assert!(
+        !out.is_empty(),
+        "no .rs files found under {}",
+        root.display()
+    );
     out
 }
 
@@ -105,7 +148,10 @@ fn crate_refs(content: &str) -> BTreeSet<String> {
         let mut rest = line;
         while let Some(pos) = rest.find("crate::") {
             rest = &rest[pos + "crate::".len()..];
-            let seg: String = rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+            let seg: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
             if !seg.is_empty() {
                 refs.insert(seg);
             }
@@ -123,8 +169,12 @@ fn fail_if_any(rule: &str, desc: &str, violations: &[(String, usize, String)]) {
     for (rel, line, text) in violations {
         msg.push_str(&format!("  src/{rel}:{line}  {}\n", text.trim()));
     }
-    msg.push_str(&format!("\nSee docs/architecture-rules.md ({rule}). If this is a deliberate, \n"));
-    msg.push_str("documented exception, add it to the rule's allowlist in tests/architecture.rs.\n");
+    msg.push_str(&format!(
+        "\nSee docs/architecture-rules.md ({rule}). If this is a deliberate, \n"
+    ));
+    msg.push_str(
+        "documented exception, add it to the rule's allowlist in tests/architecture.rs.\n",
+    );
     panic!("{msg}");
 }
 
@@ -168,7 +218,9 @@ fn r1_tauri_command_only_in_command_surfaces() {
     let v: Vec<_> = sources()
         .iter()
         .filter(|f| !f.is_test && !is_command_surface(&f.rel))
-        .filter_map(|f| first_hit(&f.content, &["#[tauri::command]"]).map(|(l, t)| (f.rel.clone(), l, t)))
+        .filter_map(|f| {
+            first_hit(&f.content, &["#[tauri::command]"]).map(|(l, t)| (f.rel.clone(), l, t))
+        })
         .collect();
     fail_if_any(
         "R1",
@@ -208,7 +260,11 @@ fn r2_no_tauri_in_lower_layers() {
         .filter(|f| r2_in_scope(f) && !R2_ALLOW.contains(&f.rel.as_str()))
         .filter_map(|f| first_hit(&f.content, TAURI_MARKERS).map(|(l, t)| (f.rel.clone(), l, t)))
         .collect();
-    fail_if_any("R2", "Tauri types (tauri::/AppHandle/.emit) must not appear below the shell layer", &v);
+    fail_if_any(
+        "R2",
+        "Tauri types (tauri::/AppHandle/.emit) must not appear below the shell layer",
+        &v,
+    );
 }
 
 #[test]
@@ -225,13 +281,16 @@ fn r2_allowlist_has_no_dead_entries() {
             stale.push(rel);
         }
     }
-    assert!(stale.is_empty(), "R2 allowlist entries no longer needed (remove them): {stale:?}");
+    assert!(
+        stale.is_empty(),
+        "R2 allowlist entries no longer needed (remove them): {stale:?}"
+    );
 }
 
 // ── R3: `rusqlite::` only in the DB handle + per-domain stores ───────────────────────
 const R3_ALLOW: &[&str] = &[
-    "db.rs",      // sole owner of the SQLite handle
-    "error.rs",   // From<rusqlite::Error> conversion
+    "db.rs",    // sole owner of the SQLite handle
+    "error.rs", // From<rusqlite::Error> conversion
     "ai_generations/mod.rs",
     "conversations/mod.rs",
     "documents/mod.rs",
@@ -247,13 +306,20 @@ fn r3_rusqlite_only_in_stores() {
         .filter(|f| !f.is_test && !R3_ALLOW.contains(&f.rel.as_str()))
         .filter_map(|f| first_hit(&f.content, &["rusqlite::"]).map(|(l, t)| (f.rel.clone(), l, t)))
         .collect();
-    fail_if_any("R3", "`rusqlite::` must be confined to db.rs/error.rs and per-domain stores", &v);
+    fail_if_any(
+        "R3",
+        "`rusqlite::` must be confined to db.rs/error.rs and per-domain stores",
+        &v,
+    );
 }
 
 // ── R4: env access only in `platform/**` ─────────────────────────────────────────────
 // Allowlist: AI provider env reads (OLLAMA_HOST, <AGENT>_BIN override). TODO(arch):
 // centralize these in platform::config.
-const R4_ALLOW: &[&str] = &["commands/ai_provider/cli_agent/mod.rs", "commands/ai_provider/ollama.rs"];
+const R4_ALLOW: &[&str] = &[
+    "commands/ai_provider/cli_agent/mod.rs",
+    "commands/ai_provider/ollama.rs",
+];
 
 #[test]
 fn r4_env_access_only_in_platform() {
@@ -261,10 +327,15 @@ fn r4_env_access_only_in_platform() {
         .iter()
         .filter(|f| !f.is_test && f.module != "platform" && !R4_ALLOW.contains(&f.rel.as_str()))
         .filter_map(|f| {
-            first_hit(&f.content, &["std::env::var", "AJH_DATA_DIR"]).map(|(l, t)| (f.rel.clone(), l, t))
+            first_hit(&f.content, &["std::env::var", "AJH_DATA_DIR"])
+                .map(|(l, t)| (f.rel.clone(), l, t))
         })
         .collect();
-    fail_if_any("R4", "`std::env::var`/`AJH_DATA_DIR` must only be read inside platform/**", &v);
+    fail_if_any(
+        "R4",
+        "`std::env::var`/`AJH_DATA_DIR` must only be read inside platform/**",
+        &v,
+    );
 }
 
 // ── R5: `reqwest::Client` construction only in `net/http.rs` ──────────────────────────
@@ -275,11 +346,18 @@ fn r5_reqwest_client_only_in_net_http() {
         .iter()
         .filter(|f| !f.is_test && f.rel != "net/http.rs")
         .filter_map(|f| {
-            first_hit(&f.content, &["reqwest::Client::new(", "reqwest::Client::builder("])
-                .map(|(l, t)| (f.rel.clone(), l, t))
+            first_hit(
+                &f.content,
+                &["reqwest::Client::new(", "reqwest::Client::builder("],
+            )
+            .map(|(l, t)| (f.rel.clone(), l, t))
         })
         .collect();
-    fail_if_any("R5", "construct reqwest clients only via net::http (shared()/build_client())", &v);
+    fail_if_any(
+        "R5",
+        "construct reqwest clients only via net::http (shared()/build_client())",
+        &v,
+    );
 }
 
 // ── R6: no stringly-typed `Result<_, String>` outside `error.rs` ─────────────────────
@@ -287,7 +365,10 @@ fn r5_reqwest_client_only_in_net_http() {
 #[test]
 fn r6_no_stringly_result() {
     let mut v = Vec::new();
-    for f in sources().iter().filter(|f| !f.is_test && f.rel != "error.rs") {
+    for f in sources()
+        .iter()
+        .filter(|f| !f.is_test && f.rel != "error.rs")
+    {
         for (i, line) in f.content.lines().enumerate() {
             let trimmed = line.trim_start();
             if trimmed.starts_with("//") || trimmed.starts_with('*') {
@@ -299,7 +380,11 @@ fn r6_no_stringly_result() {
             }
         }
     }
-    fail_if_any("R6", "use AppResult/AppError instead of Result<_, String> for fallible internals", &v);
+    fail_if_any(
+        "R6",
+        "use AppResult/AppError instead of Result<_, String> for fallible internals",
+        &v,
+    );
 }
 
 // ── R7: no upward layer imports (the only blessed exceptions are W-1 + W-9) ───────────
@@ -321,22 +406,39 @@ const R7_ALLOW: &[(&str, &str)] = &[
 fn r7_no_upward_layer_imports() {
     let mut v = Vec::new();
     for f in sources().iter().filter(|f| !f.is_test) {
-        let Some(src_layer) = layer_of(&f.module) else { continue };
+        let Some(src_layer) = layer_of(&f.module) else {
+            continue;
+        };
         for dep in crate_refs(&f.content) {
             if dep == f.module {
                 continue;
             }
-            let Some(dep_layer) = layer_of(&dep) else { continue };
+            let Some(dep_layer) = layer_of(&dep) else {
+                continue;
+            };
             if dep_layer > src_layer && !R7_ALLOW.contains(&(f.module.as_str(), dep.as_str())) {
                 let needle = format!("crate::{dep}");
-                let (line, text) = first_hit(&f.content, &[needle.as_str()]).unwrap_or((0, dep.clone()));
-                v.push((f.rel.clone(), line, format!("L{src_layer} {} -> L{dep_layer} {dep}: {}", f.module, text.trim())));
+                let (line, text) =
+                    first_hit(&f.content, &[needle.as_str()]).unwrap_or((0, dep.clone()));
+                v.push((
+                    f.rel.clone(),
+                    line,
+                    format!(
+                        "L{src_layer} {} -> L{dep_layer} {dep}: {}",
+                        f.module,
+                        text.trim()
+                    ),
+                ));
             }
         }
     }
     v.sort();
     v.dedup();
-    fail_if_any("R7", "a lower layer must not depend on a higher one (no upward crate:: imports)", &v);
+    fail_if_any(
+        "R7",
+        "a lower layer must not depend on a higher one (no upward crate:: imports)",
+        &v,
+    );
 }
 
 #[test]
@@ -351,7 +453,10 @@ fn r7_allowlist_has_no_dead_entries() {
                 .any(|f| crate_refs(&f.content).contains(*dst))
         })
         .collect();
-    assert!(stale.is_empty(), "R7 allowlist edges no longer present (remove them): {stale:?}");
+    assert!(
+        stale.is_empty(),
+        "R7 allowlist edges no longer present (remove them): {stale:?}"
+    );
 }
 
 // ── R8: oversized-module watch (hard cap prevents new mega-files) ────────────────────
@@ -365,7 +470,11 @@ fn r8_no_oversized_modules() {
     for f in sources().iter().filter(|f| !f.is_test) {
         let loc = f.content.lines().count();
         if loc > HARD_CAP_LOC {
-            over_hard.push((f.rel.clone(), loc, format!("{loc} LOC > hard cap {HARD_CAP_LOC}")));
+            over_hard.push((
+                f.rel.clone(),
+                loc,
+                format!("{loc} LOC > hard cap {HARD_CAP_LOC}"),
+            ));
         } else if loc > SOFT_LOC {
             watch.push((f.rel.clone(), loc));
         }
@@ -377,5 +486,9 @@ fn r8_no_oversized_modules() {
             eprintln!("  src/{rel}: {loc}");
         }
     }
-    fail_if_any("R8", "module exceeds the hard LOC cap — split it before it grows further", &over_hard);
+    fail_if_any(
+        "R8",
+        "module exceeds the hard LOC cap — split it before it grows further",
+        &over_hard,
+    );
 }

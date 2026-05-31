@@ -1,6 +1,6 @@
 /// Y Combinator Jobs (Work at a Startup) — public Algolia search.
 use super::super::http::{fetch_json, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -61,7 +61,10 @@ impl Scraper for YCombinatorScraper {
             super::super::http::FetchOptions {
                 method: Some(reqwest::Method::POST),
                 headers: Some(vec![
-                    ("x-algolia-application-id".to_string(), ALGOLIA_APP_ID.to_string()),
+                    (
+                        "x-algolia-application-id".to_string(),
+                        ALGOLIA_APP_ID.to_string(),
+                    ),
                     ("x-algolia-api-key".to_string(), ALGOLIA_API_KEY.to_string()),
                     ("content-type".to_string(), "application/json".to_string()),
                 ]),

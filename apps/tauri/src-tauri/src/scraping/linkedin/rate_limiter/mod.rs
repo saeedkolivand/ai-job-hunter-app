@@ -45,7 +45,7 @@ impl RateLimiter {
             .unwrap()
             .as_millis() as u64;
         let mut requests = self.requests.lock().await;
-        
+
         // Remove requests outside the current window
         requests.retain(|&t| now - t < self.options.window_ms);
 
@@ -63,10 +63,12 @@ impl RateLimiter {
     /// Record a request was made.
     pub async fn record_request(&self) {
         let mut requests = self.requests.lock().await;
-        requests.push(std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64);
+        requests.push(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
+        );
     }
 
     pub fn reset(&self) {

@@ -168,18 +168,16 @@ fn test_interaction_store_import_bundle() {
     let data_dir = std::path::PathBuf::from("/tmp/test_data_import");
     let _ = std::fs::remove_dir_all(&data_dir);
     let mut store = InteractionStore::new(&data_dir);
-    let records = vec![
-        InteractionRecord {
-            job_id: "job-1".to_string(),
-            interaction_type: "viewed".to_string(),
-            timestamp: 1234567890,
-            title: "Test".to_string(),
-            company: "Test".to_string(),
-            url: "https://example.com".to_string(),
-            source: "test".to_string(),
-            location: "Remote".to_string(),
-        },
-    ];
+    let records = vec![InteractionRecord {
+        job_id: "job-1".to_string(),
+        interaction_type: "viewed".to_string(),
+        timestamp: 1234567890,
+        title: "Test".to_string(),
+        company: "Test".to_string(),
+        url: "https://example.com".to_string(),
+        source: "test".to_string(),
+        location: "Remote".to_string(),
+    }];
     let imported = store.import_bundle(records);
     assert_eq!(imported, 1);
 }

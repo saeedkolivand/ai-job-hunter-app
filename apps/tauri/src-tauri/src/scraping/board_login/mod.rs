@@ -45,9 +45,7 @@ const CONFIGS: &[BoardLoginConfig] = &[
         is_authed_url: None,
         is_authed_cookies: Some(|cookies| {
             cookies.iter().any(|c| {
-                c.name == "li_at"
-                    && c.value.len() > 10
-                    && c.domain.contains("linkedin.com")
+                c.name == "li_at" && c.value.len() > 10 && c.domain.contains("linkedin.com")
             })
         }),
     },
@@ -56,9 +54,7 @@ const CONFIGS: &[BoardLoginConfig] = &[
         display_name: "Indeed",
         login_url: "https://secure.indeed.com/auth",
         is_authed_url: Some(|u| {
-            u.contains("indeed.com")
-                && !u.contains("/auth")
-                && !u.contains("/login")
+            u.contains("indeed.com") && !u.contains("/auth") && !u.contains("/login")
         }),
         is_authed_cookies: None,
     },
@@ -67,9 +63,7 @@ const CONFIGS: &[BoardLoginConfig] = &[
         display_name: "Xing",
         login_url: "https://login.xing.com/login",
         is_authed_url: Some(|u| {
-            u.contains("xing.com")
-                && !u.contains("login.xing.com")
-                && !u.contains("/login")
+            u.contains("xing.com") && !u.contains("login.xing.com") && !u.contains("/login")
         }),
         is_authed_cookies: None,
     },
@@ -145,16 +139,12 @@ pub fn auth_status_path(app_data_dir: &Path, board_id: &str) -> PathBuf {
 /// Returns true if the user successfully authenticated, false if the window
 /// closed or the timeout elapsed. Cookies are exported to `cookies.json` and
 /// `auth-status.json` is updated either way.
-pub async fn open_login<F>(
-    app_data_dir: &Path,
-    board_id: &str,
-    on_status: F,
-) -> Result<bool>
+pub async fn open_login<F>(app_data_dir: &Path, board_id: &str, on_status: F) -> Result<bool>
 where
     F: Fn(&str) + Send + Sync,
 {
-    let config = get_config(board_id)
-        .ok_or_else(|| anyhow!("No login config for board: {board_id}"))?;
+    let config =
+        get_config(board_id).ok_or_else(|| anyhow!("No login config for board: {board_id}"))?;
 
     let profile = profile_dir(app_data_dir, board_id);
     std::fs::create_dir_all(&profile).ok();
@@ -174,7 +164,8 @@ where
         builder = builder.chrome_executable(chrome_path);
     }
 
-    let browser_config = builder.build()
+    let browser_config = builder
+        .build()
         .map_err(|e| anyhow!("BrowserConfig build failed: {e}"))?;
 
     let (mut browser, mut handler) = Browser::launch(browser_config).await?;
@@ -295,10 +286,9 @@ async fn wait_for_auth(
             None => default_is_authed_url(&url),
         };
         // Only trust URL when the page has left the login URL.
-        if url_ok && !url.starts_with(config.login_url)
-            && config.is_authed_cookies.is_none() {
-                return true;
-            }
+        if url_ok && !url.starts_with(config.login_url) && config.is_authed_cookies.is_none() {
+            return true;
+        }
 
         // Cookie check (preferred for AJAX-login boards like LinkedIn).
         if let Some(predicate) = config.is_authed_cookies {

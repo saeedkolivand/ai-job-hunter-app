@@ -32,7 +32,8 @@ pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<
                 .map_err(|e| format!("DOCX generation failed: {}", e))?;
             (
                 bytes,
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document".to_string(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    .to_string(),
                 "docx",
                 Some(report),
             )
@@ -92,7 +93,12 @@ pub async fn documents_export_and_save(
     let result = documents_export_document(request).await?;
 
     // Extract extension for filter
-    let ext = result.filename.split('.').next_back().unwrap_or("*").to_string();
+    let ext = result
+        .filename
+        .split('.')
+        .next_back()
+        .unwrap_or("*")
+        .to_string();
     let filter_name = format!("{} files", ext.to_uppercase());
 
     // Open save dialog (blocking)
@@ -113,8 +119,7 @@ pub async fn documents_export_and_save(
     };
 
     // Write bytes to file
-    std::fs::write(&path, result.data)
-        .map_err(|e| format!("Failed to write file: {}", e))?;
+    std::fs::write(&path, result.data).map_err(|e| format!("Failed to write file: {}", e))?;
 
     Ok(path.to_string_lossy().to_string())
 }

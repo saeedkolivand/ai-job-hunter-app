@@ -68,7 +68,11 @@ impl AiProvider for AnthropicClient {
             .collect();
 
         // Extended thinking for balanced effort and above; requires temperature=1.
-        let thinking_budget = if max_tokens >= 2048 { max_tokens / 2 } else { 0 };
+        let thinking_budget = if max_tokens >= 2048 {
+            max_tokens / 2
+        } else {
+            0
+        };
         let actual_max_tokens = max_tokens + thinking_budget;
 
         let mut body = json!({
@@ -106,7 +110,11 @@ impl AiProvider for AnthropicClient {
         if !status.is_success() {
             let body_text = response.text().await.unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
-            return Err(friendly_api_error(ProviderId::Anthropic, status, &body_text));
+            return Err(friendly_api_error(
+                ProviderId::Anthropic,
+                status,
+                &body_text,
+            ));
         }
 
         let mut line_buf = String::new();
@@ -194,7 +202,10 @@ impl AiProvider for AnthropicClient {
             }
         }
 
-        let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+        let _ = app.emit(
+            "ai:stream",
+            json!({ "jobId": job_id, "delta": "", "done": true }),
+        );
         app.state::<Mutex<JobTracker>>()
             .lock()
             .complete(job_id, json!({ "done": true }));
@@ -243,7 +254,11 @@ impl AiProvider for AnthropicClient {
         if !status.is_success() {
             let body_text = resp.text().await.unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
-            return Err(friendly_api_error(ProviderId::Anthropic, status, &body_text));
+            return Err(friendly_api_error(
+                ProviderId::Anthropic,
+                status,
+                &body_text,
+            ));
         }
         let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
         trace.end(Some(status.as_u16()), true);
@@ -263,7 +278,8 @@ impl AiProvider for AnthropicClient {
 
     async fn embed(&self, _app: &AppHandle, _model: &str, _text: &str) -> AppResult<Vec<f64>> {
         Err(AppError::Provider(
-            "Anthropic has no embeddings API. Use OpenAI, Gemini, or Ollama for embeddings.".to_string(),
+            "Anthropic has no embeddings API. Use OpenAI, Gemini, or Ollama for embeddings."
+                .to_string(),
         ))
     }
 
@@ -322,7 +338,10 @@ impl AiProvider for AnthropicClient {
         if resp.status().is_success() || resp.status() == 400 {
             Ok(())
         } else {
-            Err(AppError::Provider(format!("API returned status: {}", resp.status())))
+            Err(AppError::Provider(format!(
+                "API returned status: {}",
+                resp.status()
+            )))
         }
     }
 }

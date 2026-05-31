@@ -5,22 +5,22 @@
 #![deny(clippy::await_holding_lock)]
 
 mod ai_generations;
-mod autopilot;
-mod db;
-mod extraction;
-mod cover_letter;
-mod autopilot_helpers;
-mod autopilot_scheduler;
 mod apply_helpers;
 mod applying;
+mod autopilot;
+mod autopilot_helpers;
+mod autopilot_scheduler;
 mod browser;
 mod commands;
 mod conversations;
+mod cover_letter;
 mod credentials;
 mod data_store;
+mod db;
 mod documents;
 mod error;
 mod export;
+mod extraction;
 mod ipc_contracts;
 mod job_preferences;
 mod jobs;
@@ -82,7 +82,10 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
         .item(&PredefinedMenuItem::select_all(app, None)?)
         .build()?;
 
-    MenuBuilder::new(app).item(&app_submenu).item(&edit_submenu).build()
+    MenuBuilder::new(app)
+        .item(&app_submenu)
+        .item(&edit_submenu)
+        .build()
 }
 
 fn on_menu_event(app: &AppHandle, id: &str) {
@@ -102,7 +105,11 @@ fn on_menu_event(app: &AppHandle, id: &str) {
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItemBuilder::with_id("tray_show", "Show AI Job Hunter").build(app)?;
     let quit = MenuItemBuilder::with_id("tray_quit", "Quit").build(app)?;
-    let tray_menu = MenuBuilder::new(app).item(&show).separator().item(&quit).build()?;
+    let tray_menu = MenuBuilder::new(app)
+        .item(&show)
+        .separator()
+        .item(&quit)
+        .build()?;
 
     TrayIconBuilder::new()
         .menu(&tray_menu)
@@ -162,19 +169,31 @@ fn main() {
             // All path/env knowledge lives in `platform::config`.
             let data_dir = platform::config::resolve_and_export_data_dir(handle);
 
-            app.manage(std::sync::Arc::new(Mutex::new(AutopilotStore::new(&data_dir))));
+            app.manage(std::sync::Arc::new(Mutex::new(AutopilotStore::new(
+                &data_dir,
+            ))));
             app.manage(Mutex::new(CredentialStore::new(&data_dir)));
             match documents::DocumentStore::open(&data_dir) {
-                Ok(store) => { app.manage(store); }
+                Ok(store) => {
+                    app.manage(store);
+                }
                 Err(e) => log::warn!("[setup] document store failed to open (non-fatal): {e}"),
             }
             match ai_generations::AiGenerationStore::open(&data_dir) {
-                Ok(store) => { app.manage(store); }
-                Err(e) => log::warn!("[setup] ai generations store failed to open (non-fatal): {e}"),
+                Ok(store) => {
+                    app.manage(store);
+                }
+                Err(e) => {
+                    log::warn!("[setup] ai generations store failed to open (non-fatal): {e}")
+                }
             }
             match job_preferences::JobPreferencesStore::open(&data_dir) {
-                Ok(store) => { app.manage(store); }
-                Err(e) => log::warn!("[setup] job preferences store failed to open (non-fatal): {e}"),
+                Ok(store) => {
+                    app.manage(store);
+                }
+                Err(e) => {
+                    log::warn!("[setup] job preferences store failed to open (non-fatal): {e}")
+                }
             }
             app.manage(Mutex::new(JobTracker::open(&data_dir)));
             app.manage(Mutex::new(PostingsCache::default()));
@@ -187,7 +206,9 @@ fn main() {
                 log::warn!("[setup] conversation db failed to open (non-fatal)");
             }
             match pipeline::cache::KvCache::open(&data_dir) {
-                Ok(cache) => { app.manage(cache); }
+                Ok(cache) => {
+                    app.manage(cache);
+                }
                 Err(e) => log::warn!("[setup] pipeline cache failed to open (non-fatal): {e}"),
             }
 

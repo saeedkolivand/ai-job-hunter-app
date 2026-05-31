@@ -66,12 +66,11 @@ pub struct JobTracker {
 }
 
 impl JobTracker {
-    const MIGRATIONS: &'static [Migration] = &[
-        Migration {
-            name: "create_jobs",
-            up: |conn| {
-                conn.execute_batch(
-                    "CREATE TABLE IF NOT EXISTS jobs (
+    const MIGRATIONS: &'static [Migration] = &[Migration {
+        name: "create_jobs",
+        up: |conn| {
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS jobs (
                         id         TEXT PRIMARY KEY,
                         kind       TEXT NOT NULL,
                         status     TEXT NOT NULL,
@@ -81,10 +80,9 @@ impl JobTracker {
                         error      TEXT
                     );
                     CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC);",
-                )
-            },
+            )
         },
-    ];
+    }];
 
     /// Open a persistent job tracker backed by SQLite in `data_dir`.
     /// Incomplete jobs from the previous session are loaded as `failed`.
@@ -138,7 +136,10 @@ impl JobTracker {
         }
 
         log::info!("[jobs] loaded {} recent job(s) from disk", jobs.len());
-        Self { jobs, db: Some(conn) }
+        Self {
+            jobs,
+            db: Some(conn),
+        }
     }
 
     /// Register a new job as running.
@@ -220,7 +221,10 @@ impl JobTracker {
 
     fn persist_upsert(&self, record: &JobRecord) {
         if let Some(db) = &self.db {
-            let result_str = record.result.as_ref().and_then(|r| serde_json::to_string(r).ok());
+            let result_str = record
+                .result
+                .as_ref()
+                .and_then(|r| serde_json::to_string(r).ok());
             let _ = db.execute(
                 "INSERT OR REPLACE INTO jobs (id, kind, status, progress, created_at, result, error)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",

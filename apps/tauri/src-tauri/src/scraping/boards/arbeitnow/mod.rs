@@ -1,6 +1,6 @@
 /// Arbeitnow — public JSON API
 use super::super::http::{fetch_json, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -71,7 +71,10 @@ impl Scraper for ArbeitnowScraper {
                 Ok(d) => d,
                 Err(e) if out.is_empty() => return Err(e),
                 Err(e) => {
-                    log::warn!("[arbeitnow] page {page} failed: {e}; returning {} collected", out.len());
+                    log::warn!(
+                        "[arbeitnow] page {page} failed: {e}; returning {} collected",
+                        out.len()
+                    );
                     break;
                 }
             };
@@ -90,8 +93,12 @@ impl Scraper for ArbeitnowScraper {
                     "{} {} {}",
                     j.title,
                     j.company_name,
-                    j.tags.as_ref().map(|t| t.join(" ")).unwrap_or_else(|| "".to_string())
-                ).to_lowercase();
+                    j.tags
+                        .as_ref()
+                        .map(|t| t.join(" "))
+                        .unwrap_or_else(|| "".to_string())
+                )
+                .to_lowercase();
 
                 if !q.is_empty() && !haystack.contains(&q) {
                     continue;

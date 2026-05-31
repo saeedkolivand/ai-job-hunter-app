@@ -36,8 +36,19 @@ fn test_get_unknown_board() {
 
 #[test]
 fn test_get_all_known_boards() {
-    let known_boards = ["linkedin", "indeed", "greenhouse", "workday", "xing", "glassdoor"];
+    let known_boards = [
+        "linkedin",
+        "indeed",
+        "greenhouse",
+        "workday",
+        "xing",
+        "glassdoor",
+    ];
     for board_id in known_boards {
-        assert!(ApplierRegistry::get(board_id).is_some(), "Failed for {}", board_id);
+        assert!(
+            ApplierRegistry::get(board_id).is_some(),
+            "Failed for {}",
+            board_id
+        );
     }
 }

@@ -1,3 +1,4 @@
+use parking_lot::Mutex;
 /// AutopilotStore — JSON-file-backed CRUD for Autopilot records.
 ///
 /// Records are persisted to <dataDir>/autopilots.json as a flat JSON array.
@@ -5,7 +6,6 @@
 /// (`#[serde(rename_all = "camelCase")]`).
 use std::collections::HashMap;
 use std::path::PathBuf;
-use parking_lot::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};

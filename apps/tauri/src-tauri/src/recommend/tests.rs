@@ -13,27 +13,46 @@ fn signals(title: &str, seniority: &str, reqs: &[&str]) -> RecommendSignals {
 
 #[test]
 fn software_role_gets_modern() {
-    let r = recommend(&signals("Frontend Engineer", "mid", &["React", "TypeScript"]));
+    let r = recommend(&signals(
+        "Frontend Engineer",
+        "mid",
+        &["React", "TypeScript"],
+    ));
     assert_eq!(r.template_id, TemplateId::Modern);
     assert!(!r.ats_suggested);
 }
 
 #[test]
 fn systems_role_gets_mono_technical() {
-    let r = recommend(&signals("Embedded Software Engineer", "mid", &["C++", "firmware"]));
+    let r = recommend(&signals(
+        "Embedded Software Engineer",
+        "mid",
+        &["C++", "firmware"],
+    ));
     assert_eq!(r.template_id, TemplateId::MonoTechnical);
 }
 
 #[test]
 fn conservative_field_gets_classic_and_suggests_ats() {
-    let r = recommend(&signals("Compliance Auditor", "senior", &["finance", "SOX"]));
+    let r = recommend(&signals(
+        "Compliance Auditor",
+        "senior",
+        &["finance", "SOX"],
+    ));
     assert_eq!(r.template_id, TemplateId::Classic);
-    assert!(r.ats_suggested, "conservative fields should suggest ATS mode");
+    assert!(
+        r.ats_suggested,
+        "conservative fields should suggest ATS mode"
+    );
 }
 
 #[test]
 fn academia_gets_academic() {
-    let r = recommend(&signals("Postdoctoral Researcher", "mid", &["PhD", "publications"]));
+    let r = recommend(&signals(
+        "Postdoctoral Researcher",
+        "mid",
+        &["PhD", "publications"],
+    ));
     assert_eq!(r.template_id, TemplateId::Academic);
 }
 
@@ -45,7 +64,11 @@ fn design_role_gets_two_column() {
 
 #[test]
 fn executive_overrides_to_refined_executive() {
-    let r = recommend(&signals("VP of Engineering", "executive", &["leadership", "strategy"]));
+    let r = recommend(&signals(
+        "VP of Engineering",
+        "executive",
+        &["leadership", "strategy"],
+    ));
     assert_eq!(r.template_id, TemplateId::RefinedExecutive);
 }
 
@@ -53,14 +76,22 @@ fn executive_overrides_to_refined_executive() {
 fn conservative_executive_stays_classic() {
     // A conservative field outranks seniority — a finance exec still reads best
     // as a clean single column.
-    let r = recommend(&signals("Chief Financial Officer", "executive", &["finance", "audit"]));
+    let r = recommend(&signals(
+        "Chief Financial Officer",
+        "executive",
+        &["finance", "audit"],
+    ));
     assert_eq!(r.template_id, TemplateId::Classic);
     assert!(r.ats_suggested);
 }
 
 #[test]
 fn explicit_ats_mention_suggests_ats() {
-    let r = recommend(&signals("Software Engineer", "mid", &["must pass ATS screening"]));
+    let r = recommend(&signals(
+        "Software Engineer",
+        "mid",
+        &["must pass ATS screening"],
+    ));
     assert!(r.ats_suggested);
 }
 

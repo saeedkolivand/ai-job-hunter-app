@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use parking_lot::Mutex;
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
@@ -76,7 +76,9 @@ impl AiGenerationStore {
         let path = data_dir.join("ai_generations.db");
         let conn = Connection::open(&path).map_err(|e| e.to_string())?;
         run_migrations(&conn, Self::MIGRATIONS)?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     pub fn clear_all(&self) {

@@ -96,7 +96,8 @@ pub trait CliAgentBackend: Send + Sync {
     /// the optional reasoning effort for agents that support it (Codex); others ignore it.
     fn stream_invocation(&self, model: &str, system: &str, effort: Option<&str>) -> CliInvocation;
     /// Args for a one-shot, non-streaming generation.
-    fn complete_invocation(&self, model: &str, system: &str, effort: Option<&str>) -> CliInvocation;
+    fn complete_invocation(&self, model: &str, system: &str, effort: Option<&str>)
+        -> CliInvocation;
 
     /// Map one raw stdout line to a [`CliEvent`], or `None` to ignore it.
     fn parse_stream_line(&self, line: &str) -> Option<CliEvent>;
@@ -298,7 +299,11 @@ pub async fn detect_cached(binary: &str) -> (bool, Option<String>) {
     let (ok, version) = detect(binary).await;
     detect_cache().lock().insert(
         binary.to_string(),
-        Detected { ok, version: version.clone(), at: Instant::now() },
+        Detected {
+            ok,
+            version: version.clone(),
+            at: Instant::now(),
+        },
     );
     (ok, version)
 }
@@ -368,7 +373,9 @@ async fn run_stream(
             Err(_) => {
                 let _ = child.start_kill();
                 trace.end(None, false);
-                return Err(AppError::Network(format!("{label} timed out after 5 minutes.")));
+                return Err(AppError::Network(format!(
+                    "{label} timed out after 5 minutes."
+                )));
             }
             Ok(Ok(Some(line))) => line,
             Ok(Ok(None)) => break, // clean EOF
@@ -416,7 +423,11 @@ async fn run_stream(
     // streamed text means success; otherwise surface the failure.
     if !emitted_done && !success && !any_delta {
         trace.end(status.and_then(|s| s.code()).map(|c| c as u16), false);
-        return Err(friendly_cli_error(label, status.and_then(|s| s.code()), &stderr_text));
+        return Err(friendly_cli_error(
+            label,
+            status.and_then(|s| s.code()),
+            &stderr_text,
+        ));
     }
 
     emit_done(app, job_id);
@@ -466,7 +477,9 @@ async fn run_complete(
         }
         Err(_) => {
             trace.end(None, false);
-            return Err(AppError::Network(format!("{label} timed out after 5 minutes.")));
+            return Err(AppError::Network(format!(
+                "{label} timed out after 5 minutes."
+            )));
         }
     };
 
@@ -484,7 +497,11 @@ async fn run_complete(
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────
 
-fn spawn(binary: &str, inv: &CliInvocation, prompt: &str) -> std::io::Result<tokio::process::Child> {
+fn spawn(
+    binary: &str,
+    inv: &CliInvocation,
+    prompt: &str,
+) -> std::io::Result<tokio::process::Child> {
     let mut args = inv.args.clone();
     if matches!(inv.prompt, PromptDelivery::Arg) {
         args.push(prompt.to_string());
@@ -542,7 +559,10 @@ fn is_cancelled(app: &AppHandle, job_id: &str) -> bool {
 }
 
 fn emit_done(app: &AppHandle, job_id: &str) {
-    let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+    let _ = app.emit(
+        "ai:stream",
+        json!({ "jobId": job_id, "delta": "", "done": true }),
+    );
     app.state::<Mutex<JobTracker>>()
         .lock()
         .complete(job_id, json!({ "done": true }));
@@ -568,7 +588,11 @@ fn user_prompt(req: &AiGenerateRequest) -> String {
     turns
         .iter()
         .map(|m| {
-            let label = if m.role == "assistant" { "Assistant" } else { "User" };
+            let label = if m.role == "assistant" {
+                "Assistant"
+            } else {
+                "User"
+            };
             format!("{label}: {}", m.content)
         })
         .collect::<Vec<_>>()
@@ -581,8 +605,16 @@ mod tests {
 
     #[test]
     fn registry_includes_all_cli_agents() {
-        for id in [ProviderId::ClaudeCode, ProviderId::Codex, ProviderId::GeminiCli] {
-            assert!(backend_for(id).is_some(), "{} should be registered", id.as_str());
+        for id in [
+            ProviderId::ClaudeCode,
+            ProviderId::Codex,
+            ProviderId::GeminiCli,
+        ] {
+            assert!(
+                backend_for(id).is_some(),
+                "{} should be registered",
+                id.as_str()
+            );
         }
         assert!(all().iter().all(|b| b.id().is_cli_agent()));
     }
@@ -609,7 +641,11 @@ mod tests {
         // binary (i.e. no re-spawn within the TTL).
         detect_cache().lock().insert(
             bin.to_string(),
-            Detected { ok: true, version: Some("9.9.9".into()), at: Instant::now() },
+            Detected {
+                ok: true,
+                version: Some("9.9.9".into()),
+                at: Instant::now(),
+            },
         );
         assert_eq!(detect_cached(bin).await, (true, Some("9.9.9".to_string())));
     }

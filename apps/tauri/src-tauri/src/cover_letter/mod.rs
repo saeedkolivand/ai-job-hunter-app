@@ -138,7 +138,11 @@ impl CoverLetterContext {
     fn into_response(self) -> CoverLetterResponse {
         CoverLetterResponse {
             text: self.draft,
-            company_brief: if self.brief.is_empty() { None } else { Some(self.brief) },
+            company_brief: if self.brief.is_empty() {
+                None
+            } else {
+                Some(self.brief)
+            },
             leakage_verdict: self.leakage_verdict,
             retries: self.retries,
         }
@@ -190,7 +194,10 @@ impl Stage<CoverLetterContext> for GenerateValidatedStage {
             locale: ctx.locale.clone(),
         };
         let validator = if ctx.enable_leakage {
-            Some(LeakageValidator::new(ctx.resume.clone(), ctx.job_ad.clone()))
+            Some(LeakageValidator::new(
+                ctx.resume.clone(),
+                ctx.job_ad.clone(),
+            ))
         } else {
             None
         };
@@ -225,11 +232,20 @@ struct CoverLetterDraftGenerator {
 #[async_trait]
 impl DraftGenerator for CoverLetterDraftGenerator {
     async fn generate(&self, completer: &Completer, attempt: u8) -> AppResult<String> {
-        let _ = completer
-            .app()
-            .emit("cover_letter:generation:start", json!({ "attempt": attempt }));
-        let user = build_user_prompt(&self.resume_summary, &self.job_ad, &self.brief, &self.mode, &self.locale);
-        let raw = completer.complete(COVER_LETTER_SYSTEM, &user, Some(0.4)).await?;
+        let _ = completer.app().emit(
+            "cover_letter:generation:start",
+            json!({ "attempt": attempt }),
+        );
+        let user = build_user_prompt(
+            &self.resume_summary,
+            &self.job_ad,
+            &self.brief,
+            &self.mode,
+            &self.locale,
+        );
+        let raw = completer
+            .complete(COVER_LETTER_SYSTEM, &user, Some(0.4))
+            .await?;
         let text = strip_think_blocks(&raw);
         let _ = completer.app().emit(
             "cover_letter:generation:done",
@@ -246,12 +262,16 @@ pub async fn run_pipeline(
     req: CoverLetterRequest,
 ) -> AppResult<CoverLetterResponse> {
     // Resolve the active provider + model through the centralized layer.
-    let completer =
-        Completer::resolve(&app, req.provider.as_deref(), req.model.as_deref(), req.base_url.clone())
-            .map_err(|e| {
-                tracing::error!("cover_letter: provider resolution failed: {e}");
-                e
-            })?;
+    let completer = Completer::resolve(
+        &app,
+        req.provider.as_deref(),
+        req.model.as_deref(),
+        req.base_url.clone(),
+    )
+    .map_err(|e| {
+        tracing::error!("cover_letter: provider resolution failed: {e}");
+        e
+    })?;
 
     let mut ctx = CoverLetterContext::new(completer, &req);
 

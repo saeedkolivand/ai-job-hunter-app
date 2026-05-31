@@ -1,7 +1,7 @@
-use tauri::AppHandle;
-use tauri::Manager;
 use serde_json::json;
 use serde_json::Value;
+use tauri::AppHandle;
+use tauri::Manager;
 
 #[tauri::command]
 pub async fn job_preferences_get(app: AppHandle) -> Value {

@@ -1,3 +1,4 @@
+use parking_lot::Mutex;
 /// Native document store (SQLite-backed). Holds metadata + embedding vectors.
 ///
 /// Metadata is persisted in SQLite (rusqlite, bundled). Embedding vectors are
@@ -7,7 +8,6 @@
 /// Ollama is called for embeddings via reqwest; gracefully degrades when
 /// Ollama is not running.
 use std::path::PathBuf;
-use parking_lot::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
@@ -147,7 +147,9 @@ impl DocumentStore {
         let path = data_dir.join("documents.db");
         let conn = Connection::open(&path).map_err(|e| e.to_string())?;
         run_migrations(&conn, Self::MIGRATIONS)?;
-        let store = Self { conn: Mutex::new(conn) };
+        let store = Self {
+            conn: Mutex::new(conn),
+        };
         store.backfill_vector_dims();
         Ok(store)
     }
@@ -160,9 +162,11 @@ impl DocumentStore {
             .prepare("SELECT doc_id, vector FROM vectors WHERE dim = 0")
             .ok()
             .and_then(|mut stmt| {
-                stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
-                    .ok()
-                    .map(|rows| rows.filter_map(|r| r.ok()).collect())
+                stmt.query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .ok()
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
             })
             .unwrap_or_default();
         for (doc_id, json) in rows {
@@ -178,7 +182,8 @@ impl DocumentStore {
 
     pub fn clear_all(&self) {
         let conn = self.conn.lock();
-        conn.execute_batch("DELETE FROM vectors; DELETE FROM documents;").ok();
+        conn.execute_batch("DELETE FROM vectors; DELETE FROM documents;")
+            .ok();
     }
 
     pub fn list(&self) -> Vec<DocumentRecord> {
@@ -239,7 +244,7 @@ impl DocumentStore {
             .query_row("SELECT COUNT(*) FROM documents", [], |row| row.get(0))
             .unwrap_or(0);
         let is_default = if count == 0 { true } else { rec.is_default };
-        
+
         conn.execute(
             "INSERT INTO documents (id, title, name, locale, text, pages, created_at, indexed, is_default)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -261,8 +266,11 @@ impl DocumentStore {
 
     pub fn set_indexed(&self, id: &str) -> AppResult<()> {
         let conn = self.conn.lock();
-        conn.execute("UPDATE documents SET indexed = 1 WHERE id = ?1", params![id])
-            .map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE documents SET indexed = 1 WHERE id = ?1",
+            params![id],
+        )
+        .map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -280,8 +288,11 @@ impl DocumentStore {
         // Clear all defaults, then set the new one
         conn.execute("UPDATE documents SET is_default = 0", [])
             .map_err(|e| e.to_string())?;
-        conn.execute("UPDATE documents SET is_default = 1 WHERE id = ?1", params![id])
-            .map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE documents SET is_default = 1 WHERE id = ?1",
+            params![id],
+        )
+        .map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -296,7 +307,13 @@ impl DocumentStore {
              ON CONFLICT(doc_id) DO UPDATE SET
                 vector = excluded.vector, provider = excluded.provider,
                 model = excluded.model, dim = excluded.dim, version = excluded.version",
-            params![doc_id, json, v.space.provider, v.space.model, v.space.dim as i64],
+            params![
+                doc_id,
+                json,
+                v.space.provider,
+                v.space.model,
+                v.space.dim as i64
+            ],
         )
         .map_err(|e| e.to_string())?;
         Ok(())
@@ -321,7 +338,11 @@ impl DocumentStore {
             let values: Vec<f64> = serde_json::from_str(&json).ok()?;
             Some(EmbeddingVector {
                 values,
-                space: EmbeddingSpace { provider, model, dim: dim as usize },
+                space: EmbeddingSpace {
+                    provider,
+                    model,
+                    dim: dim as usize,
+                },
             })
         })
     }
@@ -536,7 +557,11 @@ impl DataStore for DocumentStore {
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("nomic-embed-text")
                                 .to_string(),
-                            dim: s.get("dim").and_then(|v| v.as_u64()).map(|d| d as usize).unwrap_or(dim),
+                            dim: s
+                                .get("dim")
+                                .and_then(|v| v.as_u64())
+                                .map(|d| d as usize)
+                                .unwrap_or(dim),
                         })
                         .unwrap_or_else(|| EmbeddingSpace {
                             provider: "ollama".to_string(),

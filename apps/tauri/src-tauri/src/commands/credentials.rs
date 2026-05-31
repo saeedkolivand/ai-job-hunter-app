@@ -1,7 +1,7 @@
-use serde_json::{json, Value};
-use parking_lot::Mutex;
-use tauri::{AppHandle, Manager};
 use crate::credentials::CredentialStore;
+use parking_lot::Mutex;
+use serde_json::{json, Value};
+use tauri::{AppHandle, Manager};
 
 #[tauri::command]
 pub fn credentials_available(app: AppHandle) -> Value {
@@ -11,7 +11,12 @@ pub fn credentials_available(app: AppHandle) -> Value {
 }
 
 #[tauri::command]
-pub fn credentials_set(app: AppHandle, board_id: String, username: String, password: String) -> Value {
+pub fn credentials_set(
+    app: AppHandle,
+    board_id: String,
+    username: String,
+    password: String,
+) -> Value {
     let store = app.state::<Mutex<CredentialStore>>();
     let guard = store.lock();
     match guard.set(&board_id, &username, &password) {

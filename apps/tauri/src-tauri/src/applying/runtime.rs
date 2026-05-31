@@ -10,8 +10,8 @@ use chromiumoxide::browser::{Browser, BrowserConfig};
 use chromiumoxide::Page;
 use futures::StreamExt;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 pub struct ApplySession {
     pub browser: Browser,
@@ -49,7 +49,8 @@ impl ApplySession {
             builder = builder.chrome_executable(chrome_path);
         }
 
-        let config = builder.build()
+        let config = builder
+            .build()
             .map_err(|e| anyhow!("BrowserConfig build failed: {e}"))?;
 
         let (browser, mut handler) = Browser::launch(config).await?;
@@ -62,7 +63,11 @@ impl ApplySession {
         });
 
         let page = browser.new_page(posting_url).await?;
-        Ok(ApplySession { browser, page, closed })
+        Ok(ApplySession {
+            browser,
+            page,
+            closed,
+        })
     }
 
     pub async fn close(mut self) {

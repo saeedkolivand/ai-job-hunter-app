@@ -33,10 +33,7 @@ impl Applier for LinkedInApplier {
 ///    - Else if "Continue"/"Next"/"Review" exists, click and loop
 ///    - Upload resume if file input appears and resume_path is set
 ///    - Max 10 iterations, then fall back to manual completion
-async fn linkedin_easy_apply(
-    posting_url: String,
-    ctx: ApplyContext,
-) -> Result<ApplyResult> {
+async fn linkedin_easy_apply(posting_url: String, ctx: ApplyContext) -> Result<ApplyResult> {
     let app_data_dir = crate::platform::config::data_dir();
     let selectors = FormSelectors::linkedin();
 
@@ -129,7 +126,11 @@ async fn linkedin_easy_apply(
 
         // Upload resume if file input appears
         if let Some(ref resume_path) = ctx.resume_path {
-            if filler.upload_resume(&session.page, resume_path).await.is_ok() {
+            if filler
+                .upload_resume(&session.page, resume_path)
+                .await
+                .is_ok()
+            {
                 emit_step(&ctx, "resume_uploaded", true, Some("Uploaded resume"));
             }
         }

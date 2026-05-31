@@ -38,7 +38,11 @@ fn base_builder() -> reqwest::ClientBuilder {
 pub fn shared() -> reqwest::Client {
     static SHARED: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     SHARED
-        .get_or_init(|| base_builder().build().expect("failed to build shared HTTP client"))
+        .get_or_init(|| {
+            base_builder()
+                .build()
+                .expect("failed to build shared HTTP client")
+        })
         .clone()
 }
 

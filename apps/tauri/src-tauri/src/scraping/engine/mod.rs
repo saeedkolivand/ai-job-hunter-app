@@ -3,7 +3,7 @@
 /// Uses interior mutability so `Arc<ScraperEngine>` can be cloned into Tauri
 /// commands and scrape jobs run concurrently (bounded by `semaphore`) without
 /// serializing on an outer mutex.
-use super::types::{BoardSearchInput, JobPosting, ScraperMode, ScrapeContext};
+use super::types::{BoardSearchInput, JobPosting, ScrapeContext, ScraperMode};
 use arc_swap::ArcSwap;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -93,7 +93,8 @@ impl ScraperEngine {
             on_item,
         };
 
-        let span = crate::observability::Span::begin("scrape", format!("board={board} job={job_id}"));
+        let span =
+            crate::observability::Span::begin("scrape", format!("board={board} job={job_id}"));
         let result = match super::boards::get(board) {
             Some(scraper) => scraper.search(input, ctx).await,
             None => Err(anyhow::anyhow!("Unknown board: {}", board)),

@@ -64,7 +64,11 @@ async fn try_greenhouse(url: &str) -> Result<Option<JobPosting>> {
         return Ok(None);
     }
     let v: serde_json::Value = res.json().await?;
-    let title = v.get("title").and_then(|s| s.as_str()).unwrap_or("").to_string();
+    let title = v
+        .get("title")
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+        .to_string();
     let location = v
         .get("location")
         .and_then(|l| l.get("name"))
@@ -152,7 +156,11 @@ async fn try_lever(url: &str) -> Result<Option<JobPosting>> {
         return Ok(None);
     }
     let v: serde_json::Value = res.json().await?;
-    let title = v.get("text").and_then(|s| s.as_str()).unwrap_or("").to_string();
+    let title = v
+        .get("text")
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+        .to_string();
     let location = v
         .get("categories")
         .and_then(|c| c.get("location"))
@@ -172,9 +180,7 @@ async fn try_lever(url: &str) -> Result<Option<JobPosting>> {
         .and_then(|s| s.as_str())
         .unwrap_or(url)
         .to_string();
-    let created_at = v
-        .get("createdAt")
-        .and_then(|n| n.as_i64());
+    let created_at = v.get("createdAt").and_then(|n| n.as_i64());
 
     Ok(Some(JobPosting {
         id: format!("lever:{}", job_id),
@@ -253,9 +259,19 @@ async fn try_ashby(url: &str) -> Result<Option<JobPosting>> {
         Some(v) if !v.is_null() => v,
         _ => return Ok(None),
     };
-    let title = p.get("title").and_then(|s| s.as_str()).unwrap_or("").to_string();
-    let location = p.get("locationName").and_then(|s| s.as_str()).map(str::to_string);
-    let description = p.get("descriptionPlain").and_then(|s| s.as_str()).map(str::to_string);
+    let title = p
+        .get("title")
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+        .to_string();
+    let location = p
+        .get("locationName")
+        .and_then(|s| s.as_str())
+        .map(str::to_string);
+    let description = p
+        .get("descriptionPlain")
+        .and_then(|s| s.as_str())
+        .map(str::to_string);
 
     Ok(Some(JobPosting {
         id: format!("ashby:{}", job_id),
@@ -316,7 +332,8 @@ fn parse_generic_html(html: &str) -> (String, Option<String>) {
         .next()
         .map(|e| e.text().collect::<String>().trim().to_string())
         .unwrap_or_default();
-    let meta_sel = Selector::parse("meta[name=\"description\"], meta[property=\"og:description\"]").unwrap();
+    let meta_sel =
+        Selector::parse("meta[name=\"description\"], meta[property=\"og:description\"]").unwrap();
     let description = doc
         .select(&meta_sel)
         .next()
@@ -345,9 +362,7 @@ async fn try_linkedin(url: &str) -> Result<Option<JobPosting>> {
     if !path.contains("/jobs/view/") {
         return Ok(None);
     }
-    let job_id = path
-        .split('/').rfind(|s| !s.is_empty())
-        .unwrap_or("");
+    let job_id = path.split('/').rfind(|s| !s.is_empty()).unwrap_or("");
     if job_id.is_empty() {
         return Ok(None);
     }
@@ -376,7 +391,8 @@ async fn try_linkedin(url: &str) -> Result<Option<JobPosting>> {
         .map(|e| e.text().collect::<String>().trim().to_string())
         .unwrap_or_else(|| "LinkedIn".to_string());
 
-    let location_sel = Selector::parse(".topcard__flavor--bullet, .top-card-layout__second-subline").unwrap();
+    let location_sel =
+        Selector::parse(".topcard__flavor--bullet, .top-card-layout__second-subline").unwrap();
     let location = doc
         .select(&location_sel)
         .next()
@@ -527,19 +543,21 @@ async fn try_smartrecruiters(url: &str) -> Result<Option<JobPosting>> {
     }
     let v: serde_json::Value = res.json().await?;
 
-    let title = v.get("name").and_then(|s| s.as_str()).unwrap_or("").to_string();
-    let location = v
-        .get("location")
-        .and_then(|l| {
-            let city = l.get("city").and_then(|s| s.as_str());
-            let country = l.get("country").and_then(|s| s.as_str());
-            match (city, country) {
-                (Some(c), Some(co)) => Some(format!("{}, {}", c, co)),
-                (Some(c), None) => Some(c.to_string()),
-                (None, Some(co)) => Some(co.to_string()),
-                _ => None,
-            }
-        });
+    let title = v
+        .get("name")
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+        .to_string();
+    let location = v.get("location").and_then(|l| {
+        let city = l.get("city").and_then(|s| s.as_str());
+        let country = l.get("country").and_then(|s| s.as_str());
+        match (city, country) {
+            (Some(c), Some(co)) => Some(format!("{}, {}", c, co)),
+            (Some(c), None) => Some(c.to_string()),
+            (None, Some(co)) => Some(co.to_string()),
+            _ => None,
+        }
+    });
 
     let description = v
         .get("jobAd")
@@ -615,7 +633,8 @@ async fn try_personio(url: &str) -> Result<Option<JobPosting>> {
     let id_re = regex::Regex::new(r"<id>(.*?)</id>").unwrap();
     let name_re = regex::Regex::new(r"<name>(.*?)</name>").unwrap();
     let office_re = regex::Regex::new(r"<office>(.*?)</office>").unwrap();
-    let desc_re = regex::Regex::new(r"<jobDescription>\s*<value>(.*?)</value>\s*</jobDescription>").unwrap();
+    let desc_re =
+        regex::Regex::new(r"<jobDescription>\s*<value>(.*?)</value>\s*</jobDescription>").unwrap();
 
     for position_cap in position_re.captures_iter(&xml) {
         if let Some(position_content) = position_cap.get(1) {
@@ -636,7 +655,10 @@ async fn try_personio(url: &str) -> Result<Option<JobPosting>> {
                     .unwrap_or("");
                 let desc = desc_re
                     .captures(position_str)
-                    .and_then(|c| c.get(1).map(|m| crate::scraping::http::strip_html(m.as_str().trim())))
+                    .and_then(|c| {
+                        c.get(1)
+                            .map(|m| crate::scraping::http::strip_html(m.as_str().trim()))
+                    })
                     .unwrap_or_default();
 
                 return Ok(Some(JobPosting {
@@ -644,7 +666,11 @@ async fn try_personio(url: &str) -> Result<Option<JobPosting>> {
                     external_id: Some(id.clone()),
                     title: title.to_string(),
                     company: company.to_string(),
-                    location: if office.is_empty() { None } else { Some(office.to_string()) },
+                    location: if office.is_empty() {
+                        None
+                    } else {
+                        Some(office.to_string())
+                    },
                     url: url.to_string(),
                     source: "personio".to_string(),
                     description: if desc.is_empty() { None } else { Some(desc) },

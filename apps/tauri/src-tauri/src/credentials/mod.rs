@@ -1,3 +1,4 @@
+use parking_lot::Mutex;
 /// OS-native credential store for the Tauri shell.
 ///
 /// Passwords are stored in the OS secret service — the same underlying
@@ -15,7 +16,6 @@
 /// looked up by scrapers/appliers via `get_decrypted(board_id)`.
 use std::collections::HashMap;
 use std::path::PathBuf;
-use parking_lot::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use keyring_core::Entry;
@@ -126,10 +126,7 @@ impl CredentialStore {
     pub fn get_decrypted(&self, board_id: &str) -> Option<(String, String)> {
         let meta = self.load_meta();
         let m = meta.get(board_id)?;
-        let password = Entry::new(SERVICE, board_id)
-            .ok()?
-            .get_password()
-            .ok()?;
+        let password = Entry::new(SERVICE, board_id).ok()?.get_password().ok()?;
         Some((m.username.clone(), password))
     }
 

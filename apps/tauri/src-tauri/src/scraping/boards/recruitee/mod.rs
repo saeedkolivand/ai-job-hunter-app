@@ -2,7 +2,7 @@
 
 /// Recruitee — public per-company offers API
 use super::super::http::{fetch_json, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -55,7 +55,10 @@ impl Scraper for RecruiteeScraper {
             return Ok(vec![]);
         }
 
-        let url = format!("https://{}.recruitee.com/api/offers/", urlencoding::encode(company));
+        let url = format!(
+            "https://{}.recruitee.com/api/offers/",
+            urlencoding::encode(company)
+        );
         let data = fetch_json::<Resp>(&url, Default::default(), ctx.signal).await?;
 
         let offers = match data {
@@ -84,17 +87,28 @@ impl Scraper for RecruiteeScraper {
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            let posted_at = o.created_at.and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok()).map(|dt| dt.timestamp_millis());
+            let posted_at = o
+                .created_at
+                .and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok())
+                .map(|dt| dt.timestamp_millis());
 
             let posting = JobPosting {
                 id: format!("{}:{}", self.id(), o.id),
                 external_id: Some(o.id.to_string()),
                 title: o.title,
                 company: o.company_name.unwrap_or_else(|| company.to_string()),
-                location: if location.is_empty() { None } else { Some(location) },
+                location: if location.is_empty() {
+                    None
+                } else {
+                    Some(location)
+                },
                 url: o.careers_url,
                 source: self.id().to_string(),
-                description: if description.is_empty() { None } else { Some(description) },
+                description: if description.is_empty() {
+                    None
+                } else {
+                    Some(description)
+                },
                 requirements: None,
                 posted_at,
                 captured_at: now,

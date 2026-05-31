@@ -22,7 +22,10 @@ static APPLIERS: &[&dyn Applier] = &[
 
 impl ApplierRegistry {
     pub fn catalog() -> Vec<(&'static str, &'static str)> {
-        APPLIERS.iter().map(|a| (a.board_id(), a.display_name())).collect()
+        APPLIERS
+            .iter()
+            .map(|a| (a.board_id(), a.display_name()))
+            .collect()
     }
 
     pub fn get(board_id: &str) -> Option<&'static dyn Applier> {

@@ -14,7 +14,7 @@ use std::path::Path;
 use tracing::{instrument, warn};
 
 use crate::error::{AppError, AppResult};
-use types::{ExtractionError, ExtractedResume};
+use types::{ExtractedResume, ExtractionError};
 
 const MAX_BYTES: usize = 10 * 1024 * 1024; // 10 MB
 
@@ -68,8 +68,8 @@ pub fn route(path: &str, bytes: &[u8]) -> Result<ExtractedResume, ExtractionErro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use types::{Confidence, ExtractionError, SourceFormat};
     use std::io::Write as IoWrite;
+    use types::{Confidence, ExtractionError, SourceFormat};
     use zip::write::{ExtendedFileOptions, FileOptions};
     use zip::ZipWriter;
 
@@ -103,7 +103,8 @@ mod tests {
             )
             .unwrap();
 
-            zip.start_file("word/_rels/document.xml.rels", opts.clone()).unwrap();
+            zip.start_file("word/_rels/document.xml.rels", opts.clone())
+                .unwrap();
             let rels_xml = if let Some((r_id, url, _)) = link {
                 format!(
                     r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -142,7 +143,7 @@ mod tests {
 
     /// Build a valid text-layer PDF using lopdf so xref offsets are correct.
     fn build_text_pdf(text: &str) -> Vec<u8> {
-        use lopdf::{Document, Object, Stream, dictionary};
+        use lopdf::{dictionary, Document, Object, Stream};
 
         let content_bytes = if text.is_empty() {
             b"".to_vec()
@@ -201,7 +202,10 @@ mod tests {
         ));
         let result = route("resume.txt", fixture).expect("plain txt failed");
         assert_eq!(result.source_format, SourceFormat::PlainText);
-        assert!(result.text.contains("jane.doe@example.com"), "email missing");
+        assert!(
+            result.text.contains("jane.doe@example.com"),
+            "email missing"
+        );
         assert!(result.text.contains("Acme Corp"), "experience missing");
         assert!(result.text.contains("Rust"), "skills missing");
         assert!(
@@ -237,7 +241,10 @@ mod tests {
         let result = route("resume.docx", &bytes).expect("docx failed");
         assert_eq!(result.source_format, SourceFormat::Docx);
         assert!(result.text.contains("Jane Doe"), "name missing");
-        assert!(result.text.contains("jane.doe@example.com"), "email missing");
+        assert!(
+            result.text.contains("jane.doe@example.com"),
+            "email missing"
+        );
         assert!(result.text.contains("Acme Corp"), "experience missing");
     }
 
@@ -245,7 +252,11 @@ mod tests {
     fn docx_resolves_hyperlink() {
         let bytes = build_docx(
             &["Jane Doe", "Senior Engineer"],
-            Some(("rId1", "https://linkedin.com/in/janedoe", "LinkedIn Profile")),
+            Some((
+                "rId1",
+                "https://linkedin.com/in/janedoe",
+                "LinkedIn Profile",
+            )),
         );
         let result = route("resume.docx", &bytes).expect("docx hyperlink failed");
         assert_eq!(result.source_format, SourceFormat::Docx);
@@ -279,7 +290,10 @@ mod tests {
         let result = route("resume.pdf", &bytes).expect("pdf failed");
         assert_eq!(result.source_format, SourceFormat::PdfText);
         assert!(result.text.contains("Jane Doe"), "name missing");
-        assert!(result.text.contains("jane.doe@example.com"), "email missing");
+        assert!(
+            result.text.contains("jane.doe@example.com"),
+            "email missing"
+        );
     }
 
     #[test]

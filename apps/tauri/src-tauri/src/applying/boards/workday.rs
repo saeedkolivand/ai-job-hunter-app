@@ -21,7 +21,10 @@ impl Applier for WorkdayApplier {
             posting_url,
             ctx,
             FormSelectors::workday(),
-            &["[data-automation-id='applyManually']", "[data-automation-id='apply']"],
+            &[
+                "[data-automation-id='applyManually']",
+                "[data-automation-id='apply']",
+            ],
         )
         .await
     }

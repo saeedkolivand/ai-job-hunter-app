@@ -21,7 +21,11 @@ impl Applier for XingApplier {
             posting_url,
             ctx,
             FormSelectors::xing(),
-            &["button[data-qa='apply-button']", "a[href*='apply']", ".apply-button"],
+            &[
+                "button[data-qa='apply-button']",
+                "a[href*='apply']",
+                ".apply-button",
+            ],
         )
         .await
     }

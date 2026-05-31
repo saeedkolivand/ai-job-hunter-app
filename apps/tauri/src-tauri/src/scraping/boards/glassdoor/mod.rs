@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 /// Glassdoor — browser-based scraper (requires JavaScript rendering)
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use chromiumoxide::browser::{Browser, BrowserConfig};
 use futures::StreamExt;
@@ -81,11 +81,14 @@ impl Scraper for GlassdoorScraper {
                 Err(e) if results.is_empty() => return Err(e),
                 // Later page failed → keep the pages we already have.
                 Err(e) => {
-                    log::warn!("[glassdoor] page {p} failed: {e}; returning {} collected", results.len());
+                    log::warn!(
+                        "[glassdoor] page {p} failed: {e}; returning {} collected",
+                        results.len()
+                    );
                     break;
                 }
             };
-            
+
             // Parse and extract in a scope to drop doc before await
             {
                 let doc = Html::parse_document(&html);

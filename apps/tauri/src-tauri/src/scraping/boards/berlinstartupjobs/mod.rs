@@ -1,6 +1,6 @@
 /// Berlin Startup Jobs — public WordPress RSS feed
 use super::super::http::{fetch_text, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 
 /// `"Job Title at Company"` splitter — compiled once and reused (hoisted out of the
@@ -30,7 +30,12 @@ impl Scraper for BerlinStartupJobsScraper {
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
         let q = input.query.trim().to_lowercase();
-        let res = fetch_text("https://berlinstartupjobs.com/feed/", Default::default(), ctx.signal).await?;
+        let res = fetch_text(
+            "https://berlinstartupjobs.com/feed/",
+            Default::default(),
+            ctx.signal,
+        )
+        .await?;
 
         if res.status_code != 200 {
             return Ok(vec![]);
@@ -40,21 +45,29 @@ impl Scraper for BerlinStartupJobsScraper {
         let mut out = vec![];
 
         // Parse RSS XML
-        let channel = feed_rs::parser::parse(res.text.as_bytes()).map_err(|e| anyhow::anyhow!("Failed to parse RSS: {}", e))?;
+        let channel = feed_rs::parser::parse(res.text.as_bytes())
+            .map_err(|e| anyhow::anyhow!("Failed to parse RSS: {}", e))?;
 
         for entry in channel.entries {
             let title = entry.title.map(|t| t.content).unwrap_or_default();
-            let link = entry.links.first().map(|l| l.href.clone()).unwrap_or_default();
-            let guid = if entry.id.is_empty() { link.clone() } else { entry.id.clone() };
-            let description = entry.content.as_ref()
+            let link = entry
+                .links
+                .first()
+                .map(|l| l.href.clone())
+                .unwrap_or_default();
+            let guid = if entry.id.is_empty() {
+                link.clone()
+            } else {
+                entry.id.clone()
+            };
+            let description = entry
+                .content
+                .as_ref()
                 .and_then(|c| c.body.as_ref())
                 .map(|b| strip_html(b))
-                .or_else(|| {
-                    entry.summary.as_ref()
-                        .map(|s| strip_html(&s.content))
-                });
+                .or_else(|| entry.summary.as_ref().map(|s| strip_html(&s.content)));
             let pub_date = entry.published.map(|dt| dt.timestamp_millis());
-            
+
             let categories: Vec<String> = entry.categories.iter().map(|c| c.term.clone()).collect();
 
             // Split "Job Title at Company" → { title, company }
@@ -80,7 +93,11 @@ impl Scraper for BerlinStartupJobsScraper {
                 url: link,
                 source: self.id().to_string(),
                 description,
-                requirements: if categories.is_empty() { None } else { Some(categories) },
+                requirements: if categories.is_empty() {
+                    None
+                } else {
+                    Some(categories)
+                },
                 posted_at: pub_date,
                 captured_at: now,
                 extra: {
