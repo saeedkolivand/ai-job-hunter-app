@@ -452,9 +452,14 @@ other module may reconstruct its logic:
 - New exporter / parser / integration → register in its registry; compose
   `net::http`, `error::AppError`, `observability::Span`, `platform::config`.
 
-CI grep guardrails (the quality-checks job) keep ownership intact: `std::env::var`
-only in `platform/config.rs`; `reqwest::Client::new/builder` only in `net/http.rs`;
-no `Result<_, String>` outside `error.rs`.
+These boundaries are **machine-enforced**. `apps/tauri/src-tauri/tests/architecture.rs`
+(run by the `quality-checks` CI job, superseding the old grep guardrails) codifies the
+layer model + ownership as versioned tests with explicit, dead-entry-guarded allowlists.
+See [architecture-rules.md](architecture-rules.md) (the formal contract, rules R1–R8) and
+[architecture-analysis.md](architecture-analysis.md) (the discovery report it derives
+from). Among what it enforces: `#[tauri::command]` only in the shell layer; no Tauri below
+it; `std::env::var` only in `platform/**`; `reqwest::Client::new/builder` only in
+`net/http.rs`; no `Result<_, String>` outside `error.rs`; and no upward cross-layer imports.
 
 ---
 
