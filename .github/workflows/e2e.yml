@@ -41,16 +41,28 @@ jobs:
           cache: pnpm
 
       - name: 📥 Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          echo "::group::Installing dependencies"
+          pnpm install --frozen-lockfile
+          echo "::endgroup::"
 
       - name: 🔨 Build Shared Packages
-        run: pnpm build:packages
+        run: |
+          echo "::group::Building shared packages"
+          pnpm build:packages
+          echo "::endgroup::"
 
       - name: 🎭 Install Playwright Chromium
-        run: pnpm --filter @ajh/tauri exec playwright install --with-deps chromium
+        run: |
+          echo "::group::Installing Playwright Chromium"
+          pnpm --filter @ajh/tauri exec playwright install --with-deps chromium
+          echo "::endgroup::"
 
       - name: 🎭 Run E2E Tests
-        run: pnpm --filter @ajh/tauri test:e2e
+        run: |
+          echo "::group::Running E2E tests"
+          pnpm --filter @ajh/tauri test:e2e
+          echo "::endgroup::"
 
       - name: 📊 Upload Playwright Report
         if: always()
