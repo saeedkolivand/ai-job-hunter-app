@@ -1,4 +1,4 @@
-use crate::extraction::types::{ExtractionError, ExtractedResume, SourceFormat};
+use crate::extraction::types::{ExtractedResume, ExtractionError, SourceFormat};
 
 pub fn extract(bytes: &[u8]) -> Result<ExtractedResume, ExtractionError> {
     let text = String::from_utf8(bytes.to_vec())

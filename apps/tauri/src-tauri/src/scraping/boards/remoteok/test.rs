@@ -75,7 +75,9 @@ fn test_remote_ok_item_job_defaults() {
         date: None,
     };
     match item {
-        RemoteOkItem::Job { position, company, .. } => {
+        RemoteOkItem::Job {
+            position, company, ..
+        } => {
             assert!(position.is_none());
             assert!(company.is_none());
         }

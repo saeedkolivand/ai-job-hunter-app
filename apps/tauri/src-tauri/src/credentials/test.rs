@@ -23,10 +23,10 @@ fn test_credential_meta_serialization() {
         username: "test@example.com".to_string(),
         saved_at: 1234567890,
     };
-    
+
     let json = serde_json::to_string(&meta).unwrap();
     let deserialized: CredentialMeta = serde_json::from_str(&json).unwrap();
-    
+
     assert_eq!(deserialized.board_id, "linkedin");
     assert_eq!(deserialized.username, "test@example.com");
     assert_eq!(deserialized.saved_at, 1234567890);

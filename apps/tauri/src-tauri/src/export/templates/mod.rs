@@ -388,8 +388,16 @@ impl Template {
             two_column: Some(TwoColumnConfig {
                 sidebar_width_ratio: 0.30,
                 sidebar_bg_color: (240, 244, 248),
-                sidebar_sections: vec!["Contact", "Skills", "Education", "Languages",
-                                       "Kontakt", "Kenntnisse", "Ausbildung", "Sprachen"],
+                sidebar_sections: vec![
+                    "Contact",
+                    "Skills",
+                    "Education",
+                    "Languages",
+                    "Kontakt",
+                    "Kenntnisse",
+                    "Ausbildung",
+                    "Sprachen",
+                ],
             }),
             cover_letter: CoverLetterLayout {
                 header_style: CoverLetterHeader::Matched,

@@ -1,6 +1,6 @@
 /// GermanTechJobs — Next.js powered board for English-speaking tech roles in DE
 use super::super::http::{fetch_text, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -65,16 +65,24 @@ impl Scraper for GermanTechJobsScraper {
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
         let q = input.query.trim().to_lowercase();
-        let loc = input.location.as_ref().map(|l| l.trim().to_lowercase()).unwrap_or_default();
-        
+        let loc = input
+            .location
+            .as_ref()
+            .map(|l| l.trim().to_lowercase())
+            .unwrap_or_default();
+
         let res = fetch_text(
             "https://germantechjobs.de/",
             super::super::http::FetchOptions {
-                headers: Some(vec![("accept-language".to_string(), "en-US,en;q=0.9".to_string())]),
+                headers: Some(vec![(
+                    "accept-language".to_string(),
+                    "en-US,en;q=0.9".to_string(),
+                )]),
                 ..Default::default()
             },
             ctx.signal,
-        ).await?;
+        )
+        .await?;
 
         if res.status_code != 200 {
             return Ok(vec![]);
@@ -91,8 +99,10 @@ impl Scraper for GermanTechJobsScraper {
             return Ok(vec![]);
         }
 
-        let data: NextData = serde_json::from_str(raw).map_err(|e| anyhow::anyhow!("Failed to parse JSON: {}", e))?;
-        let jobs = data.props
+        let data: NextData = serde_json::from_str(raw)
+            .map_err(|e| anyhow::anyhow!("Failed to parse JSON: {}", e))?;
+        let jobs = data
+            .props
             .and_then(|p| p.page_props)
             .and_then(|pp| pp.jobs.or(pp.jobs_list))
             .unwrap_or_default();
@@ -105,16 +115,29 @@ impl Scraper for GermanTechJobsScraper {
         let mut out = vec![];
 
         for j in jobs {
-            let external_id = j._id.as_ref().or(j.id.as_ref()).or(j.slug.as_ref()).map(|s| s.as_str()).unwrap_or("");
+            let external_id = j
+                ._id
+                .as_ref()
+                .or(j.id.as_ref())
+                .or(j.slug.as_ref())
+                .map(|s| s.as_str())
+                .unwrap_or("");
             if external_id.is_empty() {
                 continue;
             }
 
-            let skills = j.tags.as_ref().or(j.skills.as_ref()).cloned().unwrap_or_default();
+            let skills = j
+                .tags
+                .as_ref()
+                .or(j.skills.as_ref())
+                .cloned()
+                .unwrap_or_default();
             let location = match j.location {
-                Some(serde_json::Value::Array(arr)) => {
-                    arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", ")
-                }
+                Some(serde_json::Value::Array(arr)) => arr
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
                 Some(serde_json::Value::String(s)) => s,
                 _ => "".to_string(),
             };
@@ -124,7 +147,8 @@ impl Scraper for GermanTechJobsScraper {
                 j.title.as_deref().unwrap_or(""),
                 j.company_name.as_deref().unwrap_or(""),
                 skills.join(" ")
-            ).to_lowercase();
+            )
+            .to_lowercase();
 
             if !q.is_empty() && !haystack.contains(&q) {
                 continue;
@@ -134,20 +158,23 @@ impl Scraper for GermanTechJobsScraper {
                 continue;
             }
 
-            let url = j.url.or_else(|| {
-                j.slug.as_ref().map(|slug| {
-                    format!("https://germantechjobs.de/job/{}", slug)
+            let url = j
+                .url
+                .or_else(|| {
+                    j.slug
+                        .as_ref()
+                        .map(|slug| format!("https://germantechjobs.de/job/{}", slug))
                 })
-            }).unwrap_or_else(|| {
-                format!("https://germantechjobs.de/job/{}", external_id)
-            });
+                .unwrap_or_else(|| format!("https://germantechjobs.de/job/{}", external_id));
 
-            let posted_at = j.published_at
+            let posted_at = j
+                .published_at
                 .as_ref()
                 .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
                 .map(|dt| dt.timestamp_millis())
                 .or_else(|| {
-                    j.created_at.as_ref()
+                    j.created_at
+                        .as_ref()
                         .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
                         .map(|dt| dt.timestamp_millis())
                 });
@@ -156,12 +183,24 @@ impl Scraper for GermanTechJobsScraper {
                 id: format!("{}:{}", self.id(), external_id),
                 external_id: Some(external_id.to_string()),
                 title: j.title.unwrap_or_default().trim().to_string(),
-                company: j.company_name.unwrap_or_else(|| "Unknown".to_string()).trim().to_string(),
-                location: if location.is_empty() { None } else { Some(location) },
+                company: j
+                    .company_name
+                    .unwrap_or_else(|| "Unknown".to_string())
+                    .trim()
+                    .to_string(),
+                location: if location.is_empty() {
+                    None
+                } else {
+                    Some(location)
+                },
                 url,
                 source: self.id().to_string(),
                 description: j.description.map(|d| strip_html(&d)),
-                requirements: if skills.is_empty() { None } else { Some(skills) },
+                requirements: if skills.is_empty() {
+                    None
+                } else {
+                    Some(skills)
+                },
                 posted_at,
                 captured_at: now,
                 extra: {

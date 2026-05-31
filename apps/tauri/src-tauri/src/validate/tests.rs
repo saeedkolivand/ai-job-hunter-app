@@ -20,7 +20,10 @@ fn in_order_sections_are_clean() {
     let e = expected(&["EXPERIENCE", "SKILLS", "EDUCATION"]);
     let extracted = "Jane Doe jane@example.com EXPERIENCE lots of work SKILLS rust EDUCATION uni";
     let issues = evaluate(&e, extracted, true, DocumentType::Resume);
-    assert!(!has_critical(&issues), "in-order two-column should be clean: {issues:?}");
+    assert!(
+        !has_critical(&issues),
+        "in-order two-column should be clean: {issues:?}"
+    );
     assert!(issues.is_empty(), "no issues expected: {issues:?}");
 }
 
@@ -31,7 +34,9 @@ fn interleaved_two_column_is_critical() {
     let extracted = "Jane Doe jane@example.com SKILLS rust EXPERIENCE lots of work EDUCATION uni";
     let issues = evaluate(&e, extracted, true, DocumentType::Resume);
     assert!(
-        issues.iter().any(|i| i.code == "section_order" && i.severity == Severity::Critical),
+        issues
+            .iter()
+            .any(|i| i.code == "section_order" && i.severity == Severity::Critical),
         "interleaved two-column must be critical: {issues:?}"
     );
 }
@@ -41,8 +46,13 @@ fn out_of_order_single_column_is_only_a_warning() {
     let e = expected(&["EXPERIENCE", "SKILLS", "EDUCATION"]);
     let extracted = "Jane Doe jane@example.com SKILLS rust EXPERIENCE lots of work EDUCATION uni";
     let issues = evaluate(&e, extracted, false, DocumentType::Resume);
-    assert!(!has_critical(&issues), "single-column order is non-blocking: {issues:?}");
-    assert!(issues.iter().any(|i| i.code == "section_order" && i.severity == Severity::Warning));
+    assert!(
+        !has_critical(&issues),
+        "single-column order is non-blocking: {issues:?}"
+    );
+    assert!(issues
+        .iter()
+        .any(|i| i.code == "section_order" && i.severity == Severity::Warning));
 }
 
 #[test]
@@ -59,7 +69,9 @@ fn no_extractable_text_is_critical() {
     let e = expected(&["EXPERIENCE", "SKILLS"]);
     let issues = evaluate(&e, "   ", true, DocumentType::Resume);
     assert!(
-        issues.iter().any(|i| i.code == "no_extractable_text" && i.severity == Severity::Critical),
+        issues
+            .iter()
+            .any(|i| i.code == "no_extractable_text" && i.severity == Severity::Critical),
         "empty extraction must be critical: {issues:?}"
     );
 }
@@ -128,8 +140,15 @@ fn single_column_pdf_is_not_blocked() {
         })
         .expect("pdf export");
     assert!(!bytes.is_empty());
-    assert!(report.ok, "a valid single-column resume must export: {:?}", report.issues);
-    assert!(report.fixed.is_empty(), "no auto-fix expected for single column");
+    assert!(
+        report.ok,
+        "a valid single-column resume must export: {:?}",
+        report.issues
+    );
+    assert!(
+        report.fixed.is_empty(),
+        "no auto-fix expected for single column"
+    );
 }
 
 #[test]
@@ -151,10 +170,17 @@ fn two_column_pdf_is_never_blocked() {
         })
         .expect("pdf export");
     assert!(!bytes.is_empty());
-    assert!(report.ok, "two-column export must auto-fix rather than block: {:?}", report.issues);
+    assert!(
+        report.ok,
+        "two-column export must auto-fix rather than block: {:?}",
+        report.issues
+    );
     // If extraction showed interleaving, the fix linearized to ATS single-column.
     if !report.fixed.is_empty() {
-        assert!(report.ats_mode, "a linearize fix was applied but ats_mode is false");
+        assert!(
+            report.ats_mode,
+            "a linearize fix was applied but ats_mode is false"
+        );
     }
 }
 

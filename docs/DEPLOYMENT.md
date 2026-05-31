@@ -66,12 +66,12 @@ Releases are **fully automated** via [semantic-release](https://semantic-release
 
 ### Commit → Version mapping
 
-| Commit prefix                                  | Version bump    | Changelog entry |
-| ---------------------------------------------- | --------------- | --------------- |
-| `feat:`                                        | minor (`1.x.0`) | Yes             |
-| `fix:`, `perf:`                                | patch (`1.0.x`) | Yes             |
-| `BREAKING CHANGE` footer                       | major (`x.0.0`) | Yes             |
-| `refactor:`, `docs:`, `chore:`, `ci:`, `test:` | none            | No              |
+| Commit prefix                                  | Version bump    | Release notes |
+| ---------------------------------------------- | --------------- | ------------- |
+| `feat:`                                        | minor (`1.x.0`) | Yes           |
+| `fix:`, `perf:`                                | patch (`1.0.x`) | Yes           |
+| `BREAKING CHANGE` footer                       | major (`x.0.0`) | Yes           |
+| `refactor:`, `docs:`, `chore:`, `ci:`, `test:` | none            | No            |
 
 ### Release configuration
 
@@ -83,7 +83,6 @@ Releases are **fully automated** via [semantic-release](https://semantic-release
   "plugins": [
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",
-    "@semantic-release/changelog",
     "@semantic-release/github"
   ]
 }

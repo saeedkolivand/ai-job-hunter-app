@@ -3,7 +3,7 @@
 /// Requires a prior login via `board_login::open_login("xing", …)` so that
 /// cookies are present in `<data_dir>/browser-state/xing/cookies.json`.
 use crate::scraping::board_login;
-use crate::scraping::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use crate::scraping::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use scraper::{Html, Selector};
 use std::collections::HashSet;
@@ -32,7 +32,7 @@ impl Scraper for XingScraper {
         let data_dir = crate::platform::config::data_dir();
         let client = board_login::build_authed_client(&data_dir, "xing")?;
 
-        let max_pages = input.pages.min(5).max(1) as usize;
+        let max_pages = input.pages.clamp(1, 5) as usize;
         let mut out = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
 
@@ -62,7 +62,10 @@ impl Scraper for XingScraper {
                 Ok(None) => break,
                 Err(e) if out.is_empty() => return Err(e),
                 Err(e) => {
-                    log::warn!("[xing] page {page} failed: {e}; returning {} collected", out.len());
+                    log::warn!(
+                        "[xing] page {page} failed: {e}; returning {} collected",
+                        out.len()
+                    );
                     break;
                 }
             };
@@ -99,8 +102,7 @@ impl Scraper for XingScraper {
 fn parse_xing_page(html: &str, seen: &mut HashSet<String>) -> Vec<JobPosting> {
     let doc = Html::parse_document(html);
     let card_sel =
-        Selector::parse("article[data-testid=\"job-search-result\"], article.job-teaser")
-            .unwrap();
+        Selector::parse("article[data-testid=\"job-search-result\"], article.job-teaser").unwrap();
     let link_sel = Selector::parse("a[href*=\"/jobs/\"]").unwrap();
     let title_sel = Selector::parse("h2, [data-testid=\"job-title\"]").unwrap();
     let company_sel =

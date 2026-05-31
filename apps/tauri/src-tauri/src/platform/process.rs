@@ -96,7 +96,10 @@ fn build_cli_path() -> Option<std::ffi::OsString> {
 /// installer, and the popular per-user toolchains.
 #[cfg(not(windows))]
 fn common_bin_dirs() -> Vec<String> {
-    let mut dirs = vec!["/opt/homebrew/bin".to_string(), "/usr/local/bin".to_string()];
+    let mut dirs = vec![
+        "/opt/homebrew/bin".to_string(),
+        "/usr/local/bin".to_string(),
+    ];
     if let Ok(home) = std::env::var("HOME") {
         for sub in [
             ".claude/local", // Claude Code native installer

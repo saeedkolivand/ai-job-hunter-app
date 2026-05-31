@@ -16,10 +16,31 @@ use crate::model::rich::url_label;
 
 /// Destinations whose contents are not body text.
 const SKIP_DESTINATIONS: &[&str] = &[
-    "fonttbl", "colortbl", "stylesheet", "info", "pict", "themedata", "colorschememapping",
-    "latentstyles", "listtable", "listoverridetable", "rsidtbl", "generator", "datastore",
-    "mmathPr", "wgrffmtfilter", "xmlnstbl", "header", "footer", "headerl", "headerr", "footerl",
-    "footerr", "headerf", "footerf", "fldinst",
+    "fonttbl",
+    "colortbl",
+    "stylesheet",
+    "info",
+    "pict",
+    "themedata",
+    "colorschememapping",
+    "latentstyles",
+    "listtable",
+    "listoverridetable",
+    "rsidtbl",
+    "generator",
+    "datastore",
+    "mmathPr",
+    "wgrffmtfilter",
+    "xmlnstbl",
+    "header",
+    "footer",
+    "headerl",
+    "headerr",
+    "footerl",
+    "footerr",
+    "headerf",
+    "footerf",
+    "fldinst",
 ];
 
 static HYPERLINK_RE: LazyLock<Regex> =
@@ -28,7 +49,9 @@ static HYPERLINK_RE: LazyLock<Regex> =
 pub fn extract(bytes: &[u8]) -> Result<ExtractedResume, ExtractionError> {
     let rtf = String::from_utf8_lossy(bytes);
     if !rtf.trim_start().starts_with("{\\rtf") {
-        return Err(ExtractionError::EncodingError("not a valid RTF document".to_string()));
+        return Err(ExtractionError::EncodingError(
+            "not a valid RTF document".to_string(),
+        ));
     }
 
     let text = rtf_to_text(&rtf);
@@ -162,7 +185,10 @@ fn rtf_to_text(rtf: &str) -> String {
                             k += 1;
                         }
                         let param = if k > ps {
-                            rtf[ps..k].parse::<i64>().ok().map(|v| if neg { -v } else { v })
+                            rtf[ps..k]
+                                .parse::<i64>()
+                                .ok()
+                                .map(|v| if neg { -v } else { v })
                         } else {
                             None
                         };
@@ -188,7 +214,11 @@ fn rtf_to_text(rtf: &str) -> String {
                             "uc" => uc_skip = param.unwrap_or(1).max(0) as usize,
                             "u" => {
                                 if let Some(code) = param {
-                                    let cp = if code < 0 { (code + 65536) as u32 } else { code as u32 };
+                                    let cp = if code < 0 {
+                                        (code + 65536) as u32
+                                    } else {
+                                        code as u32
+                                    };
                                     if let Some(ch) = char::from_u32(cp) {
                                         out.push(ch);
                                     }

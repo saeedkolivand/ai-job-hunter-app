@@ -1,3 +1,4 @@
+use parking_lot::Mutex;
 /// Background scheduler for autopilot records with a non-manual schedule.
 ///
 /// Spawns a single Tokio task on app startup. Every minute it checks which
@@ -11,7 +12,6 @@
 ///   twice_daily — run if last_run_at is > 12 h ago (or never ran)
 ///   daily       — run if last_run_at is > 24 h ago (or never ran)
 use std::sync::Arc;
-use parking_lot::Mutex;
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
@@ -52,10 +52,8 @@ fn is_due(ap: &Autopilot) -> bool {
 }
 
 pub fn start(app: AppHandle) {
-    let store: Arc<Mutex<AutopilotStore>> = app
-        .state::<Arc<Mutex<AutopilotStore>>>()
-        .inner()
-        .clone();
+    let store: Arc<Mutex<AutopilotStore>> =
+        app.state::<Arc<Mutex<AutopilotStore>>>().inner().clone();
 
     tauri::async_runtime::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(TICK_INTERVAL_SECS));

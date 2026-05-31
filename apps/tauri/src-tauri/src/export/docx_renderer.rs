@@ -1,9 +1,9 @@
-use docx_rs::*;
 use crate::export::{
     links::{split_urls, Span},
     templates::Template,
     types::{FontFamily, GenerationMeta, TextSegment},
 };
+use docx_rs::*;
 
 /// Convert points to twentieths of a point (DOCX unit).
 pub fn pt_to_dxa(pt: f32) -> usize {
@@ -118,15 +118,14 @@ pub fn render_name_line(
         .map(|s| s.as_str())
         .unwrap_or(text);
 
-    let mut para = Paragraph::new()
-        .add_run(
-            Run::new()
-                .add_text(name_text)
-                .size(pt_to_dxa(template.name_pt))
-                .bold()
-                .color(&colors.name)
-                .fonts(docx_run_fonts(template.fonts.name_family)),
-        );
+    let mut para = Paragraph::new().add_run(
+        Run::new()
+            .add_text(name_text)
+            .size(pt_to_dxa(template.name_pt))
+            .bold()
+            .color(&colors.name)
+            .fonts(docx_run_fonts(template.fonts.name_family)),
+    );
 
     if template.name_centered {
         para = para.align(AlignmentType::Center);
@@ -136,11 +135,7 @@ pub fn render_name_line(
 }
 
 /// Render contact line, converting URLs to clickable hyperlinks with friendly labels.
-pub fn render_contact_line(
-    text: &str,
-    template: &Template,
-    colors: &DocxColors,
-) -> Paragraph {
+pub fn render_contact_line(text: &str, template: &Template, colors: &DocxColors) -> Paragraph {
     let family = template.fonts.body_family;
     let spans = split_urls(text);
 
@@ -177,11 +172,7 @@ pub fn render_contact_line(
 }
 
 /// Render section header using template's heading_family font.
-pub fn render_section_header(
-    text: &str,
-    template: &Template,
-    colors: &DocxColors,
-) -> Paragraph {
+pub fn render_section_header(text: &str, template: &Template, colors: &DocxColors) -> Paragraph {
     let (header_text, effective_pt) = if template.section_small_caps {
         (text.to_uppercase(), template.section_pt * 0.85)
     } else if template.section_all_caps {
@@ -190,18 +181,21 @@ pub fn render_section_header(
         (text.to_string(), template.section_pt)
     };
 
-    let char_spacing = if template.section_small_caps || template.section_all_caps { 30 } else { 0 };
+    let char_spacing = if template.section_small_caps || template.section_all_caps {
+        30
+    } else {
+        0
+    };
 
-    let para = Paragraph::new()
-        .add_run(
-            Run::new()
-                .add_text(&header_text)
-                .size(pt_to_dxa(effective_pt))
-                .bold()
-                .color(&colors.section)
-                .fonts(docx_run_fonts(template.fonts.heading_family))
-                .character_spacing(char_spacing),
-        );
+    let para = Paragraph::new().add_run(
+        Run::new()
+            .add_text(&header_text)
+            .size(pt_to_dxa(effective_pt))
+            .bold()
+            .color(&colors.section)
+            .fonts(docx_run_fonts(template.fonts.heading_family))
+            .character_spacing(char_spacing),
+    );
 
     let _ = &template.section_style; // suppress unused warning
     para
@@ -230,15 +224,13 @@ pub fn render_job_entry(
     }
 
     if let Some(date) = date {
-        para = para
-            .add_run(Run::new().add_tab())
-            .add_run(
-                Run::new()
-                    .add_text(date)
-                    .size(pt_to_dxa(9.5))
-                    .color(&colors.date)
-                    .fonts(docx_run_fonts(family)),
-            );
+        para = para.add_run(Run::new().add_tab()).add_run(
+            Run::new()
+                .add_text(date)
+                .size(pt_to_dxa(9.5))
+                .color(&colors.date)
+                .fonts(docx_run_fonts(family)),
+        );
     }
 
     para = para.add_tab(
@@ -268,7 +260,11 @@ pub fn render_job_title(
     let mut para = Paragraph::new();
 
     for run in runs {
-        let r = if template.job_title_italic { run.italic() } else { run };
+        let r = if template.job_title_italic {
+            run.italic()
+        } else {
+            run
+        };
         para = para.add_run(r);
     }
 
@@ -290,13 +286,12 @@ pub fn render_bullet_line(
         family,
     );
 
-    let mut para = Paragraph::new()
-        .indent(
-            Some(inch_to_dxa(0.2)),
-            Some(SpecialIndentType::Hanging(inch_to_dxa(0.2))),
-            None,
-            None,
-        );
+    let mut para = Paragraph::new().indent(
+        Some(inch_to_dxa(0.2)),
+        Some(SpecialIndentType::Hanging(inch_to_dxa(0.2))),
+        None,
+        None,
+    );
 
     for run in runs {
         para = para.add_run(run);
@@ -351,7 +346,9 @@ pub fn render_cover_letter_paragraph(
 
     // spacing_after in twentieths-of-a-point (1pt = 20 dxa)
     let spacing_after = match template.cover_letter.paragraph_indent {
-        ParagraphIndent::BlockNoIndent => (template.cover_letter.paragraph_spacing_pt * 20.0) as u32,
+        ParagraphIndent::BlockNoIndent => {
+            (template.cover_letter.paragraph_spacing_pt * 20.0) as u32
+        }
         ParagraphIndent::FirstLine => 0,
     };
 
@@ -360,8 +357,7 @@ pub fn render_cover_letter_paragraph(
         ParagraphIndent::BlockNoIndent => None,
     };
 
-    let mut para = Paragraph::new()
-        .line_spacing(LineSpacing::new().after(spacing_after));
+    let mut para = Paragraph::new().line_spacing(LineSpacing::new().after(spacing_after));
 
     if let Some(indent) = first_line_indent {
         para = para.indent(Some(indent), None, None, None);
@@ -376,17 +372,16 @@ pub fn render_cover_letter_paragraph(
 
 /// Create bullet numbering definition.
 pub fn create_bullet_numbering() -> (AbstractNumbering, Numbering) {
-    let abstract_num = AbstractNumbering::new(1)
-        .add_level(
-            Level::new(
-                0,
-                Start::new(1),
-                NumberFormat::new("bullet"),
-                LevelText::new("•"),
-                LevelJc::new("left"),
-            )
-            .indent(Some(inch_to_dxa(0.2)), None, None, None),
-        );
+    let abstract_num = AbstractNumbering::new(1).add_level(
+        Level::new(
+            0,
+            Start::new(1),
+            NumberFormat::new("bullet"),
+            LevelText::new("•"),
+            LevelJc::new("left"),
+        )
+        .indent(Some(inch_to_dxa(0.2)), None, None, None),
+    );
 
     let num = Numbering::new(1, 1);
 

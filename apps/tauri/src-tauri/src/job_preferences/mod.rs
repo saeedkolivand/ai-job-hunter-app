@@ -1,7 +1,7 @@
+use parking_lot::Mutex;
 /// Job preferences store (SQLite-backed).
 /// Stores user's job search preferences: location, tech stack, seniority, salary, remote.
 use std::path::PathBuf;
-use parking_lot::Mutex;
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -66,7 +66,9 @@ impl JobPreferencesStore {
         let path = data_dir.join("job_preferences.db");
         let conn = Connection::open(&path).map_err(|e| e.to_string())?;
         run_migrations(&conn, Self::MIGRATIONS)?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     pub fn get(&self) -> JobPreferences {
@@ -77,8 +79,7 @@ impl JobPreferencesStore {
             [],
             |row| {
                 let tech_stack_json: Option<String> = row.get(5)?;
-                let tech_stack = tech_stack_json
-                    .and_then(|s| serde_json::from_str(&s).ok());
+                let tech_stack = tech_stack_json.and_then(|s| serde_json::from_str(&s).ok());
                 Ok(JobPreferences {
                     location: row.get(0)?,
                     remote: row.get(1)?,
@@ -89,7 +90,7 @@ impl JobPreferencesStore {
                 })
             },
         )
-        .unwrap_or_else(|_| JobPreferences {
+        .unwrap_or(JobPreferences {
             location: None,
             remote: None,
             seniority: None,
@@ -101,9 +102,11 @@ impl JobPreferencesStore {
 
     pub fn set(&self, prefs: &JobPreferences) -> AppResult<()> {
         let conn = self.conn.lock();
-        let tech_stack_json = prefs.tech_stack.as_ref()
+        let tech_stack_json = prefs
+            .tech_stack
+            .as_ref()
             .and_then(|ts| serde_json::to_string(ts).ok());
-        
+
         conn.execute(
             "UPDATE job_preferences 
              SET location = ?1, remote = ?2, seniority = ?3, 

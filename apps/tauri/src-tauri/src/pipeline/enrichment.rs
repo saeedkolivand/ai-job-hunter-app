@@ -17,7 +17,10 @@ pub struct EnrichmentResult {
 
 impl EnrichmentResult {
     pub fn empty() -> Self {
-        Self { key: String::new(), content: String::new() }
+        Self {
+            key: String::new(),
+            content: String::new(),
+        }
     }
 }
 

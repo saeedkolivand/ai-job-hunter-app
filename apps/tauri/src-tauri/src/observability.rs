@@ -28,7 +28,11 @@ impl Span {
         let target = target.into();
         let fields = fields.into();
         log::info!("[{target}] → {fields}");
-        Self { target, fields, start: Instant::now() }
+        Self {
+            target,
+            fields,
+            start: Instant::now(),
+        }
     }
 
     /// End the span: logs `[target] ← fields duration=<n>ms ok=<ok>`.

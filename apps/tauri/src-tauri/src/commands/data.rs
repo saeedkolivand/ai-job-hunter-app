@@ -104,7 +104,10 @@ pub async fn data_export(app: AppHandle) -> Value {
         FilePath::Url(u) => u.to_string(),
     };
 
-    match std::fs::write(&path_str, serde_json::to_string_pretty(&bundle).unwrap_or_default()) {
+    match std::fs::write(
+        &path_str,
+        serde_json::to_string_pretty(&bundle).unwrap_or_default(),
+    ) {
         Ok(()) => json!({ "success": true, "filePath": path_str }),
         Err(e) => json!({ "success": false, "error": e.to_string() }),
     }

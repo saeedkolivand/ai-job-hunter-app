@@ -5,4 +5,3 @@ pub mod linkedin;
 pub mod shared;
 pub mod workday;
 pub mod xing;
-

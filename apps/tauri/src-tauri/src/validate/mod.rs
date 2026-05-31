@@ -48,10 +48,18 @@ pub struct ExportIssue {
 
 impl ExportIssue {
     fn critical(code: &str, message: impl Into<String>) -> Self {
-        Self { severity: Severity::Critical, code: code.into(), message: message.into() }
+        Self {
+            severity: Severity::Critical,
+            code: code.into(),
+            message: message.into(),
+        }
     }
     fn warning(code: &str, message: impl Into<String>) -> Self {
-        Self { severity: Severity::Warning, code: code.into(), message: message.into() }
+        Self {
+            severity: Severity::Warning,
+            code: code.into(),
+            message: message.into(),
+        }
     }
 }
 
@@ -88,7 +96,12 @@ pub fn validate_and_fix(
     if matches!(request.format, ExportFormat::Txt) {
         return Ok((
             bytes,
-            ExportReport { ok: true, ats_mode: request.ats_mode, issues: vec![], fixed: vec![] },
+            ExportReport {
+                ok: true,
+                ats_mode: request.ats_mode,
+                issues: vec![],
+                fixed: vec![],
+            },
         ));
     }
 
@@ -110,7 +123,15 @@ pub fn validate_and_fix(
     }
 
     let ok = !has_critical(&issues);
-    Ok((bytes, ExportReport { ok, ats_mode: request.ats_mode, issues, fixed }))
+    Ok((
+        bytes,
+        ExportReport {
+            ok,
+            ats_mode: request.ats_mode,
+            issues,
+            fixed,
+        },
+    ))
 }
 
 /// Critical content expected to survive a round trip, parsed from the source.
@@ -135,7 +156,11 @@ fn expected_from_request(request: &ExportRequest) -> Expected {
     }
 
     // The candidate name from metadata overrides the parsed first line.
-    if let Some(meta_name) = request.meta.as_ref().and_then(|m| m.candidate_name.as_deref()) {
+    if let Some(meta_name) = request
+        .meta
+        .as_ref()
+        .and_then(|m| m.candidate_name.as_deref())
+    {
         if !meta_name.trim().is_empty() {
             name = Some(meta_name.to_string());
         }
@@ -143,7 +168,11 @@ fn expected_from_request(request: &ExportRequest) -> Expected {
 
     let email = EMAIL_RE.find(&request.text).map(|m| m.as_str().to_string());
 
-    Expected { name, email, headings }
+    Expected {
+        name,
+        email,
+        headings,
+    }
 }
 
 fn run_validators(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> {

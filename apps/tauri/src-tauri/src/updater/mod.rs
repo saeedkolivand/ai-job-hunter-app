@@ -1,3 +1,4 @@
+use parking_lot::Mutex;
 /// Auto-updater for the Tauri shell.
 ///
 /// ── UpdateStatus shapes (must match use-updater.ts) ──────────────────────────
@@ -21,7 +22,6 @@
 /// are never re-fetched, avoiding race conditions and unnecessary network calls.
 use std::sync::Arc;
 use std::time::Duration;
-use parking_lot::Mutex;
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -146,11 +146,13 @@ pub async fn updater_download(app: AppHandle) -> Value {
         Err(e) => {
             let msg = e.to_string();
             let user_msg = if msg.contains("invalid encoding") || msg.contains("minisign") {
-                "Download failed: Signature verification failed. The update file may be corrupted.".to_string()
+                "Download failed: Signature verification failed. The update file may be corrupted."
+                    .to_string()
             } else if msg.contains("404") || msg.contains("not found") {
                 "Download failed: Update file not found in GitHub releases.".to_string()
             } else if msg.contains("timeout") || msg.contains("timed out") {
-                "Download failed: Connection timed out. Please check your internet connection.".to_string()
+                "Download failed: Connection timed out. Please check your internet connection."
+                    .to_string()
             } else {
                 format!("Download failed: {}", msg)
             };
@@ -170,7 +172,9 @@ pub async fn updater_install(app: AppHandle) -> Value {
         match (guard.pending_update.clone(), guard.downloaded_bytes.take()) {
             (Some(u), Some(b)) => (u, b),
             (None, _) => return json!({ "error": "no pending update — call updater_check first" }),
-            (_, None) => return json!({ "error": "no downloaded update — call updater_download first" }),
+            (_, None) => {
+                return json!({ "error": "no downloaded update — call updater_download first" })
+            }
         }
     };
 

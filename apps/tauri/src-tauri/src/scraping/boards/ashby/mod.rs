@@ -2,7 +2,7 @@
 
 /// Ashby — public posting API
 use super::super::http::fetch_json;
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -75,7 +75,10 @@ impl Scraper for AshbyScraper {
         let mut out = vec![];
 
         for j in jobs {
-            let posted_at = j.published_at.and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok()).map(|dt| dt.timestamp_millis());
+            let posted_at = j
+                .published_at
+                .and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok())
+                .map(|dt| dt.timestamp_millis());
 
             let posting = JobPosting {
                 id: format!("{}:{}", self.id(), j.id),

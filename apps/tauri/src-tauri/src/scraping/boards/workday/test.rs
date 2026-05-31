@@ -4,14 +4,20 @@ use super::*;
 fn test_parse_target_colon_format() {
     let scraper = WorkdayScraper;
     let result = scraper.parse_target("tenant:site:wd1");
-    assert_eq!(result, Some(("tenant".to_string(), "site".to_string(), "wd1".to_string())));
+    assert_eq!(
+        result,
+        Some(("tenant".to_string(), "site".to_string(), "wd1".to_string()))
+    );
 }
 
 #[test]
 fn test_parse_target_colon_format_default_host() {
     let scraper = WorkdayScraper;
     let result = scraper.parse_target("tenant:site");
-    assert_eq!(result, Some(("tenant".to_string(), "site".to_string(), "wd1".to_string())));
+    assert_eq!(
+        result,
+        Some(("tenant".to_string(), "site".to_string(), "wd1".to_string()))
+    );
 }
 
 #[test]

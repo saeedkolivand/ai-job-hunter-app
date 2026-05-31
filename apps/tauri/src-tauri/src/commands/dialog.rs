@@ -21,7 +21,10 @@ pub async fn dialog_open_files(
     }
     if let Some(fs) = filters {
         for f in fs {
-            builder = builder.add_filter(&f.name, &f.extensions.iter().map(String::as_str).collect::<Vec<_>>());
+            builder = builder.add_filter(
+                &f.name,
+                &f.extensions.iter().map(String::as_str).collect::<Vec<_>>(),
+            );
         }
     }
 

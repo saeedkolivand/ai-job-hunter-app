@@ -20,4 +20,3 @@ pub struct Cookie {
     pub path: Option<String>,
     pub expires: Option<f64>,
 }
-

@@ -1,9 +1,9 @@
-use async_trait::async_trait;
-use crate::scraping::types::{JobPosting, Scraper, ScrapeContext};
-use crate::scraping::types::BoardSearchInput;
+use crate::scraping::linkedin::api_client::{JobsSearchParams, LinkedInJobsApiClient};
 use crate::scraping::linkedin::client::LinkedInHttpClient;
-use crate::scraping::linkedin::api_client::{LinkedInJobsApiClient, JobsSearchParams};
+use crate::scraping::types::BoardSearchInput;
+use crate::scraping::types::{JobPosting, ScrapeContext, Scraper};
 use anyhow::Result;
+use async_trait::async_trait;
 
 pub struct LinkedInScraper;
 
@@ -26,7 +26,10 @@ impl Scraper for LinkedInScraper {
         let session_data = self.load_session_data().await;
         if session_data.is_some() {
             // Touch the auth-status heartbeat so freshness countdown restarts.
-            crate::scraping::board_login::touch_session(&crate::platform::config::data_dir(), "linkedin");
+            crate::scraping::board_login::touch_session(
+                &crate::platform::config::data_dir(),
+                "linkedin",
+            );
         }
 
         // Create HTTP client with session
@@ -47,17 +50,11 @@ impl Scraper for LinkedInScraper {
             sort_by: input.sort_by.clone(),
         };
 
-        let max_pages = input.pages.min(10).max(1) as usize;
+        let max_pages = input.pages.clamp(1, 10) as usize;
         let signal = Some(&ctx.signal);
 
         api_client
-            .search_paginated(
-                &params,
-                max_pages,
-                signal,
-                ctx.on_progress,
-                ctx.on_item,
-            )
+            .search_paginated(&params, max_pages, signal, ctx.on_progress, ctx.on_item)
             .await
     }
 }

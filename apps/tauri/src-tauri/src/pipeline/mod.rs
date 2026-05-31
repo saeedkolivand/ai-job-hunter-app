@@ -50,14 +50,20 @@ impl Completer {
         let provider_str = provider
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| "No AI provider selected. Choose a provider in Settings → AI.".to_string())?;
+            .ok_or_else(|| {
+                "No AI provider selected. Choose a provider in Settings → AI.".to_string()
+            })?;
         let provider_id = ProviderId::parse(provider_str)?;
         let model = match model.map(str::trim).filter(|s| !s.is_empty()) {
             Some(m) => m.to_string(),
             // CLI agents may run with no explicit model — they fall back to the
             // tool's own configured default (validated leniently below).
             None if provider_id.is_cli_agent() => String::new(),
-            None => return Err("No model selected for the active provider.".to_string().into()),
+            None => {
+                return Err("No model selected for the active provider."
+                    .to_string()
+                    .into())
+            }
         };
         provider_id.validate_model(&model)?;
         Ok(Self {
@@ -104,7 +110,10 @@ pub struct Pipeline<C> {
 
 impl<C> Pipeline<C> {
     pub fn new(name: &'static str) -> Self {
-        Self { name, stages: Vec::new() }
+        Self {
+            name,
+            stages: Vec::new(),
+        }
     }
 
     pub fn add<S: Stage<C> + 'static>(mut self, stage: S) -> Self {

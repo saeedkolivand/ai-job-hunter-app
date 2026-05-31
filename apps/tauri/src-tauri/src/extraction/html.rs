@@ -24,8 +24,10 @@ static ANCHOR_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 /// Block-level boundaries that should become a line break.
 static BLOCK_BREAK_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?is)<\s*/?\s*(p|div|br|li|tr|h[1-6]|ul|ol|table|section|header|footer|article)\b[^>]*>")
-        .unwrap()
+    Regex::new(
+        r"(?is)<\s*/?\s*(p|div|br|li|tr|h[1-6]|ul|ol|table|section|header|footer|article)\b[^>]*>",
+    )
+    .unwrap()
 });
 
 static TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<[^>]+>").unwrap());
@@ -64,7 +66,9 @@ fn parse_html(html: &str) -> (String, Vec<Link>) {
     let mut links = Vec::new();
     let with_links = ANCHOR_RE.replace_all(&without_noise, |caps: &regex::Captures| {
         let url = caps[1].trim().to_string();
-        let label = decode_entities(&TAG_RE.replace_all(&caps[2], "")).trim().to_string();
+        let label = decode_entities(&TAG_RE.replace_all(&caps[2], ""))
+            .trim()
+            .to_string();
         let label = if label.is_empty() { url.clone() } else { label };
         if is_keepable_link(&url) {
             links.push(Link {
@@ -140,13 +144,14 @@ mod tests {
 
     #[test]
     fn converts_anchors_to_markdown_links() {
-        let html =
-            r#"<p>Contact: <a href="https://linkedin.com/in/jane">LinkedIn</a> | <a href="mailto:jane@example.com">Email</a></p>"#;
+        let html = r#"<p>Contact: <a href="https://linkedin.com/in/jane">LinkedIn</a> | <a href="mailto:jane@example.com">Email</a></p>"#;
         let (text, links) = parse_html(html);
         assert!(text.contains("[LinkedIn](https://linkedin.com/in/jane)"));
         assert!(text.contains("[Email](mailto:jane@example.com)"));
         assert_eq!(links.len(), 2);
-        assert!(links.iter().any(|l| l.url == "https://linkedin.com/in/jane"));
+        assert!(links
+            .iter()
+            .any(|l| l.url == "https://linkedin.com/in/jane"));
     }
 
     #[test]

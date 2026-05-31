@@ -22,7 +22,11 @@ fn page_size_dxa() -> (u32, u32) {
 
 // ─── Resume DOCX ──────────────────────────────────────────────────────────────
 
-fn generate_resume_docx(text: &str, meta: Option<&GenerationMeta>, template: &Template) -> Result<Docx> {
+fn generate_resume_docx(
+    text: &str,
+    meta: Option<&GenerationMeta>,
+    template: &Template,
+) -> Result<Docx> {
     let parsed = parse_resume(text);
     let mut docx = Docx::new();
 
@@ -55,9 +59,7 @@ fn generate_resume_docx(text: &str, meta: Option<&GenerationMeta>, template: &Te
 
             LineKind::Contact => {
                 let para = render_contact_line(&line.text, template, &colors);
-                docx = docx.add_paragraph(
-                    para.line_spacing(LineSpacing::new().after(120))
-                );
+                docx = docx.add_paragraph(para.line_spacing(LineSpacing::new().after(120)));
             }
 
             LineKind::SectionHeader => {
@@ -67,20 +69,23 @@ fn generate_resume_docx(text: &str, meta: Option<&GenerationMeta>, template: &Te
                         LineSpacing::new()
                             .before(pt_to_dxa(template.section_spacing_before) as u32)
                             .after(60),
-                    )
+                    ),
                 );
             }
 
             LineKind::JobEntry => {
-                let para = render_job_entry(&line.segments, line.right_text.as_deref(), template, &colors);
+                let para = render_job_entry(
+                    &line.segments,
+                    line.right_text.as_deref(),
+                    template,
+                    &colors,
+                );
                 docx = docx.add_paragraph(para);
             }
 
             LineKind::JobTitle => {
                 let para = render_job_title(&line.segments, template, &colors);
-                docx = docx.add_paragraph(
-                    para.line_spacing(LineSpacing::new().after(60))
-                );
+                docx = docx.add_paragraph(para.line_spacing(LineSpacing::new().after(60)));
             }
 
             LineKind::Bullet => {
@@ -181,8 +186,11 @@ fn generate_cover_letter_docx(
         }
 
         // Contact/address lines
-        if !header_done && (clean.contains('@') || clean.contains('|') || clean.contains('·')
-            || clean.chars().filter(|c| c.is_numeric()).count() > 5)
+        if !header_done
+            && (clean.contains('@')
+                || clean.contains('|')
+                || clean.contains('·')
+                || clean.chars().filter(|c| c.is_numeric()).count() > 5)
         {
             docx = docx.add_paragraph(
                 Paragraph::new()
@@ -263,12 +271,18 @@ fn generate_cover_letter_docx(
 fn extract_section<'a>(text: &'a str, start_marker: &str, end_marker: Option<&str>) -> &'a str {
     let start = if let Some(idx) = text.find(start_marker) {
         let after = &text[idx + start_marker.len()..];
-        after.find('\n').map(|i| idx + start_marker.len() + i + 1).unwrap_or(idx + start_marker.len())
+        after
+            .find('\n')
+            .map(|i| idx + start_marker.len() + i + 1)
+            .unwrap_or(idx + start_marker.len())
     } else {
         return text;
     };
     let end = if let Some(em) = end_marker {
-        text[start..].find(em).map(|i| start + i).unwrap_or(text.len())
+        text[start..]
+            .find(em)
+            .map(|i| start + i)
+            .unwrap_or(text.len())
     } else {
         text.len()
     };
@@ -294,8 +308,16 @@ pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
 
     let docx = match request.document_type {
         DocumentType::Resume => {
-            let text = extract_section(&request.text, "### CANDIDATE RESUME ###", Some("### JOB ADVERTISEMENT ###"));
-            let text = if text.is_empty() { request.text.as_str() } else { text };
+            let text = extract_section(
+                &request.text,
+                "### CANDIDATE RESUME ###",
+                Some("### JOB ADVERTISEMENT ###"),
+            );
+            let text = if text.is_empty() {
+                request.text.as_str()
+            } else {
+                text
+            };
             // Strangler-fig switch: the canonical model backend renders resume DOCX
             // by default; `--no-default-features` falls back to the legacy renderer.
             // Both arms compile via `cfg!` so neither path rots.
@@ -315,14 +337,20 @@ pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
         }
         DocumentType::CoverLetter => {
             let text = extract_section(&request.text, "### COMPLETE COVER LETTER ###", None);
-            let text = if text.is_empty() { request.text.as_str() } else { text };
+            let text = if text.is_empty() {
+                request.text.as_str()
+            } else {
+                text
+            };
             generate_cover_letter_docx(text, request.meta.as_ref(), &single_column())
                 .context("Failed to generate cover letter DOCX")?
         }
     };
 
     let mut buffer = std::io::Cursor::new(Vec::new());
-    docx.build().pack(&mut buffer).context("Failed to pack DOCX")?;
+    docx.build()
+        .pack(&mut buffer)
+        .context("Failed to pack DOCX")?;
     Ok(buffer.into_inner())
 }
 

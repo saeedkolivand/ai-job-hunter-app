@@ -44,9 +44,8 @@ pub async fn import(url: &str) -> AppResult<ProfileData> {
     let skills = extract_skills(&document, &ld);
 
     // If JSON-LD name is missing, try og:title
-    let name = name.or_else(|| {
-        extract_meta(&document, "og:title").map(|t| strip_linkedin_suffix(&t))
-    });
+    let name =
+        name.or_else(|| extract_meta(&document, "og:title").map(|t| strip_linkedin_suffix(&t)));
 
     if name.is_none() && experience.is_empty() && skills.is_empty() {
         return Err(AppError::Parse(
@@ -92,7 +91,9 @@ async fn fetch_page(url: &str) -> AppResult<String> {
         )));
     }
 
-    resp.text().await.map_err(|e| AppError::Network(format!("read body: {e}")))
+    resp.text()
+        .await
+        .map_err(|e| AppError::Network(format!("read body: {e}")))
 }
 
 // ── JSON-LD ───────────────────────────────────────────────────────────────────
@@ -158,11 +159,7 @@ fn extract_skills(doc: &Html, ld: &Option<Value>) -> Vec<String> {
     // Try JSON-LD knowsAbout array first
     if let Some(v) = ld {
         if let Some(arr) = v.get("knowsAbout").and_then(|a| a.as_array()) {
-            let skills: Vec<String> = arr
-                .iter()
-                .filter_map(|s| s.as_str())
-                .map(clean)
-                .collect();
+            let skills: Vec<String> = arr.iter().filter_map(|s| s.as_str()).map(clean).collect();
             if !skills.is_empty() {
                 return skills;
             }

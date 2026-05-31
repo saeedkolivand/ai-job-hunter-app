@@ -1,6 +1,6 @@
 /// We Work Remotely — public RSS feed
 use super::super::http::{fetch_text, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 
 pub struct WeWorkRemotelyScraper;
@@ -25,7 +25,12 @@ impl Scraper for WeWorkRemotelyScraper {
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
         let q = input.query.trim().to_lowercase();
-        let res = fetch_text("https://weworkremotely.com/remote-jobs.rss", Default::default(), ctx.signal).await?;
+        let res = fetch_text(
+            "https://weworkremotely.com/remote-jobs.rss",
+            Default::default(),
+            ctx.signal,
+        )
+        .await?;
 
         if res.status_code != 200 {
             return Ok(vec![]);
@@ -35,19 +40,27 @@ impl Scraper for WeWorkRemotelyScraper {
         let mut out = vec![];
 
         // Parse RSS XML
-        let channel = feed_rs::parser::parse(res.text.as_bytes()).map_err(|e| anyhow::anyhow!("Failed to parse RSS: {}", e))?;
+        let channel = feed_rs::parser::parse(res.text.as_bytes())
+            .map_err(|e| anyhow::anyhow!("Failed to parse RSS: {}", e))?;
 
         for entry in channel.entries {
             let title = entry.title.map(|t| t.content).unwrap_or_default();
-            let link = entry.links.first().map(|l| l.href.clone()).unwrap_or_default();
-            let guid = if entry.id.is_empty() { link.clone() } else { entry.id.clone() };
-            let description = entry.content.as_ref()
+            let link = entry
+                .links
+                .first()
+                .map(|l| l.href.clone())
+                .unwrap_or_default();
+            let guid = if entry.id.is_empty() {
+                link.clone()
+            } else {
+                entry.id.clone()
+            };
+            let description = entry
+                .content
+                .as_ref()
                 .and_then(|c| c.body.as_ref())
                 .map(|b| strip_html(b))
-                .or_else(|| {
-                    entry.summary.as_ref()
-                        .map(|s| strip_html(&s.content))
-                });
+                .or_else(|| entry.summary.as_ref().map(|s| strip_html(&s.content)));
             let pub_date = entry.published.map(|dt| dt.timestamp_millis());
 
             // WWR titles often look like "Company: Senior Engineer"

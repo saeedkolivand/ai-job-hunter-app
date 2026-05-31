@@ -1,36 +1,26 @@
 // Prevents a terminal window from appearing on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-#![allow(clippy::unnecessary_sort_by)]
-#![allow(clippy::unnecessary_lazy_evaluations)]
-#![allow(clippy::redundant_pattern_matching)]
-#![allow(clippy::collapsible_if)]
-#![allow(clippy::needless_borrows_for_generic_args)]
-#![allow(clippy::manual_clamp)]
-#![allow(clippy::redundant_closure)]
-#![allow(clippy::manual_next_back)]
-#![allow(clippy::large_enum_variant)]
-#![allow(clippy::regex_creation_in_loops)]
-#![allow(clippy::get_first)]
-#![allow(clippy::double_ended_iterator_last)]
-#![allow(clippy::wrong_self_convention)]
+// Async-safety: never hold a lock guard across an `.await` (the app uses
+// `parking_lot::Mutex` inside async command handlers). See docs/architecture-rules.md R14.
+#![deny(clippy::await_holding_lock)]
 
 mod ai_generations;
-mod autopilot;
-mod db;
-mod extraction;
-mod cover_letter;
-mod autopilot_helpers;
-mod autopilot_scheduler;
 mod apply_helpers;
 mod applying;
+mod autopilot;
+mod autopilot_helpers;
+mod autopilot_scheduler;
 mod browser;
 mod commands;
 mod conversations;
+mod cover_letter;
 mod credentials;
 mod data_store;
+mod db;
 mod documents;
 mod error;
 mod export;
+mod extraction;
 mod ipc_contracts;
 mod job_preferences;
 mod jobs;
@@ -92,7 +82,10 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
         .item(&PredefinedMenuItem::select_all(app, None)?)
         .build()?;
 
-    MenuBuilder::new(app).item(&app_submenu).item(&edit_submenu).build()
+    MenuBuilder::new(app)
+        .item(&app_submenu)
+        .item(&edit_submenu)
+        .build()
 }
 
 fn on_menu_event(app: &AppHandle, id: &str) {
@@ -112,7 +105,11 @@ fn on_menu_event(app: &AppHandle, id: &str) {
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItemBuilder::with_id("tray_show", "Show AI Job Hunter").build(app)?;
     let quit = MenuItemBuilder::with_id("tray_quit", "Quit").build(app)?;
-    let tray_menu = MenuBuilder::new(app).item(&show).separator().item(&quit).build()?;
+    let tray_menu = MenuBuilder::new(app)
+        .item(&show)
+        .separator()
+        .item(&quit)
+        .build()?;
 
     TrayIconBuilder::new()
         .menu(&tray_menu)
@@ -172,19 +169,31 @@ fn main() {
             // All path/env knowledge lives in `platform::config`.
             let data_dir = platform::config::resolve_and_export_data_dir(handle);
 
-            app.manage(std::sync::Arc::new(Mutex::new(AutopilotStore::new(&data_dir))));
+            app.manage(std::sync::Arc::new(Mutex::new(AutopilotStore::new(
+                &data_dir,
+            ))));
             app.manage(Mutex::new(CredentialStore::new(&data_dir)));
             match documents::DocumentStore::open(&data_dir) {
-                Ok(store) => { app.manage(store); }
+                Ok(store) => {
+                    app.manage(store);
+                }
                 Err(e) => log::warn!("[setup] document store failed to open (non-fatal): {e}"),
             }
             match ai_generations::AiGenerationStore::open(&data_dir) {
-                Ok(store) => { app.manage(store); }
-                Err(e) => log::warn!("[setup] ai generations store failed to open (non-fatal): {e}"),
+                Ok(store) => {
+                    app.manage(store);
+                }
+                Err(e) => {
+                    log::warn!("[setup] ai generations store failed to open (non-fatal): {e}")
+                }
             }
             match job_preferences::JobPreferencesStore::open(&data_dir) {
-                Ok(store) => { app.manage(store); }
-                Err(e) => log::warn!("[setup] job preferences store failed to open (non-fatal): {e}"),
+                Ok(store) => {
+                    app.manage(store);
+                }
+                Err(e) => {
+                    log::warn!("[setup] job preferences store failed to open (non-fatal): {e}")
+                }
             }
             app.manage(Mutex::new(JobTracker::open(&data_dir)));
             app.manage(Mutex::new(PostingsCache::default()));
@@ -197,7 +206,9 @@ fn main() {
                 log::warn!("[setup] conversation db failed to open (non-fatal)");
             }
             match pipeline::cache::KvCache::open(&data_dir) {
-                Ok(cache) => { app.manage(cache); }
+                Ok(cache) => {
+                    app.manage(cache);
+                }
                 Err(e) => log::warn!("[setup] pipeline cache failed to open (non-fatal): {e}"),
             }
 
@@ -267,7 +278,7 @@ fn main() {
             commands::ai::ai_reembed_all,
             commands::pipeline::generate_pipeline,
             // resume extraction
-            extraction::extract_resume,
+            commands::resume::extract_resume,
             // documents
             commands::documents::documents_list,
             commands::documents::documents_import,

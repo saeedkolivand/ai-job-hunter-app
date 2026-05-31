@@ -109,16 +109,19 @@ fn job_text_for(app: &AppHandle, job_id: &str) -> Option<String> {
 
 const STOPWORDS: &[&str] = &[
     "the", "and", "for", "with", "you", "your", "are", "our", "will", "have", "this", "that",
-    "from", "they", "their", "them", "all", "but", "not", "who", "can", "out", "use", "any",
-    "has", "had", "was", "were", "what", "when", "which", "while", "into", "over", "than", "such",
-    "able", "work", "role", "team", "join", "must", "etc", "via", "per",
+    "from", "they", "their", "them", "all", "but", "not", "who", "can", "out", "use", "any", "has",
+    "had", "was", "were", "what", "when", "which", "while", "into", "over", "than", "such", "able",
+    "work", "role", "team", "join", "must", "etc", "via", "per",
 ];
 
 /// Extract a deduplicated set of meaningful lowercase keywords (length > 3,
 /// excluding common stopwords).
 fn keywords(text: &str) -> HashSet<String> {
     text.split(|c: char| !c.is_alphanumeric() && c != '+' && c != '#')
-        .map(|w| w.trim_matches(|c: char| c == '+' || c == '#').to_lowercase())
+        .map(|w| {
+            w.trim_matches(|c: char| c == '+' || c == '#')
+                .to_lowercase()
+        })
         .filter(|w| w.len() > 3 && !STOPWORDS.contains(&w.as_str()))
         .collect()
 }

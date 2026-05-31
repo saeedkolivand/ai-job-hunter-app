@@ -52,10 +52,18 @@ impl CliAgentBackend for ClaudeCodeAgent {
             DISALLOWED_TOOLS.to_string(),
         ];
         push_model_system(&mut args, model, system);
-        CliInvocation { args, prompt: PromptDelivery::Stdin }
+        CliInvocation {
+            args,
+            prompt: PromptDelivery::Stdin,
+        }
     }
 
-    fn complete_invocation(&self, model: &str, system: &str, _effort: Option<&str>) -> CliInvocation {
+    fn complete_invocation(
+        &self,
+        model: &str,
+        system: &str,
+        _effort: Option<&str>,
+    ) -> CliInvocation {
         let mut args = vec![
             "-p".to_string(),
             "--output-format".to_string(),
@@ -64,7 +72,10 @@ impl CliAgentBackend for ClaudeCodeAgent {
             DISALLOWED_TOOLS.to_string(),
         ];
         push_model_system(&mut args, model, system);
-        CliInvocation { args, prompt: PromptDelivery::Stdin }
+        CliInvocation {
+            args,
+            prompt: PromptDelivery::Stdin,
+        }
     }
 
     fn parse_stream_line(&self, line: &str) -> Option<CliEvent> {
@@ -161,7 +172,10 @@ mod tests {
     #[test]
     fn result_success_is_done() {
         let line = r#"{"type":"result","subtype":"success","is_error":false,"result":"hi"}"#;
-        assert_eq!(ClaudeCodeAgent.parse_stream_line(line), Some(CliEvent::Done));
+        assert_eq!(
+            ClaudeCodeAgent.parse_stream_line(line),
+            Some(CliEvent::Done)
+        );
     }
 
     #[test]
@@ -180,8 +194,9 @@ mod tests {
             None
         );
         assert_eq!(
-            ClaudeCodeAgent
-                .parse_stream_line(r#"{"type":"assistant","message":{"content":[{"type":"text","text":"x"}]}}"#),
+            ClaudeCodeAgent.parse_stream_line(
+                r#"{"type":"assistant","message":{"content":[{"type":"text","text":"x"}]}}"#
+            ),
             None
         );
     }
@@ -202,7 +217,10 @@ mod tests {
     fn stream_invocation_includes_model_and_system() {
         let inv = ClaudeCodeAgent.stream_invocation("sonnet", "be brief", None);
         assert!(inv.args.iter().any(|a| a == "stream-json"));
-        assert!(inv.args.windows(2).any(|w| w[0] == "--model" && w[1] == "sonnet"));
+        assert!(inv
+            .args
+            .windows(2)
+            .any(|w| w[0] == "--model" && w[1] == "sonnet"));
         assert!(inv
             .args
             .windows(2)

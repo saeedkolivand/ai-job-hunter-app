@@ -88,7 +88,10 @@ impl InteractionStore {
     pub fn list(&mut self, filter_type: Option<&str>) -> Vec<InteractionRecord> {
         let all = self.load();
         match filter_type {
-            Some(t) => all.into_iter().filter(|r| r.interaction_type == t).collect(),
+            Some(t) => all
+                .into_iter()
+                .filter(|r| r.interaction_type == t)
+                .collect(),
             None => all,
         }
     }

@@ -1,7 +1,7 @@
 use lopdf::{Dictionary, Document, Object};
 use tracing::warn;
 
-use crate::extraction::types::{ExtractionError, ExtractedResume, Link, SourceFormat};
+use crate::extraction::types::{ExtractedResume, ExtractionError, Link, SourceFormat};
 
 pub fn extract(bytes: &[u8]) -> Result<ExtractedResume, ExtractionError> {
     let text = pdf_extract::extract_text_from_mem(bytes)

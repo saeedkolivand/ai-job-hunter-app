@@ -10,11 +10,15 @@ fn test_detect_system_chrome_env_var() {
 #[test]
 fn test_detect_system_chrome_nonexistent_env() {
     // Test with non-existent env var
-    unsafe { std::env::set_var("CHROME", "/nonexistent/path/chrome.exe"); }
+    unsafe {
+        std::env::set_var("CHROME", "/nonexistent/path/chrome.exe");
+    }
     let result = detect_system_chrome();
     // Should not return the non-existent path
     assert!(result.is_none() || result.unwrap().exists());
-    unsafe { std::env::remove_var("CHROME"); }
+    unsafe {
+        std::env::remove_var("CHROME");
+    }
 }
 
 #[cfg(target_os = "windows")]

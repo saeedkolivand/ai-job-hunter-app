@@ -1,8 +1,8 @@
-use serde_json::{json, Value};
-use parking_lot::Mutex;
-use tauri::{AppHandle, Manager};
 use crate::jobs::JobTracker;
 use crate::scraping::ScraperEngine;
+use parking_lot::Mutex;
+use serde_json::{json, Value};
+use tauri::{AppHandle, Manager};
 
 #[tauri::command]
 pub fn jobs_list(app: AppHandle) -> Value {
@@ -23,9 +23,7 @@ pub async fn jobs_cancel(app: AppHandle, job_id: String) -> Value {
     let engine = app.state::<std::sync::Arc<ScraperEngine>>();
     engine.cancel(&job_id).await;
 
-    app.state::<Mutex<JobTracker>>()
-        .lock()
-        .cancel(&job_id);
+    app.state::<Mutex<JobTracker>>().lock().cancel(&job_id);
     json!({ "success": true })
 }
 

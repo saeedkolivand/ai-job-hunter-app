@@ -176,12 +176,16 @@ fn test_default_is_authed_url_uas() {
 
 #[test]
 fn test_default_is_authed_url_with_query() {
-    assert!(default_is_authed_url("https://example.com/dashboard?param=value"));
+    assert!(default_is_authed_url(
+        "https://example.com/dashboard?param=value"
+    ));
 }
 
 #[test]
 fn test_default_is_authed_url_with_fragment() {
-    assert!(default_is_authed_url("https://example.com/dashboard#section"));
+    assert!(default_is_authed_url(
+        "https://example.com/dashboard#section"
+    ));
 }
 
 #[test]

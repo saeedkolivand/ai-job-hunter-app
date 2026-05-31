@@ -98,8 +98,8 @@ fn test_html_to_text_caps_blank_lines() {
 
 #[tokio::test]
 async fn test_fetch_text_success() {
-    use wiremock::{Mock, MockServer, ResponseTemplate};
     use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let mock_server = MockServer::start().await;
     let signal = tokio_util::sync::CancellationToken::new();
@@ -118,8 +118,8 @@ async fn test_fetch_text_success() {
 
 #[tokio::test]
 async fn test_fetch_text_404() {
-    use wiremock::{Mock, MockServer, ResponseTemplate};
     use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let mock_server = MockServer::start().await;
     let signal = tokio_util::sync::CancellationToken::new();
@@ -137,9 +137,9 @@ async fn test_fetch_text_404() {
 
 #[tokio::test]
 async fn test_fetch_json_success() {
-    use wiremock::{Mock, MockServer, ResponseTemplate};
-    use wiremock::matchers::method;
     use serde::Deserialize;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[derive(Deserialize)]
     struct TestResponse {
@@ -154,15 +154,16 @@ async fn test_fetch_json_success() {
         .mount(&mock_server)
         .await;
 
-    let result = fetch_json::<TestResponse>(&mock_server.uri(), FetchOptions::default(), signal).await;
+    let result =
+        fetch_json::<TestResponse>(&mock_server.uri(), FetchOptions::default(), signal).await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_some());
 }
 
 #[tokio::test]
 async fn test_fetch_json_invalid() {
-    use wiremock::{Mock, MockServer, ResponseTemplate};
     use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let mock_server = MockServer::start().await;
     let signal = tokio_util::sync::CancellationToken::new();
@@ -172,15 +173,16 @@ async fn test_fetch_json_invalid() {
         .mount(&mock_server)
         .await;
 
-    let result: anyhow::Result<Option<serde_json::Value>> = fetch_json(&mock_server.uri(), FetchOptions::default(), signal).await;
+    let result: anyhow::Result<Option<serde_json::Value>> =
+        fetch_json(&mock_server.uri(), FetchOptions::default(), signal).await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_none());
 }
 
 #[tokio::test]
 async fn test_fetch_text_cancelled() {
-    use wiremock::{Mock, MockServer, ResponseTemplate};
     use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let mock_server = MockServer::start().await;
     let signal = tokio_util::sync::CancellationToken::new();

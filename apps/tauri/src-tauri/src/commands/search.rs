@@ -98,7 +98,9 @@ async fn posting_embedding(
     id: &str,
     text: &str,
 ) -> Option<crate::commands::ai_provider::EmbeddingVector> {
-    let active = app.state::<crate::documents::DocumentStore>().embedding_config();
+    let active = app
+        .state::<crate::documents::DocumentStore>()
+        .embedding_config();
     {
         let cache = app.state::<Mutex<PostingsCache>>();
         let cached = cache.lock().get_embedding(id);
@@ -122,7 +124,10 @@ async fn posting_embedding(
 /// Lowercase tokens longer than 2 chars.
 fn keywords(text: &str) -> HashSet<String> {
     text.split(|c: char| !c.is_alphanumeric() && c != '+' && c != '#')
-        .map(|w| w.trim_matches(|c: char| c == '+' || c == '#').to_lowercase())
+        .map(|w| {
+            w.trim_matches(|c: char| c == '+' || c == '#')
+                .to_lowercase()
+        })
         .filter(|w| w.len() > 2)
         .collect()
 }

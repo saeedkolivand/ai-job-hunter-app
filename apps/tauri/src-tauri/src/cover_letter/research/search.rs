@@ -26,7 +26,11 @@ pub async fn brave_search(
         .header("Accept", "application/json")
         .header("Accept-Encoding", "gzip")
         .header("X-Subscription-Token", api_key)
-        .query(&[("q", query), ("count", &limit.to_string()), ("text_decorations", "0")])
+        .query(&[
+            ("q", query),
+            ("count", &limit.to_string()),
+            ("text_decorations", "0"),
+        ])
         .send()
         .await
         .map_err(|e| format!("brave search request: {e}"))?;
@@ -37,7 +41,10 @@ pub async fn brave_search(
         return Err(AppError::Network(format!("brave search {status}: {body}")));
     }
 
-    let body: Value = resp.json().await.map_err(|e| format!("brave search parse: {e}"))?;
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("brave search parse: {e}"))?;
 
     let results = body
         .get("web")

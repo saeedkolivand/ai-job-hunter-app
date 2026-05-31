@@ -37,7 +37,10 @@ impl Enricher for CompanyResearch {
         if let Some(cache) = app.try_state::<KvCache>() {
             if let Some(brief) = cache.get(CACHE_NS, &company, TTL_SECS) {
                 tracing::debug!(company = %company, "research: cache hit");
-                return EnrichmentResult { key: company, content: brief };
+                return EnrichmentResult {
+                    key: company,
+                    content: brief,
+                };
             }
         }
 
@@ -49,7 +52,10 @@ impl Enricher for CompanyResearch {
             Some(k) if !k.is_empty() => k,
             _ => {
                 tracing::debug!(company = %company, "research: no brave key, skipping search");
-                return EnrichmentResult { key: company, content: String::new() };
+                return EnrichmentResult {
+                    key: company,
+                    content: String::new(),
+                };
             }
         };
 
@@ -60,7 +66,10 @@ impl Enricher for CompanyResearch {
             Ok(c) => c,
             Err(e) => {
                 tracing::error!("research: http client build failed: {e}");
-                return EnrichmentResult { key: company, content: String::new() };
+                return EnrichmentResult {
+                    key: company,
+                    content: String::new(),
+                };
             }
         };
 
@@ -72,7 +81,10 @@ impl Enricher for CompanyResearch {
             Ok(r) => r,
             Err(e) => {
                 tracing::warn!("research: search failed for {company}: {e}");
-                return EnrichmentResult { key: company, content: String::new() };
+                return EnrichmentResult {
+                    key: company,
+                    content: String::new(),
+                };
             }
         };
 
@@ -80,7 +92,10 @@ impl Enricher for CompanyResearch {
             Ok(b) => b,
             Err(e) => {
                 tracing::warn!("research: brief synthesis failed for {company}: {e}");
-                return EnrichmentResult { key: company, content: String::new() };
+                return EnrichmentResult {
+                    key: company,
+                    content: String::new(),
+                };
             }
         };
 
@@ -90,6 +105,9 @@ impl Enricher for CompanyResearch {
             }
         }
 
-        EnrichmentResult { key: company, content: brief }
+        EnrichmentResult {
+            key: company,
+            content: brief,
+        }
     }
 }

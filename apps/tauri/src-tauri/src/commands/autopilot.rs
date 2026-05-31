@@ -48,13 +48,22 @@ pub fn autopilot_get(app: AppHandle, autopilot_id: String) -> Value {
 
 #[tauri::command]
 pub fn autopilot_create(app: AppHandle, req: AutopilotCreateRequest) -> Value {
-    let ap = store(&app).lock().create(serde_json::to_value(&req).unwrap_or_default());
+    let ap = store(&app)
+        .lock()
+        .create(serde_json::to_value(&req).unwrap_or_default());
     json!(ap)
 }
 
 #[tauri::command]
-pub fn autopilot_update(app: AppHandle, autopilot_id: String, req: AutopilotUpdateRequest) -> Value {
-    let ap = store(&app).lock().update(&autopilot_id, serde_json::to_value(&req).unwrap_or_default());
+pub fn autopilot_update(
+    app: AppHandle,
+    autopilot_id: String,
+    req: AutopilotUpdateRequest,
+) -> Value {
+    let ap = store(&app).lock().update(
+        &autopilot_id,
+        serde_json::to_value(&req).unwrap_or_default(),
+    );
     json!(ap)
 }
 
@@ -97,13 +106,20 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         );
     };
 
-    emit_step(&app, &job_id, "scrape_start", &format!("Scraping {}", target.board));
+    emit_step(
+        &app,
+        &job_id,
+        "scrape_start",
+        &format!("Scraping {}", target.board),
+    );
 
     let postings = match autopilot_scrape(&engine, &target, &job_id, &app).await {
         Ok(p) => p,
         Err(e) => {
             engine.unregister_token(&job_id).await;
-            app.state::<Mutex<crate::jobs::JobTracker>>().lock().fail(&job_id, e.to_string());
+            app.state::<Mutex<crate::jobs::JobTracker>>()
+                .lock()
+                .fail(&job_id, e.to_string());
             span.end(false);
             return json!({ "error": e, "jobId": job_id });
         }
@@ -118,7 +134,12 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         .collect();
 
     let total_found = postings.len();
-    emit_step(&app, &job_id, "scrape_done", &format!("Found {total_found} postings after filters"));
+    emit_step(
+        &app,
+        &job_id,
+        "scrape_done",
+        &format!("Found {total_found} postings after filters"),
+    );
 
     // Snapshot each posting, scored 0–100 against the resume when one is set, then
     // sorted highest-first. Applying is deferred (coming soon) — a run only fetches
@@ -155,7 +176,12 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     });
 
     let scored_count = found_jobs.iter().filter(|f| f.score.is_some()).count();
-    emit_step(&app, &job_id, "rank_done", &format!("Scored {scored_count} of {total_found} jobs"));
+    emit_step(
+        &app,
+        &job_id,
+        "rank_done",
+        &format!("Scored {scored_count} of {total_found} jobs"),
+    );
 
     store(&app)
         .lock()
@@ -167,7 +193,12 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         .lock()
         .complete(&job_id, json!({ "found": total_found, "applied": 0 }));
 
-    emit_step(&app, &job_id, "complete", &format!("Found {total_found}, saved for review"));
+    emit_step(
+        &app,
+        &job_id,
+        "complete",
+        &format!("Found {total_found}, saved for review"),
+    );
 
     span.end_with(&format!("found={total_found} applied=0"), true);
     json!({ "jobId": job_id, "found": total_found, "applied": 0 })
@@ -175,13 +206,17 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
 
 #[tauri::command]
 pub fn autopilot_pause(app: AppHandle, autopilot_id: String) -> Value {
-    store(&app).lock().set_status(&autopilot_id, AutopilotStatus::Paused);
+    store(&app)
+        .lock()
+        .set_status(&autopilot_id, AutopilotStatus::Paused);
     json!(null)
 }
 
 #[tauri::command]
 pub fn autopilot_resume(app: AppHandle, autopilot_id: String) -> Value {
-    store(&app).lock().set_status(&autopilot_id, AutopilotStatus::Active);
+    store(&app)
+        .lock()
+        .set_status(&autopilot_id, AutopilotStatus::Active);
     json!(null)
 }
 
@@ -195,7 +230,11 @@ fn matches_keyword_filters(posting: &JobPosting, filter: &AutopilotFilter) -> bo
     let haystack = format!(
         "{} {}",
         posting.title.to_lowercase(),
-        posting.description.as_deref().unwrap_or_default().to_lowercase()
+        posting
+            .description
+            .as_deref()
+            .unwrap_or_default()
+            .to_lowercase()
     );
 
     if let Some(excludes) = &filter.exclude_keywords {
@@ -292,28 +331,43 @@ mod tests {
     #[test]
     fn must_include_requires_all_keywords() {
         let p = posting("Rust Engineer", Some("We use Rust and Kubernetes"));
-        assert!(matches_keyword_filters(&p, &filter(Some(&["rust", "kubernetes"]), None)));
+        assert!(matches_keyword_filters(
+            &p,
+            &filter(Some(&["rust", "kubernetes"]), None)
+        ));
         // Missing one required keyword → dropped.
-        assert!(!matches_keyword_filters(&p, &filter(Some(&["rust", "elixir"]), None)));
+        assert!(!matches_keyword_filters(
+            &p,
+            &filter(Some(&["rust", "elixir"]), None)
+        ));
     }
 
     #[test]
     fn exclude_drops_on_any_match() {
         let p = posting("Senior PHP Developer", Some("Legacy PHP codebase"));
         assert!(!matches_keyword_filters(&p, &filter(None, Some(&["php"]))));
-        assert!(matches_keyword_filters(&p, &filter(None, Some(&["python"]))));
+        assert!(matches_keyword_filters(
+            &p,
+            &filter(None, Some(&["python"]))
+        ));
     }
 
     #[test]
     fn matching_is_case_insensitive_over_title_and_description() {
         let p = posting("Backend Role", Some("Postgres and REDIS"));
         // "Backend" only in title, "redis" only in description, different cases.
-        assert!(matches_keyword_filters(&p, &filter(Some(&["Backend", "redis"]), None)));
+        assert!(matches_keyword_filters(
+            &p,
+            &filter(Some(&["Backend", "redis"]), None)
+        ));
     }
 
     #[test]
     fn similarity_is_scaled_0_to_100() {
-        assert_eq!(simple_similarity("rust kubernetes docker", "rust kubernetes docker"), 100.0);
+        assert_eq!(
+            simple_similarity("rust kubernetes docker", "rust kubernetes docker"),
+            100.0
+        );
         assert_eq!(simple_similarity("rust", "java"), 0.0);
         let partial = simple_similarity("rust kubernetes", "rust docker");
         assert!(partial > 0.0 && partial < 100.0);

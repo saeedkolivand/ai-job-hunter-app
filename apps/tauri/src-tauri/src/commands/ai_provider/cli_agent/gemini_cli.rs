@@ -40,12 +40,28 @@ impl CliAgentBackend for GeminiCliAgent {
     }
 
     // Gemini CLI has no headless reasoning-effort flag — `effort` is ignored.
-    fn stream_invocation(&self, model: &str, _system: &str, _effort: Option<&str>) -> CliInvocation {
-        CliInvocation { args: prompt_args(model), prompt: PromptDelivery::Arg }
+    fn stream_invocation(
+        &self,
+        model: &str,
+        _system: &str,
+        _effort: Option<&str>,
+    ) -> CliInvocation {
+        CliInvocation {
+            args: prompt_args(model),
+            prompt: PromptDelivery::Arg,
+        }
     }
 
-    fn complete_invocation(&self, model: &str, _system: &str, _effort: Option<&str>) -> CliInvocation {
-        CliInvocation { args: prompt_args(model), prompt: PromptDelivery::Arg }
+    fn complete_invocation(
+        &self,
+        model: &str,
+        _system: &str,
+        _effort: Option<&str>,
+    ) -> CliInvocation {
+        CliInvocation {
+            args: prompt_args(model),
+            prompt: PromptDelivery::Arg,
+        }
     }
 
     fn parse_stream_line(&self, line: &str) -> Option<CliEvent> {
@@ -106,6 +122,9 @@ mod tests {
         let inv = GeminiCliAgent.stream_invocation("gemini-2.5-flash", "", None);
         assert_eq!(inv.prompt, PromptDelivery::Arg);
         assert_eq!(inv.args.last().unwrap(), "-p");
-        assert!(inv.args.windows(2).any(|w| w[0] == "-m" && w[1] == "gemini-2.5-flash"));
+        assert!(inv
+            .args
+            .windows(2)
+            .any(|w| w[0] == "-m" && w[1] == "gemini-2.5-flash"));
     }
 }

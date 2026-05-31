@@ -1,6 +1,6 @@
 #![allow(dead_code)]
-use super::session::LinkedInSessionData;
 use super::rate_limiter::RateLimiter;
+use super::session::LinkedInSessionData;
 use anyhow::Result;
 use flate2::read::GzDecoder;
 use reqwest::Client;
@@ -53,19 +53,13 @@ impl LinkedInHttpClient {
             "gzip, deflate, br".parse().unwrap(),
         );
         headers.insert("DNT", "1".parse().unwrap());
-        headers.insert(
-            reqwest::header::CONNECTION,
-            "keep-alive".parse().unwrap(),
-        );
+        headers.insert(reqwest::header::CONNECTION, "keep-alive".parse().unwrap());
         headers.insert("Upgrade-Insecure-Requests", "1".parse().unwrap());
         headers.insert("Sec-Fetch-Dest", "document".parse().unwrap());
         headers.insert("Sec-Fetch-Mode", "navigate".parse().unwrap());
         headers.insert("Sec-Fetch-Site", "none".parse().unwrap());
         headers.insert("Sec-Fetch-User", "?1".parse().unwrap());
-        headers.insert(
-            reqwest::header::CACHE_CONTROL,
-            "max-age=0".parse().unwrap(),
-        );
+        headers.insert(reqwest::header::CACHE_CONTROL, "max-age=0".parse().unwrap());
 
         // Add session cookies if available
         if let Some(ref session) = self.session_data {
@@ -74,10 +68,7 @@ impl LinkedInHttpClient {
             } else {
                 format!("li_at={}", session.li_at)
             };
-            headers.insert(
-                reqwest::header::COOKIE,
-                cookie_value.parse().unwrap(),
-            );
+            headers.insert(reqwest::header::COOKIE, cookie_value.parse().unwrap());
 
             // Add CSRF token if available
             if let Some(ref csrf) = session.csrf_token {
@@ -144,7 +135,10 @@ impl LinkedInHttpClient {
         let status = response.status();
 
         if !status.is_success() {
-            let _error_body = response.text().await.unwrap_or_else(|_| String::from("<no body>"));
+            let _error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| String::from("<no body>"));
             return Err(anyhow::anyhow!("HTTP {}: Request failed", status));
         }
 

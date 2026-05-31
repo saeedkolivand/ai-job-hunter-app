@@ -302,7 +302,12 @@ pub async fn embed_text(
     let model = if model.trim().is_empty() {
         client
             .default_embedding_model()
-            .ok_or_else(|| AppError::Config(format!("{} does not support embeddings.", provider.as_str())))?
+            .ok_or_else(|| {
+                AppError::Config(format!(
+                    "{} does not support embeddings.",
+                    provider.as_str()
+                ))
+            })?
             .to_string()
     } else {
         model.to_string()
@@ -385,11 +390,15 @@ impl RequestTrace {
             base_url,
             streaming
         );
-        Self { span: crate::observability::Span::begin("ai", fields) }
+        Self {
+            span: crate::observability::Span::begin("ai", fields),
+        }
     }
 
     pub fn end(&self, status: Option<u16>, ok: bool) {
-        let status = status.map(|s| s.to_string()).unwrap_or_else(|| "-".to_string());
+        let status = status
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "-".to_string());
         self.span.end_with(&format!("status={status}"), ok);
     }
 }
@@ -418,20 +427,30 @@ pub fn extract_error_message(body: &str) -> String {
 }
 
 /// Map a provider HTTP error to a clear, actionable message.
-pub fn friendly_api_error(provider: ProviderId, status: reqwest::StatusCode, body: &str) -> AppError {
+pub fn friendly_api_error(
+    provider: ProviderId,
+    status: reqwest::StatusCode,
+    body: &str,
+) -> AppError {
     let name = provider.as_str();
     let code = status.as_u16();
     let detail = extract_error_message(body);
     match code {
         401 | 403 => AppError::Config(format!("{name}: invalid or unauthorized API key.")),
         404 => AppError::Provider(format!("{name}: model or endpoint not found — {detail}")),
-        413 => AppError::Provider(format!("{name}: request too large — try a smaller resume/job ad.")),
-        422 => AppError::Provider(format!("{name}: this model rejected the request — {detail}")),
+        413 => AppError::Provider(format!(
+            "{name}: request too large — try a smaller resume/job ad."
+        )),
+        422 => AppError::Provider(format!(
+            "{name}: this model rejected the request — {detail}"
+        )),
         429 => AppError::Network(format!(
             "{name}: rate limit or quota reached. Wait a moment or check your plan."
         )),
         400 => AppError::Provider(format!("{name}: request rejected — {detail}")),
-        500..=599 => AppError::Network(format!("{name}: service error ({code}). Try again shortly.")),
+        500..=599 => AppError::Network(format!(
+            "{name}: service error ({code}). Try again shortly."
+        )),
         _ => AppError::Provider(format!("{name} {code}: {detail}")),
     }
 }
@@ -483,14 +502,18 @@ mod tests {
         // released models work with no code change.
         assert!(ProviderId::OpenAi.validate_model("gpt-6-ultra").is_ok());
         assert!(ProviderId::OpenAi.validate_model("o9-pro").is_ok());
-        assert!(ProviderId::Anthropic.validate_model("claude-5-haiku").is_ok());
+        assert!(ProviderId::Anthropic
+            .validate_model("claude-5-haiku")
+            .is_ok());
         assert!(ProviderId::Gemini.validate_model("gemini-9-ultra").is_ok());
     }
 
     #[test]
     fn validate_model_blocks_clear_cross_provider_mistakes() {
         assert!(ProviderId::Anthropic.validate_model("gpt-4o").is_err());
-        assert!(ProviderId::OpenAi.validate_model("claude-opus-4-7").is_err());
+        assert!(ProviderId::OpenAi
+            .validate_model("claude-opus-4-7")
+            .is_err());
         assert!(ProviderId::Gemini.validate_model("claude-3").is_err());
     }
 

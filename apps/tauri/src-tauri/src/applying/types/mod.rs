@@ -31,8 +31,12 @@ pub struct ApplyResult {
 pub trait Applier: Send + Sync {
     fn board_id(&self) -> &'static str;
     fn display_name(&self) -> &'static str;
-    
-    async fn apply(&self, posting_url: String, ctx: ApplyContext) -> Result<ApplyResult, anyhow::Error>;
+
+    async fn apply(
+        &self,
+        posting_url: String,
+        ctx: ApplyContext,
+    ) -> Result<ApplyResult, anyhow::Error>;
 }
 
 #[cfg(test)]

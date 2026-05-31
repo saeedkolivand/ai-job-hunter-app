@@ -1,5 +1,5 @@
-use super::*;
 use super::super::types::LineKind;
+use super::*;
 
 #[test]
 fn test_template_get_classic() {

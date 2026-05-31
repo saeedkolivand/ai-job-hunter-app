@@ -3,7 +3,7 @@
 /// Requires a prior login via `board_login::open_login("indeed", …)` so that
 /// cookies are present in `<data_dir>/browser-state/indeed/cookies.json`.
 use crate::scraping::board_login;
-use crate::scraping::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use crate::scraping::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use scraper::{Html, Selector};
 use std::collections::HashSet;
@@ -59,7 +59,7 @@ impl Scraper for IndeedScraper {
             .map(|(_, d)| *d)
             .unwrap_or("www.indeed.com");
 
-        let max_pages = input.pages.min(5).max(1) as usize;
+        let max_pages = input.pages.clamp(1, 5) as usize;
         let mut out = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
 
@@ -92,7 +92,10 @@ impl Scraper for IndeedScraper {
                 Err(e) if out.is_empty() => return Err(e),
                 // Later page failed → keep the pages we already have (and streamed).
                 Err(e) => {
-                    log::warn!("[indeed] page {page} failed: {e}; returning {} collected", out.len());
+                    log::warn!(
+                        "[indeed] page {page} failed: {e}; returning {} collected",
+                        out.len()
+                    );
                     break;
                 }
             };
@@ -134,7 +137,8 @@ fn parse_indeed_page(html: &str, domain: &str, seen: &mut HashSet<String>) -> Ve
     let title_sel = Selector::parse("h2.jobTitle span[title], h2.jobTitle a span").unwrap();
     let link_sel = Selector::parse("h2.jobTitle a").unwrap();
     let company_sel = Selector::parse("[data-testid=\"company-name\"], span.companyName").unwrap();
-    let location_sel = Selector::parse("[data-testid=\"text-location\"], div.companyLocation").unwrap();
+    let location_sel =
+        Selector::parse("[data-testid=\"text-location\"], div.companyLocation").unwrap();
     let snippet_sel = Selector::parse("div.job-snippet, div[data-testid=\"job-snippet\"]").unwrap();
 
     let now = chrono::Utc::now().timestamp_millis();

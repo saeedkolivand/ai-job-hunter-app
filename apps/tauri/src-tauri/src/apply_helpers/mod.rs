@@ -43,9 +43,10 @@ pub fn setup_apply_job(
     let job_id_clone = job_id.clone();
     let token_clone = cancel_token.clone();
     tokio::spawn(async move {
-        engine_clone.register_token(&job_id_clone, token_clone).await;
+        engine_clone
+            .register_token(&job_id_clone, token_clone)
+            .await;
     });
 
     (job_id, cancel_token)
 }
-

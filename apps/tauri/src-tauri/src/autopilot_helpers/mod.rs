@@ -1,6 +1,6 @@
-use crate::scraping::{BoardSearchInput, JobPosting, ScraperEngine};
 use crate::autopilot::AutopilotTarget;
 use crate::error::{AppError, AppResult};
+use crate::scraping::{BoardSearchInput, JobPosting, ScraperEngine};
 use tauri::{AppHandle, Emitter};
 use tokio_util::sync::CancellationToken;
 
@@ -38,7 +38,10 @@ pub async fn autopilot_scrape(
     let app_item = app.clone();
     let job_id_item = job_id.to_string();
     let on_item = Box::new(move |item: JobPosting| {
-        let _ = app_item.emit("scrape.item", serde_json::json!({ "jobId": job_id_item, "item": item }));
+        let _ = app_item.emit(
+            "scrape.item",
+            serde_json::json!({ "jobId": job_id_item, "item": item }),
+        );
     });
 
     let result = engine
@@ -95,4 +98,3 @@ pub async fn autopilot_rank(
 
     scored
 }
-

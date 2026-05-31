@@ -23,7 +23,7 @@ fn test_client_with_session() {
 fn test_update_session() {
     let mut client = LinkedInHttpClient::new(None);
     assert!(!client.has_session());
-    
+
     let session = LinkedInSessionData {
         cookies: vec![],
         li_at: "test_token".to_string(),

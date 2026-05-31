@@ -66,8 +66,6 @@ fn test_offer_struct_defaults() {
 
 #[test]
 fn test_resp_struct() {
-    let resp = Resp {
-        offers: vec![],
-    };
+    let resp = Resp { offers: vec![] };
     assert!(resp.offers.is_empty());
 }

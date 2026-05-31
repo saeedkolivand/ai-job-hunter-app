@@ -1,6 +1,6 @@
 /// Remotive — public JSON API
 use super::super::http::{fetch_json, strip_html};
-use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
+use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -49,7 +49,10 @@ impl Scraper for RemotiveScraper {
         let url = if q.is_empty() {
             "https://remotive.com/api/remote-jobs".to_string()
         } else {
-            format!("https://remotive.com/api/remote-jobs?search={}", urlencoding::encode(q))
+            format!(
+                "https://remotive.com/api/remote-jobs?search={}",
+                urlencoding::encode(q)
+            )
         };
 
         let data = fetch_json::<Resp>(&url, Default::default(), ctx.signal).await?;
@@ -73,7 +76,10 @@ impl Scraper for RemotiveScraper {
                 source: self.id().to_string(),
                 description: j.description.map(|d| strip_html(&d)),
                 requirements: j.tags,
-                posted_at: j.publication_date.and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok()).map(|dt| dt.timestamp_millis()),
+                posted_at: j
+                    .publication_date
+                    .and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok())
+                    .map(|dt| dt.timestamp_millis()),
                 captured_at: now,
                 extra: {
                     let mut map = std::collections::HashMap::new();

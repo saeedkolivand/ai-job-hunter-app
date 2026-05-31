@@ -33,16 +33,22 @@ impl ErrorHandler {
     /// Handle errors during application process
     pub fn handle_error(error: &anyhow::Error) -> ApplyError {
         let error_msg = error.to_string().to_lowercase();
-        
+
         if error_msg.contains("captcha") || error_msg.contains("verify you are human") {
             ApplyError::CaptchaDetected
         } else if error_msg.contains("rate limit") || error_msg.contains("too many requests") {
             ApplyError::RateLimited
-        } else if error_msg.contains("session") || error_msg.contains("unauthorized") || error_msg.contains("login") {
+        } else if error_msg.contains("session")
+            || error_msg.contains("unauthorized")
+            || error_msg.contains("login")
+        {
             ApplyError::SessionExpired
         } else if error_msg.contains("form") || error_msg.contains("not found") {
             ApplyError::FormNotFound
-        } else if error_msg.contains("network") || error_msg.contains("connection") || error_msg.contains("timeout") {
+        } else if error_msg.contains("network")
+            || error_msg.contains("connection")
+            || error_msg.contains("timeout")
+        {
             ApplyError::NetworkError(error_msg)
         } else {
             ApplyError::Unknown(error_msg)

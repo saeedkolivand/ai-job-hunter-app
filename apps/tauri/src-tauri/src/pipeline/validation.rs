@@ -21,7 +21,11 @@ pub struct ValidationReport {
 
 impl ValidationReport {
     pub fn skipped() -> Self {
-        Self { passed: true, verdict: "SKIPPED".to_string(), issues: Vec::new() }
+        Self {
+            passed: true,
+            verdict: "SKIPPED".to_string(),
+            issues: Vec::new(),
+        }
     }
 }
 

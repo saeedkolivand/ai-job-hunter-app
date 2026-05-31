@@ -15,7 +15,7 @@ fn test_get_default() {
     let temp_dir = TempDir::new().unwrap();
     let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
     let prefs = store.get();
-    
+
     assert_eq!(prefs.location, None);
     assert_eq!(prefs.remote, None);
     assert_eq!(prefs.seniority, None);
@@ -28,7 +28,7 @@ fn test_get_default() {
 fn test_set_and_get() {
     let temp_dir = TempDir::new().unwrap();
     let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
-    
+
     let prefs = JobPreferences {
         location: Some("Berlin".to_string()),
         remote: Some("hybrid".to_string()),
@@ -46,10 +46,10 @@ fn test_set_and_get() {
             },
         ]),
     };
-    
+
     store.set(&prefs).unwrap();
     let retrieved = store.get();
-    
+
     assert_eq!(retrieved.location, Some("Berlin".to_string()));
     assert_eq!(retrieved.remote, Some("hybrid".to_string()));
     assert_eq!(retrieved.seniority, Some("senior".to_string()));
@@ -62,24 +62,22 @@ fn test_set_and_get() {
 fn test_tech_stack_serialization() {
     let temp_dir = TempDir::new().unwrap();
     let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
-    
+
     let prefs = JobPreferences {
         location: None,
         remote: None,
         seniority: None,
         salary_min: None,
         salary_max: None,
-        tech_stack: Some(vec![
-            TechStackItem {
-                name: "TypeScript".to_string(),
-                category: "language".to_string(),
-            },
-        ]),
+        tech_stack: Some(vec![TechStackItem {
+            name: "TypeScript".to_string(),
+            category: "language".to_string(),
+        }]),
     };
-    
+
     store.set(&prefs).unwrap();
     let retrieved = store.get();
-    
+
     assert_eq!(retrieved.tech_stack.unwrap()[0].name, "TypeScript");
 }
 
@@ -87,7 +85,7 @@ fn test_tech_stack_serialization() {
 fn test_partial_update() {
     let temp_dir = TempDir::new().unwrap();
     let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
-    
+
     // Set initial preferences
     let prefs1 = JobPreferences {
         location: Some("Berlin".to_string()),
@@ -98,7 +96,7 @@ fn test_partial_update() {
         tech_stack: None,
     };
     store.set(&prefs1).unwrap();
-    
+
     // Update only some fields
     let prefs2 = JobPreferences {
         location: Some("Munich".to_string()),
@@ -109,7 +107,7 @@ fn test_partial_update() {
         tech_stack: None,
     };
     store.set(&prefs2).unwrap();
-    
+
     let retrieved = store.get();
     assert_eq!(retrieved.location, Some("Munich".to_string()));
     assert_eq!(retrieved.remote, Some("hybrid".to_string()));

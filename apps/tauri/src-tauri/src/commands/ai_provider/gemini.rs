@@ -46,7 +46,8 @@ impl AiProvider for GeminiClient {
     ) -> AppResult<()> {
         let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
         let endpoint_label = format!("/v1beta/models/{}:streamGenerateContent", req.model);
-        let trace = RequestTrace::begin(ProviderId::Gemini, &req.model, &endpoint_label, BASE, true);
+        let trace =
+            RequestTrace::begin(ProviderId::Gemini, &req.model, &endpoint_label, BASE, true);
 
         let temperature = req.temperature.unwrap_or(0.7);
         let system_text: String = req
@@ -61,7 +62,11 @@ impl AiProvider for GeminiClient {
             .iter()
             .filter(|m| m.role != "system")
             .map(|m| {
-                let role = if m.role == "assistant" { "model" } else { "user" };
+                let role = if m.role == "assistant" {
+                    "model"
+                } else {
+                    "user"
+                };
                 json!({ "role": role, "parts": [{ "text": m.content }] })
             })
             .collect();
@@ -169,7 +174,10 @@ impl AiProvider for GeminiClient {
             }
         }
 
-        let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+        let _ = app.emit(
+            "ai:stream",
+            json!({ "jobId": job_id, "delta": "", "done": true }),
+        );
         app.state::<Mutex<JobTracker>>()
             .lock()
             .complete(job_id, json!({ "done": true }));
@@ -312,7 +320,10 @@ impl AiProvider for GeminiClient {
         if resp.status().is_success() {
             Ok(())
         } else {
-            Err(AppError::Provider(format!("API returned status: {}", resp.status())))
+            Err(AppError::Provider(format!(
+                "API returned status: {}",
+                resp.status()
+            )))
         }
     }
 }

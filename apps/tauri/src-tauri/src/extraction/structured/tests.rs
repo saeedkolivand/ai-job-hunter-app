@@ -75,7 +75,10 @@ fn missing_email_flags_review_with_a_warning() {
 #[test]
 fn missing_name_scores_low_and_flags_review() {
     // Leading blank lines so the parser finds no name line.
-    let sr = structure(&extracted("\n\nEXPERIENCE\nAcme Corp\n- x\n\nSKILLS\n- Rust", vec![]));
+    let sr = structure(&extracted(
+        "\n\nEXPERIENCE\nAcme Corp\n- x\n\nSKILLS\n- Rust",
+        vec![],
+    ));
     assert_eq!(sr.name.confidence, Confidence::Low);
     assert!(sr.name.value.is_empty());
     assert!(sr.review_required);
@@ -106,8 +109,16 @@ fn build_model_reconciles_header_from_typed_fields() {
 
     assert_eq!(model.header.name, "Jane Doe");
     // Contact runs include the email and the link as a clickable run.
-    let contact_text: String = model.header.contact.iter().map(|r| r.text.as_str()).collect();
-    assert!(contact_text.contains("jane@example.com"), "got: {contact_text}");
+    let contact_text: String = model
+        .header
+        .contact
+        .iter()
+        .map(|r| r.text.as_str())
+        .collect();
+    assert!(
+        contact_text.contains("jane@example.com"),
+        "got: {contact_text}"
+    );
     assert!(
         model
             .header

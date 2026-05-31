@@ -78,7 +78,13 @@ impl AiProvider for OpenAiClient {
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
         let caps = self.capabilities(&req.model);
         let endpoint = format!("{}/chat/completions", self.base_url);
-        let trace = RequestTrace::begin(self.id, &req.model, "/chat/completions", &self.base_url, true);
+        let trace = RequestTrace::begin(
+            self.id,
+            &req.model,
+            "/chat/completions",
+            &self.base_url,
+            true,
+        );
 
         let messages = req
             .messages
@@ -110,7 +116,10 @@ impl AiProvider for OpenAiClient {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                return Err(AppError::Network(format!("{} unreachable: {e}", self.id.as_str())));
+                return Err(AppError::Network(format!(
+                    "{} unreachable: {e}",
+                    self.id.as_str()
+                )));
             }
         };
 
@@ -180,7 +189,10 @@ impl AiProvider for OpenAiClient {
             }
         }
 
-        let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+        let _ = app.emit(
+            "ai:stream",
+            json!({ "jobId": job_id, "delta": "", "done": true }),
+        );
         app.state::<Mutex<JobTracker>>()
             .lock()
             .complete(job_id, json!({ "done": true }));
@@ -224,7 +236,10 @@ impl AiProvider for OpenAiClient {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                return Err(AppError::Network(format!("{} unreachable: {e}", self.id.as_str())));
+                return Err(AppError::Network(format!(
+                    "{} unreachable: {e}",
+                    self.id.as_str()
+                )));
             }
         };
         let status = resp.status();
@@ -241,7 +256,9 @@ impl AiProvider for OpenAiClient {
             .and_then(|m| m.get("content"))
             .and_then(|t| t.as_str())
             .map(String::from)
-            .ok_or_else(|| AppError::Provider(format!("{}: unexpected response shape", self.id.as_str())))
+            .ok_or_else(|| {
+                AppError::Provider(format!("{}: unexpected response shape", self.id.as_str()))
+            })
     }
 
     async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
@@ -269,7 +286,12 @@ impl AiProvider for OpenAiClient {
             .and_then(|e| e.get("embedding"))
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().filter_map(|v| v.as_f64()).collect())
-            .ok_or_else(|| AppError::Provider(format!("{}: missing embedding in response", self.id.as_str())))
+            .ok_or_else(|| {
+                AppError::Provider(format!(
+                    "{}: missing embedding in response",
+                    self.id.as_str()
+                ))
+            })
     }
 
     fn default_embedding_model(&self) -> Option<&'static str> {
@@ -327,7 +349,10 @@ impl AiProvider for OpenAiClient {
         if resp.status().is_success() {
             Ok(())
         } else {
-            Err(AppError::Provider(format!("API returned status: {}", resp.status())))
+            Err(AppError::Provider(format!(
+                "API returned status: {}",
+                resp.status()
+            )))
         }
     }
 }
@@ -341,8 +366,17 @@ mod tests {
         for m in ["o1", "o1-mini", "o3", "o3-mini", "o4-mini", "o5", "o9-pro"] {
             assert!(is_reasoning_model(m), "{m} should be a reasoning model");
         }
-        for m in ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo", "omni", "chatgpt-4o"] {
-            assert!(!is_reasoning_model(m), "{m} should not be a reasoning model");
+        for m in [
+            "gpt-4o",
+            "gpt-4o-mini",
+            "gpt-3.5-turbo",
+            "omni",
+            "chatgpt-4o",
+        ] {
+            assert!(
+                !is_reasoning_model(m),
+                "{m} should not be a reasoning model"
+            );
         }
     }
 }

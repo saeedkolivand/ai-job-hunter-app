@@ -100,7 +100,10 @@ impl AiProvider for OllamaClient {
             trace.end(Some(status.as_u16()), false);
             return Err(AppError::Provider(format!("Ollama {status}: {body_text}")));
         }
-        let data: Value = resp.json().await.map_err(|e| format!("Ollama parse: {e}"))?;
+        let data: Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Ollama parse: {e}"))?;
         trace.end(Some(status.as_u16()), true);
         data.get("message")
             .and_then(|m| m.get("content"))
@@ -129,7 +132,10 @@ impl AiProvider for OllamaClient {
         let client = super::probe_client()?;
         match client.get(format!("{}/api/tags", host())).send().await {
             Ok(r) if r.status().is_success() => Ok(()),
-            Ok(r) => Err(AppError::Provider(format!("Ollama returned status: {}", r.status()))),
+            Ok(r) => Err(AppError::Provider(format!(
+                "Ollama returned status: {}",
+                r.status()
+            ))),
             Err(e) => Err(AppError::Network(format!("Ollama unreachable: {e}"))),
         }
     }
@@ -199,7 +205,10 @@ pub async fn embed_with(model: &str, text: &str) -> AppResult<Vec<f64>> {
         let body_text = resp.text().await.unwrap_or_default();
         return Err(AppError::Provider(format!("Ollama {status}: {body_text}")));
     }
-    let data: Value = resp.json().await.map_err(|e| format!("Ollama parse: {e}"))?;
+    let data: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Ollama parse: {e}"))?;
     let arr = data
         .get("embedding")
         .and_then(|e| e.as_array())
@@ -237,7 +246,10 @@ pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
                 Err(_) => continue,
             };
             let status = event.get("status").and_then(|s| s.as_str()).unwrap_or("");
-            let completed = event.get("completed").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let completed = event
+                .get("completed")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
             let total = event.get("total").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let digest = event.get("digest").and_then(|v| v.as_str()).unwrap_or("");
             let p = if total > 0.0 { completed / total } else { 0.0 };
@@ -252,17 +264,13 @@ pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
 
 // ── Chat streaming ──────────────────────────────────────────────────────────────
 
-async fn stream_chat(
-    app: &AppHandle,
-    job_id: &str,
-    req: &AiGenerateRequest,
-) -> AppResult<()> {
+async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> AppResult<()> {
     let base = host();
     let endpoint = format!("{base}/api/chat");
     let trace = RequestTrace::begin(ProviderId::Ollama, &req.model, "/api/chat", &base, true);
 
     let messages = serde_json::to_value(
-        &req.messages
+        req.messages
             .iter()
             .map(|m| json!({ "role": m.role, "content": m.content }))
             .collect::<Vec<_>>(),
@@ -353,7 +361,10 @@ async fn stream_chat(
         }
     }
 
-    let _ = app.emit("ai:stream", json!({ "jobId": job_id, "delta": "", "done": true }));
+    let _ = app.emit(
+        "ai:stream",
+        json!({ "jobId": job_id, "delta": "", "done": true }),
+    );
     app.state::<Mutex<JobTracker>>()
         .lock()
         .complete(job_id, json!({ "done": true }));
