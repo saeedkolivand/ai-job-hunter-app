@@ -401,6 +401,15 @@ fn generate_two_column_resume_pdf(
 
 // ─── Cover letter PDF ─────────────────────────────────────────────────────────
 
+/// Does this cleaned line look like a contact line (e.g. `City | a@b.com | +49 …
+/// | LinkedIn`)? Detected structurally — an email `@` or ≥2 `|` separators — so a
+/// contact line the generated letter still carries is dropped from the body
+/// regardless of what the profile-derived letterhead renders. Plain recipient
+/// lines ("JAKALA", "Hiring Team") and the date have neither, so they survive.
+fn looks_like_contact_line(clean: &str) -> bool {
+    clean.contains('@') || clean.matches('|').count() >= 2
+}
+
 fn generate_cover_letter_pdf(
     text: &str,
     meta: Option<&GenerationMeta>,
@@ -475,11 +484,19 @@ fn generate_cover_letter_pdf(
         let trimmed = raw_line.trim();
         let clean = strip_md(trimmed);
 
-        // Skip lines that were part of the header (name + contact)
+        // Skip lines that were part of the header (name + blank lines + the
+        // profile-derived contact line if it echoes here).
         if skip_lines < 3
             && (clean.is_empty() || trimmed == name_text || contact_line.contains(&clean))
         {
             skip_lines += 1;
+            continue;
+        }
+        // Drop any stray contact line the generated text still carries before the
+        // body proper — the letterhead already renders the contact from the
+        // profile, so leaving it here would duplicate it and leak raw markdown
+        // (e.g. `[Dribbble](…`) into the recipient block.
+        if !body_started && looks_like_contact_line(&clean) {
             continue;
         }
 

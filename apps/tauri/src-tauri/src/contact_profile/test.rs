@@ -121,6 +121,104 @@ fn empty_profile_is_detected() {
 }
 
 #[test]
+fn classify_keeps_other_personal_links_as_labelled_extras() {
+    // A personal profile + a known website host + two portfolio links + a job board.
+    let links = vec![
+        link("https://www.linkedin.com/in/zohreh/"),
+        link("https://solo.to/zohreh"), // website-host → Website slot
+        link("https://dribbble.com/zohreh-nejati"),
+        link("https://www.behance.net/zohreh"),
+        link("https://www.indeed.com/cmp/acme"), // job board → never surfaced
+    ];
+    let p = classify_contact_links(&links);
+    assert_eq!(p.website.as_deref(), Some("https://solo.to/zohreh"));
+
+    let labels: Vec<&str> = p.extra_links.iter().map(|e| e.label.as_str()).collect();
+    assert!(labels.contains(&"Dribbble"), "extras = {labels:?}");
+    assert!(labels.contains(&"Behance"), "extras = {labels:?}");
+    assert!(
+        !p.extra_links.iter().any(|e| e.url.contains("linkedin.com")
+            || e.url.contains("solo.to")
+            || e.url.contains("indeed.com")),
+        "named fields and job boards must not leak into extras: {:?}",
+        p.extra_links
+    );
+}
+
+#[test]
+fn fill_empty_from_completes_sparse_profile_without_clobbering() {
+    // The user edited only the website (their portfolio); an import suggests a full set.
+    let mut current = ContactProfile {
+        website: Some("https://my.portfolio/".into()),
+        ..Default::default()
+    };
+    let suggested = ContactProfile {
+        email: Some("z@example.com".into()),
+        phone: Some("+31 6 3478 0936".into()),
+        location: Some(LocalizedText {
+            default: "Zaandam, Netherlands".into(),
+            ..Default::default()
+        }),
+        linkedin: Some("https://www.linkedin.com/in/zohreh/".into()),
+        website: Some("https://drive.google.com/xyz".into()), // must NOT overwrite the user's
+        extra_links: vec![ContactLink {
+            label: "Dribbble".into(),
+            url: "https://dribbble.com/z".into(),
+        }],
+        ..Default::default()
+    };
+    current.fill_empty_from(&suggested);
+
+    assert_eq!(
+        current.website.as_deref(),
+        Some("https://my.portfolio/"),
+        "a user-set field is never overwritten"
+    );
+    assert_eq!(current.email.as_deref(), Some("z@example.com"));
+    assert_eq!(current.phone.as_deref(), Some("+31 6 3478 0936"));
+    assert_eq!(
+        current.location.as_ref().map(|l| l.default.as_str()),
+        Some("Zaandam, Netherlands")
+    );
+    assert_eq!(
+        current.linkedin.as_deref(),
+        Some("https://www.linkedin.com/in/zohreh/")
+    );
+    assert!(current.extra_links.iter().any(|e| e.label == "Dribbble"));
+}
+
+#[test]
+fn fill_empty_from_merges_extras_by_url_without_duplicates() {
+    let mut current = ContactProfile {
+        extra_links: vec![ContactLink {
+            label: "Dribbble".into(),
+            url: "https://dribbble.com/z".into(),
+        }],
+        ..Default::default()
+    };
+    let suggested = ContactProfile {
+        extra_links: vec![
+            ContactLink {
+                label: "Dribbble".into(),
+                url: "https://dribbble.com/z".into(), // duplicate by URL → skipped
+            },
+            ContactLink {
+                label: "Behance".into(),
+                url: "https://behance.net/z".into(),
+            },
+        ],
+        ..Default::default()
+    };
+    current.fill_empty_from(&suggested);
+    assert_eq!(
+        current.extra_links.len(),
+        2,
+        "duplicate deduped, new extra added: {:?}",
+        current.extra_links
+    );
+}
+
+#[test]
 fn localized_text_resolves_primary_subtag() {
     let loc = LocalizedText {
         default: "Netherlands".into(),

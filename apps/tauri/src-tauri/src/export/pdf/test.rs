@@ -241,6 +241,231 @@ fn centered_template_resume_pdf_is_generated() {
     );
 }
 
+#[test]
+fn looks_like_contact_line_detects_contact_lines_only() {
+    // Contact lines: an email, or ≥2 "|" separators.
+    assert!(looks_like_contact_line("Zaandam | a@b.com | +31 6 1234"));
+    assert!(looks_like_contact_line("a@b.com"));
+    assert!(looks_like_contact_line("City | Phone | LinkedIn"));
+    // Plain recipient / address lines are NOT contact lines.
+    assert!(!looks_like_contact_line("JAKALA"));
+    assert!(!looks_like_contact_line("Hiring Team"));
+    assert!(!looks_like_contact_line("123 Main St | Suite 5")); // single separator
+}
+
+#[test]
+fn cover_letter_does_not_leak_generated_contact_line() {
+    // The generated letter still carries its own contact line (with a markdown
+    // link). With a contact profile present, the letterhead renders the profile and
+    // the text's contact line must be dropped — never leaked into the body as raw
+    // markdown (the `[Dribbble](…` / truncation symptom).
+    let text = "Zohreh Nejati\n\
+        Zaandam, Netherlands | z@example.com | +31 6 3478 0936 | [LinkedIn](https://linkedin.com/in/z) | [Dribbble](https://dribbble.com/zohreh-nejati)\n\
+        31. Mai 2026\n\
+        JAKALA\n\
+        Hiring Team\n\
+        Sehr geehrtes JAKALA-Team,\n\n\
+        Mit mehr als vier Jahren Erfahrung bringe ich die Faehigkeit mit.\n\n\
+        Mit freundlichen Gruessen,\n\
+        Zohreh Nejati";
+    let request = ExportRequest {
+        text: text.to_string(),
+        format: super::super::types::ExportFormat::Pdf,
+        document_type: DocumentType::CoverLetter,
+        template_id: super::super::types::TemplateId::Modern,
+        meta: Some(GenerationMeta {
+            candidate_name: Some("Zohreh Nejati".to_string()),
+            job_title: None,
+            company_name: None,
+            target_language: None,
+        }),
+        ats_mode: false,
+        locale: None,
+        contact: Some(crate::contact_profile::ContactProfile {
+            website: Some("https://drive.google.com/file/d/abc/view".to_string()),
+            ..Default::default()
+        }),
+    };
+    let bytes = generate_pdf(&request).expect("cover letter pdf");
+    let rendered = pdf_extract::extract_text_from_mem(&bytes).expect("extract text");
+
+    assert!(
+        !rendered.contains("[Dribbble]") && !rendered.to_lowercase().contains("dribbble.com"),
+        "the generated contact line leaked into the body: {rendered}"
+    );
+    assert!(
+        rendered.contains("Sehr geehrtes") && rendered.contains("Mit mehr als"),
+        "the letter body must still render: {rendered}"
+    );
+}
+
+/// Collect every link annotation's `[x0,y0,x1,y1]` rect (points) + target URL.
+/// printpdf writes `/Annots` as **inline** dictionaries nested in the page object,
+/// so we recurse through arrays/dicts (not just top-level objects).
+fn collect_link_rects(doc: &lopdf::Document) -> Vec<([f32; 4], String)> {
+    fn from_dict(d: &lopdf::Dictionary, out: &mut Vec<([f32; 4], String)>) {
+        let is_link = d
+            .get(b"Subtype")
+            .ok()
+            .and_then(|v| v.as_name().ok())
+            .map(|n| n == b"Link")
+            .unwrap_or(false);
+        if is_link {
+            let rect = d
+                .get(b"Rect")
+                .ok()
+                .and_then(|v| v.as_array().ok())
+                .and_then(|a| {
+                    let v: Vec<f32> = a.iter().filter_map(|o| o.as_float().ok()).collect();
+                    <[f32; 4]>::try_from(v).ok()
+                });
+            let uri = match d.get(b"A") {
+                Ok(lopdf::Object::Dictionary(ad)) => ad
+                    .get(b"URI")
+                    .ok()
+                    .and_then(|u| u.as_str().ok())
+                    .map(|b| String::from_utf8_lossy(b).into_owned()),
+                _ => None,
+            };
+            if let (Some(rect), Some(uri)) = (rect, uri) {
+                out.push((rect, uri));
+            }
+        }
+        for (_, v) in d.iter() {
+            from_obj(v, out);
+        }
+    }
+    fn from_obj(o: &lopdf::Object, out: &mut Vec<([f32; 4], String)>) {
+        match o {
+            lopdf::Object::Dictionary(d) => from_dict(d, out),
+            lopdf::Object::Stream(s) => from_dict(&s.dict, out),
+            lopdf::Object::Array(a) => a.iter().for_each(|v| from_obj(v, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for obj in doc.objects.values() {
+        from_obj(obj, &mut out);
+    }
+    out
+}
+
+/// A long contact profile (many links) used to exercise header wrapping in both
+/// the résumé layout engine and the legacy cover-letter letterhead.
+fn long_contact_profile() -> crate::contact_profile::ContactProfile {
+    use crate::contact_profile::{ContactLink, ContactProfile, LocalizedText};
+    let extra = |label: &str, url: &str| ContactLink {
+        label: label.to_string(),
+        url: url.to_string(),
+    };
+    ContactProfile {
+        location: Some(LocalizedText {
+            default: "Zaandam, Netherlands".to_string(),
+            ..Default::default()
+        }),
+        email: Some("zohrehnejati0@gmail.com".to_string()),
+        phone: Some("+31 6 3478 0936".to_string()),
+        linkedin: Some("https://www.linkedin.com/in/zohreh-nejati/".to_string()),
+        website: Some("https://drive.google.com/file/d/abc/view".to_string()),
+        extra_links: vec![
+            extra("Dribbble", "https://dribbble.com/zohreh"),
+            extra("Behance", "https://behance.net/zohreh"),
+            extra("Portfolio", "https://zohreh.example/portfolio"),
+            extra("YouTube", "https://youtube.com/@zohreh"),
+            extra("Instagram", "https://instagram.com/zohreh"),
+            extra("Medium", "https://medium.com/@zohreh"),
+        ],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn resume_long_contact_line_wraps_within_page() {
+    let request = ExportRequest {
+        text: "Zohreh Nejati\n\nEXPERIENCE\nAcme  2020 - Present\nDesigner\n- Did work".to_string(),
+        format: super::super::types::ExportFormat::Pdf,
+        document_type: DocumentType::Resume,
+        template_id: super::super::types::TemplateId::Modern,
+        meta: Some(GenerationMeta {
+            candidate_name: Some("Zohreh Nejati".to_string()),
+            job_title: None,
+            company_name: None,
+            target_language: None,
+        }),
+        ats_mode: false,
+        locale: None,
+        contact: Some(long_contact_profile()),
+    };
+    let bytes = generate_pdf(&request).expect("resume pdf");
+    let doc = lopdf::Document::load_mem(&bytes).expect("parse pdf");
+    let rects = collect_link_rects(&doc);
+    assert!(!rects.is_empty(), "expected header link annotations");
+
+    let page_w_pt = request.page_geometry().width_mm * 2.834_645_7;
+    for (r, uri) in &rects {
+        let right = r[0].max(r[2]);
+        assert!(
+            right <= page_w_pt + 1.0,
+            "link {uri} overflows the page (right={right}, page={page_w_pt})"
+        );
+    }
+    // Wrapping happened → header links sit on ≥2 distinct baselines.
+    let mut ys: Vec<i64> = rects
+        .iter()
+        .map(|(r, _)| r[1].min(r[3]).round() as i64)
+        .collect();
+    ys.sort_unstable();
+    ys.dedup();
+    assert!(
+        ys.len() >= 2,
+        "a long contact line must wrap onto multiple lines, baselines={ys:?}"
+    );
+}
+
+#[test]
+fn cover_letter_long_contact_line_wraps_within_page() {
+    let request = ExportRequest {
+        text:
+            "Sehr geehrtes Team,\n\nIch bewerbe mich.\n\nMit freundlichen Gruessen,\nZohreh Nejati"
+                .to_string(),
+        format: super::super::types::ExportFormat::Pdf,
+        document_type: DocumentType::CoverLetter,
+        template_id: super::super::types::TemplateId::Modern,
+        meta: Some(GenerationMeta {
+            candidate_name: Some("Zohreh Nejati".to_string()),
+            job_title: None,
+            company_name: None,
+            target_language: None,
+        }),
+        ats_mode: false,
+        locale: None,
+        contact: Some(long_contact_profile()),
+    };
+    let bytes = generate_pdf(&request).expect("cover letter pdf");
+    let doc = lopdf::Document::load_mem(&bytes).expect("parse pdf");
+    let rects = collect_link_rects(&doc);
+    assert!(!rects.is_empty(), "expected letterhead link annotations");
+
+    let page_w_pt = request.page_geometry().width_mm * 2.834_645_7;
+    for (r, uri) in &rects {
+        let right = r[0].max(r[2]);
+        assert!(
+            right <= page_w_pt + 1.0,
+            "letterhead link {uri} overflows the page (right={right}, page={page_w_pt})"
+        );
+    }
+    let mut ys: Vec<i64> = rects
+        .iter()
+        .map(|(r, _)| r[1].min(r[3]).round() as i64)
+        .collect();
+    ys.sort_unstable();
+    ys.dedup();
+    assert!(
+        ys.len() >= 2,
+        "a long letterhead contact line must wrap, baselines={ys:?}"
+    );
+}
+
 /// Dev tool (ignored): write legacy-vs-engine sample resume PDFs for every
 /// template to `target/sample_pdfs/`, so the canonical layout engine's output
 /// can be eyeballed against the legacy renderer before the `layout_pdf` flag is
