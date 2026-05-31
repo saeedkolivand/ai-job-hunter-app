@@ -57,6 +57,8 @@
     "addApiKey": "API-Schlüssel in Einstellungen hinzufügen",
     "installCli": "CLI-Agent installieren",
     "pasteContent": "Lebenslauf & Stellenanzeige einfügen",
+    "addResume": "Lebenslauf hinzufügen",
+    "addJobAd": "Stellenanzeige hinzufügen",
     "idleTitle": "Lebenslauf-Analysator",
     "idleSubtitle": "Lebenslauf und Stellenanzeige einfügen für eine vollständige KI-Analyse",
     "features": {

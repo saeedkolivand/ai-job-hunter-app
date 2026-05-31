@@ -153,29 +153,80 @@ export function getLinkMap(resume: string): Record<string, string> {
   return map;
 }
 
+/** Escape a string for literal use inside a `RegExp`. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** The candidate's email — the reliable signal for "this is the contact line". */
+const CONTACT_EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
+const SECTION_HEADER_RE = /^(PROFESSIONAL|WORK|EDUCATION|SKILLS|SUMMARY)/i;
+/** An already-injected `[label](url)` span — protected so re-runs stay idempotent. */
+const MD_LINK_SPAN_RE = /\[[^\]]+\]\([^)]+\)/g;
+
 /**
- * Post-process AI-generated resume/cover-letter text.
- * Scans the first 6 lines for the contact line (contains |) and replaces
- * known profile labels (e.g. "LinkedIn") with [LinkedIn](https://...) so the
- * Rust renderer can attach the hyperlink without displaying the full URL.
+ * Post-process AI-generated resume/cover-letter text: replace the short profile
+ * labels the model wrote ("LinkedIn", "GitHub", "Website") in the contact line
+ * with `[label](https://…)` markdown, so the Rust renderer can attach the
+ * hyperlink without displaying the raw URL.
+ *
+ * The contact line is found by CONTENT, not position. Résumés keep it at the very
+ * top, but cover letters place it below a marker / name / salutation — past any
+ * fixed line window — which is why LinkedIn silently stayed unlinked in cover
+ * letters (a résumé header and a cover-letter header share this same function).
+ * We inject into every pipe-delimited line that carries the candidate's email
+ * (the contact-line signal, wherever the model put it); the email guard keeps
+ * body prose that merely mentions a platform untouched. Falls back to the first
+ * pipe line bearing a known label when no email line is present. Idempotent: the
+ * `(?<!\[)` lookbehind skips labels already inside a `[…]` link.
  */
 export function injectLinksIntoGeneratedText(
   text: string,
   linkMap: Record<string, string>
 ): string {
-  if (!Object.keys(linkMap).length) return text;
-  const lines = text.split('\n');
-  for (let i = 0; i < Math.min(lines.length, 6); i++) {
-    const line = lines[i] ?? '';
-    if (!line.includes('|')) continue;
-    if (/^(PROFESSIONAL|WORK|EDUCATION|SKILLS|SUMMARY)/i.test(line.trim())) continue;
-    let newLine = line;
-    for (const [label, url] of Object.entries(linkMap)) {
-      // Match the label at word boundaries; skip if already inside a markdown link [...]
-      const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      newLine = newLine.replace(new RegExp(`(?<!\\[)\\b${esc}\\b`, 'gi'), `[${label}](${url})`);
+  const labels = Object.keys(linkMap);
+  if (!labels.length) return text;
+
+  const injectPlain = (segment: string): string => {
+    let out = segment;
+    for (const label of labels) {
+      out = out.replace(
+        new RegExp(`\\b${escapeRegExp(label)}\\b`, 'gi'),
+        `[${label}](${linkMap[label]})`
+      );
     }
-    if (i < lines.length) lines[i] = newLine;
+    return out;
+  };
+  // Inject into the plain text only, stepping over any pre-existing `[label](url)`
+  // spans — so a label that recurs inside an already-injected URL (linkedin.com)
+  // is never re-wrapped and the pass is idempotent.
+  const inject = (line: string): string => {
+    let out = '';
+    let last = 0;
+    for (const m of line.matchAll(MD_LINK_SPAN_RE)) {
+      const idx = m.index ?? 0;
+      out += injectPlain(line.slice(last, idx)) + m[0];
+      last = idx + m[0].length;
+    }
+    return out + injectPlain(line.slice(last));
+  };
+  const hasLabel = (line: string): boolean =>
+    labels.some((l) => new RegExp(`(?<!\\[)\\b${escapeRegExp(l)}\\b`, 'i').test(line));
+  const isContactCandidate = (line: string): boolean =>
+    line.includes('|') && !SECTION_HEADER_RE.test(line.trim());
+
+  const lines = text.split('\n');
+  let injected = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    if (isContactCandidate(line) && CONTACT_EMAIL_RE.test(line)) {
+      lines[i] = inject(line);
+      injected = true;
+    }
+  }
+  if (!injected) {
+    const i = lines.findIndex((l) => isContactCandidate(l) && hasLabel(l));
+    if (i !== -1) lines[i] = inject(lines[i] ?? '');
   }
   return lines.join('\n');
 }

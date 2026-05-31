@@ -57,6 +57,8 @@
     "addApiKey": "Add API key in Settings",
     "installCli": "Install the CLI agent",
     "pasteContent": "Paste resume & job ad",
+    "addResume": "Add your résumé",
+    "addJobAd": "Add the job ad",
     "idleTitle": "Resume Analyser",
     "idleSubtitle": "Paste your resume and a job ad to get a full AI analysis",
     "features": {
