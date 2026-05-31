@@ -6,6 +6,9 @@ use crate::measure::{FontMetrics, MeasureText};
 use anyhow::Context;
 use printpdf::*;
 
+mod contact_layout;
+pub(crate) use contact_layout::{contact_link_rects, wrap_contact_markdown};
+
 // ─── Font loading ─────────────────────────────────────────────────────────────
 
 /// Per-family font IDs (regular + bold + optional italic).
@@ -238,46 +241,6 @@ fn text_advance_mm(text: &str, family: FontFamily, bold: bool, size_pt: f32) -> 
 /// Left x (mm) that horizontally centers `advance_mm`-wide content on the page.
 fn centered_x(page_width: f32, advance_mm: f32) -> f32 {
     (page_width - advance_mm) / 2.0
-}
-
-/// A clickable link rectangle in page millimetres (x measured from the page left).
-pub(crate) struct ContactLinkRect {
-    pub x_left_mm: f32,
-    pub width_mm: f32,
-    pub url: String,
-}
-
-/// Exact clickable rects for every link in a contact line. Walks the line's spans
-/// accumulating the *visible* text, so each link's left edge is the real advance of
-/// everything drawn before it and its width is the real advance of the label —
-/// overlapping the glyphs the PDF engine actually paints. Replaces the per-character
-/// `× 0.52` estimate, which also mis-measured multi-byte text (it counted bytes).
-pub(crate) fn contact_link_rects(
-    text: &str,
-    x_start_mm: f32,
-    family: FontFamily,
-    font_size: f32,
-    m: &dyn MeasureText,
-) -> Vec<ContactLinkRect> {
-    use crate::export::links::{split_urls, Span};
-    let mut out = Vec::new();
-    let mut visible = String::new();
-    for span in split_urls(text) {
-        match span {
-            Span::Text(t) => visible.push_str(&t),
-            Span::Link { label, url } => {
-                let x_left_mm = x_start_mm + m.advance_mm(&visible, family, false, font_size);
-                let width_mm = m.advance_mm(&label, family, false, font_size);
-                out.push(ContactLinkRect {
-                    x_left_mm,
-                    width_mm,
-                    url,
-                });
-                visible.push_str(&label);
-            }
-        }
-    }
-    out
 }
 
 /// Build a clickable link annotation `Op` from a rectangle given in **top-down**
@@ -668,34 +631,47 @@ pub fn render_letterhead(
 
             if !contact_line.is_empty() {
                 let font_size = 9.0_f32;
-                let visible_contact = crate::export::links::display_text(contact_line);
-                let contact_x = if template.name_centered {
-                    centered_x(
-                        layout.page_width,
-                        text_advance_mm(
-                            &visible_contact,
-                            template.fonts.body_family,
-                            false,
-                            font_size,
-                        ),
-                    )
-                } else {
-                    layout.margin_left
-                };
-                render_contact_text_with_links(
-                    contact_line,
-                    ContactSpanCtx {
-                        x_start: contact_x,
-                        y: current_y,
-                        font_size,
-                        page_height: layout.page_height,
-                        reg_id: body_reg,
-                        fill_color: colors.date.clone(),
-                        family: template.fonts.body_family,
-                    },
-                    &mut ops,
+                let fam = template.fonts.body_family;
+                let content_w = layout.page_width - layout.margin_left - layout.margin_right;
+                let full_w = text_advance_mm(
+                    &crate::export::links::display_text(contact_line),
+                    fam,
+                    false,
+                    font_size,
                 );
-                current_y -= pt_to_mm(font_size) * 1.2;
+                // Fits on one line → unchanged single-line path (preserves golden
+                // parity). Otherwise wrap on separators so a long contact line stacks
+                // instead of overflowing the page margins, centring each line.
+                let lines = if full_w <= content_w {
+                    vec![contact_line.to_string()]
+                } else {
+                    wrap_contact_markdown(contact_line, content_w, fam, font_size)
+                };
+                for line in &lines {
+                    let visible = crate::export::links::display_text(line);
+                    let contact_x = if template.name_centered {
+                        centered_x(
+                            layout.page_width,
+                            text_advance_mm(&visible, fam, false, font_size),
+                        )
+                    } else {
+                        layout.margin_left
+                    };
+                    render_contact_text_with_links(
+                        line,
+                        ContactSpanCtx {
+                            x_start: contact_x,
+                            y: current_y,
+                            font_size,
+                            page_height: layout.page_height,
+                            reg_id: body_reg,
+                            fill_color: colors.date.clone(),
+                            family: fam,
+                        },
+                        &mut ops,
+                    );
+                    current_y -= pt_to_mm(font_size) * 1.2;
+                }
             }
 
             // Hairline rule — thickness from template (e.g. 0.25 pt for Editorial Serif)

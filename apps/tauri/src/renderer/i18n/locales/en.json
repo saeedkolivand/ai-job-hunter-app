@@ -253,7 +253,15 @@
       "github": "GitHub",
       "githubPlaceholder": "https://github.com/your-handle",
       "website": "Website",
-      "websitePlaceholder": "https://your-site.com"
+      "websitePlaceholder": "https://your-site.com",
+      "extraLinks": "Other links",
+      "extraLinksHint": "Portfolio, Dribbble, Behance, or any other personal link. Imported résumés fill these in automatically.",
+      "addLink": "Add link",
+      "linkLabel": "Label",
+      "linkLabelPlaceholder": "Dribbble",
+      "linkUrl": "URL",
+      "linkUrlPlaceholder": "https://…",
+      "removeLink": "Remove link"
     },
     "developer": {
       "title": "Developer Tools",
@@ -419,6 +427,12 @@
       "changelogError": "Couldn't load the changelog.",
       "changelogEmpty": "No releases found."
     }
+  },
+  "contactPrompt": {
+    "title": "Confirm your contact details",
+    "description": "These appear in the header of every résumé and cover letter you generate. We filled in what we found — please review and complete them. You can change them anytime in Settings.",
+    "continue": "Save & continue",
+    "cancel": "Cancel"
   },
   "aiGenerate": {
     "title": "AI Generate",

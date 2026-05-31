@@ -86,6 +86,10 @@ export const PreferencesSchema = z.object({
   // Onboarding
   onboardingCompleted: z.boolean().default(false),
 
+  // One-time nudge to review/complete the contact profile before the first
+  // résumé / cover-letter generation.
+  contactPromptSeen: z.boolean().default(false),
+
   // Metadata
   lastUpdated: z.string().optional(),
 });

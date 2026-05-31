@@ -61,7 +61,7 @@ dependencies = [
 
 [[package]]
 name = "ajh-tauri"
-version = "0.33.2"
+version = "0.34.1"
 dependencies = [
  "anyhow",
  "apple-native-keyring-store",

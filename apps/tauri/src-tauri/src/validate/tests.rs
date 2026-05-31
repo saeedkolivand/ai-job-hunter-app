@@ -185,6 +185,97 @@ fn two_column_pdf_is_never_blocked() {
     }
 }
 
+// ─── header link annotations (printpdf inline-dict /Annots) ───────────────────
+
+/// Read every link annotation our renderer wrote, the way the header checks do.
+fn rendered_links(bytes: &[u8]) -> Vec<PdfLink> {
+    let doc = lopdf::Document::load_mem(bytes).expect("load pdf");
+    doc.get_pages()
+        .into_values()
+        .enumerate()
+        .flat_map(|(idx, page_id)| page_link_annotations(&doc, page_id, idx))
+        .collect()
+}
+
+fn profile_with(website: &str) -> crate::contact_profile::ContactProfile {
+    crate::contact_profile::ContactProfile {
+        website: Some(website.to_string()),
+        ..Default::default()
+    }
+}
+
+/// Regression: lopdf's `get_page_annotations` only resolves *reference* entries,
+/// but printpdf writes `/Annots` as inline dictionaries — so the header-link
+/// reader used to see zero links. It must now read our own renderer's output.
+#[test]
+fn reads_inline_dict_link_annotations_from_our_renderer() {
+    let mut request = req(ExportFormat::Pdf, TemplateId::Modern, false);
+    request.contact = Some(profile_with("https://example.dev/portfolio"));
+    let bytes = crate::export::pdf::generate_pdf(&request).expect("pdf");
+
+    let links = rendered_links(&bytes);
+    assert!(
+        links
+            .iter()
+            .any(|l| l.url == "https://example.dev/portfolio" && l.page == 0),
+        "the contact-profile header link must be read back, got {links:?}"
+    );
+}
+
+/// The reading regression meant ANY non-empty contact profile produced a phantom
+/// "missing from the rendered header" critical and blocked every export. A profile
+/// whose link the renderer actually draws must export cleanly.
+#[test]
+fn contact_profile_export_is_not_falsely_blocked() {
+    let mut request = req(ExportFormat::Pdf, TemplateId::Modern, false);
+    request.contact = Some(profile_with(
+        "https://drive.google.com/file/d/abc123/view?usp=drive_link",
+    ));
+    let (bytes, report) =
+        validate_and_fix(request, crate::export::pdf::generate_pdf).expect("pdf export");
+    assert!(!bytes.is_empty());
+    assert!(
+        report.ok,
+        "a résumé with a contact profile must export, not block: {:?}",
+        report.issues
+    );
+    assert!(
+        !report
+            .issues
+            .iter()
+            .any(|i| i.severity == Severity::Critical),
+        "no critical header issues expected: {:?}",
+        report.issues
+    );
+}
+
+/// A profile link that genuinely does not surface in the header is advisory
+/// (warning), never blocking — a missing contact link does not corrupt the doc.
+#[test]
+fn missing_header_link_is_warning_not_block() {
+    // A `mailto:` is in the profile's header_urls, but a website-only header line
+    // can leave it unrendered depending on layout; whatever surfaces, a non-matching
+    // profile URL must downgrade to a warning rather than block.
+    let mut profile = profile_with("https://example.dev/site");
+    profile.extra_links = vec![crate::contact_profile::ContactLink {
+        label: String::new(), // empty label → header_markdown never renders it…
+        url: "https://example.dev/never-rendered".to_string(), // …but header_urls lists it
+    }];
+    let mut request = req(ExportFormat::Pdf, TemplateId::Modern, false);
+    request.contact = Some(profile);
+    let (_bytes, report) =
+        validate_and_fix(request, crate::export::pdf::generate_pdf).expect("pdf export");
+    assert!(report.ok, "missing header link must not block: {report:?}");
+    assert!(
+        report
+            .issues
+            .iter()
+            .any(|i| i.code == "header_url_missing" && i.severity == Severity::Warning),
+        "the unrendered profile link must surface as a warning: {:?}",
+        report.issues
+    );
+}
+
 #[test]
 fn txt_is_returned_unvalidated() {
     let (bytes, report) =

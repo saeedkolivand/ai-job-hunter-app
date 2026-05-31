@@ -253,7 +253,15 @@
       "github": "GitHub",
       "githubPlaceholder": "https://github.com/ihr-handle",
       "website": "Website",
-      "websitePlaceholder": "https://ihre-website.com"
+      "websitePlaceholder": "https://ihre-website.com",
+      "extraLinks": "Weitere Links",
+      "extraLinksHint": "Portfolio, Dribbble, Behance oder andere persönliche Links. Beim Import eines Lebenslaufs werden diese automatisch ausgefüllt.",
+      "addLink": "Link hinzufügen",
+      "linkLabel": "Bezeichnung",
+      "linkLabelPlaceholder": "Dribbble",
+      "linkUrl": "URL",
+      "linkUrlPlaceholder": "https://…",
+      "removeLink": "Link entfernen"
     },
     "developer": {
       "title": "Entwickler-Werkzeuge",
@@ -419,6 +427,12 @@
       "changelogError": "Änderungsprotokoll konnte nicht geladen werden.",
       "changelogEmpty": "Keine Releases gefunden."
     }
+  },
+  "contactPrompt": {
+    "title": "Kontaktdaten bestätigen",
+    "description": "Diese erscheinen in der Kopfzeile jedes Lebenslaufs und Anschreibens, das Sie erstellen. Wir haben ausgefüllt, was wir gefunden haben — bitte prüfen und ergänzen Sie sie. Sie können sie jederzeit in den Einstellungen ändern.",
+    "continue": "Speichern & fortfahren",
+    "cancel": "Abbrechen"
   },
   "aiGenerate": {
     "title": "KI-Generierung",
