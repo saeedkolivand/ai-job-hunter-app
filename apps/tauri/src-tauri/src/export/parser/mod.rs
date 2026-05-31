@@ -9,10 +9,13 @@ pub fn normalize_unicode(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
         let replacement: &str = match ch {
-            // Dashes / hyphens
-            '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' => "-", // hyphen / non-breaking hyphen / figure dash / en-dash
-            '\u{2014}' | '\u{2015}' => " - ",                         // em-dash / horizontal bar
-            '\u{2212}' => "-",                                        // minus sign
+            // Dashes / hyphens. En-dash (U+2013) and em-dash (U+2014) are PRESERVED
+            // (the bundled fonts contain both glyphs — asserted by a unit test); the
+            // later `typography` pass normalizes their spacing. Collapsing them to a
+            // bare hyphen used to mangle sentence-break dashes into "word- word".
+            '\u{2010}' | '\u{2011}' | '\u{2012}' => "-", // hyphen / non-breaking hyphen / figure dash
+            '\u{2015}' => "\u{2014}",                    // horizontal bar → em-dash
+            '\u{2212}' => "-",                           // minus sign
             // Quotes
             '\u{201C}' | '\u{201D}' | '\u{201E}' | '\u{201F}' => "\"", // double quotes
             '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}' => "'", // single quotes / apostrophes
@@ -50,7 +53,7 @@ pub fn normalize_unicode(text: &str) -> String {
             '\u{00B9}' => "1",
             // Other
             '\u{2116}' => "No.",
-            '\u{2020}' | '\u{2021}' => "*", // daggers
+            '\u{2020}' | '\u{2021}' => "", // daggers — drop (never emit a stray asterisk)
             '\u{00B7}' => ".",              // middle dot
             // Private Use Area + icon-font glyphs + replacement char: these render
             // as boxes/garbage (or nothing) in the bundled fonts — drop them.
@@ -66,6 +69,66 @@ pub fn normalize_unicode(text: &str) -> String {
     }
     out
 }
+
+/// Strip stray Markdown emphasis the model occasionally leaks (`*React`, `AWS*`,
+/// `AWS*-Services`) WITHOUT touching valid `**bold**` runs (the renderer turns those
+/// into real bold) or in-word punctuation like `snake_case`. Runs after
+/// [`normalize_unicode`], before any Markdown parsing.
+pub fn sanitize_markdown(text: &str) -> String {
+    // Protect valid bold pairs, drop every remaining lone '*' and stray backtick,
+    // then restore the bold markers.
+    const BOLD: &str = "\u{0}B\u{0}";
+    text.replace("**", BOLD)
+        .chars()
+        .filter(|&c| c != '*' && c != '`')
+        .collect::<String>()
+        .replace(BOLD, "**")
+}
+
+/// Typography pass for dash usage. With en/em-dashes preserved by
+/// [`normalize_unicode`], normalize clause-level dash spacing to a spaced en-dash
+/// (" – ") and rewrite the residual ASCII "word- word" sentence-break pattern the
+/// same way — but never a German suspended hyphen (`Backend- und …`) or a tight
+/// compound / range (`2020–2023`, `state-of-the-art`).
+pub fn typography(text: &str) -> String {
+    let out = HYPHEN_BREAK_RE.replace_all(text, |c: &regex::Captures| {
+        let prev = &c[1];
+        let next = &c[2];
+        if SUSPENDED_HYPHEN_WORDS.contains(&next.to_lowercase().as_str()) {
+            format!("{prev}- {next}")
+        } else {
+            format!("{prev} \u{2013} {next}")
+        }
+    });
+    DASH_CLAUSE_SPACING_RE
+        .replace_all(&out, " \u{2013} ")
+        .into_owned()
+}
+
+/// A complete word, an ASCII hyphen, a space, then the next word — a sentence-break
+/// hyphen the model sometimes emits instead of a dash. (`e-mail`, `state-of-the-art`
+/// have no space after the hyphen and never match.)
+static HYPHEN_BREAK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(\p{L})- (\p{L}[\p{L}.]*)").unwrap());
+
+/// An en/em-dash used between clauses (a space on at least one side) → cleanly spaced
+/// en-dash. A tight range like `2020–2023` has no surrounding space and is left alone.
+static DASH_CLAUSE_SPACING_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\s*[\u{2013}\u{2014}]\s+|\s+[\u{2013}\u{2014}]\s*").unwrap());
+
+/// German suspended-hyphen continuations: `Backend- und Frontend-…` is correct German
+/// and must keep its hyphen rather than become a dash.
+const SUSPENDED_HYPHEN_WORDS: &[&str] = &[
+    "und",
+    "oder",
+    "bzw",
+    "sowie",
+    "als",
+    "wie",
+    "bis",
+    "beziehungsweise",
+    "respektive",
+];
 
 /// Unicode Private Use Area code points (BMP + planes 15/16). Icon fonts
 /// (Font Awesome, etc.) map glyphs here, so extracted/pasted text often contains

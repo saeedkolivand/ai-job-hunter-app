@@ -16,7 +16,7 @@ use anyhow::Result;
 use printpdf::*;
 
 use crate::export::pdf_renderer::{
-    build_line, load_all_fonts, resolve_fonts, rgb_to_color, LoadedFontSet,
+    build_line, link_annotation_op, load_all_fonts, resolve_fonts, rgb_to_color, LoadedFontSet,
 };
 use crate::export::templates::Template;
 use crate::export::types::GenerationMeta;
@@ -25,8 +25,6 @@ use crate::locale::PageGeometry;
 use crate::measure::FontMetrics;
 use crate::model::adapter::model_from_resume_text;
 use crate::model::transform;
-
-const PT_PER_MM: f32 = 2.834_645_7;
 
 /// Render a resume to PDF bytes via the canonical layout engine, on the default
 /// (international A4) page geometry. A test convenience — the export command uses
@@ -198,24 +196,18 @@ fn text_ops(t: &PlacedText, page_h: f32, fonts: &LoadedFontSet) -> Vec<Op> {
 }
 
 fn link_op(l: &LinkRect, page_h: f32) -> Op {
-    let y_bottom_pt = (page_h - (l.y_top_mm + l.height_mm)) * PT_PER_MM;
-    let rect = Rect {
-        x: Pt(l.x_mm * PT_PER_MM),
-        y: Pt(y_bottom_pt),
-        width: Pt(l.width_mm * PT_PER_MM),
-        height: Pt(l.height_mm * PT_PER_MM),
-        mode: None,
-        winding_order: None,
-    };
-    Op::LinkAnnotation {
-        link: LinkAnnotation::new(
-            rect,
-            Actions::Uri(l.url.clone()),
-            Some(BorderArray::Solid([0.0, 0.0, 0.0])),
-            Some(ColorArray::Transparent),
-            None,
-        ),
-    }
+    // The display list already carries the rect in top-down mm; the single shared
+    // builder does the one correct flip into printpdf's bottom-up point space. The
+    // legacy contact / cover-letter path calls the very same function, so the two
+    // PDF documents can never diverge on link-rect geometry.
+    link_annotation_op(
+        l.x_mm,
+        l.y_top_mm,
+        l.width_mm,
+        l.height_mm,
+        page_h,
+        l.url.clone(),
+    )
 }
 
 #[cfg(test)]

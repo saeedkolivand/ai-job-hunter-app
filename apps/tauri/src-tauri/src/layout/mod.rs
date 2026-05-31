@@ -679,8 +679,16 @@ impl<'a> Flow<'a> {
         } else {
             (0.0, 0.0)
         };
-        // Keep the title with at least its subtitle / first bullet.
-        if self.would_overflow(before + self.body_line() * 2.0) && !self.cur.texts.is_empty() {
+        // Keep-with-next: bind the entry title to its subtitle (role) and the first
+        // bullet line, so a title is never orphaned at the foot of a page and a role
+        // never splits onto a near-empty next page. Sized at or below the legacy
+        // renderer's reservation (title + ~2 lines), so it never breaks a page the
+        // legacy renderer wouldn't — preserving the parity gate. A role longer than a
+        // page still breaks later via the per-line guards below.
+        let keep_together_h = self.body_line()
+            + if e.subtitle.is_some() { self.body_line() } else { 0.0 }
+            + self.body_line();
+        if self.would_overflow(before + keep_together_h) && !self.cur.texts.is_empty() {
             self.new_page();
         } else {
             self.y += before;
