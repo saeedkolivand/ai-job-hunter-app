@@ -398,7 +398,8 @@ jobs:
         working-directory: apps/tauri/src-tauri
         run: |
           echo "::group::Running cargo tests"
-          cargo test --all-features
+          set -o pipefail
+          cargo test --all-features 2>&1 | tee rust-test-output.txt
           echo "::endgroup::"
 
       # Coverage reporting only — never gates the build (test pass/fail is owned
@@ -449,28 +450,31 @@ jobs:
           compression-level: 9
           if-no-files-found: ignore
 
-      - name: 📝 Job Summary
+      - name: 📊 Tests & Coverage Summary
         if: always()
         run: |
-          echo "## 🧪 Test Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Test Suite | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|------------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| JavaScript | ${{ steps.js-tests.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Rust | ${{ steps.rust-tests.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
-          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
-          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.js-tests.outcome }}" == "failure" ] || [ "${{ steps.rust-tests.outcome }}" == "failure" ]; then
-            echo "### 📊 Artifacts" >> $GITHUB_STEP_SUMMARY
-            echo "Test results uploaded: \`test-results-${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "### 🔗 Resources" >> $GITHUB_STEP_SUMMARY
-          echo "- [Vitest Docs](https://vitest.dev/) • [Rust Testing](https://doc.rust-lang.org/book/ch11-00-testing.html)" >> $GITHUB_STEP_SUMMARY
+          # Frontend (Vitest): total tests passed + line coverage (v8 text-summary).
+          js_pass=$(grep -aoE 'Tests[[:space:]]+[0-9]+ passed' coverage-output.txt 2>/dev/null | grep -oE '[0-9]+' | tail -1)
+          js_cov=$(grep -aiE '^[[:space:]]*Lines[[:space:]]*:' coverage-output.txt 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)?%' | head -1)
+          # Rust (cargo test): sum "N passed" across every test binary (unit + architecture + eval);
+          # line coverage from the cargo-llvm-cov TOTAL row.
+          rust_pass=$(grep -aoE 'test result: (ok|FAILED)\. [0-9]+ passed' apps/tauri/src-tauri/rust-test-output.txt 2>/dev/null | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' | awk '{s+=$1} END{if (NR) print s}')
+          rust_cov=$(grep -aE '^TOTAL' apps/tauri/src-tauri/rust-coverage.txt 2>/dev/null | grep -oE '[0-9]+\.[0-9]+%' | tail -1)
+          : "${js_pass:=n/a}" "${js_cov:=n/a}" "${rust_pass:=n/a}" "${rust_cov:=n/a}"
+          js_status="${{ steps.js-tests.outcome == 'success' && '✅ pass' || '❌ fail' }}"
+          rust_status="${{ steps.rust-tests.outcome == 'success' && '✅ pass' || '❌ fail' }}"
+          {
+            echo "## 🧪 Tests & Coverage"
+            echo ""
+            echo "| Suite | Status | Tests passed | Coverage (lines) |"
+            echo "| --- | :---: | ---: | ---: |"
+            echo "| 🟢 Frontend (Vitest) | ${js_status} | ${js_pass} | ${js_cov} |"
+            echo "| 🦀 Rust (cargo test) | ${rust_status} | ${rust_pass} | ${rust_cov} |"
+            echo ""
+            echo "<sub>Rust counts are summed across all test binaries; line coverage via cargo-llvm-cov. Per-file breakdowns are in the coverage sections above.</sub>"
+            echo ""
+            echo "**Environment** — Node $(node --version) · Rust $(rustc --version) · pnpm $(pnpm --version)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 🔍 Debug Environment on Failure
         if: failure()
