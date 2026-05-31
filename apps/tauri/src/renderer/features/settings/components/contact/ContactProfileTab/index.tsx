@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import type { ContactProfile } from '@ajh/shared';
 import { Input, SettingsSection } from '@ajh/ui';
 
+import { useTranslation } from '@/lib/i18n';
 import { useContactProfile, useSaveContactProfile } from '@/services';
 
 const FIELD_CLASS = 'flex flex-col gap-1.5';
@@ -16,17 +17,22 @@ const LABEL_CLASS = 'text-xs font-medium text-foreground/70';
  * LinkedIn / Website can't be displaced by an employer URL. Seeded from an
  * uploaded résumé on import, then freely editable here.
  *
+ * Location is a single value used for every document language: the backend's
+ * `LocalizedText` still supports per-language overrides, but we no longer expose
+ * an input per language (that doesn't scale as languages are added), so the form
+ * writes only `default` and clears any legacy override on save.
+ *
  * Follows the settings convention: changes persist on blur, no explicit save.
  */
 export function ContactProfileTab() {
+  const { t } = useTranslation();
   const { data: profile } = useContactProfile();
   const { mutate: save } = useSaveContactProfile();
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [locationDefault, setLocationDefault] = useState('');
-  const [locationDe, setLocationDe] = useState('');
+  const [location, setLocation] = useState('');
   const [linkedin, setLinkedin] = useState('');
   const [github, setGithub] = useState('');
   const [website, setWebsite] = useState('');
@@ -37,8 +43,7 @@ export function ContactProfileTab() {
     setFullName(profile.fullName ?? '');
     setEmail(profile.email ?? '');
     setPhone(profile.phone ?? '');
-    setLocationDefault(profile.location?.default ?? '');
-    setLocationDe(profile.location?.byLang?.de ?? '');
+    setLocation(profile.location?.default ?? '');
     setLinkedin(profile.linkedin ?? '');
     setGithub(profile.github ?? '');
     setWebsite(profile.website ?? '');
@@ -47,19 +52,13 @@ export function ContactProfileTab() {
   // Persist the whole profile from current field state (called on blur).
   const persist = () => {
     const clean = (s: string) => s.trim() || undefined;
-    const byLang: Record<string, string> = {};
-    if (locationDe.trim()) byLang.de = locationDe.trim();
 
     const next: ContactProfile = {
       fullName: clean(fullName),
       email: clean(email),
       phone: clean(phone),
-      location: locationDefault.trim()
-        ? {
-            default: locationDefault.trim(),
-            byLang: Object.keys(byLang).length ? byLang : undefined,
-          }
-        : undefined,
+      // One location for every document language — no per-language overrides.
+      location: location.trim() ? { default: location.trim() } : undefined,
       linkedin: clean(linkedin),
       github: clean(github),
       website: clean(website),
@@ -70,17 +69,13 @@ export function ContactProfileTab() {
   };
 
   return (
-    <SettingsSection icon={Contact} label="Contact Profile">
-      <p className="mb-4 text-xs text-foreground/55">
-        The header on your résumé and cover letter is built from these fields — your name, email,
-        phone, location, and personal profile links. Editing them keeps every generated document
-        correct and consistent. Changes save automatically.
-      </p>
+    <SettingsSection icon={Contact} label={t('settings.contactProfile.title')}>
+      <p className="mb-4 text-xs text-foreground/55">{t('settings.contactProfile.description')}</p>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className={FIELD_CLASS}>
           <label className={LABEL_CLASS} htmlFor="cp-name">
-            Full name
+            {t('settings.contactProfile.fullName')}
           </label>
           <Input
             id="cp-name"
@@ -92,7 +87,7 @@ export function ContactProfileTab() {
 
         <div className={FIELD_CLASS}>
           <label className={LABEL_CLASS} htmlFor="cp-email">
-            Email
+            {t('settings.contactProfile.email')}
           </label>
           <Input
             id="cp-email"
@@ -100,13 +95,13 @@ export function ContactProfileTab() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             onBlur={persist}
-            placeholder="name@example.com"
+            placeholder={t('settings.contactProfile.emailPlaceholder')}
           />
         </div>
 
         <div className={FIELD_CLASS}>
           <label className={LABEL_CLASS} htmlFor="cp-phone">
-            Phone
+            {t('settings.contactProfile.phone')}
           </label>
           <Input
             id="cp-phone"
@@ -118,66 +113,53 @@ export function ContactProfileTab() {
 
         <div className={FIELD_CLASS}>
           <label className={LABEL_CLASS} htmlFor="cp-location">
-            Location (English documents)
+            {t('settings.contactProfile.location')}
           </label>
           <Input
             id="cp-location"
-            value={locationDefault}
-            onChange={(e) => setLocationDefault(e.target.value)}
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
             onBlur={persist}
-            placeholder="Netherlands"
-          />
-        </div>
-
-        <div className={FIELD_CLASS}>
-          <label className={LABEL_CLASS} htmlFor="cp-location-de">
-            Location (German documents)
-          </label>
-          <Input
-            id="cp-location-de"
-            value={locationDe}
-            onChange={(e) => setLocationDe(e.target.value)}
-            onBlur={persist}
-            placeholder="Niederlande"
+            placeholder={t('settings.contactProfile.locationPlaceholder')}
           />
         </div>
 
         <div className={FIELD_CLASS}>
           <label className={LABEL_CLASS} htmlFor="cp-linkedin">
-            LinkedIn
+            {t('settings.contactProfile.linkedin')}
           </label>
           <Input
             id="cp-linkedin"
             value={linkedin}
             onChange={(e) => setLinkedin(e.target.value)}
             onBlur={persist}
-            placeholder="https://www.linkedin.com/in/your-profile/"
+            placeholder={t('settings.contactProfile.linkedinPlaceholder')}
           />
         </div>
 
         <div className={FIELD_CLASS}>
           <label className={LABEL_CLASS} htmlFor="cp-github">
-            GitHub
+            {t('settings.contactProfile.github')}
           </label>
           <Input
             id="cp-github"
             value={github}
             onChange={(e) => setGithub(e.target.value)}
             onBlur={persist}
-            placeholder="https://github.com/your-handle"
+            placeholder={t('settings.contactProfile.githubPlaceholder')}
           />
         </div>
 
         <div className={FIELD_CLASS}>
           <label className={LABEL_CLASS} htmlFor="cp-website">
-            Website
+            {t('settings.contactProfile.website')}
           </label>
           <Input
             id="cp-website"
             value={website}
             onChange={(e) => setWebsite(e.target.value)}
             onBlur={persist}
-            placeholder="https://your-site.com"
+            placeholder={t('settings.contactProfile.websitePlaceholder')}
           />
         </div>
       </div>

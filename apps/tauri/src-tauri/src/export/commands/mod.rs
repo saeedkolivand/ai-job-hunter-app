@@ -105,15 +105,24 @@ pub async fn documents_export_and_save(
         .to_string();
     let filter_name = format!("{} files", ext.to_uppercase());
 
-    // Open save dialog (blocking)
-    let file_path = app
-        .dialog()
-        .file()
-        .add_filter(&filter_name, &[&ext])
-        .set_title("Save Document")
-        .set_file_name(&result.filename)
-        .blocking_save_file()
-        .ok_or_else(|| "Save dialog was cancelled".to_string())?;
+    // Run the native save dialog OFF the async-runtime worker. `blocking_save_file()`
+    // blocks its caller until the dialog closes; calling it directly inside this
+    // `async` command stalls the runtime and dead-locks on a *subsequent* export —
+    // the dialog never reappears and the invoke never resolves (the "spinner spins
+    // forever on the 2nd export" symptom). `spawn_blocking` keeps the wait on a
+    // dedicated blocking thread so repeat exports work.
+    let filename = result.filename.clone();
+    let file_path = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .add_filter(&filter_name, &[&ext])
+            .set_title("Save Document")
+            .set_file_name(&filename)
+            .blocking_save_file()
+    })
+    .await
+    .map_err(|e| format!("Save dialog failed: {e}"))?
+    .ok_or_else(|| "Save dialog was cancelled".to_string())?;
 
     // Resolve to PathBuf
     let path = match file_path {
