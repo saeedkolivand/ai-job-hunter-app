@@ -210,7 +210,7 @@ impl JobTracker {
 
     pub fn list(&self) -> Vec<&JobRecord> {
         let mut jobs: Vec<&JobRecord> = self.jobs.values().collect();
-        jobs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        jobs.sort_by_key(|j| std::cmp::Reverse(j.created_at));
         jobs
     }
 

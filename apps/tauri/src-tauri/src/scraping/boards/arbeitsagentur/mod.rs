@@ -85,7 +85,7 @@ impl Scraper for ArbeitsagenturScraper {
     ) -> anyhow::Result<Vec<JobPosting>> {
         let q = input.query.trim();
         let loc = input.location.as_ref().map(|l| l.trim()).unwrap_or_default();
-        let max_pages = input.pages.min(10).max(1);
+        let max_pages = input.pages.clamp(1, 10);
         let size = 25;
         let mut out = vec![];
         let mut seen = std::collections::HashSet::new();
@@ -182,7 +182,7 @@ impl Scraper for ArbeitsagenturScraper {
                         ]
                         .into_iter()
                         .flatten()
-                        .map(|s| strip_html(s))
+                        .map(strip_html)
                         .collect::<Vec<_>>()
                         .join("\n\n");
                         if desc.is_empty() { None } else { Some(desc) }

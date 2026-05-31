@@ -370,13 +370,12 @@ fn r8_no_oversized_modules() {
             watch.push((f.rel.clone(), loc));
         }
     }
-    watch.sort_by(|a, b| b.1.cmp(&a.1));
+    watch.sort_by_key(|&(_, loc)| std::cmp::Reverse(loc));
     if !watch.is_empty() {
         eprintln!("R8 watchlist (>{SOFT_LOC} LOC — split candidates, not a failure):");
         for (rel, loc) in &watch {
             eprintln!("  src/{rel}: {loc}");
         }
     }
-    let v: Vec<_> = over_hard.into_iter().map(|(r, l, t)| (r, l, t)).collect();
-    fail_if_any("R8", "module exceeds the hard LOC cap — split it before it grows further", &v);
+    fail_if_any("R8", "module exceeds the hard LOC cap — split it before it grows further", &over_hard);
 }

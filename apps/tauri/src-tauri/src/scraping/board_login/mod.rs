@@ -295,11 +295,10 @@ async fn wait_for_auth(
             None => default_is_authed_url(&url),
         };
         // Only trust URL when the page has left the login URL.
-        if url_ok && !url.starts_with(config.login_url) {
-            if config.is_authed_cookies.is_none() {
+        if url_ok && !url.starts_with(config.login_url)
+            && config.is_authed_cookies.is_none() {
                 return true;
             }
-        }
 
         // Cookie check (preferred for AJAX-login boards like LinkedIn).
         if let Some(predicate) = config.is_authed_cookies {

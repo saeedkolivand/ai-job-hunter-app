@@ -68,8 +68,8 @@ impl Scraper for RecruiteeScraper {
 
         for o in offers {
             let description = vec![
-                o.description.as_deref().map(|d| strip_html(d)),
-                o.requirements.as_deref().map(|r| strip_html(r)),
+                o.description.as_deref().map(strip_html),
+                o.requirements.as_deref().map(strip_html),
             ]
             .into_iter()
             .flatten()

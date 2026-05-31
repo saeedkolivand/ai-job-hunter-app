@@ -171,7 +171,7 @@ impl LinkedInJobsApiClient {
                 .next()
                 .and_then(|el| el.value().attr("data-entity-urn"));
 
-            let id = entity_urn.and_then(|urn| urn.split(':').last());
+            let id = entity_urn.and_then(|urn| urn.split(':').next_back());
 
             let id = match id {
                 Some(id_str) => {
@@ -256,7 +256,7 @@ impl LinkedInJobsApiClient {
         on_progress: Option<Box<dyn Fn(f32) + Send>>,
         on_item: Option<Box<dyn Fn(JobPosting) + Send>>,
     ) -> Result<Vec<JobPosting>> {
-        let max_pages = pages.min(10).max(1);
+        let max_pages = pages.clamp(1, 10);
         let mut all_jobs = Vec::new();
         let mut seen = HashSet::new();
 

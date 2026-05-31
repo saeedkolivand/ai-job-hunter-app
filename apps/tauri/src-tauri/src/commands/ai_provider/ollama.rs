@@ -262,7 +262,7 @@ async fn stream_chat(
     let trace = RequestTrace::begin(ProviderId::Ollama, &req.model, "/api/chat", &base, true);
 
     let messages = serde_json::to_value(
-        &req.messages
+        req.messages
             .iter()
             .map(|m| json!({ "role": m.role, "content": m.content }))
             .collect::<Vec<_>>(),

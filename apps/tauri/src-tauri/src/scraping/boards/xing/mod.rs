@@ -32,7 +32,7 @@ impl Scraper for XingScraper {
         let data_dir = crate::platform::config::data_dir();
         let client = board_login::build_authed_client(&data_dir, "xing")?;
 
-        let max_pages = input.pages.min(5).max(1) as usize;
+        let max_pages = input.pages.clamp(1, 5) as usize;
         let mut out = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
 

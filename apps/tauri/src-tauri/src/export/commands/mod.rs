@@ -28,7 +28,7 @@ pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<
     // extraction, and reports what it found.
     let (data, mime_type, extension, report) = match request.format {
         ExportFormat::Docx => {
-            let (bytes, report) = validate_and_fix(request.clone(), |r| generate_docx(r))
+            let (bytes, report) = validate_and_fix(request.clone(), generate_docx)
                 .map_err(|e| format!("DOCX generation failed: {}", e))?;
             (
                 bytes,
@@ -38,7 +38,7 @@ pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<
             )
         }
         ExportFormat::Pdf => {
-            let (bytes, report) = validate_and_fix(request.clone(), |r| generate_pdf(r))
+            let (bytes, report) = validate_and_fix(request.clone(), generate_pdf)
                 .map_err(|e| format!("PDF generation failed: {}", e))?;
             (bytes, "application/pdf".to_string(), "pdf", Some(report))
         }
@@ -92,7 +92,7 @@ pub async fn documents_export_and_save(
     let result = documents_export_document(request).await?;
 
     // Extract extension for filter
-    let ext = result.filename.split('.').last().unwrap_or("*").to_string();
+    let ext = result.filename.split('.').next_back().unwrap_or("*").to_string();
     let filter_name = format!("{} files", ext.to_uppercase());
 
     // Open save dialog (blocking)

@@ -73,7 +73,7 @@ async fn try_greenhouse(url: &str) -> Result<Option<JobPosting>> {
     let description = v
         .get("content")
         .and_then(|s| s.as_str())
-        .map(|s| crate::scraping::http::strip_html(s));
+        .map(crate::scraping::http::strip_html);
     let abs_url = v
         .get("absolute_url")
         .and_then(|s| s.as_str())
@@ -165,7 +165,7 @@ async fn try_lever(url: &str) -> Result<Option<JobPosting>> {
         .or_else(|| {
             v.get("description")
                 .and_then(|s| s.as_str())
-                .map(|s| crate::scraping::http::strip_html(s))
+                .map(crate::scraping::http::strip_html)
         });
     let abs_url = v
         .get("hostedUrl")
@@ -346,9 +346,7 @@ async fn try_linkedin(url: &str) -> Result<Option<JobPosting>> {
         return Ok(None);
     }
     let job_id = path
-        .split('/')
-        .filter(|s| !s.is_empty())
-        .last()
+        .split('/').rfind(|s| !s.is_empty())
         .unwrap_or("");
     if job_id.is_empty() {
         return Ok(None);
@@ -474,7 +472,7 @@ async fn try_workday(url: &str) -> Result<Option<JobPosting>> {
         .get("jobPostingInfo")
         .and_then(|info| info.get("jobDescription"))
         .and_then(|s| s.as_str())
-        .map(|s| crate::scraping::http::strip_html(s));
+        .map(crate::scraping::http::strip_html);
 
     Ok(Some(JobPosting {
         id: format!("workday:{}", req_id),
@@ -551,7 +549,7 @@ async fn try_smartrecruiters(url: &str) -> Result<Option<JobPosting>> {
             sections
                 .values()
                 .filter_map(|sec| sec.get("text").and_then(|t| t.as_str()))
-                .map(|t| crate::scraping::http::strip_html(t))
+                .map(crate::scraping::http::strip_html)
                 .collect::<Vec<_>>()
                 .join("\n\n")
         });

@@ -129,7 +129,7 @@ async fn linkedin_easy_apply(
 
         // Upload resume if file input appears
         if let Some(ref resume_path) = ctx.resume_path {
-            if let Ok(_) = filler.upload_resume(&session.page, resume_path).await {
+            if filler.upload_resume(&session.page, resume_path).await.is_ok() {
                 emit_step(&ctx, "resume_uploaded", true, Some("Uploaded resume"));
             }
         }

@@ -4,6 +4,16 @@ use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, Sc
 use async_trait::async_trait;
 use serde::Deserialize;
 
+// Compiled once and reused across the per-page loop (hoisted to avoid recompiling
+// the regex on every iteration).
+static LD_JSON_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r#"<script type="application/ld\+json">(.*?)</script>"#).unwrap()
+});
+static STEP_ID_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"[?&]ID=([^&]+)").unwrap());
+static STEP_DIGITS_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"(\d{6,})").unwrap());
+
 #[derive(Debug, Deserialize)]
 struct JobLocation {
     address: Option<Address>,
@@ -61,7 +71,7 @@ impl Scraper for StepStoneScraper {
     ) -> anyhow::Result<Vec<JobPosting>> {
         let q = input.query.trim();
         let loc = input.location.as_ref().map(|l| l.trim()).unwrap_or_default();
-        let max_pages = input.pages.min(5).max(1);
+        let max_pages = input.pages.clamp(1, 5);
         let mut out = vec![];
         let mut seen = std::collections::HashSet::new();
         let now = chrono::Utc::now().timestamp_millis();
@@ -105,7 +115,7 @@ impl Scraper for StepStoneScraper {
             }
 
             // Extract ld+json blocks
-            let re = regex::Regex::new(r#"<script type="application/ld\+json">(.*?)</script>"#).unwrap();
+            let re = &*LD_JSON_RE;
             let mut found_any = false;
 
             for cap in re.captures_iter(&res.text) {
@@ -124,13 +134,11 @@ impl Scraper for StepStoneScraper {
                                 }
 
                                 let url = job.url.unwrap_or_default();
-                                let id = regex::Regex::new(r"[?&]ID=([^&]+)")
-                                    .unwrap()
+                                let id = STEP_ID_RE
                                     .captures(&url)
                                     .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
                                     .or_else(|| {
-                                        regex::Regex::new(r"(\d{6,})")
-                                            .unwrap()
+                                        STEP_DIGITS_RE
                                             .captures(&url)
                                             .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
                                     })

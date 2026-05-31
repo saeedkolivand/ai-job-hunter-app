@@ -3,6 +3,11 @@ use super::super::http::{fetch_text, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, Scraper, ScraperMode, ScrapeContext};
 use async_trait::async_trait;
 
+/// `"Job Title at Company"` splitter — compiled once and reused (hoisted out of the
+/// per-entry loop so the regex is not recompiled on every feed item).
+static AT_COMPANY_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r" at (.+)$").unwrap());
+
 pub struct BerlinStartupJobsScraper;
 
 #[async_trait]
@@ -53,7 +58,7 @@ impl Scraper for BerlinStartupJobsScraper {
             let categories: Vec<String> = entry.categories.iter().map(|c| c.term.clone()).collect();
 
             // Split "Job Title at Company" → { title, company }
-            let (clean_title, company) = if let Some(m) = regex::Regex::new(r" at (.+)$").unwrap().captures(&title) {
+            let (clean_title, company) = if let Some(m) = AT_COMPANY_RE.captures(&title) {
                 let company = m.get(1).map(|m| m.as_str().trim()).unwrap_or("Unknown");
                 let clean_title = title.split(" at ").next().unwrap_or(&title).trim();
                 (clean_title.to_string(), company.to_string())

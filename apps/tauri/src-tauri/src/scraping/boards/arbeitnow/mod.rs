@@ -54,7 +54,7 @@ impl Scraper for ArbeitnowScraper {
         let q = input.query.trim().to_lowercase();
         let now = chrono::Utc::now().timestamp_millis();
         let mut out = vec![];
-        let max_pages = input.pages.min(5).max(1);
+        let max_pages = input.pages.clamp(1, 5);
 
         for page in 1..=max_pages {
             if ctx.signal.is_cancelled() {

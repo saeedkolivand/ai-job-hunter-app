@@ -89,7 +89,7 @@ impl JobPreferencesStore {
                 })
             },
         )
-        .unwrap_or_else(|_| JobPreferences {
+        .unwrap_or(JobPreferences {
             location: None,
             remote: None,
             seniority: None,

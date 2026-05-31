@@ -28,7 +28,7 @@ const MAX_BYTES: usize = 10 * 1024 * 1024; // 10 MB
 /// reaches the frontend.
 #[instrument(skip_all, fields(path))]
 pub async fn extract_resume(path: String) -> AppResult<ExtractedResume> {
-    tracing::Span::current().record("path", &path.as_str());
+    tracing::Span::current().record("path", path.as_str());
 
     let bytes = std::fs::read(&path).map_err(|e| {
         let err = ExtractionError::IoError(e.to_string());

@@ -6,6 +6,10 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
+// `Job` dwarfs `Legend`, but this is a transient untagged deserialization target
+// (one value per feed item, immediately destructured); boxing the large variant
+// would complicate the serde derive for no practical gain.
+#[allow(clippy::large_enum_variant)]
 enum RemoteOkItem {
     #[serde(rename_all = "camelCase")]
     Job {

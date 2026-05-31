@@ -59,7 +59,7 @@ impl Scraper for IndeedScraper {
             .map(|(_, d)| *d)
             .unwrap_or("www.indeed.com");
 
-        let max_pages = input.pages.min(5).max(1) as usize;
+        let max_pages = input.pages.clamp(1, 5) as usize;
         let mut out = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
 

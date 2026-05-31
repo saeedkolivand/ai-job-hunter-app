@@ -37,7 +37,7 @@ fn detect_chrome_windows() -> Option<std::path::PathBuf> {
         r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe",
     ] {
         let output = Command::new("reg")
-            .args(&["query", key, "/ve"])
+            .args(["query", key, "/ve"])
             .no_window()
             .output();
         if let Ok(out) = output {

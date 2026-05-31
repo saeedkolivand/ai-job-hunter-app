@@ -47,7 +47,7 @@ impl Scraper for LinkedInScraper {
             sort_by: input.sort_by.clone(),
         };
 
-        let max_pages = input.pages.min(10).max(1) as usize;
+        let max_pages = input.pages.clamp(1, 10) as usize;
         let signal = Some(&ctx.signal);
 
         api_client

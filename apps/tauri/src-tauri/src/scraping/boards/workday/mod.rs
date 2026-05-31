@@ -51,7 +51,7 @@ impl WorkdayScraper {
 
         if trimmed.contains(':') {
             let parts: Vec<&str> = trimmed.split(':').collect();
-            let tenant = parts.get(0).map(|s| s.to_string())?;
+            let tenant = parts.first().map(|s| s.to_string())?;
             let site = parts.get(1).map(|s| s.to_string())?;
             let host = parts.get(2).map(|s| s.to_string()).unwrap_or_else(|| "wd1".to_string());
             return Some((tenant, site, host));
@@ -94,7 +94,7 @@ impl Scraper for WorkdayScraper {
         };
 
         let base = format!("https://{}.{}.myworkdayjobs.com/wday/cxs/{}/{}", tenant, host, tenant, site);
-        let max_pages = input.pages.min(5).max(1);
+        let max_pages = input.pages.clamp(1, 5);
         let limit = 20;
         let now = chrono::Utc::now().timestamp_millis();
         let mut out = vec![];
@@ -141,7 +141,7 @@ impl Scraper for WorkdayScraper {
             }
 
             for j in &job_postings {
-                let external_id = j.external_path.split('/').last().unwrap_or("").to_string();
+                let external_id = j.external_path.split('/').next_back().unwrap_or("").to_string();
                 if external_id.is_empty() {
                     continue;
                 }

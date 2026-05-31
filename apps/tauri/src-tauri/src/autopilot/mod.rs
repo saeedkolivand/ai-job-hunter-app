@@ -122,7 +122,7 @@ impl AutopilotStore {
     pub fn list(&self) -> Vec<Autopilot> {
         let map = self.load();
         let mut items: Vec<Autopilot> = map.into_values().collect();
-        items.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        items.sort_by_key(|a| std::cmp::Reverse(a.created_at));
         items
     }
 
@@ -147,7 +147,7 @@ impl AutopilotStore {
                     top_n: default_top_n(),
                 }
             }),
-            filter: serde_json::from_value(input["filter"].clone()).unwrap_or_else(|_| {
+            filter: serde_json::from_value(input["filter"].clone()).unwrap_or({
                 AutopilotFilter {
                     min_match_score: 50.0,
                     keywords: None,
@@ -277,7 +277,7 @@ impl AutopilotStore {
     fn save(&self, map: HashMap<String, Autopilot>) {
         let list: Vec<&Autopilot> = {
             let mut v: Vec<&Autopilot> = map.values().collect();
-            v.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+            v.sort_by_key(|a| std::cmp::Reverse(a.created_at));
             v
         };
         if let Ok(json) = serde_json::to_string_pretty(&list) {
