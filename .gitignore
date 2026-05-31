@@ -194,6 +194,14 @@ temp/
 # Continue.dev session cache
 .continue/.sessions/
 
+# Claude Code — the agent system (.claude/agents, skills, commands, hooks,
+# review-routes.json, settings.json) IS committed; personal/transient files are NOT:
+.claude/settings.local.json
+.claude/memory/
+.claude/.review-cache
+.claude/*.bak-ruflo
+.claude-flow*
+
 # NOTE: Project-level AI instruction files ARE committed (not ignored):
 #   CLAUDE.md                              → Claude Code
 #   .cursor/rules/                         → Cursor
@@ -209,8 +217,6 @@ temp/
 *.seed
 CHANGELOG.md
 
-.claude
-.claude-flow*
 .profraw
 .cargo
 target/llvm-cov/
