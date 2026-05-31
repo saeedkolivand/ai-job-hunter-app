@@ -103,6 +103,45 @@ body::after{
 .grade{position:absolute; inset:0; z-index:1; pointer-events:none}
 .stage > .inner{position:relative; z-index:2; width:100%; max-width:880px}
 
+/* ---------- seamless section blending ---------- */
+/* Stacked full-screen sections meet at a hard colour line by default. Each
+   section fades its top IN from the previous section's edge tone (--seam-prev)
+   and its bottom OUT to the next section's edge tone (--seam-next), so two
+   neighbours cross-fade through one shared colour instead of butting together.
+   The fades sit at z-index 1 (above .photo/.grade, below the z-index-2 .inner),
+   so they only blend the background — never dim the text. */
+.stage::before,.stage::after{content:""; position:absolute; left:0; right:0; height:clamp(100px,18vh,200px); z-index:1; pointer-events:none}
+.stage::before{top:0; background:linear-gradient(to bottom,var(--seam-prev,transparent),transparent)}
+.stage::after{bottom:0; background:linear-gradient(to top,var(--seam-next,transparent),transparent)}
+
+/* ---------- scroll-driven motion (scrollmagic-style) ---------- */
+/* A small rAF engine in the script sets, on every section, --p (0→1 as the
+   section travels through the viewport) and --c (1 when it's centred). We turn
+   those into parallax + scrubbed transforms here so motion tracks the scrollbar
+   both ways instead of firing once. Gated to no-preference users; the var()
+   fallbacks keep everything neutral when JS/the engine isn't running. */
+@media (prefers-reduced-motion: no-preference){
+  /* backgrounds drift slower than the scroll → depth */
+  .stage .photo{
+    transform:translate3d(0,calc((var(--p,.5) - .5) * 10vh),0) scale(1.2);
+    will-change:transform;
+  }
+  /* content gently sinks as a section leaves centre (scrubbed, reversible) */
+  .stage > .inner{
+    transform:translate3d(0,calc((1 - var(--c,1)) * 24px),0);
+    will-change:transform;
+  }
+  /* hero content lifts away + dims as you scroll past it */
+  .hero > .inner{
+    opacity:calc(1 - (max(0, var(--p,0) - .5) * 2.2));
+    transform:translate3d(0,calc(max(0, var(--p,0) - .5) * -16vh),0);
+  }
+  /* foreground accents move faster/opposite for parallax layering */
+  .beat4 .sun{transform:translate3d(0,calc((var(--p,.5) - .5) * 30vh),0)}
+  .beat4 .stonks{transform:translate3d(0,calc((var(--p,.5) - .5) * -22vh),0)}
+  .finale .finale-dood{transform:translate3d(0,calc((1 - var(--c,1)) * 28px),0)}
+}
+
 .kicker{font-family:var(--mono); font-size:12px; letter-spacing:.18em; text-transform:uppercase; opacity:.8; margin-bottom:14px}
 .counter{font-family:var(--mono); font-size:clamp(13px,2.4vw,17px); letter-spacing:.02em}
 
@@ -117,7 +156,7 @@ body::after{
 /* ================= HERO ================= */
 .hero .photo{background:radial-gradient(130% 90% at 50% 30%,#1b2433 0%,#11151d 55%,#0a0c11 100%)}
 .hero .grade{background:radial-gradient(60% 40% at 50% 38%,rgba(108,198,255,.10),transparent 70%)}
-.hero{--line:#e7ecf3}
+.hero{--line:#e7ecf3; --seam-next:#11151f}
 .hero h1{font-family:var(--caveat,'Caveat'),cursive; font-weight:700; font-size:clamp(40px,9vw,104px); line-height:.95; margin:0 0 4px; color:#fff; text-shadow:3px 4px 0 rgba(0,0,0,.35)}
 .hero .sub{font-family:var(--hand); font-size:clamp(16px,2.6vw,22px); color:#b9c4d4; max-width:30ch; margin:18px auto 0}
 .hero .sub b{color:#fff}
@@ -140,7 +179,7 @@ body::after{
 @keyframes heroshake{0%,100%{transform:none}25%{transform:translateX(-4px) rotate(-2deg)}60%{transform:translateX(4px) rotate(2deg)}}
 
 /* ================= BEAT 1 — slump ================= */
-.beat1{--line:#e7ecf3}
+.beat1{--line:#e7ecf3; --seam-prev:#11151f; --seam-next:#131120}
 .beat1 .photo{background:radial-gradient(120% 80% at 50% 34%,#1e2737 0%,#12161f 55%,#090b10 100%)}
 .beat1 .grade{background:radial-gradient(40% 30% at 62% 56%,rgba(120,150,200,.16),transparent 70%)}
 .section-label{font-family:var(--scrawl); font-size:14px; letter-spacing:.04em; opacity:.75; margin-bottom:8px}
@@ -151,7 +190,7 @@ body::after{
 .thought{font-family:var(--scrawl); color:#bcc7d8; margin-top:18px}
 
 /* ================= BEAT 2 — descent ================= */
-.beat2{--line:#efe6f3}
+.beat2{--line:#efe6f3; --seam-prev:#131120; --seam-next:#130c10}
 .beat2 .photo{background:radial-gradient(110% 100% at 50% 45%,#26203a 0%,#16111f 65%,#0b0810 100%)}
 .beat2 .grade{background:radial-gradient(60% 60% at 50% 55%,rgba(226,75,74,.10),transparent 70%)}
 .beat2 h2{font-family:var(--scrawl); font-size:clamp(22px,5vw,40px); color:#cdbfe0; margin:0 0 28px}
@@ -192,7 +231,7 @@ body::after{
 .doodle.flailing{animation:flail .28s linear infinite}
 
 /* ================= BEAT 3 — DEEP FRIED ================= */
-.beat3{--line:#0b0b0b}
+.beat3{--line:#0b0b0b; --seam-prev:#130c10; --seam-next:#ffb24d}
 .beat3 .photo{background:
   repeating-conic-gradient(from 0deg at 50% 42%, rgba(255,255,255,.55) 0deg 5deg, rgba(255,210,0,0) 5deg 11deg),
   radial-gradient(60% 50% at 50% 42%, #fffbe0 0%, #ffe600 30%, #ffb300 70%, #ff7a00 100%);
@@ -221,7 +260,7 @@ body::after{
 .in.beat3 .beat3-dood{animation:jolt .5s linear 3}
 
 /* ================= BEAT 4 — godmode ================= */
-.beat4{--line:#2a1808}
+.beat4{--line:#2a1808; --seam-prev:#ffb24d; --seam-next:#f4ce9e}
 .beat4 .photo{background:linear-gradient(180deg,#ffd884 0%,#ffb84d 42%,#ff8a3d 100%)}
 .beat4 .grade{background:radial-gradient(40% 30% at 78% 22%,rgba(255,255,255,.6),transparent 60%)}
 .beat4{color:#3a2208}
@@ -233,8 +272,7 @@ body::after{
 .stonks{position:absolute; left:7%; bottom:14%; width:90px; opacity:.9; z-index:1}
 
 /* ================= FEATURES ================= */
-.features{background:var(--paper); color:var(--ink); --line:var(--ink); padding:90px 22px; text-align:center; position:relative}
-.features::before{content:""; position:absolute; inset:0; opacity:.5; background-image:radial-gradient(circle,rgba(0,0,0,.05) 1px,transparent 1px); background-size:22px 22px}
+.features{background:radial-gradient(circle,rgba(0,0,0,.04) 1px,transparent 1px) 0 0/22px 22px, var(--paper); color:var(--ink); --line:var(--ink); --seam-prev:#f4ce9e; padding:90px 22px; text-align:center; position:relative}
 .features .inner{position:relative; max-width:960px; margin:0 auto}
 .features h2{font-family:var(--scrawl); font-size:clamp(24px,5vw,44px); margin:0 0 6px}
 .features .lede{font-family:var(--hand); font-size:18px; color:#5b5341; margin:0 auto 40px; max-width:40ch}
@@ -250,6 +288,8 @@ body::after{
 
 /* ================= TESTIMONIALS ================= */
 .testi{background:var(--paper); color:var(--ink); --line:var(--ink); padding:30px 22px 90px; text-align:center; position:relative}
+.testi::after{content:""; position:absolute; left:0; right:0; bottom:0; height:clamp(70px,10vh,120px); z-index:1; pointer-events:none; background:linear-gradient(to top,#ece2cf,transparent)}
+.testi > *{position:relative; z-index:2}
 .testi h2{font-family:var(--scrawl); font-size:clamp(22px,4.6vw,38px); margin:0 0 30px}
 .testi .small{font-family:var(--mono); font-size:12px; color:#7a7058}
 .wall{column-count:3; column-gap:18px; max-width:980px; margin:0 auto}
@@ -695,6 +735,28 @@ body::after{
     odo.textContent='rejections survived: '+(1247+Math.floor(f*312)).toLocaleString('en-US');
   }
   addEventListener('scroll', onScroll, {passive:true}); onScroll();
+
+  /* ---- scroll scenes: per-section --p (0→1 through the viewport) and --c
+         (1 when centred) drive the parallax/scrub CSS above. rAF-throttled. ---- */
+  var scenes = document.querySelectorAll('.stage, .testi, .finale'), sceneTick=false;
+  function paintScenes(){
+    var vh = innerHeight || document.documentElement.clientHeight;
+    for(var i=0;i<scenes.length;i++){
+      var s=scenes[i], r=s.getBoundingClientRect();
+      var p=(vh - r.top)/(vh + r.height); p = p<0?0:(p>1?1:p);
+      var mid=r.top + r.height/2;
+      var c=1 - Math.min(1, Math.abs(mid - vh/2)/(vh/2 + r.height/2));
+      s.style.setProperty('--p', p.toFixed(4));
+      s.style.setProperty('--c', c.toFixed(4));
+    }
+    sceneTick=false;
+  }
+  function scheduleScenes(){ if(!sceneTick){ sceneTick=true; requestAnimationFrame(paintScenes); } }
+  if(!reduce){
+    addEventListener('scroll', scheduleScenes, {passive:true});
+    addEventListener('resize', scheduleScenes);
+    paintScenes();
+  }
 
   /* ---- poke a doodle: it mumbles in-character (voice per mood) ---- */
   var screams=["AAAAAAA","STOP TOUCHING ME","i'm trying my BEST","do you have any openings??","please"];
