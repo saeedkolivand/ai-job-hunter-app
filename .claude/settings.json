@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": ["Bash(node .claude/*)"],
+    "deny": ["Read(./.env)", "Read(./.env.*)"]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/graphify-hint.mjs",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/review-gate.mjs",
+            "timeout": 130000
+          }
+        ]
+      }
+    ]
+  }
+}

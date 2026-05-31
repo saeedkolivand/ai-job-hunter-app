@@ -223,3 +223,15 @@ Rules:
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
+## Knowledge base & agent system
+
+This repo ships a Claude Code agent system under `.claude/` (tracked) plus a knowledge base under `docs/knowledge/`.
+
+- **Agents** (`.claude/agents/`) — 12 specialized reviewers/producers: `resume-export-expert`, `job-match-expert`, `scraping-applier-expert`, `ai-provider-expert`, `rust-backend-architect`, `tauri-security-reviewer`, `frontend-reviewer`, `performance-profiler`, `testing-reviewer`, `test-author`, `pdf-docx-generator`, `project-steward`.
+- **Commands** (`.claude/commands/`) — `/review-{rust,security,performance,ats,resume,template,export,frontend,scraping,ai}`, `/implement-feature`, `/fix-bug`, `/refactor-module`, `/add-tests`, `/analyze-job-ad`, `/improve-ats-score`, `/update-docs`, `/prepare-release`.
+- **Skills** (`.claude/skills/`) — domain standards/checklists + `token-efficiency`, `review-workflow`, `lessons`.
+- **Stop review-gate** (`.claude/hooks/review-gate.mjs`, routed by `.claude/review-routes.json`) — on finish, reviews the diff with the owning agent's checklist: deterministic arch-guards + one batched LLM pass; **only HIGH/CRITICAL block**; **≤3 reviewers per task** (Primary Owner → optional risk Secondary), with a separate conditional `test-author → testing-reviewer` stage.
+- **Lessons** (`.claude/hooks/lessons.mjs` → `.claude/memory/lessons.jsonl`, local) — distilled experiential memory; **only `project-steward` writes** (others propose via `LESSON · category · Context/Decision/Outcome`).
+
+**Context-source priority for codebase questions: graphify → source (authoritative) → `docs/knowledge/` → lessons.** Read the minimum; stop at ~90% confidence. `docs/knowledge/` is thin pointers into source/docs — keep it that way (no copied literals; point at the owning symbol). `project-steward` keeps it in sync.
