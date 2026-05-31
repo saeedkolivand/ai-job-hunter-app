@@ -1,0 +1,66 @@
+# cargo-deny policy for the Rust core (docs/architecture-rules.md R11/R12).
+# Run: `cargo deny check` (from apps/tauri/src-tauri). CI gates on this.
+
+[graph]
+# Only audit the platforms we actually ship.
+targets = [
+    { triple = "x86_64-pc-windows-msvc" },
+    { triple = "x86_64-apple-darwin" },
+    { triple = "aarch64-apple-darwin" },
+    { triple = "x86_64-unknown-linux-gnu" },
+]
+all-features = true
+
+[advisories]
+# RUSTSEC advisory database. Unmaintained/yanked crates are warnings (they are
+# common deep in the tree and not always actionable); vulnerabilities fail.
+version = 2
+yanked = "warn"
+unmaintained = "workspace"
+ignore = [
+    # Add `"RUSTSEC-YYYY-NNNN", # reason + tracking link` here only for advisories
+    # with no available fix, so the gate stays meaningful.
+]
+
+[licenses]
+version = 2
+# Permissive + weak-copyleft licenses we accept. cargo-deny fails on anything
+# not listed, so a new transitive license is a conscious decision (add it here
+# with the crate that introduced it).
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+    "BSL-1.0",
+    "CC0-1.0",
+    "OpenSSL",
+    "bzip2-1.0.6",  # permissive BSD-style; pulled in via zip -> bzip2
+]
+confidence-threshold = 0.9
+# `ajh-tauri` is a private, unpublished application crate with no license field;
+# don't require one for our own code.
+private = { ignore = true }
+# Per-crate license clarifications (e.g. ring) are added here if cargo-deny
+# cannot infer the license from the crate's files.
+exceptions = []
+
+[bans]
+# Duplicate versions are a warning (the Tauri/chromiumoxide trees pull a few);
+# wildcard version requirements are forbidden so the lockfile stays meaningful.
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+# Only crates.io by default; any git/registry source must be explicitly allowed.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
