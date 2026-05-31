@@ -122,6 +122,55 @@ describe('injectLinksIntoGeneratedText', () => {
     expect(out).toContain('[Website](https://janedoe.dev)');
     expect(out).toContain('[GitHub](https://github.com/jd)');
   });
+
+  it('finds the cover-letter contact line below the top (past the old 6-line window)', () => {
+    // Regression: cover letters carry the contact line under a marker / name /
+    // preamble, so the old fixed first-6-lines scan silently skipped it and
+    // LinkedIn never got hyperlinked (Dribbble survived only as a bare URL).
+    const coverLetter = [
+      'COMPLETE COVER LETTER ###',
+      '',
+      'preamble one',
+      'preamble two',
+      'preamble three',
+      'preamble four',
+      'preamble five',
+      'Zohreh Nejati',
+      'Zaandam, Niederlande | zohreh@example.com | +31 6 | LinkedIn | Dribbble',
+      '',
+      'Sehr geehrte Damen und Herren,',
+    ].join('\n');
+    const out = injectLinksIntoGeneratedText(coverLetter, {
+      LinkedIn: 'https://linkedin.com/in/zohreh',
+      Dribbble: 'https://dribbble.com/zohreh',
+    });
+    expect(out).toContain('[LinkedIn](https://linkedin.com/in/zohreh)');
+    expect(out).toContain('[Dribbble](https://dribbble.com/zohreh)');
+  });
+
+  it('links only the email-bearing contact line, not body prose mentioning a platform', () => {
+    const text = [
+      'Zohreh Nejati',
+      'Zaandam | zohreh@example.com | LinkedIn',
+      '',
+      'I doubled our GitHub | community and shipped on LinkedIn weekly.',
+    ].join('\n');
+    const out = injectLinksIntoGeneratedText(text, {
+      LinkedIn: 'https://linkedin.com/in/zohreh',
+      GitHub: 'https://github.com/zohreh',
+    });
+    expect(out).toContain('[LinkedIn](https://linkedin.com/in/zohreh)');
+    // The body sentence has a pipe but no email → left untouched.
+    expect(out).toContain('I doubled our GitHub | community and shipped on LinkedIn weekly.');
+    expect(out).not.toContain('[GitHub](https://github.com/zohreh)');
+  });
+
+  it('is idempotent — a second pass does not double-wrap links', () => {
+    const text = 'Name\nCity | n@example.com | LinkedIn';
+    const once = injectLinksIntoGeneratedText(text, { LinkedIn: 'https://linkedin.com/in/n' });
+    const twice = injectLinksIntoGeneratedText(once, { LinkedIn: 'https://linkedin.com/in/n' });
+    expect(twice).toBe(once);
+  });
 });
 
 describe('parseLinksFromResume', () => {

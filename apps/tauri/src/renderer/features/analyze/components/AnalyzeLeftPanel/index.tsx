@@ -46,6 +46,12 @@ export function AnalyzeLeftPanel({
 }: Props) {
   const { t } = useTranslation();
 
+  // Which half is missing — so the disabled CTA names the exact next step
+  // ("Add your résumé" / "Add the job ad") instead of the generic prompt. Mirrors
+  // the `canRun` length threshold in AnalyzePage so the label can't disagree.
+  const hasResume = resume.trim().length > 50;
+  const hasJobAd = jobAd.trim().length > 50;
+
   return (
     <div className="flex w-[400px] shrink-0 flex-col border-r border-white/[0.05] overflow-y-auto">
       {/* Header */}
@@ -170,7 +176,11 @@ export function AnalyzeLeftPanel({
                     ? t('analyze.installCli')
                     : t('analyze.selectModel')
                 : !canRun
-                  ? t('analyze.pasteContent')
+                  ? !hasResume && !hasJobAd
+                    ? t('analyze.pasteContent')
+                    : !hasResume
+                      ? t('analyze.addResume')
+                      : t('analyze.addJobAd')
                   : t('analyze.run')}
         </Button>
       </div>

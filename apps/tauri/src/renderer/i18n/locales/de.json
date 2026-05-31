@@ -57,6 +57,8 @@
     "addApiKey": "API-Schlüssel in Einstellungen hinzufügen",
     "installCli": "CLI-Agent installieren",
     "pasteContent": "Lebenslauf & Stellenanzeige einfügen",
+    "addResume": "Lebenslauf hinzufügen",
+    "addJobAd": "Stellenanzeige hinzufügen",
     "idleTitle": "Lebenslauf-Analysator",
     "idleSubtitle": "Lebenslauf und Stellenanzeige einfügen für eine vollständige KI-Analyse",
     "features": {
@@ -204,6 +206,10 @@
         "label": "Allgemein",
         "description": "Name, Sprache, Aussehen"
       },
+      "contact": {
+        "label": "Kontaktprofil",
+        "description": "Kopfzeilen-Details & Profillinks"
+      },
       "ai": {
         "label": "KI",
         "description": "Modelle, Ton, Generierung"
@@ -232,6 +238,22 @@
         "label": "Entwickler",
         "description": "Debug-Werkzeuge & Diagnose"
       }
+    },
+    "contactProfile": {
+      "title": "Kontaktprofil",
+      "description": "Die Kopfzeile Ihres Lebenslaufs und Anschreibens wird aus diesen Feldern erstellt — Name, E-Mail, Telefon, Standort und persönliche Profillinks. Wenn Sie sie bearbeiten, bleibt jedes generierte Dokument korrekt und einheitlich. Änderungen werden automatisch gespeichert.",
+      "fullName": "Vollständiger Name",
+      "email": "E-Mail",
+      "emailPlaceholder": "name@example.com",
+      "phone": "Telefon",
+      "location": "Standort",
+      "locationPlaceholder": "Niederlande",
+      "linkedin": "LinkedIn",
+      "linkedinPlaceholder": "https://www.linkedin.com/in/ihr-profil/",
+      "github": "GitHub",
+      "githubPlaceholder": "https://github.com/ihr-handle",
+      "website": "Website",
+      "websitePlaceholder": "https://ihre-website.com"
     },
     "developer": {
       "title": "Entwickler-Werkzeuge",

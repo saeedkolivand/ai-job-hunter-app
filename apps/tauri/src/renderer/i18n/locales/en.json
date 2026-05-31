@@ -57,6 +57,8 @@
     "addApiKey": "Add API key in Settings",
     "installCli": "Install the CLI agent",
     "pasteContent": "Paste resume & job ad",
+    "addResume": "Add your résumé",
+    "addJobAd": "Add the job ad",
     "idleTitle": "Resume Analyser",
     "idleSubtitle": "Paste your resume and a job ad to get a full AI analysis",
     "features": {
@@ -204,6 +206,10 @@
         "label": "General",
         "description": "Name, language, appearance"
       },
+      "contact": {
+        "label": "Contact Profile",
+        "description": "Header details & profile links"
+      },
       "ai": {
         "label": "AI",
         "description": "Models, tone, generation"
@@ -232,6 +238,22 @@
         "label": "Developer",
         "description": "Debug tools & diagnostics"
       }
+    },
+    "contactProfile": {
+      "title": "Contact Profile",
+      "description": "The header on your résumé and cover letter is built from these fields — your name, email, phone, location, and personal profile links. Editing them keeps every generated document correct and consistent. Changes save automatically.",
+      "fullName": "Full name",
+      "email": "Email",
+      "emailPlaceholder": "name@example.com",
+      "phone": "Phone",
+      "location": "Location",
+      "locationPlaceholder": "Netherlands",
+      "linkedin": "LinkedIn",
+      "linkedinPlaceholder": "https://www.linkedin.com/in/your-profile/",
+      "github": "GitHub",
+      "githubPlaceholder": "https://github.com/your-handle",
+      "website": "Website",
+      "websitePlaceholder": "https://your-site.com"
     },
     "developer": {
       "title": "Developer Tools",
