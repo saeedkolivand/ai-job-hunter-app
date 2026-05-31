@@ -23,7 +23,7 @@
   --red:#e24b4a;
 }
 *{box-sizing:border-box}
-html{scroll-behavior:smooth}
+html{scroll-behavior:smooth; -webkit-text-size-adjust:100%; text-size-adjust:100%}
 body{
   margin:0; background:#0a0c11; color:#e7ecf3;
   font-family:var(--hand); font-size:18px; line-height:1.6;
@@ -35,7 +35,7 @@ img,svg{display:block}
 
 /* grain + film texture over everything */
 body::after{
-  content:""; position:fixed; inset:0; z-index:60; pointer-events:none; opacity:.06;
+  content:""; position:fixed; top:0; right:0; bottom:0; left:0; z-index:60; pointer-events:none; opacity:.06;
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>");
   mix-blend-mode:overlay;
 }
@@ -90,7 +90,7 @@ body::after{
 
 /* loader */
 #loader{
-  position:fixed; inset:0; z-index:100; background:#0a0c11; display:flex; align-items:center; justify-content:center;
+  position:fixed; top:0; right:0; bottom:0; left:0; z-index:100; background:#0a0c11; display:flex; align-items:center; justify-content:center;
   font-family:var(--scrawl); font-size:clamp(18px,4vw,26px); color:#c7d0dd; text-align:center; padding:24px;
   transition:opacity .6s, visibility .6s;
 }
@@ -99,8 +99,8 @@ body::after{
 
 /* ---------- generic section ---------- */
 .stage{min-height:100vh; position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:64px 22px; overflow:hidden; text-align:center}
-.photo{position:absolute; inset:0; z-index:0}      /* PHOTO SWAP: set background:url('your.jpg') center/cover */
-.grade{position:absolute; inset:0; z-index:1; pointer-events:none}
+.photo{position:absolute; top:0; right:0; bottom:0; left:0; z-index:0}      /* PHOTO SWAP: set background:url('your.jpg') center/cover */
+.grade{position:absolute; top:0; right:0; bottom:0; left:0; z-index:1; pointer-events:none}
 .stage > .inner{position:relative; z-index:2; width:100%; max-width:880px}
 
 /* ---------- seamless section blending ---------- */
@@ -304,7 +304,8 @@ body::after{
 .testi .small{font-family:var(--mono); font-size:12px; color:#7a7058}
 .wall{column-count:3; column-gap:18px; max-width:980px; margin:0 auto}
 .quote{
-  break-inside:avoid; margin:0 0 18px; background:#fffdf6; border:2.4px solid var(--ink);
+  -webkit-column-break-inside:avoid; page-break-inside:avoid; break-inside:avoid;
+  margin:0 0 18px; background:#fffdf6; border:2.4px solid var(--ink);
   border-radius:13px 10px 15px 9px; padding:14px 16px; box-shadow:3px 4px 0 rgba(0,0,0,.13); text-align:left;
 }
 .quote:nth-child(even){transform:rotate(.7deg)} .quote:nth-child(3n){transform:rotate(-.8deg)}
@@ -353,6 +354,24 @@ body::after{
   .scrollhint .arr,.feed .scroller{animation:none}
   .doodle.flailing{animation:none}
   html{scroll-behavior:auto}
+}
+
+/* ---------- legacy WebKit (Safari < 14.1) hardening ----------
+   Safari before 14.1 supports neither the `inset` shorthand (handled with
+   top/right/bottom/left longhand on the overlays above) nor flexbox `gap`.
+   Without `gap` the collage cards, chip swarm, recruiter row and dialog buttons
+   collapse together. Re-create that spacing with child margins. `@supports not
+   (inset:0)` is a tight proxy — the engines lacking `inset` are the same ones
+   lacking flex `gap` — so every modern browser (incl. current Safari) skips this
+   block and never double-spaces. Grid `gap` (.feat-grid) is fine far back, so
+   it's intentionally left alone. */
+@supports not (inset:0){
+  .collage>*{margin:7px}
+  .swarm>*{margin:4px}
+  .npcs>*{margin:3px}
+  .ats>*{margin:0 5px}
+  .dialog .btns>*{margin:0 5px}
+  .dc-inner>*{margin:0 1px}
 }
 </style>
 </head>
