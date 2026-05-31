@@ -10,8 +10,13 @@
 //!
 //! Persistence mirrors [`crate::job_preferences`]: a single-row SQLite settings
 //! table. Seeding from an imported résumé uses [`classify_contact_links`], which
-//! picks the personal profile/site by name and rejects company / job-board pages —
-//! the result is a *suggestion* the user can edit, never silently trusted.
+//! picks the personal profile/site by name, rejects company / job-board pages, and
+//! keeps every other personal link as a labelled extra; the import adds email /
+//! phone / location from the deterministic structuring pass. The result is
+//! *merged* into the stored profile via [`ContactProfile::fill_empty_from`] —
+//! filling only empty fields so a sparse profile is completed while every value
+//! the user edited is preserved. It is a *suggestion* the user can edit, never
+//! silently trusted.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -24,7 +29,7 @@ use crate::data_store::DataStore;
 use crate::db::{run_migrations, Migration};
 use crate::error::AppResult;
 use crate::extraction::types::Link;
-use crate::model::rich::{tokenize_rich, RichText};
+use crate::model::rich::{tokenize_rich, url_label, RichText};
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -191,6 +196,47 @@ impl ContactProfile {
         }
         out
     }
+
+    /// Fill only the **empty/None** fields of `self` from `other`, never
+    /// overwriting a value the user already set, and merge in any of `other`'s
+    /// extra links that `self` does not already have (by URL). This lets an
+    /// import complete a sparse profile (e.g. add the résumé's email / phone /
+    /// location / Dribbble) while preserving every field the user edited.
+    pub fn fill_empty_from(&mut self, other: &ContactProfile) {
+        fn fill(slot: &mut Option<String>, src: &Option<String>) {
+            if non_empty(slot).is_none() {
+                if let Some(v) = non_empty(src) {
+                    *slot = Some(v.to_string());
+                }
+            }
+        }
+        fill(&mut self.email, &other.email);
+        fill(&mut self.phone, &other.phone);
+        fill(&mut self.linkedin, &other.linkedin);
+        fill(&mut self.github, &other.github);
+        fill(&mut self.website, &other.website);
+
+        if self
+            .location
+            .as_ref()
+            .map(LocalizedText::is_empty)
+            .unwrap_or(true)
+        {
+            if let Some(loc) = &other.location {
+                if !loc.is_empty() {
+                    self.location = Some(loc.clone());
+                }
+            }
+        }
+
+        for link in &other.extra_links {
+            let url = link.url.trim();
+            if url.is_empty() || self.extra_links.iter().any(|e| e.url.trim() == url) {
+                continue;
+            }
+            self.extra_links.push(link.clone());
+        }
+    }
 }
 
 fn non_empty(v: &Option<String>) -> Option<&str> {
@@ -264,8 +310,11 @@ fn is_job_board(url: &str) -> bool {
 /// Classify extracted résumé links into a [`ContactProfile`] by NAME, not by
 /// position. Picks the first personal LinkedIn (`/in/`), the first GitHub, and a
 /// personal website (a known link-in-bio host, else the first non-job-board,
-/// non-platform `http(s)` link). Company / job-board links are rejected. This is a
-/// suggestion to seed the editable profile, never the final header on its own.
+/// non-platform `http(s)` link). Every remaining personal `http(s)` link (e.g.
+/// Dribbble, Behance, a portfolio) is kept as a labelled [`ContactLink`] in
+/// `extra_links`, so the header is seeded with the candidate's full link set —
+/// never a job-board / employer page. This is a suggestion to seed the editable
+/// profile, never the final header on its own.
 pub fn classify_contact_links(links: &[Link]) -> ContactProfile {
     let mut profile = ContactProfile::default();
     for link in links {
@@ -308,6 +357,31 @@ pub fn classify_contact_links(links: &[Link]) -> ContactProfile {
                 break;
             }
         }
+    }
+    // Extras: every other personal http(s) link, labelled by domain (Dribbble,
+    // Behance, …). Skips job boards and the links already promoted to a named
+    // field, and de-dupes by URL so the same link is never listed twice.
+    let named: std::collections::BTreeSet<&str> = [
+        profile.linkedin.as_deref(),
+        profile.github.as_deref(),
+        profile.website.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    for link in links {
+        let url = link.url.trim();
+        if !(url.starts_with("http://") || url.starts_with("https://"))
+            || is_job_board(url)
+            || named.contains(url)
+            || profile.extra_links.iter().any(|e| e.url == url)
+        {
+            continue;
+        }
+        profile.extra_links.push(ContactLink {
+            label: url_label(url),
+            url: url.to_string(),
+        });
     }
     profile
 }

@@ -224,6 +224,7 @@ fn stray_markdown_issues(extracted: &str) -> Vec<ExportIssue> {
 
 /// A link annotation read back from the rendered PDF: its `/Rect` in PDF user
 /// space (points, bottom-up origin) and target URL.
+#[derive(Debug)]
 struct PdfLink {
     /// `[x0, y0, x1, y1]` — bottom-left and top-right corners in points.
     rect: [f32; 4],
@@ -236,10 +237,12 @@ struct PdfLink {
 /// résumé engine and the legacy cover-letter path are both covered):
 ///   * `empty_anchor_link` — every link rect overlaps rendered text (catches the
 ///     header links dumped to the page bottom with no glyphs under them).
-///   * `header_url_mismatch` — when a contact profile is the source of truth, every
-///     header-region link URL must be one of the profile's named fields, and every
-///     profile URL must appear in the header (catches a company-link displacing a
-///     personal profile / site).
+///   * `header_url_mismatch` (critical) — when a contact profile is the source of
+///     truth, every header-region link URL must be one of the profile's named
+///     fields (catches a company-link displacing a personal profile / site).
+///   * `header_url_missing` (warning) — the reverse completeness check (a profile
+///     link that did not surface in the header band); advisory only, as it leans on
+///     the band heuristic and a missing link never corrupts the document.
 fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> {
     let doc = match lopdf::Document::load_mem(bytes) {
         Ok(d) => d,
@@ -294,6 +297,9 @@ fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> 
             .filter(|l| l.page == 0 && l.rect[1].max(l.rect[3]) >= header_band_bottom)
             .collect();
 
+        // A header-band link that is NOT one of the profile's own fields means a
+        // body/company link displaced a personal one (the URL-swap regression) —
+        // the document shows a wrong link, so this stays blocking.
         for link in &header_links {
             if !allowed.contains(&link.url) {
                 issues.push(ExportIssue::critical(
@@ -306,10 +312,14 @@ fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> 
                 ));
             }
         }
+        // The reverse (a profile link that did not surface in the header band) is a
+        // *completeness* signal that depends on the 144 pt band heuristic, so it is
+        // advisory — a missing/displaced contact link is a quality note, never a
+        // reason to stop the user exporting an otherwise-valid, readable document.
         for url in &allowed {
             if !header_links.iter().any(|l| &l.url == url) {
-                issues.push(ExportIssue::critical(
-                    "header_url_mismatch",
+                issues.push(ExportIssue::warning(
+                    "header_url_missing",
                     format!("Contact profile link {url} is missing from the rendered header."),
                 ));
             }
@@ -344,17 +354,47 @@ fn text_baseline_ys(doc: &lopdf::Document, page_id: lopdf::ObjectId) -> Vec<f32>
     ys
 }
 
+/// Read a page's `/Annots` entries as concrete dictionaries, handling BOTH the
+/// inline-dictionary and the indirect-reference encodings — at the array level
+/// and per element.
+///
+/// lopdf's own [`lopdf::Document::get_page_annotations`] keeps only entries that
+/// are *indirect references* (`flat_map(Object::as_reference)`). Our PDF renderer
+/// (printpdf) writes `/Annots` as an array of **inline dictionaries**, so that
+/// helper returns nothing for every PDF we generate — which silently made the
+/// header-link checks below see zero links and report every profile URL as
+/// "missing", blocking any export that had a contact profile. Reading the array
+/// ourselves keeps the validator working against our own renderer's output.
+fn page_annot_dicts(doc: &lopdf::Document, page_id: lopdf::ObjectId) -> Vec<lopdf::Dictionary> {
+    let Ok(page) = doc.get_dictionary(page_id) else {
+        return Vec::new();
+    };
+    let array = match page.get(b"Annots") {
+        Ok(lopdf::Object::Reference(id)) => doc.get_object(*id).and_then(|o| o.as_array()).ok(),
+        Ok(lopdf::Object::Array(a)) => Some(a),
+        _ => None,
+    };
+    let Some(array) = array else {
+        return Vec::new();
+    };
+    array
+        .iter()
+        .filter_map(|o| match o {
+            lopdf::Object::Dictionary(d) => Some(d.clone()),
+            lopdf::Object::Reference(id) => doc.get_dictionary(*id).ok().cloned(),
+            _ => None,
+        })
+        .collect()
+}
+
 /// Collect `/Link` annotations (rect + `/A /URI`) for one page.
 fn page_link_annotations(
     doc: &lopdf::Document,
     page_id: lopdf::ObjectId,
     page_idx: usize,
 ) -> Vec<PdfLink> {
-    let Ok(annots) = doc.get_page_annotations(page_id) else {
-        return Vec::new();
-    };
     let mut out = Vec::new();
-    for annot in annots {
+    for annot in page_annot_dicts(doc, page_id) {
         let is_link = annot
             .get(b"Subtype")
             .and_then(|v| v.as_name())

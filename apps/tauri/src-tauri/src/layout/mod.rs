@@ -375,20 +375,31 @@ fn lay_header(
 
     if !h.contact.is_empty() {
         let fam = t.fonts.body_family;
-        let total = line_width(&h.contact, fam, CONTACT_PT, m);
-        let x = if t.name_centered {
-            (frame.geom.width_mm - total) / 2.0
-        } else {
-            frame.left
-        };
         let style = LineStyle {
             family: fam,
             size_pt: CONTACT_PT,
             normal: t.date_color,
             bold: t.date_color,
         };
-        place_line(page, &h.contact, x, *y, style, m);
-        *y += pt_to_mm(CONTACT_PT) * 1.2;
+        let total = line_width(&h.contact, fam, CONTACT_PT, m);
+        // Fits on one line → unchanged single-line path (preserves golden parity).
+        // Otherwise wrap to the content width so a long contact line (many links)
+        // stacks instead of overflowing the page margins, centring each line.
+        let lines = if total <= frame.width() {
+            vec![h.contact.clone()]
+        } else {
+            wrap_runs(&h.contact, frame.width(), fam, CONTACT_PT, m)
+        };
+        for line in &lines {
+            let lw = line_width(line, fam, CONTACT_PT, m);
+            let x = if t.name_centered {
+                (frame.geom.width_mm - lw) / 2.0
+            } else {
+                frame.left
+            };
+            place_line(page, line, x, *y, style, m);
+            *y += pt_to_mm(CONTACT_PT) * 1.2;
+        }
     }
 
     page.rules.push(RuleLine {
