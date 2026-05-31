@@ -114,6 +114,16 @@ body::after{
 .stage::before{top:0; background:linear-gradient(to bottom,var(--seam-prev,transparent),transparent)}
 .stage::after{bottom:0; background:linear-gradient(to top,var(--seam-next,transparent),transparent)}
 
+/* The descent → deep-fried boundary is the page's biggest luminance jump, so it
+   gets a much taller, warm-tinted cross-fade (overriding the default) — the
+   sunburst rises out of the dark instead of cutting straight to bright yellow.
+   The first stop stays #130c10 so it still meets beat2's bottom seamlessly. */
+.beat2::after{height:clamp(150px,30vh,340px)}
+.beat3::before{
+  height:clamp(220px,42vh,480px);
+  background:linear-gradient(to bottom,#130c10 0%,#2e1705 30%,rgba(150,85,0,.36) 58%,transparent 100%);
+}
+
 /* ---------- scroll-driven motion (scrollmagic-style) ---------- */
 /* A small rAF engine in the script sets, on every section, --p (0→1 as the
    section travels through the viewport) and --c (1 when it's centred). We turn
@@ -231,7 +241,7 @@ body::after{
 .doodle.flailing{animation:flail .28s linear infinite}
 
 /* ================= BEAT 3 — DEEP FRIED ================= */
-.beat3{--line:#0b0b0b; --seam-prev:#130c10; --seam-next:#ffb24d}
+.beat3{--line:#0b0b0b; --seam-prev:#130c10; --seam-next:#ffb24d; justify-content:flex-start; min-height:128vh; padding-top:clamp(110px,30vh,360px)}
 .beat3 .photo{background:
   repeating-conic-gradient(from 0deg at 50% 42%, rgba(255,255,255,.55) 0deg 5deg, rgba(255,210,0,0) 5deg 11deg),
   radial-gradient(60% 50% at 50% 42%, #fffbe0 0%, #ffe600 30%, #ffb300 70%, #ff7a00 100%);
@@ -416,7 +426,7 @@ body::after{
         <circle class="dood" cx="108" cy="92" r="25"/>
         <path class="dood" d="M95 90 q6 6 12 0"/><path class="dood" d="M111 90 q6 6 12 0"/>
         <path class="dood" d="M95 112 q13 -9 26 0"/>
-        <ellipse class="dood-fill" cx="93" cy="116" rx="3" ry="5.5" style="fill:#6cc6ff"><animate attributeName="cy" values="116;150;116" dur="2.6s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0;1" dur="2.6s" repeatCount="indefinite"/></ellipse>
+        <ellipse class="dood-fill" cx="93" cy="116" rx="3" ry="5.5" style="fill:#6cc6ff"><animate attributeName="cy" values="116;150;150;116" keyTimes="0;0.45;0.5;1" dur="2.6s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.4;0.5;0.95;1" dur="2.6s" repeatCount="indefinite"/></ellipse>
         <path class="dood" d="M108 117 L108 200"/>
         <path class="dood" d="M108 128 q-26 24 -42 70"/>
         <path class="dood" d="M108 128 q44 20 70 70"/>
@@ -621,6 +631,19 @@ body::after{
 </main>
 
 <script>
+/* ---- console easter egg: a hello for whoever opens devtools, in house voice.
+        (no reliable "console opened" event exists, so we just leave it waiting.) ---- */
+(function(){
+  try{
+    var head='color:#0b0b0b;background:#ffd000;font:700 22px/1.5 monospace;padding:8px 14px;text-shadow:1px 1px 0 #ff00d4';
+    var soft='color:#9fb0c6;font:13px/1.7 monospace';
+    var link='color:#6cc6ff;font:13px/1.7 monospace';
+    console.log('%c PLEASE HIRE HIM. ', head);
+    console.log('%cmade it this far? you’re either hiring or you’re me at 3am. if it’s the former — he’s alarmingly available 👉 https://github.com/saeedkolivand/ai-job-hunter-assistant-app', link);
+    console.log('%c(source’s MIT — open and freely available, like my prospects.)', soft);
+  }catch(e){}
+})();
+
 (function(){
   var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
