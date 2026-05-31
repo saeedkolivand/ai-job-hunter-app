@@ -14,6 +14,7 @@ pub mod jobs;
 pub mod documents;
 pub mod search;
 pub mod match_resume;
+pub mod resume;
 pub mod credentials;
 pub mod boards;
 pub mod conversations;

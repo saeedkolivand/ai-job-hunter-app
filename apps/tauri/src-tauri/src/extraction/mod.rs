@@ -18,12 +18,14 @@ use types::{ExtractionError, ExtractedResume};
 
 const MAX_BYTES: usize = 10 * 1024 * 1024; // 10 MB
 
-/// Tauri command — entry point for the frontend.
+/// Resume extraction entry point (text + structure). Pure logic with no Tauri
+/// coupling — the IPC command wrapper lives in the shell module `commands::resume`,
+/// which keeps the shell layer the sole owner of command definitions
+/// (see docs/architecture-rules.md R1).
 ///
-/// Returns `Ok(ExtractedResume)` on success or a user-facing error string on
-/// failure. Internal details are logged server-side via `tracing`; only the
-/// `Display` form of `ExtractionError` reaches the frontend.
-#[tauri::command]
+/// Returns `Ok(ExtractedResume)` on success. Internal details are logged
+/// server-side via `tracing`; only the `Display` form of `ExtractionError`
+/// reaches the frontend.
 #[instrument(skip_all, fields(path))]
 pub async fn extract_resume(path: String) -> AppResult<ExtractedResume> {
     tracing::Span::current().record("path", &path.as_str());

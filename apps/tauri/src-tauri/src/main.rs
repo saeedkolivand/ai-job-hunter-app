@@ -267,7 +267,7 @@ fn main() {
             commands::ai::ai_reembed_all,
             commands::pipeline::generate_pipeline,
             // resume extraction
-            extraction::extract_resume,
+            commands::resume::extract_resume,
             // documents
             commands::documents::documents_list,
             commands::documents::documents_import,
