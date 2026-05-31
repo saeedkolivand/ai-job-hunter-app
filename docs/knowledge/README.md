@@ -1,0 +1,33 @@
+# Knowledge base (`docs/knowledge/`)
+
+A **thin, pointer-style** index for AI agents (and humans). It describes _shape and contracts_ and points at the **owning source symbol**; it deliberately does **not** copy drift-prone literals (scoring weights, template/board counts) — those live in code.
+
+## How agents use this
+
+**Context-source priority: graphify → source → docs/knowledge → lessons.**
+
+1. `graphify query "<question>"` / `graphify explain "<concept>"` — scoped subgraph first.
+2. **Source is authoritative** for any region edited this turn (graphify can lag un-indexed edits until `graphify update .`).
+3. These knowledge files for shape/contracts/standards.
+4. Lessons (`.claude/hooks/lessons.mjs query …`) for prior experience — on-demand, never bulk-loaded.
+
+Read the minimum; **stop at ~90% confidence**.
+
+## Files
+
+| File                                         | What it covers                                                                                       |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| [architecture.md](architecture.md)           | Module map, Rust/TS boundary, L0–L3 layers, data flow, **feature ownership**                         |
+| [dependency-map.md](dependency-map.md)       | Dependency hubs + boundary rules + key manifests (pointer)                                           |
+| [domain-model.md](domain-model.md)           | Core types/traits + registries (DocumentModel, JobPosting, ExportRequest/Result, Scraper/Applier)    |
+| [resume-domain.md](resume-domain.md)         | Resume + ATS + export: sections, templates, country standards, ATS scoring model, PDF/DOCX contract  |
+| [automation-domain.md](automation-domain.md) | Scraping + AI-provider: registries, resilience, provider abstraction, embeddings, streaming, prompts |
+| [performance-rules.md](performance-rules.md) | Hot paths, async-runtime discipline, query-client tuning, token/cost                                 |
+| [security-rules.md](security-rules.md)       | Capabilities, CSP, deps, secrets, privacy/GDPR, updater                                              |
+| [decision-records/](decision-records/)       | ADRs (maintained by `project-steward`)                                                               |
+
+## Canonical docs (do not duplicate — link)
+
+`docs/ARCHITECTURE.md`, `docs/architecture-rules.md`, `docs/PATTERNS.md`, `docs/DESIGN_SYSTEM.md`, `docs/EXPORT_TEMPLATES.md`, `docs/API.md`, `docs/DESIGN_DECISIONS.md`, and the graphify graph (`graphify-out/`).
+
+> Maintained **only** by `project-steward`. Keep each file ≤ ~150 lines. After code/doc changes: `graphify update .`.

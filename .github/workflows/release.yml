@@ -62,8 +62,10 @@ jobs:
 
       - name: ⚙️ Configure Git
         run: |
+          echo "::group::Configuring git"
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "::endgroup::"
 
       - name: 🏷️ Run Semantic Release
         id: semantic
@@ -139,6 +141,7 @@ jobs:
 
       - name: 📤 Commit Version Files
         run: |
+          echo "::group::Committing version files"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -160,6 +163,7 @@ jobs:
             README.md
           git commit -m "chore: sync version files to v${{ needs.release.outputs.version }} [skip ci]"
           git push git@github.com:saeedkolivand/ai-job-hunter-assistant-app.git HEAD:main
+          echo "::endgroup::"
 
   build:
     name: 🏗️ Build Tauri Apps

@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "_comment": "Primary-owner routing for the Stop review-gate. First matching primary glob wins (order matters). Secondaries are added only when their globs match AND there is room under `cap`. Repo-relative globs matched against `git diff --name-only`.",
+  "cap": 3,
+  "primary": [
+    { "glob": "**/*.test.*", "owner": "testing-reviewer" },
+    { "glob": "**/*.spec.*", "owner": "testing-reviewer" },
+    { "glob": "apps/tauri/src-tauri/tests/**", "owner": "testing-reviewer" },
+    { "glob": "**/e2e/**", "owner": "testing-reviewer" },
+    { "glob": "apps/tauri/src-tauri/src/commands/match_resume.rs", "owner": "job-match-expert" },
+    { "glob": "apps/tauri/src-tauri/src/commands/cover_letter.rs", "owner": "job-match-expert" },
+    { "glob": "apps/tauri/src-tauri/src/cover_letter/**", "owner": "job-match-expert" },
+    { "glob": "apps/tauri/src-tauri/src/recommend/**", "owner": "job-match-expert" },
+    { "glob": "apps/tauri/src-tauri/src/validate/**", "owner": "job-match-expert" },
+    { "glob": "apps/tauri/src-tauri/src/commands/ai_provider/**", "owner": "ai-provider-expert" },
+    { "glob": "apps/tauri/src-tauri/src/commands/ai.rs", "owner": "ai-provider-expert" },
+    { "glob": "apps/tauri/src-tauri/src/documents/**", "owner": "ai-provider-expert" },
+    { "glob": "packages/prompts/**", "owner": "ai-provider-expert" },
+    { "glob": "apps/tauri/src-tauri/src/export/**", "owner": "resume-export-expert" },
+    { "glob": "apps/tauri/src-tauri/src/model/**", "owner": "resume-export-expert" },
+    { "glob": "apps/tauri/src-tauri/src/theme/**", "owner": "resume-export-expert" },
+    { "glob": "apps/tauri/src-tauri/src/locale/**", "owner": "resume-export-expert" },
+    { "glob": "apps/tauri/src-tauri/src/layout/**", "owner": "resume-export-expert" },
+    { "glob": "apps/tauri/src-tauri/src/measure/**", "owner": "resume-export-expert" },
+    { "glob": "apps/tauri/src-tauri/src/contact_profile/**", "owner": "resume-export-expert" },
+    { "glob": "apps/tauri/src-tauri/src/scraping/**", "owner": "scraping-applier-expert" },
+    { "glob": "apps/tauri/src-tauri/src/applying/**", "owner": "scraping-applier-expert" },
+    { "glob": "apps/tauri/src-tauri/src/apply_helpers/**", "owner": "scraping-applier-expert" },
+    { "glob": "apps/tauri/src-tauri/src/browser/**", "owner": "scraping-applier-expert" },
+    { "glob": "apps/tauri/src/renderer/**", "owner": "frontend-reviewer" },
+    { "glob": "packages/ui/**", "owner": "frontend-reviewer" },
+    { "glob": "apps/tauri/src-tauri/src/**", "owner": "rust-backend-architect" },
+    { "glob": "packages/shared/**", "owner": "rust-backend-architect" },
+    { "glob": "docs/**", "owner": "project-steward" }
+  ],
+  "secondary": [
+    {
+      "owner": "tauri-security-reviewer",
+      "globs": [
+        "apps/tauri/src-tauri/capabilities/**",
+        "apps/tauri/src-tauri/tauri.conf.json",
+        "apps/tauri/src-tauri/src/net/**",
+        "apps/tauri/src-tauri/src/credentials/**",
+        "apps/tauri/src-tauri/src/commands/credentials.rs",
+        "apps/tauri/src-tauri/src/commands/privacy.rs",
+        "apps/tauri/src-tauri/src/commands/data.rs",
+        "apps/tauri/src-tauri/src/commands/mod.rs",
+        "apps/tauri/src-tauri/src/updater/**",
+        "apps/tauri/src-tauri/src/commands/ai_provider/**",
+        "packages/prompts/**",
+        "apps/tauri/src-tauri/src/db.rs",
+        "apps/tauri/src-tauri/src/data_store.rs",
+        "**/deny.toml",
+        "**/Cargo.toml",
+        "**/Cargo.lock",
+        "**/package.json",
+        "**/pnpm-lock.yaml"
+      ]
+    },
+    {
+      "owner": "performance-profiler",
+      "globs": [
+        "apps/tauri/src-tauri/src/export/**",
+        "apps/tauri/src-tauri/src/scraping/**",
+        "apps/tauri/src-tauri/src/commands/ai_provider/**",
+        "apps/tauri/src-tauri/src/layout/**",
+        "apps/tauri/src-tauri/src/measure/**",
+        "apps/tauri/src-tauri/src/documents/**",
+        "apps/tauri/src-tauri/src/pipeline/**"
+      ]
+    }
+  ],
+  "advisory": {
+    "docs_stale": [
+      "packages/shared/src/ipc/**",
+      "apps/tauri/src-tauri/src/ipc_contracts/**",
+      "apps/tauri/src-tauri/src/commands/mod.rs"
+    ],
+    "release": [".releaserc.json", "commitlint.config.mjs", ".github/workflows/**"]
+  },
+  "lessons_domains": {
+    "export": [
+      "apps/tauri/src-tauri/src/export/**",
+      "apps/tauri/src-tauri/src/model/**",
+      "apps/tauri/src-tauri/src/theme/**",
+      "apps/tauri/src-tauri/src/locale/**",
+      "apps/tauri/src-tauri/src/layout/**",
+      "apps/tauri/src-tauri/src/measure/**"
+    ],
+    "ats": [
+      "apps/tauri/src-tauri/src/commands/match_resume.rs",
+      "apps/tauri/src-tauri/src/commands/cover_letter.rs",
+      "apps/tauri/src-tauri/src/cover_letter/**",
+      "apps/tauri/src-tauri/src/validate/**",
+      "apps/tauri/src-tauri/src/recommend/**"
+    ],
+    "scraping": [
+      "apps/tauri/src-tauri/src/scraping/**",
+      "apps/tauri/src-tauri/src/applying/**",
+      "apps/tauri/src-tauri/src/browser/**"
+    ],
+    "ai": [
+      "apps/tauri/src-tauri/src/commands/ai_provider/**",
+      "apps/tauri/src-tauri/src/commands/ai.rs",
+      "apps/tauri/src-tauri/src/documents/**",
+      "packages/prompts/**"
+    ],
+    "security": [
+      "apps/tauri/src-tauri/capabilities/**",
+      "apps/tauri/src-tauri/src/net/**",
+      "apps/tauri/src-tauri/src/credentials/**",
+      "apps/tauri/src-tauri/src/commands/privacy.rs"
+    ],
+    "frontend": ["apps/tauri/src/renderer/**", "packages/ui/**"],
+    "rust": ["apps/tauri/src-tauri/src/**", "packages/shared/**"],
+    "testing": ["**/*.test.*", "**/*.spec.*", "apps/tauri/src-tauri/tests/**"]
+  }
+}

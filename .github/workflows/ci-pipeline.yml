@@ -163,17 +163,26 @@ jobs:
       - name: 🔍 Run ESLint
         id: eslint
         continue-on-error: true
-        run: pnpm lint:strict
+        run: |
+          echo "::group::Running ESLint"
+          pnpm lint:strict
+          echo "::endgroup::"
 
       - name: 🎨 Check Formatting
         id: format
         continue-on-error: true
-        run: pnpm format:check
+        run: |
+          echo "::group::Checking formatting"
+          pnpm format:check
+          echo "::endgroup::"
 
       - name: 🧬 Check IPC Codegen Drift
         id: gen_ipc
         continue-on-error: true
-        run: pnpm gen:ipc:check
+        run: |
+          echo "::group::Checking IPC codegen drift"
+          pnpm gen:ipc:check
+          echo "::endgroup::"
 
       - name: ❌ Check for Failures
         if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure'
@@ -260,14 +269,23 @@ jobs:
           key: ${{ needs.dependencies.outputs.cache-key }}
 
       - name: 🏗️ Restore Package Build Outputs
-        run: pnpm build:packages
+        run: |
+          echo "::group::Building shared packages"
+          pnpm build:packages
+          echo "::endgroup::"
 
       - name: 🗺️ Generate Route Tree
-        run: pnpm --filter @ajh/tauri build:frontend
+        run: |
+          echo "::group::Generating route tree"
+          pnpm --filter @ajh/tauri build:frontend
+          echo "::endgroup::"
 
       - name: 🔍 Run Type Check
         id: typecheck
-        run: pnpm typecheck
+        run: |
+          echo "::group::Running type check"
+          pnpm typecheck
+          echo "::endgroup::"
 
       - name: 📝 Job Summary
         if: always()
@@ -659,7 +677,10 @@ jobs:
 
       - name: 🎨 Cargo Format Check
         working-directory: apps/tauri/src-tauri
-        run: cargo fmt --all -- --check
+        run: |
+          echo "::group::Running cargo fmt --check"
+          cargo fmt --all -- --check
+          echo "::endgroup::"
 
       - name: 🦀 Cargo Clippy
         working-directory: apps/tauri/src-tauri
@@ -689,11 +710,17 @@ jobs:
       # weekly standalone cargo-audit in security.yml stays as a scheduled sweep).
       - name: 🛡️ Cargo Deny
         working-directory: apps/tauri/src-tauri
-        run: cargo deny check
+        run: |
+          echo "::group::Running cargo deny"
+          cargo deny check
+          echo "::endgroup::"
 
       - name: 🧹 Cargo Machete (unused dependencies)
         working-directory: apps/tauri/src-tauri
-        run: cargo machete
+        run: |
+          echo "::group::Running cargo machete"
+          cargo machete
+          echo "::endgroup::"
 
       - name: 📝 Job Summary
         if: always()
