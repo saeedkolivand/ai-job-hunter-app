@@ -53,7 +53,7 @@ export function ResumeReviewPanel({ review, onDismiss }: Props) {
   const { t } = useTranslation();
 
   return (
-    <GlassCard className="space-y-4 p-4">
+    <GlassCard className="select-text space-y-4 p-4">
       <header className="space-y-1">
         <h3 className="text-sm font-semibold text-foreground">{t('resumeReview.title')}</h3>
         <p className="text-xs text-white/60">{t('resumeReview.subtitle')}</p>

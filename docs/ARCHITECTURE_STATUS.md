@@ -18,24 +18,25 @@ Last updated: 2026-06-01
 
 ## Infrastructure
 
-| Component                        | Status | Notes                                                                                                                                                 |
-| -------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tauri 2.x shell                  | ✅     | Window, tray, menus, IPC                                                                                                                              |
-| pnpm monorepo + Turbo            | ✅     | All packages wired                                                                                                                                    |
-| TypeScript 6 across all packages | ✅     | Strict mode enabled                                                                                                                                   |
-| Vite + HMR for renderer          | ✅     |                                                                                                                                                       |
-| TanStack Router (file-based)     | ✅     | All 9 routes                                                                                                                                          |
-| TanStack Query + service hooks   | ✅     | All 21 namespaces                                                                                                                                     |
-| Zustand stores                   | ✅     | preferences-store, generation-store (`store/generation-store/`), others                                                                               |
-| AppClient / mock transport       | ✅     | Tauri + mock implementations                                                                                                                          |
-| ESLint + Prettier                | ✅     | Enforced in CI                                                                                                                                        |
-| Husky + commitlint               | ✅     | Pre-commit hooks                                                                                                                                      |
-| Semantic release pipeline        | ✅     | Auto-versioning on main                                                                                                                               |
-| Auto-updater                     | ✅     | GitHub Releases integration                                                                                                                           |
-| Data backup / restore            | ✅     | `DataStore` trait → full export/import bundle (Settings → Privacy)                                                                                    |
-| Full app reset                   | ✅     | `privacy_reset_app` wipes every store registered in the `Resettable` registry (`commands/privacy.rs`)                                                 |
-| Shared platform layers           | ✅     | `platform::config`, `net::http`, `error::AppError`, `observability::Span` + provider/board registries (Phases 1–6 — see PATTERNS.md §13)              |
-| Architecture CI guardrails       | ✅     | grep bans: `std::env::var` outside `platform/config.rs`; `reqwest::Client::new/builder` outside `net/http.rs`; `Result<_, String>` outside `error.rs` |
+| Component                        | Status | Notes                                                                                                                                                                                           |
+| -------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tauri 2.x shell                  | ✅     | Window, tray, menus, IPC                                                                                                                                                                        |
+| pnpm monorepo + Turbo            | ✅     | All packages wired                                                                                                                                                                              |
+| TypeScript 6 across all packages | ✅     | Strict mode enabled                                                                                                                                                                             |
+| Vite + HMR for renderer          | ✅     |                                                                                                                                                                                                 |
+| TanStack Router (file-based)     | ✅     | All 9 routes                                                                                                                                                                                    |
+| TanStack Query + service hooks   | ✅     | All 21 namespaces                                                                                                                                                                               |
+| Zustand stores                   | ✅     | preferences-store, generation-store (`store/generation-store/`), others                                                                                                                         |
+| AppClient / mock transport       | ✅     | Tauri + mock implementations                                                                                                                                                                    |
+| ESLint + Prettier                | ✅     | Enforced in CI                                                                                                                                                                                  |
+| Husky + commitlint               | ✅     | Pre-commit hooks                                                                                                                                                                                |
+| Semantic release pipeline        | ✅     | Auto-versioning on main                                                                                                                                                                         |
+| Auto-updater                     | ✅     | GitHub Releases integration                                                                                                                                                                     |
+| Native desktop behaviors         | ✅     | `apps/tauri/src/desktop-native.ts` (`installDesktopNativeBehaviors`): context-menu, zoom, reload guards (prod-only); selection opt-in via `.select-text` / `[data-selectable]` in `globals.css` |
+| Data backup / restore            | ✅     | `DataStore` trait → full export/import bundle (Settings → Privacy)                                                                                                                              |
+| Full app reset                   | ✅     | `privacy_reset_app` wipes every store registered in the `Resettable` registry (`commands/privacy.rs`)                                                                                           |
+| Shared platform layers           | ✅     | `platform::config`, `net::http`, `error::AppError`, `observability::Span` + provider/board registries (Phases 1–6 — see PATTERNS.md §13)                                                        |
+| Architecture CI guardrails       | ✅     | grep bans: `std::env::var` outside `platform/config.rs`; `reqwest::Client::new/builder` outside `net/http.rs`; `Result<_, String>` outside `error.rs`                                           |
 
 ---
 
