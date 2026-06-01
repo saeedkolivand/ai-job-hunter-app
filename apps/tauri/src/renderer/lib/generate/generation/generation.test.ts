@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { usePreferencesStore } from '@/store/preferences-store';
+
 import { _registerClient } from '../../app-client';
 import { createMockClient } from '../../mock-client';
 import { extractMetadata, generateCoverLetter, generateResume } from './generation';
@@ -39,6 +41,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  usePreferencesStore.setState({ aiProviderConfig: undefined });
 });
 
 describe('extractMetadata', () => {
@@ -131,5 +134,59 @@ describe('generateCoverLetter', () => {
     done();
     const out = await p;
     expect(out).toContain('Dear Hiring Team');
+  });
+});
+
+describe('local model limits wiring', () => {
+  it('sends the per-model contextWindow + maxTokens on the ollama path', async () => {
+    usePreferencesStore.setState({
+      aiProviderConfig: {
+        activeProvider: 'ollama',
+        providers: {
+          ollama: {
+            model: 'llama3',
+            modelLimits: { llama3: { contextWindow: 16384, maxTokens: 4096 } },
+          },
+        },
+      },
+    });
+    const client = register();
+    const p = extractMetadata('resume', 'job ad', 'llama3');
+    await flushUntilStreaming();
+    emit('{}');
+    done();
+    await p;
+
+    expect(client.ai.generatePipeline).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'ollama', contextWindow: 16384, maxTokens: 4096 })
+    );
+  });
+
+  it('omits the local context window for cloud providers', async () => {
+    usePreferencesStore.setState({
+      aiProviderConfig: {
+        activeProvider: 'openai',
+        providers: {
+          openai: { model: 'gpt-4o' },
+          // Even with ollama limits stored, the cloud path must not send them.
+          ollama: {
+            model: 'llama3',
+            modelLimits: { llama3: { contextWindow: 16384, maxTokens: 4096 } },
+          },
+        },
+      },
+    });
+    const client = register();
+    const p = extractMetadata('resume', 'job ad', 'gpt-4o');
+    await flushUntilStreaming();
+    emit('{}');
+    done();
+    await p;
+
+    const call = (client.ai.generatePipeline as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(call).toBeDefined();
+    const arg = call?.[0] as { provider: string; contextWindow?: number };
+    expect(arg.provider).toBe('openai');
+    expect(arg.contextWindow).toBeUndefined();
   });
 });

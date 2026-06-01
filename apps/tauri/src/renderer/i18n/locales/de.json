@@ -365,6 +365,21 @@
       "searchPlaceholder": "Technologien suchen...",
       "popular": "Beliebt"
     },
+    "ai": {
+      "localLimits": {
+        "title": "Generierungslimits",
+        "analyze": "Modell analysieren",
+        "analyzing": "Analysiere…",
+        "maxContext": "Max. Kontext",
+        "noInfo": "Keine Modelldetails verfügbar",
+        "contextWindow": "Kontextfenster",
+        "maxOutput": "Max. Ausgabe-Tokens",
+        "useSuggested": "Vorschlag übernehmen",
+        "suggested": "Vorschlag",
+        "mayLagRam": "Ein großes Kontextfenster kann bei Ihrem verfügbaren RAM ruckeln",
+        "mayLagVram": "Ein großes Kontextfenster kann bei Ihrem verfügbaren VRAM ruckeln"
+      }
+    },
     "salary": {
       "title": "Gehaltserwartungen",
       "description": "Legen Sie Ihre Gehaltserwartungen fest, um Job-Empfehlungen zu filtern.",

@@ -9,6 +9,7 @@ import { ActiveProviderSwitcher } from '../ActiveProviderSwitcher';
 import { EmbeddingsSettings } from '../EmbeddingsSettings';
 import { ProviderDebugBadge } from '../ProviderDebugBadge';
 import { ProviderRow } from '../ProviderRow';
+import { LocalModelLimits } from './LocalModelLimits';
 import { OllamaResourcesPanel } from './OllamaResourcesPanel';
 import { useProviderKeys } from './useProviderKeys';
 
@@ -104,7 +105,10 @@ export function AISettingsTab() {
                 onRecheck={recheck}
               >
                 {p === 'ollama' && connected && (
-                  <OllamaResourcesPanel selectedModel={selectedOllamaModel} />
+                  <>
+                    <OllamaResourcesPanel selectedModel={selectedOllamaModel} />
+                    <LocalModelLimits selectedModel={selectedOllamaModel} />
+                  </>
                 )}
               </ProviderRow>
             );

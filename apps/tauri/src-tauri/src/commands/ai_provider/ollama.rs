@@ -216,6 +216,76 @@ pub async fn embed_with(model: &str, text: &str) -> AppResult<Vec<f64>> {
     Ok(arr.iter().filter_map(|v| v.as_f64()).collect())
 }
 
+/// Inspect a local model via `/api/show` — its real trained context length and
+/// size labels — normalized to the `ModelInspectResult` shape. Returns
+/// `Value::Null` when Ollama is unreachable, errors, or returns nothing useful,
+/// so the caller can surface "no info" without failing.
+pub async fn show_model(model: &str) -> Value {
+    let body = json!({ "model": model });
+    let resp = match crate::net::http::shared()
+        .post(format!("{}/api/show", host()))
+        .timeout(std::time::Duration::from_secs(15))
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(_) => return Value::Null,
+    };
+    if !resp.status().is_success() {
+        return Value::Null;
+    }
+    match resp.json::<Value>().await {
+        Ok(data) => normalize_show(&data),
+        Err(_) => Value::Null,
+    }
+}
+
+/// Map an Ollama `/api/show` response to the `ModelInspectResult` shape
+/// (camelCase keys), omitting fields the server didn't provide. Pure +
+/// unit-tested. `model_info.*.context_length` is keyed by architecture (e.g.
+/// `llama.context_length`, `qwen2.context_length`), so we scan for the first key
+/// ending in `.context_length` rather than hardcoding an architecture. Returns
+/// `Value::Null` when nothing usable is present.
+fn normalize_show(data: &Value) -> Value {
+    let context_length = data
+        .get("model_info")
+        .and_then(|mi| mi.as_object())
+        .and_then(|obj| {
+            obj.iter()
+                .find(|(k, _)| k.ends_with(".context_length"))
+                .and_then(|(_, v)| v.as_u64())
+        });
+    let details = data.get("details");
+    let str_field = |key: &str| -> Option<String> {
+        details
+            .and_then(|d| d.get(key))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+
+    let mut out = serde_json::Map::new();
+    if let Some(c) = context_length {
+        out.insert("contextLength".to_string(), json!(c));
+    }
+    if let Some(p) = str_field("parameter_size") {
+        out.insert("parameterSize".to_string(), json!(p));
+    }
+    if let Some(q) = str_field("quantization_level") {
+        out.insert("quantization".to_string(), json!(q));
+    }
+    if let Some(f) = str_field("family") {
+        out.insert("family".to_string(), json!(f));
+    }
+
+    if out.is_empty() {
+        Value::Null
+    } else {
+        Value::Object(out)
+    }
+}
+
 /// Stream a model pull, emitting `jobs:event` progress. Returns when complete.
 pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
     let mut response = crate::net::http::shared()
@@ -284,6 +354,11 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
     }
     if let Some(mt) = req.max_tokens {
         options.insert("num_predict".to_string(), json!(mt));
+    }
+    // Context window (num_ctx) — large résumé/job-ad prompts overflow Ollama's
+    // small default context and get silently truncated without this.
+    if let Some(ctx) = req.context_window {
+        options.insert("num_ctx".to_string(), json!(ctx));
     }
     if !options.is_empty() {
         body["options"] = Value::Object(options);
@@ -386,4 +461,45 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
         .complete(job_id, json!({ "done": true }));
     trace.end(Some(status.as_u16()), true);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_show;
+    use serde_json::json;
+
+    #[test]
+    fn normalize_extracts_context_and_details_by_architecture() {
+        // `context_length` is keyed by architecture — scan for the suffix, not a
+        // hardcoded `llama.` prefix, so qwen2/phi3/etc. all work unchanged.
+        let data = json!({
+            "model_info": { "qwen2.context_length": 32768, "qwen2.embedding_length": 3584 },
+            "details": { "parameter_size": "7.6B", "quantization_level": "Q4_K_M", "family": "qwen2" }
+        });
+        let out = normalize_show(&data);
+        assert_eq!(out["contextLength"], json!(32768));
+        assert_eq!(out["parameterSize"], json!("7.6B"));
+        assert_eq!(out["quantization"], json!("Q4_K_M"));
+        assert_eq!(out["family"], json!("qwen2"));
+    }
+
+    #[test]
+    fn normalize_omits_missing_fields() {
+        let data = json!({
+            "model_info": { "llama.context_length": 8192 },
+            "details": { "parameter_size": "8B" }
+        });
+        let out = normalize_show(&data);
+        assert_eq!(out["contextLength"], json!(8192));
+        assert_eq!(out["parameterSize"], json!("8B"));
+        // Absent fields are omitted (not null), so the TS optional schema accepts it.
+        assert!(out.get("quantization").is_none());
+        assert!(out.get("family").is_none());
+    }
+
+    #[test]
+    fn normalize_returns_null_when_nothing_usable() {
+        assert!(normalize_show(&json!({})).is_null());
+        assert!(normalize_show(&json!({ "model_info": {}, "details": {} })).is_null());
+    }
 }

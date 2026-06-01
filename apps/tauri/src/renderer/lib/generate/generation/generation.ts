@@ -69,6 +69,10 @@ async function streamGenerate(
   const activeProvider = providerConfig?.activeProvider ?? 'ollama';
   const providerSettings = providerConfig?.providers?.[activeProvider];
   const activeModel = providerSettings?.model || model;
+  // Per-model generation limits are local (Ollama) only — cloud/CLI providers
+  // ignore them, and the backend only applies num_predict/num_ctx for Ollama.
+  const localLimits =
+    activeProvider === 'ollama' ? providerSettings?.modelLimits?.[activeModel] : undefined;
   // Resume + cover-letter generation runs through the backend orchestration
   // pipeline (a composable Pipeline of stages), not the raw generate command.
   // Same streaming contract: emits `ai:stream` deltas under the returned jobId.
@@ -86,6 +90,10 @@ async function streamGenerate(
     baseUrl: providerSettings?.baseUrl,
     // Reasoning effort for CLI agents that support it (e.g. Codex).
     effort: providerSettings?.effort,
+    // Per-model local limits (Ollama) — context window (num_ctx) + max output
+    // (num_predict). Omitted (undefined) for cloud/CLI or when unset.
+    maxTokens: localLimits?.maxTokens,
+    contextWindow: localLimits?.contextWindow,
   } as Parameters<typeof api.ai.generatePipeline>[0])) as { jobId: string };
 
   const jobId = res.jobId;

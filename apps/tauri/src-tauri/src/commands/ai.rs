@@ -162,6 +162,14 @@ pub async fn ai_list_models() -> Value {
     json!(ollama::list_tag_models(&client).await)
 }
 
+/// Inspect a local (Ollama) model's real context window + size via `/api/show`,
+/// to suggest safe generation limits. Returns `Null` when Ollama is unreachable
+/// or the model has no usable info — the UI only calls this for the local provider.
+#[tauri::command]
+pub async fn ai_inspect_model(model: String) -> Value {
+    ollama::show_model(&model).await
+}
+
 #[tauri::command]
 pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
     let job_id = uuid_v4();

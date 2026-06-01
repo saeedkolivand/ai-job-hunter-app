@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 import type {
   AiProvider,
+  LocalModelLimits,
   PerProviderSettings,
   Preferences,
   PromptQuality,
@@ -65,6 +66,7 @@ interface PreferencesActions {
   setAiProviderConfig: (config: Preferences['aiProviderConfig']) => void;
   setActiveProvider: (provider: AiProvider) => void;
   setProviderSettings: (provider: AiProvider, settings: Partial<PerProviderSettings>) => void;
+  setLocalModelLimits: (model: string, limits: Partial<LocalModelLimits>) => void;
   setOutputTone: (outputTone: Preferences['outputTone']) => void;
   setResume: (resume: Preferences['resume']) => void;
   setPerformanceMode: (performanceMode: Preferences['performanceMode']) => void;
@@ -129,6 +131,32 @@ export const usePreferencesStore = create<PreferencesStore>()(
               providers: {
                 ...state.aiProviderConfig?.providers,
                 [provider]: { ...existing, ...settings },
+              },
+            },
+            lastUpdated: new Date().toISOString(),
+          };
+        }),
+
+      // Per-model limits live under the local (ollama) provider, keyed by model
+      // name, and are deep-merged so context-window and max-output update
+      // independently.
+      setLocalModelLimits: (model: string, limits: Partial<LocalModelLimits>) =>
+        set((state) => {
+          const ollama = state.aiProviderConfig?.providers?.ollama ?? { model: '' };
+          const existingLimits = ollama.modelLimits ?? {};
+          return {
+            ...state,
+            aiProviderConfig: {
+              activeProvider: state.aiProviderConfig?.activeProvider ?? 'ollama',
+              providers: {
+                ...state.aiProviderConfig?.providers,
+                ollama: {
+                  ...ollama,
+                  modelLimits: {
+                    ...existingLimits,
+                    [model]: { ...existingLimits[model], ...limits },
+                  },
+                },
               },
             },
             lastUpdated: new Date().toISOString(),
