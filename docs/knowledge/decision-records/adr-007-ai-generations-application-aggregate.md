@@ -1,5 +1,7 @@
 # ADR-007: `ai_generations` as the application aggregate with merge-upsert by job URL
 
+Last updated: 2026-06-01
+
 **Status:** Accepted
 
 ## Context

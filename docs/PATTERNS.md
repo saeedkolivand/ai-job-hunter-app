@@ -1,5 +1,7 @@
 # Patterns — AI Job Hunter
 
+Last updated: 2026-06-01
+
 This document describes the recurring architectural and implementation patterns used throughout the codebase. Understanding these patterns is essential for contributing consistently.
 
 ---
@@ -78,7 +80,7 @@ myFeature: {
 
 ## 2. React Query Service Hook Pattern
 
-All server state (anything from IPC) goes through React Query. Never `useState + useEffect` for remote data.
+All server state (anything from IPC) goes through [TanStack Query][tanstack-query]. Never `useState + useEffect` for remote data.
 
 ### Query Hook
 
@@ -192,7 +194,7 @@ function GenerationPanel() {
 
 ## 4. AI Streaming Pattern
 
-Streaming generation uses Tauri's event system rather than a promise.
+Streaming generation uses [Tauri][tauri]'s event system rather than a promise.
 
 ### Frontend Flow
 
@@ -236,7 +238,7 @@ When `chunk.thinking` is present, render it in a collapsible `ThinkingBubble` co
 
 ### Generation-session store
 
-All in-flight and completed generation sessions are held in a single Zustand store at `store/generation-store/`, keyed by a context id (e.g. autopilot job id). It survives navigation and panel close so the Apply modal can display an ongoing or finished generation without re-triggering it. This is the **sole** source of truth for generation state app-wide — do not duplicate this in local component state or React Query.
+All in-flight and completed generation sessions are held in a single [Zustand][zustand] store at `store/generation-store/`, keyed by a context id (e.g. autopilot job id). It survives navigation and panel close so the Apply modal can display an ongoing or finished generation without re-triggering it. This is the **sole** source of truth for generation state app-wide — do not duplicate this in local component state or React Query.
 
 ---
 
@@ -278,7 +280,7 @@ interface HybridSearchRequest {
 
 **Implementation order:**
 
-1. Embed the query via Ollama
+1. Embed the query via [Ollama][ollama]
 2. Run ANN search in LanceDB (returns top-K × 2 candidates)
 3. Apply SQL filters to narrow candidates
 4. Re-rank using `semanticWeight × semanticScore + (1 - semanticWeight) × keywordScore`
@@ -375,7 +377,7 @@ const has = await client.credentials.hasCredential('linkedin');
 await client.credentials.remove('linkedin');
 ```
 
-The Tauri keychain plugin encrypts secrets using the OS credential store (Windows Credential Manager, macOS Keychain, libsecret on Linux).
+The [Tauri][tauri] keychain plugin encrypts secrets using the OS credential store (Windows Credential Manager, macOS Keychain, libsecret on Linux).
 
 ---
 
@@ -473,19 +475,25 @@ it; `std::env::var` only in `platform/**`; `reqwest::Client::new/builder` only i
 
 ## Anti-Patterns to Avoid
 
-| Anti-Pattern                                      | Correct Approach                                                                                                                       |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `useState + useEffect` for IPC data               | React Query service hook                                                                                                               |
-| `window.__TAURI_INVOKE__` directly                | `useAppClient()` service hook                                                                                                          |
-| `import { useTranslation } from "react-i18next"`  | `import { useTranslation } from "@/lib/i18n"`                                                                                          |
-| Cross-feature imports                             | Only import from `@ajh/ui`, `services/`, `lib/`                                                                                        |
-| `// eslint-disable` comment                       | Fix the underlying issue or add a scoped `eslint.config.mjs` override                                                                  |
-| Inline `{ duration: 0.2, ease: "easeOut" }`       | `transition.fast` from `@/lib/motion`                                                                                                  |
-| Hardcoded colors in className                     | `text-brand`, `bg-brand`, etc.                                                                                                         |
-| Storing credentials in SQLite                     | OS keychain via `client.credentials`                                                                                                   |
-| Reading `AJH_DATA_DIR` / rebuilding `~/.ajh`      | `platform::config::data_dir()`                                                                                                         |
-| Per-page `?` that aborts a partial scrape         | First-page error propagates as `Err`; a later page logs + `break`s, keeping the partial (P10)                                          |
-| `reqwest::Client::new()` / `::builder()`          | `net::http::shared()` or `net::http::build_client()`                                                                                   |
-| `Result<_, String>` for fallible internals        | `AppResult<_>` / `AppError` from `crate::error`                                                                                        |
-| Folding web-fetched content directly into prompts | Wrap in an untrusted-content fence (see `packages/prompts/src/emphasis.ts`); label the block so the model treats it as untrusted input |
-| Per-provider `thinking` handling in the renderer  | Normalize at the adapter boundary; consume the unified `chunk.thinking` field everywhere                                               |
+| Anti-Pattern                                      | Correct Approach                                                                                                                             |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `useState + useEffect` for IPC data               | React Query service hook                                                                                                                     |
+| `window.__TAURI_INVOKE__` directly                | `useAppClient()` service hook                                                                                                                |
+| `import { useTranslation } from "react-i18next"`  | `import { useTranslation } from "@/lib/i18n"`                                                                                                |
+| Cross-feature imports                             | Only import from `@ajh/ui`, `services/`, `lib/`                                                                                              |
+| `// eslint-disable` comment                       | Fix the underlying issue or add a scoped `eslint.config.mjs` override                                                                        |
+| Inline `{ duration: 0.2, ease: "easeOut" }`       | `transition.fast` from `@/lib/motion`                                                                                                        |
+| Hardcoded colors in className                     | `text-brand`, `bg-brand`, etc.                                                                                                               |
+| Storing credentials in SQLite                     | OS keychain via `client.credentials`                                                                                                         |
+| Reading `AJH_DATA_DIR` / rebuilding `~/.ajh`      | `platform::config::data_dir()`                                                                                                               |
+| Per-page `?` that aborts a partial scrape         | First-page error propagates as `Err`; a later page logs + `break`s, keeping the partial (P10)                                                |
+| `reqwest::Client::new()` / `::builder()`          | `net::http::shared()` or `net::http::build_client()`                                                                                         |
+| `Result<_, String>` for fallible internals        | `AppResult<_>` / `AppError` from `crate::error`                                                                                              |
+| Folding web-fetched content directly into prompts | Wrap in an untrusted-content fence (see `packages/prompts/src/emphasis.ts`); label the block so the model treats it as untrusted input       |
+| Per-provider `thinking` handling in the renderer  | Normalize at the adapter boundary; consume the unified `chunk.thinking` field everywhere                                                     |
+| Raw `<a target="_blank">` or `window.open`        | `<ExternalLink href={url}>` for hyperlinks; `useOpenExternal()` directly for button/actions with side effects (`components/ui/ExternalLink`) |
+
+[tauri]: https://tauri.app
+[tanstack-query]: https://tanstack.com/query
+[zustand]: https://github.com/pmndrs/zustand
+[ollama]: https://ollama.com

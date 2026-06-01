@@ -1,7 +1,7 @@
-import { ExternalLink, Loader2 } from 'lucide-react';
+import { ExternalLink as ExternalLinkIcon, Loader2 } from 'lucide-react';
 
+import { ExternalLink } from '@/components/ui/ExternalLink';
 import { useTranslation } from '@/lib/i18n';
-import { useOpenExternal } from '@/services';
 
 interface Props {
   jobDesc: string;
@@ -12,7 +12,6 @@ interface Props {
 
 export function JobDescriptionPanel({ jobDesc, hasDesc, fetchingDesc, jobUrl }: Props) {
   const { t } = useTranslation();
-  const openExternal = useOpenExternal();
 
   return (
     <div>
@@ -31,14 +30,13 @@ export function JobDescriptionPanel({ jobDesc, hasDesc, fetchingDesc, jobUrl }: 
       ) : jobUrl ? (
         <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-[11px] text-amber-200/80">
           {t('autopilot.apply.loadFailed')}{' '}
-          <button
-            type="button"
-            onClick={() => void openExternal.mutate(jobUrl)}
+          <ExternalLink
+            href={jobUrl}
             className="inline-flex items-center gap-0.5 font-medium text-brand-soft hover:underline"
           >
             {t('autopilot.viewJob')}
-            <ExternalLink size={10} />
-          </button>
+            <ExternalLinkIcon size={10} />
+          </ExternalLink>
         </div>
       ) : (
         <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-[11px] text-amber-200/80">

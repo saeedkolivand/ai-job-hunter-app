@@ -94,3 +94,19 @@ If branch gone: `rtk git checkout main && rtk git pull origin main`.
 `feat:` → minor · `fix:`/`perf:` → patch · `BREAKING CHANGE` → major.
 Never manually tag or bump versions.
 Commit subject must be lowercase (commitlint `subject-case`) — lowercase acronyms too (`url`, `api`, `docx`). Subject ≤ 100 chars; body lines ≤ 200.
+
+---
+
+## Agent system & review conventions
+
+This repo ships a Claude Code agent system under `.claude/` (12 specialized agents,
+`/review-*` + implementation commands, domain skills, a Stop review-gate hook, and a lessons log).
+
+GitHub Copilot cannot invoke Claude Code sub-agents, but **follow the same conventions**:
+
+- Route changes to the owning domain (ownership table in `CLAUDE.md`).
+- Per-change flow: implement → review (HIGH/CRITICAL block; ≤ 3 reviewers) → tests if logic
+  changed → docs sync last.
+- Only HIGH/CRITICAL findings block; style/naming issues are advisory.
+
+Full operating contract: `CLAUDE.md`.

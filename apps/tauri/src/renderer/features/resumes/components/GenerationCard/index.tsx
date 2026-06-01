@@ -5,7 +5,7 @@ import {
   ChevronDown,
   Copy,
   Download,
-  ExternalLink,
+  ExternalLink as ExternalLinkIcon,
   FileText,
   HelpCircle,
   Loader2,
@@ -19,9 +19,9 @@ import { useState } from 'react';
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
 import { Button, cn, transition } from '@ajh/ui';
 
+import { ExternalLink } from '@/components/ui/ExternalLink';
 import { buildFilename, exportDOCX, exportPDF, exportTXT, type TemplateId } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
-import { useOpenExternal } from '@/services';
 import { useRemoveAiGeneration } from '@/services/use-ai-generations';
 
 const EXPORT_FORMATS = ['pdf', 'docx', 'txt'] as const;
@@ -40,7 +40,6 @@ interface GenerationCardProps {
 export function GenerationCard({ gen }: GenerationCardProps) {
   const { t } = useTranslation();
   const removeAiGeneration = useRemoveAiGeneration();
-  const openExternal = useOpenExternal();
   const [expanded, setExpanded] = useState<
     'resume' | 'cover' | 'jobAd' | 'brief' | 'answers' | null
   >(null);
@@ -143,14 +142,13 @@ export function GenerationCard({ gen }: GenerationCardProps) {
               </span>
             )}
             {gen.jobUrl && (
-              <button
-                type="button"
-                onClick={() => void openExternal.mutate(gen.jobUrl)}
+              <ExternalLink
+                href={gen.jobUrl}
                 title={t('resumes.generated.openPosting')}
                 className="flex items-center gap-1 text-foreground/35 transition-colors hover:text-brand-soft"
               >
-                <ExternalLink size={10} /> {t('resumes.generated.openPosting')}
-              </button>
+                <ExternalLinkIcon size={10} /> {t('resumes.generated.openPosting')}
+              </ExternalLink>
             )}
           </div>
         </div>

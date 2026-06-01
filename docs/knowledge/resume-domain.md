@@ -1,5 +1,7 @@
 # Resume domain (resume + ATS + export)
 
+Last updated: 2026-06-01
+
 Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `job-match-expert` (ATS scoring). Canonical: [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md). Source is authoritative for literals (template count, scoring weights).
 
 ## Résumé structure
@@ -18,16 +20,19 @@ Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `j
 ## Export contract & pipeline
 
 - Contract: `ExportRequest`/`ExportResult` in `export/types.rs` (format, template, ATS mode, locale).
-- **PDF**: `export/pdf/`, `export/pdf_renderer/`, `export/layout_pdf/` — printpdf + ttf-parser; embed fonts; pre-measure layout before render; compute pagination once (avoid overflow). Prefer **golden tests**.
-- **DOCX**: `export/docx/`, `export/model_docx/`, `export/docx_renderer.rs` — docx-rs; fallback fonts; structural fidelity. Prefer **golden tests**.
+- **PDF**: `export/pdf/`, `export/pdf_renderer/`, `export/layout_pdf/` — [printpdf][printpdf] + ttf-parser; embed fonts; pre-measure layout before render; compute pagination once (avoid overflow). Prefer **golden tests**.
+- **DOCX**: `export/docx/`, `export/model_docx/`, `export/docx_renderer.rs` — [docx-rs][docx-rs]; fallback fonts; structural fidelity. Prefer **golden tests**.
 - **Golden parity** — keep PDF and DOCX outputs aligned where the design requires; deterministic snapshots, reviewed on update.
 - **Validate gate** — `validate/` checks ATS compliance before/at export.
 
 ## PDF glyph subsetting
 
-`export/pdf_renderer/fonts.rs: parse_font` subsets each embedded font to rendered codepoints via `printpdf::subset_font`; falls back to full-font on failure. A size-budget guardrail test (`export/pdf/test.rs: classic_resume_pdf_is_glyph_subset_under_budget`, 800 KB limit) catches subsetting regressions. See [ADR-008](decision-records/adr-008-pdf-glyph-subsetting.md).
+`export/pdf_renderer/fonts.rs: parse_font` subsets each embedded font to rendered codepoints via [printpdf][printpdf]'s `subset_font`; falls back to full-font on failure. A size-budget guardrail test (`export/pdf/test.rs: classic_resume_pdf_is_glyph_subset_under_budget`, 800 KB limit) catches subsetting regressions. See [ADR-008](decision-records/adr-008-pdf-glyph-subsetting.md).
 
 ## Review heuristics
 
 - HIGH: a template/layout change that breaks ATS parseability; a scoring change that violates the documented model without an ADR; an untested export error path; a header-link regression (links must come from `contact_profile/`).
 - MEDIUM: missing golden/edge-case test, non-deterministic snapshot, avoidable re-shaping in the render loop (perf → `performance-profiler`).
+
+[printpdf]: https://github.com/fschutt/printpdf
+[docx-rs]: https://github.com/bokuweb/docx-rs

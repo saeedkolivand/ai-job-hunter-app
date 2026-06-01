@@ -1,12 +1,14 @@
 # Design System — AI Job Hunter
 
+Last updated: 2026-06-01
+
 The design system lives in `packages/ui` and is published as the `@ajh/ui` internal package. It provides design tokens, a component library, motion primitives, and theming infrastructure.
 
 ---
 
 ## Design Tokens
 
-All tokens are CSS custom properties defined in `packages/ui/src/css/tokens.css`. TailwindCSS v4 consumes them via `@theme`.
+All tokens are CSS custom properties defined in `packages/ui/src/css/tokens.css`. [Tailwind CSS][tailwindcss] v4 consumes them via `@theme`.
 
 ### Color Tokens
 
@@ -344,7 +346,7 @@ Wraps subtrees to catch render errors gracefully:
 
 ## Motion System
 
-Motion tokens are defined in `packages/ui/src/lib/motion.ts` and imported through the app-level alias:
+Motion tokens are defined in `packages/ui/src/lib/motion.ts` and imported through the app-level alias. Uses [motion/react][motion-react] for animation primitives:
 
 ```typescript
 import { transition } from '@/lib/motion';
@@ -407,7 +409,7 @@ import { cn } from "@/lib/cn";
 
 ## ESLint Design System Rules
 
-These are enforced in CI (`pnpm lint:strict`):
+These are enforced in CI (`pnpm lint:strict`) by [ESLint][eslint]:
 
 | Rule                                 | What it prevents                 |
 | ------------------------------------ | -------------------------------- |
@@ -440,3 +442,7 @@ Components that belong in `features/*/components/`:
 Components that belong in `components/layout/`:
 
 - App chrome (sidebar, titlebar, statusbar, shell wrappers)
+
+[tailwindcss]: https://tailwindcss.com
+[motion-react]: https://motion.dev
+[eslint]: https://eslint.org
