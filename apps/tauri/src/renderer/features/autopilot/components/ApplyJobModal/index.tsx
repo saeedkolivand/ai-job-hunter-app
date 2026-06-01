@@ -243,6 +243,8 @@ export function ApplyJobModal({ job, resumeText, board, onClose }: Props) {
             meta={gen.meta}
             canUse={canUse}
             hasDesc={hasDesc}
+            jobUrl={job.url}
+            board={board}
           />
         </div>
       </div>

@@ -10,6 +10,14 @@ use crate::data_store::DataStore;
 use crate::db::{run_migrations, Migration};
 use crate::error::AppResult;
 
+/// One answered application question, stored on the application record.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ApplicationAnswer {
+    pub id: String,
+    pub question: String,
+    pub answer: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiGenerationRecord {
     pub id: String,
@@ -47,6 +55,12 @@ pub struct AiGenerationRecord {
     pub job_url: String,
     #[serde(default)]
     pub board: String,
+    // Application extras — answered questions and the company-research brief used,
+    // so the record is the full auditable application aggregate. Stored as JSON.
+    #[serde(rename = "applicationAnswers", default)]
+    pub application_answers: Vec<ApplicationAnswer>,
+    #[serde(rename = "companyBrief", default)]
+    pub company_brief: String,
 }
 
 pub struct AiGenerationStore {
@@ -91,6 +105,17 @@ impl AiGenerationStore {
                 )
             },
         },
+        // Additive: the answered application questions and the company-research
+        // brief used, completing the application aggregate. Old rows default empty.
+        Migration {
+            name: "add_application_answers",
+            up: |conn| {
+                conn.execute_batch(
+                    "ALTER TABLE ai_generations ADD COLUMN application_answers TEXT NOT NULL DEFAULT '[]';
+                     ALTER TABLE ai_generations ADD COLUMN company_brief       TEXT NOT NULL DEFAULT '';",
+                )
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -114,48 +139,47 @@ impl AiGenerationStore {
             "SELECT id, created_at, candidate_name, job_title, company_name,
                     resume_language, job_ad_language, target_language, mismatch,
                     top_requirements, mode, resume_text, cover_letter_text, job_ad,
-                    job_url, board
+                    job_url, board, application_answers, company_brief
              FROM ai_generations ORDER BY created_at DESC",
         )
         .ok()
         .and_then(|mut stmt| {
-            stmt.query_map([], |row| {
-                let top_req_json: String = row.get(9)?;
-                Ok(AiGenerationRecord {
-                    id: row.get(0)?,
-                    created_at: row.get::<_, i64>(1)? as u64,
-                    candidate_name: row.get(2)?,
-                    job_title: row.get(3)?,
-                    company_name: row.get(4)?,
-                    resume_language: row.get(5)?,
-                    job_ad_language: row.get(6)?,
-                    target_language: row.get(7)?,
-                    mismatch: row.get::<_, i64>(8)? != 0,
-                    top_requirements: serde_json::from_str(&top_req_json).unwrap_or_default(),
-                    mode: row.get(10)?,
-                    resume_text: row.get(11)?,
-                    cover_letter_text: row.get(12)?,
-                    job_ad: row.get(13)?,
-                    job_url: row.get(14)?,
-                    board: row.get(15)?,
-                })
-            })
-            .ok()
-            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            stmt.query_map([], row_to_record)
+                .ok()
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
         })
         .unwrap_or_default()
     }
 
+    /// Most-recent record linked to `job_url`, if any — the row a per-job save
+    /// merges into so each job keeps one application aggregate.
+    fn find_by_job_url(&self, job_url: &str) -> Option<AiGenerationRecord> {
+        if job_url.is_empty() {
+            return None;
+        }
+        let conn = self.conn.lock();
+        conn.prepare(
+            "SELECT id, created_at, candidate_name, job_title, company_name,
+                    resume_language, job_ad_language, target_language, mismatch,
+                    top_requirements, mode, resume_text, cover_letter_text, job_ad,
+                    job_url, board, application_answers, company_brief
+             FROM ai_generations WHERE job_url = ?1 ORDER BY created_at DESC LIMIT 1",
+        )
+        .ok()
+        .and_then(|mut stmt| stmt.query_row(params![job_url], row_to_record).ok())
+    }
+
     pub fn insert(&self, rec: &AiGenerationRecord) -> AppResult<()> {
         let top_req_json = serde_json::to_string(&rec.top_requirements).unwrap_or_default();
+        let answers_json = serde_json::to_string(&rec.application_answers).unwrap_or_default();
         let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO ai_generations
              (id, created_at, candidate_name, job_title, company_name,
               resume_language, job_ad_language, target_language, mismatch,
               top_requirements, mode, resume_text, cover_letter_text, job_ad,
-              job_url, board)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
+              job_url, board, application_answers, company_brief)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
             params![
                 rec.id,
                 rec.created_at as i64,
@@ -173,10 +197,66 @@ impl AiGenerationStore {
                 rec.job_ad,
                 rec.job_url,
                 rec.board,
+                answers_json,
+                rec.company_brief,
             ],
         )
         .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    /// Overwrite an existing row by id (used by the per-job merge-upsert).
+    fn update(&self, rec: &AiGenerationRecord) -> AppResult<()> {
+        let top_req_json = serde_json::to_string(&rec.top_requirements).unwrap_or_default();
+        let answers_json = serde_json::to_string(&rec.application_answers).unwrap_or_default();
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE ai_generations SET
+              candidate_name = ?2, job_title = ?3, company_name = ?4,
+              resume_language = ?5, job_ad_language = ?6, target_language = ?7,
+              mismatch = ?8, top_requirements = ?9, mode = ?10, resume_text = ?11,
+              cover_letter_text = ?12, job_ad = ?13, job_url = ?14, board = ?15,
+              application_answers = ?16, company_brief = ?17
+             WHERE id = ?1",
+            params![
+                rec.id,
+                rec.candidate_name,
+                rec.job_title,
+                rec.company_name,
+                rec.resume_language,
+                rec.job_ad_language,
+                rec.target_language,
+                rec.mismatch as i64,
+                top_req_json,
+                rec.mode,
+                rec.resume_text,
+                rec.cover_letter_text,
+                rec.job_ad,
+                rec.job_url,
+                rec.board,
+                answers_json,
+                rec.company_brief,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Save an application generation as a **per-job aggregate**: when it carries
+    /// a `job_url`, merge into that job's existing row ([`merge_application`]) so
+    /// résumé, cover letter, answers, and brief from separate user actions land on
+    /// one record; otherwise insert a fresh row (manual generations with no link).
+    /// Returns the id of the affected row.
+    pub fn save_application(&self, incoming: AiGenerationRecord) -> AppResult<String> {
+        if let Some(existing) = self.find_by_job_url(&incoming.job_url) {
+            let merged = merge_application(existing, incoming);
+            let id = merged.id.clone();
+            self.update(&merged)?;
+            return Ok(id);
+        }
+        let id = incoming.id.clone();
+        self.insert(&incoming)?;
+        Ok(id)
     }
 
     /// Distinct non-empty `job_url`s that have at least one saved generation —
@@ -198,6 +278,72 @@ impl AiGenerationStore {
         conn.execute("DELETE FROM ai_generations WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+}
+
+/// Map a DB row (the full 18-column projection) to a record. Shared by `list`
+/// and `find_by_job_url` so the column order lives in one place.
+fn row_to_record(row: &rusqlite::Row) -> rusqlite::Result<AiGenerationRecord> {
+    let top_req_json: String = row.get(9)?;
+    let answers_json: String = row.get(16)?;
+    Ok(AiGenerationRecord {
+        id: row.get(0)?,
+        created_at: row.get::<_, i64>(1)? as u64,
+        candidate_name: row.get(2)?,
+        job_title: row.get(3)?,
+        company_name: row.get(4)?,
+        resume_language: row.get(5)?,
+        job_ad_language: row.get(6)?,
+        target_language: row.get(7)?,
+        mismatch: row.get::<_, i64>(8)? != 0,
+        top_requirements: serde_json::from_str(&top_req_json).unwrap_or_default(),
+        mode: row.get(10)?,
+        resume_text: row.get(11)?,
+        cover_letter_text: row.get(12)?,
+        job_ad: row.get(13)?,
+        job_url: row.get(14)?,
+        board: row.get(15)?,
+        application_answers: serde_json::from_str(&answers_json).unwrap_or_default(),
+        company_brief: row.get(17)?,
+    })
+}
+
+/// Merge an incoming per-job save into the existing application row: keep the
+/// existing id + first-seen time, and take each incoming field only when it
+/// carries content, so independent saves (résumé, cover, answers, brief) layer
+/// onto one aggregate instead of clobbering each other. Pure — unit-tested.
+fn merge_application(
+    existing: AiGenerationRecord,
+    incoming: AiGenerationRecord,
+) -> AiGenerationRecord {
+    let pick = |inc: String, ex: String| if inc.trim().is_empty() { ex } else { inc };
+    AiGenerationRecord {
+        id: existing.id,
+        created_at: existing.created_at,
+        candidate_name: pick(incoming.candidate_name, existing.candidate_name),
+        job_title: pick(incoming.job_title, existing.job_title),
+        company_name: pick(incoming.company_name, existing.company_name),
+        resume_language: pick(incoming.resume_language, existing.resume_language),
+        job_ad_language: pick(incoming.job_ad_language, existing.job_ad_language),
+        target_language: pick(incoming.target_language, existing.target_language),
+        mismatch: incoming.mismatch || existing.mismatch,
+        top_requirements: if incoming.top_requirements.is_empty() {
+            existing.top_requirements
+        } else {
+            incoming.top_requirements
+        },
+        mode: pick(incoming.mode, existing.mode),
+        resume_text: pick(incoming.resume_text, existing.resume_text),
+        cover_letter_text: pick(incoming.cover_letter_text, existing.cover_letter_text),
+        job_ad: pick(incoming.job_ad, existing.job_ad),
+        job_url: pick(incoming.job_url, existing.job_url),
+        board: pick(incoming.board, existing.board),
+        application_answers: if incoming.application_answers.is_empty() {
+            existing.application_answers
+        } else {
+            incoming.application_answers
+        },
+        company_brief: pick(incoming.company_brief, existing.company_brief),
     }
 }
 

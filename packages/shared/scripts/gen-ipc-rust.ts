@@ -219,7 +219,14 @@ function buildStruct(
 
     if (useDefault) {
       const fn = `default_${snakeCase(name)}_${field}`;
-      struct.helpers.push(`fn ${fn}() -> ${base} {\n    ${rustDefault(prop, base)}\n}`);
+      // Match rustfmt: a zero-arg signature wider than max_width (100) wraps the
+      // empty param list onto its own line, so the generated file stays
+      // `cargo fmt --check`-clean as well as `gen:ipc:check`-stable.
+      const sig =
+        `fn ${fn}() -> ${base} {`.length > 100
+          ? `fn ${fn}(\n) -> ${base} {`
+          : `fn ${fn}() -> ${base} {`;
+      struct.helpers.push(`${sig}\n    ${rustDefault(prop, base)}\n}`);
       struct.fields.push(`    #[serde(default = "${fn}")]`);
       struct.fields.push(`    pub ${field}: ${base},`);
     } else if (override || required.has(key)) {

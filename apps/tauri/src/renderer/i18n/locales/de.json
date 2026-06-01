@@ -870,7 +870,9 @@
       "exportResume": "Lebenslauf",
       "exportCoverLetter": "Anschreiben",
       "applied": "Beworben",
-      "openPosting": "Anzeige öffnen"
+      "openPosting": "Anzeige öffnen",
+      "companyResearch": "Unternehmensrecherche",
+      "applicationAnswers": "Bewerbungsantworten"
     },
     "relativeTime": {
       "justNow": "Gerade eben",

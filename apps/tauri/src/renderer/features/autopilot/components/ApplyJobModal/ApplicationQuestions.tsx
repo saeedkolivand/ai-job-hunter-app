@@ -18,6 +18,8 @@ interface Props {
   meta?: GenerationMeta | null;
   canUse: boolean;
   hasDesc: boolean;
+  jobUrl: string;
+  board: string;
 }
 
 /**
@@ -34,13 +36,25 @@ export function ApplicationQuestions({
   meta,
   canUse,
   hasDesc,
+  jobUrl,
+  board,
 }: Props) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const { selected, toggle, answers, generating, error, generate, canGenerate } =
-    useApplicationAnswers({ resume, jobDesc, model, researchCompany, meta, canUse, hasDesc });
+    useApplicationAnswers({
+      resume,
+      jobDesc,
+      model,
+      researchCompany,
+      meta,
+      canUse,
+      hasDesc,
+      jobUrl,
+      board,
+    });
 
   const copy = async (id: string, text: string) => {
     await navigator.clipboard.writeText(text);
