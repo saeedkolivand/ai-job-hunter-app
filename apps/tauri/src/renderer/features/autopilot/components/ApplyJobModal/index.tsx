@@ -6,6 +6,7 @@ import { Button, cn, ModalShell } from '@ajh/ui';
 
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
+import { ThinkingBubble } from '@/features/ai-generate/components/ThinkingBubble';
 import { useTranslation } from '@/lib/i18n';
 import { useExtractText, useResolveJobUrl } from '@/services';
 
@@ -31,7 +32,7 @@ export function ApplyJobModal({ job, resumeText, onClose }: Props) {
   const extractTextMutation = useExtractText();
 
   const [resume, setResume] = useState(resumeText ?? '');
-  const [target, setTarget] = useState<TailorTarget>('cover');
+  const [target, setTarget] = useState<TailorTarget>('both');
   const [uploading, setUploading] = useState(false);
 
   // Fetch the description on demand when the board's list scrape omitted it.
@@ -65,8 +66,8 @@ export function ApplyJobModal({ job, resumeText, onClose }: Props) {
   };
 
   const targets: { id: TailorTarget; label: string }[] = [
-    { id: 'cover', label: t('autopilot.apply.target.cover') },
     { id: 'resume', label: t('autopilot.apply.target.resume') },
+    { id: 'cover', label: t('autopilot.apply.target.cover') },
     { id: 'both', label: t('autopilot.apply.target.both') },
   ];
 
@@ -132,16 +133,28 @@ export function ApplyJobModal({ job, resumeText, onClose }: Props) {
                 </button>
               ))}
             </div>
-            <Button
-              variant="glass"
-              size="sm"
-              loading={gen.generating}
-              disabled={!canUse || !hasDesc || gen.generating || !resume.trim()}
-              onClick={() => void gen.generate(resume, target)}
-            >
-              {!gen.generating && <Sparkles size={13} />}
-              {gen.generating ? t('autopilot.apply.generating') : t('autopilot.apply.generate')}
-            </Button>
+            <div className="flex items-center gap-2">
+              {gen.generating && (
+                <Button
+                  variant="glass"
+                  size="sm"
+                  onClick={() => gen.abort()}
+                  className="border-red-400/20 text-red-300/80 hover:text-red-200"
+                >
+                  {t('autopilot.apply.cancel')}
+                </Button>
+              )}
+              <Button
+                variant="glass"
+                size="sm"
+                loading={gen.generating}
+                disabled={!canUse || !hasDesc || gen.generating || !resume.trim()}
+                onClick={() => void gen.generate(resume, target)}
+              >
+                {!gen.generating && <Sparkles size={13} />}
+                {gen.generating ? t('autopilot.apply.generating') : t('autopilot.apply.generate')}
+              </Button>
+            </div>
           </div>
 
           {!canUse && (
@@ -167,6 +180,9 @@ export function ApplyJobModal({ job, resumeText, onClose }: Props) {
               )}
             </div>
           )}
+
+          {/* Model reasoning — same box as AI Generate; self-hides when empty */}
+          <ThinkingBubble thinking={gen.thinking} done={!gen.generating} />
 
           {/* Output */}
           {(gen.resumeOut || gen.coverOut) && (

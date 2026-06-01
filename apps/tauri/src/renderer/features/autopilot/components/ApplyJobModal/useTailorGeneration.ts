@@ -34,6 +34,7 @@ export function useTailorGeneration({ jobDesc, model, canUse, hasDesc }: Params)
   const [phase, setPhase] = useState<'idle' | 'analyzing' | 'resume' | 'cover'>('idle');
   const [resumeOut, setResumeOut] = useState('');
   const [coverOut, setCoverOut] = useState('');
+  const [thinking, setThinking] = useState('');
   const [activeOut, setActiveOut] = useState<'resume' | 'cover'>('cover');
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -52,14 +53,19 @@ export function useTailorGeneration({ jobDesc, model, canUse, hasDesc }: Params)
     setPhase('analyzing');
     setResumeOut('');
     setCoverOut('');
+    setThinking('');
     const controller = new AbortController();
     abortRef.current = controller;
+    // Reasoning deltas (Anthropic-style flag or inline <think> tags) accumulate
+    // here and render in the ThinkingBubble; cleared at the start of each phase.
+    const onThink = (tok: string) => setThinking((p) => p + tok);
     try {
       const detected = await extractMetadata(resume, jobDesc, model);
       setMeta(detected);
       if (target === 'resume' || target === 'both') {
         setActiveOut('resume');
         setPhase('resume');
+        setThinking('');
         const r = await generateResume(
           resume,
           jobDesc,
@@ -68,13 +74,15 @@ export function useTailorGeneration({ jobDesc, model, canUse, hasDesc }: Params)
           model,
           (tok) => setResumeOut((p) => p + tok),
           'en',
-          controller.signal
+          controller.signal,
+          onThink
         );
         setResumeOut(r);
       }
       if (target === 'cover' || target === 'both') {
         setActiveOut('cover');
         setPhase('cover');
+        setThinking('');
         const c = await generateCoverLetter(
           resume,
           jobDesc,
@@ -83,7 +91,8 @@ export function useTailorGeneration({ jobDesc, model, canUse, hasDesc }: Params)
           model,
           (tok) => setCoverOut((p) => p + tok),
           'en',
-          controller.signal
+          controller.signal,
+          onThink
         );
         setCoverOut(c);
       }
@@ -137,6 +146,7 @@ export function useTailorGeneration({ jobDesc, model, canUse, hasDesc }: Params)
     generating,
     phase,
     phaseLabel,
+    thinking,
     resumeOut,
     coverOut,
     activeOut,
