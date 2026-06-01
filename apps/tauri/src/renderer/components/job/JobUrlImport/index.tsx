@@ -1,4 +1,4 @@
-import { AlertCircle, Link2, Loader2 } from 'lucide-react';
+import { AlertCircle, Check, Link2, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button, Input } from '@ajh/ui';
@@ -22,6 +22,9 @@ export function JobUrlImport({ onImport, disabled }: Props) {
   const importJob = useImportJobUrl();
   const [url, setUrl] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // What the last successful import resolved to — shown so the user sees the
+  // detected role and company, not just a silently-filled job-ad field.
+  const [imported, setImported] = useState<{ title?: string; company?: string } | null>(null);
 
   const busy = importJob.isPending;
 
@@ -38,6 +41,7 @@ export function JobUrlImport({ onImport, disabled }: Props) {
       }
       const header = [posting?.title, posting?.company].filter(Boolean).join(' — ');
       onImport(header ? `${header}\n\n${description}` : description);
+      setImported({ title: posting?.title, company: posting?.company });
       setUrl('');
     } catch {
       setError(t('jobUrlImport.failed'));
@@ -50,7 +54,11 @@ export function JobUrlImport({ onImport, disabled }: Props) {
         <Input
           autoFocus
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          onChange={(e) => {
+            setUrl(e.target.value);
+            if (error) setError(null);
+            if (imported) setImported(null);
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
@@ -74,6 +82,15 @@ export function JobUrlImport({ onImport, disabled }: Props) {
         <div className="flex items-center gap-1.5 text-[10px] text-amber-300/80">
           <AlertCircle size={10} className="shrink-0" />
           {error}
+        </div>
+      )}
+      {!error && imported && (imported.title || imported.company) && (
+        <div className="flex items-center gap-1.5 text-[10px] text-brand-soft/90">
+          <Check size={10} className="shrink-0" />
+          <span className="truncate">
+            {t('jobUrlImport.imported')}:{' '}
+            {[imported.title, imported.company].filter(Boolean).join(' · ')}
+          </span>
         </div>
       )}
     </div>
