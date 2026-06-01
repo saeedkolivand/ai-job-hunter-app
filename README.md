@@ -179,7 +179,7 @@ xattr -cr "/Applications/AI Job Hunter Assistant.app"
 <details>
 <summary><strong>Homebrew (macOS)</strong></summary>
 
-> ⚠️ The Homebrew cask/tap is not published yet — once it is, install with:
+> ⚠️ The cask definition lives in the repo at [`Casks/ai-job-hunter.rb`](Casks/ai-job-hunter.rb), but it is **not installable yet** — the GitHub releases don't carry `.dmg` artifacts for Homebrew to download. Once the release pipeline attaches the macOS installers (and the cask's `sha256` is pinned), publish the cask in a tap and install with:
 
 ```bash
 brew tap saeedkolivand/tap
