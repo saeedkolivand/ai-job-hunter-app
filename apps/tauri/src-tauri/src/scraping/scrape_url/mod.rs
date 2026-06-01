@@ -307,12 +307,14 @@ async fn generic_html(url: &str) -> Result<Option<JobPosting>> {
         .ok()
         .and_then(|u| u.host_str().map(str::to_string))
         .unwrap_or_default();
+    // Prefer a real employer name (JSON-LD / og:site_name) over the bare host.
+    let company = parse_generic_company(&html).unwrap_or(host);
 
     Ok(Some(JobPosting {
         id: format!("url:{}", url),
         external_id: None,
         title,
-        company: host,
+        company,
         location: None,
         url: url.to_string(),
         source: "url".to_string(),
@@ -339,6 +341,62 @@ fn parse_generic_html(html: &str) -> (String, Option<String>) {
         .next()
         .and_then(|e| e.value().attr("content").map(str::to_string));
     (title, description)
+}
+
+/// Best-effort real employer name for the generic fallback. Tries JSON-LD
+/// (`JobPosting.hiringOrganization.name`, incl. an `@graph` array), then
+/// `og:site_name`. Returns `None` when neither is present so the caller can
+/// fall back to the host.
+fn parse_generic_company(html: &str) -> Option<String> {
+    let doc = Html::parse_document(html);
+
+    if let Ok(sel) = Selector::parse(r#"script[type="application/ld+json"]"#) {
+        for node in doc.select(&sel) {
+            let raw = node.text().collect::<String>();
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
+                if let Some(name) = json_ld_company(&json) {
+                    let name = name.trim();
+                    if !name.is_empty() {
+                        return Some(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    if let Ok(sel) = Selector::parse(r#"meta[property="og:site_name"]"#) {
+        if let Some(name) = doc
+            .select(&sel)
+            .next()
+            .and_then(|e| e.value().attr("content"))
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            return Some(name.to_string());
+        }
+    }
+
+    None
+}
+
+/// Pull `hiringOrganization.name` from a JSON-LD value, tolerating a single
+/// object, a string org, and an `@graph` array of nodes.
+fn json_ld_company(json: &serde_json::Value) -> Option<String> {
+    fn org_name(node: &serde_json::Value) -> Option<String> {
+        match node.get("hiringOrganization")? {
+            serde_json::Value::String(s) => Some(s.clone()),
+            org @ serde_json::Value::Object(_) => {
+                org.get("name").and_then(|n| n.as_str()).map(str::to_string)
+            }
+            _ => None,
+        }
+    }
+    if let Some(name) = org_name(json) {
+        return Some(name);
+    }
+    json.get("@graph")
+        .and_then(|g| g.as_array())
+        .and_then(|nodes| nodes.iter().find_map(org_name))
 }
 
 // ── LinkedIn ────────────────────────────────────────────────────────────────
