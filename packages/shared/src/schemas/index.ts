@@ -162,6 +162,10 @@ export const AiGenerationSaveSchema = z.object({
   resumeText: z.string().default(''),
   coverLetterText: z.string().default(''),
   jobAd: z.string().default(''),
+  // Application link — the job this generation targets and the board it came
+  // from. `jobUrl` is what marks an autopilot found job as "applied".
+  jobUrl: z.string().default(''),
+  board: z.string().default(''),
 });
 // Note: the `AiGenerationSaveRequest` type is declared in the aiGenerations IPC
 // contract (single source for that name); this schema validates the same shape.
