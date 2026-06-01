@@ -72,7 +72,7 @@ export function ThinkingBubble({ thinking, done = false }: ThinkingBubbleProps) 
           >
             <pre
               ref={scrollRef}
-              className="max-h-40 overflow-y-auto px-3 pb-3 font-mono text-[10px] leading-relaxed text-violet-300/40 whitespace-pre-wrap break-all"
+              className="select-text max-h-40 overflow-y-auto px-3 pb-3 font-mono text-[10px] leading-relaxed text-violet-300/40 whitespace-pre-wrap break-all"
             >
               {thinking}
               {!done && (

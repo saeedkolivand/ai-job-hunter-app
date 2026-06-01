@@ -25,7 +25,7 @@ export function JobDescriptionPanel({ jobDesc, hasDesc, fetchingDesc, jobUrl }: 
           {t('autopilot.apply.fetchingDescription')}
         </div>
       ) : hasDesc ? (
-        <div className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] leading-relaxed text-foreground/60">
+        <div className="select-text max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] leading-relaxed text-foreground/60">
           {jobDesc}
         </div>
       ) : jobUrl ? (
