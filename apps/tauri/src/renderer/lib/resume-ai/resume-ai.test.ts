@@ -72,7 +72,9 @@ describe('runAnalysis', () => {
 
     const result = await promise;
     expect(result.scores.ats).toBe(72);
-    expect(onToken).toHaveBeenCalledWith('{"scores":{"ats":72}}');
+    // The shared <think> splitter may chunk the streamed content (it holds back a
+    // few trailing chars to detect split tags), so assert the reassembled stream.
+    expect(onToken.mock.calls.map((c) => c[0]).join('')).toBe('{"scores":{"ats":72}}');
     expect(result.detectedLanguages).toHaveProperty('mismatch');
   });
 

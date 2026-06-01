@@ -29,6 +29,32 @@ fn is_reasoning_model(model: &str) -> bool {
     matches!((bytes.next(), bytes.next()), (Some(b'o'), Some(d)) if d.is_ascii_digit())
 }
 
+/// Split one streaming chunk into `(reasoning, content)` deltas.
+///
+/// OpenAI-compatible servers that expose chain-of-thought put it on
+/// `delta.reasoning_content` (DeepSeek-R1, vLLM, LM Studio, Ollama's OpenAI
+/// shim) or `delta.reasoning` (OpenRouter); the visible answer stays on
+/// `delta.content`. Either may be empty/absent. Pure + unit-tested so the
+/// streaming loop stays a thin emitter.
+///
+/// Honest limitation: OpenAI's own o-series hide their reasoning text over Chat
+/// Completions, so there is nothing to surface there — only the answer streams.
+fn parse_openai_delta(event: &Value) -> (&str, &str) {
+    let delta = event
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("delta"));
+    let reasoning = delta
+        .and_then(|d| d.get("reasoning_content").or_else(|| d.get("reasoning")))
+        .and_then(|c| c.as_str())
+        .unwrap_or("");
+    let content = delta
+        .and_then(|d| d.get("content"))
+        .and_then(|c| c.as_str())
+        .unwrap_or("");
+    (reasoning, content)
+}
+
 pub struct OpenAiClient {
     id: ProviderId,
     base_url: String,
@@ -166,13 +192,13 @@ impl AiProvider for OpenAiClient {
                             Ok(v) => v,
                             Err(_) => continue,
                         };
-                        let delta = event
-                            .get("choices")
-                            .and_then(|c| c.get(0))
-                            .and_then(|c| c.get("delta"))
-                            .and_then(|d| d.get("content"))
-                            .and_then(|c| c.as_str())
-                            .unwrap_or("");
+                        let (reasoning, delta) = parse_openai_delta(&event);
+                        if !reasoning.is_empty() {
+                            let _ = app.emit(
+                                "ai:stream",
+                                json!({ "jobId": job_id, "delta": reasoning, "done": false, "thinking": true }),
+                            );
+                        }
                         if !delta.is_empty() {
                             let _ = app.emit(
                                 "ai:stream",
@@ -359,7 +385,8 @@ impl AiProvider for OpenAiClient {
 
 #[cfg(test)]
 mod tests {
-    use super::is_reasoning_model;
+    use super::{is_reasoning_model, parse_openai_delta};
+    use serde_json::json;
 
     #[test]
     fn detects_o_series_including_future_models() {
@@ -378,5 +405,29 @@ mod tests {
                 "{m} should not be a reasoning model"
             );
         }
+    }
+
+    #[test]
+    fn parse_delta_splits_reasoning_from_content() {
+        // DeepSeek-R1 / vLLM style: reasoning on `reasoning_content`.
+        let ev = json!({ "choices": [{ "delta": { "reasoning_content": "let me think" } }] });
+        assert_eq!(parse_openai_delta(&ev), ("let me think", ""));
+
+        // OpenRouter style: reasoning on `reasoning`.
+        let ev = json!({ "choices": [{ "delta": { "reasoning": "pondering" } }] });
+        assert_eq!(parse_openai_delta(&ev), ("pondering", ""));
+
+        // Normal answer content.
+        let ev = json!({ "choices": [{ "delta": { "content": "the answer" } }] });
+        assert_eq!(parse_openai_delta(&ev), ("", "the answer"));
+    }
+
+    #[test]
+    fn parse_delta_empty_when_no_choices_or_fields() {
+        assert_eq!(parse_openai_delta(&json!({})), ("", ""));
+        assert_eq!(
+            parse_openai_delta(&json!({ "choices": [{ "delta": {} }] })),
+            ("", "")
+        );
     }
 }

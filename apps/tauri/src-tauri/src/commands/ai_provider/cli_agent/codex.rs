@@ -73,6 +73,12 @@ impl CliAgentBackend for CodexAgent {
             // Emit at message granularity (Codex's canonical assistant output).
             return text_of(m).map(CliEvent::Delta);
         }
+        if ty.contains("reasoning") {
+            // Codex streams chain-of-thought as `agent_reasoning*` events; surface
+            // it as thinking, like the cloud providers. Section-break markers carry
+            // no text and are dropped by `text_of`.
+            return text_of(m).map(CliEvent::Thinking);
+        }
         if ty.contains("task_complete") || ty.contains("turn_complete") {
             return Some(CliEvent::Done);
         }
@@ -168,6 +174,22 @@ mod tests {
     fn task_complete_is_done() {
         let line = r#"{"msg":{"type":"task_complete"}}"#;
         assert_eq!(CodexAgent.parse_stream_line(line), Some(CliEvent::Done));
+    }
+
+    #[test]
+    fn agent_reasoning_becomes_thinking() {
+        let line = r#"{"msg":{"type":"agent_reasoning","text":"weighing options"}}"#;
+        assert_eq!(
+            CodexAgent.parse_stream_line(line),
+            Some(CliEvent::Thinking("weighing options".to_string()))
+        );
+    }
+
+    #[test]
+    fn empty_reasoning_section_break_is_ignored() {
+        // Section-break markers carry no text — `text_of` filters them out.
+        let line = r#"{"msg":{"type":"agent_reasoning_section_break"}}"#;
+        assert_eq!(CodexAgent.parse_stream_line(line), None);
     }
 
     #[test]
