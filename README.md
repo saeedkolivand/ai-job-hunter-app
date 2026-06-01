@@ -436,8 +436,10 @@ MIT — see [LICENSE](LICENSE).
 
 ---
 
-## Star History
+<h2 align="center">Star History</h2>
 
-<a href="https://star-history.com/#saeedkolivand/ai-job-hunter-assistant-app&Date">
-  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=saeedkolivand/ai-job-hunter-assistant-app&type=Date" width="600">
-</a>
+<p align="center">
+  <a href="https://star-history.com/#saeedkolivand/ai-job-hunter-assistant-app&Date">
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=saeedkolivand/ai-job-hunter-assistant-app&type=Date" width="600">
+  </a>
+</p>
