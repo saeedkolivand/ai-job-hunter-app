@@ -92,6 +92,14 @@ interface ModelInfo {
 
 Downloads an Ollama model. Progress is emitted as `ai:pull-progress` events.
 
+#### `ai.inspectModel(req: { model: string }): Promise<ModelInspectResult | null>`
+
+Returns per-model context-window and max-token limits from Ollama (`/api/show`). Returns `null` for non-local providers or when the Ollama server is unreachable. Used to populate `modelLimits` in the preferences store and show hardware-lag warnings. See `commands/ai.rs: ai_inspect_model`.
+
+#### `ai.researchCompany(req: { jobAd: string; provider?: string; model?: string; baseUrl?: string }): Promise<{ company: string; brief: string }>`
+
+Accepts the full **job ad text** (not a company name). The backend extracts the company internally via the `CompanyResearch` enricher (`cover_letter/research/`), runs Brave search + provider synthesis, and caches the result in `KvCache`. Returns `{ company, brief }`. Degrades gracefully — returns `{ company: "", brief: "" }` when there is no Brave key or the search/synthesis fails, so generation always proceeds. The brief is folded into cover-letter and application-answer prompts as an untrusted-fenced block (see ADR-010). See `commands/ai.rs: ai_research_company`.
+
 #### `ai.embed(text: string): Promise<number[]>`
 
 Generates a vector embedding for the given text using the configured embedding model.
@@ -113,7 +121,7 @@ interface StreamChunk {
   id: string; // generationId from generate()
   delta: string; // text fragment
   done: boolean; // true on last chunk
-  thinking?: string; // Anthropic extended thinking block
+  thinking?: string; // reasoning content — normalized across all providers (OpenAI reasoning_content, Gemini thought parts, Ollama message.thinking, inline <think> blocks)
 }
 ```
 
@@ -149,19 +157,31 @@ Tracks metadata for all AI-generated documents.
 #### `aiGenerations.delete(id: string): Promise<void>`
 
 ```typescript
+interface ApplicationAnswer {
+  id: string;
+  question: string;
+  answer: string;
+}
+
 interface AIGenerationRecord {
   id: string;
   type: 'cover-letter' | 'resume' | 'email' | 'summary';
   documentId: string;
   jobId?: string;
+  jobUrl?: string; // links record to a FoundJob for applied-status derivation
+  board?: string; // board the job came from
   model: string;
   provider: AIProvider;
   content: string;
   language: string;
   template?: string;
+  applicationAnswers?: ApplicationAnswer[]; // answered application questions
+  companyBrief?: string; // cached company research (untrusted)
   createdAt: string;
 }
 ```
+
+`aiGenerations.save` performs a **per-job merge-upsert by `jobUrl`** (`merge_application` in `ai_generations/mod.rs`): résumé, cover letter, answers, and brief from separate generation actions all land on one row when they share a `jobUrl`. Manual generations without a `jobUrl` insert as separate rows. See `commands/ai_generations.rs`.
 
 ---
 

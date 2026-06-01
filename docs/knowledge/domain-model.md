@@ -28,6 +28,7 @@ Describes the **shape**; the source is authoritative for field-level detail. Use
 - **Provider adapters** — `commands/ai_provider/{ollama,openai,anthropic,gemini}.rs` behind a shared interface (`mod.rs`); business logic must not depend on a specific provider.
 - **Embeddings** — `documents/mod.rs` (storage + embedding-space invalidation on model change).
 - **Prompts** — `packages/prompts` (provider-aware, locale-driven templates).
+- **`ai_generations` aggregate** — per-job merge-upsert by `job_url` (`save_application` + pure `merge_application` in `ai_generations/mod.rs`); `applied` status derived via `applied_job_urls()`. See [ADR-007](decision-records/adr-007-ai-generations-application-aggregate.md).
 
 ## Platform / data
 

@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-05-29
+Last updated: 2026-06-01
 
 ---
 
@@ -26,13 +26,14 @@ Last updated: 2026-05-29
 | Vite + HMR for renderer          | ✅     |                                                                                                                                                       |
 | TanStack Router (file-based)     | ✅     | All 9 routes                                                                                                                                          |
 | TanStack Query + service hooks   | ✅     | All 21 namespaces                                                                                                                                     |
-| Zustand stores                   | ✅     | preferences-store, others                                                                                                                             |
+| Zustand stores                   | ✅     | preferences-store, generation-store (`store/generation-store/`), others                                                                               |
 | AppClient / mock transport       | ✅     | Tauri + mock implementations                                                                                                                          |
 | ESLint + Prettier                | ✅     | Enforced in CI                                                                                                                                        |
 | Husky + commitlint               | ✅     | Pre-commit hooks                                                                                                                                      |
 | Semantic release pipeline        | ✅     | Auto-versioning on main                                                                                                                               |
 | Auto-updater                     | ✅     | GitHub Releases integration                                                                                                                           |
 | Data backup / restore            | ✅     | `DataStore` trait → full export/import bundle (Settings → Privacy)                                                                                    |
+| Full app reset                   | ✅     | `privacy_reset_app` wipes every store registered in the `Resettable` registry (`commands/privacy.rs`)                                                 |
 | Shared platform layers           | ✅     | `platform::config`, `net::http`, `error::AppError`, `observability::Span` + provider/board registries (Phases 1–6 — see PATTERNS.md §13)              |
 | Architecture CI guardrails       | ✅     | grep bans: `std::env::var` outside `platform/config.rs`; `reqwest::Client::new/builder` outside `net/http.rs`; `Result<_, String>` outside `error.rs` |
 
@@ -79,19 +80,22 @@ former `packages/ai` and `packages/data` Node packages were removed.
 
 ## AI Generation (`apps/tauri/src/renderer/features/ai-generate/`)
 
-| Feature                       | Status | Notes                                                                                                     |
-| ----------------------------- | ------ | --------------------------------------------------------------------------------------------------------- |
-| Cover letter generation       | ✅     | Streaming                                                                                                 |
-| Resume generation             | ✅     | Streaming                                                                                                 |
-| Email generation              | ✅     |                                                                                                           |
-| Summary generation            | ✅     |                                                                                                           |
-| Bold keyword extraction       | ✅     | Post-processes output                                                                                     |
-| DOCX export                   | ✅     | Canonical model engine (default): real two-column table + native ATS; A4 + font fallback; legacy fallback |
-| PDF export                    | ✅     | Canonical layout engine (default); legacy fallback                                                        |
-| ATS-safe linearization        | ✅     | Two-column → single for ATS                                                                               |
-| Extended thinking (Anthropic) | ✅     | ThinkingBubble UI                                                                                         |
-| Locale-aware prompts          | ✅     | 11 languages                                                                                              |
-| Template preview              | ✅     | OptionTile with live preview                                                                              |
+| Feature                    | Status | Notes                                                                                                     |
+| -------------------------- | ------ | --------------------------------------------------------------------------------------------------------- |
+| Cover letter generation    | ✅     | Streaming                                                                                                 |
+| Resume generation          | ✅     | Streaming                                                                                                 |
+| Email generation           | ✅     |                                                                                                           |
+| Summary generation         | ✅     |                                                                                                           |
+| Bold keyword extraction    | ✅     | Post-processes output                                                                                     |
+| DOCX export                | ✅     | Canonical model engine (default): real two-column table + native ATS; A4 + font fallback; legacy fallback |
+| PDF export                 | ✅     | Canonical layout engine; glyph-subset fonts (`pdf_renderer/fonts.rs`) ~120 KB vs ~3 MB full embed         |
+| ATS-safe linearization     | ✅     | Two-column → single for ATS                                                                               |
+| Universal thinking display | ✅     | All providers normalized via `think-split.ts`; `ThinkingBubble` UI (`ai-generate/components/`)            |
+| Local model limits         | ✅     | `ai_inspect_model` IPC; `modelLimits` in preferences-store; `num_ctx`/`num_predict` on Ollama path only   |
+| Company research           | ✅     | `ai_research_company` IPC; opt-in; Brave + provider synthesis; untrusted-fenced in prompt                 |
+| Application questions      | ✅     | `APPLICATION_QUESTIONS` registry + grounded answer prompt; answers persist on per-job record              |
+| Locale-aware prompts       | ✅     | 11 languages                                                                                              |
+| Template preview           | ✅     | OptionTile with live preview                                                                              |
 
 ---
 
@@ -111,16 +115,20 @@ former `packages/ai` and `packages/data` Node packages were removed.
 
 ## Autopilot (`apps/tauri/src-tauri/src/autopilot/`)
 
-| Feature                      | Status | Notes                              |
-| ---------------------------- | ------ | ---------------------------------- |
-| Workflow definition wizard   | ✅     | 3-step UI                          |
-| Workflow persistence         | ✅     | SQLite                             |
-| Manual trigger               | ✅     |                                    |
-| Scheduled execution          | ✅     | Cron-like scheduler                |
-| Real-time step events        | ✅     | autopilot:step stream              |
-| Pause / resume               | ✅     |                                    |
-| Auto-apply integration       | 🚧     | Apply success rate varies by board |
-| Batch application throttling | 🚧     | Rate limiting per board            |
+| Feature                      | Status | Notes                                                                                                          |
+| ---------------------------- | ------ | -------------------------------------------------------------------------------------------------------------- |
+| Workflow definition wizard   | ✅     | 3-step UI                                                                                                      |
+| Workflow persistence         | ✅     | SQLite                                                                                                         |
+| Manual trigger               | ✅     |                                                                                                                |
+| Scheduled execution          | ✅     | Cron-like scheduler                                                                                            |
+| Real-time step events        | ✅     | autopilot:step stream                                                                                          |
+| Pause / resume               | ✅     |                                                                                                                |
+| Found-job dedup + tracking   | ✅     | `merge_found_jobs` dedup by URL; `FoundJob.is_new`; `applied` derived from `ai_generations.job_url`            |
+| Generation-session store     | ✅     | `store/generation-store/` — app-wide, keyed by context id, survives navigation; Apply modal uses it            |
+| `ai_generations` aggregate   | ✅     | `job_url`, `board`, `application_answers`, `company_brief` columns; per-job merge-upsert (`merge_application`) |
+| Applications/History view    | ✅     | Generated tab — new/applied badges; per-job record in history card                                             |
+| Auto-apply integration       | 🚧     | Apply success rate varies by board                                                                             |
+| Batch application throttling | 🚧     | Rate limiting per board                                                                                        |
 
 ---
 
@@ -159,4 +167,3 @@ former `packages/ai` and `packages/data` Node packages were removed.
 | Cloud sync                              | Low      | Deferred — needs a remote backend; the backup bundle + `DataStore` trait are the substrate |
 | Team/shared job tracking                | Low      | Would require cloud sync                                                                   |
 | Interview preparation AI                | Medium   | Mock interview Q&A                                                                         |
-| Application analytics dashboard         | Medium   | Track apply→response rates                                                                 |
