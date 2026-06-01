@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.png" alt="AI Job Hunter" width="100%">
+  <img src="docs/assets/banner.png" alt="AI Job Hunter" width="100%">
 </p>
 
 <h1 align="center">AI Job Hunter</h1>
