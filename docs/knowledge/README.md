@@ -38,7 +38,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-006](decision-records/adr-006-generation-session-store.md)              | Single app-wide generation-session store                                    |
 | [ADR-007](decision-records/adr-007-ai-generations-application-aggregate.md)  | `ai_generations` as the application aggregate with merge-upsert by job URL  |
 | [ADR-008](decision-records/adr-008-pdf-glyph-subsetting.md)                  | PDF glyph subsetting at export time via `parse_font`                        |
-| [ADR-009](decision-records/adr-009-full-reset-lockstep-list.md)              | Full factory reset via explicit lockstep store list in `privacy_reset_app`  |
+| [ADR-009](decision-records/adr-009-resettable-reset-registry.md)             | Full factory reset via a `Resettable` registry                              |
 | [ADR-010](decision-records/adr-010-untrusted-input-fencing.md)               | Untrusted-input fencing for web-sourced company research                    |
 
 ## Canonical docs (do not duplicate — link)

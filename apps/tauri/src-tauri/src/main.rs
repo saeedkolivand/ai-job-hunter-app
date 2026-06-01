@@ -170,56 +170,77 @@ fn main() {
             // All path/env knowledge lives in `platform::config`.
             let data_dir = platform::config::resolve_and_export_data_dir(handle);
 
-            app.manage(std::sync::Arc::new(Mutex::new(AutopilotStore::new(
-                &data_dir,
-            ))));
-            app.manage(Mutex::new(CredentialStore::new(&data_dir)));
+            // Persistent user-data stores are managed via `manage_resettable`, which
+            // also registers each one into the `ResetRegistry` so `privacy_reset_app`
+            // wipes it on factory reset — no hand-maintained clear list.
+            use commands::privacy::manage_resettable;
+            let mut reset_registry = commands::privacy::ResetRegistry::default();
+
+            manage_resettable(
+                app,
+                &mut reset_registry,
+                "autopilots",
+                std::sync::Arc::new(Mutex::new(AutopilotStore::new(&data_dir))),
+            );
+            manage_resettable(
+                app,
+                &mut reset_registry,
+                "credentials",
+                Mutex::new(CredentialStore::new(&data_dir)),
+            );
             match documents::DocumentStore::open(&data_dir) {
-                Ok(store) => {
-                    app.manage(store);
-                }
+                Ok(store) => manage_resettable(app, &mut reset_registry, "documents", store),
                 Err(e) => log::warn!("[setup] document store failed to open (non-fatal): {e}"),
             }
             match ai_generations::AiGenerationStore::open(&data_dir) {
-                Ok(store) => {
-                    app.manage(store);
-                }
+                Ok(store) => manage_resettable(app, &mut reset_registry, "ai_generations", store),
                 Err(e) => {
                     log::warn!("[setup] ai generations store failed to open (non-fatal): {e}")
                 }
             }
             match job_preferences::JobPreferencesStore::open(&data_dir) {
-                Ok(store) => {
-                    app.manage(store);
-                }
+                Ok(store) => manage_resettable(app, &mut reset_registry, "job_preferences", store),
                 Err(e) => {
                     log::warn!("[setup] job preferences store failed to open (non-fatal): {e}")
                 }
             }
             match contact_profile::ContactProfileStore::open(&data_dir) {
-                Ok(store) => {
-                    app.manage(store);
-                }
+                Ok(store) => manage_resettable(app, &mut reset_registry, "contact_profile", store),
                 Err(e) => {
                     log::warn!("[setup] contact profile store failed to open (non-fatal): {e}")
                 }
             }
-            app.manage(Mutex::new(JobTracker::open(&data_dir)));
-            app.manage(Mutex::new(PostingsCache::default()));
-            app.manage(Mutex::new(InteractionStore::new(&data_dir)));
+            manage_resettable(
+                app,
+                &mut reset_registry,
+                "job_tracker",
+                Mutex::new(JobTracker::open(&data_dir)),
+            );
+            manage_resettable(
+                app,
+                &mut reset_registry,
+                "postings",
+                Mutex::new(PostingsCache::default()),
+            );
+            manage_resettable(
+                app,
+                &mut reset_registry,
+                "interactions",
+                Mutex::new(InteractionStore::new(&data_dir)),
+            );
             app.manage(Mutex::new(UpdaterState::default()));
             app.manage(std::sync::Arc::new(ScraperEngine::new()));
             if let Ok(db) = conversations::ConversationDb::open(handle) {
-                app.manage(db);
+                manage_resettable(app, &mut reset_registry, "conversations", db);
             } else {
                 log::warn!("[setup] conversation db failed to open (non-fatal)");
             }
             match pipeline::cache::KvCache::open(&data_dir) {
-                Ok(cache) => {
-                    app.manage(cache);
-                }
+                Ok(cache) => manage_resettable(app, &mut reset_registry, "cache", cache),
                 Err(e) => log::warn!("[setup] pipeline cache failed to open (non-fatal): {e}"),
             }
+
+            app.manage(reset_registry);
 
             // Build and set the application menu.
             let menu = build_app_menu(handle)?;
