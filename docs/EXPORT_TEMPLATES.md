@@ -131,10 +131,16 @@ the relationships part). The visible label is shown, never the raw URL.
 
 ## Fonts
 
-Six families are bundled as TTFs and embedded in the PDF. The DOCX is **not**
-embedded yet, so it references a widely-available fallback so output is
-predictable on machines without the bundled fonts (true OOXML embedding is a
-tracked follow-up):
+Six families are bundled as TTFs and embedded in the PDF. Each font is
+**glyph-subsetted per export** to only the codepoints actually rendered
+(`export/pdf_renderer/fonts.rs: parse_font`), using `printpdf::subset_font` with
+a safe fallback to the full font on failure. This reduces typical PDF size from
+~3 MB (full embed) to ~120 KB. A size-budget guardrail test in
+`export/pdf/test.rs` enforces this.
+
+The DOCX is **not** embedded yet, so it references a widely-available fallback so
+output is predictable on machines without the bundled fonts (true OOXML embedding
+is a tracked follow-up):
 
 | Bundled family   | DOCX fallback |
 | ---------------- | ------------- |

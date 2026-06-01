@@ -23,6 +23,10 @@ Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `j
 - **Golden parity** — keep PDF and DOCX outputs aligned where the design requires; deterministic snapshots, reviewed on update.
 - **Validate gate** — `validate/` checks ATS compliance before/at export.
 
+## PDF glyph subsetting
+
+`export/pdf_renderer/fonts.rs: parse_font` subsets each embedded font to rendered codepoints via `printpdf::subset_font`; falls back to full-font on failure. A size-budget guardrail test (`export/pdf/test.rs: classic_resume_pdf_is_glyph_subset_under_budget`, 800 KB limit) catches subsetting regressions. See [ADR-008](decision-records/adr-008-pdf-glyph-subsetting.md).
+
 ## Review heuristics
 
 - HIGH: a template/layout change that breaks ATS parseability; a scoring change that violates the documented model without an ADR; an untested export error path; a header-link regression (links must come from `contact_profile/`).

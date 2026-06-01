@@ -10,7 +10,7 @@ For `performance-profiler` (Secondary). Bias findings toward MEDIUM unless there
 
 - **Scraping** (`scraping/`, `browser/`) — bounded concurrency, reuse chromiumoxide pages where possible, per-board rate limits, don't spawn unbounded tasks.
 - **AI / embeddings** (`commands/ai_provider/`, `documents/`) — batch sizing, streaming back-pressure, minimal token/context, cheapest viable model; avoid re-embedding unchanged content.
-- **Export / layout** (`export/`, `layout/`, `measure/`) — pre-measure before render; don't re-shape fonts per glyph; compute pagination once.
+- **Export / layout** (`export/`, `layout/`, `measure/`) — pre-measure before render; don't re-shape fonts per glyph; compute pagination once. PDF fonts are glyph-subset at export time (`export/pdf_renderer/fonts.rs: parse_font`); size guardrail test catches regressions. See [ADR-008](decision-records/adr-008-pdf-glyph-subsetting.md).
 - **Pipeline** (`pipeline/`, `autopilot/`) — bounded queues; backpressure; cancellation honored.
 - **Data** — no N+1 queries, no full-table scans on warm paths.
 
