@@ -477,3 +477,4 @@ graph TD
 [tanstack-query]: https://tanstack.com/query
 [chromiumoxide]: https://github.com/mattsse/chromiumoxide
 [vitest]: https://vitest.dev
+[ollama]: https://ollama.com
