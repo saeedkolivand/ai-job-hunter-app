@@ -30,10 +30,22 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
         job_ad: req.job_ad,
         job_url: req.job_url,
         board: req.board,
+        application_answers: req
+            .application_answers
+            .into_iter()
+            .map(|a| crate::ai_generations::ApplicationAnswer {
+                id: a.id,
+                question: a.question,
+                answer: a.answer,
+            })
+            .collect(),
+        company_brief: req.company_brief,
     };
 
-    match store.insert(&rec) {
-        Ok(()) => json!({ "id": rec.id, "success": true }),
+    // Per-job aggregate: when linked to a job, merge into that job's row so
+    // résumé/cover/answers/brief from separate actions land on one record.
+    match store.save_application(rec) {
+        Ok(id) => json!({ "id": id, "success": true }),
         Err(e) => json!({ "error": e }),
     }
 }

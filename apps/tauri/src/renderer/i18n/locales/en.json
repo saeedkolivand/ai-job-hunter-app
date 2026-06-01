@@ -870,7 +870,9 @@
       "exportResume": "Resume",
       "exportCoverLetter": "Cover Letter",
       "applied": "Applied",
-      "openPosting": "Open posting"
+      "openPosting": "Open posting",
+      "companyResearch": "Company research",
+      "applicationAnswers": "Application answers"
     },
     "relativeTime": {
       "justNow": "Just now",
