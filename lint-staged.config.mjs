@@ -1,17 +1,20 @@
 /**
  * lint-staged — pre-commit configuration.
  *
- * Runs ONLY formatting on commit (fast, zero memory pressure).
- * ESLint, TypeScript, and tests run in the pre-push hook instead.
+ * Auto-fixes + formats ONLY the staged files (fast, low memory):
+ *   1. `eslint --cache --fix` — corrects fixable lint issues so they land *in*
+ *      the commit (the only place auto-fix actually reaches the push).
+ *   2. `prettier --write` — formats, and has the final say so it never fights
+ *      ESLint's stylistic fixes.
  *
- * Rationale: running eslint on 200+ staged files in parallel causes OOM/SIGKILL
- * on developer machines. Format-on-commit is instant and non-blocking. Lint
- * errors are caught by the editor in real-time and by pre-push before reaching
- * the remote — the right gate for that check.
+ * Scope matters: lint-staged passes only the staged file paths, so this never
+ * runs `eslint .` across the 200+ files in the repo (which OOM/SIGKILLs dev
+ * machines). The exhaustive, non-fixing gate stays in the pre-push hook
+ * (`pnpm lint:strict`, `--max-warnings 0`) and in CI.
  */
 export default {
-  '**/*.{ts,tsx}': ['prettier --write'],
-  '**/*.{js,mjs,cjs}': ['prettier --write'],
+  '**/*.{ts,tsx}': ['eslint --cache --fix', 'prettier --write'],
+  '**/*.{js,mjs,cjs}': ['eslint --cache --fix', 'prettier --write'],
   '**/*.{json,md,yml,yaml}': ['prettier --write'],
   '**/*.css': ['prettier --write'],
 };
