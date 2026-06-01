@@ -571,6 +571,13 @@
         "label": "Unternehmen recherchieren",
         "hint": "Fügt dem Anschreiben eine kurze Web-Zusammenfassung hinzu. Benötigt einen Brave-Search-Schlüssel; nach bestem Bemühen."
       },
+      "questions": {
+        "title": "Bewerbungsfragen",
+        "hint": "Wählen Sie häufige Fragen – wir entwerfen Antworten auf Basis Ihres Lebenslaufs.",
+        "generate": "Antworten generieren",
+        "generating": "Wird generiert…",
+        "copy": "Antwort kopieren"
+      },
       "target": {
         "resume": "Lebenslauf",
         "cover": "Anschreiben",

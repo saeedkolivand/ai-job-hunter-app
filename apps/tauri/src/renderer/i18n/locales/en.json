@@ -571,6 +571,13 @@
         "label": "Research the company",
         "hint": "Adds a short web brief to the cover letter. Needs a Brave Search key; best-effort."
       },
+      "questions": {
+        "title": "Application questions",
+        "hint": "Pick common questions and we'll draft answers grounded in your resume.",
+        "generate": "Generate answers",
+        "generating": "Generating…",
+        "copy": "Copy answer"
+      },
       "target": {
         "resume": "Resume",
         "cover": "Cover letter",

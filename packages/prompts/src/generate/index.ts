@@ -4,6 +4,7 @@
  * `@ajh/prompts/generate` entry point.
  */
 
+export * from './application-questions.js';
 export * from './cover-letter.js';
 export * from './emphasis.js';
 export * from './links.js';
