@@ -534,6 +534,7 @@
       "fetchingDescription": "Fetching job description…",
       "generate": "Generate",
       "generating": "Generating…",
+      "cancel": "Cancel",
       "analyzing": "Analyzing job description…",
       "writingResume": "Writing resume…",
       "writingCover": "Writing cover letter…",
