@@ -156,6 +156,15 @@ fn main() {
     credentials::init_keyring();
 
     tauri::Builder::default()
+        // Single-instance must be the FIRST plugin: on a second launch it focuses
+        // the already-running window instead of spawning another process.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+        }))
         .plugin(
             tauri_plugin_log::Builder::new()
                 .max_file_size(5_000_000)
@@ -167,6 +176,10 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
+        // Persist + restore window size/position/maximized across launches; the
+        // width/height/center in tauri.conf.json become first-run defaults only.
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let handle = app.handle();
 
