@@ -1,4 +1,4 @@
-import type { AiGenerateRequest } from '../../schemas/index.js';
+import type { AiGenerateRequest, ModelInspectResult } from '../../schemas/index.js';
 import type { AiStreamChunk } from '../../types/index.js';
 
 export interface AiContract {
@@ -14,6 +14,13 @@ export interface AiContract {
   onStream(handler: (chunk: AiStreamChunk) => void): () => void;
 
   listModels(): Promise<Array<{ name: string }>>;
+
+  /**
+   * Inspect a local (Ollama) model's real context window + size via `/api/show`,
+   * to suggest safe generation limits. Returns `null` for non-local providers or
+   * an unreachable Ollama server.
+   */
+  inspectModel(req: { model: string }): Promise<ModelInspectResult | null>;
 
   pullModel(model: string): Promise<{ jobId: string }>;
 
