@@ -21,11 +21,18 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases"><img alt="Release" src="https://img.shields.io/github/v/release/saeedkolivand/ai-job-hunter-assistant-app?color=e24b4a&label=release"></a>
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/saeedkolivand/ai-job-hunter-assistant-app/total?color=e24b4a&label=downloads"></a>
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/ci-pipeline.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/saeedkolivand/ai-job-hunter-assistant-app/ci-pipeline.yml?branch=main&label=CI"></a>
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/saeedkolivand/ai-job-hunter-assistant-app"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.44.0-e24b4a"></a>
-  <a href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/"><img alt="Live site" src="https://img.shields.io/badge/Live-site-e24b4a"></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey"></a>
+  <a href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/"><img alt="Live site" src="https://img.shields.io/badge/Live-site-e24b4a"></a>
   <a href="SECURITY.md"><img alt="Security policy" src="https://img.shields.io/badge/security-policy-2ea44f"></a>
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/saeedkolivand/ai-job-hunter-assistant-app?style=flat&color=f5b301"></a>
   <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/pulls"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
 </p>
 
@@ -433,6 +440,18 @@ Found a vulnerability? Please report it privately — see **[SECURITY.md](SECURI
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+<h2 align="center">Contributors</h2>
+
+<p align="center">
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/graphs/contributors">
+    <img alt="Contributors" src="https://contrib.rocks/image?repo=saeedkolivand/ai-job-hunter-assistant-app">
+  </a>
+</p>
+
+<p align="center"><em>Contributions welcome — see <a href="CONTRIBUTING.md">CONTRIBUTING.md</a>.</em></p>
 
 ---
 
