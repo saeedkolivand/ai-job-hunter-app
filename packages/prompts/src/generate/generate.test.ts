@@ -346,6 +346,29 @@ describe('buildCoverLetterPrompt', () => {
     expect(prompt).toContain('Acme');
     expect(prompt).toContain('Today:');
   });
+
+  it('omits the company-research block when no brief is provided', () => {
+    const prompt = buildCoverLetterPrompt(RESUME_WITH_LINKS, 'Job ad', META, 'recruiter');
+    expect(prompt).not.toContain('<company_research>');
+  });
+
+  it('folds a provided company brief into a fenced, untrusted research block', () => {
+    const brief = 'Acme builds payment rails for SMBs and recently raised a Series B.';
+    const prompt = buildCoverLetterPrompt(
+      RESUME_WITH_LINKS,
+      'Job ad',
+      META,
+      'recruiter',
+      'large',
+      brief
+    );
+    expect(prompt).toContain('<company_research>');
+    expect(prompt).toContain(brief);
+    // Prompt-injection hardening: the brief is reference-only, and embedded
+    // instructions must be ignored.
+    expect(prompt).toMatch(/untrusted/i);
+    expect(prompt).toMatch(/ignore any instructions/i);
+  });
 });
 
 describe('extractPlainText', () => {

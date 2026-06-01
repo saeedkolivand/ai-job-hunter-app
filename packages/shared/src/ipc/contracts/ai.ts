@@ -22,6 +22,20 @@ export interface AiContract {
    */
   inspectModel(req: { model: string }): Promise<ModelInspectResult | null>;
 
+  /**
+   * Research the company named in a job ad and return a short factual brief for
+   * the cover-letter "fit" paragraph. Reuses the shared company-research enricher
+   * (Brave search + provider synthesis, cached). Degrades gracefully — an empty
+   * brief, never an error, when there's no Brave key or the search fails. The
+   * brief is reference context only; the prompt treats it as untrusted.
+   */
+  researchCompany(req: {
+    jobAd: string;
+    provider?: string;
+    model?: string;
+    baseUrl?: string;
+  }): Promise<{ company: string; brief: string }>;
+
   pullModel(model: string): Promise<{ jobId: string }>;
 
   unloadModel(model: string): Promise<void>;
