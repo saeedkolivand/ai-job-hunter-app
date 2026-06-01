@@ -542,6 +542,10 @@
     "collapse": "Collapse",
     "viewJob": "Open posting",
     "applyJob": "Apply",
+    "badge": {
+      "new": "New",
+      "applied": "Applied"
+    },
     "apply": {
       "jobDescription": "Job description",
       "noDescription": "No description was captured for this job.",
@@ -849,7 +853,9 @@
       "noCoverLetter": "No cover letter generated",
       "export": "Export",
       "exportResume": "Resume",
-      "exportCoverLetter": "Cover Letter"
+      "exportCoverLetter": "Cover Letter",
+      "applied": "Applied",
+      "openPosting": "Open posting"
     },
     "relativeTime": {
       "justNow": "Just now",
