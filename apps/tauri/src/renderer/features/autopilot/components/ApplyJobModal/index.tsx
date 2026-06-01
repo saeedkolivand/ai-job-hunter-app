@@ -43,12 +43,19 @@ export function ApplyJobModal({ job, resumeText, onClose }: Props) {
   const hasDesc = jobDesc.length > 0;
   const fetchingDesc = !initialDesc && resolved.isLoading;
 
-  const gen = useTailorGeneration({ jobDesc, model, canUse, hasDesc });
+  // Per-job session key — generation lives in the store under this id, so closing
+  // and reopening the modal (or leaving the page) preserves the result.
+  const gen = useTailorGeneration({
+    contextId: `autopilot:${job.url}`,
+    jobDesc,
+    model,
+    canUse,
+    hasDesc,
+  });
 
-  const close = () => {
-    gen.abort();
-    onClose();
-  };
+  // Closing the modal no longer cancels — generation finishes in the background
+  // and is restored on reopen. Use the Cancel button to abort explicitly.
+  const close = () => onClose();
 
   const handleUpload = async (file: File) => {
     setUploading(true);
