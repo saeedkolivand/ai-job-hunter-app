@@ -28,6 +28,8 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
         resume_text: req.resume_text,
         cover_letter_text: req.cover_letter_text,
         job_ad: req.job_ad,
+        job_url: req.job_url,
+        board: req.board,
     };
 
     match store.insert(&rec) {

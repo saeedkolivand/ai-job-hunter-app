@@ -13,6 +13,10 @@ export interface AiGenerationRecord {
   resumeText: string;
   coverLetterText: string;
   jobAd: string;
+  /** The job this generation targets — links the record to an autopilot found job. */
+  jobUrl: string;
+  /** The board the job came from (e.g. "linkedin"). */
+  board: string;
 }
 
 export interface AiGenerationSaveRequest {
@@ -28,6 +32,10 @@ export interface AiGenerationSaveRequest {
   resumeText: string;
   coverLetterText: string;
   jobAd: string;
+  /** The job this generation targets (marks the autopilot found job "applied"). */
+  jobUrl?: string;
+  /** The board the job came from. */
+  board?: string;
 }
 
 export interface AiGenerationsContract {

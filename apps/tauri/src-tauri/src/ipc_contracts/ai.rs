@@ -63,6 +63,10 @@ pub struct AiGenerationSaveRequest {
     pub cover_letter_text: String,
     #[serde(default = "default_ai_generation_save_request_job_ad")]
     pub job_ad: String,
+    #[serde(default = "default_ai_generation_save_request_job_url")]
+    pub job_url: String,
+    #[serde(default = "default_ai_generation_save_request_board")]
+    pub board: String,
 }
 
 fn default_ai_generation_save_request_candidate_name() -> String {
@@ -110,5 +114,13 @@ fn default_ai_generation_save_request_cover_letter_text() -> String {
 }
 
 fn default_ai_generation_save_request_job_ad() -> String {
+    "".to_string()
+}
+
+fn default_ai_generation_save_request_job_url() -> String {
+    "".to_string()
+}
+
+fn default_ai_generation_save_request_board() -> String {
     "".to_string()
 }
