@@ -180,5 +180,7 @@ export function useTailorGeneration({
     abort,
     copy,
     exportAs,
+    // Detected metadata — lets the questions assistant reuse it instead of re-extracting.
+    meta,
   };
 }

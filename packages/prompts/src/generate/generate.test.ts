@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import urlLabels from '../fixtures/url-labels.json';
 import {
+  APPLICATION_QUESTIONS,
+  buildApplicationAnswerPrompt,
+  buildApplicationAnswerSystemPrompt,
   buildCoverLetterPrompt,
   buildCoverLetterSystemPrompt,
   buildGroundingBlock,
@@ -366,6 +369,51 @@ describe('buildCoverLetterPrompt', () => {
     expect(prompt).toContain(brief);
     // Prompt-injection hardening: the brief is reference-only, and embedded
     // instructions must be ignored.
+    expect(prompt).toMatch(/untrusted/i);
+    expect(prompt).toMatch(/ignore any instructions/i);
+  });
+});
+
+describe('application questions', () => {
+  it('exposes a non-empty registry with unique ids', () => {
+    expect(APPLICATION_QUESTIONS.length).toBeGreaterThan(0);
+    const ids = APPLICATION_QUESTIONS.map((q) => q.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const q of APPLICATION_QUESTIONS) expect(q.question.length).toBeGreaterThan(5);
+  });
+
+  it('system prompt enforces no-fabrication grounding', () => {
+    const sys = buildApplicationAnswerSystemPrompt();
+    expect(sys).toMatch(/traceable to <candidate_resume>/i);
+    expect(sys).toMatch(/never invent/i);
+  });
+
+  it('grounds the answer prompt in the résumé and includes the question', () => {
+    const prompt = buildApplicationAnswerPrompt({
+      question: 'Why do you want to work at this company?',
+      resume: RESUME_FOR_GROUNDING,
+      jobAd: 'Backend role needing Kubernetes and Go',
+      meta: { ...META, topRequirements: ['React', 'Kubernetes'] },
+    });
+    expect(prompt).toContain('<candidate_resume>');
+    expect(prompt).toContain('Why do you want to work at this company?');
+    // Reuses the grounding split: a résumé-absent requirement is flagged ABSENT.
+    expect(prompt).toMatch(/ABSENT/);
+    // No brief provided → no research block.
+    expect(prompt).not.toContain('<company_research>');
+  });
+
+  it('folds a company brief into a fenced, untrusted block when provided', () => {
+    const brief = 'Globex is a logistics company expanding into the EU market.';
+    const prompt = buildApplicationAnswerPrompt({
+      question: 'Why this company?',
+      resume: RESUME_FOR_GROUNDING,
+      jobAd: 'A role',
+      meta: META,
+      companyBrief: brief,
+    });
+    expect(prompt).toContain('<company_research>');
+    expect(prompt).toContain(brief);
     expect(prompt).toMatch(/untrusted/i);
     expect(prompt).toMatch(/ignore any instructions/i);
   });
