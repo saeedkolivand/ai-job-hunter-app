@@ -1,5 +1,7 @@
 # IPC API Reference — AI Job Hunter
 
+Last updated: 2026-06-01
+
 All renderer ↔ Rust communication is defined as typed contracts in `packages/shared/src/ipc/contracts/`. The renderer accesses them exclusively through `AppClient` service hooks.
 
 > **Never call `window.__TAURI_INVOKE__` directly.** Use the service hooks in `apps/tauri/src/renderer/services/`.
@@ -90,11 +92,11 @@ interface ModelInfo {
 
 #### `ai.pullModel(name: string): Promise<void>`
 
-Downloads an Ollama model. Progress is emitted as `ai:pull-progress` events.
+Downloads an [Ollama][ollama] model. Progress is emitted as `ai:pull-progress` events.
 
 #### `ai.inspectModel(req: { model: string }): Promise<ModelInspectResult | null>`
 
-Returns per-model context-window and max-token limits from Ollama (`/api/show`). Returns `null` for non-local providers or when the Ollama server is unreachable. Used to populate `modelLimits` in the preferences store and show hardware-lag warnings. See `commands/ai.rs: ai_inspect_model`.
+Returns per-model context-window and max-token limits from [Ollama][ollama] (`/api/show`). Returns `null` for non-local providers or when the Ollama server is unreachable. Used to populate `modelLimits` in the preferences store and show hardware-lag warnings. See `commands/ai.rs: ai_inspect_model`.
 
 #### `ai.researchCompany(req: { jobAd: string; provider?: string; model?: string; baseUrl?: string }): Promise<{ company: string; brief: string }>`
 
@@ -786,3 +788,5 @@ interface UpdateProgress {
   error?: string;
 }
 ```
+
+[ollama]: https://ollama.com

@@ -1,6 +1,8 @@
 # Deployment — AI Job Hunter
 
-AI Job Hunter is distributed as a native desktop installer built by Tauri. There is no server to deploy — the entire app runs on the end user's machine.
+Last updated: 2026-06-01
+
+AI Job Hunter is distributed as a native desktop installer built by [Tauri][tauri]. There is no server to deploy — the entire app runs on the end user's machine.
 
 ---
 
@@ -62,7 +64,7 @@ pnpm tauri build
 
 ## Release Pipeline
 
-Releases are **fully automated** via [semantic-release](https://semantic-release.gitbook.io/) on push to `main`.
+Releases are **fully automated** via [semantic-release][semantic-release] on push to `main`.
 
 ### Commit → Version mapping
 
@@ -258,3 +260,6 @@ The app includes built-in diagnostic tools accessible from Settings → Support:
 - **Reset tools**: Clear cache, reimport documents, factory reset
 
 These are useful for end-user support without needing a remote logging system.
+
+[tauri]: https://tauri.app
+[semantic-release]: https://github.com/semantic-release/semantic-release

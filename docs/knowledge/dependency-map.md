@@ -1,12 +1,14 @@
 # Dependency map (pointer)
 
+Last updated: 2026-06-01
+
 For the live graph use **graphify** — `graphify query "what depends on <X>"`, `graphify path "<A>" "<B>"`, or `graphify-out/GRAPH_REPORT.md` for hubs/communities. This file only fixes the **boundary rules** and where manifests live.
 
 ## Package boundaries (must not be violated)
 
-- `packages/shared` → depended on by everything; itself depends on **nothing app-specific** (no React, no Node, no `window`).
-- `packages/ui` → no Zustand, no IPC, no routing, no app logic.
-- `packages/prompts` → pure TS, **zero deps**, no UI, no `window`.
+- `packages/shared` → depended on by everything; itself depends on **nothing app-specific** (no [React][react], no Node, no `window`).
+- `packages/ui` → no [Zustand][zustand], no IPC, no routing, no app logic.
+- `packages/prompts` → pure [TypeScript][typescript], **zero deps**, no UI, no `window`.
 - `apps/tauri` renderer → backend **only** via `AppClient`/service hooks (never `window.api.*` in features/routes/components).
 
 ## Layer boundaries (Rust, CI-enforced)
@@ -26,3 +28,7 @@ For the live graph use **graphify** — `graphify query "what depends on <X>"`, 
 - AI providers — `commands/ai_provider/` (one file per provider behind a shared interface; adding a provider = new adapter only).
 
 > Drift note: dependency counts/versions live in the manifests — never copy them here; point at the manifest.
+
+[react]: https://react.dev
+[zustand]: https://github.com/pmndrs/zustand
+[typescript]: https://www.typescriptlang.org

@@ -1,5 +1,7 @@
 # Export Templates — the resume/cover-letter rendering contract
 
+Last updated: 2026-06-01
+
 The normative reference for the document export system: the nine templates, the
 two backends, and the cross-cutting rules (page size, ATS mode, links, fonts,
 validation). This is a **contract** — behavior described here is locked by tests;
@@ -133,7 +135,7 @@ the relationships part). The visible label is shown, never the raw URL.
 
 Six families are bundled as TTFs and embedded in the PDF. Each font is
 **glyph-subsetted per export** to only the codepoints actually rendered
-(`export/pdf_renderer/fonts.rs: parse_font`), using `printpdf::subset_font` with
+(`export/pdf_renderer/fonts.rs: parse_font`), using [printpdf][printpdf]'s `subset_font` with
 a safe fallback to the full font on failure. This reduces typical PDF size from
 ~3 MB (full embed) to ~120 KB. A size-budget guardrail test in
 `export/pdf/test.rs` enforces this.
@@ -177,3 +179,5 @@ The report (`ok`, `atsMode`, `issues`, `fixed`) rides back on the export result.
 
 `txt` is produced client-side: the markdown is stripped of `**bold**` markers.
 No layout, no validation report.
+
+[printpdf]: https://github.com/fschutt/printpdf

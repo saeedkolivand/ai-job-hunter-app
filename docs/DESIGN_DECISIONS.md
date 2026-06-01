@@ -1,46 +1,40 @@
 # AI Job Hunter — Design Decisions
 
-This document covers every major architectural decision in the project — the reasoning behind technology choices, patterns used, and the trade-offs considered. It is a reference for contributors, reviewers, and anyone who wants to understand the _why_ behind the codebase.
+Last updated: 2026-06-01
+
+This document records the major architectural decisions in the project — the reasoning behind the technology choices, the patterns used, and the trade-offs considered. It is a reference for contributors and reviewers who want to understand the _why_ behind the codebase.
 
 ---
 
-## 1. Elevator Pitch
+## 1. Overview
 
-### 30-Second Version (recruiter / HR screen)
+AI Job Hunter is a local-first desktop application built on [Tauri][tauri] 2, with a [Rust][rust] backend as the process host and an OS-native WebView running the [React][react] frontend. It automates the mechanical parts of job searching — scraping job boards, scoring postings against a résumé with embeddings, and generating tailored résumés and cover letters — and includes an autonomous apply flow (Autopilot). Everything runs locally; there is no cloud backend.
 
-> "AI Job Hunter is a full-stack desktop application I built with Tauri, React, and Rust. It automates the mechanical parts of job searching — scraping 18+ job boards, scoring postings against your resume using vector embeddings, and generating tailored cover letters — with autonomous auto-apply (Autopilot) on the roadmap. Everything runs locally on your machine with no cloud backend. I designed it as a production-grade monorepo with a strict ports-and-adapters architecture, a typed IPC contract layer, a custom component library, and automated releases."
+The two halves communicate over a typed IPC layer: the contract namespaces are defined in a shared package so there is no drift between what the frontend calls and what Rust implements. Heavier work (scraping, OCR, embeddings, document export) runs natively in the Rust core; long operations are spawned as background `tokio` tasks tracked by a SQLite-backed job tracker with retry, so they don't block command handling.
 
-### 2-Minute Version (technical interview)
-
-> "The app is a local-first desktop application built on Tauri 2. Tauri uses a Rust backend as the process host and a Chromium WebView for the React frontend. Those two halves communicate over a typed IPC layer — I defined 21 typed contract namespaces in a shared package so there's no drift between what the frontend calls and what Rust implements.
->
-> The heavier work — scraping, OCR, embeddings — runs natively in the Rust core. Long operations are spawned as background `tokio` tasks (tracked by a SQLite-backed job tracker with retry) so they don't block command handling. An earlier design ran this in a separate Node.js sidecar, but it was folded into Rust to drop a whole process and language from the runtime.
->
-> On the frontend I used TanStack Router for file-based routing, TanStack Query for all server state, Zustand for client state, and a custom micro state machine for multi-step flows. All UI primitives come from a private `@ajh/ui` component library I built in the same monorepo, which enforces the design token system via ESLint rules.
->
-> The project is fully set up for production: Conventional Commits, semantic-release for automated versioning, Turborepo for incremental builds, Husky pre-commit hooks that block any lint error from reaching the repo, and a Vitest suite covering 437 test cases."
+The frontend uses [TanStack Router][tanstack-router] for routing, [TanStack Query][tanstack-query] for server state, [Zustand][zustand] for client state, and a small custom state machine for multi-step flows. All UI primitives come from a private `@ajh/ui` component library in the same monorepo, which enforces the design-token system through [ESLint][eslint] rules. The repository is set up for production: [Conventional Commits][conventional-commits], [semantic-release][semantic-release] for automated versioning, [Turborepo][turborepo] for incremental builds, [Husky][husky] pre-commit hooks that block lint errors, and a [Vitest][vitest] suite spanning the packages.
 
 ---
 
 ## 2. Architecture Decisions — With Reasoning
 
-These are the questions interviewers actually ask. Each answer explains the _why_, not just the _what_.
+Each entry explains the _why_, not just the _what_.
 
 ---
 
-### "Why Tauri instead of Electron?"
+### Tauri over Electron
 
-Tauri uses the OS-native WebView (Edge on Windows, WebKit on macOS/Linux) instead of bundling Chromium. The result:
+[Tauri][tauri] uses the OS-native WebView (Edge/WebView2 on Windows, WebKit on macOS/Linux) instead of bundling Chromium. The result:
 
-- **50–80 MB installer** vs 150+ MB for Electron apps
-- **Rust backend** instead of Node.js — near-zero memory overhead for background tasks
-- **Better security model** — the backend exposes only the commands you explicitly allow via Tauri's capability manifest
+- **Smaller installer** (tens of MB) versus 150+ MB for a typical Electron app
+- **Rust backend** instead of Node.js — low memory overhead for background tasks
+- **Tighter security model** — the backend exposes only the commands explicitly allowed via Tauri's capability manifest
 
-The trade-off: WebKit on macOS doesn't always render identically to Edge on Windows. I handled that with careful CSS and a cross-platform test pass before each release.
+The trade-off: WebKit on macOS doesn't always render identically to WebView2 on Windows. That is handled with careful CSS and a cross-platform pass before each release.
 
 ---
 
-### "Why did you use a monorepo?"
+### Monorepo structure
 
 The app has clear, enforced package boundaries:
 
@@ -50,145 +44,130 @@ packages/ui        ← component library (no IPC, no state management)
 packages/prompts   ← AI prompt templates, provider-aware + locale-driven (pure TypeScript)
 ```
 
-(The heavy work — scraping, AI, documents, embeddings — lives in the Rust core under `apps/tauri/src-tauri/`. Earlier Node packages for a sidecar runtime were removed once that work moved to Rust.)
+The heavy work — scraping, AI, documents, embeddings — lives in the Rust core under `apps/tauri/src-tauri/`. (An earlier design ran some of this in a separate Node.js sidecar; it was folded into Rust to drop a process and a language from the runtime.)
 
-Each package has its own `tsconfig`, build step, and test suite. Turborepo's dependency graph means builds are incremental — if `packages/shared` hasn't changed, nothing that depends on it rebuilds. This keeps `pnpm build` fast even as the project grows.
-
-The key discipline: **ESLint hard-blocks cross-boundary imports** — e.g. `packages/shared` may not import React or Node APIs. This isn't just a convention — it's enforced at lint time and blocks commits.
+Each package has its own `tsconfig`, build step, and test suite. [Turborepo][turborepo]'s dependency graph keeps builds incremental — if `packages/shared` hasn't changed, nothing that depends on it rebuilds. The key discipline is that **ESLint hard-blocks cross-boundary imports** (e.g. `packages/shared` may not import React or Node APIs); it is enforced at lint time and blocks commits, not just a convention.
 
 ---
 
-### "What is the IPC contract pattern?"
+### The IPC contract pattern
 
-Every renderer → Rust interaction is defined in one place: `packages/shared/src/ipc/contracts/`. The pattern is:
+Every renderer → Rust interaction is defined in one place: `packages/shared/src/ipc/contracts/`. The flow is:
 
 ```
 UI Component → Service Hook (React Query) → AppClient → IPC Contract → Tauri bridge → Rust command
 ```
 
-`AppClient` is injected via React context. In production it's backed by `createTauriInvokeClient()`. In tests it's backed by `createMockClient()`. The UI is completely portable — you can run `pnpm dev:frontend` to develop the entire React frontend against mocked data without Tauri running at all.
+`AppClient` is injected via React context. In production it is backed by `createTauriInvokeClient()`; in tests by `createMockClient()`. The UI is therefore portable — the entire React frontend can run against mocked data without Tauri running at all.
 
-**Interview follow-up:** _This is the Ports and Adapters (Hexagonal Architecture) pattern_. `AppClient` is the port. `TauriInvokeClient` and `MockClient` are the adapters. The UI only knows about the port interface.
+This is the Ports and Adapters (Hexagonal) pattern: `AppClient` is the port, `TauriInvokeClient` and `MockClient` are the adapters, and the UI only knows about the port interface.
 
 ---
 
-### "How does AI streaming work?"
+### AI streaming
 
 Streaming uses Tauri's event system rather than a request/response pattern:
 
-1. UI calls `client.ai.generate(req)` → gets back a `generationId` immediately
-2. UI subscribes to `client.ai.onStream(handler)` — this is a Tauri event listener
-3. Rust receives SSE chunks from the LLM, emits each delta as a Tauri event to the renderer
-4. The `StreamingText` component appends each delta to the output buffer
-5. When `chunk.done === true`, the UI unsubscribes and transitions the state machine to `extracting`
+1. The UI calls `client.ai.generate(req)` and gets back a `generationId` immediately
+2. The UI subscribes to `client.ai.onStream(handler)` — a Tauri event listener
+3. Rust receives SSE chunks from the LLM and emits each delta as a Tauri event to the renderer
+4. The streaming component appends each delta to the output buffer
+5. When `chunk.done === true`, the UI unsubscribes and transitions the state machine forward
 
-The state machine is important here: streaming goes through states `idle → configuring → generating → extracting → done`. Without the machine, you'd manage this with a tangle of booleans. With the machine, each valid state is explicit and transitions are enforced.
+The state machine matters here: streaming moves through explicit states (`idle → configuring → generating → extracting → done`). Without it, the flow would be a tangle of booleans; with it, each valid state is named and transitions are enforced.
 
 ---
 
-### "Why did you write your own state machine instead of using XState?"
+### Custom state machine over XState
 
-The flows in this app have 5–8 states at most. XState is a powerful library but it adds ~20 KB to the bundle, requires learning its own config DSL, and is overkill for simple linear flows.
+The flows in this app have at most a handful of states. XState is powerful but adds bundle weight, introduces its own config DSL, and is overkill for short linear flows.
 
-I wrote a micro state machine in ~80 lines of TypeScript (`lib/machine.ts`) and a `useMachine(machine)` hook. It covers:
+The project uses a micro state machine (~80 lines, `lib/machine.ts`) and a `useMachine(machine)` hook covering:
 
 - State transitions via `send(event)`
-- `busyStates` — know when the machine is loading
-- `errorStates` — know when to show an error UI
+- `busyStates` — when the machine is loading
+- `errorStates` — when to show an error UI
 
-For a flow like "onboarding wizard" or "document generation", this is all you need. The trade-off is that it doesn't support parallel states, history, or guards — but none of those are needed here, and you can always swap to XState later if they become needed.
-
----
-
-### "How does the search work?"
-
-Hybrid search combines two signals:
-
-1. **Semantic search** — the user's query is embedded via Ollama (or whichever provider is active), then an ANN (approximate nearest neighbor) search runs against LanceDB vectors. This finds semantically relevant results even when the exact keywords don't match ("senior engineer" matching "staff software engineer").
-
-2. **Keyword/filter search** — SQL WHERE conditions narrow the ANN candidates by metadata (location, salary, remote flag, board, etc.)
-
-The results are re-ranked using a weighted score:
-
-```
-finalScore = semanticWeight × semanticScore + (1 − semanticWeight) × keywordScore
-```
-
-A `semanticWeight` of 0.7 gives 70% weight to vector similarity and 30% to keyword relevance. The user can tune this in the search UI.
+For flows like an onboarding wizard or document generation, that is sufficient. The trade-off is no parallel states, history, or guards — none of which are needed here, and XState remains an option if they ever are.
 
 ---
 
-### "How is state management structured?"
+### Hybrid search
+
+Posting search combines two signals, computed in the Rust core (`commands/search.rs`, `search_hybrid`):
+
+1. **Semantic similarity** — the query is embedded via the active provider (`documents::embed`), then **cosine similarity** is computed against stored posting embeddings. This surfaces relevant results even when exact keywords don't match ("senior engineer" matching "staff software engineer").
+2. **Keyword overlap** — term overlap between the query and the posting text.
+
+The two scores are combined into a weighted score and the top-K hits are returned. (Embeddings are stored in SQLite alongside the documents, not in a separate vector engine — the corpus is small enough that an in-memory cosine pass is fast and avoids another dependency.)
+
+---
+
+### State management
 
 There are two separate state concerns:
 
-**Server state** (data from IPC/Rust): all managed by TanStack Query. Every IPC call has a corresponding service hook (`use-jobs.ts`, `use-documents.ts`, etc.). React Query handles caching, background refetch, optimistic updates, and loading/error states. This replaces `useState + useEffect` for remote data — an antipattern that's common in less mature codebases.
+**Server state** (data from IPC/[Rust][rust]) is managed entirely by [TanStack Query][tanstack-query]. Every IPC call has a corresponding service hook (`use-jobs.ts`, `use-documents.ts`, etc.) handling caching, background refetch, optimistic updates, and loading/error states. This replaces the `useState + useEffect` data-fetching antipattern.
 
-**Client state** (UI-only): Zustand stores. Currently two stores: `preferences-store` (persisted user settings) and `session-store` (transient session data like current generation ID). Zustand was chosen over Redux because the stores are simple, there's no boilerplate, and it integrates well with React 19's concurrent features.
+**Client state** (UI-only) lives in [Zustand][zustand] stores (e.g. persisted user preferences, transient generation session). [Zustand][zustand] is used over Redux because the stores are simple, there is no boilerplate, and it integrates well with [React][react] 19.
 
 ---
 
-### "How does credential storage work?"
+### Credential storage
 
-API keys and job board passwords are stored in the OS native keychain:
+API keys and job-board passwords are stored in the OS-native keychain:
 
 - Windows: Credential Manager (DPAPI encryption)
-- macOS: Keychain Access
+- macOS: Keychain
 - Linux: libsecret (GNOME Keyring / KWallet)
 
-The Rust backend uses the `keyring-core` crate with platform-specific store adapters. The Tauri process calls `init_keyring()` at startup to register the platform backend. The renderer calls `client.credentials.set()` / `.get()` through the IPC contract — it never handles raw secrets.
-
-**Interview follow-up:** This is intentional security-by-design. Even if the renderer had an XSS vulnerability, secrets would not be accessible — they're stored outside the web context entirely.
+The Rust backend uses the `keyring-core` crate with platform-specific adapters; the Tauri process registers the backend via `init_keyring()` at startup. The renderer calls credential commands through the IPC contract and never handles raw secrets. This is security-by-design: even with a renderer XSS, secrets are not reachable because they live outside the web context.
 
 ---
 
-### "How does backup and restore work?"
+### Backup and restore
 
-Each persistent store (documents, AI generations, job preferences, autopilots, conversations, interactions) implements a single `DataStore` trait — `export() -> Value` and `import(&Value)` with REPLACE semantics. The `data.export` / `data.import` commands assemble one versioned JSON bundle (`{ version, exportedAt, stores }`) and write/read it via the Tauri dialog plugin; the user backs up or restores from Settings → Privacy.
+Each backup-able persistent store implements a single `DataStore` trait — `export() -> Value` and `import(&Value)` with REPLACE semantics. The `data.export` / `data.import` commands assemble one versioned JSON bundle (`{ version, exportedAt, stores }`) read/written via the dialog plugin; the user backs up or restores from Settings → Privacy.
 
-Credentials (kept in the OS keychain), ephemeral caches, and the transient job-execution log are deliberately excluded. Restore is a full replace, not a merge, so a backup file is an exact snapshot.
-
-**Interview follow-up:** The `DataStore` trait keeps the data layer uniform without a heavyweight ORM, and the bundle is the foundation a future cloud-sync feature would build on — sync itself is deferred since the app is local-first with no remote backend today.
+Credentials (in the OS keychain), ephemeral caches, and the transient job-execution log are deliberately excluded. Restore is a full replace, not a merge, so a backup file is an exact snapshot. The `DataStore` trait keeps the data layer uniform without a heavyweight ORM, and the bundle is the foundation any future sync feature would build on.
 
 ---
 
-### "How is the component library structured?"
+### Component library
 
-`packages/ui` is a standalone React component library published as `@ajh/ui` within the monorepo. It has:
+`packages/ui` is a standalone React component library consumed as `@ajh/ui` within the monorepo. It provides:
 
 - **Design tokens** as CSS custom properties (`--color-brand`, `--color-surface-elevated`, etc.)
 - **TailwindCSS v4** consuming those tokens via `@theme`
-- **Motion presets** — instead of inline `{ duration: 0.2, ease: "easeOut" }` objects, every animation uses a named token (`transition.fast`, `transition.spring`, etc.)
-- **ESLint enforcement** — custom rules block raw `<button>`, `<select>`, `<textarea>` elements, hardcoded hex colors, and inline transition objects in feature code
+- **Motion presets** — named tokens (`transition.fast`, `transition.spring`, …) instead of inline `{ duration, ease }` objects
+- **ESLint enforcement** — custom rules block raw `<button>`/`<select>`/`<textarea>`, hardcoded hex colors, and inline transition objects in feature code
 
-The library has no IPC, no Zustand, no routing. It's a pure UI package. This means you could use `@ajh/ui` in a web app tomorrow with no changes.
+The library has no IPC, no Zustand, and no routing — it is a pure UI package.
 
 ---
 
-### "How does the document processing pipeline work?"
+### Document processing pipeline
 
 When a user imports a PDF, DOCX, TXT, or image:
 
-1. **Format detection** — Rust inspects the file extension and magic bytes
-2. **Text extraction** — PDF via `pdf-extract`, DOCX via `docx-rs` parsing, images via `Tesseract.js` OCR (dispatched to a Web Worker so it doesn't block)
-3. **Storage** — the raw text and metadata are saved to SQLite
-4. **Chunking** — text is split into ~512-token chunks in a Web Worker
-5. **Embedding** — each chunk is vectorized via Ollama's `/api/embeddings` endpoint
-6. **Vector storage** — vectors are upserted to LanceDB for later ANN search
+1. **Format detection** — Rust inspects the extension and magic bytes
+2. **Text extraction** — PDF and DOCX via dedicated parsers; images via OCR
+3. **Storage** — raw text and metadata are saved to SQLite
+4. **Chunking** — text is split into chunks for embedding
+5. **Embedding** — each chunk is vectorized via the active embedding provider
+6. **Vector storage** — embeddings are stored in `documents.db` for later similarity search
 
-Progress events are emitted at each stage so the UI can show a live progress indicator.
-
----
-
-## 3. Frontend Patterns — Deep Dive
-
-These are the patterns an interviewer who cares about frontend architecture will probe.
+Progress events are emitted at each stage so the UI can show a live indicator.
 
 ---
 
-### React Query Service Hook Pattern
+## 3. Frontend Patterns
 
-Every piece of server state follows this shape:
+---
+
+### React Query service-hook pattern
+
+Every piece of server state follows the same shape:
 
 ```typescript
 // A query
@@ -216,7 +195,7 @@ All query keys live in a centralized `queryKeys` object so invalidation is relia
 
 ---
 
-### Feature Isolation
+### Feature isolation
 
 The `features/` directory enforces a strict ownership model:
 
@@ -228,11 +207,11 @@ features/
   resumes/
 ```
 
-Each feature exports exactly one thing from its `index.tsx`. Everything else is private. Cross-feature imports are forbidden by ESLint. This means you can refactor `ai-generate/` without worrying about breaking `jobs/` — they have zero coupling.
+Each feature exposes a narrow public surface; everything else is private, and cross-feature imports are forbidden by ESLint. A feature can be refactored without breaking another because they have zero coupling.
 
 ---
 
-### State Machine Pattern
+### State machine pattern
 
 ```typescript
 // Step 1: define the machine
@@ -259,11 +238,11 @@ const [state, send] = useMachine(generationMachine);
 {state === 'done'       && <OutputPanel output={result} />}
 ```
 
-**Why this is better than booleans:** With `isLoading`, `isError`, `isDone`, `isConfiguring` you can enter impossible states — like `isLoading && isDone`. With a state machine, every valid state is named and only one state is active at a time.
+A state machine avoids impossible states (`isLoading && isDone`): every valid state is named and exactly one is active at a time.
 
 ---
 
-### i18n Wrapper Pattern
+### i18n wrapper pattern
 
 Never import `react-i18next` directly:
 
@@ -275,13 +254,13 @@ import { useTranslation } from '@/lib/i18n';
 import { useTranslation } from 'react-i18next';
 ```
 
-The wrapper in `lib/i18n.ts` provides a consistent namespace and lets you swap the underlying i18n library without touching 50+ component files. It's a simple abstraction that pays off if you ever need to migrate.
+The wrapper in `lib/i18n.ts` provides a consistent namespace and isolates the underlying i18n library behind one module, so it can be swapped without touching component files.
 
 ---
 
-### Zod Validation
+### Zod validation
 
-All IPC request/response payloads and user-facing form data are validated with Zod 4:
+IPC request/response payloads and user-facing form data are validated with Zod:
 
 ```typescript
 // packages/shared/src/schemas/job.ts
@@ -299,23 +278,17 @@ export const JobRecordSchema = z.object({
 export type JobRecord = z.infer<typeof JobRecordSchema>;
 ```
 
-Validation happens at system boundaries (IPC receive, form submit). Inside the app, the TypeScript types are trusted. No defensive `if (!data?.id)` checks scattered through component logic.
+Validation happens at system boundaries (IPC receive, form submit). Inside the app the TypeScript types are trusted — no defensive `if (!data?.id)` checks scattered through component logic.
 
 ---
 
 ## 4. TypeScript Patterns
 
-### Strict Configuration
+### Strict configuration
 
-The project uses TypeScript 6 with `strict: true`, `noUncheckedIndexedAccess: true`, and `exactOptionalPropertyTypes: true`. This catches:
+The project uses TypeScript 6 with `strict: true`, `noUncheckedIndexedAccess: true`, and `exactOptionalPropertyTypes: true`, which catches undefined array access, optional-vs-absent property distinctions, and missing null checks.
 
-- Undefined array access (`arr[0]` returns `T | undefined`)
-- Optional vs absent property distinction
-- Missing null checks
-
-### Discriminated Unions for State
-
-Instead of nullable fields:
+### Discriminated unions for state
 
 ```typescript
 // ❌ ambiguous
@@ -333,9 +306,9 @@ type GenerationState =
   | { status: 'error'; message: string };
 ```
 
-With a discriminated union, a `switch` on `state.status` narrows the type in each branch — TypeScript knows `output` only exists when `status === 'done'`.
+A `switch` on `state.status` narrows the type in each branch — `output` only exists when `status === 'done'`.
 
-### `as const` for Query Keys
+### `as const` for query keys
 
 ```typescript
 export const queryKeys = {
@@ -348,13 +321,13 @@ export const queryKeys = {
 } as const;
 ```
 
-`as const` makes the tuple types literal, not `string[]`. React Query uses this for precise cache invalidation.
+`as const` makes the tuple types literal rather than `string[]`, which React Query relies on for precise cache invalidation.
 
 ---
 
 ## 5. Testing Approach
 
-The test suite has 437 test cases using Vitest, split across packages:
+The suite uses Vitest, split across packages:
 
 | What's tested      | Approach                                             |
 | ------------------ | ---------------------------------------------------- |
@@ -363,127 +336,144 @@ The test suite has 437 test cases using Vitest, split across packages:
 | Utility functions  | Pure unit tests                                      |
 | State machines     | `send()` + assert state                              |
 | Rust commands      | `#[cfg(test)]` modules with `tempfile` in-memory DBs |
-| Board scrapers     | Wiremock HTTP fixtures (no real network calls)       |
+| Board scrapers     | HTTP fixtures (no real network calls)                |
 
-The mock AppClient (`createMockClient()`) is the key enabler for testing UI in isolation. You can render any feature component and inject a mock that returns deterministic data, without Tauri running.
+The mock AppClient (`createMockClient()`) is the key enabler for testing UI in isolation: any feature component can be rendered with a mock that returns deterministic data, without Tauri running.
 
 ---
 
 ## 6. Performance Considerations
 
-### Off-Thread CPU-Intensive Work
+### Off-thread CPU-intensive work
 
-OCR runs via Tesseract.js, which manages its own Web Worker in the renderer, so recognition never blocks the UI thread. Text chunking, embedding, and document extraction run in the Rust core as background `tokio` tasks, keeping both the renderer and command handling responsive.
+OCR runs off the UI thread; text chunking, embedding, and document extraction run in the Rust core as background `tokio` tasks, keeping both the renderer and command handling responsive.
 
-### Performance Mode
+### Performance mode
 
-The app detects available system memory and CPU cores via `sysinfo` (Rust) and offers three tiers:
+The app detects available memory and CPU cores via `sysinfo` (Rust) and offers tiers that scale worker threads and batch size — a low tier for older or background use, a balanced default, and a performance tier for desktop workstations.
 
-| Mode        | Worker threads | Batch size | Use case                      |
-| ----------- | -------------- | ---------- | ----------------------------- |
-| Low         | 1              | 4          | Older laptops, background use |
-| Balanced    | 2              | 16         | Most users                    |
-| Performance | 4              | 64         | Desktop workstations          |
+### Streaming rendering
 
-### Streaming Rendering
+AI output appends delta characters to a buffer rather than re-rendering the full string on each chunk, which avoids layout thrashing during generation.
 
-AI output uses TanStack Query's subscription pattern + `StreamingText` component that appends delta characters rather than re-rendering the full string. This prevents layout thrashing during generation.
+### Incremental monorepo builds
 
-### Incremental Monorepo Builds
-
-Turborepo tracks file hashes per package. If `packages/ui` hasn't changed, its build is skipped. In CI this typically halves build time after the first run.
+Turborepo tracks file hashes per package, so unchanged packages skip their build — this meaningfully shortens CI build time after the first run.
 
 ---
 
 ## 7. Build & Release Pipeline
 
-### Automated Versioning
+### Automated versioning
 
-The repo uses `semantic-release` triggered by Conventional Commits:
+The repo uses [semantic-release][semantic-release] driven by [Conventional Commits][conventional-commits]:
 
-| Commit prefix                  | Release type  | Example     |
-| ------------------------------ | ------------- | ----------- |
-| `feat:`                        | minor (1.x.0) | New feature |
-| `fix:`, `perf:`                | patch (1.0.x) | Bug fix     |
-| `BREAKING CHANGE` footer       | major (x.0.0) | API break   |
-| `chore:`, `docs:`, `refactor:` | no release    | Maintenance |
+| Commit prefix                  | Release type |
+| ------------------------------ | ------------ |
+| `feat:`                        | minor        |
+| `fix:`, `perf:`                | patch        |
+| `BREAKING CHANGE` footer       | major        |
+| `chore:`, `docs:`, `refactor:` | no release   |
 
-On merge to `main`, semantic-release automatically: bumps the version, publishes release notes to the GitHub release, and triggers the Tauri build pipeline.
+On merge to `main`, semantic-release bumps the version, publishes release notes to the GitHub release, and triggers the Tauri build pipeline.
 
-### Pre-commit Hooks (Husky + lint-staged)
+### Pre-commit hooks ([Husky][husky] + [lint-staged][lint-staged])
 
-Every commit runs:
-
-1. `eslint --fix` on staged TypeScript files
-2. `prettier --write` on everything else
-3. `commitlint` validates the commit message format
-
-Pre-push runs `tsc --noEmit` across the full monorepo.
-
-**Interview talking point:** _These hooks mean the main branch never has a lint warning. Any PR that breaks ESLint or TypeScript is caught before it reaches review._
+Every commit runs `eslint --fix` on staged [TypeScript][typescript], [Prettier][prettier] on the rest, and [commitlint][commitlint] on the message. Pre-push runs the full gate (typecheck, lint, `cargo check`/`test`/`clippy`, formatting). The effect is that the main branch never carries a lint or type error.
 
 ---
 
-## 8. Full-Stack Awareness (Rust)
+## 8. Rust Backend
 
-If an interviewer asks about the Rust side (good for senior/lead roles):
+### Why Rust for the backend
 
-### Why Rust for the backend?
-
-- **Memory safety** — no garbage collector pauses during scraping or file processing. Tauri's async runtime (Tokio) handles concurrent board scraping without spawning OS threads per request.
-- **SQLite ownership** — `rusqlite` with the bundled feature ships SQLite as part of the binary. No external database process, no version mismatch.
-- **OS integration** — keychain access, file system dialogs, tray icon, auto-updater — all via Tauri's plugin system with thin Rust wrappers.
+- **Memory safety** — no GC pauses during scraping or file processing; [Tokio][tokio] handles concurrent board scraping without an OS thread per request.
+- **SQLite ownership** — [rusqlite][rusqlite] with the bundled feature ships [SQLite][sqlite] inside the binary, so there is no external database process or version mismatch.
+- **OS integration** — keychain, file dialogs, tray icon, single-instance, window-state, notifications, and the auto-updater are all thin [Rust][rust] wrappers over [Tauri][tauri] plugins.
 
 ### SQLite design
 
-Five independent SQLite databases, each with its own Rust struct and `Mutex<Connection>` (using `parking_lot` for poison-free locking):
+Several independent [SQLite][sqlite] databases, each with its own [Rust][rust] struct and `Mutex<Connection>` (using [parking_lot][parking-lot] for poison-free locking):
 
-| Database             | Purpose                                     |
-| -------------------- | ------------------------------------------- |
-| `documents.db`       | Resume/document metadata + embedded vectors |
-| `conversations.db`   | Chat history                                |
-| `ai_generations.db`  | Generation records + metadata               |
-| `job_preferences.db` | User search preferences                     |
-| `company_briefs.db`  | 7-day TTL company research cache            |
+| Database             | Purpose                                        |
+| -------------------- | ---------------------------------------------- |
+| `documents.db`       | Résumé/document metadata + embeddings          |
+| `conversations.db`   | Chat history                                   |
+| `ai_generations.db`  | Generation + application records               |
+| `job_preferences.db` | User search preferences                        |
+| `contact_profile.db` | Contact profile used for document headers      |
+| `jobs.db`            | Background job-execution tracker (retry state) |
+| `pipeline_cache.db`  | Company-research and OCR cache (TTL)           |
 
-Keeping them separate means a corrupt `conversations.db` doesn't affect `documents.db`.
+Keeping them separate means a corrupt `conversations.db` doesn't affect `documents.db`. The job-execution tracker and the cache are excluded from backups (transient/ephemeral).
 
 ### Concurrent scraping
 
-Board scrapers run in parallel using `tokio::spawn`. Each scraper gets a `CancellationToken` so the user can stop a scrape mid-run. Results are collected with `futures::join_all` and streamed to the renderer via `app.emit()` as they arrive.
+Board scrapers run in parallel via [Tokio][tokio]'s `spawn`. Each scraper holds a `CancellationToken` so a scrape can be stopped mid-run, and results are streamed to the renderer via `app.emit()` as they arrive.
 
 ---
 
-## 9. "What Would You Do Differently?"
+## 9. Known Limitations & Future Work
 
-This question shows maturity. Good answers for this project:
-
-1. **Type-safe IPC from the start** — I defined TypeScript contracts, but the Rust side still uses `Value` (untyped JSON) for most commands. I'd use `tauri-specta` to generate TypeScript bindings directly from Rust types, eliminating the manual contract maintenance.
-
-2. **Single SQLite database with proper migrations** — Having five separate DB files simplified the early development but adds overhead when querying across them. I'd consolidate into one database with `rusqlite_migration` once a compatible version is available for `rusqlite 0.40`.
-
-3. **E2E tests** — The unit/integration coverage is good, but there are no end-to-end tests exercising the full Tauri process. I'd add a Playwright-based E2E suite that drives the actual desktop app.
-
-4. **Observability** — Production log files exist (via `tauri-plugin-log`), but there's no structured event tracing. I'd add OpenTelemetry spans around the generation pipeline to see where latency actually comes from.
+1. **Type-safe IPC end to end** — the TypeScript contracts are typed, but the Rust side still returns `Value` (untyped JSON) for most commands. Generating TypeScript bindings directly from Rust types (e.g. `tauri-specta`) would remove the manual contract maintenance.
+2. **Database consolidation** — the per-domain SQLite files keep faults isolated but add overhead for cross-store queries; consolidating into one database with a migration framework is a candidate once tooling versions line up.
+3. **End-to-end tests** — unit/integration coverage is solid, but there is no E2E suite driving the full Tauri process; a Playwright-based suite would close that gap.
+4. **Observability** — log files exist (via `tauri-plugin-log`), but there is no structured tracing; spans around the generation pipeline would make latency sources visible.
 
 ---
 
-## 10. Quick-Reference: Technologies and Why
+## 10. Technology Reference
 
-| Technology           | Why                                                                         |
-| -------------------- | --------------------------------------------------------------------------- |
-| **Tauri 2**          | Smaller binary than Electron; Rust backend; OS-native WebView               |
-| **React 19**         | Concurrent features; first-class support in TanStack ecosystem              |
-| **TypeScript 6**     | `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` for maximum safety |
-| **TanStack Router**  | File-based routing with full type safety on route params and search params  |
-| **TanStack Query**   | Eliminates `useEffect` data fetching; built-in caching, background refetch  |
-| **Zustand**          | Minimal boilerplate for simple client state; React 19 concurrent-safe       |
-| **TailwindCSS v4**   | CSS-first config with `@theme`; zero runtime                                |
-| **motion/react**     | Framer Motion v11 rebranded; best-in-class animation performance            |
-| **Zod 4**            | Schema-first validation with zero-cost type inference                       |
-| **Turborepo**        | Incremental monorepo builds with shared remote cache                        |
-| **Vitest**           | Fast, Vite-native test runner; no Jest config migration needed              |
-| **semantic-release** | Fully automated versioning driven by commit messages                        |
-| **parking_lot**      | Drop-in `std::sync::Mutex` replacement with no poisoning risk               |
-| **LanceDB**          | Embedded vector DB with no server process; Rust-native                      |
-| **Tesseract.js**     | Client-side OCR in a Web Worker; no cloud API needed                        |
+| Technology                               | Why                                                                          |
+| ---------------------------------------- | ---------------------------------------------------------------------------- |
+| **[Tauri][tauri] 2**                     | Smaller binary than Electron; [Rust][rust] backend; OS-native WebView        |
+| **[React][react] 19**                    | Concurrent features; first-class TanStack support                            |
+| **[TypeScript][typescript] 6**           | `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` for stricter safety |
+| **[TanStack Router][tanstack-router]**   | File-based routing with typed route + search params                          |
+| **[TanStack Query][tanstack-query]**     | Removes `useEffect` data fetching; caching + background refetch              |
+| **[Zustand][zustand]**                   | Minimal client-state store; [React][react] 19 concurrent-safe                |
+| **[Tailwind CSS][tailwindcss] v4**       | CSS-first config via `@theme`; zero runtime                                  |
+| **[motion/react][motion-react]**         | High-performance animation library                                           |
+| **[Zod][zod]**                           | Schema-first validation with type inference                                  |
+| **[Turborepo][turborepo]**               | Incremental monorepo builds                                                  |
+| **[Vitest][vitest]**                     | Fast, [Vite][vite]-native test runner                                        |
+| **[semantic-release][semantic-release]** | Automated versioning from commit messages                                    |
+| **[parking_lot][parking-lot]**           | `Mutex` replacement with no lock poisoning                                   |
+| **[rusqlite][rusqlite]**                 | Embedded [SQLite][sqlite] bundled into the binary                            |
+
+---
+
+## 11. AI-Assistant Agent System
+
+The repository ships a Claude Code agent system under `.claude/` (tracked alongside source). The system consists of 12 specialized agents covering distinct ownership domains — `resume-export-expert`, `job-match-expert`, `scraping-applier-expert`, `ai-provider-expert`, `rust-backend-architect`, `tauri-security-reviewer`, `frontend-reviewer`, `performance-profiler`, `testing-reviewer`, `test-author`, `pdf-docx-generator`, and `project-steward` — plus a set of slash commands: `/review-{rust,security,performance,ats,resume,template,export,frontend,scraping,ai}`, `/implement-feature`, `/fix-bug`, `/refactor-module`, `/add-tests`, `/update-docs`, and `/prepare-release`.
+
+The system also includes domain skills and checklists (`.claude/skills/`), a Stop review-gate hook that runs on every diff and blocks only HIGH/CRITICAL findings, and a distilled lessons log (`.claude/memory/lessons.jsonl`).
+
+The per-change flow is: Primary Owner agent makes the change → review pass against the owner's checklist (HIGH/CRITICAL findings block, others are advisory; ≤ 3 reviewers total) → if the change touches testable logic, `test-author` writes tests and `testing-reviewer` audits coverage → `project-steward` closes by syncing documentation, knowledge files, ADRs, and the lessons log.
+
+`CLAUDE.md` is the source of truth for the full operating contract, agent routing table, and enforced rules. The same domain-routing and review conventions apply when other AI tools work in this repository — see `AGENTS.md`, `.clinerules`, `.windsurfrules`, and `.github/copilot-instructions.md` for the per-tool rules files that document the conventions those assistants follow.
+
+[tauri]: https://tauri.app
+[react]: https://react.dev
+[rust]: https://www.rust-lang.org
+[typescript]: https://www.typescriptlang.org
+[tanstack-router]: https://tanstack.com/router
+[tanstack-query]: https://tanstack.com/query
+[zustand]: https://github.com/pmndrs/zustand
+[tailwindcss]: https://tailwindcss.com
+[motion-react]: https://motion.dev
+[zod]: https://zod.dev
+[turborepo]: https://turborepo.com
+[vitest]: https://vitest.dev
+[vite]: https://vite.dev
+[semantic-release]: https://github.com/semantic-release/semantic-release
+[conventional-commits]: https://www.conventionalcommits.org
+[husky]: https://typicode.github.io/husky
+[lint-staged]: https://github.com/lint-staged/lint-staged
+[commitlint]: https://commitlint.js.org
+[eslint]: https://eslint.org
+[prettier]: https://prettier.io
+[tokio]: https://tokio.rs
+[sqlite]: https://www.sqlite.org
+[rusqlite]: https://github.com/rusqlite/rusqlite
+[parking-lot]: https://github.com/Amanieu/parking_lot

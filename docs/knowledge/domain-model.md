@@ -1,5 +1,7 @@
 # Domain model (core types, traits, registries)
 
+Last updated: 2026-06-01
+
 Describes the **shape**; the source is authoritative for field-level detail. Use `graphify explain "<type>"` then read the owning file.
 
 ## Resume document
@@ -11,7 +13,7 @@ Describes the **shape**; the source is authoritative for field-level detail. Use
 ## Export contract
 
 - **`ExportRequest` / `ExportResult`** — `apps/tauri/src-tauri/src/export/types.rs` (the request/response shape: target format, template, ATS mode, locale). Owned by `resume-export-expert`; **implemented** by `pdf-docx-generator`.
-- PDF path: `export/pdf/`, `export/pdf_renderer/`, `export/layout_pdf/` (printpdf + ttf-parser). DOCX path: `export/docx/`, `export/model_docx/`, `export/docx_renderer.rs` (docx-rs). Templates: `export/templates/`. Gate: `validate/`.
+- PDF path: `export/pdf/`, `export/pdf_renderer/`, `export/layout_pdf/` ([printpdf][printpdf] + ttf-parser). DOCX path: `export/docx/`, `export/model_docx/`, `export/docx_renderer.rs` ([docx-rs][docx-rs]). Templates: `export/templates/`. Gate: `validate/`.
 
 ## Job / matching
 
@@ -33,4 +35,9 @@ Describes the **shape**; the source is authoritative for field-level detail. Use
 ## Platform / data
 
 - **Errors** — `error.rs` (`AppError`/`AppResult`). **Config/paths** — `platform/config.rs` (`data_dir()`). **HTTP** — `net/http.rs` (`shared()`). **Tracing** — `observability.rs` (`Span`).
-- **Data** — `db.rs`, `data_store.rs` (SQLite); migrations + GDPR (`commands/privacy.rs`) owned by `rust-backend-architect` (data security lens → `tauri-security-reviewer`).
+- **Data** — `db.rs`, `data_store.rs` ([SQLite][sqlite] via [rusqlite][rusqlite]); migrations + GDPR (`commands/privacy.rs`) owned by `rust-backend-architect` (data security lens → `tauri-security-reviewer`).
+
+[printpdf]: https://github.com/fschutt/printpdf
+[docx-rs]: https://github.com/bokuweb/docx-rs
+[sqlite]: https://www.sqlite.org
+[rusqlite]: https://github.com/rusqlite/rusqlite
