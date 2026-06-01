@@ -13,6 +13,12 @@
     "dialog:default",
     "updater:default",
     "clipboard-manager:default",
-    "log:default"
+    "log:default",
+    "notification:allow-notify",
+    "notification:allow-show",
+    "notification:allow-request-permission",
+    "notification:allow-check-permissions",
+    "notification:allow-is-permission-granted",
+    "notification:allow-permission-state"
   ]
 }
