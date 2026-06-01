@@ -17,6 +17,42 @@ use super::{
 
 const BASE: &str = "https://generativelanguage.googleapis.com";
 
+/// Whether to request `thinkingConfig.includeThoughts`. Gemini 1.5 and the GA
+/// 2.0 models reject `thinkingConfig` with a 400, so we only enable it for the
+/// 2.5 family and any explicit `*-thinking-*` model. Unknown future models simply
+/// don't surface thoughts (a graceful miss, never a broken request).
+fn gemini_supports_thinking(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    m.contains("2.5") || m.contains("thinking")
+}
+
+/// Extract a Gemini chunk's streamed parts as `(is_thought, text)` pairs. 2.5
+/// thinking models flag reasoning parts with `"thought": true`; the rest are
+/// normal answer text. Pure + unit-tested so the streaming loop stays a thin
+/// emitter.
+fn parse_gemini_parts(event: &Value) -> Vec<(bool, &str)> {
+    event
+        .get("candidates")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("content"))
+        .and_then(|c| c.get("parts"))
+        .and_then(|p| p.as_array())
+        .map(|parts| {
+            parts
+                .iter()
+                .filter_map(|part| {
+                    let text = part.get("text").and_then(|t| t.as_str())?;
+                    let thought = part
+                        .get("thought")
+                        .and_then(|t| t.as_bool())
+                        .unwrap_or(false);
+                    Some((thought, text))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub struct GeminiClient;
 
 #[async_trait]
@@ -74,6 +110,10 @@ impl AiProvider for GeminiClient {
         let mut generation_config = json!({ "temperature": temperature });
         if let Some(mt) = req.max_tokens {
             generation_config["maxOutputTokens"] = json!(mt);
+        }
+        // Ask thinking-capable models to stream their reasoning as `thought` parts.
+        if gemini_supports_thinking(&req.model) {
+            generation_config["thinkingConfig"] = json!({ "includeThoughts": true });
         }
         let mut body = json!({ "contents": contents, "generationConfig": generation_config });
         if !system_text.is_empty() {
@@ -146,20 +186,18 @@ impl AiProvider for GeminiClient {
                         if depth == 0 && buf.trim_start().starts_with('{') && !buf.trim().is_empty()
                         {
                             if let Ok(event) = serde_json::from_str::<Value>(buf.trim()) {
-                                let delta = event
-                                    .get("candidates")
-                                    .and_then(|c| c.get(0))
-                                    .and_then(|c| c.get("content"))
-                                    .and_then(|c| c.get("parts"))
-                                    .and_then(|p| p.get(0))
-                                    .and_then(|p| p.get("text"))
-                                    .and_then(|t| t.as_str())
-                                    .unwrap_or("");
-                                if !delta.is_empty() {
-                                    let _ = app.emit(
-                                        "ai:stream",
-                                        json!({ "jobId": job_id, "delta": delta, "done": false }),
-                                    );
+                                // Split every part: `thought` parts stream as reasoning,
+                                // the rest as the normal answer.
+                                for (thought, text) in parse_gemini_parts(&event) {
+                                    if text.is_empty() {
+                                        continue;
+                                    }
+                                    let chunk = if thought {
+                                        json!({ "jobId": job_id, "delta": text, "done": false, "thinking": true })
+                                    } else {
+                                        json!({ "jobId": job_id, "delta": text, "done": false })
+                                    };
+                                    let _ = app.emit("ai:stream", chunk);
                                 }
                             }
                             buf.clear();
@@ -325,5 +363,50 @@ impl AiProvider for GeminiClient {
                 resp.status()
             )))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{gemini_supports_thinking, parse_gemini_parts};
+    use serde_json::json;
+
+    #[test]
+    fn thinking_gate_enables_only_known_models() {
+        for m in [
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash-thinking",
+        ] {
+            assert!(gemini_supports_thinking(m), "{m} should enable thinking");
+        }
+        for m in ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash"] {
+            assert!(
+                !gemini_supports_thinking(m),
+                "{m} must not request thinkingConfig (it 400s)"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_parts_splits_thought_from_answer() {
+        let ev = json!({
+            "candidates": [{
+                "content": { "parts": [
+                    { "text": "reasoning…", "thought": true },
+                    { "text": "the answer" }
+                ] }
+            }]
+        });
+        assert_eq!(
+            parse_gemini_parts(&ev),
+            vec![(true, "reasoning…"), (false, "the answer")]
+        );
+    }
+
+    #[test]
+    fn parse_parts_empty_without_candidates() {
+        assert!(parse_gemini_parts(&json!({})).is_empty());
+        assert!(parse_gemini_parts(&json!({ "candidates": [] })).is_empty());
     }
 }

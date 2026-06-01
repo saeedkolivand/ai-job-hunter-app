@@ -334,12 +334,28 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
                         Ok(v) => v,
                         Err(_) => continue,
                     };
-                    let delta = event
-                        .get("message")
+                    let message = event.get("message");
+                    let delta = message
                         .and_then(|m| m.get("content"))
                         .and_then(|c| c.as_str())
                         .unwrap_or("");
+                    // Structured reasoning from thinking models (DeepSeek-R1, Qwen3)
+                    // when the server populates `message.thinking`. Models that instead
+                    // embed <think>…</think> in `content` are split renderer-side. We do
+                    // not force Ollama's `think` flag here — it 400s on non-thinking
+                    // models, so capability-gated enablement rides with the /api/show
+                    // work (Part A).
+                    let thinking = message
+                        .and_then(|m| m.get("thinking"))
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("");
                     let done = event.get("done").and_then(|d| d.as_bool()).unwrap_or(false);
+                    if !thinking.is_empty() {
+                        let _ = app.emit(
+                            "ai:stream",
+                            json!({ "jobId": job_id, "delta": thinking, "done": false, "thinking": true }),
+                        );
+                    }
                     let _ = app.emit(
                         "ai:stream",
                         json!({ "jobId": job_id, "delta": delta, "done": done }),
