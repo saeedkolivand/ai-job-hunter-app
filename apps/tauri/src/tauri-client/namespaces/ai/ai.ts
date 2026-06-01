@@ -10,6 +10,7 @@ export const ai = {
   generate: (req: AiGenerateRequest) => invoke('ai_generate', { req }),
   generatePipeline: (req: AiGenerateRequest) => invoke('generate_pipeline', { req }),
   listModels: () => invoke('ai_list_models'),
+  inspectModel: ({ model }: { model: string }) => invoke('ai_inspect_model', { model }),
   pullModel: (model: string) => invoke('ai_pull_model', { model }),
   unloadModel: (model: string) => invoke('ai_unload_model', { model }),
   embed: (req: EmbedRequest) => invoke('ai_embed', { req }),

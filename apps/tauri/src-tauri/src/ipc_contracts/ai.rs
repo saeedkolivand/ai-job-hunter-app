@@ -12,6 +12,7 @@ pub struct AiGenerateRequest {
     pub locale: String,
     pub temperature: Option<f64>,
     pub max_tokens: Option<u32>,
+    pub context_window: Option<u32>,
     pub stream: Option<bool>,
     pub provider: Option<String>,
     pub base_url: Option<String>,

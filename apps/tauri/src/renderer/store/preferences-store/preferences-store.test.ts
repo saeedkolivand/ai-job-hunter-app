@@ -49,6 +49,17 @@ describe('usePreferencesStore', () => {
     });
   });
 
+  it('stores per-model local limits under ollama, keyed by model and deep-merged', () => {
+    const s = usePreferencesStore.getState();
+    s.setLocalModelLimits('llama3', { contextWindow: 16384 });
+    s.setLocalModelLimits('llama3', { maxTokens: 4096 }); // independent field, merged
+    s.setLocalModelLimits('qwen3', { contextWindow: 32768 }); // a different model
+
+    const limits = usePreferencesStore.getState().aiProviderConfig?.providers?.ollama?.modelLimits;
+    expect(limits?.llama3).toEqual({ contextWindow: 16384, maxTokens: 4096 });
+    expect(limits?.qwen3).toEqual({ contextWindow: 32768 });
+  });
+
   it('marks onboarding complete and resets to defaults', () => {
     usePreferencesStore.getState().setOnboardingComplete();
     expect(usePreferencesStore.getState().onboardingCompleted).toBe(true);

@@ -25,6 +25,12 @@ export const AiGenerateRequestSchema = z.object({
   locale: LocaleSchema,
   temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().int().min(1).max(32768).optional(),
+  /**
+   * Context window in tokens (Ollama `num_ctx`). Local models only — large
+   * résumé/job-ad prompts overflow Ollama's small default context and get
+   * silently truncated without this. Ignored by cloud/CLI providers.
+   */
+  contextWindow: z.number().int().min(512).max(131072).optional(),
   stream: z.boolean().optional(),
   /**
    * AI backend — 'ollama' (default), 'openai', 'openai-compatible', 'anthropic',
@@ -35,6 +41,22 @@ export const AiGenerateRequestSchema = z.object({
   baseUrl: z.string().optional(),
   /** Reasoning effort for CLI agents that support it (e.g. Codex: low/medium/high). */
   effort: z.string().optional(),
+});
+
+/**
+ * Inspection of a local (Ollama) model via `/api/show` — its real maximum
+ * context window and size, used to suggest safe generation limits. All fields
+ * optional: older Ollama servers omit some of `model_info`/`details`.
+ */
+export const ModelInspectResultSchema = z.object({
+  /** Trained context length in tokens (e.g. 8192, 131072). */
+  contextLength: z.number().int().positive().optional(),
+  /** Parameter size label from `details` (e.g. "7B", "70.6B"). */
+  parameterSize: z.string().optional(),
+  /** Quantization level (e.g. "Q4_K_M"). */
+  quantization: z.string().optional(),
+  /** Model family (e.g. "llama", "qwen2"). */
+  family: z.string().optional(),
 });
 
 export const DocumentImportRequestSchema = z.object({
@@ -226,6 +248,7 @@ export type AutopilotUpdate = z.infer<typeof AutopilotUpdateSchema>;
 export type JobPreferences = z.infer<typeof JobPreferencesSchema>;
 
 export type AiGenerateRequest = z.infer<typeof AiGenerateRequestSchema>;
+export type ModelInspectResult = z.infer<typeof ModelInspectResultSchema>;
 export type DocumentImportRequest = z.infer<typeof DocumentImportRequestSchema>;
 export type ScrapeBoardRequest = z.infer<typeof ScrapeBoardRequestSchema>;
 export type ScrapeUrlRequest = z.infer<typeof ScrapeUrlRequestSchema>;

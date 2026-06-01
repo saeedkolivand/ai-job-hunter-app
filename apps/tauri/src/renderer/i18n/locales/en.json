@@ -365,6 +365,21 @@
       "searchPlaceholder": "Search technologies...",
       "popular": "Popular"
     },
+    "ai": {
+      "localLimits": {
+        "title": "Generation limits",
+        "analyze": "Analyze model",
+        "analyzing": "Analyzing…",
+        "maxContext": "Max context",
+        "noInfo": "No model details available",
+        "contextWindow": "Context window",
+        "maxOutput": "Max output tokens",
+        "useSuggested": "Use suggested",
+        "suggested": "Suggested",
+        "mayLagRam": "A large context window may lag on your available RAM",
+        "mayLagVram": "A large context window may lag on your available VRAM"
+      }
+    },
     "salary": {
       "title": "Salary Expectations",
       "description": "Set your salary expectations to filter job recommendations.",

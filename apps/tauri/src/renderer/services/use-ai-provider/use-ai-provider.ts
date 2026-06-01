@@ -57,6 +57,17 @@ export const useTestProviderKey = () => {
   });
 };
 
+/**
+ * Inspect a local (Ollama) model's real context window + size via `/api/show`.
+ * On-demand (the settings "Analyze model" button), so a mutation rather than a query.
+ */
+export const useInspectModel = () => {
+  const api = useAppClient();
+  return useMutation({
+    mutationFn: ({ model }: { model: string }) => api.ai.inspectModel({ model }),
+  });
+};
+
 /** Active embedding space, per-space vector counts, and document index coverage. */
 export const useEmbeddingStatus = () => {
   const api = useAppClient();
