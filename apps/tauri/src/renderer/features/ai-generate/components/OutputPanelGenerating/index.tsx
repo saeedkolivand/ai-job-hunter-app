@@ -94,7 +94,7 @@ export function OutputPanelGenerating({
             ? t('aiGenerate.generatingResume')
             : t('aiGenerate.generatingCoverLetter')}
         </div>
-        <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground/40">
+        <pre className="select-text whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground/40">
           {streamBuffer}
           <span className="inline-block h-3 w-0.5 animate-pulse bg-brand ml-0.5 align-middle" />
         </pre>

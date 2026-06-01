@@ -80,3 +80,40 @@ html[data-performance-mode='low-memory'] [role='listbox'] {
 .app-no-drag {
   -webkit-app-region: no-drag;
 }
+
+/* ── Native text-selection lock ──────────────────────────────────────────── */
+/* Make the shell behave like a native desktop app: nothing is selectable by  */
+/* default (no browser-style drag-to-select on chrome), with a default cursor. */
+/* Real content opts back in via inputs, [contenteditable], `.select-text`, or */
+/* `[data-selectable]` — keep this allow-list in sync with                    */
+/* `desktop-native.ts` (SELECTABLE_SELECTOR).                                  */
+body {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+input,
+textarea,
+[contenteditable],
+[contenteditable] *,
+.select-text,
+.select-text *,
+[data-selectable],
+[data-selectable] * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Text cursor only for text-entry fields — range/checkbox/radio/file keep
+   their native cursor. */
+input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']),
+textarea {
+  cursor: text;
+}
+
+/* Icons/images shouldn't be ghost-draggable out of the window. */
+img,
+svg {
+  -webkit-user-drag: none;
+}

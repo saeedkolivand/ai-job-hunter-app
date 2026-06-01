@@ -17,11 +17,14 @@ import { PerformanceModeProvider } from '@/providers/PerformanceModeProvider';
 import { routeTree } from '@/routeTree.gen';
 import { queryClient } from '@/services/query-client';
 
+import { installDesktopNativeBehaviors } from './desktop-native';
 import { createTauriInvokeClient } from './tauri-client/index.js';
 import { TauriWindowControls } from './TauriWindowControls';
 
 import '@/i18n';
 import './styles.css';
+
+installDesktopNativeBehaviors();
 
 registerWindowControls(TauriWindowControls);
 

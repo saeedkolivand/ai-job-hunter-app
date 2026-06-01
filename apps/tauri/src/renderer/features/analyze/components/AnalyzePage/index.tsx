@@ -180,7 +180,7 @@ function AnalyzePage() {
                 exit={{ opacity: 0 }}
                 className="flex flex-1 flex-col overflow-hidden"
               >
-                <div className="flex-1 overflow-y-auto px-8 py-8">
+                <div className="select-text flex-1 overflow-y-auto px-8 py-8">
                   <AnalysisProgress
                     running
                     stream={stream}
@@ -203,7 +203,7 @@ function AnalyzePage() {
                 animate={{ opacity: 1 }}
                 className="flex flex-1 flex-col overflow-hidden"
               >
-                <div className="flex-1 overflow-y-auto px-8 py-8 space-y-4">
+                <div className="select-text flex-1 overflow-y-auto px-8 py-8 space-y-4">
                   <AnalysisResults result={result} t={t} />
                 </div>
               </motion.div>

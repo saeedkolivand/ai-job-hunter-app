@@ -331,7 +331,7 @@ export function GenerationCard({ gen }: GenerationCardProps) {
                   transition={transition.normal}
                   className="overflow-hidden"
                 >
-                  <pre className="px-4 pb-4 whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-foreground/50 max-h-64 overflow-y-auto">
+                  <pre className="select-text px-4 pb-4 whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-foreground/50 max-h-64 overflow-y-auto">
                     {text}
                   </pre>
                 </motion.div>
@@ -367,7 +367,7 @@ export function GenerationCard({ gen }: GenerationCardProps) {
                 transition={transition.normal}
                 className="overflow-hidden"
               >
-                <div className="max-h-72 space-y-3 overflow-y-auto px-4 pb-4">
+                <div className="select-text max-h-72 space-y-3 overflow-y-auto px-4 pb-4">
                   {gen.applicationAnswers.map((qa) => (
                     <div key={qa.id}>
                       <p className="text-[11px] font-medium text-foreground/70">{qa.question}</p>
