@@ -1,5 +1,6 @@
 import {
   Briefcase,
+  Check,
   ChevronUp,
   ExternalLink,
   Pause,
@@ -224,7 +225,21 @@ export function AutopilotCard({
                       className="flex min-w-0 flex-1 items-center gap-2 text-left"
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-[11px] text-foreground/80">{job.title}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate text-[11px] text-foreground/80">
+                            {job.title}
+                          </span>
+                          {job.isNew && (
+                            <span className="shrink-0 rounded-full bg-brand/15 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-brand-soft">
+                              {t('autopilot.badge.new')}
+                            </span>
+                          )}
+                          {job.applied && (
+                            <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-emerald-400/15 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-emerald-300">
+                              <Check size={8} /> {t('autopilot.badge.applied')}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5 text-[10px] text-foreground/40">
                           <span className="truncate">{job.company}</span>
                           {job.location && <span className="truncate">· {job.location}</span>}
@@ -256,6 +271,7 @@ export function AutopilotCard({
         <ApplyJobModal
           job={applyJob}
           resumeText={ap.resumeText}
+          board={ap.target.board}
           onClose={() => setApplyJob(null)}
         />
       )}

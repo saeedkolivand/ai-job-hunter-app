@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import {
   buildFilename,
@@ -10,7 +11,14 @@ import {
   type TemplateId,
 } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
-import { EMPTY_SESSION, type TailorTarget, useGenerationStore } from '@/store/generation-store';
+import { useAppClient } from '@/providers/AppClientProvider';
+import { keys } from '@/services/query-client';
+import {
+  EMPTY_SESSION,
+  type GenerationResult,
+  type TailorTarget,
+  useGenerationStore,
+} from '@/store/generation-store';
 
 export type { TailorTarget };
 
@@ -25,6 +33,11 @@ interface Params {
   model: string;
   canUse: boolean;
   hasDesc: boolean;
+  /** The found job's URL — links the saved generation to it so the backend
+   *  derives the "Applied" badge from a matching `jobUrl`. */
+  jobUrl: string;
+  /** The board the job came from (e.g. "linkedin"), stored on the record. */
+  board: string;
 }
 
 /**
@@ -33,8 +46,18 @@ interface Params {
  * only selects the session and keeps modal-local UI state (copy/export). Closing
  * the modal no longer aborts — generation continues and reappears on reopen.
  */
-export function useTailorGeneration({ contextId, jobDesc, model, canUse, hasDesc }: Params) {
+export function useTailorGeneration({
+  contextId,
+  jobDesc,
+  model,
+  canUse,
+  hasDesc,
+  jobUrl,
+  board,
+}: Params) {
   const { t } = useTranslation();
+  const api = useAppClient();
+  const qc = useQueryClient();
 
   const session = useGenerationStore((s) => s.sessions[contextId] ?? EMPTY_SESSION);
   const runTailor = useGenerationStore((s) => s.runTailor);
@@ -49,9 +72,50 @@ export function useTailorGeneration({ contextId, jobDesc, model, canUse, hasDesc
 
   const output = activeOut === 'resume' ? resumeOut : coverOut;
 
+  // Persist the finished application linked to this job. Called by the store on a
+  // clean run — bypasses the React Query mutation hook (which the modal may have
+  // unmounted) and talks to the client directly, so a background generation still
+  // records and flips the job to "Applied". Best-effort: a save failure never
+  // surfaces over the already-shown output.
+  const persist = ({ meta: m, resumeText, coverLetterText }: GenerationResult) => {
+    void api.aiGenerations
+      .save({
+        candidateName: m.candidateName,
+        jobTitle: m.jobTitle,
+        companyName: m.companyName,
+        resumeLanguage: m.resumeLanguage,
+        jobAdLanguage: m.jobAdLanguage,
+        targetLanguage: m.targetLanguage,
+        mismatch: m.mismatch,
+        topRequirements: m.topRequirements,
+        mode: MODE,
+        resumeText,
+        coverLetterText,
+        jobAd: jobDesc,
+        jobUrl,
+        board,
+      })
+      .then(() => {
+        void qc.invalidateQueries({ queryKey: keys.aiGenerations.all });
+        void qc.invalidateQueries({ queryKey: keys.autopilot.all });
+      })
+      .catch(() => {
+        /* best-effort persistence — the generation is already shown to the user */
+      });
+  };
+
   const generate = (resume: string, target: TailorTarget) => {
     if (!canUse || !hasDesc) return Promise.resolve();
-    return runTailor({ contextId, resume, jobDesc, model, mode: MODE, target, t });
+    return runTailor({
+      contextId,
+      resume,
+      jobDesc,
+      model,
+      mode: MODE,
+      target,
+      t,
+      onComplete: persist,
+    });
   };
 
   const abort = () => cancel(contextId);

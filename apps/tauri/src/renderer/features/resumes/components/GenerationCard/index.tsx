@@ -1,9 +1,11 @@
 import {
   Building2,
   Calendar,
+  Check,
   ChevronDown,
   Copy,
   Download,
+  ExternalLink,
   FileText,
   Loader2,
   Trash2,
@@ -17,6 +19,7 @@ import { Button, cn, transition } from '@ajh/ui';
 
 import { buildFilename, exportDOCX, exportPDF, exportTXT, type TemplateId } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
+import { useOpenExternal } from '@/services';
 import { useRemoveAiGeneration } from '@/services/use-ai-generations';
 
 const EXPORT_FORMATS = ['pdf', 'docx', 'txt'] as const;
@@ -35,6 +38,7 @@ interface GenerationCardProps {
 export function GenerationCard({ gen }: GenerationCardProps) {
   const { t } = useTranslation();
   const removeAiGeneration = useRemoveAiGeneration();
+  const openExternal = useOpenExternal();
   const [expanded, setExpanded] = useState<'resume' | 'cover' | 'jobAd' | null>(null);
   const [copied, setCopied] = useState<'resume' | 'cover' | null>(null);
   const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
@@ -122,6 +126,28 @@ export function GenerationCard({ gen }: GenerationCardProps) {
             <span className="rounded-full border border-brand/20 bg-brand/8 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-brand-soft">
               {gen.mode}
             </span>
+            {gen.board && (
+              <span className="rounded-full border border-white/[0.06] bg-white/[0.03] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-foreground/45">
+                {gen.board}
+              </span>
+            )}
+            {/* A linked job means this generation was an application — surface the
+                "Applied" state and a link back to the original posting. */}
+            {gen.jobUrl && (
+              <span className="flex items-center gap-0.5 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-emerald-300">
+                <Check size={9} /> {t('resumes.generated.applied')}
+              </span>
+            )}
+            {gen.jobUrl && (
+              <button
+                type="button"
+                onClick={() => void openExternal.mutate(gen.jobUrl)}
+                title={t('resumes.generated.openPosting')}
+                className="flex items-center gap-1 text-foreground/35 transition-colors hover:text-brand-soft"
+              >
+                <ExternalLink size={10} /> {t('resumes.generated.openPosting')}
+              </button>
+            )}
           </div>
         </div>
 

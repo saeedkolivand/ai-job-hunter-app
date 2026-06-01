@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { generateResume } from '@/lib/generate';
+
 import { EMPTY_SESSION, useGenerationStore } from './generation-store';
 
 // Stub the generation pipeline; resume/cover emit one reasoning + one content token.
@@ -95,5 +97,30 @@ describe('generation store', () => {
     useGenerationStore.setState({ sessions: { [id]: { ...EMPTY_SESSION, resumeOut: 'X' } } });
     useGenerationStore.getState().reset(id);
     expect(useGenerationStore.getState().getSession(id)).toBe(EMPTY_SESSION);
+  });
+
+  it('calls onComplete with the finished documents + metadata after a clean run', async () => {
+    const onComplete = vi.fn();
+    await useGenerationStore
+      .getState()
+      .runTailor({ contextId: 'c1', target: 'both', onComplete, ...base });
+
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(onComplete).toHaveBeenCalledWith({
+      meta: expect.objectContaining({ resumeLanguage: 'en' }),
+      resumeText: 'RESUME',
+      coverLetterText: 'COVER',
+    });
+  });
+
+  it('does not call onComplete when the run fails (so a failed application is never saved)', async () => {
+    vi.mocked(generateResume).mockRejectedValueOnce(new Error('boom'));
+    const onComplete = vi.fn();
+    await useGenerationStore
+      .getState()
+      .runTailor({ contextId: 'c2', target: 'resume', onComplete, ...base });
+
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(useGenerationStore.getState().getSession('c2').error).toBe('boom');
   });
 });

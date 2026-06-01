@@ -43,6 +43,13 @@ export const EMPTY_SESSION: GenerationSession = {
   meta: null,
 };
 
+/** The finished documents + detected metadata, handed to {@link RunTailorParams.onComplete}. */
+export interface GenerationResult {
+  meta: GenerationMeta;
+  resumeText: string;
+  coverLetterText: string;
+}
+
 export interface RunTailorParams {
   contextId: string;
   resume: string;
@@ -52,6 +59,13 @@ export interface RunTailorParams {
   target: TailorTarget;
   /** Translator for the failure message. */
   t: (key: string) => string;
+  /**
+   * Called once after a run completes successfully (not on cancel/error). The
+   * store stays a pure state container — persistence (e.g. saving the application
+   * record) lives in the caller. Fires even if the originating component has
+   * unmounted, so a background generation still records its result.
+   */
+  onComplete?: (result: GenerationResult) => void;
 }
 
 interface GenerationStore {
@@ -105,7 +119,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
         return { sessions: next };
       }),
 
-    runTailor: async ({ contextId: id, resume, jobDesc, model, mode, target, t }) => {
+    runTailor: async ({ contextId: id, resume, jobDesc, model, mode, target, t, onComplete }) => {
       if (get().sessions[id]?.generating || !resume.trim()) return;
 
       const controller = new AbortController();
@@ -125,9 +139,12 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
         const detected = await extractMetadata(resume, jobDesc, model);
         patch(id, { meta: detected });
 
+        let resumeText = '';
+        let coverLetterText = '';
+
         if (target === 'resume' || target === 'both') {
           patch(id, { activeOut: 'resume', phase: 'resume', thinking: '' });
-          const r = await generateResume(
+          resumeText = await generateResume(
             resume,
             jobDesc,
             detected,
@@ -138,12 +155,12 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
             controller.signal,
             onThink
           );
-          patch(id, { resumeOut: r });
+          patch(id, { resumeOut: resumeText });
         }
 
         if (target === 'cover' || target === 'both') {
           patch(id, { activeOut: 'cover', phase: 'cover', thinking: '' });
-          const c = await generateCoverLetter(
+          coverLetterText = await generateCoverLetter(
             resume,
             jobDesc,
             detected,
@@ -154,8 +171,11 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
             controller.signal,
             onThink
           );
-          patch(id, { coverOut: c });
+          patch(id, { coverOut: coverLetterText });
         }
+
+        // Persist after a clean run only — a cancel/error throws and skips this.
+        onComplete?.({ meta: detected, resumeText, coverLetterText });
       } catch (err) {
         patch(id, { error: err instanceof Error ? err.message : t('autopilot.apply.failed') });
       } finally {
