@@ -125,6 +125,7 @@ export {
   type AiGenerationRecord,
   type AiGenerationSaveRequest,
   type AiGenerationsContract,
+  type ApplicationAnswer,
 } from './aiGenerations.js';
 export { APPLY_CHANNELS, type ApplyContract } from './apply.js';
 export {
