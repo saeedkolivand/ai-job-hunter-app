@@ -473,19 +473,20 @@ it; `std::env::var` only in `platform/**`; `reqwest::Client::new/builder` only i
 
 ## Anti-Patterns to Avoid
 
-| Anti-Pattern                                      | Correct Approach                                                                                                                       |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `useState + useEffect` for IPC data               | React Query service hook                                                                                                               |
-| `window.__TAURI_INVOKE__` directly                | `useAppClient()` service hook                                                                                                          |
-| `import { useTranslation } from "react-i18next"`  | `import { useTranslation } from "@/lib/i18n"`                                                                                          |
-| Cross-feature imports                             | Only import from `@ajh/ui`, `services/`, `lib/`                                                                                        |
-| `// eslint-disable` comment                       | Fix the underlying issue or add a scoped `eslint.config.mjs` override                                                                  |
-| Inline `{ duration: 0.2, ease: "easeOut" }`       | `transition.fast` from `@/lib/motion`                                                                                                  |
-| Hardcoded colors in className                     | `text-brand`, `bg-brand`, etc.                                                                                                         |
-| Storing credentials in SQLite                     | OS keychain via `client.credentials`                                                                                                   |
-| Reading `AJH_DATA_DIR` / rebuilding `~/.ajh`      | `platform::config::data_dir()`                                                                                                         |
-| Per-page `?` that aborts a partial scrape         | First-page error propagates as `Err`; a later page logs + `break`s, keeping the partial (P10)                                          |
-| `reqwest::Client::new()` / `::builder()`          | `net::http::shared()` or `net::http::build_client()`                                                                                   |
-| `Result<_, String>` for fallible internals        | `AppResult<_>` / `AppError` from `crate::error`                                                                                        |
-| Folding web-fetched content directly into prompts | Wrap in an untrusted-content fence (see `packages/prompts/src/emphasis.ts`); label the block so the model treats it as untrusted input |
-| Per-provider `thinking` handling in the renderer  | Normalize at the adapter boundary; consume the unified `chunk.thinking` field everywhere                                               |
+| Anti-Pattern                                      | Correct Approach                                                                                                                             |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `useState + useEffect` for IPC data               | React Query service hook                                                                                                                     |
+| `window.__TAURI_INVOKE__` directly                | `useAppClient()` service hook                                                                                                                |
+| `import { useTranslation } from "react-i18next"`  | `import { useTranslation } from "@/lib/i18n"`                                                                                                |
+| Cross-feature imports                             | Only import from `@ajh/ui`, `services/`, `lib/`                                                                                              |
+| `// eslint-disable` comment                       | Fix the underlying issue or add a scoped `eslint.config.mjs` override                                                                        |
+| Inline `{ duration: 0.2, ease: "easeOut" }`       | `transition.fast` from `@/lib/motion`                                                                                                        |
+| Hardcoded colors in className                     | `text-brand`, `bg-brand`, etc.                                                                                                               |
+| Storing credentials in SQLite                     | OS keychain via `client.credentials`                                                                                                         |
+| Reading `AJH_DATA_DIR` / rebuilding `~/.ajh`      | `platform::config::data_dir()`                                                                                                               |
+| Per-page `?` that aborts a partial scrape         | First-page error propagates as `Err`; a later page logs + `break`s, keeping the partial (P10)                                                |
+| `reqwest::Client::new()` / `::builder()`          | `net::http::shared()` or `net::http::build_client()`                                                                                         |
+| `Result<_, String>` for fallible internals        | `AppResult<_>` / `AppError` from `crate::error`                                                                                              |
+| Folding web-fetched content directly into prompts | Wrap in an untrusted-content fence (see `packages/prompts/src/emphasis.ts`); label the block so the model treats it as untrusted input       |
+| Per-provider `thinking` handling in the renderer  | Normalize at the adapter boundary; consume the unified `chunk.thinking` field everywhere                                                     |
+| Raw `<a target="_blank">` or `window.open`        | `<ExternalLink href={url}>` for hyperlinks; `useOpenExternal()` directly for button/actions with side effects (`components/ui/ExternalLink`) |
