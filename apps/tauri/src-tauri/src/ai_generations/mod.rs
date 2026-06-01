@@ -40,6 +40,13 @@ pub struct AiGenerationRecord {
     pub cover_letter_text: String,
     #[serde(rename = "jobAd")]
     pub job_ad: String,
+    // Application link — makes the record the single "application" aggregate: the
+    // job it targets and the board it came from. `job_url` is what derives a found
+    // job's `applied` flag (a matching url means the user generated for it).
+    #[serde(rename = "jobUrl", default)]
+    pub job_url: String,
+    #[serde(default)]
+    pub board: String,
 }
 
 pub struct AiGenerationStore {
@@ -47,11 +54,12 @@ pub struct AiGenerationStore {
 }
 
 impl AiGenerationStore {
-    const MIGRATIONS: &'static [Migration] = &[Migration {
-        name: "create_ai_generations",
-        up: |conn| {
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS ai_generations (
+    const MIGRATIONS: &'static [Migration] = &[
+        Migration {
+            name: "create_ai_generations",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS ai_generations (
                     id                TEXT PRIMARY KEY,
                     created_at        INTEGER NOT NULL,
                     candidate_name    TEXT NOT NULL DEFAULT '',
@@ -67,9 +75,23 @@ impl AiGenerationStore {
                     cover_letter_text TEXT NOT NULL DEFAULT '',
                     job_ad            TEXT NOT NULL DEFAULT ''
                 );",
-            )
+                )
+            },
         },
-    }];
+        // Additive: link a generation to the job it targets (and its board), so
+        // each row is the full "application" record. Old rows default to ''.
+        Migration {
+            name: "add_job_link",
+            up: |conn| {
+                conn.execute_batch(
+                    "ALTER TABLE ai_generations ADD COLUMN job_url TEXT NOT NULL DEFAULT '';
+                     ALTER TABLE ai_generations ADD COLUMN board   TEXT NOT NULL DEFAULT '';
+                     CREATE INDEX IF NOT EXISTS idx_ai_generations_job_url
+                         ON ai_generations(job_url);",
+                )
+            },
+        },
+    ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
         std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
@@ -91,7 +113,8 @@ impl AiGenerationStore {
         conn.prepare(
             "SELECT id, created_at, candidate_name, job_title, company_name,
                     resume_language, job_ad_language, target_language, mismatch,
-                    top_requirements, mode, resume_text, cover_letter_text, job_ad
+                    top_requirements, mode, resume_text, cover_letter_text, job_ad,
+                    job_url, board
              FROM ai_generations ORDER BY created_at DESC",
         )
         .ok()
@@ -113,6 +136,8 @@ impl AiGenerationStore {
                     resume_text: row.get(11)?,
                     cover_letter_text: row.get(12)?,
                     job_ad: row.get(13)?,
+                    job_url: row.get(14)?,
+                    board: row.get(15)?,
                 })
             })
             .ok()
@@ -128,8 +153,9 @@ impl AiGenerationStore {
             "INSERT INTO ai_generations
              (id, created_at, candidate_name, job_title, company_name,
               resume_language, job_ad_language, target_language, mismatch,
-              top_requirements, mode, resume_text, cover_letter_text, job_ad)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+              top_requirements, mode, resume_text, cover_letter_text, job_ad,
+              job_url, board)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
             params![
                 rec.id,
                 rec.created_at as i64,
@@ -145,10 +171,26 @@ impl AiGenerationStore {
                 rec.resume_text,
                 rec.cover_letter_text,
                 rec.job_ad,
+                rec.job_url,
+                rec.board,
             ],
         )
         .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    /// Distinct non-empty `job_url`s that have at least one saved generation —
+    /// the set used to derive a found job's `applied` flag.
+    pub fn applied_job_urls(&self) -> std::collections::HashSet<String> {
+        let conn = self.conn.lock();
+        conn.prepare("SELECT DISTINCT job_url FROM ai_generations WHERE job_url != ''")
+            .ok()
+            .and_then(|mut stmt| {
+                stmt.query_map([], |row| row.get::<_, String>(0))
+                    .ok()
+                    .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            })
+            .unwrap_or_default()
     }
 
     pub fn remove(&self, id: &str) -> AppResult<()> {
@@ -192,3 +234,6 @@ impl DataStore for AiGenerationStore {
         Ok(count)
     }
 }
+
+#[cfg(test)]
+mod test;

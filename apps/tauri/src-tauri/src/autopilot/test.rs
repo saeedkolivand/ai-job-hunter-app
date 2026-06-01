@@ -99,3 +99,58 @@ fn test_data_store_export_import_preserves_id() {
     assert_eq!(list[0].id, id); // id preserved across restore
     assert_eq!(list[0].name, "Test AP");
 }
+
+fn found_job(url: &str, found_at: u64) -> FoundJob {
+    FoundJob {
+        title: "Engineer".into(),
+        company: "Acme".into(),
+        url: url.into(),
+        location: None,
+        description: None,
+        score: None,
+        found_at,
+        is_new: false,
+        applied: false,
+    }
+}
+
+#[test]
+fn merge_dedups_by_url_preserving_first_seen_and_flagging_new() {
+    let existing = vec![found_job("https://a.com/1", 100)];
+    let incoming = vec![
+        found_job("https://a.com/1", 999), // re-surfaced — keep found_at=100
+        found_job("https://a.com/2", 200), // genuinely new
+    ];
+
+    let merged = merge_found_jobs(&existing, incoming);
+
+    assert_eq!(merged.len(), 2, "no duplicate row for the same url");
+    let a1 = merged.iter().find(|j| j.url == "https://a.com/1").unwrap();
+    assert_eq!(a1.found_at, 100, "first-seen time preserved");
+    assert!(!a1.is_new, "an existing job is not new");
+    let a2 = merged.iter().find(|j| j.url == "https://a.com/2").unwrap();
+    assert!(a2.is_new, "a never-seen url is flagged new");
+}
+
+#[test]
+fn merge_is_idempotent_on_a_repeated_run() {
+    let first = merge_found_jobs(&[], vec![found_job("u1", 1), found_job("u2", 2)]);
+    assert!(first.iter().all(|j| j.is_new));
+
+    // Re-running with the same postings yields the same set; only is_new clears.
+    let second = merge_found_jobs(&first, vec![found_job("u1", 9), found_job("u2", 9)]);
+    assert_eq!(second.len(), 2);
+    assert!(second.iter().all(|j| !j.is_new));
+}
+
+#[test]
+fn merge_keeps_prior_jobs_not_in_the_new_run() {
+    let existing = vec![found_job("old", 1)];
+    let merged = merge_found_jobs(&existing, vec![found_job("fresh", 2)]);
+    assert_eq!(
+        merged.len(),
+        2,
+        "prior finds are retained, new ones appended"
+    );
+    assert!(merged.iter().any(|j| j.url == "old"));
+}

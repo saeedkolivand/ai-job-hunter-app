@@ -237,6 +237,11 @@ export interface AutopilotFoundJob {
   /** Match score (0–100) when the posting passed ranking. */
   score?: number;
   foundAt: number;
+  /** First surfaced in the most recent run — drives the "New" badge. */
+  isNew?: boolean;
+  /** The user has generated an application for this job (derived from a saved
+   *  generation whose `jobUrl` matches `url`). Drives the "Applied" badge. */
+  applied?: boolean;
 }
 
 /** Result record for a single autopilot run. */

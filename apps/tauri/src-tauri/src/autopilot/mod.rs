@@ -64,6 +64,16 @@ pub struct FoundJob {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score: Option<f64>,
     pub found_at: u64,
+    /// First surfaced in the most recent run (set by the dedup merge in
+    /// [`AutopilotStore::record_run`]). Drives the "New" badge.
+    #[serde(default)]
+    pub is_new: bool,
+    /// Whether the user has generated an application for this job. **Derived** at
+    /// read time from a saved generation whose `job_url` matches `url` (see
+    /// `commands::autopilot`), never hand-set, so it can't drift. Stored value is
+    /// always `false`; the read path fills it in.
+    #[serde(default)]
+    pub applied: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -232,7 +242,10 @@ impl AutopilotStore {
         self.save(map);
     }
 
-    /// Persist the outcome of a run: counts, the found-jobs list, and last-run time.
+    /// Persist the outcome of a run: counts, last-run time, and the found-jobs
+    /// list **merged** with prior runs by URL — so re-running keeps history
+    /// (first-seen + any state) instead of replacing it, and genuinely new
+    /// postings are flagged `is_new`.
     pub fn record_run(
         &self,
         id: &str,
@@ -245,7 +258,7 @@ impl AutopilotStore {
             let now = now_ms();
             ap.total_found = total_found;
             ap.total_applied = total_applied;
-            ap.found_jobs = found_jobs;
+            ap.found_jobs = merge_found_jobs(&ap.found_jobs, found_jobs);
             ap.last_run_at = Some(now);
             ap.updated_at = now;
         }
@@ -314,6 +327,58 @@ fn str_field(v: &serde_json::Value, key: &str) -> String {
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string()
+}
+
+/// Merge a fresh run's postings into the cumulative found-jobs list, idempotently:
+///
+/// - existing rows are kept (preserving `found_at`/first-seen) and have `is_new`
+///   cleared; if the run re-surfaced them, volatile fields (title/company/
+///   description/score/location) are refreshed,
+/// - postings whose URL was never seen are appended and flagged `is_new`.
+///
+/// Re-running with the same postings yields the same set — only `is_new` moves.
+/// `applied` is derived on read, so it is left at its default here.
+fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<FoundJob> {
+    use std::collections::HashMap;
+
+    let incoming_by_url: HashMap<&str, &FoundJob> =
+        incoming.iter().map(|j| (j.url.as_str(), j)).collect();
+
+    let mut merged: Vec<FoundJob> = existing
+        .iter()
+        .map(|e| {
+            let mut row = e.clone();
+            row.is_new = false;
+            if let Some(inc) = incoming_by_url.get(e.url.as_str()) {
+                row.title = inc.title.clone();
+                row.company = inc.company.clone();
+                if inc.location.is_some() {
+                    row.location = inc.location.clone();
+                }
+                if inc.description.is_some() {
+                    row.description = inc.description.clone();
+                }
+                if inc.score.is_some() {
+                    row.score = inc.score;
+                }
+            }
+            row
+        })
+        .collect();
+
+    let existing_urls: std::collections::HashSet<&str> =
+        existing.iter().map(|j| j.url.as_str()).collect();
+    for inc in incoming {
+        if !existing_urls.contains(inc.url.as_str()) {
+            merged.push(FoundJob {
+                is_new: true,
+                applied: false,
+                ..inc
+            });
+        }
+    }
+
+    merged
 }
 
 impl crate::data_store::DataStore for AutopilotStore {

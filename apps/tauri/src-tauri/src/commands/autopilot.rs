@@ -34,15 +34,39 @@ fn store(app: &AppHandle) -> Arc<Mutex<AutopilotStore>> {
     app.state::<Arc<Mutex<AutopilotStore>>>().inner().clone()
 }
 
+/// Fill each found job's `applied` from the set of `job_url`s that have a saved
+/// generation — so the badge reflects a real link (a generation exists for that
+/// job) rather than a hand-set flag that could drift.
+fn enrich_applied(app: &AppHandle, list: &mut [crate::autopilot::Autopilot]) {
+    let applied = app
+        .try_state::<crate::ai_generations::AiGenerationStore>()
+        .map(|s| s.applied_job_urls())
+        .unwrap_or_default();
+    if applied.is_empty() {
+        return;
+    }
+    for ap in list.iter_mut() {
+        for job in ap.found_jobs.iter_mut() {
+            job.applied = applied.contains(&job.url);
+        }
+    }
+}
+
 #[tauri::command]
 pub fn autopilot_list(app: AppHandle) -> Value {
-    let list = store(&app).lock().list();
+    let mut list = store(&app).lock().list();
+    enrich_applied(&app, &mut list);
     json!(list)
 }
 
 #[tauri::command]
 pub fn autopilot_get(app: AppHandle, autopilot_id: String) -> Value {
-    let ap = store(&app).lock().get(&autopilot_id);
+    let ap = store(&app).lock().get(&autopilot_id).map(|a| {
+        let mut one = [a];
+        enrich_applied(&app, &mut one);
+        let [ap] = one;
+        ap
+    });
     json!(ap)
 }
 
@@ -163,6 +187,9 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
                 description: p.description.clone(),
                 score,
                 found_at,
+                // Set by the dedup merge in `record_run`; `applied` is derived on read.
+                is_new: false,
+                applied: false,
             }
         })
         .collect();
