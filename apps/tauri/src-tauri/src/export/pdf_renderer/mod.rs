@@ -3,121 +3,13 @@ use crate::export::{
     types::{FontFamily, GenerationMeta, TextSegment},
 };
 use crate::measure::{FontMetrics, MeasureText};
-use anyhow::Context;
 use printpdf::*;
 
 mod contact_layout;
 pub(crate) use contact_layout::{contact_link_rects, wrap_contact_markdown};
 
-// ─── Font loading ─────────────────────────────────────────────────────────────
-
-/// Per-family font IDs (regular + bold + optional italic).
-#[derive(Clone)]
-pub struct FamilyFonts {
-    pub regular: FontId,
-    pub bold: FontId,
-    pub italic: Option<FontId>,
-}
-
-/// All template fonts embedded at compile time regardless of which template the
-/// user selects. This keeps the renderer stateless and avoids runtime font-file IO
-/// at the cost of ~4.2 MB binary size. Switch to a lazy font registry keyed by
-/// FontFamily if bundle size becomes a concern.
-pub struct LoadedFontSet {
-    pub calibri: FamilyFonts,
-    pub inter: FamilyFonts,
-    pub source_serif4: FamilyFonts,
-    pub manrope: FamilyFonts,
-    pub jetbrains_mono: FamilyFonts,
-    pub playfair_display: FamilyFonts,
-}
-
-impl LoadedFontSet {
-    pub fn family(&self, fam: FontFamily) -> &FamilyFonts {
-        match fam {
-            FontFamily::Calibri => &self.calibri,
-            FontFamily::Inter => &self.inter,
-            FontFamily::SourceSerif4 => &self.source_serif4,
-            FontFamily::Manrope => &self.manrope,
-            FontFamily::JetBrainsMono => &self.jetbrains_mono,
-            FontFamily::PlayfairDisplay => &self.playfair_display,
-        }
-    }
-}
-
-fn parse_font(bytes: &[u8], doc: &mut PdfDocument) -> anyhow::Result<FontId> {
-    let mut w = Vec::new();
-    let f = ParsedFont::from_bytes(bytes, 0, &mut w).context("Failed to parse font")?;
-    Ok(doc.add_font(&f))
-}
-
-/// Load all template fonts into the PDF document.
-/// Returns LoadedFontSet ready to use across all render functions.
-pub fn load_all_fonts(doc: &mut PdfDocument) -> anyhow::Result<LoadedFontSet> {
-    // Calibri (existing — bundled separately)
-    let cal_reg = include_bytes!("../../../fonts/calibri.ttf");
-    let cal_bol = include_bytes!("../../../fonts/calibrib.ttf");
-
-    // Inter
-    let int_reg = include_bytes!("../../../fonts/inter_regular.ttf");
-    let int_bol = include_bytes!("../../../fonts/inter_bold.ttf");
-
-    // Source Serif 4
-    let ss4_reg = include_bytes!("../../../fonts/source_serif4_regular.ttf");
-    let ss4_bol = include_bytes!("../../../fonts/source_serif4_bold.ttf");
-    let ss4_ita = include_bytes!("../../../fonts/source_serif4_italic.ttf");
-
-    // Manrope
-    let man_reg = include_bytes!("../../../fonts/manrope_regular.ttf");
-    let man_bol = include_bytes!("../../../fonts/manrope_bold.ttf");
-
-    // JetBrains Mono
-    let jbm_reg = include_bytes!("../../../fonts/jetbrains_mono_regular.ttf");
-    let jbm_bol = include_bytes!("../../../fonts/jetbrains_mono_bold.ttf");
-
-    // Playfair Display
-    let pfd_reg = include_bytes!("../../../fonts/playfair_display_regular.ttf");
-    let pfd_bol = include_bytes!("../../../fonts/playfair_display_bold.ttf");
-
-    Ok(LoadedFontSet {
-        calibri: FamilyFonts {
-            regular: parse_font(cal_reg, doc)?,
-            bold: parse_font(cal_bol, doc)?,
-            italic: None,
-        },
-        inter: FamilyFonts {
-            regular: parse_font(int_reg, doc)?,
-            bold: parse_font(int_bol, doc)?,
-            italic: None,
-        },
-        source_serif4: FamilyFonts {
-            regular: parse_font(ss4_reg, doc)?,
-            bold: parse_font(ss4_bol, doc)?,
-            italic: Some(parse_font(ss4_ita, doc)?),
-        },
-        manrope: FamilyFonts {
-            regular: parse_font(man_reg, doc)?,
-            bold: parse_font(man_bol, doc)?,
-            italic: None,
-        },
-        jetbrains_mono: FamilyFonts {
-            regular: parse_font(jbm_reg, doc)?,
-            bold: parse_font(jbm_bol, doc)?,
-            italic: None,
-        },
-        playfair_display: FamilyFonts {
-            regular: parse_font(pfd_reg, doc)?,
-            bold: parse_font(pfd_bol, doc)?,
-            italic: None,
-        },
-    })
-}
-
-/// Resolve the (regular, bold, italic_opt) font IDs for a given family.
-pub fn resolve_fonts(set: &LoadedFontSet, fam: FontFamily) -> (&FontId, &FontId, Option<&FontId>) {
-    let f = set.family(fam);
-    (&f.regular, &f.bold, f.italic.as_ref())
-}
+mod fonts;
+pub use fonts::*;
 
 /// Bundles the four common render parameters so functions stay under the arg limit.
 pub struct RenderCtx<'a> {

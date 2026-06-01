@@ -4,6 +4,32 @@ use crate::export::types::FontFamily;
 use crate::measure::FontMetrics;
 
 #[test]
+fn collect_codepoints_seeds_baseline_and_adds_text() {
+    let used = collect_codepoints(["Zürich", "naïve café"]);
+
+    // Baseline glyphs the renderers inject are always present, even though none
+    // of the input strings contained them.
+    for ch in ['•', '·', '–', '—', ' ', 'A', 'z', '0', '|'] {
+        assert!(used.contains(&ch), "baseline glyph {ch:?} missing");
+    }
+    // Codepoints from the text are folded in (incl. non-ASCII names).
+    for ch in ['Z', 'ü', 'r', 'ï', 'é', 'c', 'f'] {
+        assert!(used.contains(&ch), "text glyph {ch:?} missing");
+    }
+    // A glyph in neither the baseline nor the text is absent.
+    assert!(!used.contains(&'😀'));
+}
+
+#[test]
+fn collect_codepoints_is_deduplicated() {
+    let once = collect_codepoints(["a"]);
+    let many = collect_codepoints(["aaa", "a", "aa"]);
+    // BTreeSet dedupes — repeating 'a' adds nothing beyond the first.
+    assert_eq!(once.len(), many.len());
+    assert!(once.contains(&'a'));
+}
+
+#[test]
 fn test_rgb_to_color() {
     let color = rgb_to_color((255, 0, 0));
     if let Color::Rgb(rgb) = color {
