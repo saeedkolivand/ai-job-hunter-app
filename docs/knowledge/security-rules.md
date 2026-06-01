@@ -24,7 +24,7 @@ For `tauri-security-reviewer` (cross-cutting authority). Security/data findings 
 ## Data / privacy (GDPR)
 
 - `commands/privacy.rs` + `db.rs`/`data_store.rs`: retention + deletion honored; temp/export files cleaned up; resume/PII protected at rest and in caches. A retention/cleanup regression is HIGH.
-- **Full reset** — `privacy_reset_app` calls `clear_all()` on every persistent store via an explicit lockstep list (maintained alongside `commands/data.rs::build_bundle`). A new persistent store must be added to both. See [ADR-009](decision-records/adr-009-full-reset-lockstep-list.md).
+- **Full reset** — `privacy_reset_app` wipes every persistent store via a `Resettable` registry: stores are wired with `manage_resettable` at their `.manage()` site (which registers their reset), and the command just iterates the registry — so a new store is covered automatically. Backups (`commands/data.rs::build_bundle`) remain a separate explicit list. See [ADR-009](decision-records/adr-009-resettable-reset-registry.md).
 
 ## Abuse / cost (DoS & spend)
 
