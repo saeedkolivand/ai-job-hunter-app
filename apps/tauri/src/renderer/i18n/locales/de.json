@@ -452,6 +452,10 @@
   "aiGenerate": {
     "title": "KI-Generierung",
     "subtitle": "Laden Sie Ihren Lebenslauf und die Stellenanzeige hoch, um maßgeschneiderte, ATS-optimierte Dokumente zu erstellen.",
+    "research": {
+      "label": "Unternehmen recherchieren",
+      "hint": "Fügt dem Anschreiben eine kurze Web-Zusammenfassung hinzu. Benötigt einen Brave-Search-Schlüssel; nach bestem Bemühen."
+    },
     "recommendationTitle": "Empfohlene Vorlage",
     "applyRecommendation": "Vorschlag übernehmen",
     "recommendationApplied": "Übernommen",
@@ -563,6 +567,10 @@
       "addApiKey": "Fügen Sie zuerst einen API-Schlüssel hinzu",
       "installCli": "CLI-Agent installieren",
       "failed": "Generierung fehlgeschlagen",
+      "research": {
+        "label": "Unternehmen recherchieren",
+        "hint": "Fügt dem Anschreiben eine kurze Web-Zusammenfassung hinzu. Benötigt einen Brave-Search-Schlüssel; nach bestem Bemühen."
+      },
       "target": {
         "resume": "Lebenslauf",
         "cover": "Anschreiben",

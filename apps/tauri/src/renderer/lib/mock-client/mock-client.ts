@@ -58,6 +58,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       generatePipeline: noop,
       listModels: emptyList,
       inspectModel: async () => null,
+      researchCompany: async () => ({ company: '', brief: '' }),
       pullModel: noop,
       unloadModel: noop,
       embed: noop,

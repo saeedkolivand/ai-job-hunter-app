@@ -38,6 +38,8 @@ interface Params {
   jobUrl: string;
   /** The board the job came from (e.g. "linkedin"), stored on the record. */
   board: string;
+  /** Opt-in: research the company and fold a brief into the cover-letter prompt. */
+  researchCompany: boolean;
 }
 
 /**
@@ -54,6 +56,7 @@ export function useTailorGeneration({
   hasDesc,
   jobUrl,
   board,
+  researchCompany,
 }: Params) {
   const { t } = useTranslation();
   const api = useAppClient();
@@ -113,6 +116,7 @@ export function useTailorGeneration({
       model,
       mode: MODE,
       target,
+      researchCompany,
       t,
       onComplete: persist,
     });
