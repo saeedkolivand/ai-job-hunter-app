@@ -1,10 +1,12 @@
 # Architecture — AI Job Hunter
 
+Last updated: 2026-06-01
+
 ## High-Level Overview
 
-AI Job Hunter is a **local-first desktop application** built on Tauri 2. There is no cloud backend, no telemetry endpoint, and no remote database. Every computation — AI inference, web scraping, vector search, document parsing — runs on the user's machine.
+AI Job Hunter is a **local-first desktop application** built on [Tauri][tauri] 2. There is no cloud backend, no telemetry endpoint, and no remote database. Every computation — AI inference, web scraping, vector search, document parsing — runs on the user's machine.
 
-The architecture follows a **ports-and-adapters** model: the React renderer communicates exclusively through typed IPC contracts, and the Rust core handles everything else — command routing plus the heavy work (scraping, document processing, embeddings) natively, without a separate process.
+The architecture follows a **ports-and-adapters** model: the [React][react] renderer communicates exclusively through typed IPC contracts, and the [Rust][rust] core handles everything else — command routing plus the heavy work (scraping, document processing, embeddings) natively, without a separate process.
 
 ---
 
@@ -87,7 +89,7 @@ The Tauri app is split into two processes:
 | `error` (`AppError`) | Unified typed error hierarchy (`AppResult`); serializes to its message string                                             |
 | `observability`      | Shared timed trace `Span`s (`→`/`←` + duration) for AI, scraping, apply, autopilot                                        |
 | `scraping/`          | Board scrapers (chromiumoxide for browser boards, HTTP for API boards) via a single `SCRAPERS` registry + `Scraper` trait |
-| `documents/`         | Document import, OCR dispatch, SQLite storage                                                                             |
+| `documents/`         | Document import, OCR dispatch, [SQLite][sqlite] storage                                                                   |
 | `jobs/`              | Job tracker state machine (queued → running → done/failed)                                                                |
 | `credentials/`       | OS keychain CRUD via Tauri keychain plugin                                                                                |
 | `conversations/`     | Chat history persistence                                                                                                  |
@@ -100,18 +102,18 @@ The Tauri app is split into two processes:
 | `data_store.rs`      | `DataStore` trait (export/import) implemented by every persistent store                                                   |
 | `commands/data.rs`   | Full backup/restore — one versioned bundle across all stores                                                              |
 
-**React renderer (`src/renderer/`)** — feature-scoped UI:
+**[React][react] renderer (`src/renderer/`)** — feature-scoped UI:
 
-| Directory            | Responsibility                                                   |
-| -------------------- | ---------------------------------------------------------------- |
-| `routes/`            | TanStack Router file-based pages (9 routes)                      |
-| `features/`          | Feature-scoped component trees (never cross-import)              |
-| `services/`          | React Query hooks wrapping every IPC namespace                   |
-| `lib/`               | Pure utilities: motion tokens, i18n, state machine, `cn()`       |
-| `store/`             | Zustand stores for persistent UI state                           |
-| `providers/`         | React context providers (AppClient, Capability, PerformanceMode) |
-| `hooks/`             | Shared React hooks (`useMachine`, `useMouseParallax`)            |
-| `components/layout/` | Sidebar, Titlebar, StatusBar, PageShell                          |
+| Directory            | Responsibility                                                      |
+| -------------------- | ------------------------------------------------------------------- |
+| `routes/`            | [TanStack Router][tanstack-router] file-based pages (9 routes)      |
+| `features/`          | Feature-scoped component trees (never cross-import)                 |
+| `services/`          | [TanStack Query][tanstack-query] hooks wrapping every IPC namespace |
+| `lib/`               | Pure utilities: motion tokens, i18n, state machine, `cn()`          |
+| `store/`             | [Zustand][zustand] stores for persistent UI state                   |
+| `providers/`         | React context providers (AppClient, Capability, PerformanceMode)    |
+| `hooks/`             | Shared React hooks (`useMachine`, `useMouseParallax`)               |
+| `components/layout/` | Sidebar, Titlebar, StatusBar, PageShell                             |
 
 ---
 
@@ -157,7 +159,7 @@ packages/shared/src/
 
 ### `packages/ui` — Component Library (`@ajh/ui`)
 
-A standalone React component library with no routing, IPC, or state management dependencies. Consumed only from the renderer.
+A standalone [React][react] component library with no routing, IPC, or state management dependencies. Consumed only from the renderer.
 
 ### `packages/prompts` — Prompt Templates
 
@@ -387,7 +389,7 @@ erDiagram
 
 ### 1. Local-First Architecture
 
-All data lives on the user's machine — SQLite, LanceDB, credential keychain. No account signup, no cloud sync. This is a deliberate product decision: the target user is privacy-conscious and may be searching confidentially.
+All data lives on the user's machine — [SQLite][sqlite], LanceDB, credential keychain. No account signup, no cloud sync. This is a deliberate product decision: the target user is privacy-conscious and may be searching confidentially.
 
 ### 2. IPC Contract as Single Source of Truth
 
@@ -395,11 +397,11 @@ All data lives on the user's machine — SQLite, LanceDB, credential keychain. N
 
 ### 3. Ports & Adapters for AppClient
 
-The renderer never calls `window.__TAURI_INVOKE__` directly. It uses `AppClient` which can be swapped to a mock, enabling UI-only development (`pnpm dev:frontend`) and Vitest tests without the full Tauri runtime.
+The renderer never calls `window.__TAURI_INVOKE__` directly. It uses `AppClient` which can be swapped to a mock, enabling UI-only development (`pnpm dev:frontend`) and [Vitest][vitest] tests without the full [Tauri][tauri] runtime.
 
 ### 4. Native Rust Runtimes
 
-Heavy work (scraping, OCR, embeddings) runs natively in the Rust core on Tauri's async runtime and `tokio` tasks — there is no separate Node.js process. Long operations are spawned as background tasks so they don't block command handling, and OCR runs in the renderer via Tesseract.js (its own Web Worker).
+Heavy work (scraping, OCR, embeddings) runs natively in the [Rust][rust] core on [Tauri][tauri]'s async runtime and [Tokio][tokio] tasks — there is no separate Node.js process. Long operations are spawned as background tasks so they don't block command handling, and OCR runs in the renderer via Tesseract.js (its own Web Worker).
 
 ### 5. Streaming as First-Class Concern
 
@@ -427,15 +429,15 @@ The Rust core composes a small set of **single-owner** infrastructure modules in
 
 All HTTP goes through the shared `net::http` client (rustls).
 
-| Integration     | Protocol                                           | Auth                         | Purpose                      |
-| --------------- | -------------------------------------------------- | ---------------------------- | ---------------------------- |
-| Ollama          | HTTP (`net::http`, local)                          | None (local)                 | Chat generation + embeddings |
-| OpenAI          | HTTPS (REST)                                       | API key (keychain)           | Cloud generation fallback    |
-| Anthropic       | HTTPS (REST)                                       | API key (keychain)           | Extended thinking generation |
-| Google Gemini   | HTTPS (REST)                                       | API key (keychain)           | Multilingual generation      |
-| LM Studio       | HTTP (OpenAI-compatible)                           | Optional                     | Local cloud-replacement      |
-| Job boards (20) | chromiumoxide (browser) / `net::http` (API boards) | Board credentials (keychain) | Scraping                     |
-| OS Keychain     | Tauri plugin                                       | OS auth                      | Credential encryption        |
+| Integration      | Protocol                                                            | Auth                         | Purpose                      |
+| ---------------- | ------------------------------------------------------------------- | ---------------------------- | ---------------------------- |
+| [Ollama][ollama] | HTTP (`net::http`, local)                                           | None (local)                 | Chat generation + embeddings |
+| OpenAI           | HTTPS (REST)                                                        | API key (keychain)           | Cloud generation fallback    |
+| Anthropic        | HTTPS (REST)                                                        | API key (keychain)           | Extended thinking generation |
+| Google Gemini    | HTTPS (REST)                                                        | API key (keychain)           | Multilingual generation      |
+| LM Studio        | HTTP (OpenAI-compatible)                                            | Optional                     | Local cloud-replacement      |
+| Job boards (20)  | [chromiumoxide][chromiumoxide] (browser) / `net::http` (API boards) | Board credentials (keychain) | Scraping                     |
+| OS Keychain      | Tauri plugin                                                        | OS auth                      | Credential encryption        |
 
 ---
 
@@ -460,7 +462,18 @@ graph TD
 
 **Hard rules:**
 
-- `packages/shared` — no React, no Node APIs, no UI
-- `packages/ui` — no Zustand, no IPC, no routing
+- `packages/shared` — no [React][react], no Node APIs, no UI
+- `packages/ui` — no [Zustand][zustand], no IPC, no routing
 - `packages/prompts` — no UI, no `window`
 - The renderer imports only `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`
+
+[tauri]: https://tauri.app
+[react]: https://react.dev
+[rust]: https://www.rust-lang.org
+[tokio]: https://tokio.rs
+[sqlite]: https://www.sqlite.org
+[zustand]: https://github.com/pmndrs/zustand
+[tanstack-router]: https://tanstack.com/router
+[tanstack-query]: https://tanstack.com/query
+[chromiumoxide]: https://github.com/mattsse/chromiumoxide
+[vitest]: https://vitest.dev

@@ -1,16 +1,18 @@
 # AI Job Hunter — Design Decisions
 
+Last updated: 2026-06-01
+
 This document records the major architectural decisions in the project — the reasoning behind the technology choices, the patterns used, and the trade-offs considered. It is a reference for contributors and reviewers who want to understand the _why_ behind the codebase.
 
 ---
 
 ## 1. Overview
 
-AI Job Hunter is a local-first desktop application built on Tauri 2, with a Rust backend as the process host and an OS-native WebView running the React frontend. It automates the mechanical parts of job searching — scraping job boards, scoring postings against a résumé with embeddings, and generating tailored résumés and cover letters — and includes an autonomous apply flow (Autopilot). Everything runs locally; there is no cloud backend.
+AI Job Hunter is a local-first desktop application built on [Tauri][tauri] 2, with a [Rust][rust] backend as the process host and an OS-native WebView running the [React][react] frontend. It automates the mechanical parts of job searching — scraping job boards, scoring postings against a résumé with embeddings, and generating tailored résumés and cover letters — and includes an autonomous apply flow (Autopilot). Everything runs locally; there is no cloud backend.
 
 The two halves communicate over a typed IPC layer: the contract namespaces are defined in a shared package so there is no drift between what the frontend calls and what Rust implements. Heavier work (scraping, OCR, embeddings, document export) runs natively in the Rust core; long operations are spawned as background `tokio` tasks tracked by a SQLite-backed job tracker with retry, so they don't block command handling.
 
-The frontend uses TanStack Router for routing, TanStack Query for server state, Zustand for client state, and a small custom state machine for multi-step flows. All UI primitives come from a private `@ajh/ui` component library in the same monorepo, which enforces the design-token system through ESLint rules. The repository is set up for production: Conventional Commits, semantic-release for automated versioning, Turborepo for incremental builds, Husky pre-commit hooks that block lint errors, and a Vitest suite spanning the packages.
+The frontend uses [TanStack Router][tanstack-router] for routing, [TanStack Query][tanstack-query] for server state, [Zustand][zustand] for client state, and a small custom state machine for multi-step flows. All UI primitives come from a private `@ajh/ui` component library in the same monorepo, which enforces the design-token system through [ESLint][eslint] rules. The repository is set up for production: [Conventional Commits][conventional-commits], [semantic-release][semantic-release] for automated versioning, [Turborepo][turborepo] for incremental builds, [Husky][husky] pre-commit hooks that block lint errors, and a [Vitest][vitest] suite spanning the packages.
 
 ---
 
@@ -22,7 +24,7 @@ Each entry explains the _why_, not just the _what_.
 
 ### Tauri over Electron
 
-Tauri uses the OS-native WebView (Edge/WebView2 on Windows, WebKit on macOS/Linux) instead of bundling Chromium. The result:
+[Tauri][tauri] uses the OS-native WebView (Edge/WebView2 on Windows, WebKit on macOS/Linux) instead of bundling Chromium. The result:
 
 - **Smaller installer** (tens of MB) versus 150+ MB for a typical Electron app
 - **Rust backend** instead of Node.js — low memory overhead for background tasks
@@ -44,7 +46,7 @@ packages/prompts   ← AI prompt templates, provider-aware + locale-driven (pure
 
 The heavy work — scraping, AI, documents, embeddings — lives in the Rust core under `apps/tauri/src-tauri/`. (An earlier design ran some of this in a separate Node.js sidecar; it was folded into Rust to drop a process and a language from the runtime.)
 
-Each package has its own `tsconfig`, build step, and test suite. Turborepo's dependency graph keeps builds incremental — if `packages/shared` hasn't changed, nothing that depends on it rebuilds. The key discipline is that **ESLint hard-blocks cross-boundary imports** (e.g. `packages/shared` may not import React or Node APIs); it is enforced at lint time and blocks commits, not just a convention.
+Each package has its own `tsconfig`, build step, and test suite. [Turborepo][turborepo]'s dependency graph keeps builds incremental — if `packages/shared` hasn't changed, nothing that depends on it rebuilds. The key discipline is that **ESLint hard-blocks cross-boundary imports** (e.g. `packages/shared` may not import React or Node APIs); it is enforced at lint time and blocks commits, not just a convention.
 
 ---
 
@@ -105,9 +107,9 @@ The two scores are combined into a weighted score and the top-K hits are returne
 
 There are two separate state concerns:
 
-**Server state** (data from IPC/Rust) is managed entirely by TanStack Query. Every IPC call has a corresponding service hook (`use-jobs.ts`, `use-documents.ts`, etc.) handling caching, background refetch, optimistic updates, and loading/error states. This replaces the `useState + useEffect` data-fetching antipattern.
+**Server state** (data from IPC/[Rust][rust]) is managed entirely by [TanStack Query][tanstack-query]. Every IPC call has a corresponding service hook (`use-jobs.ts`, `use-documents.ts`, etc.) handling caching, background refetch, optimistic updates, and loading/error states. This replaces the `useState + useEffect` data-fetching antipattern.
 
-**Client state** (UI-only) lives in Zustand stores (e.g. persisted user preferences, transient generation session). Zustand is used over Redux because the stores are simple, there is no boilerplate, and it integrates well with React 19.
+**Client state** (UI-only) lives in [Zustand][zustand] stores (e.g. persisted user preferences, transient generation session). [Zustand][zustand] is used over Redux because the stores are simple, there is no boilerplate, and it integrates well with [React][react] 19.
 
 ---
 
@@ -364,7 +366,7 @@ Turborepo tracks file hashes per package, so unchanged packages skip their build
 
 ### Automated versioning
 
-The repo uses `semantic-release` driven by Conventional Commits:
+The repo uses [semantic-release][semantic-release] driven by [Conventional Commits][conventional-commits]:
 
 | Commit prefix                  | Release type |
 | ------------------------------ | ------------ |
@@ -375,9 +377,9 @@ The repo uses `semantic-release` driven by Conventional Commits:
 
 On merge to `main`, semantic-release bumps the version, publishes release notes to the GitHub release, and triggers the Tauri build pipeline.
 
-### Pre-commit hooks (Husky + lint-staged)
+### Pre-commit hooks ([Husky][husky] + [lint-staged][lint-staged])
 
-Every commit runs `eslint --fix` on staged TypeScript, `prettier --write` on the rest, and `commitlint` on the message. Pre-push runs the full gate (typecheck, lint, `cargo check`/`test`/`clippy`, formatting). The effect is that the main branch never carries a lint or type error.
+Every commit runs `eslint --fix` on staged [TypeScript][typescript], [Prettier][prettier] on the rest, and [commitlint][commitlint] on the message. Pre-push runs the full gate (typecheck, lint, `cargo check`/`test`/`clippy`, formatting). The effect is that the main branch never carries a lint or type error.
 
 ---
 
@@ -385,13 +387,13 @@ Every commit runs `eslint --fix` on staged TypeScript, `prettier --write` on the
 
 ### Why Rust for the backend
 
-- **Memory safety** — no GC pauses during scraping or file processing; Tokio handles concurrent board scraping without an OS thread per request.
-- **SQLite ownership** — `rusqlite` with the bundled feature ships SQLite inside the binary, so there is no external database process or version mismatch.
-- **OS integration** — keychain, file dialogs, tray icon, single-instance, window-state, notifications, and the auto-updater are all thin Rust wrappers over Tauri plugins.
+- **Memory safety** — no GC pauses during scraping or file processing; [Tokio][tokio] handles concurrent board scraping without an OS thread per request.
+- **SQLite ownership** — [rusqlite][rusqlite] with the bundled feature ships [SQLite][sqlite] inside the binary, so there is no external database process or version mismatch.
+- **OS integration** — keychain, file dialogs, tray icon, single-instance, window-state, notifications, and the auto-updater are all thin [Rust][rust] wrappers over [Tauri][tauri] plugins.
 
 ### SQLite design
 
-Several independent SQLite databases, each with its own Rust struct and `Mutex<Connection>` (using `parking_lot` for poison-free locking):
+Several independent [SQLite][sqlite] databases, each with its own [Rust][rust] struct and `Mutex<Connection>` (using [parking_lot][parking-lot] for poison-free locking):
 
 | Database             | Purpose                                        |
 | -------------------- | ---------------------------------------------- |
@@ -407,7 +409,7 @@ Keeping them separate means a corrupt `conversations.db` doesn't affect `documen
 
 ### Concurrent scraping
 
-Board scrapers run in parallel via `tokio::spawn`. Each scraper holds a `CancellationToken` so a scrape can be stopped mid-run, and results are streamed to the renderer via `app.emit()` as they arrive.
+Board scrapers run in parallel via [Tokio][tokio]'s `spawn`. Each scraper holds a `CancellationToken` so a scrape can be stopped mid-run, and results are streamed to the renderer via `app.emit()` as they arrive.
 
 ---
 
@@ -422,19 +424,56 @@ Board scrapers run in parallel via `tokio::spawn`. Each scraper holds a `Cancell
 
 ## 10. Technology Reference
 
-| Technology           | Why                                                                          |
-| -------------------- | ---------------------------------------------------------------------------- |
-| **Tauri 2**          | Smaller binary than Electron; Rust backend; OS-native WebView                |
-| **React 19**         | Concurrent features; first-class TanStack support                            |
-| **TypeScript 6**     | `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` for stricter safety |
-| **TanStack Router**  | File-based routing with typed route + search params                          |
-| **TanStack Query**   | Removes `useEffect` data fetching; caching + background refetch              |
-| **Zustand**          | Minimal client-state store; React 19 concurrent-safe                         |
-| **TailwindCSS v4**   | CSS-first config via `@theme`; zero runtime                                  |
-| **motion/react**     | High-performance animation library                                           |
-| **Zod**              | Schema-first validation with type inference                                  |
-| **Turborepo**        | Incremental monorepo builds                                                  |
-| **Vitest**           | Fast, Vite-native test runner                                                |
-| **semantic-release** | Automated versioning from commit messages                                    |
-| **parking_lot**      | `Mutex` replacement with no lock poisoning                                   |
-| **rusqlite**         | Embedded SQLite bundled into the binary                                      |
+| Technology                               | Why                                                                          |
+| ---------------------------------------- | ---------------------------------------------------------------------------- |
+| **[Tauri][tauri] 2**                     | Smaller binary than Electron; [Rust][rust] backend; OS-native WebView        |
+| **[React][react] 19**                    | Concurrent features; first-class TanStack support                            |
+| **[TypeScript][typescript] 6**           | `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` for stricter safety |
+| **[TanStack Router][tanstack-router]**   | File-based routing with typed route + search params                          |
+| **[TanStack Query][tanstack-query]**     | Removes `useEffect` data fetching; caching + background refetch              |
+| **[Zustand][zustand]**                   | Minimal client-state store; [React][react] 19 concurrent-safe                |
+| **[Tailwind CSS][tailwindcss] v4**       | CSS-first config via `@theme`; zero runtime                                  |
+| **[motion/react][motion-react]**         | High-performance animation library                                           |
+| **[Zod][zod]**                           | Schema-first validation with type inference                                  |
+| **[Turborepo][turborepo]**               | Incremental monorepo builds                                                  |
+| **[Vitest][vitest]**                     | Fast, [Vite][vite]-native test runner                                        |
+| **[semantic-release][semantic-release]** | Automated versioning from commit messages                                    |
+| **[parking_lot][parking-lot]**           | `Mutex` replacement with no lock poisoning                                   |
+| **[rusqlite][rusqlite]**                 | Embedded [SQLite][sqlite] bundled into the binary                            |
+
+---
+
+## 11. AI-Assistant Agent System
+
+The repository ships a Claude Code agent system under `.claude/` (tracked alongside source). The system consists of 12 specialized agents covering distinct ownership domains — `resume-export-expert`, `job-match-expert`, `scraping-applier-expert`, `ai-provider-expert`, `rust-backend-architect`, `tauri-security-reviewer`, `frontend-reviewer`, `performance-profiler`, `testing-reviewer`, `test-author`, `pdf-docx-generator`, and `project-steward` — plus a set of slash commands: `/review-{rust,security,performance,ats,resume,template,export,frontend,scraping,ai}`, `/implement-feature`, `/fix-bug`, `/refactor-module`, `/add-tests`, `/update-docs`, and `/prepare-release`.
+
+The system also includes domain skills and checklists (`.claude/skills/`), a Stop review-gate hook that runs on every diff and blocks only HIGH/CRITICAL findings, and a distilled lessons log (`.claude/memory/lessons.jsonl`).
+
+The per-change flow is: Primary Owner agent makes the change → review pass against the owner's checklist (HIGH/CRITICAL findings block, others are advisory; ≤ 3 reviewers total) → if the change touches testable logic, `test-author` writes tests and `testing-reviewer` audits coverage → `project-steward` closes by syncing documentation, knowledge files, ADRs, and the lessons log.
+
+`CLAUDE.md` is the source of truth for the full operating contract, agent routing table, and enforced rules. The same domain-routing and review conventions apply when other AI tools work in this repository — see `AGENTS.md`, `.clinerules`, `.windsurfrules`, and `.github/copilot-instructions.md` for the per-tool rules files that document the conventions those assistants follow.
+
+[tauri]: https://tauri.app
+[react]: https://react.dev
+[rust]: https://www.rust-lang.org
+[typescript]: https://www.typescriptlang.org
+[tanstack-router]: https://tanstack.com/router
+[tanstack-query]: https://tanstack.com/query
+[zustand]: https://github.com/pmndrs/zustand
+[tailwindcss]: https://tailwindcss.com
+[motion-react]: https://motion.dev
+[zod]: https://zod.dev
+[turborepo]: https://turborepo.com
+[vitest]: https://vitest.dev
+[vite]: https://vite.dev
+[semantic-release]: https://github.com/semantic-release/semantic-release
+[conventional-commits]: https://www.conventionalcommits.org
+[husky]: https://typicode.github.io/husky
+[lint-staged]: https://github.com/lint-staged/lint-staged
+[commitlint]: https://commitlint.js.org
+[eslint]: https://eslint.org
+[prettier]: https://prettier.io
+[tokio]: https://tokio.rs
+[sqlite]: https://www.sqlite.org
+[rusqlite]: https://github.com/rusqlite/rusqlite
+[parking-lot]: https://github.com/Amanieu/parking_lot
