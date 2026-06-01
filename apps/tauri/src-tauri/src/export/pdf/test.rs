@@ -554,3 +554,60 @@ LANGUAGES
 
     eprintln!("wrote sample PDFs to apps/tauri/src-tauri/target/sample_pdfs/");
 }
+
+/// Size guardrail: the default (Calibri) template must glyph-subset its embedded
+/// fonts. The full Calibri regular+bold faces are ~3.2 MB, so an unsubsetted
+/// export blows past 3 MB. printpdf 0.9.1 has its own subsetting disabled, so if
+/// our `parse_font` subsetting ever regresses (or silently falls back to the full
+/// font for every glyph) this fails loudly. Budget is generous (800 KB) to stay
+/// stable across content/font-table changes while still catching a full-font
+/// regression by an order of magnitude.
+#[test]
+fn classic_resume_pdf_is_glyph_subset_under_budget() {
+    use super::super::types::{ExportFormat, TemplateId};
+
+    let text = "\
+Jane Doe
+jane@example.com | +1 555 0100 | [LinkedIn](https://linkedin.com/in/janedoe)
+
+EXPERIENCE
+Acme Corp  2020 - Present
+Senior Software Engineer
+- Led a team of five engineers delivering the core billing platform
+- Cut p95 API latency from 800ms to 180ms via caching and query work
+
+SKILLS
+- Rust, TypeScript, React, PostgreSQL
+
+EDUCATION
+State University  2013 - 2017
+BSc Computer Science
+";
+
+    let request = ExportRequest {
+        text: text.to_string(),
+        format: ExportFormat::Pdf,
+        document_type: DocumentType::Resume,
+        template_id: TemplateId::Classic, // TemplateFonts::default() = Calibri (the 3.2 MB face)
+        meta: None,
+        ats_mode: false,
+        locale: None,
+        contact: None,
+    };
+
+    let bytes = generate_pdf(&request).expect("classic resume pdf");
+
+    // Sanity: a real, parseable PDF (not an empty/short error stub).
+    assert!(bytes.starts_with(b"%PDF"), "output is not a PDF");
+    assert!(
+        lopdf::Document::load_mem(&bytes).is_ok(),
+        "subsetted PDF must still parse"
+    );
+
+    assert!(
+        bytes.len() < 800_000,
+        "Calibri résumé PDF must be glyph-subset (<800 KB); got {} bytes — \
+         full-font embedding has regressed",
+        bytes.len()
+    );
+}

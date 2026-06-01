@@ -16,7 +16,8 @@ use anyhow::Result;
 use printpdf::*;
 
 use crate::export::pdf_renderer::{
-    build_line, link_annotation_op, load_all_fonts, resolve_fonts, rgb_to_color, LoadedFontSet,
+    build_line, collect_codepoints, link_annotation_op, load_all_fonts, resolve_fonts,
+    rgb_to_color, LoadedFontSet,
 };
 use crate::export::templates::Template;
 use crate::export::types::GenerationMeta;
@@ -97,7 +98,15 @@ pub(crate) fn generate_resume_pdf_in(
 /// (mm from bottom-left), drawing fills, then rules, then text, then links.
 fn emit_pdf(laid: &LaidOutDoc) -> Result<Vec<u8>> {
     let mut doc = PdfDocument::new("Resume");
-    let fonts = load_all_fonts(&mut doc)?;
+    // Subset every embedded font to exactly the glyphs this laid-out document
+    // draws — the placed runs are the authoritative set of rendered text.
+    let used = collect_codepoints(
+        laid.pages
+            .iter()
+            .flat_map(|p| p.texts.iter())
+            .map(|t| t.text.as_str()),
+    );
+    let fonts = load_all_fonts(&mut doc, &used)?;
     let page_h = laid.page_height_mm;
 
     let pages: Vec<PdfPage> = laid

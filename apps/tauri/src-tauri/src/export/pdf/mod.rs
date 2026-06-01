@@ -38,7 +38,10 @@ pub(crate) fn generate_resume_pdf(
 
     let parsed = parse_resume(text);
     let mut doc = PdfDocument::new("Resume");
-    let fonts = load_all_fonts(&mut doc)?;
+    let used = collect_codepoints(
+        std::iter::once(text).chain(meta.and_then(|m| m.candidate_name.as_deref())),
+    );
+    let fonts = load_all_fonts(&mut doc, &used)?;
     let layout = setup_layout(&effective_template);
     let colors = setup_colors(&effective_template);
 
@@ -192,7 +195,10 @@ fn generate_two_column_resume_pdf(
         .expect("two_column config required");
     let parsed = parse_resume(text);
     let mut doc = PdfDocument::new("Resume");
-    let fonts = load_all_fonts(&mut doc)?;
+    let used = collect_codepoints(
+        std::iter::once(text).chain(meta.and_then(|m| m.candidate_name.as_deref())),
+    );
+    let fonts = load_all_fonts(&mut doc, &used)?;
     let layout = setup_layout(template);
     let colors = setup_colors(template);
 
@@ -418,7 +424,15 @@ fn generate_cover_letter_pdf(
     lang: &str,
 ) -> Result<Vec<u8>> {
     let mut doc = PdfDocument::new("Cover Letter");
-    let fonts = load_all_fonts(&mut doc)?;
+    // Seed the subset with every text input the letter can draw: the body, the
+    // candidate name override, and the profile-derived contact header.
+    let header = contact.map(|c| c.header_markdown(lang));
+    let used = collect_codepoints(
+        std::iter::once(text)
+            .chain(meta.and_then(|m| m.candidate_name.as_deref()))
+            .chain(header.as_deref()),
+    );
+    let fonts = load_all_fonts(&mut doc, &used)?;
     let layout = setup_layout(template);
     let colors = setup_colors(template);
     let cl = &template.cover_letter;
