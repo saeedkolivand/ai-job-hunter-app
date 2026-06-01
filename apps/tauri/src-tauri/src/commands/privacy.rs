@@ -4,9 +4,14 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::ai_generations::AiGenerationStore;
+use crate::autopilot::AutopilotStore;
+use crate::contact_profile::ContactProfileStore;
 use crate::conversations::ConversationDb;
 use crate::credentials::CredentialStore;
 use crate::documents::DocumentStore;
+use crate::job_preferences::JobPreferencesStore;
+use crate::jobs::JobTracker;
+use crate::pipeline::cache::KvCache;
 use crate::postings::{InteractionStore, PostingsCache};
 
 #[tauri::command]
@@ -56,21 +61,32 @@ pub fn privacy_reset_app(app: AppHandle) -> Value {
         crate::scraping::board_login::disconnect(&data_dir, board_id);
     }
 
-    // Clear in-memory + JSON-backed stores
+    // Wipe EVERY persistent user-data store. Keep this list in lockstep with
+    // `commands/data.rs::build_bundle` (the backup set) plus the stores that are
+    // intentionally excluded from backups (secrets, caches, the job log) — adding
+    // a new persistent store means handling it in BOTH places.
     app.state::<Mutex<PostingsCache>>().lock().clear_all();
     app.state::<Mutex<InteractionStore>>().lock().clear_all();
-
-    // Clear SQLite databases
+    app.state::<Mutex<JobTracker>>().lock().clear();
     app.state::<DocumentStore>().clear_all();
     app.state::<AiGenerationStore>().clear_all();
     app.state::<ConversationDb>().clear_all();
-
-    // Clear all AI provider API keys from keychain
-    let store = app.state::<Mutex<CredentialStore>>();
-    let guard = store.lock();
-    for provider in &["openai", "anthropic", "gemini", "openai-compatible"] {
-        let _ = guard.remove(&format!("ai:{provider}"));
+    if let Some(s) = app.try_state::<std::sync::Arc<Mutex<AutopilotStore>>>() {
+        s.lock().clear_all();
     }
+    if let Some(s) = app.try_state::<JobPreferencesStore>() {
+        let _ = s.clear();
+    }
+    if let Some(s) = app.try_state::<ContactProfileStore>() {
+        let _ = s.clear();
+    }
+    if let Some(s) = app.try_state::<KvCache>() {
+        s.clear();
+    }
+
+    // Remove every stored secret — all AI/provider keys (incl. Brave) and board
+    // passwords — driven off the credential metadata index (no hardcoded list).
+    let _ = app.state::<Mutex<CredentialStore>>().lock().clear_all();
 
     json!({ "success": true })
 }
