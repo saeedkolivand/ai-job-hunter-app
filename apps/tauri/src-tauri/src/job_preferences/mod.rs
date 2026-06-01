@@ -100,6 +100,18 @@ impl JobPreferencesStore {
         })
     }
 
+    /// Reset all job preferences to empty (factory reset).
+    pub fn clear(&self) -> AppResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE job_preferences SET location = NULL, remote = NULL, seniority = NULL,
+                 salary_min = NULL, salary_max = NULL, tech_stack = NULL WHERE id = 1",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     pub fn set(&self, prefs: &JobPreferences) -> AppResult<()> {
         let conn = self.conn.lock();
         let tech_stack_json = prefs

@@ -439,6 +439,11 @@ impl ContactProfileStore {
         .map_err(|e| e.to_string())?;
         Ok(())
     }
+
+    /// Reset the contact profile to empty (factory reset).
+    pub fn clear(&self) -> AppResult<()> {
+        self.set(&ContactProfile::default())
+    }
 }
 
 impl DataStore for ContactProfileStore {

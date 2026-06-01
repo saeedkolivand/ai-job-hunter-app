@@ -25,6 +25,29 @@ fn test_get_default() {
 }
 
 #[test]
+fn test_clear_resets_to_empty() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+    store
+        .set(&JobPreferences {
+            location: Some("Berlin".to_string()),
+            remote: Some("remote".to_string()),
+            seniority: None,
+            salary_min: Some(60000),
+            salary_max: None,
+            tech_stack: None,
+        })
+        .unwrap();
+    assert!(store.get().location.is_some());
+
+    store.clear().unwrap();
+    let prefs = store.get();
+    assert_eq!(prefs.location, None);
+    assert_eq!(prefs.remote, None);
+    assert_eq!(prefs.salary_min, None);
+}
+
+#[test]
 fn test_set_and_get() {
     let temp_dir = TempDir::new().unwrap();
     let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();

@@ -157,6 +157,15 @@ impl JobTracker {
         self.jobs.insert(id.to_string(), record);
     }
 
+    /// Wipe the job-execution log — in-memory records and the `jobs` table.
+    /// Used by the factory reset.
+    pub fn clear(&mut self) {
+        self.jobs.clear();
+        if let Some(db) = &self.db {
+            let _ = db.execute("DELETE FROM jobs", []);
+        }
+    }
+
     pub fn update_progress(&mut self, id: &str, p: f64) {
         if let Some(job) = self.jobs.get_mut(id) {
             job.progress = p;

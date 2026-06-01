@@ -59,6 +59,12 @@ impl KvCache {
             params![namespace, key, value, now_secs()],
         );
     }
+
+    /// Drop every cached entry (e.g. company briefs, OCR results). Factory reset.
+    pub fn clear(&self) {
+        let conn = self.conn.lock();
+        let _ = conn.execute("DELETE FROM kv_cache", []);
+    }
 }
 
 fn now_secs() -> i64 {

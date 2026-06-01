@@ -51,6 +51,27 @@ fn test_now_ms() {
 }
 
 #[test]
+fn test_clear_all_removes_every_autopilot() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    for name in ["AP1", "AP2"] {
+        store.create(serde_json::json!({
+            "name": name,
+            "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+            "filter": { "minMatchScore": 50.0 },
+            "action": "save",
+            "schedule": "manual",
+        }));
+    }
+    assert_eq!(store.list().len(), 2);
+
+    store.clear_all();
+    assert!(store.list().is_empty());
+}
+
+#[test]
 fn test_data_store_export_import_preserves_id() {
     use crate::data_store::DataStore;
     use tempfile::TempDir;

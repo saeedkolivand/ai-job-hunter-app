@@ -46,3 +46,13 @@ fn keys_are_case_insensitive_per_schema() {
     cache.set("ns", "Acme", "v");
     assert_eq!(cache.get("ns", "acme", 3600), Some("v".to_string()));
 }
+
+#[test]
+fn clear_drops_every_entry() {
+    let (_dir, cache) = cache();
+    cache.set("company_brief", "acme", "v1");
+    cache.set("ocr", "doc1", "v2");
+    cache.clear();
+    assert_eq!(cache.get("company_brief", "acme", 3600), None);
+    assert_eq!(cache.get("ocr", "doc1", 3600), None);
+}

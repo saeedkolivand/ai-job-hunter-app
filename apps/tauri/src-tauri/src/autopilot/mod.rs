@@ -218,6 +218,11 @@ impl AutopilotStore {
         self.save(map);
     }
 
+    /// Remove every autopilot and its found-jobs history (factory reset).
+    pub fn clear_all(&self) {
+        self.save(HashMap::new());
+    }
+
     pub fn set_status(&self, id: &str, status: AutopilotStatus) {
         let mut map = self.load();
         if let Some(ap) = map.get_mut(id) {
