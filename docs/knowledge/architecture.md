@@ -1,15 +1,17 @@
 # Architecture (map + boundaries + feature ownership)
 
+Last updated: 2026-06-01
+
 Canonical: [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md), [`docs/architecture-rules.md`](../architecture-rules.md) (the L0–L3 rules, tested by `cargo test --test architecture`), [`docs/PATTERNS.md`](../PATTERNS.md). Use `graphify explain "<module>"` for a scoped view.
 
 ## Shape
 
-Local-first desktop app, pnpm monorepo. **Tauri is the shell.**
+Local-first desktop app, [pnpm][pnpm] monorepo. **[Tauri][tauri] is the shell.**
 
-- `packages/shared` — IPC contracts + Zod schemas + types (no React, no Node).
-- `packages/ui` — React component library + design system (no app logic, no IPC).
-- `packages/prompts` — AI prompt templates, provider-aware + locale-driven (pure TS, zero deps).
-- `apps/tauri` — Rust core (`src-tauri/src/`) + React renderer (`src/renderer/`).
+- `packages/shared` — IPC contracts + [Zod][zod] schemas + types (no [React][react], no Node).
+- `packages/ui` — [React][react] component library + design system (no app logic, no IPC).
+- `packages/prompts` — AI prompt templates, provider-aware + locale-driven (pure [TypeScript][typescript], zero deps).
+- `apps/tauri` — [Rust][rust] core (`src-tauri/src/`) + [React][react] renderer (`src/renderer/`).
 
 ## Rust/TS boundary (Rust-first)
 
@@ -29,7 +31,7 @@ L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints.
 
 ## Feature ownership (frontend ↔ domain ↔ agent)
 
-Renderer (`apps/tauri/src/renderer/`): ~14 features each owning a route + service hooks (`renderer/services/`, React Query), Zustand stores, state machines (`lib/machines/`). Map: jobs/search/monitoring → backend jobs/scraping; ai-generate/ai-workspace → AI + resume/export; resumes/resume → resume-export domain; autopilot/onboarding → automation; settings/privacy → platform/security.
+Renderer (`apps/tauri/src/renderer/`): ~14 features each owning a route + service hooks (`renderer/services/`, [TanStack Query][tanstack-query]), [Zustand][zustand] stores, state machines (`lib/machines/`). Map: jobs/search/monitoring → backend jobs/scraping; ai-generate/ai-workspace → AI + resume/export; resumes/resume → resume-export domain; autopilot/onboarding → automation; settings/privacy → platform/security.
 
 | Area                                 | Owner agent                                        | Key paths                                                                     |
 | ------------------------------------ | -------------------------------------------------- | ----------------------------------------------------------------------------- |
@@ -41,3 +43,12 @@ Renderer (`apps/tauri/src/renderer/`): ~14 features each owning a route + servic
 | Security (cross-cutting)             | `tauri-security-reviewer`                          | `capabilities/`, `net/`, `credentials/`, deps, `updater/`                     |
 | Frontend / UI / a11y / i18n          | `frontend-reviewer`                                | `apps/tauri/src/renderer/**`, `packages/ui`                                   |
 | Docs / knowledge / lessons / release | `project-steward`                                  | `docs/`, `docs/knowledge/`, release config                                    |
+
+[tauri]: https://tauri.app
+[pnpm]: https://pnpm.io
+[react]: https://react.dev
+[rust]: https://www.rust-lang.org
+[typescript]: https://www.typescriptlang.org
+[zod]: https://zod.dev
+[tanstack-query]: https://tanstack.com/query
+[zustand]: https://github.com/pmndrs/zustand

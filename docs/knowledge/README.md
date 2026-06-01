@@ -1,5 +1,7 @@
 # Knowledge base (`docs/knowledge/`)
 
+Last updated: 2026-06-01
+
 A **thin, pointer-style** index for AI agents (and humans). It describes _shape and contracts_ and points at the **owning source symbol**; it deliberately does **not** copy drift-prone literals (scoring weights, template/board counts) — those live in code.
 
 ## How agents use this

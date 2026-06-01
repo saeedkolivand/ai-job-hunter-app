@@ -1,5 +1,7 @@
 # Development Setup — AI Job Hunter
 
+Last updated: 2026-06-01
+
 This guide gets you from zero to a running dev environment.
 
 ---
@@ -42,13 +44,13 @@ cd ai-job-hunter-assistant-app
 pnpm install
 ```
 
-This installs dependencies for all packages and apps via pnpm workspaces.
+This installs dependencies for all packages and apps via [pnpm][pnpm] workspaces.
 
 ---
 
 ## Start Ollama
 
-Ollama must be running before you start the app (for AI features):
+[Ollama][ollama] must be running before you start the app (for AI features):
 
 ```bash
 # Pull a model (first time only — choose one)
@@ -174,7 +176,7 @@ cargo clippy        # lint
 
 ## Adding a New Route
 
-TanStack Router uses file-based routing in `apps/tauri/src/renderer/routes/`:
+[TanStack Router][tanstack-router] uses file-based routing in `apps/tauri/src/renderer/routes/`:
 
 1. Create the route file: `routes/my-page.tsx`
 2. Export a default component
@@ -231,7 +233,7 @@ Settings → AI → Ollama Host → http://your-host:11434
 
 ## Database
 
-The SQLite database is stored in the OS app data directory:
+The [SQLite][sqlite] database is stored in the OS app data directory:
 
 - **Windows**: `%APPDATA%\ai-job-hunter\app.db`
 - **macOS**: `~/Library/Application Support/ai-job-hunter/app.db`
@@ -245,10 +247,10 @@ To reset the database during development, delete `app.db` and `vectors/` and res
 
 ## Commit Hooks
 
-Husky runs on `git commit`:
+[Husky][husky] runs on `git commit`:
 
-1. `lint-staged` — ESLint + Prettier on staged files
-2. `commitlint` — validates commit message format
+1. [lint-staged][lint-staged] — [ESLint][eslint] + [Prettier][prettier] on staged files
+2. [commitlint][commitlint] — validates commit message format
 
 If a commit is rejected, check the terminal output for the specific lint error. Never use `--no-verify`.
 
@@ -326,6 +328,16 @@ Workspace settings (`.vscode/settings.json`):
 
 ### JetBrains (WebStorm / RustRover)
 
-- Enable ESLint in `Preferences → Languages → JavaScript → Code Quality Tools → ESLint`
-- Enable Prettier as formatter on save
+- Enable [ESLint][eslint] in `Preferences → Languages → JavaScript → Code Quality Tools → ESLint`
+- Enable [Prettier][prettier] as formatter on save
 - Use RustRover or IntelliJ + Rust plugin for `src-tauri/`
+
+[pnpm]: https://pnpm.io
+[ollama]: https://ollama.com
+[tanstack-router]: https://tanstack.com/router
+[sqlite]: https://www.sqlite.org
+[husky]: https://typicode.github.io/husky
+[lint-staged]: https://github.com/lint-staged/lint-staged
+[eslint]: https://eslint.org
+[prettier]: https://prettier.io
+[commitlint]: https://commitlint.js.org

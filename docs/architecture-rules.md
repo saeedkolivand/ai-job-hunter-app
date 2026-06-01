@@ -1,5 +1,7 @@
 # Architecture Rules — Rust/Tauri Core
 
+Last updated: 2026-06-01
+
 > **Status:** enforceable rules (Phase 2), derived from
 > [`architecture-analysis.md`](architecture-analysis.md) — the **actual** structure of
 > `apps/tauri/src-tauri/`, not a generic Clean-Architecture template. These rules are
@@ -58,8 +60,8 @@ L0  Shared infra       error, observability, db, data_store, net, platform, brow
   `validate`/`locale`) is mutually cohesive (intra-L1; permitted).
 - **Internal-only:** board/provider/parser impls are `pub(crate)`; only the registry +
   trait are public across modules.
-- **DB access:** a domain module that persists state owns its SQLite store **in its own
-  `mod.rs`** via `rusqlite` + `db::open()`. Logic/helper files must not touch SQL.
+- **DB access:** a domain module that persists state owns its [SQLite][sqlite] store **in its own
+  `mod.rs`** via [rusqlite][rusqlite] + `db::open()`. Logic/helper files must not touch SQL.
 - **Documented exceptions (W-1, W-3):** see the allowlist tables below — provider
   reach-ups and Tauri `emit`/`AppHandle` usage that exist today are grandfathered with
   `TODO(arch)`; **no new instances allowed**.
@@ -148,7 +150,7 @@ Extends `docs/PATTERNS.md` §13. No other module may reconstruct these:
   domain/application code, registered in `main.rs`. Never put the command in the domain
   module itself.
 - **New persistent store** → a domain module with its store in `mod.rs` using `db::open()`
-  - `rusqlite`, implementing `data_store::DataStore`; register it in `commands/data.rs`.
+  - [rusqlite][rusqlite], implementing `data_store::DataStore`; register it in `commands/data.rs`.
 - **New cross-cutting concern** → add a single owner under L0 and route everyone through
   it; add a guard to `tests/architecture.rs`.
 
@@ -161,3 +163,6 @@ Extends `docs/PATTERNS.md` §13. No other module may reconstruct these:
 3. **Group the rendering cluster** under a `render/` parent (or document the cohesion as
    intentional) → addresses W-8.
 4. **Split the god objects** (W-6), starting with `export/pdf_renderer` (1343 LOC).
+
+[sqlite]: https://www.sqlite.org
+[rusqlite]: https://github.com/rusqlite/rusqlite

@@ -410,31 +410,37 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # cargo-llvm-cov is the test runner AND the coverage collector, so the
+      # suite compiles + runs ONCE (instrumented) instead of twice — a plain
+      # `cargo test` followed by a separate instrumented `cargo llvm-cov` run.
+      # It must be installed before the test step below.
+      - name: 🦀 Install cargo-llvm-cov
+        if: always()
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
       - name: 🦀 Cargo Test
         id: rust-tests
         continue-on-error: true
         working-directory: apps/tauri/src-tauri
         run: |
-          echo "::group::Running cargo tests"
+          echo "::group::Running cargo tests (instrumented for coverage)"
           set -o pipefail
-          cargo test --all-features 2>&1 | tee rust-test-output.txt
+          # --no-report runs every test binary (this is the pass/fail gate) and
+          # records raw coverage data without formatting a report yet.
+          cargo llvm-cov --no-report --all-features 2>&1 | tee rust-test-output.txt
           echo "::endgroup::"
 
       # Coverage reporting only — never gates the build (test pass/fail is owned
-      # by the Cargo Test step above).
-      - name: 🦀 Install cargo-llvm-cov
-        if: always()
-        continue-on-error: true
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-llvm-cov
-
+      # by the Cargo Test step above). `report` just formats the data the test
+      # step already collected — no second compile, no second test run.
       - name: 📊 Rust Coverage → Job Summary
         if: always()
         continue-on-error: true
         working-directory: apps/tauri/src-tauri
         run: |
-          if cargo llvm-cov --all-features --summary-only 2>&1 | tee rust-coverage.txt; then
+          if cargo llvm-cov report --summary-only 2>&1 | tee rust-coverage.txt; then
             {
               echo "## 🦀 Rust Coverage"
               echo ""

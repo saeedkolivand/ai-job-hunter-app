@@ -228,10 +228,30 @@ Rules:
 
 This repo ships a Claude Code agent system under `.claude/` (tracked) plus a knowledge base under `docs/knowledge/`.
 
+### Mandatory default — always route through agents, auto-selected
+
+**Every task and code change runs through this agent system by default — no slash command and no explicit agent name required.** If the user names no agent, you still pick and run the right one automatically; never wait to be told which agent to use. Agents auto-select by their `description` — match the touched area to its **Primary Owner**:
+
+| Touched area                                                                           | Primary Owner agent                                                      |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| React renderer (`apps/tauri/src/renderer/**`, components, routes, UI state)            | `frontend-reviewer`                                                      |
+| Rust/Tauri backend (`apps/tauri/src-tauri/src/**`, not owned by a more specific agent) | `rust-backend-architect`                                                 |
+| Resume/export, DocumentModel, templates, theme, locale                                 | `resume-export-expert` (review) · `pdf-docx-generator` (write/rendering) |
+| ATS scoring, job analysis, resume↔job matching, cover-letter relevance                 | `job-match-expert`                                                       |
+| AI providers, model routing, embeddings, prompts, streaming                            | `ai-provider-expert`                                                     |
+| Scraping, browser automation, application automation, registries                       | `scraping-applier-expert`                                                |
+| Security config / any risk-bearing change                                              | `tauri-security-reviewer` (default **Secondary**)                        |
+| Docs / knowledge base / ADRs / lessons / release                                       | `project-steward` (sole writer)                                          |
+| Tests (write) / test audit                                                             | `test-author` / `testing-reviewer`                                       |
+
+**Per-change sequence** (skip stages that don't apply): **Primary Owner implements → review pass (resolve HIGH/CRITICAL before continuing; LOW/MEDIUM advisory) → if the change touches testable logic, `test-author` writes tests then `testing-reviewer` audits the changed code → `project-steward` closes (docs/`docs/knowledge`/lessons sync + `graphify update .`)**. Stay within **≤3 reviewers** (Primary + risk-justified Secondaries; `tauri-security-reviewer` is the default Secondary on risk-bearing changes). **Orchestrate every sub-agent from the main session** — agents can't call agents, so sequence them yourself; never tell one agent to "hand off" to another.
+
+**Stay light.** Trivial diffs (docs / config / rename / one-liners) **skip the swarm** — just make the change; the Stop review-gate reviews the real diff regardless. This is a strong default for AI sessions; the only _hard_ enforcement is the Stop review-gate hook + CI (ESLint, commitlint, architecture tests).
+
 - **Agents** (`.claude/agents/`) — 12 specialized reviewers/producers: `resume-export-expert`, `job-match-expert`, `scraping-applier-expert`, `ai-provider-expert`, `rust-backend-architect`, `tauri-security-reviewer`, `frontend-reviewer`, `performance-profiler`, `testing-reviewer`, `test-author`, `pdf-docx-generator`, `project-steward`.
 - **Commands** (`.claude/commands/`) — `/review-{rust,security,performance,ats,resume,template,export,frontend,scraping,ai}`, `/implement-feature`, `/fix-bug`, `/refactor-module`, `/add-tests`, `/analyze-job-ad`, `/improve-ats-score`, `/update-docs`, `/prepare-release`.
 - **Skills** (`.claude/skills/`) — domain standards/checklists + `token-efficiency`, `review-workflow`, `lessons`.
-- **Stop review-gate** (`.claude/hooks/review-gate.mjs`, routed by `.claude/review-routes.json`) — on finish, reviews the diff with the owning agent's checklist: deterministic arch-guards + one batched LLM pass; **only HIGH/CRITICAL block**; **≤3 reviewers per task** (Primary Owner → optional risk Secondary), with a separate conditional `test-author → testing-reviewer` stage.
+- **Stop review-gate** (`.claude/hooks/review-gate.mjs`, routed by `.claude/review-routes.json`) — on finish, reviews the diff with the owning agent's checklist: deterministic arch-guards + one batched LLM pass; **only HIGH/CRITICAL block** (architecture-rule violation; untested error/security path on changed code; credential/IPC/updater exploit; data loss/corruption — LOW/MEDIUM are advisory); **≤3 reviewers per task** (Primary Owner → optional risk Secondary), with a separate conditional `test-author → testing-reviewer` stage. It **blocks once per finish-chain**, then lets the next finish through — run a `/review-*` command for a second enforced pass — and is **inert in plan mode** (empty diff). It never edits tracked files; a stale-docs finding is advisory → `/update-docs`.
 - **Lessons** (`.claude/hooks/lessons.mjs` → `.claude/memory/lessons.jsonl`, local) — distilled experiential memory; **only `project-steward` writes** (others propose via `LESSON · category · Context/Decision/Outcome`).
 
 **Context-source priority for codebase questions: graphify → source (authoritative) → `docs/knowledge/` → lessons.** Read the minimum; stop at ~90% confidence. `docs/knowledge/` is thin pointers into source/docs — keep it that way (no copied literals; point at the owning symbol). `project-steward` keeps it in sync.

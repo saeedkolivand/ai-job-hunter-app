@@ -1,5 +1,7 @@
 # ADR-005: Universal thinking/reasoning normalization at the provider-adapter boundary
 
+Last updated: 2026-06-01
+
 **Status:** Accepted
 
 ## Context
