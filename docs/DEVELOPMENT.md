@@ -132,11 +132,7 @@ apps/
 packages/
   shared/               ← IPC contracts + Zod schemas + shared types
   ui/                   ← @ajh/ui component library
-  core/                 ← EventBus, JobQueue, Scheduler
-  ai/                   ← Ollama client + AI runtime
-  data/                 ← SQLite + LanceDB + scrapers + matchers
   prompts/              ← AI prompt templates
-  workers/              ← Web Worker threads (OCR, embed, chunk)
 ```
 
 ---
@@ -157,10 +153,11 @@ The renderer imports `@ajh/ui` via the workspace symlink. After rebuilding, Vite
 ### Modifying IPC contracts (`packages/shared`)
 
 1. Edit `packages/shared/src/ipc/contracts/<namespace>.ts`
-2. Run `pnpm typecheck` to verify no breakage
-3. Update the Rust command handler in `apps/tauri/src-tauri/src/commands/`
-4. Update `apps/tauri/src/tauri-client.ts`
-5. Update the service hook in `apps/tauri/src/renderer/services/`
+2. Run `pnpm --filter @ajh/shared gen:ipc` to regenerate `ipc_contracts/*.rs` (CI runs `gen:ipc:check` to enforce this)
+3. Run `pnpm typecheck` to verify no breakage
+4. Update the Rust command handler in `apps/tauri/src-tauri/src/commands/`
+5. Update `apps/tauri/src/tauri-client.ts`
+6. Update the service hook in `apps/tauri/src/renderer/services/`
 
 ### Modifying Rust code (`apps/tauri/src-tauri`)
 

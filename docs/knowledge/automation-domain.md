@@ -19,6 +19,7 @@ Merged knowledge for `scraping-applier-expert` and `ai-provider-expert`. Source 
 
 - **Abstraction (architectural rule — HIGH if violated)** — `ollama.rs`, `openai.rs`, `anthropic.rs`, `gemini.rs`, `cli_agent/` behind a shared interface (`mod.rs`). **No business logic depends on a provider-specific API.** Adding OpenAI/Anthropic/Gemini/Ollama/OpenRouter/LM Studio/future = **config + adapter only**.
 - **Embeddings** — `documents/mod.rs`: storage + **embedding-space invalidation** when the model/space changes (stale embeddings across a model switch = HIGH).
-- **Streaming** — partial responses + cancellation handled; no resource leak on cancel.
+- **Streaming / thinking normalization** — every provider maps reasoning to `ai:stream { delta, thinking:true }`; inline `<think>` blocks for local models are split by `renderer/lib/generate/think-split.ts: createThinkSplitter`. See [ADR-005](decision-records/adr-005-universal-thinking-normalization.md).
+- **Generation session store** — `renderer/store/generation-store/` (Zustand), keyed by context id, survives navigation/close. See [ADR-006](decision-records/adr-006-generation-session-store.md).
 - **Prompts** — `packages/prompts` (provider-aware, locale-driven, pure TS, zero deps); reusable/composable templates.
 - **Cost/token** — minimize prompt/context; reuse embedded context; pick the cheapest viable model (`performance-profiler` co-reviews hot AI paths).

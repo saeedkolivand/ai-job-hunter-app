@@ -24,7 +24,22 @@ Read the minimum; **stop at ~90% confidence**.
 | [automation-domain.md](automation-domain.md) | Scraping + AI-provider: registries, resilience, provider abstraction, embeddings, streaming, prompts |
 | [performance-rules.md](performance-rules.md) | Hot paths, async-runtime discipline, query-client tuning, token/cost                                 |
 | [security-rules.md](security-rules.md)       | Capabilities, CSP, deps, secrets, privacy/GDPR, updater                                              |
-| [decision-records/](decision-records/)       | ADRs (maintained by `project-steward`)                                                               |
+| [decision-records/](decision-records/)       | ADRs (maintained by `project-steward`) — see table below                                             |
+
+## Decision records index
+
+| ADR                                                                          | Title                                                                       |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [ADR-001](decision-records/adr-001-rust-first-business-logic.md)             | Rust-first business logic                                                   |
+| [ADR-002](decision-records/adr-002-dual-pdf-docx-backends-golden-parity.md)  | Dual PDF + DOCX backends with golden-parity tests                           |
+| [ADR-003](decision-records/adr-003-centralized-platform-net-error-layers.md) | Centralized platform/net/error layers                                       |
+| [ADR-004](decision-records/adr-004-ports-and-adapters-frontend.md)           | Ports & adapters in the renderer                                            |
+| [ADR-005](decision-records/adr-005-universal-thinking-normalization.md)      | Universal thinking/reasoning normalization at the provider-adapter boundary |
+| [ADR-006](decision-records/adr-006-generation-session-store.md)              | Single app-wide generation-session store                                    |
+| [ADR-007](decision-records/adr-007-ai-generations-application-aggregate.md)  | `ai_generations` as the application aggregate with merge-upsert by job URL  |
+| [ADR-008](decision-records/adr-008-pdf-glyph-subsetting.md)                  | PDF glyph subsetting at export time via `parse_font`                        |
+| [ADR-009](decision-records/adr-009-full-reset-lockstep-list.md)              | Full factory reset via explicit lockstep store list in `privacy_reset_app`  |
+| [ADR-010](decision-records/adr-010-untrusted-input-fencing.md)               | Untrusted-input fencing for web-sourced company research                    |
 
 ## Canonical docs (do not duplicate — link)
 
