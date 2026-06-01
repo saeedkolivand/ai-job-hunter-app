@@ -170,6 +170,40 @@ pub async fn ai_inspect_model(model: String) -> Value {
     ollama::show_model(&model).await
 }
 
+/// Research the company named in a job ad and return a short factual brief for
+/// the cover-letter "fit" paragraph. Reuses the shared [`CompanyResearch`]
+/// enricher (Brave search + provider synthesis, cached for a week) so cover-letter
+/// generation and (later) application-question answers share **one** research
+/// path. Degrades gracefully — an empty brief, never an error, when there is no
+/// Brave key or the search/synthesis fails — so generation always proceeds.
+///
+/// Returns `{ company, brief }`. The brief is reference context only; the prompt
+/// layer treats it as untrusted and never as a source of candidate facts.
+#[tauri::command]
+pub async fn ai_research_company(
+    app: AppHandle,
+    job_ad: String,
+    provider: Option<String>,
+    model: Option<String>,
+    base_url: Option<String>,
+) -> Value {
+    use crate::cover_letter::research::CompanyResearch;
+    use crate::pipeline::enrichment::Enricher;
+    use crate::pipeline::Completer;
+
+    let completer = match Completer::resolve(&app, provider.as_deref(), model.as_deref(), base_url)
+    {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::debug!("research_company: provider resolution failed: {e}");
+            return json!({ "company": "", "brief": "" });
+        }
+    };
+
+    let result = CompanyResearch.enrich(&completer, &job_ad).await;
+    json!({ "company": result.key, "brief": result.content })
+}
+
 #[tauri::command]
 pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
     let job_id = uuid_v4();
