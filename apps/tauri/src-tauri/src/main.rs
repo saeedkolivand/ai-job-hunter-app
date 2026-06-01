@@ -43,7 +43,9 @@ mod validate;
 
 use parking_lot::Mutex;
 
-use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use tauri::menu::{
+    AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
+};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
 
@@ -57,20 +59,22 @@ use updater::UpdaterState;
 // ── App menu ──────────────────────────────────────────────────────────────────
 
 fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    let quit = MenuItemBuilder::with_id("quit", "Quit")
-        .accelerator("CmdOrControl+Q")
-        .build(app)?;
-    let hide = MenuItemBuilder::with_id("hide", "Hide Window")
-        .accelerator("CmdOrControl+H")
-        .build(app)?;
-    let about = MenuItemBuilder::with_id("about", "About AI Job Hunter").build(app)?;
+    // Every item is a predefined role: it self-handles and carries the standard
+    // platform accelerator, so no `on_menu_event` handler is needed.
+    let about_metadata = AboutMetadataBuilder::new()
+        .name(Some("AI Job Hunter"))
+        .version(Some(env!("CARGO_PKG_VERSION")))
+        .build();
 
+    // App submenu — must remain the FIRST submenu (the macOS app-name menu).
     let app_submenu = SubmenuBuilder::new(app, "AI Job Hunter")
-        .item(&about)
+        .item(&PredefinedMenuItem::about(app, None, Some(about_metadata))?)
         .separator()
-        .item(&hide)
+        .item(&PredefinedMenuItem::hide(app, None)?)
+        .item(&PredefinedMenuItem::hide_others(app, None)?)
+        .item(&PredefinedMenuItem::show_all(app, None)?)
         .separator()
-        .item(&quit)
+        .item(&PredefinedMenuItem::quit(app, None)?)
         .build()?;
 
     let edit_submenu = SubmenuBuilder::new(app, "Edit")
@@ -83,22 +87,23 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
         .item(&PredefinedMenuItem::select_all(app, None)?)
         .build()?;
 
+    let view_submenu = SubmenuBuilder::new(app, "View")
+        .item(&PredefinedMenuItem::fullscreen(app, None)?)
+        .build()?;
+
+    let window_submenu = SubmenuBuilder::new(app, "Window")
+        .item(&PredefinedMenuItem::minimize(app, None)?)
+        .item(&PredefinedMenuItem::maximize(app, None)?)
+        .separator()
+        .item(&PredefinedMenuItem::close_window(app, None)?)
+        .build()?;
+
     MenuBuilder::new(app)
         .item(&app_submenu)
         .item(&edit_submenu)
+        .item(&view_submenu)
+        .item(&window_submenu)
         .build()
-}
-
-fn on_menu_event(app: &AppHandle, id: &str) {
-    match id {
-        "quit" => app.exit(0),
-        "hide" => {
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.hide();
-            }
-        }
-        _ => {}
-    }
 }
 
 // ── System tray ───────────────────────────────────────────────────────────────
@@ -242,10 +247,10 @@ fn main() {
 
             app.manage(reset_registry);
 
-            // Build and set the application menu.
+            // Build and set the application menu. All items are predefined roles
+            // that self-handle, so no app-level menu-event handler is registered.
             let menu = build_app_menu(handle)?;
             app.set_menu(menu)?;
-            app.on_menu_event(|app, event| on_menu_event(app, event.id().as_ref()));
 
             // Platform-specific window decorations
             #[cfg(target_os = "windows")]
