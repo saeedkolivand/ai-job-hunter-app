@@ -238,6 +238,49 @@ fn test_parse_generic_html_whitespace() {
 }
 
 #[test]
+fn test_parse_generic_company_json_ld() {
+    let html = r#"<html><head>
+        <script type="application/ld+json">
+        {"@type":"JobPosting","title":"Engineer","hiringOrganization":{"@type":"Organization","name":"Acme Inc"}}
+        </script>
+    </head></html>"#;
+    assert_eq!(parse_generic_company(html), Some("Acme Inc".to_string()));
+}
+
+#[test]
+fn test_parse_generic_company_og_site_name() {
+    let html = r#"<html><head><meta property="og:site_name" content="BRANDUNG"></head></html>"#;
+    assert_eq!(parse_generic_company(html), Some("BRANDUNG".to_string()));
+}
+
+#[test]
+fn test_parse_generic_company_json_ld_graph() {
+    let html = r#"<html><head>
+        <script type="application/ld+json">
+        {"@graph":[{"@type":"WebPage"},{"@type":"JobPosting","hiringOrganization":{"name":"Globex"}}]}
+        </script>
+    </head></html>"#;
+    assert_eq!(parse_generic_company(html), Some("Globex".to_string()));
+}
+
+#[test]
+fn test_parse_generic_company_prefers_json_ld_over_og() {
+    let html = r#"<html><head>
+        <meta property="og:site_name" content="Careers Portal">
+        <script type="application/ld+json">
+        {"@type":"JobPosting","hiringOrganization":{"name":"Initech"}}
+        </script>
+    </head></html>"#;
+    assert_eq!(parse_generic_company(html), Some("Initech".to_string()));
+}
+
+#[test]
+fn test_parse_generic_company_none() {
+    let html = "<html><head><title>Job</title></head></html>";
+    assert_eq!(parse_generic_company(html), None);
+}
+
+#[test]
 fn test_parse_lever_url_with_query() {
     let url = "https://jobs.lever.co/stripe/abc123?ref=source";
     let result = parse_lever_url(url);

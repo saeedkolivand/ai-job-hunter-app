@@ -1445,7 +1445,8 @@
     "placeholder": "Paste a LinkedIn job URL…",
     "import": "Import",
     "notFound": "Couldn't read that job posting — paste the description manually.",
-    "failed": "Import failed. Check the URL and try again."
+    "failed": "Import failed. Check the URL and try again.",
+    "imported": "Imported"
   },
   "updater": {
     "available": "v{{version}} is available",
