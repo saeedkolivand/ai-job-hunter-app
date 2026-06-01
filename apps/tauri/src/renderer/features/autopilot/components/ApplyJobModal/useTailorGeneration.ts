@@ -1,109 +1,61 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 
 import {
   buildFilename,
   exportDOCX,
   exportPDF,
   exportTXT,
-  extractMetadata,
-  generateCoverLetter,
-  generateResume,
   type GenerationMeta,
   type GenerationMode,
   type TemplateId,
 } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
+import { EMPTY_SESSION, type TailorTarget, useGenerationStore } from '@/store/generation-store';
 
-export type TailorTarget = 'resume' | 'cover' | 'both';
+export type { TailorTarget };
 
 const TEMPLATE: TemplateId = 'modern';
 const MODE: GenerationMode = 'ats';
 
 interface Params {
+  /** Stable per-job session key (e.g. `autopilot:<jobUrl>`) so results survive
+   *  closing/reopening the modal and navigating away. */
+  contextId: string;
   jobDesc: string;
   model: string;
   canUse: boolean;
   hasDesc: boolean;
 }
 
-/** Owns the analyze → resume → cover-letter generation flow for ApplyJobModal. */
-export function useTailorGeneration({ jobDesc, model, canUse, hasDesc }: Params) {
+/**
+ * Thin adapter over the app-wide [`useGenerationStore`] for ApplyJobModal: the
+ * analyze → resume → cover flow runs in the store (background-safe), so this hook
+ * only selects the session and keeps modal-local UI state (copy/export). Closing
+ * the modal no longer aborts — generation continues and reappears on reopen.
+ */
+export function useTailorGeneration({ contextId, jobDesc, model, canUse, hasDesc }: Params) {
   const { t } = useTranslation();
 
-  const [generating, setGenerating] = useState(false);
-  const [phase, setPhase] = useState<'idle' | 'analyzing' | 'resume' | 'cover'>('idle');
-  const [resumeOut, setResumeOut] = useState('');
-  const [coverOut, setCoverOut] = useState('');
-  const [thinking, setThinking] = useState('');
-  const [activeOut, setActiveOut] = useState<'resume' | 'cover'>('cover');
-  const [error, setError] = useState<string | null>(null);
+  const session = useGenerationStore((s) => s.sessions[contextId] ?? EMPTY_SESSION);
+  const runTailor = useGenerationStore((s) => s.runTailor);
+  const cancel = useGenerationStore((s) => s.cancel);
+  const setActiveOutInStore = useGenerationStore((s) => s.setActiveOut);
+
+  const { generating, phase, resumeOut, coverOut, thinking, activeOut, error, meta } = session;
+
+  // Modal-local, ephemeral UI — fine to reset when the modal remounts.
   const [copied, setCopied] = useState(false);
-  const [meta, setMeta] = useState<GenerationMeta | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
 
   const output = activeOut === 'resume' ? resumeOut : coverOut;
 
-  const abort = () => abortRef.current?.abort();
-
-  const generate = async (resume: string, target: TailorTarget) => {
-    if (!canUse || !hasDesc || generating || !resume.trim()) return;
-    setError(null);
-    setGenerating(true);
-    setPhase('analyzing');
-    setResumeOut('');
-    setCoverOut('');
-    setThinking('');
-    const controller = new AbortController();
-    abortRef.current = controller;
-    // Reasoning deltas (Anthropic-style flag or inline <think> tags) accumulate
-    // here and render in the ThinkingBubble; cleared at the start of each phase.
-    const onThink = (tok: string) => setThinking((p) => p + tok);
-    try {
-      const detected = await extractMetadata(resume, jobDesc, model);
-      setMeta(detected);
-      if (target === 'resume' || target === 'both') {
-        setActiveOut('resume');
-        setPhase('resume');
-        setThinking('');
-        const r = await generateResume(
-          resume,
-          jobDesc,
-          detected,
-          MODE,
-          model,
-          (tok) => setResumeOut((p) => p + tok),
-          'en',
-          controller.signal,
-          onThink
-        );
-        setResumeOut(r);
-      }
-      if (target === 'cover' || target === 'both') {
-        setActiveOut('cover');
-        setPhase('cover');
-        setThinking('');
-        const c = await generateCoverLetter(
-          resume,
-          jobDesc,
-          detected,
-          MODE,
-          model,
-          (tok) => setCoverOut((p) => p + tok),
-          'en',
-          controller.signal,
-          onThink
-        );
-        setCoverOut(c);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('autopilot.apply.failed'));
-    } finally {
-      setGenerating(false);
-      setPhase('idle');
-      abortRef.current = null;
-    }
+  const generate = (resume: string, target: TailorTarget) => {
+    if (!canUse || !hasDesc) return Promise.resolve();
+    return runTailor({ contextId, resume, jobDesc, model, mode: MODE, target, t });
   };
+
+  const abort = () => cancel(contextId);
+  const setActiveOut = (which: 'resume' | 'cover') => setActiveOutInStore(contextId, which);
 
   const phaseLabel =
     phase === 'analyzing'

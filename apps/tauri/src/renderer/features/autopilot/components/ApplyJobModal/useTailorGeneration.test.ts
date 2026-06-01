@@ -1,5 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
+
+import { useGenerationStore } from '@/store/generation-store';
 
 import { useTailorGeneration } from './useTailorGeneration';
 
@@ -59,9 +61,18 @@ vi.mock('@/lib/generate', () => ({
   exportTXT: vi.fn(),
 }));
 
-const params = { jobDesc: 'JD', model: 'llama', canUse: true, hasDesc: true };
+const params = {
+  contextId: 'autopilot:test-job',
+  jobDesc: 'JD',
+  model: 'llama',
+  canUse: true,
+  hasDesc: true,
+};
 
 describe('useTailorGeneration', () => {
+  // The session lives in the shared store — reset it so tests don't leak state.
+  beforeEach(() => useGenerationStore.setState({ sessions: {} }));
+
   it('starts idle with empty buffers', () => {
     const { result } = renderHook(() => useTailorGeneration(params));
     expect(result.current.phase).toBe('idle');
