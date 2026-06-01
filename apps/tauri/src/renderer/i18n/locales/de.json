@@ -542,6 +542,10 @@
     "collapse": "Einklappen",
     "viewJob": "Anzeige öffnen",
     "applyJob": "Bewerben",
+    "badge": {
+      "new": "Neu",
+      "applied": "Beworben"
+    },
     "apply": {
       "jobDescription": "Stellenbeschreibung",
       "noDescription": "Für diesen Job wurde keine Beschreibung erfasst.",
@@ -849,7 +853,9 @@
       "noCoverLetter": "Kein Anschreiben generiert",
       "export": "Exportieren",
       "exportResume": "Lebenslauf",
-      "exportCoverLetter": "Anschreiben"
+      "exportCoverLetter": "Anschreiben",
+      "applied": "Beworben",
+      "openPosting": "Anzeige öffnen"
     },
     "relativeTime": {
       "justNow": "Gerade eben",
