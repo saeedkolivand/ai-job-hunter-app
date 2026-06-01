@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
+import type { ApplicationAnswer } from '@ajh/shared/ipc';
 
 import {
   extractMetadata,
@@ -8,6 +10,8 @@ import {
   type GenerationMeta,
   researchCompany as fetchCompanyBrief,
 } from '@/lib/generate';
+import { useAppClient } from '@/providers/AppClientProvider';
+import { keys } from '@/services/query-client';
 
 interface Params {
   resume: string;
@@ -19,6 +23,9 @@ interface Params {
   meta?: GenerationMeta | null;
   canUse: boolean;
   hasDesc: boolean;
+  /** Links the answers to the per-job application record (merge-upsert by url). */
+  jobUrl: string;
+  board: string;
 }
 
 /**
@@ -36,7 +43,11 @@ export function useApplicationAnswers({
   meta,
   canUse,
   hasDesc,
+  jobUrl,
+  board,
 }: Params) {
+  const api = useAppClient();
+  const qc = useQueryClient();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
@@ -60,6 +71,7 @@ export function useApplicationAnswers({
       const detected = meta ?? (await extractMetadata(resume, jobDesc, model));
       const brief = researchCompany ? await fetchCompanyBrief(jobDesc, model) : '';
       const chosen = APPLICATION_QUESTIONS.filter((q) => selected.has(q.id));
+      const results: ApplicationAnswer[] = [];
       for (const q of chosen) {
         const answer = await generateApplicationAnswer({
           question: q.question,
@@ -69,8 +81,32 @@ export function useApplicationAnswers({
           model,
           companyBrief: brief,
         });
+        results.push({ id: q.id, question: q.question, answer });
         setAnswers((prev) => ({ ...prev, [q.id]: answer }));
       }
+
+      // Persist onto the per-job application record (merge-upsert by jobUrl), so
+      // answers + brief live alongside the résumé/cover the tailor flow saved.
+      await api.aiGenerations.save({
+        candidateName: detected.candidateName,
+        jobTitle: detected.jobTitle,
+        companyName: detected.companyName,
+        resumeLanguage: detected.resumeLanguage,
+        jobAdLanguage: detected.jobAdLanguage,
+        targetLanguage: detected.targetLanguage,
+        mismatch: detected.mismatch,
+        topRequirements: detected.topRequirements,
+        mode: 'ats',
+        resumeText: '',
+        coverLetterText: '',
+        jobAd: jobDesc,
+        jobUrl,
+        board,
+        applicationAnswers: results,
+        companyBrief: brief,
+      });
+      void qc.invalidateQueries({ queryKey: keys.aiGenerations.all });
+      void qc.invalidateQueries({ queryKey: keys.autopilot.all });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate answers');
     } finally {

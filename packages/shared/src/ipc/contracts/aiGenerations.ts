@@ -1,3 +1,10 @@
+/** One answered application question stored on the application record. */
+export interface ApplicationAnswer {
+  id: string;
+  question: string;
+  answer: string;
+}
+
 export interface AiGenerationRecord {
   id: string;
   createdAt: number;
@@ -17,6 +24,10 @@ export interface AiGenerationRecord {
   jobUrl: string;
   /** The board the job came from (e.g. "linkedin"). */
   board: string;
+  /** Answered application questions (the questions assistant), if any. */
+  applicationAnswers: ApplicationAnswer[];
+  /** The company-research brief used for this application, if any. */
+  companyBrief: string;
 }
 
 export interface AiGenerationSaveRequest {
@@ -36,6 +47,10 @@ export interface AiGenerationSaveRequest {
   jobUrl?: string;
   /** The board the job came from. */
   board?: string;
+  /** Answered application questions to persist on the (per-job) record. */
+  applicationAnswers?: ApplicationAnswer[];
+  /** The company-research brief used, persisted for audit. */
+  companyBrief?: string;
 }
 
 export interface AiGenerationsContract {

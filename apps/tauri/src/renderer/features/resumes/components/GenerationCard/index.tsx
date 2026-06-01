@@ -7,7 +7,9 @@ import {
   Download,
   ExternalLink,
   FileText,
+  HelpCircle,
   Loader2,
+  Search,
   Trash2,
   Wand2,
 } from 'lucide-react';
@@ -39,7 +41,9 @@ export function GenerationCard({ gen }: GenerationCardProps) {
   const { t } = useTranslation();
   const removeAiGeneration = useRemoveAiGeneration();
   const openExternal = useOpenExternal();
-  const [expanded, setExpanded] = useState<'resume' | 'cover' | 'jobAd' | null>(null);
+  const [expanded, setExpanded] = useState<
+    'resume' | 'cover' | 'jobAd' | 'brief' | 'answers' | null
+  >(null);
   const [copied, setCopied] = useState<'resume' | 'cover' | null>(null);
   const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
   const [exportTemplate, setExportTemplate] = useState<TemplateId>('modern');
@@ -296,6 +300,12 @@ export function GenerationCard({ gen }: GenerationCardProps) {
           text: gen.jobAd,
           icon: Building2,
         },
+        {
+          key: 'brief' as const,
+          label: t('resumes.generated.companyResearch'),
+          text: gen.companyBrief,
+          icon: Search,
+        },
       ]
         .filter((s) => s.text)
         .map(({ key, label, text, icon: SectionIcon }) => (
@@ -329,6 +339,49 @@ export function GenerationCard({ gen }: GenerationCardProps) {
             </AnimatePresence>
           </div>
         ))}
+
+      {/* Application answers — structured Q/A from the questions assistant. */}
+      {gen.applicationAnswers.length > 0 && (
+        <div className="border-t border-white/[0.04]">
+          <button
+            onClick={() => setExpanded(expanded === 'answers' ? null : 'answers')}
+            className="flex w-full items-center justify-between px-4 py-2.5 text-left text-xs text-foreground/50 transition-colors hover:text-foreground/70"
+          >
+            <span className="flex items-center gap-1.5">
+              <HelpCircle size={11} /> {t('resumes.generated.applicationAnswers')}
+              <span className="rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-foreground/45">
+                {gen.applicationAnswers.length}
+              </span>
+            </span>
+            <ChevronDown
+              size={12}
+              className={cn('transition-transform', expanded === 'answers' && 'rotate-180')}
+            />
+          </button>
+          <AnimatePresence initial={false}>
+            {expanded === 'answers' && (
+              <motion.div
+                initial={{ height: 0 }}
+                animate={{ height: 'auto' }}
+                exit={{ height: 0 }}
+                transition={transition.normal}
+                className="overflow-hidden"
+              >
+                <div className="max-h-72 space-y-3 overflow-y-auto px-4 pb-4">
+                  {gen.applicationAnswers.map((qa) => (
+                    <div key={qa.id}>
+                      <p className="text-[11px] font-medium text-foreground/70">{qa.question}</p>
+                      <p className="mt-0.5 whitespace-pre-wrap text-[11px] leading-relaxed text-foreground/50">
+                        {qa.answer}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }

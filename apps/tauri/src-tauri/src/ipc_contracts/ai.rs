@@ -67,6 +67,22 @@ pub struct AiGenerationSaveRequest {
     pub job_url: String,
     #[serde(default = "default_ai_generation_save_request_board")]
     pub board: String,
+    #[serde(default = "default_ai_generation_save_request_application_answers")]
+    pub application_answers: Vec<AiGenerationSaveRequestApplicationAnswer>,
+    #[serde(default = "default_ai_generation_save_request_company_brief")]
+    pub company_brief: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+pub struct AiGenerationSaveRequestApplicationAnswer {
+    #[serde(default = "default_ai_generation_save_request_application_answer_id")]
+    pub id: String,
+    #[serde(default = "default_ai_generation_save_request_application_answer_question")]
+    pub question: String,
+    #[serde(default = "default_ai_generation_save_request_application_answer_answer")]
+    pub answer: String,
 }
 
 fn default_ai_generation_save_request_candidate_name() -> String {
@@ -122,5 +138,26 @@ fn default_ai_generation_save_request_job_url() -> String {
 }
 
 fn default_ai_generation_save_request_board() -> String {
+    "".to_string()
+}
+
+fn default_ai_generation_save_request_application_answers(
+) -> Vec<AiGenerationSaveRequestApplicationAnswer> {
+    Vec::new()
+}
+
+fn default_ai_generation_save_request_company_brief() -> String {
+    "".to_string()
+}
+
+fn default_ai_generation_save_request_application_answer_id() -> String {
+    "".to_string()
+}
+
+fn default_ai_generation_save_request_application_answer_question() -> String {
+    "".to_string()
+}
+
+fn default_ai_generation_save_request_application_answer_answer() -> String {
     "".to_string()
 }
