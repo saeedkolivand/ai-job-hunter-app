@@ -11,6 +11,8 @@
 
 import { getModelTier } from '@ajh/prompts/context-manager';
 import {
+  buildApplicationAnswerPrompt,
+  buildApplicationAnswerSystemPrompt,
   buildCoverLetterPrompt,
   buildCoverLetterSystemPrompt,
   buildMetadataPrompt,
@@ -322,4 +324,48 @@ export async function generateCoverLetter(
     onThinking
   );
   return injectLinksIntoGeneratedText(extractPlainText(raw), getLinkMap(resume));
+}
+
+/**
+ * Generate a single, résumé-grounded answer to one application question. Routes
+ * through the same streaming pipeline as résumé/cover-letter generation (so it
+ * works for every provider with zero per-provider code) and the shared grounding
+ * contract (no fabrication). Pass `companyBrief` to inform company-context
+ * questions; it is fenced as untrusted by the prompt layer. Returns plain text.
+ */
+export async function generateApplicationAnswer(params: {
+  question: string;
+  resume: string;
+  jobAd: string;
+  meta: GenerationMeta;
+  model: string;
+  companyBrief?: string;
+  signal?: AbortSignal;
+  onToken?: (tok: string) => void;
+}): Promise<string> {
+  const { question, resume, jobAd, meta, model, companyBrief = '', signal, onToken } = params;
+  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
+  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+  const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
+  const tier = effectiveTier(activeModel, activeProvider);
+
+  const system = buildApplicationAnswerSystemPrompt();
+  const user = buildApplicationAnswerPrompt({
+    question,
+    resume,
+    jobAd,
+    meta,
+    companyBrief,
+    target: tier,
+  });
+  const raw = await streamGenerate(
+    model,
+    system,
+    user,
+    onToken ?? (() => {}),
+    0.3,
+    meta.targetLanguage || 'en',
+    signal
+  );
+  return extractPlainText(raw);
 }

@@ -6,6 +6,7 @@ import { _registerClient } from '../../app-client';
 import { createMockClient } from '../../mock-client';
 import {
   extractMetadata,
+  generateApplicationAnswer,
   generateCoverLetter,
   generateResume,
   researchCompany,
@@ -227,6 +228,58 @@ describe('generateCoverLetter', () => {
   it('researchCompany degrades to an empty brief when the backend fails', async () => {
     registerWithResearch(vi.fn().mockRejectedValue(new Error('no brave key')));
     expect(await researchCompany('Job ad', 'llama3')).toBe('');
+  });
+});
+
+describe('generateApplicationAnswer', () => {
+  it('grounds an answer prompt with the question + brief and returns clean text', async () => {
+    const client = register();
+
+    const p = generateApplicationAnswer({
+      question: 'Why do you want to work here?',
+      resume: 'My resume: led a payments migration.',
+      jobAd: 'Backend role at Acme',
+      meta: {
+        resumeLanguage: 'en',
+        jobAdLanguage: 'en',
+        mismatch: false,
+        candidateName: 'X',
+        jobTitle: 'Backend Engineer',
+        companyName: 'Acme',
+        targetLanguage: 'en',
+        topRequirements: [],
+      },
+      model: 'llama3',
+      companyBrief: 'Acme builds payment rails.',
+    });
+    await flushUntilStreaming();
+    emit('<think>plan</think>I led a payments migration, which maps to your rails work.');
+    done();
+    const answer = await p;
+
+    expect(answer).toContain('payments migration');
+    expect(answer).not.toContain('<think>');
+    // The question and the (untrusted) brief both reach the user prompt.
+    expect(client.ai.generatePipeline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: 'user',
+            content: expect.stringContaining('Why do you want to work here?'),
+          }),
+        ]),
+      })
+    );
+    expect(client.ai.generatePipeline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: 'user',
+            content: expect.stringContaining('<company_research>'),
+          }),
+        ]),
+      })
+    );
   });
 });
 

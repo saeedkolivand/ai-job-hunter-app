@@ -10,6 +10,7 @@ import { ThinkingBubble } from '@/features/ai-generate/components/ThinkingBubble
 import { useTranslation } from '@/lib/i18n';
 import { useExtractText, useResolveJobUrl } from '@/services';
 
+import { ApplicationQuestions } from './ApplicationQuestions';
 import { GenerationOutput } from './GenerationOutput';
 import { JobDescriptionPanel } from './JobDescriptionPanel';
 import { type TailorTarget, useTailorGeneration } from './useTailorGeneration';
@@ -232,6 +233,17 @@ export function ApplyJobModal({ job, resumeText, board, onClose }: Props) {
               onExport={gen.exportAs}
             />
           )}
+
+          {/* Optional application-questions assistant — résumé-grounded answers. */}
+          <ApplicationQuestions
+            resume={resume}
+            jobDesc={jobDesc}
+            model={model}
+            researchCompany={researchCompany}
+            meta={gen.meta}
+            canUse={canUse}
+            hasDesc={hasDesc}
+          />
         </div>
       </div>
     </ModalShell>
