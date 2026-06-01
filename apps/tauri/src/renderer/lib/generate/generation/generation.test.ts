@@ -4,7 +4,12 @@ import { usePreferencesStore } from '@/store/preferences-store';
 
 import { _registerClient } from '../../app-client';
 import { createMockClient } from '../../mock-client';
-import { extractMetadata, generateCoverLetter, generateResume } from './generation';
+import {
+  extractMetadata,
+  generateCoverLetter,
+  generateResume,
+  researchCompany,
+} from './generation';
 
 let streamHandler: ((chunk: unknown) => void) | null = null;
 
@@ -134,6 +139,94 @@ describe('generateCoverLetter', () => {
     done();
     const out = await p;
     expect(out).toContain('Dear Hiring Team');
+  });
+
+  const COVER_META = {
+    resumeLanguage: 'en',
+    jobAdLanguage: 'en',
+    mismatch: false,
+    candidateName: 'X',
+    jobTitle: 'Y',
+    companyName: 'Z',
+    targetLanguage: 'en',
+    topRequirements: [],
+  };
+
+  const registerWithResearch = (research: ReturnType<typeof vi.fn>) => {
+    const client = createMockClient({
+      ai: {
+        generatePipeline: vi.fn().mockResolvedValue({ jobId: 'gen-1' }),
+        onStream: vi.fn((h: (chunk: unknown) => void) => {
+          streamHandler = h;
+          return () => {};
+        }),
+        researchCompany: research,
+      },
+      jobs: { get: vi.fn().mockResolvedValue(null), cancel: vi.fn() },
+    });
+    _registerClient(client);
+    return client;
+  };
+
+  it('researches the company and folds the brief into the prompt when enabled', async () => {
+    const research = vi
+      .fn()
+      .mockResolvedValue({ company: 'Acme', brief: 'Acme builds payment rails for SMBs.' });
+    const client = registerWithResearch(research);
+
+    const p = generateCoverLetter(
+      'My resume',
+      'Job ad at Acme',
+      COVER_META,
+      'recruiter',
+      'llama3',
+      vi.fn(),
+      'en',
+      undefined,
+      undefined,
+      { researchCompany: true }
+    );
+    await flushUntilStreaming();
+    emit('Dear Hiring Team, great fit.');
+    done();
+    await p;
+
+    expect(research).toHaveBeenCalledWith(expect.objectContaining({ jobAd: 'Job ad at Acme' }));
+    expect(client.ai.generatePipeline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: 'user',
+            content: expect.stringContaining('Acme builds payment rails'),
+          }),
+        ]),
+      })
+    );
+  });
+
+  it('skips research entirely when the flag is off (no extra call)', async () => {
+    const research = vi.fn().mockResolvedValue({ company: '', brief: '' });
+    registerWithResearch(research);
+
+    const p = generateCoverLetter(
+      'My resume',
+      'Job ad',
+      COVER_META,
+      'recruiter',
+      'llama3',
+      vi.fn()
+    );
+    await flushUntilStreaming();
+    emit('Dear Hiring Team.');
+    done();
+    await p;
+
+    expect(research).not.toHaveBeenCalled();
+  });
+
+  it('researchCompany degrades to an empty brief when the backend fails', async () => {
+    registerWithResearch(vi.fn().mockRejectedValue(new Error('no brave key')));
+    expect(await researchCompany('Job ad', 'llama3')).toBe('');
   });
 });
 

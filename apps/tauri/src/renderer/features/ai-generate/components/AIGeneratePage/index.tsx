@@ -75,6 +75,8 @@ export function AIGeneratePage() {
   const [genStep, setGenStep] = useState<{ current: number; total: number; label: string } | null>(
     null
   );
+  // Opt-in company research for the cover letter — default off (no extra web/LLM call).
+  const [researchCompany, setResearchCompany] = useState(false);
 
   const selectedModel = useSelectedModel();
   const { canUse: canUseAI, reason: aiReason } = useCanUseAI();
@@ -119,7 +121,8 @@ export function AIGeneratePage() {
     abortControllerRef,
     saveAiGeneration,
     t,
-    setStageLabel
+    setStageLabel,
+    researchCompany
   );
 
   const canProceed = resume.trim().length > 50 && jobAd.trim().length > 50;
@@ -224,6 +227,8 @@ export function AIGeneratePage() {
           setTemplateId={setTemplateId}
           setAtsMode={setAtsMode}
           setLocale={setLocale}
+          researchCompany={researchCompany}
+          onResearchCompanyChange={setResearchCompany}
           onUpload={handleUpload}
           onReset={reset}
           onAnalyze={handleAnalyze}

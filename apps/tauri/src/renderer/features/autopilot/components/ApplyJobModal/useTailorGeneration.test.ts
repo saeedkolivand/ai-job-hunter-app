@@ -77,6 +77,7 @@ const params = {
   hasDesc: true,
   jobUrl: 'https://acme.com/job/42',
   board: 'linkedin',
+  researchCompany: false,
 };
 
 // useTailorGeneration uses useQueryClient (to invalidate after save), so the hook

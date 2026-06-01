@@ -33,6 +33,8 @@ interface Props {
   setTemplateId: (v: TemplateId) => void;
   setAtsMode: (v: boolean) => void;
   setLocale: (v: string) => void;
+  researchCompany: boolean;
+  onResearchCompanyChange: (v: boolean) => void;
   onUpload: (target: 'resume' | 'jobAd', file: File) => Promise<void>;
   onReset: () => void;
   onAnalyze: () => void;
@@ -62,6 +64,8 @@ export function LeftPanel({
   setTemplateId,
   setAtsMode,
   setLocale,
+  researchCompany,
+  onResearchCompanyChange,
   onUpload,
   onReset,
   onAnalyze,
@@ -162,6 +166,29 @@ export function LeftPanel({
         onGenerate={onGenerate}
         isGenerating={isGenerating}
       />
+
+      {/* Opt-in company research — only when a cover letter is produced. Default
+          off, so generation makes no extra web/LLM call unless the user asks. */}
+      {(target === 'cover' || target === 'both') && (
+        <div className="px-6 pb-2">
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2">
+            <input
+              type="checkbox"
+              checked={researchCompany}
+              onChange={(e) => onResearchCompanyChange(e.target.checked)}
+              className="mt-0.5 accent-brand"
+            />
+            <span className="min-w-0">
+              <span className="block text-[11px] font-medium text-foreground/80">
+                {t('aiGenerate.research.label')}
+              </span>
+              <span className="block text-[10px] text-foreground/40">
+                {t('aiGenerate.research.hint')}
+              </span>
+            </span>
+          </label>
+        </div>
+      )}
 
       {/* Idle CTA */}
       {stage === 'idle' && (

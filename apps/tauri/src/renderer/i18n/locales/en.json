@@ -452,6 +452,10 @@
   "aiGenerate": {
     "title": "AI Generate",
     "subtitle": "Upload your resume and target job ad to generate tailored, ATS-optimized documents.",
+    "research": {
+      "label": "Research the company",
+      "hint": "Adds a short web brief to the cover letter. Needs a Brave Search key; best-effort."
+    },
     "recommendationTitle": "Suggested template",
     "applyRecommendation": "Apply suggestion",
     "recommendationApplied": "Applied",
@@ -563,6 +567,10 @@
       "addApiKey": "Add an API key first",
       "installCli": "Install the CLI agent",
       "failed": "Generation failed",
+      "research": {
+        "label": "Research the company",
+        "hint": "Adds a short web brief to the cover letter. Needs a Brave Search key; best-effort."
+      },
       "target": {
         "resume": "Resume",
         "cover": "Cover letter",

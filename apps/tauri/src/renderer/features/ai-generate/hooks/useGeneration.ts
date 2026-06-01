@@ -34,7 +34,9 @@ export function useGeneration(
   abortControllerRef: React.MutableRefObject<AbortController | null>,
   saveAiGeneration: { mutate: (data: AiGenerationSaveRequest) => void },
   t: (key: string) => string,
-  setStageLabel: (label: string) => void
+  setStageLabel: (label: string) => void,
+  /** Opt-in company research folded into the cover-letter prompt. */
+  researchCompany = false
 ) {
   const handleAnalyze = async () => {
     setError(null);
@@ -126,7 +128,8 @@ export function useGeneration(
           }),
           undefined,
           controller.signal,
-          onThink
+          onThink,
+          { researchCompany }
         );
         setCoverOut(finalCover);
       }

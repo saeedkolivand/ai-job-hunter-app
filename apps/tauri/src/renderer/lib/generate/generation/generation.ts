@@ -264,6 +264,29 @@ export async function generateResume(
   return injectLinksIntoGeneratedText(extractPlainText(raw), getLinkMap(resume));
 }
 
+/**
+ * Best-effort company research for the cover-letter "fit" paragraph. Routes
+ * through the backend enricher (Brave search + provider synthesis, cached). Any
+ * failure or missing Brave key yields '' so the cover letter still generates.
+ * The returned brief is untrusted reference text — the prompt fences it.
+ */
+export async function researchCompany(jobAd: string, model: string): Promise<string> {
+  try {
+    const providerConfig = usePreferencesStore.getState().aiProviderConfig;
+    const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+    const providerSettings = providerConfig?.providers?.[activeProvider];
+    const res = (await getClient().ai.researchCompany({
+      jobAd,
+      provider: activeProvider,
+      model: providerSettings?.model || model,
+      baseUrl: providerSettings?.baseUrl,
+    })) as { company: string; brief: string };
+    return res?.brief ?? '';
+  } catch {
+    return '';
+  }
+}
+
 export async function generateCoverLetter(
   resume: string,
   jobAd: string,
@@ -273,15 +296,19 @@ export async function generateCoverLetter(
   onToken: (tok: string) => void,
   locale = 'en',
   signal?: AbortSignal,
-  onThinking?: (tok: string) => void
+  onThinking?: (tok: string) => void,
+  opts?: { researchCompany?: boolean }
 ): Promise<string> {
   const providerConfig = usePreferencesStore.getState().aiProviderConfig;
   const activeProvider = providerConfig?.activeProvider ?? 'ollama';
   const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
   const tier = effectiveTier(activeModel, activeProvider);
 
+  // Opt-in: fetch a company brief and fold it into the prompt's fit paragraph.
+  const companyBrief = opts?.researchCompany ? await researchCompany(jobAd, model) : '';
+
   const system = buildCoverLetterSystemPrompt(mode, tier);
-  const user = buildCoverLetterPrompt(resume, jobAd, meta, mode, tier);
+  const user = buildCoverLetterPrompt(resume, jobAd, meta, mode, tier, companyBrief);
   // Lower temperature for small models to reduce hallucination noise
   const temperature = tier === 'small' ? 0.3 : 0.4;
   const raw = await streamGenerate(

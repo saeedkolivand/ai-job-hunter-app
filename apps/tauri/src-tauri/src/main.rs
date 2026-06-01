@@ -275,6 +275,7 @@ fn main() {
             commands::ai::ai_generate,
             commands::ai::ai_list_models,
             commands::ai::ai_inspect_model,
+            commands::ai::ai_research_company,
             commands::ai::ai_pull_model,
             commands::ai::ai_unload_model,
             commands::ai::ai_embed,

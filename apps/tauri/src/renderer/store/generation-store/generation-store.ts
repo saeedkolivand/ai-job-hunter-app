@@ -57,6 +57,8 @@ export interface RunTailorParams {
   model: string;
   mode: GenerationMode;
   target: TailorTarget;
+  /** Opt-in: research the company and fold a brief into the cover-letter prompt. */
+  researchCompany?: boolean;
   /** Translator for the failure message. */
   t: (key: string) => string;
   /**
@@ -119,7 +121,17 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
         return { sessions: next };
       }),
 
-    runTailor: async ({ contextId: id, resume, jobDesc, model, mode, target, t, onComplete }) => {
+    runTailor: async ({
+      contextId: id,
+      resume,
+      jobDesc,
+      model,
+      mode,
+      target,
+      researchCompany,
+      t,
+      onComplete,
+    }) => {
       if (get().sessions[id]?.generating || !resume.trim()) return;
 
       const controller = new AbortController();
@@ -169,7 +181,8 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
             (tok) => append(id, 'coverOut', tok),
             'en',
             controller.signal,
-            onThink
+            onThink,
+            { researchCompany }
           );
           patch(id, { coverOut: coverLetterText });
         }

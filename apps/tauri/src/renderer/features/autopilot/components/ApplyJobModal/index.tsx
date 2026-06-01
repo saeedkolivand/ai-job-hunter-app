@@ -36,6 +36,8 @@ export function ApplyJobModal({ job, resumeText, board, onClose }: Props) {
   const [resume, setResume] = useState(resumeText ?? '');
   const [target, setTarget] = useState<TailorTarget>('both');
   const [uploading, setUploading] = useState(false);
+  // Opt-in company research — default off, so no extra web/LLM call unless asked.
+  const [researchCompany, setResearchCompany] = useState(false);
 
   // Fetch the description on demand when the board's list scrape omitted it.
   const initialDesc = (job.description ?? '').trim();
@@ -55,6 +57,7 @@ export function ApplyJobModal({ job, resumeText, board, onClose }: Props) {
     hasDesc,
     jobUrl: job.url,
     board,
+    researchCompany,
   });
 
   // Closing the modal no longer cancels — generation finishes in the background
@@ -124,6 +127,26 @@ export function ApplyJobModal({ job, resumeText, board, onClose }: Props) {
 
           {/* Model */}
           <ModelSelector />
+
+          {/* Opt-in company research — only relevant when a cover letter is produced. */}
+          {(target === 'cover' || target === 'both') && (
+            <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2">
+              <input
+                type="checkbox"
+                checked={researchCompany}
+                onChange={(e) => setResearchCompany(e.target.checked)}
+                className="mt-0.5 accent-brand"
+              />
+              <span className="min-w-0">
+                <span className="block text-[11px] font-medium text-foreground/80">
+                  {t('autopilot.apply.research.label')}
+                </span>
+                <span className="block text-[10px] text-foreground/40">
+                  {t('autopilot.apply.research.hint')}
+                </span>
+              </span>
+            </label>
+          )}
 
           {/* Target + generate */}
           <div className="flex items-center justify-between gap-2">
