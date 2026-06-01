@@ -28,6 +28,7 @@ import { detectLanguages } from '@ajh/shared/language-detection';
 import { usePreferencesStore } from '@/store/preferences-store';
 
 import { getClient } from '../../app-client';
+import { createThinkSplitter } from '../think-split';
 
 type ModelTier = 'large' | 'medium' | 'small';
 
@@ -90,10 +91,16 @@ async function streamGenerate(
   const jobId = res.jobId;
   let buffer = '';
 
-  // Tracks whether we're inside an inline <think>...</think> block emitted
-  // token-by-token by local reasoning models (DeepSeek, Qwen, etc.)
-  let inThinkBlock = false;
-  let thinkAccum = '';
+  // Local reasoning models embed <think>…</think> inline; the shared splitter
+  // separates that reasoning from the answer. Cloud providers instead flag
+  // reasoning structurally (the `thinking` chunk flag handled below).
+  const splitter = createThinkSplitter(
+    (text) => {
+      buffer += text;
+      onToken(text);
+    },
+    (text) => onThinking?.(text)
+  );
 
   return new Promise((resolve, reject) => {
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -123,61 +130,16 @@ async function streamGenerate(
       }
       if (c.delta) {
         if (c.thinking) {
-          // Anthropic-style separate thinking flag
+          // Provider-flagged reasoning (Anthropic, and now OpenAI/Gemini/Ollama
+          // via the normalized `thinking` chunk flag).
           onThinking?.(c.delta);
         } else {
-          // Accumulate to detect inline <think> tags from local models
-          thinkAccum += c.delta;
-
-          // Flush any complete non-thinking content from the accumulator
-          let out = '';
-          let remaining = thinkAccum;
-
-          while (remaining.length > 0) {
-            if (inThinkBlock) {
-              const closeIdx = remaining.indexOf('</think>');
-              if (closeIdx !== -1) {
-                onThinking?.(remaining.slice(0, closeIdx));
-                inThinkBlock = false;
-                remaining = remaining.slice(closeIdx + 8);
-              } else {
-                // Still inside think block — forward to thinking handler, keep nothing
-                onThinking?.(remaining);
-                remaining = '';
-              }
-            } else {
-              const openIdx = remaining.indexOf('<think>');
-              if (openIdx !== -1) {
-                out += remaining.slice(0, openIdx);
-                inThinkBlock = true;
-                remaining = remaining.slice(openIdx + 7);
-              } else {
-                // No open tag — but it might be a partial tag at the end, hold back 7 chars
-                const holdBack = 7;
-                if (remaining.length > holdBack) {
-                  out += remaining.slice(0, remaining.length - holdBack);
-                  remaining = remaining.slice(remaining.length - holdBack);
-                }
-                break;
-              }
-            }
-          }
-
-          thinkAccum = remaining;
-
-          if (out) {
-            buffer += out;
-            onToken(out);
-          }
+          // Local models embed reasoning inline as <think>…</think>.
+          splitter.push(c.delta);
         }
       }
       if (c.done) {
-        // Flush whatever remains — even if a think block never closed, discard it;
-        // flush any trailing non-think content so the buffer is complete.
-        if (thinkAccum && !inThinkBlock) {
-          buffer += thinkAccum;
-          onToken(thinkAccum);
-        }
+        splitter.flush();
         off();
         cleanup();
         resolve(buffer);

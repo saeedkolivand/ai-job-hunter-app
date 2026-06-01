@@ -23,6 +23,7 @@ import { detectLanguages } from '@ajh/shared/language-detection';
 import { usePreferencesStore } from '@/store/preferences-store';
 
 import { getClient } from '../app-client';
+import { createThinkSplitter } from '../generate/think-split';
 
 type ModelTier = 'large' | 'medium' | 'small';
 
@@ -116,6 +117,15 @@ export async function runAnalysis({
   // Collect streamed tokens into the full response
   const full = await new Promise<string>((resolve, reject) => {
     let buffer = '';
+    // Local models embed reasoning inline as <think>…</think>; the shared splitter
+    // keeps it out of the analysis JSON. Cloud providers flag it structurally below.
+    const splitter = createThinkSplitter(
+      (text) => {
+        buffer += text;
+        onToken?.(text);
+      },
+      (text) => onThinking?.(text)
+    );
     const off = api.ai.onStream((chunk: unknown) => {
       const c = chunk as {
         jobId: string;
@@ -134,11 +144,11 @@ export async function runAnalysis({
         if (c.thinking) {
           onThinking?.(c.delta);
         } else {
-          buffer += c.delta;
-          onToken?.(c.delta);
+          splitter.push(c.delta);
         }
       }
       if (c.done) {
+        splitter.flush();
         off();
         resolve(buffer);
       }
@@ -161,6 +171,7 @@ export async function runAnalysis({
       () => {
         off();
         if (abortListener && signal) signal.removeEventListener('abort', abortListener);
+        splitter.flush();
         resolve(buffer);
       },
       5 * 60 * 1000
@@ -187,6 +198,7 @@ export async function runAnalysis({
             clearTimeout(timeoutId);
             off();
             if (abortListener && signal) signal.removeEventListener('abort', abortListener);
+            splitter.flush();
             // Use the job result text if the stream already buffered everything,
             // otherwise fall back to whatever the job stored.
             resolve(buffer || job.result?.text || '');
