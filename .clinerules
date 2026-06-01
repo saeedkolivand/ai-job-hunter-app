@@ -192,3 +192,18 @@ Features must not import each other's internals. Shared code → `@ajh/ui`, `@/h
 2. `apps/desktop/src/main/ipc/router.ts`
 3. `apps/desktop/src/preload/index.ts`
 4. `apps/desktop/src/renderer/services/`
+
+---
+
+## Agent system & review conventions
+
+This repo ships a Claude Code agent system under `.claude/` (12 specialized agents,
+`/review-*` + implementation commands, domain skills, a Stop review-gate hook, and a lessons log).
+
+Cline cannot invoke Claude Code sub-agents, but **follow the same conventions**:
+- Route changes to the owning domain (ownership table in `CLAUDE.md`).
+- Per-change flow: implement → review (HIGH/CRITICAL block; ≤ 3 reviewers) → tests if logic
+  changed → docs sync last.
+- Only HIGH/CRITICAL findings block; style/naming issues are advisory.
+
+Full operating contract: `CLAUDE.md`.

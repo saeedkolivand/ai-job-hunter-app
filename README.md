@@ -80,11 +80,11 @@ ollama pull mistral   # optional: a local model for the offline Ollama provider
 pnpm dev              # launches the Tauri app with hot reload
 ```
 
-No API key required to start — run fully offline with Ollama, or add a cloud key later in **Settings → AI**. New here? See **[Installation](#-installation)** for prerequisites and per-OS notes.
+No API key required to start — run fully offline with [Ollama][ollama], or add a cloud key later in **Settings → AI**. New here? See **[Installation](#-installation)** for prerequisites and per-OS notes.
 
 ## What It Does
 
-AI Job Hunter is a desktop application built with **Tauri** (a Rust core with a React renderer) that brings AI-driven job hunting to your local machine. It scrapes 18+ job boards, semantically matches postings to your résumé, generates tailored cover letters and résumés with your AI provider of choice, drafts grounded answers to application questions, and tracks everything you apply to — all while keeping your data and credentials on your device.
+AI Job Hunter is a desktop application built with **[Tauri][tauri]** (a [Rust][rust] core with a [React][react] renderer) that brings AI-driven job hunting to your local machine. It scrapes 18+ job boards, semantically matches postings to your résumé, generates tailored cover letters and résumés with your AI provider of choice, drafts grounded answers to application questions, and tracks everything you apply to — all while keeping your data and credentials on your device.
 
 The only outbound calls are to the AI provider **you** configure (and an optional web search you explicitly enable). Everything else — jobs, résumés, generations, applications — lives in a local database on your machine.
 
@@ -96,7 +96,7 @@ The only outbound calls are to the AI provider **you** configure (and an optiona
 <summary><strong>📝 Résumé &amp; cover-letter generation</strong></summary>
 
 - **Streaming generation** with 9 professional templates, DOCX / PDF / TXT export, ATS-safe formatting.
-- **Universal "thinking" view** — see the model's reasoning stream live across **every** provider (Anthropic, OpenAI, Gemini, Ollama, CLI agents), not just one.
+- **Universal "thinking" view** — see the model's reasoning stream live across **every** provider (Anthropic, OpenAI, Gemini, [Ollama][ollama], CLI agents), not just one.
 - **Background generation** — switch tabs, close the modal, or navigate away; generation keeps running and the result is there when you come back.
 - **Smaller PDFs** — fonts are glyph-subsetted per export (only the characters you actually use), shrinking a typical résumé PDF from ~3 MB to ~120 KB.
 </details>
@@ -127,8 +127,8 @@ The only outbound calls are to the AI provider **you** configure (and an optiona
 <details>
 <summary><strong>🧠 AI providers &amp; local tuning</strong></summary>
 
-- **Multi-provider** — Ollama (local), OpenAI, Anthropic, Gemini, any OpenAI-compatible server (LM Studio, vLLM, remote Ollama), plus headless **CLI agents** (Claude Code, Codex, Gemini CLI).
-- **Per-model local limits** — analyze a local model's real context window via Ollama's `/api/show`, then set the context window + max output tokens per model, with a hardware-lag warning so large prompts aren't silently truncated.
+- **Multi-provider** — [Ollama][ollama] (local), OpenAI, Anthropic, Gemini, any OpenAI-compatible server (LM Studio, vLLM, remote [Ollama][ollama]), plus headless **CLI agents** (Claude Code, Codex, Gemini CLI).
+- **Per-model local limits** — analyze a local model's real context window via [Ollama][ollama]'s `/api/show`, then set the context window + max output tokens per model, with a hardware-lag warning so large prompts aren't silently truncated.
 </details>
 
 <details>
@@ -291,23 +291,23 @@ The app uses the OS keychain for secrets — no `.env` files. Keys and credentia
 
 ## Tech Stack
 
-| Layer               | Technology                                       |
-| ------------------- | ------------------------------------------------ |
-| Desktop shell       | Tauri 2.x — Rust core + React renderer           |
-| UI framework        | React 19, TypeScript 6                           |
-| Routing             | TanStack Router 1.x (file-based)                 |
-| Server state        | TanStack Query 5.x                               |
-| Client state        | Zustand 5                                        |
-| Styling             | TailwindCSS v4 + CSS custom properties           |
-| Animations          | motion/react                                     |
-| Build system        | Vite 8 + Turbo (monorepo)                        |
-| Package manager     | pnpm 11 (workspaces)                             |
-| Local AI            | Ollama                                           |
-| Relational DB       | SQLite via `rusqlite` (Rust core)                |
-| Vector search       | Hybrid vector + keyword matching                 |
-| Browser automation  | `chromiumoxide` (Rust) — Playwright for e2e only |
-| Document generation | `printpdf` + `docx-rs` (Rust)                    |
-| Validation          | Zod (shared schemas → generated Rust structs)    |
+| Layer               | Technology                                                              |
+| ------------------- | ----------------------------------------------------------------------- |
+| Desktop shell       | [Tauri][tauri] 2.x — [Rust][rust] core + [React][react] renderer        |
+| UI framework        | [React][react] 19, [TypeScript][typescript] 6                           |
+| Routing             | [TanStack Router][tanstack-router] 1.x (file-based)                     |
+| Server state        | [TanStack Query][tanstack-query] 5.x                                    |
+| Client state        | [Zustand][zustand] 5                                                    |
+| Styling             | [Tailwind CSS][tailwindcss] v4 + CSS custom properties                  |
+| Animations          | [motion/react][motion-react]                                            |
+| Build system        | [Vite][vite] 8 + [Turborepo][turborepo] (monorepo)                      |
+| Package manager     | [pnpm][pnpm] 11 (workspaces)                                            |
+| Local AI            | [Ollama][ollama]                                                        |
+| Relational DB       | [SQLite][sqlite] via [rusqlite][rusqlite] ([Rust][rust] core)           |
+| Vector search       | Hybrid vector + keyword matching                                        |
+| Browser automation  | [chromiumoxide][chromiumoxide] ([Rust][rust]) — Playwright for e2e only |
+| Document generation | [printpdf][printpdf] + [docx-rs][docx-rs] ([Rust][rust])                |
+| Validation          | [Zod][zod] (shared schemas → generated [Rust][rust] structs)            |
 
 ---
 
@@ -320,7 +320,7 @@ React renderer  →  service hook (React Query)  →  tauri-client  →  Rust #[
                          apps/tauri/src/renderer/services            apps/tauri/src-tauri/src
 ```
 
-IPC request shapes have a single source of truth: **Zod schemas in `packages/shared`**, from which `pnpm gen:ipc` generates the matching Rust structs — so the TS and Rust sides can't drift.
+IPC request shapes have a single source of truth: **[Zod][zod] schemas in `packages/shared`**, from which `pnpm gen:ipc` generates the matching [Rust][rust] structs — so the [TypeScript][typescript] and [Rust][rust] sides can't drift.
 
 <details>
 <summary><strong>Add a new IPC capability (5 hand-synced touchpoints)</strong></summary>
@@ -344,7 +344,7 @@ IPC request shapes have a single source of truth: **Zod schemas in `packages/sha
 <details>
 <summary><strong>Conventions &amp; guardrails</strong></summary>
 
-- **PRs only** — never push to `main`; Conventional Commits; ESLint + commitlint + architecture tests gate every change.
+- **PRs only** — never push to `main`; [Conventional Commits][conventional-commits]; [ESLint][eslint] + [commitlint][commitlint] + architecture tests gate every change.
 - **Ports &amp; adapters** — UI imports `@ajh/ui` primitives and service hooks, never `window.api` directly; design-system tokens (`text-brand`, motion tokens) over hardcoded values.
 - **Backend owns business logic** — Rust-first; the renderer is a thin client.
 - See **[CLAUDE.md](CLAUDE.md)** for the enforced rules and **[docs/PATTERNS.md](docs/PATTERNS.md)** for the patterns.
@@ -408,8 +408,8 @@ pnpm format           # Prettier format
 See [CONTRIBUTING.md](CONTRIBUTING.md) for branching, commit conventions, code style, and PR guidelines. Quick rules:
 
 - All changes go through PRs — never push directly to `main`.
-- Use Conventional Commits (`feat:`, `fix:`, `chore:`, …).
-- Run `pnpm lint:fix && pnpm typecheck` before pushing; ESLint errors block commits.
+- Use [Conventional Commits][conventional-commits] (`feat:`, `fix:`, `chore:`, …).
+- Run `pnpm lint:fix && pnpm typecheck` before pushing; [ESLint][eslint] errors block commits.
 
 ---
 
@@ -442,6 +442,29 @@ Found a vulnerability? Please report it privately — see **[SECURITY.md](SECURI
 MIT — see [LICENSE](LICENSE).
 
 ---
+
+[tauri]: https://tauri.app
+[react]: https://react.dev
+[rust]: https://www.rust-lang.org
+[typescript]: https://www.typescriptlang.org
+[tanstack-router]: https://tanstack.com/router
+[tanstack-query]: https://tanstack.com/query
+[zustand]: https://github.com/pmndrs/zustand
+[tailwindcss]: https://tailwindcss.com
+[motion-react]: https://motion.dev
+[vite]: https://vite.dev
+[turborepo]: https://turborepo.com
+[pnpm]: https://pnpm.io
+[ollama]: https://ollama.com
+[sqlite]: https://www.sqlite.org
+[rusqlite]: https://github.com/rusqlite/rusqlite
+[chromiumoxide]: https://github.com/mattsse/chromiumoxide
+[printpdf]: https://github.com/fschutt/printpdf
+[docx-rs]: https://github.com/bokuweb/docx-rs
+[zod]: https://zod.dev
+[conventional-commits]: https://www.conventionalcommits.org
+[eslint]: https://eslint.org
+[commitlint]: https://commitlint.js.org
 
 <h2 align="center">Contributors</h2>
 
