@@ -32,12 +32,23 @@ export const AiProviderSchema = z.enum([
   'gemini-cli',
 ]);
 
+// Per-local-model generation limits (Ollama only). Keyed by model name so each
+// model remembers its own context window + max output. Cloud/CLI providers ignore these.
+export const LocalModelLimitsSchema = z.object({
+  contextWindow: z.number().int().min(512).max(131072).optional(),
+  maxTokens: z.number().int().min(1).max(32768).optional(),
+});
+
 // Per-provider settings (model choice, optional base URL, optional CLI effort)
 export const PerProviderSettingsSchema = z.object({
   model: z.string().default(''),
   baseUrl: z.string().optional(),
   // Reasoning effort for CLI agents that support it (e.g. Codex: low/medium/high).
   effort: z.string().optional(),
+  // Per-model generation limits, keyed by model name (local/Ollama only).
+  // Optional so existing per-provider settings (and the many `{ model }` literals)
+  // stay valid; readers default it to `{}`.
+  modelLimits: z.record(z.string(), LocalModelLimitsSchema).optional(),
 });
 
 // Multi-provider config: each provider stores its own settings independently;
@@ -50,6 +61,7 @@ export const AiProviderConfigSchema = z.object({
 export type AiProvider = z.infer<typeof AiProviderSchema>;
 export type AiProviderConfig = z.infer<typeof AiProviderConfigSchema>;
 export type PerProviderSettings = z.infer<typeof PerProviderSettingsSchema>;
+export type LocalModelLimits = z.infer<typeof LocalModelLimitsSchema>;
 
 // Resume preference
 export const ResumePreferenceSchema = z.object({
