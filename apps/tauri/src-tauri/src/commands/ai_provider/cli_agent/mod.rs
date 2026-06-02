@@ -29,6 +29,7 @@ use crate::error::{AppError, AppResult};
 use crate::jobs::JobTracker;
 use crate::platform::NoWindow;
 
+use super::research;
 use super::{
     AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace, TokenParam,
 };
@@ -206,6 +207,28 @@ impl AiProvider for CliAgentClient {
         _temperature: Option<f64>,
     ) -> AppResult<String> {
         run_complete(app, self.backend.as_ref(), model, system, user).await
+    }
+
+    async fn research(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        company: &str,
+        role: &str,
+    ) -> AppResult<String> {
+        // CLI agents carry their own web tools — prompt them to search and write
+        // the brief. Best-effort: any failure (or an agent without web access in
+        // headless mode) degrades to "" so generation still proceeds.
+        let user = research::native_user(company, role);
+        Ok(run_complete(
+            app,
+            self.backend.as_ref(),
+            model,
+            research::NATIVE_SYSTEM,
+            &user,
+        )
+        .await
+        .unwrap_or_default())
     }
 
     async fn embed(&self, _app: &AppHandle, _model: &str, _text: &str) -> AppResult<Vec<f64>> {

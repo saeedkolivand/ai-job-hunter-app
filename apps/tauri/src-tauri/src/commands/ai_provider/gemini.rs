@@ -10,12 +10,32 @@ use crate::jobs::JobTracker;
 
 use crate::error::{AppError, AppResult};
 
+use super::research;
 use super::{
     friendly_api_error, AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace,
     TokenParam,
 };
 
 const BASE: &str = "https://generativelanguage.googleapis.com";
+
+/// Concatenate every `parts[].text` of the first candidate (non-streaming
+/// `generateContent`, incl. grounded responses) into one string. Pure +
+/// unit-tested.
+fn join_parts_text(data: &Value) -> String {
+    data.get("candidates")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("content"))
+        .and_then(|c| c.get("parts"))
+        .and_then(|p| p.as_array())
+        .map(|parts| {
+            parts
+                .iter()
+                .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .unwrap_or_default()
+}
 
 /// Whether to request `thinkingConfig.includeThoughts`. Gemini 1.5 and the GA
 /// 2.0 models reject `thinkingConfig` with a 400, so we only enable it for the
@@ -266,20 +286,74 @@ impl AiProvider for GeminiClient {
         }
         let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
         trace.end(Some(status.as_u16()), true);
-        data.get("candidates")
-            .and_then(|c| c.get(0))
-            .and_then(|c| c.get("content"))
-            .and_then(|c| c.get("parts"))
-            .and_then(|p| p.as_array())
-            .map(|parts| {
-                parts
-                    .iter()
-                    .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
-                    .collect::<Vec<_>>()
-                    .join("")
-            })
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| AppError::Provider("Gemini: unexpected response shape".to_string()))
+        let text = join_parts_text(&data);
+        if text.is_empty() {
+            return Err(AppError::Provider(
+                "Gemini: unexpected response shape".to_string(),
+            ));
+        }
+        Ok(text)
+    }
+
+    async fn research(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        company: &str,
+        role: &str,
+    ) -> AppResult<String> {
+        let api_key = match get_provider_key(app, self.id().credential_key()) {
+            Some(k) if !k.trim().is_empty() => k,
+            _ => return Ok(String::new()),
+        };
+        let m = model.strip_prefix("models/").unwrap_or(model);
+        let endpoint_label = format!("/v1beta/models/{m}:generateContent");
+        let trace = RequestTrace::begin(
+            ProviderId::Gemini,
+            model,
+            "/generateContent google_search",
+            BASE,
+            false,
+        );
+
+        // Grounding with Google Search: the model searches and writes the brief.
+        let body = json!({
+            "contents": [ { "role": "user", "parts": [{ "text": research::native_user(company, role) }] } ],
+            "systemInstruction": { "parts": [{ "text": research::NATIVE_SYSTEM }] },
+            "generationConfig": { "temperature": 0.2 },
+            "tools": [{ "google_search": {} }],
+        });
+        let url = format!("{BASE}{endpoint_label}?key={api_key}");
+        let resp = crate::net::http::shared()
+            .post(&url)
+            .timeout(std::time::Duration::from_secs(25))
+            .json(&body)
+            .send()
+            .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                tracing::warn!("gemini research unreachable: {e}");
+                return Ok(String::new());
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            tracing::warn!("gemini research {status}: {body_text}");
+            return Ok(String::new());
+        }
+        let data: Value = match resp.json().await {
+            Ok(v) => v,
+            Err(_) => {
+                trace.end(Some(status.as_u16()), false);
+                return Ok(String::new());
+            }
+        };
+        trace.end(Some(status.as_u16()), true);
+        Ok(join_parts_text(&data))
     }
 
     async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
@@ -368,8 +442,21 @@ impl AiProvider for GeminiClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{gemini_supports_thinking, parse_gemini_parts};
+    use super::{gemini_supports_thinking, join_parts_text, parse_gemini_parts};
     use serde_json::json;
+
+    #[test]
+    fn join_parts_text_concatenates_first_candidate_parts() {
+        let data = json!({
+            "candidates": [{
+                "content": { "parts": [{ "text": "Acme is " }, { "text": "a widget maker." }] },
+                "groundingMetadata": { "webSearchQueries": ["Acme"] }
+            }]
+        });
+        assert_eq!(join_parts_text(&data), "Acme is a widget maker.");
+        assert_eq!(join_parts_text(&json!({})), "");
+        assert_eq!(join_parts_text(&json!({ "candidates": [] })), "");
+    }
 
     #[test]
     fn thinking_gate_enables_only_known_models() {

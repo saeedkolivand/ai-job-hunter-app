@@ -22,6 +22,9 @@ export const AIModelPreferenceSchema = z.object({
 // AI provider selection (API key stored in OS keychain, not here)
 export const AiProviderSchema = z.enum([
   'ollama',
+  // Ollama Cloud — hosted Ollama models via its OpenAI-compatible endpoint; the
+  // same account key also powers Ollama Web Search for company research.
+  'ollama-cloud',
   'openai',
   'anthropic',
   'gemini',

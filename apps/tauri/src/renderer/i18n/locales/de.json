@@ -305,6 +305,19 @@
       "loading": "Modelle werden geladen...",
       "noModels": "Keine Modelle verfügbar. Stellen Sie sicher, dass Ollama läuft."
     },
+    "companyResearch": {
+      "title": "Unternehmensrecherche",
+      "description": "Fügt Anschreiben und Bewerbungsantworten eine kurze, sachliche Unternehmens-Zusammenfassung hinzu — über die eigene Websuche Ihres aktiven KI-Anbieters. Cloud- und CLI-Anbieter suchen mit ihrem eigenen Schlüssel — nur Ollama benötigt den kostenlosen Ollama-Schlüssel unten.",
+      "connected": "Verbunden — Ollama-Schlüssel gespeichert",
+      "remove": "Entfernen",
+      "getKeyAt": "Kostenlosen Ollama-Schlüssel erhalten unter",
+      "keyPlaceholder": "Ollama-API-Schlüssel einfügen…",
+      "sameKeyNote": "Derselbe Schlüssel schaltet Ollama-Cloud-Modelle frei.",
+      "save": "Speichern",
+      "saved": "Ollama-Schlüssel gespeichert.",
+      "removed": "Ollama-Schlüssel entfernt.",
+      "saveError": "Schlüssel konnte nicht gespeichert werden."
+    },
     "accounts": {
       "credentialsWarning": "Anmeldedaten werden lokal verschlüsselt auf Ihrem Gerät gespeichert. Sie werden niemals an einen Server gesendet.",
       "noEncryptionWarning": "Sichere Speicherung von Anmeldedaten ist auf diesem System nicht verfügbar. Anmeldedaten können nicht gespeichert werden."
@@ -454,7 +467,8 @@
     "subtitle": "Laden Sie Ihren Lebenslauf und die Stellenanzeige hoch, um maßgeschneiderte, ATS-optimierte Dokumente zu erstellen.",
     "research": {
       "label": "Unternehmen recherchieren",
-      "hint": "Fügt dem Anschreiben eine kurze Web-Zusammenfassung hinzu. Benötigt einen Brave-Search-Schlüssel; nach bestem Bemühen."
+      "hint": "Fügt dem Anschreiben eine kurze Web-Zusammenfassung hinzu — über die eigene Websuche Ihres KI-Anbieters. Nach bestem Bemühen.",
+      "ollamaKeyHint": "Ollama benötigt einen kostenlosen Ollama-Schlüssel zum Suchen — unter Einstellungen → KI hinzufügen."
     },
     "recommendationTitle": "Empfohlene Vorlage",
     "applyRecommendation": "Vorschlag übernehmen",
@@ -569,7 +583,7 @@
       "failed": "Generierung fehlgeschlagen",
       "research": {
         "label": "Unternehmen recherchieren",
-        "hint": "Fügt dem Anschreiben eine kurze Web-Zusammenfassung hinzu. Benötigt einen Brave-Search-Schlüssel; nach bestem Bemühen."
+        "hint": "Fügt eine Web-Zusammenfassung hinzu, die Anschreiben und unternehmensbezogene Antworten schärft — über die eigene Websuche Ihres KI-Anbieters. Nach bestem Bemühen."
       },
       "questions": {
         "title": "Bewerbungsfragen",
@@ -1408,6 +1422,20 @@
       "apiKeyStored": "API-Schlüssel gespeichert",
       "getApiKeyAt": "API-Schlüssel erhalten unter",
       "saveKey": "Schlüssel speichern"
+    },
+    "research": {
+      "title": "Bessere Anschreiben",
+      "subtitle": "Lassen Sie die App optional das Unternehmen im Web recherchieren und eine sachliche Zusammenfassung in Ihre Anschreiben und Bewerbungsantworten einfließen.",
+      "connected": "Verbunden — die Recherche ist startklar.",
+      "getKeyAt": "Kostenlosen Ollama-Schlüssel erhalten unter",
+      "keyPlaceholder": "Ollama-API-Schlüssel einfügen…",
+      "saveKey": "Verbinden",
+      "saved": "Ollama-Schlüssel gespeichert.",
+      "saveError": "Schlüssel konnte nicht gespeichert werden.",
+      "optionalNote": "Optional. Cloud- und CLI-Anbieter suchen bereits mit ihrem eigenen Schlüssel — dieser Ollama-Schlüssel wird nur für die Recherche mit Ollama benötigt.",
+      "back": "Zurück",
+      "next": "Weiter",
+      "skip": "Vorerst überspringen"
     },
     "browser": {
       "title": "Browser erforderlich",

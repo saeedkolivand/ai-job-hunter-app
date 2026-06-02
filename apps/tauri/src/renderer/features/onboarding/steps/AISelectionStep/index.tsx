@@ -20,6 +20,7 @@ import { OllamaNotInstalled } from '../ollama/OllamaNotInstalled';
 import { type TabMode, TabSwitcher } from '../ollama/TabSwitcher';
 
 const CLOUD_DEFAULT_MODELS: Record<string, string> = {
+  'ollama-cloud': 'gpt-oss:120b',
   openai: 'gpt-4o',
   anthropic: 'claude-sonnet-4-6',
   gemini: 'gemini-2.0-flash',

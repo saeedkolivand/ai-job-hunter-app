@@ -129,25 +129,24 @@ export function ApplyJobModal({ job, resumeText, board, onClose }: Props) {
           {/* Model */}
           <ModelSelector />
 
-          {/* Opt-in company research — only relevant when a cover letter is produced. */}
-          {(target === 'cover' || target === 'both') && (
-            <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2">
-              <input
-                type="checkbox"
-                checked={researchCompany}
-                onChange={(e) => setResearchCompany(e.target.checked)}
-                className="mt-0.5 accent-brand"
-              />
-              <span className="min-w-0">
-                <span className="block text-[11px] font-medium text-foreground/80">
-                  {t('autopilot.apply.research.label')}
-                </span>
-                <span className="block text-[10px] text-foreground/40">
-                  {t('autopilot.apply.research.hint')}
-                </span>
+          {/* Opt-in company research — improves the cover letter AND company-specific
+              application answers, so it's offered regardless of the tailor target. */}
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2">
+            <input
+              type="checkbox"
+              checked={researchCompany}
+              onChange={(e) => setResearchCompany(e.target.checked)}
+              className="mt-0.5 accent-brand"
+            />
+            <span className="min-w-0">
+              <span className="block text-[11px] font-medium text-foreground/80">
+                {t('autopilot.apply.research.label')}
               </span>
-            </label>
-          )}
+              <span className="block text-[10px] text-foreground/40">
+                {t('autopilot.apply.research.hint')}
+              </span>
+            </span>
+          </label>
 
           {/* Target + generate */}
           <div className="flex items-center justify-between gap-2">

@@ -10,15 +10,23 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::commands::ai::get_provider_key;
 use crate::error::{AppError, AppResult};
 use crate::jobs::JobTracker;
 
+use super::research::{self, SearchResult};
 use super::{
     AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace, TokenParam,
 };
 
 const DEFAULT_HOST: &str = "http://127.0.0.1:11434";
 const EMBED_MODEL: &str = "nomic-embed-text";
+/// Ollama's first-party Web Search API (cloud) — authenticated with the Ollama
+/// account key (`ai:ollama-cloud`), independent of the local daemon host.
+const WEB_SEARCH_URL: &str = "https://ollama.com/api/web_search";
+/// Credential slot for the Ollama account key shared by Ollama Cloud chat and
+/// Ollama Web Search. Local Ollama has no chat key but still needs this to search.
+pub const ACCOUNT_KEY: &str = "ollama-cloud";
 
 /// Resolve the Ollama host (env override or localhost default).
 pub fn host() -> String {
@@ -110,6 +118,18 @@ impl AiProvider for OllamaClient {
             .and_then(|c| c.as_str())
             .map(String::from)
             .ok_or_else(|| AppError::Provider("Ollama: unexpected response shape".to_string()))
+    }
+
+    async fn research(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        company: &str,
+        role: &str,
+    ) -> AppResult<String> {
+        // Local Ollama can't search itself — it uses the Ollama Web Search API
+        // (needs the account key) then synthesizes via the local model.
+        ollama_research(app, self, model, company, role).await
     }
 
     async fn embed(&self, _app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
@@ -214,6 +234,111 @@ pub async fn embed_with(model: &str, text: &str) -> AppResult<Vec<f64>> {
         .and_then(|e| e.as_array())
         .ok_or_else(|| "Ollama: missing embedding in response".to_string())?;
     Ok(arr.iter().filter_map(|v| v.as_f64()).collect())
+}
+
+// ── Company research (Ollama Web Search) ────────────────────────────────────────
+
+/// Call Ollama's Web Search API and return up to `limit` result snippets. `key`
+/// is the Ollama account key (`ai:ollama-cloud`). Pure transport — any error is
+/// surfaced for the caller to swallow, so a missing/invalid key never breaks
+/// generation.
+pub async fn ollama_web_search(
+    key: &str,
+    query: &str,
+    limit: usize,
+) -> AppResult<Vec<SearchResult>> {
+    let resp = crate::net::http::shared()
+        .post(WEB_SEARCH_URL)
+        .timeout(std::time::Duration::from_secs(15))
+        .bearer_auth(key)
+        .json(&json!({ "query": query, "max_results": limit.min(10) }))
+        .send()
+        .await
+        .map_err(|e| format!("ollama web_search request: {e}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(AppError::Network(format!(
+            "ollama web_search {status}: {body}"
+        )));
+    }
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("ollama web_search parse: {e}"))?;
+    Ok(parse_web_search(&body, limit))
+}
+
+/// Map an Ollama `web_search` response (`{ results: [{title,url,content}] }`) to
+/// `SearchResult`. Pure + unit-tested.
+fn parse_web_search(body: &Value, limit: usize) -> Vec<SearchResult> {
+    body.get("results")
+        .and_then(|r| r.as_array())
+        .map(|arr| {
+            arr.iter()
+                .take(limit)
+                .map(|item| SearchResult {
+                    title: item
+                        .get("title")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    snippet: item
+                        .get("content")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    url: item
+                        .get("url")
+                        .and_then(|u| u.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Shared Ollama-family research: search via the Ollama Web Search API (account
+/// key), then synthesize the brief with `provider` — the local daemon for
+/// [`OllamaClient`], `ollama.com/v1` for Ollama Cloud. Returns `""` when the key
+/// is missing or the search yields nothing, so research degrades gracefully.
+pub async fn ollama_research(
+    app: &AppHandle,
+    provider: &dyn AiProvider,
+    model: &str,
+    company: &str,
+    role: &str,
+) -> AppResult<String> {
+    let key = get_provider_key(app, ACCOUNT_KEY).unwrap_or_default();
+    if key.trim().is_empty() {
+        return Ok(String::new());
+    }
+    let trace = RequestTrace::begin(
+        ProviderId::OllamaCloud,
+        model,
+        "/api/web_search",
+        "https://ollama.com",
+        false,
+    );
+    let results = match ollama_web_search(&key, &research::search_query(company), 5).await {
+        Ok(r) => {
+            trace.end(Some(200), true);
+            r
+        }
+        Err(e) => {
+            trace.end(None, false);
+            tracing::warn!("ollama web_search failed: {e}");
+            return Ok(String::new());
+        }
+    };
+    if results.is_empty() {
+        return Ok(String::new());
+    }
+    let user = research::synth_user(company, role, &results);
+    provider
+        .complete(app, model, research::SYNTH_SYSTEM, &user, Some(0.2))
+        .await
 }
 
 /// Inspect a local model via `/api/show` — its real trained context length and
@@ -465,8 +590,33 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_show;
+    use super::{normalize_show, parse_web_search};
     use serde_json::json;
+
+    #[test]
+    fn parse_web_search_maps_results_and_caps_limit() {
+        let body = json!({
+            "results": [
+                { "title": "Acme — Wikipedia", "url": "https://w/a", "content": "Acme makes widgets." },
+                { "title": "Acme careers", "url": "https://a/c", "content": "Series B." },
+                { "title": "extra", "url": "https://x", "content": "ignored by limit" },
+            ]
+        });
+        let out = parse_web_search(&body, 2);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].title, "Acme — Wikipedia");
+        assert_eq!(out[0].snippet, "Acme makes widgets.");
+        assert_eq!(out[1].url, "https://a/c");
+    }
+
+    #[test]
+    fn parse_web_search_tolerates_missing_fields_and_no_results() {
+        assert!(parse_web_search(&json!({}), 5).is_empty());
+        let out = parse_web_search(&json!({ "results": [{}] }), 5);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].title, "");
+        assert_eq!(out[0].snippet, "");
+    }
 
     #[test]
     fn normalize_extracts_context_and_details_by_architecture() {

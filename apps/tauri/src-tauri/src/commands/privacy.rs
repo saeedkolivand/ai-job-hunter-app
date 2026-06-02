@@ -42,8 +42,8 @@ impl Resettable for Mutex<JobTracker> {
 }
 impl Resettable for Mutex<CredentialStore> {
     fn reset(&self) {
-        // Clears every stored secret (AI/provider keys incl. Brave, board
-        // passwords), driven off the credential metadata index.
+        // Clears every stored secret (AI/provider keys incl. the Ollama account
+        // key, board passwords), driven off the credential metadata index.
         let _ = self.lock().clear_all();
     }
 }

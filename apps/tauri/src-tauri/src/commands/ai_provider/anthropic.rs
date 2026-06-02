@@ -10,6 +10,7 @@ use crate::jobs::JobTracker;
 
 use crate::error::{AppError, AppResult};
 
+use super::research;
 use super::{
     friendly_api_error, AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace,
     TokenParam,
@@ -17,6 +18,23 @@ use super::{
 
 const BASE: &str = "https://api.anthropic.com/v1";
 const VERSION: &str = "2023-06-01";
+
+/// Concatenate every `type:"text"` block in an Anthropic Messages `content` array
+/// into one string (web-search responses interleave `server_tool_use` /
+/// `web_search_tool_result` blocks, which have no `text` field and are skipped).
+/// Pure + unit-tested.
+fn join_text_blocks(data: &Value) -> String {
+    data.get("content")
+        .and_then(|c| c.as_array())
+        .map(|blocks| {
+            blocks
+                .iter()
+                .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .unwrap_or_default()
+}
 
 pub struct AnthropicClient;
 
@@ -262,18 +280,79 @@ impl AiProvider for AnthropicClient {
         }
         let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
         trace.end(Some(status.as_u16()), true);
-        // Concatenate all text blocks in the content array.
-        data.get("content")
-            .and_then(|c| c.as_array())
-            .map(|blocks| {
-                blocks
-                    .iter()
-                    .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
-                    .collect::<Vec<_>>()
-                    .join("")
-            })
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| AppError::Provider("Anthropic: unexpected response shape".to_string()))
+        let text = join_text_blocks(&data);
+        if text.is_empty() {
+            return Err(AppError::Provider(
+                "Anthropic: unexpected response shape".to_string(),
+            ));
+        }
+        Ok(text)
+    }
+
+    async fn research(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        company: &str,
+        role: &str,
+    ) -> AppResult<String> {
+        let api_key = match get_provider_key(app, self.id().credential_key()) {
+            Some(k) if !k.trim().is_empty() => k,
+            _ => return Ok(String::new()),
+        };
+        let endpoint = format!("{BASE}/messages");
+        let trace = RequestTrace::begin(
+            ProviderId::Anthropic,
+            model,
+            "/messages web_search",
+            BASE,
+            false,
+        );
+
+        // Non-streaming Messages call with the server-side web-search tool. Capped
+        // at 3 searches (a brief, not deep research); the enricher also bounds the
+        // whole call with a timeout. Requires the org to enable web search.
+        let body = json!({
+            "model": model,
+            "max_tokens": 1024,
+            "system": research::NATIVE_SYSTEM,
+            "messages": [{ "role": "user", "content": research::native_user(company, role) }],
+            "temperature": 0.2,
+            "tools": [{ "type": "web_search_20250305", "name": "web_search", "max_uses": 3 }],
+        });
+
+        let resp = crate::net::http::shared()
+            .post(&endpoint)
+            .timeout(std::time::Duration::from_secs(25))
+            .header("x-api-key", &api_key)
+            .header("anthropic-version", VERSION)
+            .json(&body)
+            .send()
+            .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                tracing::warn!("anthropic research unreachable: {e}");
+                return Ok(String::new());
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            tracing::warn!("anthropic research {status}: {body_text}");
+            return Ok(String::new());
+        }
+        let data: Value = match resp.json().await {
+            Ok(v) => v,
+            Err(_) => {
+                trace.end(Some(status.as_u16()), false);
+                return Ok(String::new());
+            }
+        };
+        trace.end(Some(status.as_u16()), true);
+        Ok(join_text_blocks(&data))
     }
 
     async fn embed(&self, _app: &AppHandle, _model: &str, _text: &str) -> AppResult<Vec<f64>> {
@@ -343,5 +422,31 @@ impl AiProvider for AnthropicClient {
                 resp.status()
             )))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::join_text_blocks;
+    use serde_json::json;
+
+    #[test]
+    fn join_text_blocks_concatenates_only_text_blocks() {
+        // Web-search responses interleave tool blocks among the text blocks.
+        let data = json!({
+            "content": [
+                { "type": "text", "text": "Acme is a " },
+                { "type": "server_tool_use", "name": "web_search", "input": { "query": "Acme" } },
+                { "type": "web_search_tool_result", "content": [{ "url": "x", "title": "y" }] },
+                { "type": "text", "text": "widget maker." }
+            ]
+        });
+        assert_eq!(join_text_blocks(&data), "Acme is a widget maker.");
+    }
+
+    #[test]
+    fn join_text_blocks_empty_on_missing_or_error() {
+        assert_eq!(join_text_blocks(&json!({})), "");
+        assert_eq!(join_text_blocks(&json!({ "content": [] })), "");
     }
 }

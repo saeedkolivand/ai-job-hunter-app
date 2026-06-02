@@ -305,6 +305,19 @@
       "loading": "Loading models...",
       "noModels": "No models available. Make sure Ollama is running."
     },
+    "companyResearch": {
+      "title": "Company Research",
+      "description": "Adds a short, factual company brief to cover letters and application answers, using your active AI provider's own web search. Cloud and CLI providers search with their own key — only Ollama needs the free Ollama account key below.",
+      "connected": "Connected — Ollama account key stored",
+      "remove": "Remove",
+      "getKeyAt": "Get a free Ollama key at",
+      "keyPlaceholder": "Paste your Ollama API key…",
+      "sameKeyNote": "Same key unlocks Ollama Cloud models.",
+      "save": "Save",
+      "saved": "Ollama key saved.",
+      "removed": "Ollama key removed.",
+      "saveError": "Couldn't save the key."
+    },
     "accounts": {
       "credentialsWarning": "Credentials are stored locally and encrypted on your device. They are never sent to any server.",
       "noEncryptionWarning": "Secure credential storage is not available on this system. Credentials cannot be saved."
@@ -454,7 +467,8 @@
     "subtitle": "Upload your resume and target job ad to generate tailored, ATS-optimized documents.",
     "research": {
       "label": "Research the company",
-      "hint": "Adds a short web brief to the cover letter. Needs a Brave Search key; best-effort."
+      "hint": "Adds a short web brief to the cover letter, using your AI provider's own web search. Best-effort.",
+      "ollamaKeyHint": "Ollama needs a free Ollama account key to search — add it in Settings → AI."
     },
     "recommendationTitle": "Suggested template",
     "applyRecommendation": "Apply suggestion",
@@ -569,7 +583,7 @@
       "failed": "Generation failed",
       "research": {
         "label": "Research the company",
-        "hint": "Adds a short web brief to the cover letter. Needs a Brave Search key; best-effort."
+        "hint": "Adds a web brief that sharpens your cover letter and company-specific answers, using your AI provider's own web search. Best-effort."
       },
       "questions": {
         "title": "Application questions",
@@ -1408,6 +1422,20 @@
       "apiKeyStored": "API key stored",
       "getApiKeyAt": "Get your API key at",
       "saveKey": "Save Key"
+    },
+    "research": {
+      "title": "Smarter cover letters",
+      "subtitle": "Optionally let the app research the company on the web and weave a factual brief into your cover letters and application answers.",
+      "connected": "Connected — research is ready to go.",
+      "getKeyAt": "Get a free Ollama key at",
+      "keyPlaceholder": "Paste your Ollama API key…",
+      "saveKey": "Connect",
+      "saved": "Ollama key saved.",
+      "saveError": "Couldn't save the key.",
+      "optionalNote": "Optional. Cloud and CLI providers already search with their own key — this Ollama key is only needed for research on Ollama.",
+      "back": "Back",
+      "next": "Continue",
+      "skip": "Skip for now"
     },
     "browser": {
       "title": "Browser Required",

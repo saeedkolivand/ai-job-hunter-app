@@ -172,10 +172,11 @@ pub async fn ai_inspect_model(model: String) -> Value {
 
 /// Research the company named in a job ad and return a short factual brief for
 /// the cover-letter "fit" paragraph. Reuses the shared [`CompanyResearch`]
-/// enricher (Brave search + provider synthesis, cached for a week) so cover-letter
-/// generation and (later) application-question answers share **one** research
-/// path. Degrades gracefully — an empty brief, never an error, when there is no
-/// Brave key or the search/synthesis fails — so generation always proceeds.
+/// enricher — the **active provider's own** web search + synthesis, cached for a
+/// week — so cover-letter generation and application-question answers share
+/// **one** research path. Degrades gracefully — an empty brief, never an error,
+/// when the provider can't search (e.g. Ollama with no account key) or the
+/// search/synthesis fails — so generation always proceeds.
 ///
 /// Returns `{ company, brief }`. The brief is reference context only; the prompt
 /// layer treats it as untrusted and never as a source of candidate facts.

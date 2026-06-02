@@ -85,6 +85,15 @@ impl Completer {
             .await
     }
 
+    /// Company-research brief through the active provider's **own** web search.
+    /// Returns `""` (never an error) when the provider can't search — see
+    /// [`AiProvider::research`](crate::commands::ai_provider::AiProvider::research).
+    pub async fn research(&self, company: &str, role: &str) -> AppResult<String> {
+        self.provider
+            .research(&self.app, &self.model, company, role)
+            .await
+    }
+
     /// The app handle, so stages can reach managed state (caches, credentials) and
     /// emit events without threading `AppHandle` through every signature.
     pub fn app(&self) -> &AppHandle {

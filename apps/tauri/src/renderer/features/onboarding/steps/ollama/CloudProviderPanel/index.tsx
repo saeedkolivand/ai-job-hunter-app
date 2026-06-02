@@ -24,6 +24,13 @@ interface CloudProvider {
 
 const CLOUD_PROVIDERS: CloudProvider[] = [
   {
+    id: 'ollama-cloud',
+    label: 'Ollama Cloud',
+    placeholder: 'Ollama API key…',
+    docsUrl: 'https://ollama.com/settings/keys',
+    color: 'text-emerald-400',
+  },
+  {
     id: 'openai',
     label: 'OpenAI',
     placeholder: 'sk-...',
@@ -54,6 +61,7 @@ const CLOUD_PROVIDERS: CloudProvider[] = [
 ];
 
 const CLOUD_DEFAULT_MODELS: Record<string, string> = {
+  'ollama-cloud': 'gpt-oss:120b',
   openai: 'gpt-4o',
   anthropic: 'claude-sonnet-4-6',
   gemini: 'gemini-2.0-flash',
