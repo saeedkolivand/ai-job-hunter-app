@@ -6,7 +6,7 @@ Last updated: 2026-06-01
 
 ## Context
 
-Company-research text is retrieved from the web (Brave search + AI synthesis) and folded into prompts for cover-letter generation and application-question answers. Web-sourced content can contain prompt-injection payloads (e.g. "Ignore previous instructions and…") that, if passed to the model without fencing, could manipulate generated output.
+Company-research text is retrieved from the web (the active AI provider's own web search — a native search tool, or the Ollama Web Search API for Ollama — plus AI synthesis) and folded into prompts for cover-letter generation and application-question answers. Web-sourced content can contain prompt-injection payloads (e.g. "Ignore previous instructions and…") that, if passed to the model without fencing, could manipulate generated output.
 
 ## Decision
 

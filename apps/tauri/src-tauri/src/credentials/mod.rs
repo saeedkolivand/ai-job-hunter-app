@@ -122,7 +122,7 @@ impl CredentialStore {
     }
 
     /// Remove every stored credential — board passwords and all AI/provider keys
-    /// (including the Brave search key). Driven off the metadata index, so it
+    /// (including the Ollama account key). Driven off the metadata index, so it
     /// needs no hardcoded provider list. Used by the factory reset.
     pub fn clear_all(&self) -> AppResult<()> {
         for meta in self.list() {

@@ -8,8 +8,11 @@ import { ModelSelector } from '@/components/ui/ModelSelector';
 import { GenerationConfig } from '@/features/ai-generate/components/GenerationConfig';
 import { GenerationMetadata } from '@/features/ai-generate/components/GenerationMetadata';
 import { TemplateRecommendation } from '@/features/ai-generate/components/TemplateRecommendation';
+import { isOllamaFamily } from '@/lib/ai-providers/provider-meta';
 import type { GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
+import { useHasProviderKey } from '@/services';
+import { useAiProviderConfig } from '@/store/preferences-store';
 
 interface Props {
   resume: string;
@@ -73,6 +76,13 @@ export function LeftPanel({
   isGenerating,
 }: Props) {
   const { t } = useTranslation();
+  const providerConfig = useAiProviderConfig();
+  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+  // Research works for every provider; only Ollama-family needs the (free) Ollama
+  // account key, since they search via the Ollama Web Search API. The checkbox is
+  // never hidden — we just nudge when that key is missing.
+  const { data: ollamaKey } = useHasProviderKey('ollama-cloud');
+  const showOllamaResearchHint = isOllamaFamily(activeProvider) && !(ollamaKey?.has ?? false);
 
   return (
     <div className="flex w-[420px] shrink-0 flex-col border-r border-white/[0.05] overflow-y-auto">
@@ -185,6 +195,11 @@ export function LeftPanel({
               <span className="block text-[10px] text-foreground/40">
                 {t('aiGenerate.research.hint')}
               </span>
+              {showOllamaResearchHint && (
+                <span className="mt-1 block text-[10px] text-amber-400/70">
+                  {t('aiGenerate.research.ollamaKeyHint')}
+                </span>
+              )}
             </span>
           </label>
         </div>

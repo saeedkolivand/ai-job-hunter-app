@@ -268,9 +268,10 @@ export async function generateResume(
 
 /**
  * Best-effort company research for the cover-letter "fit" paragraph. Routes
- * through the backend enricher (Brave search + provider synthesis, cached). Any
- * failure or missing Brave key yields '' so the cover letter still generates.
- * The returned brief is untrusted reference text — the prompt fences it.
+ * through the backend enricher — the active provider's own web search +
+ * synthesis, cached. Any failure or a provider that can't search yields '' so
+ * the cover letter still generates. The returned brief is untrusted reference
+ * text — the prompt fences it.
  */
 export async function researchCompany(jobAd: string, model: string): Promise<string> {
   try {
