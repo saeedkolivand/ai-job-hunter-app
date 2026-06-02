@@ -69,7 +69,9 @@ export function useApplicationAnswers({
     setError(null);
     try {
       const detected = meta ?? (await extractMetadata(resume, jobDesc, model));
-      const brief = researchCompany ? await fetchCompanyBrief(jobDesc, model) : '';
+      const brief = researchCompany
+        ? await fetchCompanyBrief(jobDesc, model, detected.companyName)
+        : '';
       const chosen = APPLICATION_QUESTIONS.filter((q) => selected.has(q.id));
       const results: ApplicationAnswer[] = [];
       for (const q of chosen) {
