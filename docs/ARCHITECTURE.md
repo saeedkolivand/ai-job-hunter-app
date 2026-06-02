@@ -96,7 +96,7 @@ The Tauri app is split into two processes:
 | `autopilot/`         | Workflow engine + step scheduler                                                                                          |
 | `apply_helpers/`     | Form-filling logic for auto-apply                                                                                         |
 | `ai_generations/`    | Metadata tracking for generated documents                                                                                 |
-| `export/`            | DOCX/PDF rendering using docx + jsPDF                                                                                     |
+| `export/`            | DOCX/PDF rendering — PDF via Typst (`export/typst_engine/`), DOCX via docx-rs (`export/docx/`)                            |
 | `updater/`           | Auto-update state (check, download, install)                                                                              |
 | `browser/`           | System browser detection and launch                                                                                       |
 | `data_store.rs`      | `DataStore` trait (export/import) implemented by every persistent store                                                   |

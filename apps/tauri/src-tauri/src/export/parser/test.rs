@@ -109,3 +109,179 @@ fn typography_fixes_sentence_break_dashes_only() {
     assert_eq!(typography("2020\u{2013}2023"), "2020\u{2013}2023");
     assert_eq!(typography("state-of-the-art"), "state-of-the-art");
 }
+
+// ── New job-entry detection branches ─────────────────────────────────────────
+
+/// Comma + parenthesized date: the AI's documented output format.
+/// "Senior Engineer, Acme Corp (January 2021 – March 2023)" → JobEntry
+/// with text = the full line (role + company + period all bold).
+#[test]
+fn job_entry_paren_date_full_line() {
+    let line = parse_line(
+        "Senior Engineer, Acme Corp (January 2021 \u{2013} March 2023)",
+        5,
+        &[],
+    );
+    assert!(
+        matches!(line.kind, LineKind::JobEntry),
+        "expected JobEntry, got {:?}",
+        line.kind
+    );
+    assert!(
+        line.text
+            .contains("Senior Engineer, Acme Corp (January 2021"),
+        "text should contain the full header; got: {:?}",
+        line.text
+    );
+    assert!(
+        line.right_text.is_none(),
+        "right_text must be None for paren-date format; got: {:?}",
+        line.right_text
+    );
+}
+
+/// Pipe-separated with a year-only range.
+/// "Senior Platform Engineer | Globex Corp | 2020 – Present" → JobEntry
+#[test]
+fn job_entry_pipe_date_segment_year_range() {
+    let line = parse_line(
+        "Senior Platform Engineer | Globex Corp | 2020 \u{2013} Present",
+        5,
+        &[],
+    );
+    assert!(
+        matches!(line.kind, LineKind::JobEntry),
+        "expected JobEntry, got {:?}",
+        line.kind
+    );
+    assert!(
+        line.text.contains("Senior Platform Engineer"),
+        "text should contain the full header; got: {:?}",
+        line.text
+    );
+    assert!(
+        line.right_text.is_none(),
+        "right_text must be None for pipe-date format; got: {:?}",
+        line.right_text
+    );
+}
+
+/// Pipe-separated with month-year range.
+/// "Software Engineer | Beta Inc | Jan 2021 – Mar 2023" → JobEntry
+#[test]
+fn job_entry_pipe_date_segment_month_year_range() {
+    let line = parse_line(
+        "Software Engineer | Beta Inc | Jan 2021 \u{2013} Mar 2023",
+        5,
+        &[],
+    );
+    assert!(
+        matches!(line.kind, LineKind::JobEntry),
+        "expected JobEntry, got {:?}",
+        line.kind
+    );
+}
+
+/// "Distributed Rate Limiter | Open Source | 2021" → JobEntry.
+/// Projects (and single-year education) use a bare year, not a range — they must
+/// still render as bold entries like Experience, not plain paragraphs.
+#[test]
+fn job_entry_pipe_single_year() {
+    let line = parse_line("Distributed Rate Limiter | Open Source | 2021", 5, &[]);
+    assert!(
+        matches!(line.kind, LineKind::JobEntry),
+        "expected JobEntry for a single-year project header, got {:?}",
+        line.kind
+    );
+}
+
+/// A contact line carrying a phone + a bare year but NO email must stay Contact —
+/// the `@`-only guard was insufficient (real contacts have a phone, not an email).
+#[test]
+fn contact_line_phone_and_year_stays_contact() {
+    let line = parse_line("Berlin, Germany | +49 30 1234567 | 2021", 5, &[]);
+    assert!(
+        !matches!(line.kind, LineKind::JobEntry),
+        "phone+year contact must NOT be JobEntry, got {:?}",
+        line.kind
+    );
+}
+
+/// Single-separator skill / certification lines with a bare year are ambiguous and
+/// must NOT be promoted to entries (a single year only counts with ≥2 separators).
+#[test]
+fn single_separator_year_is_not_job_entry() {
+    for s in ["React • 2021", "AWS Certified • 2023"] {
+        let line = parse_line(s, 5, &[]);
+        assert!(
+            !matches!(line.kind, LineKind::JobEntry),
+            "{s:?} must NOT be JobEntry, got {:?}",
+            line.kind
+        );
+    }
+}
+
+/// Contact line with email MUST still be Contact even if it has pipes.
+/// "Haarlem, NL | jane@example.com | +31 6 1234 5678 | LinkedIn" → Contact
+#[test]
+fn contact_line_with_email_stays_contact() {
+    let line = parse_line(
+        "Haarlem, NL | jane@example.com | +31 6 1234 5678 | LinkedIn",
+        5,
+        &[],
+    );
+    assert!(
+        matches!(line.kind, LineKind::Contact),
+        "expected Contact (has '@'), got {:?}",
+        line.kind
+    );
+}
+
+/// Contact line with only pipes and no date MUST still be Contact.
+/// "New York | LinkedIn | github.com/jane" → Contact (URL_RE matches)
+#[test]
+fn contact_line_pipes_no_date_stays_contact() {
+    let line = parse_line("New York | linkedin.com/in/jane | github.com/jane", 5, &[]);
+    assert!(
+        matches!(line.kind, LineKind::Contact),
+        "expected Contact (URL match), got {:?}",
+        line.kind
+    );
+}
+
+/// Legacy 2-space format still works.
+/// "Acme Corp  2020 - Present" → JobEntry (existing behavior preserved)
+#[test]
+fn job_entry_legacy_two_space_format_preserved() {
+    let line = parse_line("Acme Corp  2020 - Present", 5, &[]);
+    assert!(
+        matches!(line.kind, LineKind::JobEntry),
+        "expected JobEntry (legacy 2-space), got {:?}",
+        line.kind
+    );
+    assert_eq!(line.text, "Acme Corp");
+    assert_eq!(line.right_text.as_deref(), Some("2020 - Present"));
+}
+
+/// A normal skills line is not a job entry.
+/// "Rust, TypeScript, React, AWS, Docker" → Text
+#[test]
+fn skills_line_stays_text() {
+    let line = parse_line("Rust, TypeScript, React, AWS, Docker", 5, &[]);
+    assert!(
+        !matches!(line.kind, LineKind::JobEntry),
+        "skills line must not be JobEntry, got {:?}",
+        line.kind
+    );
+}
+
+/// A known section header is still detected as SectionHeader, not JobEntry.
+#[test]
+fn section_header_not_job_entry() {
+    let line = parse_line("EXPERIENCE", 5, &[]);
+    assert!(
+        matches!(line.kind, LineKind::SectionHeader),
+        "expected SectionHeader, got {:?}",
+        line.kind
+    );
+}

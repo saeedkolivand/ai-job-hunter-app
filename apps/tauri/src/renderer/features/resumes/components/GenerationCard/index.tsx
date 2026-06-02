@@ -20,18 +20,24 @@ import type { AiGenerationRecord } from '@ajh/shared/ipc';
 import { Button, cn, transition } from '@ajh/ui';
 
 import { ExternalLink } from '@/components/ui/ExternalLink';
-import { buildFilename, exportDOCX, exportPDF, exportTXT, type TemplateId } from '@/lib/generate';
+import {
+  buildFilename,
+  exportDOCX,
+  exportPDF,
+  exportTXT,
+  type TemplateId,
+  TEMPLATES,
+} from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 import { useRemoveAiGeneration } from '@/services/use-ai-generations';
 
 const EXPORT_FORMATS = ['pdf', 'docx', 'txt'] as const;
 type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
-const TEMPLATE_OPTIONS: { id: TemplateId; label: string }[] = [
-  { id: 'modern', label: 'Modern' },
-  { id: 'classic', label: 'Classic' },
-  { id: 'executive', label: 'Executive' },
-];
+const TEMPLATE_OPTIONS: { id: TemplateId; label: string }[] = Object.values(TEMPLATES).map((t) => ({
+  id: t.id,
+  label: t.name,
+}));
 
 interface GenerationCardProps {
   gen: AiGenerationRecord;

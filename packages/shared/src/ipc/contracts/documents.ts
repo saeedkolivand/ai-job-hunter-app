@@ -5,13 +5,13 @@ import type { ContactProfile } from './contactProfile.js';
 export type TemplateId =
   | 'classic'
   | 'modern'
-  | 'executive'
-  | 'editorial-serif'
   | 'swiss-minimal'
-  | 'two-column'
-  | 'mono-technical'
-  | 'refined-executive'
-  | 'academic';
+  | 'academic'
+  | 'atelier'
+  | 'meridian'
+  | 'throughline'
+  | 'portrait'
+  | 'lebenslauf';
 
 interface ExportMeta {
   candidateName?: string;

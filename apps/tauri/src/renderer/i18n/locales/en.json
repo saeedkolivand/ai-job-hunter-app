@@ -273,7 +273,15 @@
       "linkLabelPlaceholder": "Dribbble",
       "linkUrl": "URL",
       "linkUrlPlaceholder": "https://…",
-      "removeLink": "Remove link"
+      "removeLink": "Remove link",
+      "photo": "Photo",
+      "photoHint": "Optional. Used by the photo templates (Portrait, Lebenslauf). Kept on your device only — never uploaded.",
+      "photoAlt": "Profile photo",
+      "photoUpload": "Upload photo",
+      "photoRemove": "Remove photo",
+      "photoErrorType": "Please choose a PNG, JPEG, WebP, or GIF image.",
+      "photoErrorSize": "That image is too large. Choose one under 10 MB.",
+      "photoErrorDecode": "That image couldn't be read. Try a different file."
     },
     "developer": {
       "title": "Developer Tools",
@@ -372,18 +380,6 @@
       "searchPlaceholder": "Search for a location...",
       "recent": "Recent"
     },
-    "remote": {
-      "title": "Work Preference",
-      "description": "Choose your preferred work arrangement to personalize job recommendations.",
-      "remote": "Remote",
-      "remoteDescription": "Work from anywhere",
-      "hybrid": "Hybrid",
-      "hybridDescription": "Mix of remote and office",
-      "onSite": "On-site",
-      "onSiteDescription": "Work from office",
-      "any": "Any",
-      "anyDescription": "No preference"
-    },
     "techStack": {
       "title": "Tech Stack",
       "description": "Add your technical skills to personalize job recommendations and AI analysis.",
@@ -404,15 +400,6 @@
         "mayLagRam": "A large context window may lag on your available RAM",
         "mayLagVram": "A large context window may lag on your available VRAM"
       }
-    },
-    "salary": {
-      "title": "Salary Expectations",
-      "description": "Set your salary expectations to filter job recommendations.",
-      "currency": "Currency",
-      "period": "Period",
-      "range": "Range",
-      "minimum": "Minimum",
-      "maximum": "Maximum"
     },
     "outputTone": {
       "title": "AI Output Tone",
@@ -498,6 +485,7 @@
     "company": "Company",
     "languages": "Languages",
     "languageMismatch": "Language mismatch — output will be localized to {{lang}}",
+    "cjkUnsupported": "Chinese, Japanese & Korean aren't supported in PDF export yet — those characters won't render. DOCX and text export still work.",
     "generate": "Generate",
     "style": "Style",
     "resume": "Resume",

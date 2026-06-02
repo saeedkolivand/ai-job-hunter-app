@@ -145,6 +145,14 @@ static DATE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|19\d{2}|20\d{2})[\s\S]{0,30}?(?:Present|Current|Now|Heute|Ongoing|Actuel|20\d{2}|19\d{2})\b").unwrap()
 });
 
+// A pipe/middot segment that IS a standalone single date — a bare year or
+// "Month YYYY" (e.g. "2021", "Jan 2021"). Anchored so it matches only when the
+// whole segment is a date. Lets single-year entries (common for PROJECTS and
+// education) be recognized as entries, not only date ranges.
+static SOLO_DATE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^\s*(?:(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+)?(?:19|20)\d{2}\s*$").unwrap()
+});
+
 static BULLET_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([•\-–*·▪▸►✓✔○●◆◇■□▹▸]|\d+\.|[a-z]\))\s+(.+)$").unwrap());
 
@@ -429,9 +437,59 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
         }
     }
 
-    // Contact: has @ or phone or pipe separators or URLs
+    // Job entry: trailing parenthesized date — "Role Title, Company Name (January 2021 – March 2023)"
+    // The whole line (role + company + period) becomes the bold entry title.
+    {
+        static PAREN_DATE_RE: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"(?i)^(.+?)\s*\(\s*(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|19\d{2}|20\d{2})[\s\S]{0,30}?(?:Present|Current|Now|Heute|Ongoing|Actuel|20\d{2}|19\d{2})\s*\)\s*$").unwrap()
+        });
+        if PAREN_DATE_RE.is_match(&clean) && !clean.contains('@') {
+            return ParsedLine {
+                kind: LineKind::JobEntry,
+                raw: trimmed.to_string(),
+                text: clean.clone(),
+                segments: parse_inline_md(trimmed),
+                right_text: None,
+            };
+        }
+    }
+
+    // Job entry: pipe/middot-separated with a date segment and no email address —
+    // "Role | Company | 2020 – Present" or "Role · Company · Jan 2021 – Mar 2023".
+    // Excludes contact lines: an email, or a non-date phone/URL segment, keeps Contact.
     let pipe_count =
         clean.matches('|').count() + clean.matches('·').count() + clean.matches('•').count();
+    if pipe_count >= 1 && !clean.contains('@') {
+        let seg_is_date = |s: &str| DATE_RE.is_match(s) || SOLO_DATE_RE.is_match(s);
+        // A non-date phone/URL segment marks this as a CONTACT line, not an entry
+        // (e.g. "Berlin | +49 30 1234567 | 2021" or "City | linkedin.com/in/x | 2021").
+        // The `@`-only guard was insufficient: real contacts carry a phone/URL, no email.
+        let has_contact_segment = clean.split(['|', '·', '•']).any(|seg| {
+            let s = seg.trim();
+            (PHONE_RE.is_match(s) || URL_RE.is_match(s)) && !seg_is_date(s)
+        });
+        let has_range = clean
+            .split(['|', '·', '•'])
+            .any(|seg| DATE_RE.is_match(seg.trim()));
+        let has_solo = clean
+            .split(['|', '·', '•'])
+            .any(|seg| SOLO_DATE_RE.is_match(seg.trim()));
+        // A date RANGE is entry-like even with a single separator. A bare single
+        // year is ambiguous with skill/cert lines ("AWS Certified • 2023"), so it
+        // only counts as an entry when there are ≥2 separators ("Name | Type | 2021").
+        if !has_contact_segment && (has_range || (has_solo && pipe_count >= 2)) {
+            return ParsedLine {
+                kind: LineKind::JobEntry,
+                raw: trimmed.to_string(),
+                text: clean.clone(),
+                segments: parse_inline_md(trimmed),
+                right_text: None,
+            };
+        }
+    }
+
+    // Contact: has @ or phone or pipe separators or URLs
+    // (pipe_count was computed above for the pipe-date job-entry check)
     if clean.contains('@')
         || PHONE_RE.is_match(&clean)
         || pipe_count >= 2

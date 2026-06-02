@@ -139,34 +139,34 @@ describe('injectLinksIntoGeneratedText', () => {
       'preamble three',
       'preamble four',
       'preamble five',
-      'Zohreh Nejati',
-      'Zaandam, Niederlande | zohreh@example.com | +31 6 | LinkedIn | Dribbble',
+      'Lena Vos',
+      'Amsterdam, Niederlande | lena.vos@example.com | +31 6 | LinkedIn | Dribbble',
       '',
       'Sehr geehrte Damen und Herren,',
     ].join('\n');
     const out = injectLinksIntoGeneratedText(coverLetter, {
-      LinkedIn: 'https://linkedin.com/in/zohreh',
-      Dribbble: 'https://dribbble.com/zohreh',
+      LinkedIn: 'https://linkedin.com/in/lena-vos',
+      Dribbble: 'https://dribbble.com/lenavos',
     });
-    expect(out).toContain('[LinkedIn](https://linkedin.com/in/zohreh)');
-    expect(out).toContain('[Dribbble](https://dribbble.com/zohreh)');
+    expect(out).toContain('[LinkedIn](https://linkedin.com/in/lena-vos)');
+    expect(out).toContain('[Dribbble](https://dribbble.com/lenavos)');
   });
 
   it('links only the email-bearing contact line, not body prose mentioning a platform', () => {
     const text = [
-      'Zohreh Nejati',
-      'Zaandam | zohreh@example.com | LinkedIn',
+      'Lena Vos',
+      'Amsterdam | lena.vos@example.com | LinkedIn',
       '',
       'I doubled our GitHub | community and shipped on LinkedIn weekly.',
     ].join('\n');
     const out = injectLinksIntoGeneratedText(text, {
-      LinkedIn: 'https://linkedin.com/in/zohreh',
-      GitHub: 'https://github.com/zohreh',
+      LinkedIn: 'https://linkedin.com/in/lena-vos',
+      GitHub: 'https://github.com/lenavos',
     });
-    expect(out).toContain('[LinkedIn](https://linkedin.com/in/zohreh)');
+    expect(out).toContain('[LinkedIn](https://linkedin.com/in/lena-vos)');
     // The body sentence has a pipe but no email → left untouched.
     expect(out).toContain('I doubled our GitHub | community and shipped on LinkedIn weekly.');
-    expect(out).not.toContain('[GitHub](https://github.com/zohreh)');
+    expect(out).not.toContain('[GitHub](https://github.com/lenavos)');
   });
 
   it('is idempotent — a second pass does not double-wrap links', () => {

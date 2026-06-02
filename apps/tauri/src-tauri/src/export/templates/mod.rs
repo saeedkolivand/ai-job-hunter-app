@@ -28,32 +28,9 @@ pub struct TwoColumnConfig {
     pub sidebar_width_ratio: f32,
     /// Background tint of the sidebar column (RGB).
     pub sidebar_bg_color: (u8, u8, u8),
-    /// Section names whose content is placed in the sidebar column.
-    pub sidebar_sections: Vec<&'static str>,
 }
 
 // ─── Cover letter configuration ───────────────────────────────────────────────
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CoverLetterHeader {
-    /// Matches the resume header exactly — name + contact line + accent rule.
-    Matched,
-    /// Name only, single bold line, no contact details.
-    Compact,
-    /// Name centered in display type, no rule.
-    Centered,
-    /// Full letterhead block with name, contact stack, and hairline rule.
-    Letterhead,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub enum DatePosition {
-    TopRight,
-    BelowHeader,
-    AboveSalutation,
-    Omitted,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParagraphIndent {
@@ -63,40 +40,21 @@ pub enum ParagraphIndent {
     BlockNoIndent,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SignatureStyle {
-    /// Just typed name in body font.
-    TypedOnly,
-    /// Typed name (bold) + professional title underneath.
-    NameAndTitle,
-    /// Name in the template's name_family italic — mimics a handwritten signature.
-    ScriptStyle,
-}
-
+/// Cover-letter layout knobs still read by the DOCX letter renderer. (Date
+/// placement, recipient block, and sign-off come from `LetterMarketConventions`
+/// in the Typst letter path, so they're no longer template config.)
 #[derive(Debug, Clone)]
 pub struct CoverLetterLayout {
-    pub header_style: CoverLetterHeader,
-    pub date_position: DatePosition,
-    /// Whether to include a recipient/addressee block.
-    pub recipient_block: bool,
     pub paragraph_indent: ParagraphIndent,
     /// Extra vertical space (pt) after each block-indent paragraph.
     pub paragraph_spacing_pt: f32,
-    pub signature_block: SignatureStyle,
-    /// Default closing phrase — overridden by user input if provided.
-    pub closing_phrase_default: &'static str,
 }
 
 impl Default for CoverLetterLayout {
     fn default() -> Self {
         Self {
-            header_style: CoverLetterHeader::Matched,
-            date_position: DatePosition::BelowHeader,
-            recipient_block: true,
             paragraph_indent: ParagraphIndent::BlockNoIndent,
             paragraph_spacing_pt: 8.0,
-            signature_block: SignatureStyle::TypedOnly,
-            closing_phrase_default: "Sincerely,",
         }
     }
 }
@@ -164,19 +122,24 @@ impl Template {
         match id {
             TemplateId::Classic => Self::classic(),
             TemplateId::Modern => Self::modern(),
-            TemplateId::Executive => Self::executive(),
-            TemplateId::EditorialSerif => Self::editorial_serif(),
             TemplateId::SwissMinimal => Self::swiss_minimal(),
-            TemplateId::TwoColumn => Self::two_column(),
-            TemplateId::MonoTechnical => Self::mono_technical(),
-            TemplateId::RefinedExecutive => Self::refined_executive(),
             TemplateId::Academic => Self::academic(),
+            TemplateId::Atelier => Self::atelier(),
+            TemplateId::Meridian => Self::meridian(),
+            TemplateId::Throughline => Self::throughline(),
+            TemplateId::Portrait => Self::portrait(),
+            TemplateId::Lebenslauf => Self::lebenslauf(),
         }
     }
 
-    // ─── Existing three templates ─────────────────────────────────────────────
+    // ─── Nine live templates ──────────────────────────────────────────────────
 
     /// ATS Classic — maximum compatibility, no color, safe for all ATS parsers.
+    ///
+    /// `section_style` is [`SectionStyle::RuledBottom`] because `classic.typ`
+    /// renders a full-width rule below each section heading (not just an
+    /// underline on the text).  Keeping declaration and render in sync avoids
+    /// misleading callers that inspect this field.
     pub(super) fn classic() -> Self {
         Self {
             id: TemplateId::Classic,
@@ -196,7 +159,7 @@ impl Template {
             section_spacing_before: 12.0,
             name_centered: false,
             section_all_caps: true,
-            section_style: SectionStyle::Underline,
+            section_style: SectionStyle::RuledBottom,
             fonts: TemplateFonts::default(),
             job_title_italic: true,
             section_small_caps: false,
@@ -236,84 +199,6 @@ impl Template {
         }
     }
 
-    /// Executive — minimalist, charcoal, premium whitespace for senior roles.
-    pub(super) fn executive() -> Self {
-        Self {
-            id: TemplateId::Executive,
-            name: "Executive",
-            name_color: (28, 28, 28),
-            section_color: (44, 44, 44),
-            accent_color: (68, 68, 68),
-            body_color: (44, 44, 44),
-            date_color: (128, 128, 128),
-            emphasis_color: (28, 28, 28),
-            rule_color: (204, 204, 204),
-            name_pt: 24.0,
-            section_pt: 10.5,
-            body_pt: 10.5,
-            margin_in: 1.1,
-            line_spacing: 1.25,
-            section_spacing_before: 15.0,
-            name_centered: true,
-            section_all_caps: false,
-            section_style: SectionStyle::RuledBottom,
-            fonts: TemplateFonts::default(),
-            job_title_italic: true,
-            section_small_caps: false,
-            rule_thickness: 1.0,
-            two_column: None,
-            cover_letter: CoverLetterLayout {
-                header_style: CoverLetterHeader::Centered,
-                paragraph_indent: ParagraphIndent::FirstLine,
-                ..CoverLetterLayout::default()
-            },
-        }
-    }
-
-    // ─── Six new templates ────────────────────────────────────────────────────
-
-    /// Editorial Serif — NYT op-ed character, Source Serif 4 + Inter, deep indigo accent.
-    fn editorial_serif() -> Self {
-        Self {
-            id: TemplateId::EditorialSerif,
-            name: "Editorial Serif",
-            name_color: (26, 26, 26),
-            section_color: (45, 43, 85),
-            accent_color: (45, 43, 85),
-            body_color: (26, 26, 26),
-            date_color: (90, 90, 90),
-            emphasis_color: (45, 43, 85),
-            rule_color: (45, 43, 85),
-            name_pt: 22.0,
-            section_pt: 11.0,
-            body_pt: 11.0,
-            margin_in: 1.0,
-            line_spacing: 1.2,
-            section_spacing_before: 13.0,
-            name_centered: false,
-            section_all_caps: true,
-            section_style: SectionStyle::RuledBottom,
-            fonts: TemplateFonts {
-                name_family: FontFamily::SourceSerif4,
-                heading_family: FontFamily::SourceSerif4,
-                body_family: FontFamily::Inter,
-            },
-            job_title_italic: true,
-            section_small_caps: true,
-            rule_thickness: 0.25,
-            two_column: None,
-            cover_letter: CoverLetterLayout {
-                header_style: CoverLetterHeader::Letterhead,
-                date_position: DatePosition::TopRight,
-                recipient_block: true,
-                paragraph_indent: ParagraphIndent::FirstLine,
-                paragraph_spacing_pt: 0.0,
-                signature_block: SignatureStyle::ScriptStyle,
-                closing_phrase_default: "Sincerely,",
-            },
-        }
-    }
-
     /// Swiss Minimal — Manrope, red accent, generous whitespace, almost empty page.
     fn swiss_minimal() -> Self {
         Self {
@@ -345,152 +230,8 @@ impl Template {
             rule_thickness: 0.0,
             two_column: None,
             cover_letter: CoverLetterLayout {
-                header_style: CoverLetterHeader::Compact,
-                date_position: DatePosition::BelowHeader,
-                recipient_block: false,
                 paragraph_indent: ParagraphIndent::BlockNoIndent,
                 paragraph_spacing_pt: 12.0,
-                signature_block: SignatureStyle::TypedOnly,
-                closing_phrase_default: "Best regards,",
-            },
-        }
-    }
-
-    /// Two Column — Inter, light sidebar tint, contact/skills/education in sidebar.
-    fn two_column() -> Self {
-        Self {
-            id: TemplateId::TwoColumn,
-            name: "Two Column",
-            name_color: (20, 20, 20),
-            section_color: (30, 64, 175),
-            accent_color: (30, 64, 175),
-            body_color: (30, 30, 30),
-            date_color: (100, 100, 120),
-            emphasis_color: (30, 64, 175),
-            rule_color: (180, 200, 240),
-            name_pt: 22.0,
-            section_pt: 10.5,
-            body_pt: 10.0,
-            margin_in: 0.5,
-            line_spacing: 1.15,
-            section_spacing_before: 10.0,
-            name_centered: false,
-            section_all_caps: true,
-            section_style: SectionStyle::BoldOnly,
-            fonts: TemplateFonts {
-                name_family: FontFamily::Inter,
-                heading_family: FontFamily::Inter,
-                body_family: FontFamily::Inter,
-            },
-            job_title_italic: true,
-            section_small_caps: false,
-            rule_thickness: 0.5,
-            two_column: Some(TwoColumnConfig {
-                sidebar_width_ratio: 0.30,
-                sidebar_bg_color: (240, 244, 248),
-                sidebar_sections: vec![
-                    "Contact",
-                    "Skills",
-                    "Education",
-                    "Languages",
-                    "Kontakt",
-                    "Kenntnisse",
-                    "Ausbildung",
-                    "Sprachen",
-                ],
-            }),
-            cover_letter: CoverLetterLayout {
-                header_style: CoverLetterHeader::Matched,
-                date_position: DatePosition::BelowHeader,
-                recipient_block: true,
-                paragraph_indent: ParagraphIndent::BlockNoIndent,
-                paragraph_spacing_pt: 8.0,
-                signature_block: SignatureStyle::TypedOnly,
-                closing_phrase_default: "Best,",
-            },
-        }
-    }
-
-    /// Mono Technical — JetBrains Mono headings, Inter body, cyan accent.
-    fn mono_technical() -> Self {
-        Self {
-            id: TemplateId::MonoTechnical,
-            name: "Mono Technical",
-            name_color: (10, 10, 10),
-            section_color: (0, 150, 180),
-            accent_color: (0, 180, 216),
-            body_color: (30, 30, 30),
-            date_color: (100, 120, 130),
-            emphasis_color: (0, 150, 180),
-            rule_color: (0, 180, 216),
-            name_pt: 20.0,
-            section_pt: 10.5,
-            body_pt: 10.5,
-            margin_in: 1.0,
-            line_spacing: 1.2,
-            section_spacing_before: 12.0,
-            name_centered: false,
-            section_all_caps: true,
-            section_style: SectionStyle::RuledBottom,
-            fonts: TemplateFonts {
-                name_family: FontFamily::JetBrainsMono,
-                heading_family: FontFamily::JetBrainsMono,
-                body_family: FontFamily::Inter,
-            },
-            job_title_italic: false,
-            section_small_caps: false,
-            rule_thickness: 1.0,
-            two_column: None,
-            cover_letter: CoverLetterLayout {
-                header_style: CoverLetterHeader::Compact,
-                date_position: DatePosition::TopRight,
-                recipient_block: false,
-                paragraph_indent: ParagraphIndent::BlockNoIndent,
-                paragraph_spacing_pt: 8.0,
-                signature_block: SignatureStyle::TypedOnly,
-                closing_phrase_default: "Regards,",
-            },
-        }
-    }
-
-    /// Refined Executive — Playfair Display name, Inter body, warm gold accent.
-    fn refined_executive() -> Self {
-        Self {
-            id: TemplateId::RefinedExecutive,
-            name: "Refined Executive",
-            name_color: (20, 20, 20),
-            section_color: (100, 80, 50),
-            accent_color: (139, 115, 85),
-            body_color: (40, 38, 35),
-            date_color: (120, 110, 95),
-            emphasis_color: (100, 80, 50),
-            rule_color: (200, 185, 160),
-            name_pt: 26.0,
-            section_pt: 11.0,
-            body_pt: 10.5,
-            margin_in: 1.1,
-            line_spacing: 1.25,
-            section_spacing_before: 15.0,
-            name_centered: true,
-            section_all_caps: false,
-            section_style: SectionStyle::RuledBottom,
-            fonts: TemplateFonts {
-                name_family: FontFamily::PlayfairDisplay,
-                heading_family: FontFamily::Inter,
-                body_family: FontFamily::Inter,
-            },
-            job_title_italic: true,
-            section_small_caps: false,
-            rule_thickness: 0.5,
-            two_column: None,
-            cover_letter: CoverLetterLayout {
-                header_style: CoverLetterHeader::Centered,
-                date_position: DatePosition::BelowHeader,
-                recipient_block: true,
-                paragraph_indent: ParagraphIndent::FirstLine,
-                paragraph_spacing_pt: 0.0,
-                signature_block: SignatureStyle::NameAndTitle,
-                closing_phrase_default: "Sincerely yours,",
             },
         }
     }
@@ -515,7 +256,7 @@ impl Template {
             section_spacing_before: 12.0,
             name_centered: false,
             section_all_caps: false,
-            section_style: SectionStyle::Underline,
+            section_style: SectionStyle::RuledBottom,
             fonts: TemplateFonts {
                 name_family: FontFamily::SourceSerif4,
                 heading_family: FontFamily::SourceSerif4,
@@ -526,13 +267,248 @@ impl Template {
             rule_thickness: 0.5,
             two_column: None,
             cover_letter: CoverLetterLayout {
-                header_style: CoverLetterHeader::Letterhead,
-                date_position: DatePosition::TopRight,
-                recipient_block: true,
                 paragraph_indent: ParagraphIndent::FirstLine,
                 paragraph_spacing_pt: 0.0,
-                signature_block: SignatureStyle::NameAndTitle,
-                closing_phrase_default: "Sincerely,",
+            },
+        }
+    }
+
+    /// Atelier — premium two-column sidebar template.
+    ///
+    /// Design: slate-indigo accent (#4A4580), Source Serif 4 main column,
+    /// Inter sidebar, full-height sidebar band at 30 % page width. Sidebar
+    /// tint is a very light warm grey (#F0EFF8) that complements the indigo.
+    /// Skills / Education / Languages / Certifications go to the sidebar via
+    /// `theme::placement_for`; everything else flows in the main column.
+    ///
+    /// Phase 1b: Typst engine only — not yet wired into the live export flow.
+    fn atelier() -> Self {
+        Self {
+            id: TemplateId::Atelier,
+            name: "Atelier",
+            // Slate-indigo palette: a deep, sophisticated purple-grey.
+            name_color: (22, 20, 54),
+            section_color: (74, 69, 128),
+            accent_color: (74, 69, 128),
+            body_color: (30, 28, 50),
+            date_color: (110, 105, 145),
+            emphasis_color: (74, 69, 128),
+            rule_color: (180, 175, 220),
+            name_pt: 22.0,
+            section_pt: 10.5,
+            body_pt: 10.5,
+            margin_in: 0.55,
+            line_spacing: 1.2,
+            section_spacing_before: 11.0,
+            name_centered: false,
+            section_all_caps: true,
+            section_style: SectionStyle::RuledBottom,
+            fonts: TemplateFonts {
+                // Main column: editorial serif body; sidebar: clean sans.
+                name_family: FontFamily::SourceSerif4,
+                heading_family: FontFamily::SourceSerif4,
+                body_family: FontFamily::Inter,
+            },
+            job_title_italic: true,
+            section_small_caps: false,
+            rule_thickness: 0.5,
+            two_column: Some(TwoColumnConfig {
+                sidebar_width_ratio: 0.30,
+                // Very light warm-grey tint that pairs with the slate-indigo accent.
+                sidebar_bg_color: (240, 239, 248),
+            }),
+            // Cover letter mirrors modern's layout (not yet specialized for Atelier).
+            cover_letter: CoverLetterLayout {
+                paragraph_indent: ParagraphIndent::BlockNoIndent,
+                paragraph_spacing_pt: 8.0,
+            },
+        }
+    }
+
+    // ─── Phase 3a premium single-column templates ─────────────────────────────
+
+    /// Meridian — header-forward band.
+    ///
+    /// Design: a full-width tinted header band holds the name, title, and contact
+    /// line. Accent: warm copper-sienna (#A0522D) — distinct from Atelier's indigo.
+    /// Font: Inter throughout (clean, modern sans). Below the band: airy single-
+    /// column body using the house rhythm. Section headings in the accent.
+    /// Cover-letter layout mirrors `modern`.
+    pub(super) fn meridian() -> Self {
+        Self {
+            id: TemplateId::Meridian,
+            name: "Meridian",
+            // Warm copper-sienna palette — original, professional.
+            name_color: (255, 255, 255),  // white on the dark band
+            section_color: (160, 82, 45), // copper-sienna for section headings
+            accent_color: (160, 82, 45),  // copper-sienna accent
+            body_color: (30, 25, 20),     // near-black warm body
+            date_color: (120, 100, 80),   // muted warm brown dates
+            emphasis_color: (160, 82, 45),
+            rule_color: (210, 170, 140), // soft copper rule
+            name_pt: 26.0,
+            section_pt: 11.0,
+            body_pt: 10.5,
+            margin_in: 0.0, // controlled per-zone in the template
+            line_spacing: 1.2,
+            section_spacing_before: 13.0,
+            name_centered: false,
+            section_all_caps: true,
+            section_style: SectionStyle::RuledBottom,
+            fonts: TemplateFonts {
+                name_family: FontFamily::Inter,
+                heading_family: FontFamily::Inter,
+                body_family: FontFamily::Inter,
+            },
+            job_title_italic: true,
+            section_small_caps: false,
+            rule_thickness: 0.5,
+            two_column: None,
+            cover_letter: CoverLetterLayout {
+                paragraph_indent: ParagraphIndent::BlockNoIndent,
+                paragraph_spacing_pt: 8.0,
+            },
+        }
+    }
+
+    /// Throughline — timeline spine.
+    ///
+    /// Design: a thin vertical spine with a filled dot per entry in EXPERIENCE and
+    /// PROJECTS sections. Other sections render as normal single-column blocks.
+    /// Accent: deep forest teal (#1A5C52) — cool, grounded, original.
+    /// Font: Carlito body, Manrope headings.
+    /// Cover-letter layout mirrors `modern`.
+    pub(super) fn throughline() -> Self {
+        Self {
+            id: TemplateId::Throughline,
+            name: "Throughline",
+            // Deep forest-teal palette.
+            name_color: (15, 50, 45),    // very dark teal name
+            section_color: (26, 92, 82), // forest teal sections
+            accent_color: (26, 92, 82),  // forest teal accent (spine + nodes)
+            body_color: (25, 35, 32),    // near-black cool body
+            date_color: (85, 120, 110),  // muted teal dates
+            emphasis_color: (26, 92, 82),
+            rule_color: (160, 200, 190), // light teal rule
+            name_pt: 22.0,
+            section_pt: 11.0,
+            body_pt: 10.5,
+            margin_in: 1.0,
+            line_spacing: 1.2,
+            section_spacing_before: 13.0,
+            name_centered: false,
+            section_all_caps: true,
+            section_style: SectionStyle::RuledBottom,
+            fonts: TemplateFonts {
+                name_family: FontFamily::Manrope,
+                heading_family: FontFamily::Manrope,
+                body_family: FontFamily::Calibri,
+            },
+            job_title_italic: true,
+            section_small_caps: false,
+            rule_thickness: 0.5,
+            two_column: None,
+            cover_letter: CoverLetterLayout {
+                paragraph_indent: ParagraphIndent::BlockNoIndent,
+                paragraph_spacing_pt: 8.0,
+            },
+        }
+    }
+
+    // ─── Phase 3b-i photo templates ───────────────────────────────────────────
+
+    /// Portrait — circular photo top-left, name/title stacked right, accent
+    /// keyline, two-column sidebar for contact/skills/education.
+    ///
+    /// Design: deep slate-teal accent (#2A6478), circular photo top-left,
+    /// Inter throughout, sidebar 30 % width.  When no photo: graceful monogram
+    /// / name-only fallback so the header never looks broken.
+    /// Phase 3b-i: Typst-only; not yet wired into the live export flow.
+    pub(super) fn portrait() -> Self {
+        Self {
+            id: TemplateId::Portrait,
+            name: "Portrait",
+            // Deep slate-teal palette — professional, original.
+            name_color: (18, 40, 50),
+            section_color: (42, 100, 120),
+            accent_color: (42, 100, 120),
+            body_color: (28, 30, 32),
+            date_color: (90, 110, 120),
+            emphasis_color: (42, 100, 120),
+            rule_color: (160, 195, 210),
+            name_pt: 22.0,
+            section_pt: 10.5,
+            body_pt: 10.5,
+            margin_in: 0.55,
+            line_spacing: 1.2,
+            section_spacing_before: 11.0,
+            name_centered: false,
+            section_all_caps: true,
+            section_style: SectionStyle::RuledBottom,
+            fonts: TemplateFonts {
+                name_family: FontFamily::Inter,
+                heading_family: FontFamily::Inter,
+                body_family: FontFamily::Inter,
+            },
+            job_title_italic: true,
+            section_small_caps: false,
+            rule_thickness: 0.5,
+            // Two-column: sidebar holds contact, skills, education, languages,
+            // certifications — same set as Atelier.
+            two_column: Some(TwoColumnConfig {
+                sidebar_width_ratio: 0.30,
+                // Very light teal tint for the sidebar.
+                sidebar_bg_color: (235, 244, 248),
+            }),
+            // Cover letter mirrors modern layout.
+            cover_letter: CoverLetterLayout {
+                paragraph_indent: ParagraphIndent::BlockNoIndent,
+                paragraph_spacing_pt: 8.0,
+            },
+        }
+    }
+
+    /// Lebenslauf — DACH DIN-style tabular CV.
+    ///
+    /// Design: warm slate accent (#3D4F6B), formal A4, photo top-right,
+    /// left-label / right-value rows, Carlito body, restrained accent.
+    /// When no photo: text-only formal header.
+    /// Phase 3b-i: Typst-only; not yet wired into the live export flow.
+    pub(super) fn lebenslauf() -> Self {
+        Self {
+            id: TemplateId::Lebenslauf,
+            name: "Lebenslauf",
+            // Warm slate palette — formal, DACH-appropriate.
+            name_color: (20, 25, 35),
+            section_color: (61, 79, 107),
+            accent_color: (61, 79, 107),
+            body_color: (30, 30, 35),
+            date_color: (100, 110, 125),
+            emphasis_color: (61, 79, 107),
+            rule_color: (180, 190, 210),
+            name_pt: 20.0,
+            section_pt: 11.0,
+            body_pt: 10.5,
+            margin_in: 0.85,
+            line_spacing: 1.15,
+            section_spacing_before: 13.0,
+            name_centered: false,
+            section_all_caps: false, // DIN style: normal-case section headings
+            section_style: SectionStyle::RuledBottom,
+            fonts: TemplateFonts {
+                name_family: FontFamily::Calibri,
+                heading_family: FontFamily::Calibri,
+                body_family: FontFamily::Calibri,
+            },
+            job_title_italic: false, // DIN style: no italic job titles
+            section_small_caps: false,
+            rule_thickness: 0.5,
+            // Single-column — DIN tabular layout manages its own columns.
+            two_column: None,
+            // Cover letter mirrors modern layout (appropriate for DIN letters).
+            cover_letter: CoverLetterLayout {
+                paragraph_indent: ParagraphIndent::BlockNoIndent,
+                paragraph_spacing_pt: 8.0,
             },
         }
     }

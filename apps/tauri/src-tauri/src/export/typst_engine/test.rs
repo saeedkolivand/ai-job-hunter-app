@@ -1,0 +1,2458 @@
+//! Tests for the Typst engine — smoke tests + model-based + ATS harness.
+//!
+//! All tests run fully in-process (no disk, no network) via the offline
+//! ResumeWorld hard-wall.
+
+use crate::export::templates::Template;
+use crate::export::types::TemplateId;
+use crate::export::typst_engine::{
+    render_letter_pdf, render_pdf, render_pdf_from_source, RenderOpts, TypstTemplate,
+};
+use crate::locale::PageGeometry;
+use crate::model::adapter::model_from_resume_text;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Count `/Type /Page` (individual page) objects in PDF bytes.
+///
+/// Uses a byte-level scan rather than lopdf's `get_pages()` because lopdf's
+/// page-tree walker does not handle all page-tree structures that Typst emits
+/// (it misses pages under certain indirect-reference trees and returns 1 even
+/// for multi-page documents). The scan finds all occurrences of the `/Type /Page`
+/// dictionary entry that marks an individual page object (not `/Type /Pages`
+/// which marks a page-tree node).
+fn count_pdf_pages(bytes: &[u8]) -> usize {
+    // Match `/Type /Page` followed by a non-`s` byte (to exclude `/Pages`).
+    let mut count = 0usize;
+    let mut i = 0usize;
+    let needle = b"/Type /Page";
+    while i + needle.len() < bytes.len() {
+        if bytes[i..i + needle.len()] == *needle {
+            // The character after `/Page` must not be `s` (which would make it `/Pages`).
+            let next = bytes[i + needle.len()];
+            if next != b's' {
+                count += 1;
+            }
+            i += needle.len();
+        } else {
+            i += 1;
+        }
+    }
+    count
+}
+
+/// Extract every `/Link` annotation target URI from a rendered PDF.
+///
+/// Typst writes `/Annots` as an array of **inline dictionaries**; lopdf's
+/// `get_page_annotations` only resolves *indirect references* and so misses them
+/// entirely — the documented regression that once made every header link read as
+/// "missing". We therefore walk each object's `/Annots` array ourselves (mirroring
+/// the validator's reader) and pull `/A /URI` off each `/Link`.
+fn link_uris(bytes: &[u8]) -> Vec<String> {
+    let doc = lopdf::Document::load_mem(bytes).expect("rendered PDF should parse with lopdf");
+
+    fn uri_of(annot: &lopdf::Dictionary, doc: &lopdf::Document) -> Option<String> {
+        let is_link = annot
+            .get(b"Subtype")
+            .and_then(|v| v.as_name())
+            .map(|n| n == b"Link")
+            .unwrap_or(false);
+        if !is_link {
+            return None;
+        }
+        annot
+            .get(b"A")
+            .ok()
+            .and_then(|a| match a {
+                lopdf::Object::Dictionary(d) => Some(d.clone()),
+                lopdf::Object::Reference(id) => doc.get_dictionary(*id).ok().cloned(),
+                _ => None,
+            })
+            .and_then(|d| {
+                d.get(b"URI")
+                    .ok()
+                    .and_then(|u| u.as_str().ok())
+                    .map(|b| String::from_utf8_lossy(b).into_owned())
+            })
+    }
+
+    let mut uris = Vec::new();
+    for obj in doc.objects.values() {
+        let Ok(dict) = obj.as_dict() else {
+            continue;
+        };
+        let array = match dict.get(b"Annots") {
+            Ok(lopdf::Object::Array(a)) => a.clone(),
+            Ok(lopdf::Object::Reference(id)) => {
+                match doc.get_object(*id).and_then(|o| o.as_array()) {
+                    Ok(a) => a.clone(),
+                    Err(_) => continue,
+                }
+            }
+            _ => continue,
+        };
+        for entry in &array {
+            let annot = match entry {
+                lopdf::Object::Dictionary(d) => d.clone(),
+                lopdf::Object::Reference(id) => match doc.get_dictionary(*id) {
+                    Ok(d) => d.clone(),
+                    Err(_) => continue,
+                },
+                _ => continue,
+            };
+            if let Some(uri) = uri_of(&annot, &doc) {
+                uris.push(uri);
+            }
+        }
+    }
+    uris
+}
+
+// ── Smoke tests (raw source path) ─────────────────────────────────────────────
+
+/// Minimal Typst document that exercises font loading and basic layout.
+const SMOKE_SOURCE: &str = "= Hello\n\nSome body text rendered with the bundled font.";
+
+#[test]
+fn smoke_pdf_is_non_empty_and_starts_with_pdf_header() {
+    let bytes = render_pdf_from_source(SMOKE_SOURCE)
+        .expect("render_pdf_from_source should succeed for a trivial document");
+
+    assert!(!bytes.is_empty(), "rendered PDF must be non-empty");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "rendered PDF must begin with %PDF, got: {:?}",
+        &bytes[..4.min(bytes.len())]
+    );
+}
+
+#[test]
+fn smoke_pdf_text_extraction_contains_expected_words() {
+    let bytes = render_pdf_from_source(SMOKE_SOURCE)
+        .expect("render_pdf_from_source should succeed for a trivial document");
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract should be able to read our output");
+
+    let lower = extracted.to_lowercase();
+    assert!(
+        lower.contains("hello"),
+        "extracted text should contain 'hello'; got: {extracted:?}"
+    );
+    assert!(
+        lower.contains("body"),
+        "extracted text should contain 'body'; got: {extracted:?}"
+    );
+}
+
+// ── Fixture ───────────────────────────────────────────────────────────────────
+
+/// Short one-page resume fixture — enough content to exercise all block types
+/// (header, paragraph, entry with bullets, standalone bullets) while keeping
+/// compilation fast.
+const FIXTURE_RESUME: &str = "\
+Jane Doe
+jane@example.com | https://linkedin.com/in/janedoe | https://github.com/janedoe
+
+SUMMARY
+Experienced software engineer with a passion for building reliable systems.
+
+EXPERIENCE
+Senior Engineer | Acme Corp | 2021 – Present
+- Designed distributed task scheduler reducing latency by 40 percent
+- Led migration to Rust-based microservices across three product teams
+
+Software Engineer | Beta Inc | 2018 – 2021
+- Built real-time data pipeline processing one million events per day
+- Mentored two junior engineers through onboarding
+
+EDUCATION
+B.Sc. Computer Science | State University | 2014 – 2018
+
+SKILLS
+Rust, Python, TypeScript, PostgreSQL, Kubernetes, AWS
+";
+
+// ── Model-based render tests ──────────────────────────────────────────────────
+
+fn opts_a4() -> RenderOpts {
+    RenderOpts {
+        page: PageGeometry {
+            width_mm: 210.0,
+            height_mm: 297.0,
+        },
+        accent: None,
+        lang: "en".to_string(),
+        ats: false,
+    }
+}
+
+#[test]
+fn classic_render_produces_valid_pdf() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let bytes = render_pdf(&model, TypstTemplate::Classic, &opts_a4(), None)
+        .expect("render_pdf(classic) should succeed");
+
+    assert!(!bytes.is_empty(), "PDF bytes must not be empty");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "output must start with %PDF header"
+    );
+}
+
+// ── Link-annotation round-trip (header contact links) ───────────────────────────
+//
+// The header carries the candidate's email/LinkedIn/GitHub as clickable links.
+// They must survive into the PDF as real `/Link` annotations with extractable
+// `/A /URI` targets — the exact path that regressed before (lopdf inline-annot
+// parsing). Render through the live engine, then read the links back. Replaces the
+// `resume_embeds_contact_link_annotations` + `every_template_renders_a_valid_pdf`
+// coverage that lived in the deleted printpdf `layout_pdf` suite.
+
+#[test]
+fn classic_resume_embeds_contact_link_annotations() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let bytes = render_pdf(&model, TypstTemplate::Classic, &opts_a4(), None)
+        .expect("render_pdf(classic) should succeed");
+    let uris = link_uris(&bytes);
+    assert!(
+        uris.iter().any(|u| u.contains("linkedin.com/in/janedoe")),
+        "LinkedIn link annotation missing from classic resume; found {uris:?}"
+    );
+    assert!(
+        uris.iter().any(|u| u.contains("github.com/janedoe")),
+        "GitHub link annotation missing from classic resume; found {uris:?}"
+    );
+}
+
+#[test]
+fn two_column_resume_embeds_contact_link_annotations() {
+    // The full-width header in two-column templates is the higher-risk path for
+    // dropped annotations, so assert links survive there too (Atelier).
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let template = Template::get(TemplateId::Atelier);
+    let bytes = render_pdf(
+        &model,
+        TypstTemplate::from_template(&template),
+        &opts_a4(),
+        Some(&template),
+    )
+    .expect("render_pdf(atelier) should succeed");
+    let uris = link_uris(&bytes);
+    assert!(
+        uris.iter().any(|u| u.contains("linkedin.com/in/janedoe")),
+        "LinkedIn link annotation missing from two-column resume; found {uris:?}"
+    );
+    assert!(
+        uris.iter().any(|u| u.contains("github.com/janedoe")),
+        "GitHub link annotation missing from two-column resume; found {uris:?}"
+    );
+}
+
+#[test]
+fn every_template_renders_a_valid_pdf() {
+    // Canonical user-facing set — must match the `TemplateId` enum (pinned by the
+    // serde round-trip test in types.rs and the TS sync guard).
+    let ids = [
+        TemplateId::Classic,
+        TemplateId::Modern,
+        TemplateId::SwissMinimal,
+        TemplateId::Academic,
+        TemplateId::Atelier,
+        TemplateId::Meridian,
+        TemplateId::Throughline,
+        TemplateId::Portrait,
+        TemplateId::Lebenslauf,
+    ];
+    assert_eq!(ids.len(), 9, "expected the nine canonical templates");
+
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    for id in ids {
+        let template = Template::get(id);
+        let bytes = render_pdf(
+            &model,
+            TypstTemplate::from_template(&template),
+            &opts_a4(),
+            Some(&template),
+        )
+        .unwrap_or_else(|e| panic!("render_pdf({id:?}) should succeed: {e:?}"));
+        assert!(!bytes.is_empty(), "{id:?}: PDF bytes must not be empty");
+        assert!(
+            bytes.starts_with(b"%PDF"),
+            "{id:?}: output must start with %PDF"
+        );
+        assert!(
+            count_pdf_pages(&bytes) >= 1,
+            "{id:?}: must emit at least one page"
+        );
+    }
+}
+
+#[test]
+fn classic_render_letter_page_succeeds() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let opts = RenderOpts {
+        page: PageGeometry {
+            width_mm: 215.9,
+            height_mm: 279.4,
+        },
+        lang: "en".to_string(),
+        accent: None,
+        ats: false,
+    };
+    let bytes = render_pdf(&model, TypstTemplate::Classic, &opts, None)
+        .expect("render_pdf(classic, Letter) should succeed");
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
+#[test]
+fn classic_render_with_valid_accent_succeeds() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let opts = RenderOpts {
+        page: PageGeometry {
+            width_mm: 210.0,
+            height_mm: 297.0,
+        },
+        accent: Some("#1a2b3c".to_string()),
+        lang: "en".to_string(),
+        ats: false,
+    };
+    // Classic ignores accent visually (no-color template) but it must not crash.
+    let bytes = render_pdf(&model, TypstTemplate::Classic, &opts, None)
+        .expect("render_pdf should succeed even with an accent that classic ignores");
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
+#[test]
+fn classic_render_with_invalid_accent_falls_back_gracefully() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let opts = RenderOpts {
+        page: PageGeometry {
+            width_mm: 210.0,
+            height_mm: 297.0,
+        },
+        accent: Some("not-a-color".to_string()),
+        lang: "en".to_string(),
+        ats: false,
+    };
+    // Invalid accent must not cause an error (normalise_accent returns "" →
+    // template defaults apply).
+    let bytes = render_pdf(&model, TypstTemplate::Classic, &opts, None)
+        .expect("render_pdf should succeed with an invalid accent color");
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
+// ── ATS harness ───────────────────────────────────────────────────────────────
+//
+// Renders the fixture through Classic, extracts text with pdf-extract, and
+// asserts three ATS-safety properties:
+//
+//   (a) READING ORDER — section headings appear in the expected top-to-bottom
+//       order (SUMMARY before EXPERIENCE before EDUCATION before SKILLS).
+//
+//   (b) WORD BOUNDARIES — a known multi-word phrase from the fixture survives
+//       WITH spaces and is not run together (e.g. "State University" not
+//       "StateUniversity").
+//
+//   (c) CONTENT PRESENT — the candidate name, all major section headings, and
+//       a representative bullet fragment are findable in the extracted text.
+
+#[test]
+fn ats_harness_classic_reading_order_word_boundaries_content() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let bytes = render_pdf(&model, TypstTemplate::Classic, &opts_a4(), None)
+        .expect("render_pdf(classic) for ATS harness");
+
+    let extracted =
+        pdf_extract::extract_text_from_mem(&bytes).expect("pdf-extract must succeed on our output");
+
+    let lower = extracted.to_lowercase();
+
+    // ── (c) Content present ───────────────────────────────────────────────────
+    assert!(
+        lower.contains("jane doe"),
+        "ATS: candidate name 'Jane Doe' missing from extracted text\n---\n{extracted}"
+    );
+
+    for heading in &["summary", "experience", "education", "skills"] {
+        assert!(
+            lower.contains(heading),
+            "ATS: section heading '{heading}' missing from extracted text\n---\n{extracted}"
+        );
+    }
+
+    // A bullet fragment that must survive intact.
+    assert!(
+        lower.contains("distributed task scheduler"),
+        "ATS: bullet fragment 'distributed task scheduler' missing\n---\n{extracted}"
+    );
+
+    // ── (b) Word boundaries ───────────────────────────────────────────────────
+    // "State University" must appear with a space, not run together.
+    assert!(
+        lower.contains("state university"),
+        "ATS: 'state university' must appear with preserved word boundary\n---\n{extracted}"
+    );
+
+    // ── (a) Reading order ─────────────────────────────────────────────────────
+    let order = ["summary", "experience", "education", "skills"];
+    let mut last_pos = 0usize;
+    for heading in &order {
+        let pos = lower.find(heading).unwrap_or_else(|| {
+            panic!("ATS reading order: '{heading}' not found in extracted text")
+        });
+        assert!(
+            pos >= last_pos,
+            "ATS reading order: '{heading}' (at {pos}) appeared before previous heading (at {last_pos})\n---\n{extracted}"
+        );
+        last_pos = pos;
+    }
+}
+
+// ── Accent normalisation unit tests (in render.rs tests, but also here) ───────
+
+#[test]
+fn render_opts_default_is_a4_en() {
+    let opts = RenderOpts::default();
+    assert_eq!(opts.page.width_mm, 210.0);
+    assert_eq!(opts.page.height_mm, 297.0);
+    assert_eq!(opts.lang, "en");
+    assert!(!opts.ats);
+    assert!(opts.accent.is_none());
+}
+
+// ── JsonSection.kind + emphasize_education unit tests ─────────────────────────
+//
+// These tests verify the two new data-model fields without needing a PDF render:
+//
+//   (a) section_id_to_kind: education section serializes as kind == "education".
+//   (b) style_from_template: academic → emphasize_education == true;
+//       modern and swiss_minimal → emphasize_education == false.
+
+#[test]
+fn json_section_kind_education_serializes_correctly() {
+    use crate::export::typst_engine::render::{section_id_to_kind, JsonSection};
+    use crate::model::document::SectionId;
+
+    let kind = section_id_to_kind(&SectionId::Education);
+    assert_eq!(
+        kind, "education",
+        "SectionId::Education must serialize to \"education\""
+    );
+
+    // Spot-check a few other kinds while we are here.
+    assert_eq!(section_id_to_kind(&SectionId::Experience), "experience");
+    assert_eq!(section_id_to_kind(&SectionId::Skills), "skills");
+    assert_eq!(
+        section_id_to_kind(&SectionId::Custom("Foo".into())),
+        "custom"
+    );
+
+    // Confirm a JsonSection round-trips through serde with kind present.
+    let section = JsonSection {
+        heading: "Education".to_string(),
+        blocks: vec![],
+        placement: "main".to_string(),
+        kind: kind.clone(),
+    };
+    let json = serde_json::to_string(&section).expect("JsonSection must serialize");
+    assert!(
+        json.contains("\"kind\":\"education\""),
+        "serialized JSON must contain \"kind\":\"education\"; got: {json}"
+    );
+}
+
+#[test]
+fn style_from_template_emphasize_education_academic_true_others_false() {
+    use crate::export::typst_engine::render::style_from_template;
+
+    let academic = template_style(TemplateId::Academic);
+    assert!(
+        style_from_template(&academic).emphasize_education,
+        "Academic template must have emphasize_education == true"
+    );
+
+    let modern = template_style(TemplateId::Modern);
+    assert!(
+        !style_from_template(&modern).emphasize_education,
+        "Modern template must have emphasize_education == false"
+    );
+
+    let swiss = template_style(TemplateId::SwissMinimal);
+    assert!(
+        !style_from_template(&swiss).emphasize_education,
+        "SwissMinimal template must have emphasize_education == false"
+    );
+}
+
+// ── Atelier (Phase 1b) tests ──────────────────────────────────────────────────
+//
+// Tests cover:
+//   (1) Basic render — valid PDF in both ats:false and ats:true.
+//   (2) 2-page sidebar repeat — enough content to force ≥2 pages; ALL sidebar
+//       items from the fixture must be present in the extracted text (regression
+//       guard for the dense-sidebar overflow fix, F1/F4).
+//   (3) ATS collapse — ats:true → linear reading order, sidebar headings appear
+//       AFTER the main-column headings but still present and in order.
+//   (4) Entry integrity — titles + bullets present in extracted text.
+//   (5) Accent override — custom accent does not cause a compile error.
+//   (6) Sample PDF written to target/ for human review (informational, always passes).
+//   (7) Dense-sidebar fixture — 10+ skills, 2 degrees, 3 certs, 4 languages;
+//       every sidebar item must be present (F1 regression guard).
+//   (8) Empty-sidebar fixture — all sections placed in main; no sidebar sections;
+//       template must fall back to single-column (no band) and render cleanly.
+
+/// Single-page fixture — exercises all block types.
+const ATELIER_FIXTURE: &str = "\
+Alexandra Rivera
+alex@example.com | [LinkedIn](https://linkedin.com/in/alexrivera) | https://alexrivera.dev
+
+SUMMARY
+Product-focused engineering leader with twelve years building distributed systems.
+
+EXPERIENCE
+Principal Engineer | Meridian Systems | 2019 – Present
+- Scaled the event-sourcing platform to 500 k events per second
+- Drove adoption of a domain-driven architecture across seven product teams
+
+Software Engineer | Cobalt Labs | 2015 – 2019
+- Built the real-time collaboration layer used by 200 k active users
+- Reduced cold-start latency from 900 ms to 110 ms
+
+EDUCATION
+M.Sc. Computer Science | Western University | 2013 – 2015
+
+SKILLS
+Rust, Go, TypeScript, Kubernetes, AWS, Kafka, PostgreSQL
+
+LANGUAGES
+English (native), Portuguese (fluent)
+";
+
+/// Multi-page fixture — enough experience + project entries to force ≥2 pages.
+/// The main-column content (SUMMARY + EXPERIENCE + PROJECTS) is deliberately
+/// long enough to overflow a single A4 page in the 70% main column.
+const ATELIER_MULTIPAGE: &str = "\
+Alexandra Rivera
+alex@example.com | https://alexrivera.dev
+
+SUMMARY
+Engineering leader with a decade of distributed-systems experience building resilient
+platforms at scale. Passionate about developer productivity, reliability engineering,
+and growing high-performing teams across multiple time zones.
+
+EXPERIENCE
+Staff Engineer | Apex Corp | 2022 – Present
+- Led the platform-reliability initiative that reduced P99 latency by 60 percent across all production services
+- Introduced chaos engineering practices that were adopted across twelve service teams globally
+- Architected a zero-downtime schema migration pipeline managing a 10 TB customer dataset
+- Mentored eight engineers through promotion to senior level over the course of eighteen months
+- Drove the company-wide observability strategy resulting in 99.99 percent annual SLA achievement
+- Defined engineering excellence standards that were subsequently adopted by all thirty backend teams
+- Designed the on-call runbook system reducing mean time to resolution from 45 minutes to 8 minutes
+
+Senior Engineer | Meridian Systems | 2019 – 2022
+- Built the multi-tenant billing engine that processed 50 M transactions per month without downtime
+- Migrated a legacy monolith to fifty domain-aligned microservices over an eighteen-month programme
+- Designed the event-sourcing backbone now serving 300 k events per second at peak production load
+- Reduced infrastructure cost by 35 percent through adaptive auto-scaling policies and spot instances
+- Shipped a real-time analytics dashboard that was adopted by over 10 k business users on launch day
+- Onboarded and technically led a distributed team of nine engineers across three time zones
+
+Software Engineer | Cobalt Labs | 2016 – 2019
+- Delivered the real-time collaboration layer for the flagship product used by 200 k daily active users
+- Implemented end-to-end encryption for all user-generated content at rest and in transit
+- Reduced cold-start API latency from 900 ms to 110 ms through optimised connection pooling strategies
+- Contributed core modules to three open-source libraries with a combined 8 k GitHub stars
+
+Junior Software Engineer | Vertex Startup | 2014 – 2016
+- Shipped the initial iOS client that reached 50 k downloads in the first month after public launch
+- Rebuilt the search indexing pipeline and cut ingestion lag from five minutes to eight seconds
+- Integrated third-party payment providers handling 500 k transactions per day in a PCI-DSS environment
+
+PROJECTS
+Distributed Rate Limiter | Open Source | 2021
+- Designed a Redis-backed token-bucket rate limiter with sub-millisecond overhead per request
+- Published to crates.io; adopted by fourteen organisations within six months of initial release
+- Maintained comprehensive documentation, changelog, and semver-stable public API
+
+High-Throughput Log Aggregator | Open Source | 2020
+- Built a lock-free ring-buffer pipeline aggregating 1 M log lines per second on commodity hardware
+- Presented at a regional systems-programming conference to an audience of 400 engineers
+
+EDUCATION
+M.Sc. Computer Science | Western University | 2012 – 2014
+B.Sc. Computer Engineering | Eastern College | 2008 – 2012
+
+SKILLS
+Rust, Go, TypeScript, Kubernetes, AWS, GCP, Kafka, PostgreSQL, Redis, Terraform, Prometheus, Grafana
+
+LANGUAGES
+English (native), Portuguese (fluent), Spanish (working)
+";
+
+/// Dense-sidebar fixture — 10+ skills, 2 degrees, 3 certifications, 4 languages.
+/// This is the F1 regression fixture: the sidebar content is tall enough that
+/// the template must detect overflow and fall back to single-column so that
+/// no sidebar item is silently clipped.
+const ATELIER_DENSE_SIDEBAR: &str = "\
+Jordan Kim
+jordan@example.com | https://linkedin.com/in/jordankim | https://jordankim.dev
+
+SUMMARY
+Polyglot engineer with deep expertise in distributed systems and cloud infrastructure.
+
+EXPERIENCE
+Senior Platform Engineer | Globex Corp | 2020 – Present
+- Designed a multi-region failover system achieving five nines availability
+- Reduced mean deployment time from 45 minutes to under four minutes
+
+Platform Engineer | Initech Solutions | 2017 – 2020
+- Built a shared CI/CD platform adopted by 80 engineering teams
+- Introduced contract testing reducing integration failures by 70 percent
+
+EDUCATION
+M.Eng. Software Engineering | Metro University | 2015 – 2017
+B.Sc. Computer Science | Coastal College | 2011 – 2015
+
+SKILLS
+Rust, Go, Python, TypeScript, Java, Kotlin, C++, Bash, SQL, Terraform, Ansible, Pulumi
+
+LANGUAGES
+English (native), German (fluent), French (professional), Mandarin (conversational)
+
+CERTIFICATIONS
+AWS Solutions Architect Professional
+Google Cloud Professional Data Engineer
+Certified Kubernetes Administrator
+";
+
+fn opts_atelier(ats: bool) -> RenderOpts {
+    RenderOpts {
+        page: PageGeometry {
+            width_mm: 210.0,
+            height_mm: 297.0,
+        },
+        accent: Some("#4A4580".to_string()),
+        lang: "en".to_string(),
+        ats,
+    }
+}
+
+// (1a) Non-ATS render produces a valid PDF.
+#[test]
+fn atelier_render_produces_valid_pdf() {
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let bytes = render_pdf(&model, TypstTemplate::Atelier, &opts_atelier(false), None)
+        .expect("render_pdf(atelier) should succeed");
+
+    assert!(!bytes.is_empty(), "PDF must not be empty");
+    assert!(bytes.starts_with(b"%PDF"), "output must start with %PDF");
+}
+
+// (1b) ATS render also produces a valid PDF.
+#[test]
+fn atelier_ats_render_produces_valid_pdf() {
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let bytes = render_pdf(&model, TypstTemplate::Atelier, &opts_atelier(true), None)
+        .expect("render_pdf(atelier, ats:true) should succeed");
+
+    assert!(!bytes.is_empty(), "ATS PDF must not be empty");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "ATS output must start with %PDF"
+    );
+}
+
+// (2) 2-page sidebar repeat: the multi-page fixture forces ≥2 pages.
+// The FULL set of sidebar items from the multipage fixture must be present
+// in the extracted text — this is the regression guard for F1/F4 (dense
+// sidebar overflow).  A clipped sidebar would cause these assertions to fail.
+#[test]
+fn atelier_multipage_sidebar_repeats() {
+    let model = model_from_resume_text(ATELIER_MULTIPAGE);
+    let bytes = render_pdf(&model, TypstTemplate::Atelier, &opts_atelier(false), None)
+        .expect("render_pdf(atelier, multipage) should succeed");
+
+    assert!(bytes.starts_with(b"%PDF"));
+
+    // Assert ≥2 pages by counting /Type /Page objects directly in the PDF bytes.
+    let page_count = count_pdf_pages(&bytes);
+    assert!(
+        page_count >= 2,
+        "multi-page fixture must produce ≥2 pages; got {page_count}"
+    );
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract must succeed on our Typst PDF");
+
+    // Normalise: collapse all whitespace (newlines, multiple spaces) to a single
+    // space so line-wrapped tokens ("Eastern \nCollege") still match. Education
+    // entries are now rendered as entry blocks (grid layout) which can introduce
+    // line breaks inside multi-word names — normalization makes assertions robust.
+    let normalised: String = extracted.split_whitespace().collect::<Vec<_>>().join(" ");
+    let lower = normalised.to_lowercase();
+
+    // Every sidebar skill from the fixture must be present.
+    let sidebar_skills = [
+        "rust",
+        "go",
+        "typescript",
+        "kubernetes",
+        "aws",
+        "gcp",
+        "kafka",
+        "postgresql",
+        "redis",
+        "terraform",
+        "prometheus",
+        "grafana",
+    ];
+    for skill in &sidebar_skills {
+        assert!(
+            lower.contains(skill),
+            "sidebar skill '{skill}' missing from extracted text — possible sidebar clip\n---\n{lower}"
+        );
+    }
+
+    // Education entries in the sidebar must also be present.
+    assert!(
+        lower.contains("western university"),
+        "sidebar education 'western university' missing\n---\n{lower}"
+    );
+    assert!(
+        lower.contains("eastern college"),
+        "sidebar education 'eastern college' missing\n---\n{lower}"
+    );
+
+    // Languages must be present.
+    for lang in &["english", "portuguese", "spanish"] {
+        assert!(
+            lower.contains(lang),
+            "sidebar language '{lang}' missing\n---\n{lower}"
+        );
+    }
+
+    // The known skill "Rust" must also appear ≥2 times (sidebar repeats per page).
+    let rust_count = lower.matches("rust").count();
+    assert!(
+        rust_count >= 2,
+        "sidebar skill 'Rust' should appear ≥2 times across pages (sidebar repeats); \
+         found {rust_count} time(s)\n---\n{lower}"
+    );
+}
+
+// (3) ATS collapse: ats:true → single column, linear reading order.
+// Main headings (SUMMARY, EXPERIENCE) must appear before sidebar headings
+// (EDUCATION, SKILLS, LANGUAGES) in the extracted text.
+#[test]
+fn atelier_ats_linear_reading_order() {
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let bytes = render_pdf(&model, TypstTemplate::Atelier, &opts_atelier(true), None)
+        .expect("render_pdf(atelier, ats:true) should succeed");
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes).expect("pdf-extract must succeed");
+
+    let lower = extracted.to_lowercase();
+
+    // All major section headings must be present.
+    for heading in &["summary", "experience", "education", "skills", "languages"] {
+        assert!(
+            lower.contains(heading),
+            "ATS: heading '{heading}' missing from extracted text\n---\n{extracted}"
+        );
+    }
+
+    // Main-column sections must appear before sidebar-column sections in the
+    // extracted text (linear order = no column interleaving).
+    let pos_experience = lower
+        .find("experience")
+        .expect("'experience' must be present");
+    let pos_education = lower
+        .find("education")
+        .expect("'education' must be present");
+    let pos_skills = lower.find("skills").expect("'skills' must be present");
+
+    assert!(
+        pos_experience < pos_education,
+        "ATS: 'experience' ({pos_experience}) should precede 'education' ({pos_education}) \
+         in linear order\n---\n{extracted}"
+    );
+    assert!(
+        pos_experience < pos_skills,
+        "ATS: 'experience' ({pos_experience}) should precede 'skills' ({pos_skills}) \
+         in linear order\n---\n{extracted}"
+    );
+
+    // Word boundaries: "Western University" must appear with a space.
+    assert!(
+        lower.contains("western university"),
+        "ATS: 'western university' must appear with preserved word boundary\n---\n{extracted}"
+    );
+}
+
+// (4) Entry integrity: entry titles and bullet fragments must all be present.
+#[test]
+fn atelier_entry_integrity() {
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let bytes = render_pdf(&model, TypstTemplate::Atelier, &opts_atelier(false), None)
+        .expect("render_pdf(atelier) should succeed");
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes).expect("pdf-extract must succeed");
+
+    let lower = extracted.to_lowercase();
+
+    // Candidate name.
+    assert!(
+        lower.contains("alexandra rivera"),
+        "entry integrity: candidate name missing\n---\n{extracted}"
+    );
+
+    // Entry titles.
+    for title in &["meridian systems", "cobalt labs"] {
+        assert!(
+            lower.contains(title),
+            "entry integrity: title '{title}' missing\n---\n{extracted}"
+        );
+    }
+
+    // Bullet fragments.
+    assert!(
+        lower.contains("event-sourcing platform"),
+        "entry integrity: bullet fragment 'event-sourcing platform' missing\n---\n{extracted}"
+    );
+    assert!(
+        lower.contains("real-time collaboration"),
+        "entry integrity: bullet fragment 'real-time collaboration' missing\n---\n{extracted}"
+    );
+}
+
+// (5) Custom accent override does not cause a compile error.
+#[test]
+fn atelier_custom_accent_succeeds() {
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let opts = RenderOpts {
+        page: PageGeometry {
+            width_mm: 210.0,
+            height_mm: 297.0,
+        },
+        accent: Some("#1A6B5A".to_string()), // deep teal override
+        lang: "en".to_string(),
+        ats: false,
+    };
+    let bytes = render_pdf(&model, TypstTemplate::Atelier, &opts, None)
+        .expect("render_pdf(atelier, custom accent) should succeed");
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
+// (6) Write a classic sample PDF to target/ for human review.
+// This test always passes; it is informational.
+// Uses .ok() so a read-only target/ directory does not fail the test run.
+#[test]
+fn classic_write_sample_pdf_for_review() {
+    use std::fs;
+    use std::path::Path;
+
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let bytes = render_pdf(&model, TypstTemplate::Classic, &opts_a4(), None)
+        .expect("render_pdf(classic) should succeed for sample PDF");
+
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+    if let Err(e) = fs::create_dir_all(&target) {
+        eprintln!("classic_write_sample_pdf_for_review: could not create target/: {e}");
+    }
+    let out_path = target.join("classic_sample.pdf");
+    match fs::write(&out_path, &bytes) {
+        Ok(()) => eprintln!("Classic sample PDF written to: {}", out_path.display()),
+        Err(e) => eprintln!(
+            "classic_write_sample_pdf_for_review: could not write {}: {e} (informational only)",
+            out_path.display()
+        ),
+    }
+
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
+// (6b) Write an atelier sample PDF to target/ for human review.
+// This test always passes; it is informational.
+// Uses .ok() so a read-only target/ directory does not fail the test run.
+#[test]
+fn atelier_write_sample_pdf_for_review() {
+    use std::fs;
+    use std::path::Path;
+
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let bytes = render_pdf(&model, TypstTemplate::Atelier, &opts_atelier(false), None)
+        .expect("render_pdf(atelier) should succeed for sample PDF");
+
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+    if let Err(e) = fs::create_dir_all(&target) {
+        eprintln!("atelier_write_sample_pdf_for_review: could not create target/: {e}");
+    }
+    let out_path = target.join("atelier_sample.pdf");
+    match fs::write(&out_path, &bytes) {
+        Ok(()) => eprintln!("Atelier sample PDF written to: {}", out_path.display()),
+        Err(e) => eprintln!(
+            "atelier_write_sample_pdf_for_review: could not write {}: {e} (informational only)",
+            out_path.display()
+        ),
+    }
+
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
+// (6c) Write a MULTI-PAGE atelier sample to target/ for human review.
+// Forces ≥2 pages so the page-background sidebar repeat + pagination + the
+// locked house spacing scale can be eyeballed across a page break.
+// Informational; .ok()-style write never fails the run.
+#[test]
+fn atelier_write_multipage_sample_for_review() {
+    use std::fs;
+    use std::path::Path;
+
+    let model = model_from_resume_text(ATELIER_MULTIPAGE);
+    let bytes = render_pdf(&model, TypstTemplate::Atelier, &opts_atelier(false), None)
+        .expect("render_pdf(atelier, multipage) should succeed for sample PDF");
+
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+    if let Err(e) = fs::create_dir_all(&target) {
+        eprintln!("atelier_write_multipage_sample_for_review: could not create target/: {e}");
+    }
+    let out_path = target.join("atelier_multipage_diag.pdf");
+    match fs::write(&out_path, &bytes) {
+        Ok(()) => eprintln!("Atelier multipage sample written to: {}", out_path.display()),
+        Err(e) => eprintln!(
+            "atelier_write_multipage_sample_for_review: could not write {}: {e} (informational only)",
+            out_path.display()
+        ),
+    }
+
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
+// (7) Dense-sidebar fixture: 10+ skills, 2 degrees, 3 certs, 4 languages.
+// Every sidebar item must appear in the extracted PDF text, proving that
+// the dense-sidebar overflow detection (F1) correctly falls back to
+// single-column and does NOT silently clip any content.
+#[test]
+fn atelier_dense_sidebar_no_data_loss() {
+    use std::fs;
+    use std::path::Path;
+
+    let model = model_from_resume_text(ATELIER_DENSE_SIDEBAR);
+    let bytes = render_pdf(&model, TypstTemplate::Atelier, &opts_atelier(false), None)
+        .expect("render_pdf(atelier, dense-sidebar) should succeed");
+
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "dense-sidebar PDF must start with %PDF"
+    );
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract must succeed on dense-sidebar output");
+
+    // Normalise: collapse all whitespace (newlines, multiple spaces) to a
+    // single space so that line-wrapped tokens ("Coastal \nCollege") still
+    // match the expected substrings.
+    let normalised: String = extracted.split_whitespace().collect::<Vec<_>>().join(" ");
+    let lower = normalised.to_lowercase();
+
+    // ── Skills (10+) ──────────────────────────────────────────────────────────
+    let skills = [
+        "rust",
+        "go",
+        "python",
+        "typescript",
+        "java",
+        "kotlin",
+        "c++",
+        "bash",
+        "sql",
+        "terraform",
+        "ansible",
+        "pulumi",
+    ];
+    for skill in &skills {
+        assert!(
+            lower.contains(skill),
+            "dense-sidebar: skill '{skill}' missing — possible silent clip\n---\n{lower}"
+        );
+    }
+
+    // ── Education (2 degrees) ─────────────────────────────────────────────────
+    assert!(
+        lower.contains("metro university"),
+        "dense-sidebar: 'metro university' missing\n---\n{lower}"
+    );
+    assert!(
+        lower.contains("coastal college"),
+        "dense-sidebar: 'coastal college' missing\n---\n{lower}"
+    );
+
+    // ── Languages (4) ─────────────────────────────────────────────────────────
+    for lang in &["english", "german", "french", "mandarin"] {
+        assert!(
+            lower.contains(lang),
+            "dense-sidebar: language '{lang}' missing\n---\n{lower}"
+        );
+    }
+
+    // ── Certifications (3) ────────────────────────────────────────────────────
+    assert!(
+        lower.contains("aws solutions architect"),
+        "dense-sidebar: 'aws solutions architect' cert missing\n---\n{lower}"
+    );
+    assert!(
+        lower.contains("google cloud"),
+        "dense-sidebar: 'google cloud' cert missing\n---\n{lower}"
+    );
+    assert!(
+        lower.contains("kubernetes administrator"),
+        "dense-sidebar: 'kubernetes administrator' cert missing\n---\n{lower}"
+    );
+
+    // Write the dense-sidebar sample for eyeballing.
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+    if let Err(e) = fs::create_dir_all(&target) {
+        eprintln!("atelier_dense_sidebar_no_data_loss: could not create target/: {e}");
+    }
+    let out_path = target.join("atelier_dense_sidebar.pdf");
+    match fs::write(&out_path, &bytes) {
+        Ok(()) => eprintln!(
+            "Dense-sidebar sample PDF written to: {}",
+            out_path.display()
+        ),
+        Err(e) => eprintln!(
+            "atelier_dense_sidebar_no_data_loss: could not write {}: {e} (informational only)",
+            out_path.display()
+        ),
+    }
+}
+
+// (8) Empty-sidebar fixture: all sections map to main; no sidebar sections.
+// The template must render cleanly in single-column mode (no band) and all
+// content must be present in the extracted text.
+#[test]
+fn atelier_empty_sidebar_renders_single_column() {
+    // A resume with only SUMMARY + EXPERIENCE + PROJECTS — none of these
+    // sections map to the sidebar (Skills/Education/Languages/Certifications
+    // are the sidebar sections).  The template must detect no sidebar sections
+    // and fall back to single-column to avoid rendering an empty tinted band.
+    let fixture = "\
+Morgan Ellis
+morgan@example.com | https://morganellis.dev
+
+SUMMARY
+Full-stack engineer specialising in high-throughput data pipelines.
+
+EXPERIENCE
+Senior Engineer | DataCo | 2020 – Present
+- Designed a streaming ingestion layer processing 2 M events per second
+- Reduced P99 query latency from 800 ms to 35 ms via index optimisation
+
+Engineer | PipeCraft | 2017 – 2020
+- Built the core ETL framework adopted by all twelve data teams
+- Migrated a batch pipeline to a streaming architecture with zero downtime
+
+PROJECTS
+OpenStream | Open Source | 2022
+- High-throughput event router with pluggable backends
+- 2 k GitHub stars; used in production by three Fortune 500 companies
+";
+
+    let model = model_from_resume_text(fixture);
+    let bytes = render_pdf(&model, TypstTemplate::Atelier, &opts_atelier(false), None)
+        .expect("render_pdf(atelier, empty-sidebar) should succeed");
+
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "empty-sidebar PDF must start with %PDF"
+    );
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract must succeed on empty-sidebar output");
+
+    let lower = extracted.to_lowercase();
+
+    // All content must be present — none clipped by a missing sidebar.
+    assert!(
+        lower.contains("morgan ellis"),
+        "empty-sidebar: candidate name missing\n---\n{extracted}"
+    );
+    assert!(
+        lower.contains("dataco"),
+        "empty-sidebar: 'dataco' entry missing\n---\n{extracted}"
+    );
+    assert!(
+        lower.contains("streaming ingestion"),
+        "empty-sidebar: bullet fragment missing\n---\n{extracted}"
+    );
+    assert!(
+        lower.contains("openstream"),
+        "empty-sidebar: project 'openstream' missing\n---\n{extracted}"
+    );
+}
+
+// ── Phase 2: Modern, SwissMinimal, Academic — SingleColumn parametric ─────────
+//
+// For each new template:
+//   (a) Render produces a valid PDF.
+//   (b) ATS harness: reading order + word boundaries + content present.
+//   (c) Sample PDF written to target/ for human review (informational, always passes).
+
+fn template_style(id: TemplateId) -> Template {
+    Template::get(id)
+}
+
+fn opts_sc() -> RenderOpts {
+    RenderOpts {
+        page: PageGeometry {
+            width_mm: 210.0,
+            height_mm: 297.0,
+        },
+        accent: None,
+        lang: "en".to_string(),
+        ats: false,
+    }
+}
+
+// ── Modern ────────────────────────────────────────────────────────────────────
+
+#[test]
+fn modern_render_produces_valid_pdf() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Modern);
+    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts_sc(), Some(&t))
+        .expect("render_pdf(modern) should succeed");
+    assert!(!bytes.is_empty(), "Modern PDF must not be empty");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "Modern output must start with %PDF"
+    );
+}
+
+#[test]
+fn modern_ats_harness() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Modern);
+    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts_sc(), Some(&t))
+        .expect("render_pdf(modern) for ATS harness");
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract must succeed on modern output");
+    let lower = extracted.to_lowercase();
+
+    // Content present
+    assert!(
+        lower.contains("jane doe"),
+        "modern ATS: 'jane doe' missing\n---\n{extracted}"
+    );
+    for heading in &["summary", "experience", "education", "skills"] {
+        assert!(
+            lower.contains(heading),
+            "modern ATS: heading '{heading}' missing\n---\n{extracted}"
+        );
+    }
+    assert!(
+        lower.contains("distributed task scheduler"),
+        "modern ATS: bullet fragment missing\n---\n{extracted}"
+    );
+
+    // Word boundaries
+    assert!(
+        lower.contains("state university"),
+        "modern ATS: 'state university' word boundary broken\n---\n{extracted}"
+    );
+
+    // Reading order
+    let order = ["summary", "experience", "education", "skills"];
+    let mut last = 0usize;
+    for h in &order {
+        let pos = lower
+            .find(h)
+            .unwrap_or_else(|| panic!("modern ATS: '{h}' not found"));
+        assert!(
+            pos >= last,
+            "modern ATS: '{h}' ({pos}) before previous ({last})"
+        );
+        last = pos;
+    }
+}
+
+#[test]
+fn modern_write_sample_pdf_for_review() {
+    use std::fs;
+    use std::path::Path;
+
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Modern);
+    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts_sc(), Some(&t))
+        .expect("render_pdf(modern) should succeed for sample PDF");
+
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+    if let Err(e) = fs::create_dir_all(&target) {
+        eprintln!("modern_write_sample_pdf_for_review: could not create target/: {e}");
+    }
+    let out_path = target.join("modern_sample.pdf");
+    match fs::write(&out_path, &bytes) {
+        Ok(()) => eprintln!("Modern sample PDF written to: {}", out_path.display()),
+        Err(e) => eprintln!(
+            "modern_write_sample_pdf_for_review: could not write {}: {e} (informational only)",
+            out_path.display()
+        ),
+    }
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
+// ── Swiss Minimal ─────────────────────────────────────────────────────────────
+
+#[test]
+fn swiss_minimal_render_produces_valid_pdf() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::SwissMinimal);
+    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts_sc(), Some(&t))
+        .expect("render_pdf(swiss-minimal) should succeed");
+    assert!(!bytes.is_empty(), "Swiss Minimal PDF must not be empty");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "Swiss Minimal output must start with %PDF"
+    );
+}
+
+#[test]
+fn swiss_minimal_ats_harness() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::SwissMinimal);
+    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts_sc(), Some(&t))
+        .expect("render_pdf(swiss-minimal) for ATS harness");
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract must succeed on swiss-minimal output");
+    let lower = extracted.to_lowercase();
+
+    assert!(
+        lower.contains("jane doe"),
+        "swiss-minimal ATS: 'jane doe' missing\n---\n{extracted}"
+    );
+    for heading in &["summary", "experience", "education", "skills"] {
+        assert!(
+            lower.contains(heading),
+            "swiss-minimal ATS: heading '{heading}' missing\n---\n{extracted}"
+        );
+    }
+    assert!(
+        lower.contains("distributed task scheduler"),
+        "swiss-minimal ATS: bullet fragment missing\n---\n{extracted}"
+    );
+    assert!(
+        lower.contains("state university"),
+        "swiss-minimal ATS: 'state university' word boundary broken\n---\n{extracted}"
+    );
+
+    let order = ["summary", "experience", "education", "skills"];
+    let mut last = 0usize;
+    for h in &order {
+        let pos = lower
+            .find(h)
+            .unwrap_or_else(|| panic!("swiss-minimal ATS: '{h}' not found"));
+        assert!(
+            pos >= last,
+            "swiss-minimal ATS: '{h}' ({pos}) before previous ({last})"
+        );
+        last = pos;
+    }
+}
+
+#[test]
+fn swiss_minimal_write_sample_pdf_for_review() {
+    use std::fs;
+    use std::path::Path;
+
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::SwissMinimal);
+    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts_sc(), Some(&t))
+        .expect("render_pdf(swiss-minimal) should succeed for sample PDF");
+
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+    if let Err(e) = fs::create_dir_all(&target) {
+        eprintln!("swiss_minimal_write_sample_pdf_for_review: could not create target/: {e}");
+    }
+    let out_path = target.join("swiss_minimal_sample.pdf");
+    match fs::write(&out_path, &bytes) {
+        Ok(()) => eprintln!("Swiss Minimal sample PDF written to: {}", out_path.display()),
+        Err(e) => eprintln!(
+            "swiss_minimal_write_sample_pdf_for_review: could not write {}: {e} (informational only)",
+            out_path.display()
+        ),
+    }
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
+// ── Academic ──────────────────────────────────────────────────────────────────
+
+#[test]
+fn academic_render_produces_valid_pdf() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Academic);
+    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts_sc(), Some(&t))
+        .expect("render_pdf(academic) should succeed");
+    assert!(!bytes.is_empty(), "Academic PDF must not be empty");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "Academic output must start with %PDF"
+    );
+}
+
+#[test]
+fn academic_ats_harness() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Academic);
+    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts_sc(), Some(&t))
+        .expect("render_pdf(academic) for ATS harness");
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract must succeed on academic output");
+    let lower = extracted.to_lowercase();
+
+    assert!(
+        lower.contains("jane doe"),
+        "academic ATS: 'jane doe' missing\n---\n{extracted}"
+    );
+    for heading in &["summary", "experience", "education", "skills"] {
+        assert!(
+            lower.contains(heading),
+            "academic ATS: heading '{heading}' missing\n---\n{extracted}"
+        );
+    }
+    assert!(
+        lower.contains("distributed task scheduler"),
+        "academic ATS: bullet fragment missing\n---\n{extracted}"
+    );
+    assert!(
+        lower.contains("state university"),
+        "academic ATS: 'state university' word boundary broken\n---\n{extracted}"
+    );
+
+    let order = ["summary", "experience", "education", "skills"];
+    let mut last = 0usize;
+    for h in &order {
+        let pos = lower
+            .find(h)
+            .unwrap_or_else(|| panic!("academic ATS: '{h}' not found"));
+        assert!(
+            pos >= last,
+            "academic ATS: '{h}' ({pos}) before previous ({last})"
+        );
+        last = pos;
+    }
+}
+
+#[test]
+fn academic_write_sample_pdf_for_review() {
+    use std::fs;
+    use std::path::Path;
+
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Academic);
+    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts_sc(), Some(&t))
+        .expect("render_pdf(academic) should succeed for sample PDF");
+
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+    if let Err(e) = fs::create_dir_all(&target) {
+        eprintln!("academic_write_sample_pdf_for_review: could not create target/: {e}");
+    }
+    let out_path = target.join("academic_sample.pdf");
+    match fs::write(&out_path, &bytes) {
+        Ok(()) => eprintln!("Academic sample PDF written to: {}", out_path.display()),
+        Err(e) => eprintln!(
+            "academic_write_sample_pdf_for_review: could not write {}: {e} (informational only)",
+            out_path.display()
+        ),
+    }
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
+// ── Phase 1c: Cover-letter render tests ───────────────────────────────────────
+//
+// Tests cover:
+//   (1) US letter — renders valid PDF on Letter-size page (215.9 × 279.4 mm),
+//       no subject line; salutation, body phrase, sign-off present.
+//   (2) DE letter — renders valid PDF on A4; DIN subject "Betreff:" present;
+//       German salutation + signoff recognised.
+//   (3) Both PDFs start with %PDF.
+//   (4) Sample PDF writers: target/letter_us_sample.pdf and
+//       target/letter_de_sample.pdf — informational, always pass.
+
+/// US English cover letter fixture.
+const LETTER_FIXTURE_US: &str = "\
+Jane Smith
+jane@example.com | https://linkedin.com/in/janesmith
+
+June 2, 2025
+
+Hiring Manager
+Acme Corp
+123 Main Street
+New York, NY 10001
+
+Dear Hiring Manager,
+
+I am writing to express my strong interest in the Software Engineer position at \
+Acme Corp. With five years of experience building distributed systems in Rust and \
+Go, I believe I would be a great addition to your team.
+
+During my time at Beta Inc, I led the migration of our payments service to a \
+microservices architecture, reducing end-to-end latency by 40 percent and \
+cutting infrastructure costs by 30 percent.
+
+I would welcome the opportunity to discuss how my background aligns with your needs.
+
+Sincerely,
+
+Jane Smith
+Software Engineer
+";
+
+/// German DIN 5008 cover letter fixture.
+const LETTER_FIXTURE_DE: &str = "\
+Max Müller
+max@example.de | https://linkedin.com/in/maxmueller
+
+Frankfurt, 2. Juni 2025
+
+Frau Dr. Anna Weber
+Musterfirma GmbH
+Hauptstraße 1
+60311 Frankfurt am Main
+
+Betreff: Bewerbung als Software Engineer
+
+Sehr geehrte Frau Dr. Weber,
+
+mit großem Interesse habe ich Ihre Stellenausschreibung für die Position als \
+Software Engineer gelesen. Ich bewerbe mich hiermit für diese Stelle.
+
+In meiner bisherigen Tätigkeit bei der Beta GmbH habe ich umfangreiche Erfahrungen \
+in der Entwicklung verteilter Systeme gesammelt und konnte die Systemlatenz um \
+40 Prozent reduzieren.
+
+Über eine Einladung zum Vorstellungsgespräch würde ich mich sehr freuen.
+
+Mit freundlichen Grüßen,
+
+Max Müller
+";
+
+// (1) US letter renders to a valid PDF and contains expected text.
+#[test]
+fn letter_us_renders_valid_pdf_with_expected_content() {
+    let t = Template::get(TemplateId::Modern);
+    let bytes = render_letter_pdf(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
+        .expect("render_letter_pdf(us) should succeed");
+
+    assert!(!bytes.is_empty(), "US letter PDF must not be empty");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "US letter output must start with %PDF"
+    );
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract must succeed on US letter output");
+    let lower = extracted.to_lowercase();
+
+    // Salutation must be present.
+    assert!(
+        lower.contains("dear hiring manager"),
+        "US letter: salutation 'Dear Hiring Manager' missing\n---\n{extracted}"
+    );
+
+    // A body phrase must survive.
+    assert!(
+        lower.contains("distributed systems"),
+        "US letter: body phrase 'distributed systems' missing\n---\n{extracted}"
+    );
+
+    // Sign-off must be present.
+    assert!(
+        lower.contains("sincerely"),
+        "US letter: sign-off 'Sincerely' missing\n---\n{extracted}"
+    );
+
+    // Signature name.
+    assert!(
+        lower.contains("jane smith"),
+        "US letter: signature name 'Jane Smith' missing\n---\n{extracted}"
+    );
+
+    // Ordering: salutation before body before sign-off.
+    let pos_sal = lower.find("dear").expect("salutation must be present");
+    let pos_body = lower
+        .find("distributed")
+        .expect("body phrase must be present");
+    let pos_signoff = lower.find("sincerely").expect("sign-off must be present");
+    assert!(
+        pos_sal < pos_body && pos_body < pos_signoff,
+        "US letter: reading order broken — sal={pos_sal} body={pos_body} signoff={pos_signoff}"
+    );
+}
+
+// (2) DE letter renders to a valid PDF and contains DIN subject + German conventions.
+#[test]
+fn letter_de_renders_valid_pdf_with_subject_line() {
+    let t = Template::get(TemplateId::Modern);
+    let bytes = render_letter_pdf(LETTER_FIXTURE_DE, &t, None, Some("Max Müller"), "de", "de")
+        .expect("render_letter_pdf(de) should succeed");
+
+    assert!(!bytes.is_empty(), "DE letter PDF must not be empty");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "DE letter output must start with %PDF"
+    );
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract must succeed on DE letter output");
+
+    // Normalise whitespace (Typst can wrap long lines).
+    let normalised: String = extracted.split_whitespace().collect::<Vec<_>>().join(" ");
+    let lower = normalised.to_lowercase();
+
+    // Subject label "Betreff" must be present.
+    assert!(
+        lower.contains("betreff"),
+        "DE letter: subject label 'Betreff' missing\n---\n{lower}"
+    );
+
+    // German salutation.
+    assert!(
+        lower.contains("sehr geehr"),
+        "DE letter: German salutation 'Sehr geehr...' missing\n---\n{lower}"
+    );
+
+    // Body phrase.
+    assert!(
+        lower.contains("verteilter systeme") || lower.contains("verteilter"),
+        "DE letter: body phrase missing\n---\n{lower}"
+    );
+
+    // German sign-off.
+    assert!(
+        lower.contains("freundlichen"),
+        "DE letter: German sign-off missing\n---\n{lower}"
+    );
+
+    // Signature name.
+    assert!(
+        lower.contains("max") && lower.contains("müller"),
+        "DE letter: signature name missing\n---\n{lower}"
+    );
+}
+
+// (3) Both outputs start with %PDF — belt-and-suspenders after the content tests
+// above already assert this; kept as a quick standalone guard.
+#[test]
+fn letter_us_and_de_both_start_with_pdf_header() {
+    let t = Template::get(TemplateId::Modern);
+    let us = render_letter_pdf(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
+        .expect("render_letter_pdf(us)");
+    let de = render_letter_pdf(LETTER_FIXTURE_DE, &t, None, Some("Max Müller"), "de", "de")
+        .expect("render_letter_pdf(de)");
+    assert!(us.starts_with(b"%PDF"), "US letter must start with %PDF");
+    assert!(de.starts_with(b"%PDF"), "DE letter must start with %PDF");
+}
+
+// (4a) Write the US letter sample to target/ for human eyeballing.
+// Informational; always passes; .ok()-style write.
+#[test]
+fn letter_us_write_sample_pdf_for_review() {
+    use std::fs;
+    use std::path::Path;
+
+    let t = Template::get(TemplateId::Modern);
+    let bytes = render_letter_pdf(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
+        .expect("render_letter_pdf(us) should succeed for sample PDF");
+
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+    if let Err(e) = fs::create_dir_all(&target) {
+        eprintln!("letter_us_write_sample_pdf_for_review: could not create target/: {e}");
+    }
+    let out_path = target.join("letter_us_sample.pdf");
+    match fs::write(&out_path, &bytes) {
+        Ok(()) => eprintln!("US letter sample PDF written to: {}", out_path.display()),
+        Err(e) => eprintln!(
+            "letter_us_write_sample_pdf_for_review: could not write {}: {e} (informational only)",
+            out_path.display()
+        ),
+    }
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
+// (4b) Write the DE letter sample to target/ for human eyeballing.
+// Informational; always passes; .ok()-style write.
+#[test]
+fn letter_de_write_sample_pdf_for_review() {
+    use std::fs;
+    use std::path::Path;
+
+    let t = Template::get(TemplateId::Modern);
+    let bytes = render_letter_pdf(LETTER_FIXTURE_DE, &t, None, Some("Max Müller"), "de", "de")
+        .expect("render_letter_pdf(de) should succeed for sample PDF");
+
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+    if let Err(e) = fs::create_dir_all(&target) {
+        eprintln!("letter_de_write_sample_pdf_for_review: could not create target/: {e}");
+    }
+    let out_path = target.join("letter_de_sample.pdf");
+    match fs::write(&out_path, &bytes) {
+        Ok(()) => eprintln!("DE letter sample PDF written to: {}", out_path.display()),
+        Err(e) => eprintln!(
+            "letter_de_write_sample_pdf_for_review: could not write {}: {e} (informational only)",
+            out_path.display()
+        ),
+    }
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
+// ── Phase 3a: Meridian, Throughline, Quanta — premium single-column ───────────
+//
+// For each template:
+//   (a) Render produces a valid PDF.
+//   (b) ATS harness: reading order + word boundaries + content present.
+//   (c) Sample PDF written to target/ for human review (informational, always passes).
+//
+// For Throughline additionally:
+//   (d) EXPERIENCE entries + bullets all survive extraction (timeline decoration
+//       must not drop any text).
+
+fn opts_p3a() -> RenderOpts {
+    RenderOpts {
+        page: PageGeometry {
+            width_mm: 210.0,
+            height_mm: 297.0,
+        },
+        accent: None,
+        lang: "en".to_string(),
+        ats: false,
+    }
+}
+
+// ── Meridian ──────────────────────────────────────────────────────────────────
+
+#[test]
+fn meridian_render_produces_valid_pdf() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Meridian);
+    let bytes = render_pdf(&model, TypstTemplate::Meridian, &opts_p3a(), Some(&t))
+        .expect("render_pdf(meridian) should succeed");
+    assert!(!bytes.is_empty(), "Meridian PDF must not be empty");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "Meridian output must start with %PDF"
+    );
+}
+
+#[test]
+fn meridian_ats_harness() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Meridian);
+    let bytes = render_pdf(&model, TypstTemplate::Meridian, &opts_p3a(), Some(&t))
+        .expect("render_pdf(meridian) for ATS harness");
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract must succeed on meridian output");
+
+    // Normalise whitespace — band layout can introduce line breaks inside
+    // the header content (name, contact line placed in page background).
+    let normalised: String = extracted.split_whitespace().collect::<Vec<_>>().join(" ");
+    let lower = normalised.to_lowercase();
+
+    // (c) Content present.
+    assert!(
+        lower.contains("jane doe"),
+        "meridian ATS: 'jane doe' missing\n---\n{lower}"
+    );
+    for heading in &["summary", "experience", "education", "skills"] {
+        assert!(
+            lower.contains(heading),
+            "meridian ATS: heading '{heading}' missing\n---\n{lower}"
+        );
+    }
+    assert!(
+        lower.contains("distributed task scheduler"),
+        "meridian ATS: bullet fragment 'distributed task scheduler' missing\n---\n{lower}"
+    );
+
+    // (b) Word boundaries.
+    assert!(
+        lower.contains("state university"),
+        "meridian ATS: 'state university' word boundary broken\n---\n{lower}"
+    );
+
+    // (a) Reading order: summary → experience → education → skills.
+    let order = ["summary", "experience", "education", "skills"];
+    let mut last = 0usize;
+    for h in &order {
+        let pos = lower
+            .find(h)
+            .unwrap_or_else(|| panic!("meridian ATS: '{h}' not found in extracted text"));
+        assert!(
+            pos >= last,
+            "meridian ATS: '{h}' ({pos}) appeared before previous heading ({last})\n---\n{lower}"
+        );
+        last = pos;
+    }
+}
+
+#[test]
+fn meridian_write_sample_pdf_for_review() {
+    use std::fs;
+    use std::path::Path;
+
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Meridian);
+    let bytes = render_pdf(&model, TypstTemplate::Meridian, &opts_p3a(), Some(&t))
+        .expect("render_pdf(meridian) should succeed for sample PDF");
+
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+    if let Err(e) = fs::create_dir_all(&target) {
+        eprintln!("meridian_write_sample_pdf_for_review: could not create target/: {e}");
+    }
+    let out_path = target.join("meridian_sample.pdf");
+    match fs::write(&out_path, &bytes) {
+        Ok(()) => eprintln!("Meridian sample PDF written to: {}", out_path.display()),
+        Err(e) => eprintln!(
+            "meridian_write_sample_pdf_for_review: could not write {}: {e} (informational only)",
+            out_path.display()
+        ),
+    }
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
+// ── Throughline ───────────────────────────────────────────────────────────────
+
+#[test]
+fn throughline_render_produces_valid_pdf() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Throughline);
+    let bytes = render_pdf(&model, TypstTemplate::Throughline, &opts_p3a(), Some(&t))
+        .expect("render_pdf(throughline) should succeed");
+    assert!(!bytes.is_empty(), "Throughline PDF must not be empty");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "Throughline output must start with %PDF"
+    );
+}
+
+#[test]
+fn throughline_ats_harness() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Throughline);
+    let bytes = render_pdf(&model, TypstTemplate::Throughline, &opts_p3a(), Some(&t))
+        .expect("render_pdf(throughline) for ATS harness");
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract must succeed on throughline output");
+
+    let normalised: String = extracted.split_whitespace().collect::<Vec<_>>().join(" ");
+    let lower = normalised.to_lowercase();
+
+    // (c) Content present.
+    assert!(
+        lower.contains("jane doe"),
+        "throughline ATS: 'jane doe' missing\n---\n{lower}"
+    );
+    for heading in &["summary", "experience", "education", "skills"] {
+        assert!(
+            lower.contains(heading),
+            "throughline ATS: heading '{heading}' missing\n---\n{lower}"
+        );
+    }
+    assert!(
+        lower.contains("distributed task scheduler"),
+        "throughline ATS: bullet fragment missing\n---\n{lower}"
+    );
+
+    // (b) Word boundaries.
+    assert!(
+        lower.contains("state university"),
+        "throughline ATS: 'state university' word boundary broken\n---\n{lower}"
+    );
+
+    // (a) Reading order.
+    let order = ["summary", "experience", "education", "skills"];
+    let mut last = 0usize;
+    for h in &order {
+        let pos = lower
+            .find(h)
+            .unwrap_or_else(|| panic!("throughline ATS: '{h}' not found"));
+        assert!(
+            pos >= last,
+            "throughline ATS: '{h}' ({pos}) appeared before previous ({last})\n---\n{lower}"
+        );
+        last = pos;
+    }
+}
+
+// (d) Throughline-specific: EXPERIENCE entries + bullets must all survive
+// text extraction — the timeline decoration (nodes/spine) must not drop content.
+#[test]
+fn throughline_timeline_entries_and_bullets_survive_extraction() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Throughline);
+    let bytes = render_pdf(&model, TypstTemplate::Throughline, &opts_p3a(), Some(&t))
+        .expect("render_pdf(throughline) for timeline integrity");
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes).expect("pdf-extract must succeed");
+
+    let normalised: String = extracted.split_whitespace().collect::<Vec<_>>().join(" ");
+    let lower = normalised.to_lowercase();
+
+    // Entry titles from the fixture's EXPERIENCE section.
+    for title in &["acme corp", "beta inc"] {
+        assert!(
+            lower.contains(title),
+            "throughline timeline: entry title '{title}' missing — timeline may have dropped text\n---\n{lower}"
+        );
+    }
+
+    // Bullet fragments from EXPERIENCE entries.
+    assert!(
+        lower.contains("distributed task scheduler"),
+        "throughline timeline: bullet 'distributed task scheduler' missing\n---\n{lower}"
+    );
+    assert!(
+        lower.contains("real-time data pipeline"),
+        "throughline timeline: bullet 'real-time data pipeline' missing\n---\n{lower}"
+    );
+}
+
+#[test]
+fn throughline_write_sample_pdf_for_review() {
+    use std::fs;
+    use std::path::Path;
+
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Throughline);
+    let bytes = render_pdf(&model, TypstTemplate::Throughline, &opts_p3a(), Some(&t))
+        .expect("render_pdf(throughline) should succeed for sample PDF");
+
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+    if let Err(e) = fs::create_dir_all(&target) {
+        eprintln!("throughline_write_sample_pdf_for_review: could not create target/: {e}");
+    }
+    let out_path = target.join("throughline_sample.pdf");
+    match fs::write(&out_path, &bytes) {
+        Ok(()) => eprintln!("Throughline sample PDF written to: {}", out_path.display()),
+        Err(e) => eprintln!(
+            "throughline_write_sample_pdf_for_review: could not write {}: {e} (informational only)",
+            out_path.display()
+        ),
+    }
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
+// ── (Quanta removed) ──────────────────────────────────────────────────────────
+
+// ── Phase 3b-i: Portrait + Lebenslauf — photo templates ──────────────────────
+//
+// Tests cover, per template:
+//   (1) Render with fixture photo → valid PDF.
+//   (2) Render without photo (no-photo fallback) → valid PDF.
+//   (3) ATS harness: reading order + word boundaries + content.
+//   (4) Sample PDFs written to target/ for human review.
+//
+// A fixture photo is generated in-test via the `image` crate (240×240 solid
+// PNG → base64 data URL) — no committed binary needed.
+
+use crate::export::typst_engine::resolve_photo;
+
+/// Generate a 240×240 solid RGBA PNG as a base64 data URL, for use as a
+/// fixture photo in the photo-template tests.
+fn fixture_photo_data_url() -> String {
+    use base64::Engine;
+    use image::{DynamicImage, ImageBuffer, ImageFormat, Rgba};
+    use std::io::Cursor;
+
+    // Gradient-ish: top-left warm orange, bottom-right deep blue-slate.
+    let img = ImageBuffer::from_fn(240, 240, |x, y| {
+        let r = (200u8).saturating_sub((x as u8).saturating_mul(170u8 / 240u8));
+        let g = (100u8).saturating_add(y as u8 / 3);
+        let b = (50u8).saturating_add(x as u8 / 3);
+        Rgba([r, g, b, 255])
+    });
+    let dyn_img = DynamicImage::ImageRgba8(img);
+    let mut buf = Vec::new();
+    dyn_img
+        .write_to(&mut Cursor::new(&mut buf), ImageFormat::Png)
+        .expect("fixture_photo: encode png");
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&buf);
+    format!("data:image/png;base64,{b64}")
+}
+
+fn opts_photo(ats: bool) -> RenderOpts {
+    RenderOpts {
+        page: PageGeometry {
+            width_mm: 210.0,
+            height_mm: 297.0,
+        },
+        accent: None,
+        lang: "en".to_string(),
+        ats,
+    }
+}
+
+// ── Portrait ──────────────────────────────────────────────────────────────────
+
+// (1a) Portrait with fixture photo → valid PDF.
+#[test]
+fn portrait_render_with_photo_produces_valid_pdf() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+
+    let data_url = fixture_photo_data_url();
+    let photo_png = resolve_photo(&data_url);
+    assert!(photo_png.is_some(), "fixture photo must resolve");
+
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let t = template_style(TemplateId::Portrait);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Portrait,
+        &opts_photo(false),
+        Some(&t),
+        photo_png,
+    )
+    .expect("render_pdf_with_photo(portrait) should succeed");
+
+    assert!(!bytes.is_empty(), "Portrait PDF must not be empty");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "Portrait output must start with %PDF"
+    );
+}
+
+// (1b) Portrait without photo (no-photo fallback) → valid PDF.
+#[test]
+fn portrait_render_no_photo_produces_valid_pdf() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let t = template_style(TemplateId::Portrait);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Portrait,
+        &opts_photo(false),
+        Some(&t),
+        None,
+    )
+    .expect("render_pdf_with_photo(portrait, no-photo) should succeed");
+
+    assert!(!bytes.is_empty(), "Portrait no-photo PDF must not be empty");
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
+// (1c) Portrait ATS mode → valid PDF with linear reading order.
+#[test]
+fn portrait_ats_harness() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Portrait);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Portrait,
+        &opts_photo(true),
+        Some(&t),
+        None,
+    )
+    .expect("render_pdf_with_photo(portrait, ats) should succeed");
+
+    assert!(bytes.starts_with(b"%PDF"));
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract must succeed on portrait ATS output");
+
+    let normalised: String = extracted.split_whitespace().collect::<Vec<_>>().join(" ");
+    let lower = normalised.to_lowercase();
+
+    // Content present.
+    assert!(
+        lower.contains("jane doe"),
+        "portrait ATS: 'jane doe' missing\n---\n{lower}"
+    );
+    for heading in &["summary", "experience", "education", "skills"] {
+        assert!(
+            lower.contains(heading),
+            "portrait ATS: heading '{heading}' missing\n---\n{lower}"
+        );
+    }
+    assert!(
+        lower.contains("distributed task scheduler"),
+        "portrait ATS: bullet fragment missing\n---\n{lower}"
+    );
+
+    // Word boundaries.
+    assert!(
+        lower.contains("state university"),
+        "portrait ATS: 'state university' word boundary broken\n---\n{lower}"
+    );
+
+    // Reading order.
+    let order = ["summary", "experience", "education", "skills"];
+    let mut last = 0usize;
+    for h in &order {
+        let pos = lower
+            .find(h)
+            .unwrap_or_else(|| panic!("portrait ATS: '{h}' not found"));
+        assert!(
+            pos >= last,
+            "portrait ATS: '{h}' ({pos}) before previous ({last})"
+        );
+        last = pos;
+    }
+}
+
+// (1d) Write Portrait sample PDFs to target/ for human review (with and without photo).
+#[test]
+fn portrait_write_sample_pdfs_for_review() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+    use std::fs;
+    use std::path::Path;
+
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let t = template_style(TemplateId::Portrait);
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+    let _ = fs::create_dir_all(&target);
+
+    // With photo.
+    let data_url = fixture_photo_data_url();
+    let photo_png = resolve_photo(&data_url);
+    let bytes_with = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Portrait,
+        &opts_photo(false),
+        Some(&t),
+        photo_png,
+    )
+    .expect("portrait with photo");
+    match fs::write(target.join("portrait_sample.pdf"), &bytes_with) {
+        Ok(()) => eprintln!("Portrait (with photo) sample written to target/portrait_sample.pdf"),
+        Err(e) => eprintln!("portrait_write: could not write portrait_sample.pdf: {e}"),
+    }
+    assert!(bytes_with.starts_with(b"%PDF"));
+
+    // Without photo (no-photo fallback).
+    let bytes_nophoto = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Portrait,
+        &opts_photo(false),
+        Some(&t),
+        None,
+    )
+    .expect("portrait no-photo");
+    match fs::write(target.join("portrait_nophoto_sample.pdf"), &bytes_nophoto) {
+        Ok(()) => {
+            eprintln!("Portrait (no-photo) sample written to target/portrait_nophoto_sample.pdf")
+        }
+        Err(e) => eprintln!("portrait_write: could not write portrait_nophoto_sample.pdf: {e}"),
+    }
+    assert!(bytes_nophoto.starts_with(b"%PDF"));
+}
+
+// ── Lebenslauf ────────────────────────────────────────────────────────────────
+
+/// German Lebenslauf fixture — uses typical DACH names and section content.
+const LEBENSLAUF_FIXTURE: &str = "\
+Max Müller
+max.mueller@example.de | https://linkedin.com/in/maxmueller
+
+BERUFSERFAHRUNG
+Senior Software Engineer | Musterfirma GmbH | 2020 – Heute
+- Entwicklung einer hochverfügbaren Microservices-Architektur mit Kubernetes
+- Einführung von CI/CD-Pipelines und Reduktion der Deployment-Zeit um 60 Prozent
+
+Software Engineer | Tech AG | 2017 – 2020
+- Aufbau einer Echtzeit-Datenplattform für zwei Millionen tägliche Nutzer
+- Mentoring von drei Junior-Entwicklern im Bereich Rust und TypeScript
+
+AUSBILDUNG
+M.Sc. Informatik | Technische Universität Berlin | 2015 – 2017
+
+KENNTNISSE
+Rust, Go, TypeScript, Kubernetes, AWS, PostgreSQL, Kafka
+
+SPRACHEN
+Deutsch (Muttersprache), Englisch (fließend)
+";
+
+// (2a) Lebenslauf with fixture photo → valid PDF.
+#[test]
+fn lebenslauf_render_with_photo_produces_valid_pdf() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+
+    let data_url = fixture_photo_data_url();
+    let photo_png = resolve_photo(&data_url);
+    assert!(photo_png.is_some(), "fixture photo must resolve");
+
+    let model = model_from_resume_text(LEBENSLAUF_FIXTURE);
+    let t = template_style(TemplateId::Lebenslauf);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Lebenslauf,
+        &opts_photo(false),
+        Some(&t),
+        photo_png,
+    )
+    .expect("render_pdf_with_photo(lebenslauf) should succeed");
+
+    assert!(!bytes.is_empty(), "Lebenslauf PDF must not be empty");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "Lebenslauf output must start with %PDF"
+    );
+}
+
+// (2b) Lebenslauf without photo → valid PDF.
+#[test]
+fn lebenslauf_render_no_photo_produces_valid_pdf() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+
+    let model = model_from_resume_text(LEBENSLAUF_FIXTURE);
+    let t = template_style(TemplateId::Lebenslauf);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Lebenslauf,
+        &opts_photo(false),
+        Some(&t),
+        None,
+    )
+    .expect("render_pdf_with_photo(lebenslauf, no-photo) should succeed");
+
+    assert!(!bytes.is_empty());
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
+// (2c) Lebenslauf ATS harness.
+#[test]
+fn lebenslauf_ats_harness() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Lebenslauf);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Lebenslauf,
+        &opts_photo(true),
+        Some(&t),
+        None,
+    )
+    .expect("render_pdf_with_photo(lebenslauf, ats) should succeed");
+
+    assert!(bytes.starts_with(b"%PDF"));
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract must succeed on lebenslauf ATS output");
+
+    let normalised: String = extracted.split_whitespace().collect::<Vec<_>>().join(" ");
+    let lower = normalised.to_lowercase();
+
+    // Content present.
+    assert!(
+        lower.contains("jane doe"),
+        "lebenslauf ATS: 'jane doe' missing\n---\n{lower}"
+    );
+    for heading in &["summary", "experience", "education", "skills"] {
+        assert!(
+            lower.contains(heading),
+            "lebenslauf ATS: heading '{heading}' missing\n---\n{lower}"
+        );
+    }
+    assert!(
+        lower.contains("distributed task scheduler"),
+        "lebenslauf ATS: bullet fragment missing\n---\n{lower}"
+    );
+
+    // Word boundaries.
+    assert!(
+        lower.contains("state university"),
+        "lebenslauf ATS: 'state university' word boundary broken\n---\n{lower}"
+    );
+
+    // Reading order.
+    let order = ["summary", "experience", "education", "skills"];
+    let mut last = 0usize;
+    for h in &order {
+        let pos = lower
+            .find(h)
+            .unwrap_or_else(|| panic!("lebenslauf ATS: '{h}' not found"));
+        assert!(
+            pos >= last,
+            "lebenslauf ATS: '{h}' ({pos}) before previous ({last})"
+        );
+        last = pos;
+    }
+}
+
+// (2d) Write Lebenslauf sample PDFs to target/ for human review.
+#[test]
+fn lebenslauf_write_sample_pdfs_for_review() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+    use std::fs;
+    use std::path::Path;
+
+    let model = model_from_resume_text(LEBENSLAUF_FIXTURE);
+    let t = template_style(TemplateId::Lebenslauf);
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+    let _ = fs::create_dir_all(&target);
+
+    // With photo.
+    let data_url = fixture_photo_data_url();
+    let photo_png = resolve_photo(&data_url);
+    let bytes_with = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Lebenslauf,
+        &opts_photo(false),
+        Some(&t),
+        photo_png,
+    )
+    .expect("lebenslauf with photo");
+    match fs::write(target.join("lebenslauf_sample.pdf"), &bytes_with) {
+        Ok(()) => {
+            eprintln!("Lebenslauf (with photo) sample written to target/lebenslauf_sample.pdf")
+        }
+        Err(e) => eprintln!("lebenslauf_write: could not write lebenslauf_sample.pdf: {e}"),
+    }
+    assert!(bytes_with.starts_with(b"%PDF"));
+}
+
+// ── resolve_photo unit tests (already in photo.rs; re-exercised here for ──────
+//    integration-layer confidence that the export module re-exports correctly)
+
+#[test]
+fn resolve_photo_valid_data_url_returns_png_bytes() {
+    let data_url = fixture_photo_data_url();
+    let result = resolve_photo(&data_url);
+    assert!(
+        result.is_some(),
+        "resolve_photo must return Some for a valid PNG data URL"
+    );
+    let bytes = result.unwrap();
+    assert!(
+        bytes.starts_with(b"\x89PNG"),
+        "resolve_photo output must be PNG; got {:?}",
+        &bytes[..4.min(bytes.len())]
+    );
+}
+
+#[test]
+fn resolve_photo_oversized_returns_none() {
+    let huge: String = "A".repeat(15 * 1024 * 1024);
+    let data_url = format!("data:image/png;base64,{huge}");
+    assert!(
+        resolve_photo(&data_url).is_none(),
+        "oversized data URL must return None"
+    );
+}
+
+#[test]
+fn resolve_photo_non_image_returns_none() {
+    use base64::Engine;
+    let garbage = b"not an image at all";
+    let b64 = base64::engine::general_purpose::STANDARD.encode(garbage);
+    let data_url = format!("data:image/png;base64,{b64}");
+    assert!(
+        resolve_photo(&data_url).is_none(),
+        "non-image bytes must return None"
+    );
+}
+
+#[test]
+fn resolve_photo_bogus_path_returns_none() {
+    assert!(
+        resolve_photo("/nonexistent/path/photo.png").is_none(),
+        "nonexistent path must return None"
+    );
+}
+
+// ── Stray-Typst-code guard ────────────────────────────────────────────────────
+//
+// Renders a fixture through EVERY template (classic, modern, swiss-minimal,
+// academic, atelier, meridian, throughline, portrait, lebenslauf, letter) and
+// asserts that the extracted PDF text contains NONE of the following
+// case-sensitive substrings — these are Typst code tokens that would appear as
+// literal printed text when a `#` prefix is accidentally omitted from a
+// top-level call in markup context.
+//
+// Caught by this guard:
+//   - `line(length` / `stroke:` / `block(above` / `block(below` / `grid(columns`
+//   - `#let` / `pad(left` / `place(`
+//
+// This guard caught the `lebenslauf.typ` Bug 2 (missing `#` before `line` and
+// `block` in the header section) and will catch any future regression across
+// all templates.
+
+const STRAY_TOKENS: &[&str] = &[
+    "line(length",
+    "stroke:",
+    "block(above",
+    "block(below",
+    "grid(columns",
+    "#let",
+    "pad(left",
+    "place(",
+];
+
+/// Render `bytes` through pdf-extract and assert no stray Typst tokens appear.
+fn assert_no_stray_tokens(label: &str, bytes: &[u8]) {
+    let extracted = pdf_extract::extract_text_from_mem(bytes)
+        .unwrap_or_else(|e| panic!("stray-token guard: pdf-extract failed for {label}: {e}"));
+
+    for token in STRAY_TOKENS {
+        assert!(
+            !extracted.contains(token),
+            "stray-token guard [{label}]: found leaked Typst code token {token:?} \
+             in extracted text — a `#` prefix is likely missing in the template source.\n\
+             Extracted snippet (first 2000 chars):\n{:.2000}",
+            extracted,
+        );
+    }
+}
+
+#[test]
+fn stray_typst_code_guard_classic() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let bytes = render_pdf(&model, TypstTemplate::Classic, &opts_a4(), None)
+        .expect("stray-token guard: classic render failed");
+    assert_no_stray_tokens("classic", &bytes);
+}
+
+#[test]
+fn stray_typst_code_guard_modern() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Modern);
+    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts_sc(), Some(&t))
+        .expect("stray-token guard: modern render failed");
+    assert_no_stray_tokens("modern", &bytes);
+}
+
+#[test]
+fn stray_typst_code_guard_swiss_minimal() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::SwissMinimal);
+    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts_sc(), Some(&t))
+        .expect("stray-token guard: swiss-minimal render failed");
+    assert_no_stray_tokens("swiss-minimal", &bytes);
+}
+
+#[test]
+fn stray_typst_code_guard_academic() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Academic);
+    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts_sc(), Some(&t))
+        .expect("stray-token guard: academic render failed");
+    assert_no_stray_tokens("academic", &bytes);
+}
+
+#[test]
+fn stray_typst_code_guard_atelier() {
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let bytes = render_pdf(&model, TypstTemplate::Atelier, &opts_atelier(false), None)
+        .expect("stray-token guard: atelier render failed");
+    assert_no_stray_tokens("atelier", &bytes);
+}
+
+#[test]
+fn stray_typst_code_guard_meridian() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Meridian);
+    let bytes = render_pdf(&model, TypstTemplate::Meridian, &opts_p3a(), Some(&t))
+        .expect("stray-token guard: meridian render failed");
+    assert_no_stray_tokens("meridian", &bytes);
+}
+
+#[test]
+fn stray_typst_code_guard_throughline() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let t = template_style(TemplateId::Throughline);
+    let bytes = render_pdf(&model, TypstTemplate::Throughline, &opts_p3a(), Some(&t))
+        .expect("stray-token guard: throughline render failed");
+    assert_no_stray_tokens("throughline", &bytes);
+}
+
+#[test]
+fn stray_typst_code_guard_portrait_with_photo() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+
+    let data_url = fixture_photo_data_url();
+    let photo_png = resolve_photo(&data_url);
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let t = template_style(TemplateId::Portrait);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Portrait,
+        &opts_photo(false),
+        Some(&t),
+        photo_png,
+    )
+    .expect("stray-token guard: portrait (with photo) render failed");
+    assert_no_stray_tokens("portrait-with-photo", &bytes);
+}
+
+#[test]
+fn stray_typst_code_guard_portrait_no_photo() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let t = template_style(TemplateId::Portrait);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Portrait,
+        &opts_photo(false),
+        Some(&t),
+        None,
+    )
+    .expect("stray-token guard: portrait (no-photo) render failed");
+    assert_no_stray_tokens("portrait-no-photo", &bytes);
+}
+
+#[test]
+fn stray_typst_code_guard_lebenslauf_with_photo() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+
+    let data_url = fixture_photo_data_url();
+    let photo_png = resolve_photo(&data_url);
+    let model = model_from_resume_text(LEBENSLAUF_FIXTURE);
+    let t = template_style(TemplateId::Lebenslauf);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Lebenslauf,
+        &opts_photo(false),
+        Some(&t),
+        photo_png,
+    )
+    .expect("stray-token guard: lebenslauf (with photo) render failed");
+    assert_no_stray_tokens("lebenslauf-with-photo", &bytes);
+}
+
+#[test]
+fn stray_typst_code_guard_lebenslauf_no_photo() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+
+    let model = model_from_resume_text(LEBENSLAUF_FIXTURE);
+    let t = template_style(TemplateId::Lebenslauf);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Lebenslauf,
+        &opts_photo(false),
+        Some(&t),
+        None,
+    )
+    .expect("stray-token guard: lebenslauf (no-photo) render failed");
+    assert_no_stray_tokens("lebenslauf-no-photo", &bytes);
+}
+
+#[test]
+fn stray_typst_code_guard_letter() {
+    let t = Template::get(TemplateId::Modern);
+    let bytes = render_letter_pdf(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
+        .expect("stray-token guard: letter render failed");
+    assert_no_stray_tokens("letter", &bytes);
+}

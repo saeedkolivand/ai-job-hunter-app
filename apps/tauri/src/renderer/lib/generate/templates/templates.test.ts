@@ -12,6 +12,23 @@ describe('TEMPLATES', () => {
     }
   });
 
+  // Sync guard: this id set MUST equal the Rust `TemplateId` enum (export/types.rs,
+  // kebab-case) and the shared contract union (packages/shared/.../documents.ts).
+  // The Rust round-trip test pins the other side; if either drifts, a guard fails.
+  it('matches the canonical 9-template id set', () => {
+    expect([...ids].sort()).toEqual([
+      'academic',
+      'atelier',
+      'classic',
+      'lebenslauf',
+      'meridian',
+      'modern',
+      'portrait',
+      'swiss-minimal',
+      'throughline',
+    ]);
+  });
+
   it('uses 6-digit hex colours without a leading hash', () => {
     for (const t of Object.values(TEMPLATES)) {
       for (const color of [t.nameColor, t.sectionColor, t.bodyColor, t.ruleColor]) {
