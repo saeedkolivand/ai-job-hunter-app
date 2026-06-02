@@ -239,6 +239,18 @@
         "description": "Debug tools & diagnostics"
       }
     },
+    "applicant": {
+      "title": "Applicant details",
+      "description": "Optional facts a résumé can't answer — used for the cover letter where a market expects them (e.g. Germany asks for a salary expectation and start date) and for auto-pilot application answers. Left blank, the app answers non-committally and never invents a number or date. Changes save automatically.",
+      "salary": "Salary expectation",
+      "salaryPlaceholder": "e.g. €70,000 or €65–75k",
+      "startDate": "Earliest start date",
+      "startDatePlaceholder": "e.g. 1 March 2026, or immediately",
+      "notice": "Notice period",
+      "noticePlaceholder": "e.g. 3 months",
+      "remote": "Remote / hybrid preference",
+      "remotePlaceholder": "e.g. remote-first, hybrid 2 days, on-site"
+    },
     "contactProfile": {
       "title": "Contact Profile",
       "description": "The header on your résumé and cover letter is built from these fields — your name, email, phone, location, and personal profile links. Editing them keeps every generated document correct and consistent. Changes save automatically.",
@@ -469,6 +481,11 @@
       "label": "Research the company",
       "hint": "Adds a short web brief to the cover letter, using your AI provider's own web search. Best-effort.",
       "ollamaKeyHint": "Ollama needs a free Ollama account key to search — add it in Settings → AI."
+    },
+    "market": {
+      "label": "Target market",
+      "auto": "Auto (detected from job)",
+      "hint": "Sets the cover letter's etiquette and exported layout (salutation, sign-off, subject line, date placement). Auto follows the job's country."
     },
     "recommendationTitle": "Suggested template",
     "applyRecommendation": "Apply suggestion",
@@ -905,6 +922,8 @@
   },
   "ai": {
     "title": "AI Workspace",
+    "model": "Model",
+    "promptQuality": "Prompt Quality",
     "placeholder": "Ask anything about jobs, resumes, or career advice...",
     "send": "Send message",
     "processing": "Processing...",

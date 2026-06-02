@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import urlLabels from '../fixtures/url-labels.json';
 import {
   APPLICATION_QUESTIONS,
+  buildApplicantDetailsBlock,
   buildApplicationAnswerPrompt,
   buildApplicationAnswerSystemPrompt,
   buildCoverLetterPrompt,
@@ -334,7 +335,24 @@ describe('résumé context wiring', () => {
 describe('buildCoverLetterSystemPrompt', () => {
   it('returns a detailed prompt for large models', () => {
     const prompt = buildCoverLetterSystemPrompt('recruiter');
-    expect(prompt).toContain('WHAT KILLS COVER LETTERS');
+    // The detailed prompt teaches flow/voice (the fix for robotic output) via a
+    // movement-by-movement narrative + a tone exemplar, and is materially longer
+    // than the compact small-model variant.
+    expect(prompt).toContain('cover letter specialist');
+    expect(prompt).toContain('MOVEMENT BY MOVEMENT');
+    expect(prompt).toContain('TONE REFERENCE');
+    expect(prompt.length).toBeGreaterThan(
+      buildCoverLetterSystemPrompt('recruiter', 'small').length
+    );
+  });
+
+  it('carries the anti-bluff honesty spine in every depth', () => {
+    // Matching the job ad must never become claiming résumé-absent skills, so the
+    // no-bluff directive appears in the large (cloud), small (local), and agent
+    // (cli/task) prompt variants.
+    expect(buildCoverLetterSystemPrompt('ats', 'large')).toMatch(/never bluff/i);
+    expect(buildCoverLetterSystemPrompt('ats', 'small')).toMatch(/never bluff/i);
+    expect(buildCoverLetterSystemPrompt('ats', { kind: 'cli' })).toMatch(/never bluff/i);
   });
 
   it('returns a compact prompt for small models', () => {
@@ -355,6 +373,29 @@ describe('buildCoverLetterPrompt', () => {
     expect(prompt).not.toContain('<company_research>');
   });
 
+  it('injects German market conventions (Betreff + salary/start-date) while keeping the letter language', () => {
+    const prompt = buildCoverLetterPrompt(
+      RESUME_WITH_LINKS,
+      'Job ad',
+      META,
+      'recruiter',
+      'large',
+      '',
+      'de'
+    );
+    expect(prompt).toContain('<market_conventions market="Germany">');
+    expect(prompt).toContain('Betreff');
+    expect(prompt).toMatch(/salary expectation/i);
+    // Decision: write in the letter language (en here), apply German etiquette.
+    expect(prompt).toMatch(/Write the letter in en/);
+  });
+
+  it('uses the international baseline (no subject line) by default', () => {
+    const prompt = buildCoverLetterPrompt(RESUME_WITH_LINKS, 'Job ad', META, 'recruiter');
+    expect(prompt).toContain('<market_conventions market="International">');
+    expect(prompt).toContain('Do NOT add a subject line');
+  });
+
   it('folds a provided company brief into a fenced, untrusted research block', () => {
     const brief = 'Acme builds payment rails for SMBs and recently raised a Series B.';
     const prompt = buildCoverLetterPrompt(
@@ -371,6 +412,11 @@ describe('buildCoverLetterPrompt', () => {
     // instructions must be ignored.
     expect(prompt).toMatch(/untrusted/i);
     expect(prompt).toMatch(/ignore any instructions/i);
+    // Positive use: the prompt now tells the model to actually weave the brief
+    // into the "why this company" part, so research informs the letter instead
+    // of just being fenced and ignored.
+    expect(prompt).toMatch(/draw on <company_research>/i);
+    expect(prompt).toMatch(/why this company/i);
   });
 });
 
@@ -417,6 +463,62 @@ describe('application questions', () => {
     expect(prompt).toMatch(/untrusted/i);
     expect(prompt).toMatch(/ignore any instructions/i);
   });
+
+  it('is market-aware and uses applicant details for logistics answers', () => {
+    const prompt = buildApplicationAnswerPrompt({
+      question: 'What are your salary expectations?',
+      resume: RESUME_FOR_GROUNDING,
+      jobAd: 'A role',
+      meta: META,
+      market: 'de',
+      applicant: { salaryExpectation: '€70,000', noticePeriod: '3 months' },
+    });
+    expect(prompt).toContain('Market: Germany');
+    expect(prompt).toContain('<applicant_details>');
+    expect(prompt).toContain('€70,000');
+    expect(prompt).toContain('3 months');
+  });
+
+  it('system prompt forbids fabricating logistics and allows research where it helps', () => {
+    const sys = buildApplicationAnswerSystemPrompt();
+    expect(sys).toMatch(/<applicant_details>/);
+    expect(sys).toMatch(/never invent a number or date/i);
+    expect(sys).toMatch(/company_research/i);
+  });
+});
+
+describe('applicant preferences block', () => {
+  it('fences stated preferences and forbids fabrication', () => {
+    const block = buildApplicantDetailsBlock({
+      salaryExpectation: '€70,000',
+      earliestStartDate: '1 March 2026',
+    });
+    expect(block).toContain('<applicant_details>');
+    expect(block).toContain('€70,000');
+    expect(block).toContain('1 March 2026');
+    expect(block).toMatch(/never invent/i);
+  });
+
+  it('is empty when nothing is set (so prompts pay nothing)', () => {
+    expect(buildApplicantDetailsBlock(undefined)).toBe('');
+    expect(buildApplicantDetailsBlock({})).toBe('');
+    expect(buildApplicantDetailsBlock({ salaryExpectation: '   ' })).toBe('');
+  });
+
+  it('cover letter folds applicant details in for market inclusions (DACH)', () => {
+    const prompt = buildCoverLetterPrompt(
+      RESUME_WITH_LINKS,
+      'Job ad',
+      META,
+      'recruiter',
+      'large',
+      '',
+      'de',
+      { salaryExpectation: '€70,000', earliestStartDate: '1 March 2026' }
+    );
+    expect(prompt).toContain('<applicant_details>');
+    expect(prompt).toContain('€70,000');
+  });
 });
 
 describe('extractPlainText', () => {
@@ -460,5 +562,19 @@ describe('validateMetadata', () => {
 
   it('returns null for unparseable input', () => {
     expect(validateMetadata('not json at all')).toBeNull();
+  });
+
+  it('extracts and upper-cases the job location + country', () => {
+    const meta = validateMetadata(
+      '{"candidateName":"Jane","jobAdLanguage":"en","jobLocation":"Munich, Germany","jobCountry":"de"}'
+    );
+    expect(meta?.jobLocation).toBe('Munich, Germany');
+    expect(meta?.jobCountry).toBe('DE');
+  });
+
+  it('drops a malformed jobCountry that is not a 2-letter code', () => {
+    const meta = validateMetadata('{"candidateName":"Jane","jobCountry":"Germany"}');
+    expect(meta?.jobCountry).toBe('');
+    expect(meta?.jobLocation).toBe('');
   });
 });

@@ -23,6 +23,7 @@ import {
   type GenerationMode,
   getLinkMap,
   injectLinksIntoGeneratedText,
+  resolveMarket,
   validateMetadata,
 } from '@ajh/prompts/generate';
 import { detectLanguages } from '@ajh/shared/language-detection';
@@ -273,13 +274,20 @@ export async function generateResume(
  * the cover letter still generates. The returned brief is untrusted reference
  * text — the prompt fences it.
  */
-export async function researchCompany(jobAd: string, model: string): Promise<string> {
+export async function researchCompany(
+  jobAd: string,
+  model: string,
+  company?: string
+): Promise<string> {
   try {
     const providerConfig = usePreferencesStore.getState().aiProviderConfig;
     const activeProvider = providerConfig?.activeProvider ?? 'ollama';
     const providerSettings = providerConfig?.providers?.[activeProvider];
     const res = (await getClient().ai.researchCompany({
       jobAd,
+      // The AI-extracted company name is far more reliable than the backend's
+      // heuristic job-ad scan (which can grab a tagline), so send it when known.
+      company: company?.trim() || undefined,
       provider: activeProvider,
       model: providerSettings?.model || model,
       baseUrl: providerSettings?.baseUrl,
@@ -300,7 +308,7 @@ export async function generateCoverLetter(
   locale = 'en',
   signal?: AbortSignal,
   onThinking?: (tok: string) => void,
-  opts?: { researchCompany?: boolean }
+  opts?: { researchCompany?: boolean; market?: string }
 ): Promise<string> {
   const providerConfig = usePreferencesStore.getState().aiProviderConfig;
   const activeProvider = providerConfig?.activeProvider ?? 'ollama';
@@ -308,12 +316,36 @@ export async function generateCoverLetter(
   const tier = effectiveTier(activeModel, activeProvider);
 
   // Opt-in: fetch a company brief and fold it into the prompt's fit paragraph.
-  const companyBrief = opts?.researchCompany ? await researchCompany(jobAd, model) : '';
+  const companyBrief = opts?.researchCompany
+    ? await researchCompany(jobAd, model, meta.companyName)
+    : '';
+
+  // Resolve the cover-letter market from the job's country (decision: job
+  // location, not ad language) with an optional manual override; the letter is
+  // written in `meta.targetLanguage` but adopts this market's etiquette.
+  const market = resolveMarket({
+    jobCountry: meta.jobCountry,
+    targetLanguage: meta.targetLanguage,
+    override: opts?.market,
+  });
+  // User-supplied preferences (salary/start date) — stated only where the market
+  // expects them (e.g. DACH); never fabricated. From the global settings store.
+  const applicant = usePreferencesStore.getState().applicant;
 
   const system = buildCoverLetterSystemPrompt(mode, tier);
-  const user = buildCoverLetterPrompt(resume, jobAd, meta, mode, tier, companyBrief);
-  // Lower temperature for small models to reduce hallucination noise
-  const temperature = tier === 'small' ? 0.3 : 0.4;
+  const user = buildCoverLetterPrompt(
+    resume,
+    jobAd,
+    meta,
+    mode,
+    tier,
+    companyBrief,
+    market,
+    applicant
+  );
+  // Cover letters are prose: a little more temperature loosens the phrasing so it
+  // reads human, not mechanical. Small models stay lower to limit drift.
+  const temperature = tier === 'small' ? 0.4 : 0.55;
   const raw = await streamGenerate(
     model,
     system,
@@ -350,6 +382,14 @@ export async function generateApplicationAnswer(params: {
   const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
   const tier = effectiveTier(activeModel, activeProvider);
 
+  // Market drives the answer's register; applicant prefs answer logistics
+  // questions (salary/start date/notice/remote) honestly without fabrication.
+  const market = resolveMarket({
+    jobCountry: meta.jobCountry,
+    targetLanguage: meta.targetLanguage,
+  });
+  const applicant = usePreferencesStore.getState().applicant;
+
   const system = buildApplicationAnswerSystemPrompt();
   const user = buildApplicationAnswerPrompt({
     question,
@@ -358,6 +398,8 @@ export async function generateApplicationAnswer(params: {
     meta,
     companyBrief,
     target: tier,
+    market,
+    applicant,
   });
   const raw = await streamGenerate(
     model,

@@ -19,6 +19,18 @@ export interface GenerationMeta {
   targetLanguage: string;
   /** Top keywords/technologies extracted from the job ad. Used for bold emphasis. */
   topRequirements: string[];
+  /**
+   * Free-text job location exactly as written in the ad (e.g.
+   * "Munich, Germany / remote in DE"). Empty when the ad doesn't state one.
+   * Optional so existing `GenerationMeta` literals stay valid.
+   */
+  jobLocation?: string;
+  /**
+   * Normalized ISO-3166 alpha-2 country of the job (e.g. "DE"). Drives the
+   * cover-letter market (decision: job country, not ad language). Empty/omitted
+   * when unknown — resolution then falls back to the research brief / language.
+   */
+  jobCountry?: string;
 }
 
 export const MODES: Record<

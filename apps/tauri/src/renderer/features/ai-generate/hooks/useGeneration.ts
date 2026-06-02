@@ -36,7 +36,13 @@ export function useGeneration(
   t: (key: string) => string,
   setStageLabel: (label: string) => void,
   /** Opt-in company research folded into the cover-letter prompt. */
-  researchCompany = false
+  researchCompany = false,
+  /**
+   * Manual target-market override (a market id like `de`, or '' for auto). Passed
+   * to the cover-letter prompt so the generated text matches the export layout,
+   * which resolves the same market from this value + the detected job country.
+   */
+  marketOverride = ''
 ) {
   const handleAnalyze = async () => {
     setError(null);
@@ -129,7 +135,7 @@ export function useGeneration(
           undefined,
           controller.signal,
           onThink,
-          { researchCompany }
+          { researchCompany, market: marketOverride || undefined }
         );
         setCoverOut(finalCover);
       }

@@ -1,6 +1,6 @@
 import { AlertCircle, ArrowRight, RefreshCw, Wand2 } from 'lucide-react';
 
-import { Button } from '@ajh/ui';
+import { Button, SelectDropdown } from '@ajh/ui';
 
 import { JobAdField } from '@/components/job/JobAdField';
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
@@ -9,7 +9,13 @@ import { GenerationConfig } from '@/features/ai-generate/components/GenerationCo
 import { GenerationMetadata } from '@/features/ai-generate/components/GenerationMetadata';
 import { TemplateRecommendation } from '@/features/ai-generate/components/TemplateRecommendation';
 import { isOllamaFamily } from '@/lib/ai-providers/provider-meta';
-import type { GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate';
+import {
+  type GenerationMeta,
+  type GenerationMode,
+  LETTER_MARKET_IDS,
+  letterConventions,
+  type TemplateId,
+} from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 import { useHasProviderKey } from '@/services';
 import { useAiProviderConfig } from '@/store/preferences-store';
@@ -23,6 +29,8 @@ interface Props {
   target: 'resume' | 'cover' | 'both';
   templateId: TemplateId;
   atsMode: boolean;
+  /** Target-market id for the cover letter ('' / language code = auto-detect). */
+  locale: string;
   uploading: 'resume' | 'jobAd' | null;
   uploadError: string | null;
   canGenerate: boolean;
@@ -54,6 +62,7 @@ export function LeftPanel({
   target,
   templateId,
   atsMode,
+  locale,
   uploading,
   uploadError,
   canGenerate,
@@ -83,6 +92,18 @@ export function LeftPanel({
   // never hidden — we just nudge when that key is missing.
   const { data: ollamaKey } = useHasProviderKey('ollama-cloud');
   const showOllamaResearchHint = isOllamaFamily(activeProvider) && !(ollamaKey?.has ?? false);
+
+  // Target-market options for the cover letter: an "Auto (detected)" entry plus
+  // each supported market (labelled by country). Auto resolves from the job's
+  // detected country at generation + export time, so they always agree.
+  const marketOptions = [
+    { value: '', label: t('aiGenerate.market.auto') },
+    ...LETTER_MARKET_IDS.filter((id) => id !== 'intl').map((id) => ({
+      value: id,
+      label: letterConventions(id).country,
+    })),
+  ];
+  const marketValue = marketOptions.some((o) => o.value === locale) ? locale : '';
 
   return (
     <div className="flex w-[420px] shrink-0 flex-col border-r border-white/[0.05] overflow-y-auto">
@@ -176,6 +197,25 @@ export function LeftPanel({
         onGenerate={onGenerate}
         isGenerating={isGenerating}
       />
+
+      {/* Target market — drives the cover letter's etiquette + exported layout.
+          Auto-detected from the job's country; override here. */}
+      {(target === 'cover' || target === 'both') && (
+        <div className="px-6 pb-2">
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/30">
+            {t('aiGenerate.market.label')}
+          </div>
+          <SelectDropdown
+            options={marketOptions}
+            value={marketValue}
+            onChange={setLocale}
+            placeholder={t('aiGenerate.market.auto')}
+          />
+          <p className="mt-1 text-[10px] leading-relaxed text-foreground/35">
+            {t('aiGenerate.market.hint')}
+          </p>
+        </div>
+      )}
 
       {/* Opt-in company research — only when a cover letter is produced. Default
           off, so generation makes no extra web/LLM call unless the user asks. */}

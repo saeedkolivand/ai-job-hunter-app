@@ -1,12 +1,17 @@
 import { Cpu } from 'lucide-react';
+import { useQueries } from '@tanstack/react-query';
 
 import { Dropdown } from '@ajh/ui';
 
 import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
-import { useAIModels, useHasProviderKey, useListProviderModels, useSystemHealth } from '@/services';
+import { useAppClient } from '@/providers/AppClientProvider';
+import { useAIModels, useHasProviderKey, useSystemHealth } from '@/services';
+import { keys } from '@/services/query-client';
 import type { AiProvider } from '@/store/preferences-schema';
 import { useAIModel, useAiProviderConfig, usePreferencesStore } from '@/store/preferences-store';
 import type { Model } from '@/types';
+
+import { buildModelOptions } from './build-options';
 
 interface ModelSelectorProps {
   className?: string;
@@ -19,6 +24,7 @@ interface ModelSelectorProps {
  * curated aliases when their binary is detected.
  */
 export function ModelSelector({ className }: ModelSelectorProps) {
+  const api = useAppClient();
   const { data: modelList = [] } = useAIModels();
   const ollamaModels = modelList as Model[];
   const aiModel = useAIModel();
@@ -29,54 +35,51 @@ export function ModelSelector({ className }: ModelSelectorProps) {
   const activeProvider = providerConfig?.activeProvider ?? 'ollama';
   const activeProviderModel = providerConfig?.providers?.[activeProvider]?.model ?? '';
 
-  // Cloud key status (fixed set of hooks — one per cloud provider).
-  const openaiKey = useHasProviderKey('openai');
-  const anthropicKey = useHasProviderKey('anthropic');
-  const geminiKey = useHasProviderKey('gemini');
-  const compatKey = useHasProviderKey('openai-compatible');
-  const cloudConnected: Record<string, boolean> = {
-    openai: openaiKey.data?.has ?? false,
-    anthropic: anthropicKey.data?.has ?? false,
-    gemini: geminiKey.data?.has ?? false,
-    'openai-compatible': compatKey.data?.has ?? false,
-  };
+  // Cloud key + model status, driven off the registry (no hardcoded provider
+  // list) so a new cloud provider — e.g. Ollama Cloud — is picked up with no
+  // change here. Custom base URL only applies to the OpenAI-compatible provider.
+  const cloudProviders = PROVIDER_ORDER.filter((p) => PROVIDERS[p].kind === 'cloud');
+  const baseUrlFor = (p: AiProvider): string | undefined =>
+    p === 'openai-compatible'
+      ? providerConfig?.providers?.['openai-compatible']?.baseUrl
+      : undefined;
 
-  // Cloud model lists (fetched from each provider when connected).
-  const openaiModels = useListProviderModels('openai', cloudConnected.openai);
-  const anthropicModels = useListProviderModels('anthropic', cloudConnected.anthropic);
-  const geminiModels = useListProviderModels('gemini', cloudConnected.gemini);
-  const compatModels = useListProviderModels(
-    'openai-compatible',
-    cloudConnected['openai-compatible'],
-    providerConfig?.providers?.['openai-compatible']?.baseUrl
+  const keyQueries = useQueries({
+    queries: cloudProviders.map((p) => ({
+      queryKey: [...keys.ai.models, 'provider-key', p],
+      queryFn: () => api.ai.hasProviderKey({ provider: p }),
+      staleTime: 30_000,
+    })),
+  });
+  const connected = new Map<AiProvider, boolean>(
+    cloudProviders.map((p, i) => [p, keyQueries[i]?.data?.has ?? false])
   );
-  const cloudModels: Record<string, Array<{ name: string }>> = {
-    openai: openaiModels.data ?? [],
-    anthropic: anthropicModels.data ?? [],
-    gemini: geminiModels.data ?? [],
-    'openai-compatible': compatModels.data ?? [],
-  };
+
+  const modelQueries = useQueries({
+    queries: cloudProviders.map((p) => ({
+      queryKey: [...keys.ai.models, 'provider-models', p, baseUrlFor(p) ?? ''],
+      queryFn: () => api.ai.listProviderModels({ provider: p, baseUrl: baseUrlFor(p) }),
+      enabled: connected.get(p) ?? false,
+      staleTime: 300_000,
+    })),
+  });
+  const cloudModelNames = new Map<AiProvider, string[]>(
+    cloudProviders.map((p, i) => [
+      p,
+      ((modelQueries[i]?.data as Array<{ name: string }> | undefined) ?? []).map((m) => m.name),
+    ])
+  );
 
   // CLI-agent availability (binary detected) from the system health probe.
   const { data: health } = useSystemHealth();
   const cliDetected = (id: string) => health?.cliAgents?.[id]?.detected ?? false;
 
-  // Grouped options, derived from the registry by provider kind.
-  const options = PROVIDER_ORDER.flatMap((p) => {
-    const meta = PROVIDERS[p];
-    let names: string[];
-    if (meta.kind === 'local-server') {
-      names = ollamaModels.map((m) => m.name);
-    } else if (meta.kind === 'cli-agent') {
-      names = cliDetected(p) ? meta.models : [];
-    } else {
-      names = cloudConnected[p] ? (cloudModels[p] ?? []).map((m) => m.name) : [];
-    }
-    return names.map((name) => ({
-      value: `${p}||${name}`,
-      label: name,
-      section: meta.label,
-    }));
+  // Grouped options, derived from the registry by provider kind (pure helper).
+  const options = buildModelOptions(PROVIDER_ORDER, PROVIDERS, {
+    ollamaModels: ollamaModels.map((m) => m.name),
+    cliDetected,
+    cloudConnected: (p) => connected.get(p) ?? false,
+    cloudModels: (p) => cloudModelNames.get(p) ?? [],
   });
 
   // Current selection as "provider||model" (Ollama keeps its own defaultModel).

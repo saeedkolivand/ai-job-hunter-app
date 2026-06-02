@@ -50,10 +50,10 @@ export function LocationDropdown({
             position: 'fixed',
             top: position.top,
             left: position.left,
-            width: position.width,
+            width: Math.min(Math.max(position.width, 240), 420),
             zIndex: 9999,
           }}
-          className="glass-elevated overflow-hidden rounded-xl shadow-2xl"
+          className="dropdown-surface overflow-hidden rounded-xl"
         >
           {/* Search input */}
           <div className="border-b border-white/[0.06] px-2 py-2">
