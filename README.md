@@ -120,7 +120,7 @@ The only outbound calls are to the AI provider **you** configure (and an optiona
 <details>
 <summary><strong>🔎 Company research (opt-in)</strong></summary>
 
-- Before writing a cover letter or answers, optionally research the company on the web (Brave Search → a concise, factual brief: what they do, size/stage, products, recent news).
+- Before writing a cover letter or answers, optionally research the company on the web — using your active AI provider's **own** web search (or the free Ollama Web Search API on Ollama) → a concise, factual brief: what they do, size/stage, products, mission, recent news.
 - Default **off**, cached for a week, and treated as **untrusted** reference context — it never becomes a candidate fact, and the no-fabrication grounding rule still governs every claim.
 </details>
 
@@ -219,13 +219,13 @@ pnpm dev
 <details>
 <summary><strong>Troubleshooting</strong></summary>
 
-| Symptom                                       | Fix                                                                                                           |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| macOS: _"app is damaged and can't be opened"_ | Not notarized — clear quarantine once: `xattr -cr "/Applications/AI Job Hunter Assistant.app"`                |
-| No models in the picker / "select a model"    | Start Ollama and `ollama pull <model>`, or add a cloud key in **Settings → AI**                               |
-| Company research does nothing                 | It's opt-in and needs a **Brave Search** key (Settings → AI); without it, generation proceeds without a brief |
-| Scraping can't find a browser                 | Set the browser path in **Settings → Scraping**                                                               |
-| `pnpm dev` fails to build the Rust core       | Ensure the stable Rust toolchain is installed (`rustup install stable`) and re-run                            |
+| Symptom                                       | Fix                                                                                                                                                                         |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS: _"app is damaged and can't be opened"_ | Not notarized — clear quarantine once: `xattr -cr "/Applications/AI Job Hunter Assistant.app"`                                                                              |
+| No models in the picker / "select a model"    | Start Ollama and `ollama pull <model>`, or add a cloud key in **Settings → AI**                                                                                             |
+| Company research does nothing                 | It's opt-in and uses your AI provider's own web search; on **Ollama** add the free Ollama key (Settings → AI). Without a usable search, generation proceeds without a brief |
+| Scraping can't find a browser                 | Set the browser path in **Settings → Scraping**                                                                                                                             |
+| `pnpm dev` fails to build the Rust core       | Ensure the stable Rust toolchain is installed (`rustup install stable`) and re-run                                                                                          |
 
 </details>
 
@@ -282,7 +282,7 @@ The app uses the OS keychain for secrets — no `.env` files. Keys and credentia
 | ------------------ | ------------------- | ------------------------------------------------- |
 | AI provider + key  | Settings → AI       | Ollama / OpenAI / Anthropic / Gemini / compatible |
 | Local model limits | Settings → AI       | Context window + max output, per Ollama model     |
-| Brave Search key   | Settings → AI       | Optional — enables company research               |
+| Ollama account key | Settings → AI       | Optional — Ollama Cloud models + company research |
 | Performance mode   | Settings → General  | Low / Balanced / Performance                      |
 | Language           | Settings → General  | UI and generation locale                          |
 | Browser            | Settings → Scraping | Path to system browser                            |

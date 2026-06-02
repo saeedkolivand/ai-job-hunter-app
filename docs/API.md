@@ -100,7 +100,7 @@ Returns per-model context-window and max-token limits from [Ollama][ollama] (`/a
 
 #### `ai.researchCompany(req: { jobAd: string; provider?: string; model?: string; baseUrl?: string }): Promise<{ company: string; brief: string }>`
 
-Accepts the full **job ad text** (not a company name). The backend extracts the company internally via the `CompanyResearch` enricher (`cover_letter/research/`), runs Brave search + provider synthesis, and caches the result in `KvCache`. Returns `{ company, brief }`. Degrades gracefully — returns `{ company: "", brief: "" }` when there is no Brave key or the search/synthesis fails, so generation always proceeds. The brief is folded into cover-letter and application-answer prompts as an untrusted-fenced block (see ADR-010). See `commands/ai.rs: ai_research_company`.
+Accepts the full **job ad text** (not a company name). The backend extracts the company internally via the `CompanyResearch` enricher (`cover_letter/research/`), runs the **active provider's own web search + synthesis** (each provider's native `research()` — a native web-search tool, or the Ollama Web Search API for Ollama), and caches the result in `KvCache`. Returns `{ company, brief }`. Degrades gracefully — returns `{ company: "", brief: "" }` when the provider can't search or the search/synthesis fails (or times out), so generation always proceeds. The brief is folded into cover-letter and application-answer prompts as an untrusted-fenced block (see ADR-010). See `commands/ai.rs: ai_research_company`.
 
 #### `ai.embed(text: string): Promise<number[]>`
 
