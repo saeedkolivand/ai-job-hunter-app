@@ -23,6 +23,8 @@ import { useTranslation } from '@/lib/i18n';
 import type { PromptQuality } from '@/store/preferences-schema';
 import { usePreferencesStore, usePromptQuality } from '@/store/preferences-store';
 
+import type { PreviewFocus } from '../../samples';
+
 interface GenerationConfigProps {
   stage: string;
   mode: GenerationMode;
@@ -35,6 +37,8 @@ interface GenerationConfigProps {
   onAtsModeChange: (enabled: boolean) => void;
   onGenerate: () => void;
   isGenerating: boolean;
+  /** Show this option's sample in the result panel (fires alongside selection). */
+  onPreviewFocus: (focus: PreviewFocus) => void;
 }
 
 const QUALITY_OPTIONS: { id: PromptQuality; label: string; icon: LucideIcon }[] = [
@@ -55,6 +59,7 @@ export function GenerationConfig({
   onAtsModeChange,
   onGenerate,
   isGenerating,
+  onPreviewFocus,
 }: GenerationConfigProps) {
   const { t } = useTranslation();
   const promptQuality = usePromptQuality();
@@ -79,7 +84,10 @@ export function GenerationConfig({
           ).map(({ id, icon: Icon, label }) => (
             <Button
               key={id}
-              onClick={() => onTargetChange(id)}
+              onClick={() => {
+                onTargetChange(id);
+                onPreviewFocus({ group: 'target', id });
+              }}
               className={cn(
                 'flex flex-col items-center gap-1 rounded-lg border py-2.5 text-[11px] font-medium transition-all h-auto',
                 target === id
@@ -104,7 +112,10 @@ export function GenerationConfig({
             ([id, m]) => (
               <Button
                 key={id}
-                onClick={() => onModeChange(id)}
+                onClick={() => {
+                  onModeChange(id);
+                  onPreviewFocus({ group: 'style', id });
+                }}
                 className={cn(
                   'w-full flex items-center gap-3 rounded-lg border px-3 py-2 text-left transition-all h-auto',
                   mode === id
@@ -132,7 +143,10 @@ export function GenerationConfig({
           {QUALITY_OPTIONS.map(({ id, label, icon: Icon }) => (
             <Button
               key={id}
-              onClick={() => setPromptQuality(id)}
+              onClick={() => {
+                setPromptQuality(id);
+                onPreviewFocus({ group: 'quality', id });
+              }}
               className={cn(
                 'flex flex-col items-center gap-1 rounded-lg border py-2.5 text-[11px] font-medium transition-all h-auto',
                 promptQuality === id
@@ -172,7 +186,10 @@ export function GenerationConfig({
           {Object.values(TEMPLATES).map((tpl) => (
             <Button
               key={tpl.id}
-              onClick={() => onTemplateChange(tpl.id)}
+              onClick={() => {
+                onTemplateChange(tpl.id);
+                onPreviewFocus({ group: 'template', id: tpl.id });
+              }}
               className={cn(
                 'flex flex-col items-center gap-1 rounded-lg border px-2 py-2 text-center transition-all h-auto',
                 templateId === tpl.id

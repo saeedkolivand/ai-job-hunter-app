@@ -21,6 +21,8 @@ import { useTranslation } from '@/lib/i18n';
 import { useHasProviderKey } from '@/services';
 import { useAiProviderConfig } from '@/store/preferences-store';
 
+import type { PreviewFocus } from '../../samples';
+
 interface Props {
   resume: string;
   jobAd: string;
@@ -52,6 +54,7 @@ interface Props {
   onAnalyze: () => void;
   onGenerate: () => void;
   isGenerating: boolean;
+  onPreviewFocus: (focus: PreviewFocus) => void;
 }
 
 export function LeftPanel({
@@ -84,6 +87,7 @@ export function LeftPanel({
   onAnalyze,
   onGenerate,
   isGenerating,
+  onPreviewFocus,
 }: Props) {
   const { t } = useTranslation();
   const providerConfig = useAiProviderConfig();
@@ -197,6 +201,7 @@ export function LeftPanel({
         onAtsModeChange={setAtsMode}
         onGenerate={onGenerate}
         isGenerating={isGenerating}
+        onPreviewFocus={onPreviewFocus}
       />
 
       {/* Target market — drives the cover letter's etiquette + exported layout.
