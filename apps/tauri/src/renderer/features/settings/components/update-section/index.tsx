@@ -9,7 +9,15 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, cn, GlassCard, IconBadge, RefreshButton, SectionLabel } from '@ajh/ui';
+import {
+  Button,
+  cn,
+  GlassCard,
+  IconBadge,
+  MarkdownMessage,
+  RefreshButton,
+  SectionLabel,
+} from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { useAppVersion, useOpenExternal } from '@/services';
@@ -129,8 +137,11 @@ export function UpdateSection() {
             <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-foreground/30">
               {t('settings.update.whatsNew')} {'version' in status ? status.version : ''}
             </div>
-            <div className="max-h-36 overflow-y-auto rounded-lg border border-white/[0.05] bg-white/[0.02] p-3 text-xs text-foreground/50 leading-relaxed whitespace-pre-wrap">
-              {status.releaseNotes}
+            <div className="max-h-36 overflow-y-auto rounded-lg border border-white/[0.05] bg-white/[0.02] p-3">
+              <MarkdownMessage
+                content={status.releaseNotes}
+                className="text-xs text-foreground/60"
+              />
             </div>
           </div>
         )}
@@ -199,8 +210,11 @@ export function UpdateSection() {
                     )}
                   </div>
                   {release.body && (
-                    <div className="whitespace-pre-wrap rounded-lg border border-white/[0.05] bg-white/[0.02] p-3 text-xs leading-relaxed text-foreground/50">
-                      {release.body}
+                    <div className="rounded-lg border border-white/[0.05] bg-white/[0.02] p-3">
+                      <MarkdownMessage
+                        content={release.body}
+                        className="text-xs text-foreground/60"
+                      />
                     </div>
                   )}
                 </div>
