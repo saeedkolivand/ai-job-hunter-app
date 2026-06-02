@@ -3,6 +3,7 @@ import { Contact } from 'lucide-react';
 import { SettingsSection } from '@ajh/ui';
 
 import { ContactProfileForm } from '@/components/contact/ContactProfileForm';
+import { ApplicantDetailsSection } from '@/features/settings/components/contact/ApplicantDetailsSection';
 import { useTranslation } from '@/lib/i18n';
 
 /**
@@ -17,9 +18,14 @@ export function ContactProfileTab() {
   const { t } = useTranslation();
 
   return (
-    <SettingsSection icon={Contact} label={t('settings.contactProfile.title')}>
-      <p className="mb-4 text-xs text-foreground/55">{t('settings.contactProfile.description')}</p>
-      <ContactProfileForm />
-    </SettingsSection>
+    <>
+      <SettingsSection icon={Contact} label={t('settings.contactProfile.title')}>
+        <p className="mb-4 text-xs text-foreground/55">
+          {t('settings.contactProfile.description')}
+        </p>
+        <ContactProfileForm />
+      </SettingsSection>
+      <ApplicantDetailsSection />
+    </>
   );
 }

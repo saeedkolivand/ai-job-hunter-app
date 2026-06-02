@@ -184,12 +184,12 @@ pub async fn ai_inspect_model(model: String) -> Value {
 pub async fn ai_research_company(
     app: AppHandle,
     job_ad: String,
+    company: Option<String>,
     provider: Option<String>,
     model: Option<String>,
     base_url: Option<String>,
 ) -> Value {
     use crate::cover_letter::research::CompanyResearch;
-    use crate::pipeline::enrichment::Enricher;
     use crate::pipeline::Completer;
 
     let completer = match Completer::resolve(&app, provider.as_deref(), model.as_deref(), base_url)
@@ -201,7 +201,11 @@ pub async fn ai_research_company(
         }
     };
 
-    let result = CompanyResearch.enrich(&completer, &job_ad).await;
+    // Prefer the accurate AI-extracted company name from the generation flow; the
+    // enricher falls back to heuristic job-ad extraction only when it's absent.
+    let result = CompanyResearch
+        .enrich_with(&completer, &job_ad, company.as_deref())
+        .await;
     json!({ "company": result.key, "brief": result.content })
 }
 

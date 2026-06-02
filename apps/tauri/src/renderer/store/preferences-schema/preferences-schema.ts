@@ -73,6 +73,17 @@ export const ResumePreferenceSchema = z.object({
   autoParse: z.boolean().default(true),
 });
 
+// Applicant preferences — user-supplied facts a résumé can't answer (salary,
+// availability, notice, remote). Fed to the cover letter (market inclusions such
+// as the DACH salary expectation + earliest start date) and to autopilot
+// application answers. User-supplied ONLY; never inferred or auto-filled.
+export const ApplicantPreferencesSchema = z.object({
+  salaryExpectation: z.string().optional(),
+  earliestStartDate: z.string().optional(),
+  noticePeriod: z.string().optional(),
+  remotePreference: z.string().optional(),
+});
+
 // Main preferences schema
 export const PreferencesSchema = z.object({
   version: z.number().default(1),
@@ -88,6 +99,9 @@ export const PreferencesSchema = z.object({
 
   // Resume Preferences
   resume: ResumePreferenceSchema.optional(),
+
+  // Applicant preferences (salary, start date, notice, remote) — user-supplied.
+  applicant: ApplicantPreferencesSchema.optional(),
 
   // Performance Preferences
   performanceMode: PerformanceModeSchema.default('balanced'),
@@ -115,3 +129,4 @@ export type PromptQuality = z.infer<typeof PromptQualitySchema>;
 export type OutputTone = z.infer<typeof OutputToneSchema>;
 export type AIModelPreference = z.infer<typeof AIModelPreferenceSchema>;
 export type ResumePreference = z.infer<typeof ResumePreferenceSchema>;
+export type ApplicantPreferences = z.infer<typeof ApplicantPreferencesSchema>;

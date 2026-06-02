@@ -29,16 +29,21 @@ export function AIWorkspace() {
 
   return (
     <div className="flex h-full flex-col relative">
-      {/* Header with model selector */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+      {/* Header */}
+      <div className="flex items-center px-4 py-3 border-b border-white/5">
         <h2 className="text-sm font-medium text-foreground/70">{t('ai.title')}</h2>
-        <ModelSelector className="flex items-center gap-2" />
       </div>
 
-      {/* Prompt quality selector */}
+      {/* Model + prompt quality */}
       <div className="px-4 pt-3 pb-2 border-b border-white/5">
+        <div className="mb-3">
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/30">
+            {t('ai.model')}
+          </div>
+          <ModelSelector className="w-full" />
+        </div>
         <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/30">
-          Prompt Quality
+          {t('ai.promptQuality')}
         </div>
         <div className="grid grid-cols-3 gap-1.5">
           {(

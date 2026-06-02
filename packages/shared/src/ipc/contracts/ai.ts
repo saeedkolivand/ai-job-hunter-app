@@ -33,6 +33,8 @@ export interface AiContract {
    */
   researchCompany(req: {
     jobAd: string;
+    /** Accurate AI-extracted company name; preferred over heuristic job-ad extraction. */
+    company?: string;
     provider?: string;
     model?: string;
     baseUrl?: string;

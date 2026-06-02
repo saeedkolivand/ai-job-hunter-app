@@ -170,6 +170,10 @@ fn main() {
                 .max_file_size(5_000_000)
                 .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(3))
                 .level(log::LevelFilter::Warn)
+                // Surface the company-research brief (logged at info) in the
+                // terminal/logs without lowering the global level (which would
+                // flood with per-request RequestTrace info lines).
+                .level_for("ajh_tauri::cover_letter::research", log::LevelFilter::Info)
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())

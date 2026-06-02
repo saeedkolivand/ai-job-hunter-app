@@ -94,6 +94,18 @@
   border: 1px solid var(--border-clear);
   box-shadow: var(--shadow-xl), var(--shadow-inset-top);
 }
+/* Canonical dropdown / popover menu surface. Every menu panel (Dropdown,
+   SelectDropdown, LocationDropdown) uses this so they stay visually identical.
+   Kept near-opaque on purpose: backdrop-filter is unreliable across portal
+   stacking contexts, so the panel must never bleed the content behind it (e.g.
+   a page's empty-state text) even when the blur doesn't apply. */
+.dropdown-surface {
+  background: rgba(12, 12, 20, 0.92);
+  backdrop-filter: blur(var(--blur-xl)) saturate(var(--sat-high));
+  -webkit-backdrop-filter: blur(var(--blur-xl)) saturate(var(--sat-high));
+  border: 1px solid var(--border-mid);
+  box-shadow: var(--shadow-xl), var(--shadow-inset-top);
+}
 
 /* ── Tonal glass variants ────────────────────────────────────────────────── */
 .glass-violet {

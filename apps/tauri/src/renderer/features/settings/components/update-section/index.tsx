@@ -141,6 +141,7 @@ export function UpdateSection() {
               <MarkdownMessage
                 content={status.releaseNotes}
                 className="text-xs text-foreground/60"
+                onLinkClick={(url) => openExternal.mutate(url)}
               />
             </div>
           </div>
@@ -214,6 +215,7 @@ export function UpdateSection() {
                       <MarkdownMessage
                         content={release.body}
                         className="text-xs text-foreground/60"
+                        onLinkClick={(url) => openExternal.mutate(url)}
                       />
                     </div>
                   )}

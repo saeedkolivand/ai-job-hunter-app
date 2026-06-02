@@ -257,6 +257,8 @@ export const METADATA_JSON_SCHEMA = {
     jobAdLanguage: { type: 'string' },
     topRequirements: { type: 'array', items: { type: 'string' } },
     candidateSeniority: { type: 'string', enum: ['junior', 'mid', 'senior', 'lead', 'executive'] },
+    jobLocation: { type: 'string' },
+    jobCountry: { type: 'string' },
   },
   required: [
     'candidateName',

@@ -239,6 +239,18 @@
         "description": "Debug-Werkzeuge & Diagnose"
       }
     },
+    "applicant": {
+      "title": "Bewerberangaben",
+      "description": "Optionale Angaben, die ein Lebenslauf nicht enthält — werden im Anschreiben verwendet, wo der Markt sie erwartet (z. B. fragt Deutschland nach Gehaltsvorstellung und Eintrittstermin), sowie für Autopilot-Bewerbungsantworten. Bleiben sie leer, antwortet die App unverbindlich und erfindet niemals eine Zahl oder ein Datum. Änderungen werden automatisch gespeichert.",
+      "salary": "Gehaltsvorstellung",
+      "salaryPlaceholder": "z. B. 70.000 € oder 65–75 Tsd. €",
+      "startDate": "Frühester Eintrittstermin",
+      "startDatePlaceholder": "z. B. 1. März 2026 oder sofort",
+      "notice": "Kündigungsfrist",
+      "noticePlaceholder": "z. B. 3 Monate",
+      "remote": "Remote- / Hybrid-Präferenz",
+      "remotePlaceholder": "z. B. Remote-First, Hybrid 2 Tage, vor Ort"
+    },
     "contactProfile": {
       "title": "Kontaktprofil",
       "description": "Die Kopfzeile Ihres Lebenslaufs und Anschreibens wird aus diesen Feldern erstellt — Name, E-Mail, Telefon, Standort und persönliche Profillinks. Wenn Sie sie bearbeiten, bleibt jedes generierte Dokument korrekt und einheitlich. Änderungen werden automatisch gespeichert.",
@@ -469,6 +481,11 @@
       "label": "Unternehmen recherchieren",
       "hint": "Fügt dem Anschreiben eine kurze Web-Zusammenfassung hinzu — über die eigene Websuche Ihres KI-Anbieters. Nach bestem Bemühen.",
       "ollamaKeyHint": "Ollama benötigt einen kostenlosen Ollama-Schlüssel zum Suchen — unter Einstellungen → KI hinzufügen."
+    },
+    "market": {
+      "label": "Zielmarkt",
+      "auto": "Automatisch (aus Stelle erkannt)",
+      "hint": "Bestimmt Etikette und Layout des Anschreibens (Anrede, Grußformel, Betreff, Datumsposition). Automatisch richtet sich nach dem Land der Stelle."
     },
     "recommendationTitle": "Empfohlene Vorlage",
     "applyRecommendation": "Vorschlag übernehmen",
@@ -905,6 +922,8 @@
   },
   "ai": {
     "title": "KI-Arbeitsbereich",
+    "model": "Modell",
+    "promptQuality": "Prompt-Qualität",
     "placeholder": "Frag alles. Die KI antwortet in deiner Sprache.",
     "send": "Senden",
     "processing": "Verarbeitung...",

@@ -69,6 +69,7 @@ interface PreferencesActions {
   setLocalModelLimits: (model: string, limits: Partial<LocalModelLimits>) => void;
   setOutputTone: (outputTone: Preferences['outputTone']) => void;
   setResume: (resume: Preferences['resume']) => void;
+  setApplicant: (applicant: Preferences['applicant']) => void;
   setPerformanceMode: (performanceMode: Preferences['performanceMode']) => void;
   setPromptQuality: (promptQuality: PromptQuality) => void;
   setDebugMode: (enabled: boolean) => void;
@@ -177,6 +178,13 @@ export const usePreferencesStore = create<PreferencesStore>()(
           lastUpdated: new Date().toISOString(),
         })),
 
+      setApplicant: (applicant: Preferences['applicant']) =>
+        set((state) => ({
+          ...state,
+          applicant,
+          lastUpdated: new Date().toISOString(),
+        })),
+
       setPerformanceMode: (performanceMode: Preferences['performanceMode']) =>
         set((state) => ({
           ...state,
@@ -236,6 +244,7 @@ export const useOnboardingCompleted = () =>
 export const useContactPromptSeen = () =>
   usePreferencesStore((state) => state.contactPromptSeen ?? false);
 export const useResume = () => usePreferencesStore((state) => state.resume);
+export const useApplicant = () => usePreferencesStore((state) => state.applicant);
 export const usePerformanceMode = () => usePreferencesStore((state) => state.performanceMode);
 export const usePromptQuality = () => usePreferencesStore((state) => state.promptQuality ?? 'auto');
 export const useDebugMode = () => usePreferencesStore((state) => state.debugMode ?? false);

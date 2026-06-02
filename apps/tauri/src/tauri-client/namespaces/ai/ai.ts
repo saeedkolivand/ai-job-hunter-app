@@ -13,15 +13,17 @@ export const ai = {
   inspectModel: ({ model }: { model: string }) => invoke('ai_inspect_model', { model }),
   researchCompany: ({
     jobAd,
+    company,
     provider,
     model,
     baseUrl,
   }: {
     jobAd: string;
+    company?: string;
     provider?: string;
     model?: string;
     baseUrl?: string;
-  }) => invoke('ai_research_company', { jobAd, provider, model, baseUrl }),
+  }) => invoke('ai_research_company', { jobAd, company, provider, model, baseUrl }),
   pullModel: (model: string) => invoke('ai_pull_model', { model }),
   unloadModel: (model: string) => invoke('ai_unload_model', { model }),
   embed: (req: EmbedRequest) => invoke('ai_embed', { req }),

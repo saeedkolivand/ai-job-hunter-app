@@ -422,6 +422,9 @@ fn generate_cover_letter_pdf(
     template: &Template,
     contact: Option<&crate::contact_profile::ContactProfile>,
     lang: &str,
+    // Resolved job-market id (`us`, `de`, …) — drives the subject line + date
+    // placement per market. Defaults to the intl baseline for an unknown market.
+    market: &str,
 ) -> Result<Vec<u8>> {
     let mut doc = PdfDocument::new("Cover Letter");
     // Seed the subset with every text input the letter can draw: the body, the
@@ -489,6 +492,7 @@ fn generate_cover_letter_pdf(
     let mut current_para = String::new();
     let mut date_str: Option<String> = None;
     let mut recipient_lines: Vec<String> = Vec::new();
+    let mut subject_line: Option<String> = None;
     let mut salutation_line: Option<String> = None;
     let mut closing_line: Option<String> = None;
     let mut after_closing = false;
@@ -522,15 +526,11 @@ fn generate_cover_letter_pdf(
             continue;
         }
 
-        let is_salutation = clean.starts_with("Dear") || clean.starts_with("Sehr geehrte");
-        let is_signoff = clean.starts_with("Kind regards")
-            || clean.starts_with("Sincerely")
-            || clean.starts_with("Best regards")
-            || clean.starts_with("Best,")
-            || clean.starts_with("Regards")
-            || clean.starts_with("Mit freundlichen")
-            || clean.starts_with("Hochachtungsvoll")
-            || clean.starts_with("Viele Grüße");
+        // Locale-aware: recognize salutations/sign-offs across every supported
+        // market (was English/German only, which dumped FR/ES/IT/JP/… greetings
+        // into the recipient block).
+        let is_salutation = crate::locale::letter::is_salutation(&clean);
+        let is_signoff = crate::locale::letter::is_signoff(&clean);
 
         if is_salutation {
             if !current_para.is_empty() {
@@ -559,9 +559,10 @@ fn generate_cover_letter_pdf(
         }
 
         if !body_started {
-            // Pre-salutation: date or recipient block
-            let is_date = DATE_PATTERN.is_match(&clean);
-            if is_date && date_str.is_none() {
+            // Pre-salutation: subject line (Betreff/Objet/…), date, or recipient.
+            if crate::locale::letter::is_subject_line(&clean) && subject_line.is_none() {
+                subject_line = Some(clean.clone());
+            } else if DATE_PATTERN.is_match(&clean) && date_str.is_none() {
                 date_str = Some(clean.clone());
             } else {
                 recipient_lines.push(clean.clone());
@@ -580,9 +581,14 @@ fn generate_cover_letter_pdf(
 
     let line_height = layout.line_height;
 
+    // The job market can override the template's date placement (e.g. DACH/DIN
+    // wants the date top-right); unknown markets keep the template default.
+    let market_conv = crate::locale::letter::conventions(market);
+    let date_pos = map_date_position(&market_conv.date_position).unwrap_or(cl.date_position);
+
     // Date line
     if let Some(date) = &date_str {
-        match cl.date_position {
+        match date_pos {
             DatePosition::TopRight | DatePosition::AboveSalutation => {
                 let (reg_id, _, _) = resolve_fonts(&fonts, template.fonts.body_family);
                 let date_x = layout.page_width
@@ -662,6 +668,33 @@ fn generate_cover_letter_pdf(
             page_state.y -= line_height;
         }
         page_state.y -= pt_to_mm(4.0);
+    }
+
+    // Subject line (Betreff/Objet/Oggetto/…) — rendered bold between the
+    // recipient block and the salutation, as formal markets expect.
+    if let Some(subject) = &subject_line {
+        page_state.y -= pt_to_mm(2.0);
+        let (_, bold_id, _) = resolve_fonts(&fonts, template.fonts.body_family);
+        let pos = Point {
+            x: Mm(x).into(),
+            y: Mm(page_state.y).into(),
+        };
+        page_state.current_ops.extend([
+            Op::StartTextSection,
+            Op::SetFillColor {
+                col: colors.body.clone(),
+            },
+            Op::SetTextCursor { pos },
+            Op::SetFont {
+                font: PdfFontHandle::External(bold_id.clone()),
+                size: Pt(template.body_pt),
+            },
+            Op::ShowText {
+                items: vec![TextItem::Text(subject.clone())],
+            },
+            Op::EndTextSection,
+        ]);
+        page_state.y -= line_height + pt_to_mm(2.0);
     }
 
     // Salutation
@@ -768,6 +801,17 @@ fn generate_cover_letter_pdf(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/// Map a fixture `datePosition` string to the renderer's [`DatePosition`].
+/// Returns `None` for an unrecognized value so the caller keeps the template default.
+fn map_date_position(s: &str) -> Option<DatePosition> {
+    match s {
+        "top-right" => Some(DatePosition::TopRight),
+        "below-header" => Some(DatePosition::BelowHeader),
+        "above-salutation" => Some(DatePosition::AboveSalutation),
+        _ => None,
+    }
+}
+
 /// Simple date-line pattern — month names or 4-digit years.
 static DATE_PATTERN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new(
@@ -855,6 +899,7 @@ pub fn generate_pdf(request: &ExportRequest) -> Result<Vec<u8>> {
                 &template,
                 request.contact.as_ref(),
                 &request.target_lang(),
+                request.locale.as_deref().unwrap_or("intl"),
             )
             .context("Failed to generate cover letter PDF")
         }

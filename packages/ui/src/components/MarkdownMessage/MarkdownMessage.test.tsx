@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 import { MarkdownMessage } from './MarkdownMessage';
 
@@ -45,5 +45,31 @@ describe('MarkdownMessage', () => {
   it('renders plain paragraphs', () => {
     render(<MarkdownMessage content={'just a normal sentence'} />);
     expect(screen.getByText('just a normal sentence')).toBeInTheDocument();
+  });
+
+  it('renders a [label](url) link as plain label text when no handler is given (no raw href)', () => {
+    const { container } = render(
+      <MarkdownMessage content={'see ([#225](https://example.com/issues/225)) for details'} />
+    );
+    // Label is shown, the URL is not, and no navigable anchor is emitted.
+    expect(screen.getByText('#225')).toBeInTheDocument();
+    expect(container.querySelector('a[href]')).toBeNull();
+    expect(container.textContent).not.toContain('https://example.com');
+  });
+
+  it('calls onLinkClick with the URL when a link is activated (changelog/external open)', () => {
+    const onLinkClick = vi.fn();
+    render(
+      <MarkdownMessage
+        content={'## [0.49.0](https://example.com/compare/v0.48.0...v0.49.0) (2026-06-02)'}
+        onLinkClick={onLinkClick}
+      />
+    );
+    const link = screen.getByRole('link', { name: '0.49.0' });
+    expect(link).not.toHaveAttribute('href'); // never navigates the webview itself
+    fireEvent.click(link);
+    expect(onLinkClick).toHaveBeenCalledWith('https://example.com/compare/v0.48.0...v0.49.0');
+    // Surrounding heading text is preserved alongside the link.
+    expect(screen.getByText(/2026-06-02/)).toBeInTheDocument();
   });
 });

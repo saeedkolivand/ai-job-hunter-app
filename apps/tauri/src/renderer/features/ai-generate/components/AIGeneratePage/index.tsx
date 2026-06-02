@@ -18,6 +18,7 @@ import {
   exportPDF,
   exportTXT,
   type GenerationMode,
+  resolveMarket,
   type TemplateId,
 } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
@@ -122,7 +123,8 @@ export function AIGeneratePage() {
     saveAiGeneration,
     t,
     setStageLabel,
-    researchCompany
+    researchCompany,
+    locale
   );
 
   const canProceed = resume.trim().length > 50 && jobAd.trim().length > 50;
@@ -175,6 +177,18 @@ export function AIGeneratePage() {
     const text = currentOutput;
     if (!text) return;
     const type = activeOut === 'resume' ? 'resume' : 'cover-letter';
+    // The cover letter's exported layout (subject line, date placement, page)
+    // must match the market its text was generated for, so resolve it the same
+    // way generation does (manual override → job country → language → intl).
+    // Résumé export keeps the user's chosen locale unchanged.
+    const exportLocale =
+      type === 'cover-letter'
+        ? resolveMarket({
+            jobCountry: meta?.jobCountry,
+            targetLanguage: meta?.targetLanguage,
+            override: locale,
+          })
+        : locale;
     const name = buildFilename(
       meta ?? {
         candidateName: '',
@@ -190,10 +204,10 @@ export function AIGeneratePage() {
       fmt
     );
     if (fmt === 'pdf') {
-      await exportPDF(text, name, type, meta ?? undefined, templateId, atsMode, locale);
+      await exportPDF(text, name, type, meta ?? undefined, templateId, atsMode, exportLocale);
     }
     if (fmt === 'docx') {
-      await exportDOCX(text, name, type, meta ?? undefined, templateId, atsMode, locale);
+      await exportDOCX(text, name, type, meta ?? undefined, templateId, atsMode, exportLocale);
     }
     if (fmt === 'txt') {
       exportTXT(text, name);
@@ -214,6 +228,7 @@ export function AIGeneratePage() {
           target={target}
           templateId={templateId}
           atsMode={atsMode}
+          locale={locale}
           uploading={uploading}
           uploadError={uploadError}
           canGenerate={canGenerate}

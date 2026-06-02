@@ -164,13 +164,10 @@ fn generate_cover_letter_docx(
         let clean = strip_md(trimmed);
         let _segments = super::parser::parse_inline_md(trimmed);
 
-        let is_salutation = clean.starts_with("Dear") || clean.starts_with("Sehr geehrte");
-        let is_signoff = clean.starts_with("Kind regards")
-            || clean.starts_with("Sincerely")
-            || clean.starts_with("Best regards")
-            || clean.starts_with("Best,")
-            || clean.starts_with("Regards")
-            || clean.starts_with("Mit freundlichen");
+        // Locale-aware: recognize salutations/sign-offs across every supported
+        // market (was English/German only).
+        let is_salutation = crate::locale::letter::is_salutation(&clean);
+        let is_signoff = crate::locale::letter::is_signoff(&clean);
 
         // First line is name
         if !header_done && docx.document.children.is_empty() {
@@ -258,6 +255,23 @@ fn generate_cover_letter_docx(
                             .fonts(docx_run_fonts(body_family)),
                     )
                     .line_spacing(LineSpacing::new().before(240).after(480)),
+            );
+            continue;
+        }
+
+        // Subject line (Betreff/Objet/Oggetto/…) — bold, before the salutation.
+        if !in_body && crate::locale::letter::is_subject_line(&clean) {
+            docx = docx.add_paragraph(
+                Paragraph::new()
+                    .add_run(
+                        Run::new()
+                            .add_text(&clean)
+                            .size(pt_to_dxa(template.body_pt))
+                            .bold()
+                            .color(&colors.body)
+                            .fonts(docx_run_fonts(body_family)),
+                    )
+                    .line_spacing(LineSpacing::new().before(120).after(120)),
             );
             continue;
         }
