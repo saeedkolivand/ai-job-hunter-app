@@ -544,6 +544,17 @@
     "resumePlaceholder": "Lebenslauftext hier einfügen…",
     "atsMode": "ATS-sicherer Modus",
     "atsModeHint": "Empfohlen für ATS-Bewerbungen — linearisiert das zweispaltige Layout",
+    "previewPanel": {
+      "tag": "Beispiel",
+      "disclaimer": "Beispielausgabe – nicht aus deinen Daten generiert.",
+      "imagePending": "Vorlagenvorschau erscheint hier.",
+      "groups": {
+        "template": "Vorlage",
+        "style": "Stil",
+        "target": "Dokument",
+        "quality": "Detailgrad"
+      }
+    },
     "coverLetterStrings": {
       "closingPhrase": {
         "sincerely": "Mit freundlichen Grüßen,",

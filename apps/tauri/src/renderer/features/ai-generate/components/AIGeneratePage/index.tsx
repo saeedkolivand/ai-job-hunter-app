@@ -9,9 +9,11 @@ import { OutputPanelDone } from '@/features/ai-generate/components/OutputPanelDo
 import { OutputPanelExtracting } from '@/features/ai-generate/components/OutputPanelExtracting';
 import { OutputPanelGenerating } from '@/features/ai-generate/components/OutputPanelGenerating';
 import { OutputPanelIdle } from '@/features/ai-generate/components/OutputPanelIdle';
+import { OutputPanelPreview } from '@/features/ai-generate/components/OutputPanelPreview';
 import { useFileUpload } from '@/features/ai-generate/hooks/useFileUpload';
 import { useGeneration } from '@/features/ai-generate/hooks/useGeneration';
 import { useStageRotation } from '@/features/ai-generate/hooks/useStageRotation';
+import type { PreviewFocus } from '@/features/ai-generate/samples';
 import {
   buildFilename,
   exportDOCX,
@@ -78,6 +80,13 @@ export function AIGeneratePage() {
   );
   // Opt-in company research for the cover letter — default off (no extra web/LLM call).
   const [researchCompany, setResearchCompany] = useState(false);
+
+  // Which option's illustrative sample the result panel shows while configuring.
+  // Defaults to the selected template (most visual) and follows the last click.
+  const [previewFocus, setPreviewFocus] = useState<PreviewFocus>({
+    group: 'template',
+    id: templateId,
+  });
 
   const selectedModel = useSelectedModel();
   const { canUse: canUseAI, reason: aiReason } = useCanUseAI();
@@ -159,6 +168,7 @@ export function AIGeneratePage() {
     setError(null);
     setStreamBuffer('');
     setThinkingBuffer('');
+    setPreviewFocus({ group: 'template', id: templateId });
     resetAIGenerate();
   };
 
@@ -249,11 +259,14 @@ export function AIGeneratePage() {
           onAnalyze={handleAnalyze}
           onGenerate={requestGenerate}
           isGenerating={isGenerating}
+          onPreviewFocus={setPreviewFocus}
         />
 
         <div className="flex flex-1 flex-col overflow-hidden">
           <AnimatePresence mode="wait">
-            {(stage === 'idle' || stage === 'configuring') && <OutputPanelIdle />}
+            {stage === 'idle' && <OutputPanelIdle />}
+
+            {stage === 'configuring' && <OutputPanelPreview key="preview" focus={previewFocus} />}
 
             {stage === 'extracting' && <OutputPanelExtracting stageLabel={stageLabel} />}
 
