@@ -2465,9 +2465,13 @@ fn stray_typst_code_guard_letter() {
 // #F4F4F5 background with 20 px border-padding and 14 px gaps, writing the
 // result to docs/assets/templates-showcase.png.
 //
+// As a side output it also writes one 700 px-wide per-template preview PNG to
+// apps/tauri/src/renderer/features/ai-generate/assets/template-previews/<id>.png,
+// which the AI-Generate option previews show in the result panel.
+//
 // This test is `#[ignore]`d so it never runs in the normal CI suite.
-// Run it explicitly with:
-//   cargo test -p ajh-tauri --lib -- --ignored generate_templates_showcase_banner
+// Run it explicitly with (the crate is a binary, so target the bin, not --lib):
+//   cargo test --bin ajh-tauri -- --ignored generate_templates_showcase_banner
 //
 // No personal data — synthetic fixture only.  No text-caption rendering dep.
 
@@ -2548,6 +2552,11 @@ fn generate_templates_showcase_banner() {
     /// from the original A4 aspect ratio.
     const CELL_W: u32 = 300;
 
+    /// Width (px) of each per-template preview image written for the AI-Generate
+    /// option previews — a generic sample résumé rendered in each template,
+    /// committed under the renderer's feature assets and fetched lazily by the UI.
+    const PREVIEW_W: u32 = 700;
+
     /// Layout: a single wide row — 9 columns × 1 row (banner proportions).
     const COLS: u32 = 9;
     const ROWS: u32 = 1;
@@ -2581,16 +2590,18 @@ fn generate_templates_showcase_banner() {
 
     // ── Template list (must be exactly 9, matching the canonical TemplateId set) ──
 
-    let templates: &[(TemplateId, &str)] = &[
-        (TemplateId::Classic, "Classic"),
-        (TemplateId::Modern, "Modern"),
-        (TemplateId::SwissMinimal, "SwissMinimal"),
-        (TemplateId::Academic, "Academic"),
-        (TemplateId::Atelier, "Atelier"),
-        (TemplateId::Meridian, "Meridian"),
-        (TemplateId::Throughline, "Throughline"),
-        (TemplateId::Portrait, "Portrait"),
-        (TemplateId::Lebenslauf, "Lebenslauf"),
+    // (TemplateId, human label, kebab slug). The slug MUST match the renderer's
+    // `TemplateId` wire ids so the per-template preview files line up with the UI.
+    let templates: &[(TemplateId, &str, &str)] = &[
+        (TemplateId::Classic, "Classic", "classic"),
+        (TemplateId::Modern, "Modern", "modern"),
+        (TemplateId::SwissMinimal, "SwissMinimal", "swiss-minimal"),
+        (TemplateId::Academic, "Academic", "academic"),
+        (TemplateId::Atelier, "Atelier", "atelier"),
+        (TemplateId::Meridian, "Meridian", "meridian"),
+        (TemplateId::Throughline, "Throughline", "throughline"),
+        (TemplateId::Portrait, "Portrait", "portrait"),
+        (TemplateId::Lebenslauf, "Lebenslauf", "lebenslauf"),
     ];
     assert_eq!(
         templates.len(),
@@ -2637,9 +2648,17 @@ fn generate_templates_showcase_banner() {
     let a4_aspect = 297.0_f32 / 210.0_f32;
     let cell_h = (CELL_W as f32 * a4_aspect).round() as u32;
 
+    // Per-template preview images for the AI-Generate option previews. Written
+    // into the renderer's feature assets (the UI imports them via a Vite glob).
+    let preview_h = (PREVIEW_W as f32 * a4_aspect).round() as u32;
+    let preview_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../src/renderer/features/ai-generate/assets/template-previews");
+    std::fs::create_dir_all(&preview_dir)
+        .unwrap_or_else(|e| panic!("showcase: create_dir_all template-previews: {e}"));
+
     let mut thumbnails: Vec<RgbaImage> = Vec::with_capacity(9);
 
-    for (id, label) in templates {
+    for (id, label, slug) in templates {
         eprintln!("showcase: rendering {label}...");
 
         let t = Template::get(*id);
@@ -2673,6 +2692,18 @@ fn generate_templates_showcase_banner() {
         let (pxw, pxh) = (pixmap.width(), pixmap.height());
         let raw = pixmap.data().to_vec();
         let rgba = pixmap_to_rgba(pxw, pxh, raw);
+
+        // Per-template preview PNG (downscaled page-1 raster) for the UI picker.
+        let preview = DynamicImage::ImageRgba8(rgba.clone())
+            .thumbnail(PREVIEW_W, preview_h)
+            .to_rgba8();
+        let mut preview_buf: Vec<u8> = Vec::new();
+        DynamicImage::ImageRgba8(preview)
+            .write_to(&mut Cursor::new(&mut preview_buf), ImageFormat::Png)
+            .unwrap_or_else(|e| panic!("showcase: preview PNG encode ({label}) failed: {e}"));
+        let preview_path = preview_dir.join(format!("{slug}.png"));
+        std::fs::write(&preview_path, &preview_buf)
+            .unwrap_or_else(|e| panic!("showcase: write preview {}: {e}", preview_path.display()));
 
         // Thumbnail to CELL_W × cell_h.
         let thumb = DynamicImage::ImageRgba8(rgba)
@@ -2782,4 +2813,22 @@ fn generate_templates_showcase_banner() {
         file_size / 1024,
     );
     eprintln!("  path: {}", out_path.display());
+
+    // ── Verify: all nine per-template previews exist and are non-trivial ──────
+
+    for (_, label, slug) in templates {
+        let p = preview_dir.join(format!("{slug}.png"));
+        let meta = std::fs::metadata(&p)
+            .unwrap_or_else(|e| panic!("showcase: preview {slug}.png missing ({label}): {e}"));
+        assert!(
+            meta.len() >= 5_000,
+            "showcase: preview {slug}.png suspiciously small ({} bytes)",
+            meta.len()
+        );
+    }
+    eprintln!(
+        "template previews written: 9 × {} px wide → {}",
+        PREVIEW_W,
+        preview_dir.display()
+    );
 }

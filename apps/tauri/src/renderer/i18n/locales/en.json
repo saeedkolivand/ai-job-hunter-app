@@ -544,6 +544,17 @@
     "resumePlaceholder": "Paste your resume text here…",
     "atsMode": "ATS-safe mode",
     "atsModeHint": "Recommended for ATS submissions — linearizes the two-column layout",
+    "previewPanel": {
+      "tag": "Sample",
+      "disclaimer": "Example output — not generated from your data.",
+      "imagePending": "Template preview will appear here.",
+      "groups": {
+        "template": "Template",
+        "style": "Style",
+        "target": "Document",
+        "quality": "Detail level"
+      }
+    },
     "coverLetterStrings": {
       "closingPhrase": {
         "sincerely": "Sincerely,",
