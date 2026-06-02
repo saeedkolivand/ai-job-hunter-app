@@ -170,8 +170,6 @@ describe('JobPreferencesSchema', () => {
         location: 'Berlin',
         remote: 'hybrid',
         seniority: 'senior',
-        salaryMin: 60000,
-        salaryMax: 90000,
         techStack: [{ name: 'React', category: 'frontend' }],
       })
     ).not.toThrow();
