@@ -67,11 +67,23 @@ export function Dropdown({
   useEffect(() => {
     if (open && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
+      const margin = 8;
+      // At least as wide as the trigger, but never so narrow that options
+      // truncate (e.g. the model picker in the slim workspace header), and capped
+      // so it can't overrun a small viewport.
+      const width = Math.min(Math.max(rect.width, 240), 420);
+      // Keep the panel inside the window: if a right-aligned trigger would push
+      // the (wider) menu past the right edge, align the menu's right edge to the
+      // trigger instead of letting it spill out of the window.
+      const left =
+        rect.left + width > window.innerWidth - margin
+          ? Math.max(margin, rect.right - width)
+          : rect.left;
       // Let the option list use the space below the trigger (minus the search
       // box + a margin) instead of a fixed height, so trailing sections — e.g.
       // "Ollama Cloud" after a long local list — aren't pushed below the fold.
       const maxListHeight = Math.max(180, window.innerHeight - rect.bottom - 80);
-      setPosition({ top: rect.bottom + 6, left: rect.left, width: rect.width, maxListHeight });
+      setPosition({ top: rect.bottom + 6, left, width, maxListHeight });
     }
     if (open) {
       setQuery('');
@@ -138,10 +150,7 @@ export function Dropdown({
                 position: 'fixed',
                 top: position.top,
                 left: position.left,
-                // At least as wide as the trigger, but never so narrow that
-                // options truncate (e.g. the model picker in the slim workspace
-                // header). Capped so it can't overrun a small viewport.
-                width: Math.min(Math.max(position.width, 240), 420),
+                width: position.width,
                 zIndex: 9999,
               }}
               className="dropdown-surface overflow-hidden rounded-xl"
