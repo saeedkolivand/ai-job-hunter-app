@@ -95,6 +95,24 @@
   --border-mid: rgba(255, 255, 255, 0.12);
   --border-clear: rgba(255, 255, 255, 0.15);
 
+  /* ── Glass material ───────────────────────────────────────────────────
+     The single source of truth for every frosted surface. The glass-* utility
+     classes compose these; the theme layer overrides only these vars per
+     color-scheme (light/dark), so one definition drives the whole elevation
+     ladder. `--glass-rgb` is a space-separated RGB triplet consumed via
+     `rgb(var(--glass-rgb) / <alpha>)`. */
+  --glass-rgb: 18 18 28; /* dark substrate — NOT a bright white fill */
+  --glass-alpha-card: 0.55;
+  --glass-alpha-surface: 0.6;
+  --glass-alpha-elevated: 0.72;
+  --glass-alpha-dropdown: 0.5;
+  --glass-alpha-modal: 0.85;
+  /* Vibrancy: saturation paired with the blur to make the backdrop feel alive
+     (the macOS material signature). */
+  --glass-sat: var(--sat-mid);
+  /* Top-edge specular highlight — the bright hairline that reads as real glass. */
+  --glass-specular: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+
   /* ── Aurora / nebula palette (for CinematicBackground) ───────────────── */
   --aurora-violet: #a855f7;
   --aurora-indigo: #6366f1;

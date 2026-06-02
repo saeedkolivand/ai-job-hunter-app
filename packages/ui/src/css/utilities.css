@@ -53,42 +53,42 @@
    glass-card → glass-surface → glass-elevated → glass-dropdown → glass-modal
 */
 .glass-card {
-  background-color: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(var(--blur-sm)) saturate(var(--sat-low));
-  -webkit-backdrop-filter: blur(var(--blur-sm)) saturate(var(--sat-low));
+  background-color: rgb(var(--glass-rgb) / var(--glass-alpha-card));
+  backdrop-filter: blur(var(--blur-md)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--blur-md)) saturate(var(--glass-sat));
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-md), var(--glass-specular);
 }
 .glass {
-  background-color: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(var(--blur-sm));
-  -webkit-backdrop-filter: blur(var(--blur-sm));
+  background-color: rgb(var(--glass-rgb) / var(--glass-alpha-card));
+  backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
   border: 1px solid var(--border-soft);
 }
 .glass-surface {
-  background: rgba(20, 20, 30, 0.6);
-  backdrop-filter: blur(var(--blur-md)) saturate(var(--sat-mid));
-  -webkit-backdrop-filter: blur(var(--blur-md)) saturate(var(--sat-mid));
+  background: rgb(var(--glass-rgb) / var(--glass-alpha-surface));
+  backdrop-filter: blur(var(--blur-md)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--blur-md)) saturate(var(--glass-sat));
   border: 1px solid var(--border-soft);
   box-shadow: var(--shadow-md);
 }
 .glass-elevated {
-  background: rgba(15, 15, 25, 0.7);
+  background: rgb(var(--glass-rgb) / var(--glass-alpha-elevated));
   backdrop-filter: blur(var(--blur-lg)) saturate(var(--sat-high));
   -webkit-backdrop-filter: blur(var(--blur-lg)) saturate(var(--sat-high));
   border: 1px solid var(--border-mid);
   box-shadow: var(--shadow-lg), var(--shadow-inset-top);
 }
 .glass-dropdown {
-  background: rgba(15, 15, 25, 0.45);
+  background: rgb(var(--glass-rgb) / var(--glass-alpha-dropdown));
   backdrop-filter: blur(var(--blur-xl)) saturate(var(--sat-high));
   -webkit-backdrop-filter: blur(var(--blur-xl)) saturate(var(--sat-high));
   border: 1px solid var(--border-dim);
   box-shadow: var(--shadow-lg), var(--shadow-inset-top);
 }
 .glass-modal {
-  background: rgba(10, 10, 20, 0.85);
+  background: rgb(var(--glass-rgb) / var(--glass-alpha-modal));
   backdrop-filter: blur(var(--blur-2xl)) saturate(var(--sat-max));
   -webkit-backdrop-filter: blur(var(--blur-2xl)) saturate(var(--sat-max));
   border: 1px solid var(--border-clear);
@@ -114,9 +114,7 @@
   -webkit-backdrop-filter: blur(var(--blur-md)) saturate(var(--sat-high));
   border: 1px solid rgba(196, 181, 253, 0.1);
   border-radius: var(--radius);
-  box-shadow:
-    var(--shadow-2xl),
-    0 0 40px -10px rgba(139, 92, 246, 0.25);
+  box-shadow: var(--shadow-2xl), var(--glow-brand-md);
 }
 .glass-indigo {
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(59, 130, 246, 0.04) 100%);
@@ -124,9 +122,7 @@
   -webkit-backdrop-filter: blur(var(--blur-md)) saturate(var(--sat-high));
   border: 1px solid rgba(165, 180, 252, 0.1);
   border-radius: var(--radius);
-  box-shadow:
-    var(--shadow-2xl),
-    0 0 40px -10px rgba(99, 102, 241, 0.22);
+  box-shadow: var(--shadow-2xl), var(--glow-blue-md);
 }
 .glass-graphite {
   background: linear-gradient(135deg, rgba(20, 20, 28, 0.6) 0%, rgba(10, 10, 16, 0.4) 100%);
