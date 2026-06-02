@@ -67,7 +67,19 @@ export function Dropdown({
   useEffect(() => {
     if (open && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
-      setPosition({ top: rect.bottom + 6, left: rect.left, width: rect.width });
+      const margin = 8;
+      // At least as wide as the trigger, but never so narrow that options
+      // truncate (e.g. the model picker in the slim workspace header), and capped
+      // so it can't overrun a small viewport.
+      const width = Math.min(Math.max(rect.width, 240), 420);
+      // Keep the panel inside the window: if a right-aligned trigger would push
+      // the (wider) menu past the right edge, align the menu's right edge to the
+      // trigger instead of letting it spill out of the window.
+      const left =
+        rect.left + width > window.innerWidth - margin
+          ? Math.max(margin, rect.right - width)
+          : rect.left;
+      setPosition({ top: rect.bottom + 6, left, width });
     }
     if (open) {
       setQuery('');
@@ -137,7 +149,7 @@ export function Dropdown({
                 width: position.width,
                 zIndex: 9999,
               }}
-              className="glass-elevated overflow-hidden rounded-xl shadow-2xl"
+              className="dropdown-surface overflow-hidden rounded-xl"
             >
               {showSearch && (
                 <div className="border-b border-white/[0.06] px-3 py-2.5">
