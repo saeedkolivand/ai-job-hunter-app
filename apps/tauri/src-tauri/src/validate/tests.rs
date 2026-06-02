@@ -4,6 +4,7 @@
 //! blocking of valid documents.
 
 use super::*;
+use crate::export::types::TemplateId;
 
 fn expected(headings: &[&str]) -> Expected {
     Expected {
@@ -165,8 +166,9 @@ fn resume_docx_is_not_blocked() {
 
 #[test]
 fn two_column_pdf_is_never_blocked() {
+    // Atelier is the live two-column template (TwoColumn was deleted).
     let (bytes, report) =
-        validate_and_fix(req(ExportFormat::Pdf, TemplateId::TwoColumn, false), |r| {
+        validate_and_fix(req(ExportFormat::Pdf, TemplateId::Atelier, false), |r| {
             crate::export::pdf::generate_pdf(r)
         })
         .expect("pdf export");
@@ -185,7 +187,7 @@ fn two_column_pdf_is_never_blocked() {
     }
 }
 
-// ─── header link annotations (printpdf inline-dict /Annots) ───────────────────
+// ─── header link annotations (Typst inline-dict /Annots) ─────────────────────
 
 /// Read every link annotation our renderer wrote, the way the header checks do.
 fn rendered_links(bytes: &[u8]) -> Vec<PdfLink> {
@@ -205,7 +207,7 @@ fn profile_with(website: &str) -> crate::contact_profile::ContactProfile {
 }
 
 /// Regression: lopdf's `get_page_annotations` only resolves *reference* entries,
-/// but printpdf writes `/Annots` as inline dictionaries — so the header-link
+/// but Typst writes `/Annots` as inline dictionaries — so the header-link
 /// reader used to see zero links. It must now read our own renderer's output.
 #[test]
 fn reads_inline_dict_link_annotations_from_our_renderer() {
@@ -287,4 +289,93 @@ fn txt_is_returned_unvalidated() {
     assert!(report.ok);
     assert!(report.issues.is_empty());
     assert!(report.fixed.is_empty());
+}
+
+// ─── validate_and_fix on Typst-rendered PDFs ──────────────────────────────────
+//
+// After Cutover-1 every template goes through the Typst engine. The validator
+// must not false-positive on a valid Typst PDF (the coordinate-origin and
+// text-positioning characteristics of Typst must not produce
+// spurious "empty_anchor_link" or "no_extractable_text" criticals).
+
+/// Helper: render via the now-live generate_pdf (Typst) and run validate_and_fix.
+fn typst_validate(template_id: TemplateId) -> (Vec<u8>, ExportReport) {
+    validate_and_fix(
+        req(ExportFormat::Pdf, template_id, false),
+        crate::export::pdf::generate_pdf,
+    )
+    .expect("typst pdf export")
+}
+
+#[test]
+fn typst_single_column_pdf_passes_validation() {
+    for id in [
+        TemplateId::Modern,
+        TemplateId::Classic,
+        TemplateId::SwissMinimal,
+        TemplateId::Academic,
+        TemplateId::Meridian,
+        TemplateId::Throughline,
+        TemplateId::Lebenslauf,
+    ] {
+        let (bytes, report) = typst_validate(id);
+        assert!(!bytes.is_empty(), "{id:?}: empty PDF");
+        assert!(
+            report.ok,
+            "{id:?}: Typst single-column PDF must pass validate_and_fix — issues: {:?}",
+            report.issues
+        );
+        assert!(
+            !report
+                .issues
+                .iter()
+                .any(|i| i.severity == Severity::Critical),
+            "{id:?}: no critical issues expected on a valid Typst PDF, got: {:?}",
+            report.issues
+        );
+    }
+}
+
+#[test]
+fn typst_two_column_atelier_pdf_passes_validation() {
+    for id in [TemplateId::Atelier, TemplateId::Portrait] {
+        let (bytes, report) = typst_validate(id);
+        assert!(!bytes.is_empty(), "{id:?}: empty PDF");
+        assert!(
+            report.ok,
+            "Typst two-column {id:?} PDF must pass validate_and_fix — issues: {:?}",
+            report.issues
+        );
+        assert!(
+            !report
+                .issues
+                .iter()
+                .any(|i| i.severity == Severity::Critical),
+            "{id:?}: no critical issues expected on a valid Typst PDF, got: {:?}",
+            report.issues
+        );
+    }
+}
+
+/// The cover-letter path also runs through Typst; validate that it passes.
+#[test]
+fn typst_cover_letter_pdf_passes_validation() {
+    let request = ExportRequest {
+        text: "Jane Doe\njane@example.com\n\nDear Hiring Manager,\n\nI am writing to apply.\n\nSincerely,\nJane Doe".to_string(),
+        format: ExportFormat::Pdf,
+        document_type: DocumentType::CoverLetter,
+        template_id: TemplateId::Modern,
+        meta: None,
+        ats_mode: false,
+        locale: None,
+        contact: None,
+    };
+    let (bytes, report) =
+        validate_and_fix(request, crate::export::pdf::generate_pdf).expect("cover letter export");
+    assert!(!bytes.is_empty(), "cover letter PDF must not be empty");
+    assert!(
+        report.ok,
+        "Typst cover letter PDF must pass validate_and_fix — issues: {:?}",
+        report.issues
+    );
 }

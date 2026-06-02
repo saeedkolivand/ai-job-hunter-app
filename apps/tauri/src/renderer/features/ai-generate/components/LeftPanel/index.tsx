@@ -12,6 +12,7 @@ import { isOllamaFamily } from '@/lib/ai-providers/provider-meta';
 import {
   type GenerationMeta,
   type GenerationMode,
+  isTwoColumnTemplate,
   LETTER_MARKET_IDS,
   letterConventions,
   type TemplateId,
@@ -175,8 +176,8 @@ export function LeftPanel({
         onApply={(id, atsSuggested, recommendedLocale) => {
           setTemplateId(id);
           setLocale(recommendedLocale);
-          if (atsSuggested && id === 'two-column') setAtsMode(true);
-          else if (id !== 'two-column') setAtsMode(false);
+          if (atsSuggested && isTwoColumnTemplate(id)) setAtsMode(true);
+          else if (!isTwoColumnTemplate(id)) setAtsMode(false);
         }}
       />
 
@@ -191,7 +192,7 @@ export function LeftPanel({
         onTargetChange={setTarget}
         onTemplateChange={(id) => {
           setTemplateId(id);
-          if (id !== 'two-column') setAtsMode(false);
+          if (!isTwoColumnTemplate(id)) setAtsMode(false);
         }}
         onAtsModeChange={setAtsMode}
         onGenerate={onGenerate}

@@ -21,9 +21,9 @@ pub fn template(id: TemplateId) -> Template {
     Template::get(id)
 }
 
-/// Default column placement for a section in a two-column layout, independent of
-/// any single template's (string-keyed, locale-specific) `sidebar_sections` list
-/// that still drives the legacy renderer.
+/// Column placement for a section in a two-column layout — the single source of
+/// truth for sidebar classification (the per-template `sidebar_sections` list and
+/// its legacy printpdf renderer are gone).
 ///
 /// Sidebar-leaning sections (skills / education / languages / certifications) go
 /// to the sidebar; everything else flows in the main column. Contact details
@@ -37,6 +37,14 @@ pub fn placement_for(id: &SectionId) -> Placement {
         | SectionId::Certifications => Placement::Sidebar,
         _ => Placement::Main,
     }
+}
+
+/// Returns `true` when a template uses a two-column layout.
+///
+/// `Atelier` (Phase 1b) and `Portrait` (Phase 3b-i) are the two live two-column
+/// templates.  In ATS mode they collapse to a single linear column.
+pub fn is_two_column(id: TemplateId) -> bool {
+    matches!(id, TemplateId::Atelier | TemplateId::Portrait)
 }
 
 /// How hyperlinks render for a template.
@@ -71,7 +79,7 @@ mod tests {
     #[test]
     fn template_accessor_matches_registry() {
         assert_eq!(template(TemplateId::Classic).id, TemplateId::Classic);
-        assert_eq!(template(TemplateId::TwoColumn).id, TemplateId::TwoColumn);
+        assert_eq!(template(TemplateId::Atelier).id, TemplateId::Atelier);
     }
 
     #[test]
@@ -102,6 +110,21 @@ mod tests {
         assert_eq!(
             placement_for(&SectionId::Custom("Patents".into())),
             Placement::Main
+        );
+    }
+
+    #[test]
+    fn two_column_only_for_two_column_templates() {
+        assert!(is_two_column(TemplateId::Atelier), "Atelier is two-column");
+        assert!(
+            is_two_column(TemplateId::Portrait),
+            "Portrait is two-column"
+        );
+        assert!(!is_two_column(TemplateId::Classic));
+        assert!(!is_two_column(TemplateId::Modern));
+        assert!(
+            !is_two_column(TemplateId::Lebenslauf),
+            "Lebenslauf is single-column"
         );
     }
 

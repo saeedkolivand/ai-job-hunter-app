@@ -66,11 +66,6 @@ chromiumoxide = { version = "0.9", features = ["fetcher", "zip8"] }
 
 futures = "0.3"
 regex = "1"
-# Font metrics for the canonical text-measurement layer (measure/): real glyph
-# advances/line-heights from the bundled TTFs — the future replacement for the
-# `× 0.52` char-width estimate in the PDF renderer. Pinned to match the version
-# already present transitively so the tree carries a single ttf-parser.
-ttf-parser = "0.25"
 anyhow = "1"
 thiserror = "2"
 chrono = "0.4"
@@ -98,8 +93,10 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 pdf-extract = "0.10"
 zip = "8"
 docx-rs = "0.4.20"
-printpdf = "0.9.1"
 lopdf = "0.40"
+typst = "=0.14.2"
+typst-pdf = "=0.14.2"
+image = "=0.25.10"
 
 
 [target.'cfg(windows)'.dependencies]
@@ -117,3 +114,5 @@ mockall = "0.14"
 tempfile = "3.27"
 proptest = "1.5"
 wiremock = "0.6.5"
+# Rasteriser for the generate_templates_showcase_banner test — dev-only, NOT in the shipped binary.
+typst-render = "=0.14.2"

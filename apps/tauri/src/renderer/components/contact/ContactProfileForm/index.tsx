@@ -1,10 +1,12 @@
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Upload, UserRound } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { ContactProfile } from '@ajh/shared';
-import { Button, Input } from '@ajh/ui';
+import { Button, Input, LocationInput } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
+import { PhotoProcessingError, processPhotoFile } from '@/lib/photo';
+import { useAppClient } from '@/providers/AppClientProvider';
 import { useContactProfile, useSaveContactProfile } from '@/services';
 
 const FIELD_CLASS = 'flex flex-col gap-1.5';
@@ -32,6 +34,7 @@ interface LinkRow {
  */
 export function ContactProfileForm() {
   const { t } = useTranslation();
+  const api = useAppClient();
   const { data: profile } = useContactProfile();
   const { mutate: save } = useSaveContactProfile();
 
@@ -43,7 +46,11 @@ export function ContactProfileForm() {
   const [github, setGithub] = useState('');
   const [website, setWebsite] = useState('');
   const [extraLinks, setExtraLinks] = useState<LinkRow[]>([]);
+  // The candidate photo as a bounded `data:` URL (used by the photo templates).
+  const [photo, setPhoto] = useState('');
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const rowId = useRef(0);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   // Hydrate the form once the stored profile loads (or changes).
   useEffect(() => {
@@ -55,6 +62,7 @@ export function ContactProfileForm() {
     setLinkedin(profile.linkedin ?? '');
     setGithub(profile.github ?? '');
     setWebsite(profile.website ?? '');
+    setPhoto(profile.photo ?? '');
     setExtraLinks(
       (profile.extraLinks ?? []).map((l) => ({ id: rowId.current++, label: l.label, url: l.url }))
     );
@@ -77,11 +85,54 @@ export function ContactProfileForm() {
       github: clean(github),
       website: clean(website),
       extraLinks: extra.length ? extra : undefined,
+      photo: clean(photo),
     };
   };
 
   // Persist on blur (named fields + extra-link edits).
   const persist = () => save(buildProfile(extraLinks));
+
+  // Location commits on select/clear (LocationInput has no blur), so persist
+  // immediately with the next value rather than the stale closure one.
+  const persistLocation = (next: string) =>
+    save({
+      ...buildProfile(extraLinks),
+      location: next.trim() ? { default: next.trim() } : undefined,
+    });
+
+  // Photo set/remove persist immediately with the next value (state is async),
+  // so the data URL doesn't lag a render behind the saved profile.
+  const persistPhoto = (next: string) =>
+    save({ ...buildProfile(extraLinks), photo: next.trim() || undefined });
+
+  const onPickPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file
+    if (!file) return;
+    try {
+      const dataUrl = await processPhotoFile(file);
+      setPhoto(dataUrl);
+      setPhotoError(null);
+      persistPhoto(dataUrl);
+    } catch (err) {
+      const kind = err instanceof PhotoProcessingError ? err.kind : 'decode';
+      setPhotoError(
+        t(
+          kind === 'type'
+            ? 'settings.contactProfile.photoErrorType'
+            : kind === 'size'
+              ? 'settings.contactProfile.photoErrorSize'
+              : 'settings.contactProfile.photoErrorDecode'
+        )
+      );
+    }
+  };
+
+  const removePhoto = () => {
+    setPhoto('');
+    setPhotoError(null);
+    persistPhoto('');
+  };
 
   const updateLink = (id: number, patch: Partial<LinkRow>) =>
     setExtraLinks((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -98,6 +149,51 @@ export function ContactProfileForm() {
 
   return (
     <>
+      <div className="mb-6 flex items-center gap-4">
+        <div className="size-20 shrink-0 overflow-hidden rounded-full border border-white/10 bg-white/[0.03]">
+          {photo ? (
+            <img
+              src={photo}
+              alt={t('settings.contactProfile.photoAlt')}
+              className="size-full object-cover"
+            />
+          ) : (
+            <div className="flex size-full items-center justify-center text-foreground/30">
+              <UserRound className="size-8" />
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className={LABEL_CLASS}>{t('settings.contactProfile.photo')}</span>
+          <p className="text-xs text-foreground/55">{t('settings.contactProfile.photoHint')}</p>
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={onPickPhoto}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => fileRef.current?.click()}
+              className="gap-1.5"
+            >
+              <Upload className="size-4" />
+              {t('settings.contactProfile.photoUpload')}
+            </Button>
+            {photo && (
+              <Button variant="ghost" size="sm" onClick={removePhoto} className="gap-1.5">
+                <Trash2 className="size-4" />
+                {t('settings.contactProfile.photoRemove')}
+              </Button>
+            )}
+          </div>
+          {photoError && <p className="text-xs text-amber-400/80">{photoError}</p>}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className={FIELD_CLASS}>
           <label className={LABEL_CLASS} htmlFor="cp-name">
@@ -138,15 +234,15 @@ export function ContactProfileForm() {
         </div>
 
         <div className={FIELD_CLASS}>
-          <label className={LABEL_CLASS} htmlFor="cp-location">
-            {t('settings.contactProfile.location')}
-          </label>
-          <Input
-            id="cp-location"
+          <span className={LABEL_CLASS}>{t('settings.contactProfile.location')}</span>
+          <LocationInput
             value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            onBlur={persist}
+            onChange={(v) => {
+              setLocation(v);
+              persistLocation(v);
+            }}
             placeholder={t('settings.contactProfile.locationPlaceholder')}
+            onFetchSuggestions={(q) => api.geocode.suggest(q)}
           />
         </div>
 

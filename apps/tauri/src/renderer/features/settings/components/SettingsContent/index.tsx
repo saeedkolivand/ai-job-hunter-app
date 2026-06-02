@@ -10,9 +10,7 @@ import { DeveloperPreferences } from '@/features/settings/components/preferences
 import { JobLocationPreferences } from '@/features/settings/components/preferences/JobLocationPreferences';
 import { OutputTonePreferences } from '@/features/settings/components/preferences/OutputTonePreferences';
 import { PerformancePreferences } from '@/features/settings/components/preferences/PerformancePreferences';
-import { RemotePreferences } from '@/features/settings/components/preferences/RemotePreferences';
 import { ResumePreferences } from '@/features/settings/components/preferences/ResumePreferences';
-import { SalaryPreferences } from '@/features/settings/components/preferences/SalaryPreferences';
 import { TechStackPreferences } from '@/features/settings/components/preferences/TechStackPreferences';
 import { PrivacySettingsTab } from '@/features/settings/components/privacy/PrivacySettingsTab';
 import type { NavItem, SectionId } from '@/features/settings/constants';
@@ -74,9 +72,7 @@ export function SettingsContent({
             {activeSection === 'job' && (
               <>
                 <JobLocationPreferences />
-                <RemotePreferences />
                 <TechStackPreferences />
-                <SalaryPreferences />
               </>
             )}
             {activeSection === 'resume' && <ResumePreferences />}

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { detectLanguage, detectLanguages, getLanguageName } from './language-detection';
+import {
+  detectLanguage,
+  detectLanguages,
+  getLanguageName,
+  isCjkLanguage,
+} from './language-detection';
 
 // Reasonably long samples — franc needs ~enough text to be confident.
 const ENGLISH =
@@ -40,6 +45,29 @@ describe('getLanguageName', () => {
   it('falls back to the code itself when unknown', () => {
     expect(getLanguageName('xx')).toBe('xx');
     expect(getLanguageName('unknown')).toBe('unknown');
+  });
+});
+
+describe('isCjkLanguage', () => {
+  it('flags Chinese, Japanese, and Korean codes', () => {
+    expect(isCjkLanguage('zh')).toBe(true);
+    expect(isCjkLanguage('ja')).toBe(true);
+    expect(isCjkLanguage('ko')).toBe(true);
+  });
+
+  it('ignores case and a region subtag', () => {
+    expect(isCjkLanguage('ZH')).toBe(true);
+    expect(isCjkLanguage('zh-Hans')).toBe(true);
+    expect(isCjkLanguage('ja-JP')).toBe(true);
+  });
+
+  it('returns false for supported scripts and empty input', () => {
+    expect(isCjkLanguage('en')).toBe(false);
+    expect(isCjkLanguage('ru')).toBe(false);
+    expect(isCjkLanguage('tr')).toBe(false);
+    expect(isCjkLanguage('')).toBe(false);
+    expect(isCjkLanguage(undefined)).toBe(false);
+    expect(isCjkLanguage(null)).toBe(false);
   });
 });
 

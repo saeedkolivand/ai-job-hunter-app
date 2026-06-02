@@ -1,16 +1,21 @@
-// Document templates — colors, sizes, and layout flags consumed by the backend
-// DOCX/PDF exporter (`ai.exportAndSave`). Pure data.
+// Document templates — the picker's source of truth. The backend renders from a
+// canonical Rust `Template` registry keyed by `id`; only the `id` is sent over
+// IPC (see `BaseExportRequest.templateId`), so the colour/size fields here are
+// display metadata for the picker, kept consistent with the Rust template.
+//
+// The set MUST match the Rust `TemplateId` enum (export/types.rs) and the shared
+// contract union (packages/shared/.../documents.ts) — a guard test pins all three.
 
 export type TemplateId =
   | 'classic'
   | 'modern'
-  | 'executive'
-  | 'editorial-serif'
   | 'swiss-minimal'
-  | 'two-column'
-  | 'mono-technical'
-  | 'refined-executive'
-  | 'academic';
+  | 'academic'
+  | 'atelier'
+  | 'meridian'
+  | 'throughline'
+  | 'portrait'
+  | 'lebenslauf';
 
 interface DocTemplate {
   id: TemplateId;
@@ -57,7 +62,7 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
     sectionSpacingBefore: 240,
     nameCentered: false,
     sectionAllCaps: true,
-    sectionStyle: 'underline',
+    sectionStyle: 'ruled-bottom',
   },
 
   /** Modern Technical — clean navy, professional, best for tech roles */
@@ -74,50 +79,6 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
     namePt: 22,
     sectionPt: 11,
     bodyPt: 10.5,
-    marginIn: 1.0,
-    lineSpacingDocx: 276,
-    sectionSpacingBefore: 260,
-    nameCentered: false,
-    sectionAllCaps: true,
-    sectionStyle: 'ruled-bottom',
-  },
-
-  /** Executive — minimalist, charcoal, premium whitespace for senior roles */
-  executive: {
-    id: 'executive',
-    name: 'Executive',
-    nameColor: '1C1C1C',
-    sectionColor: '2C2C2C',
-    accentColor: '444444',
-    bodyColor: '2C2C2C',
-    dateColor: '808080',
-    emphasisColor: '1C1C1C',
-    ruleColor: 'CCCCCC',
-    namePt: 24,
-    sectionPt: 10.5,
-    bodyPt: 10.5,
-    marginIn: 1.1,
-    lineSpacingDocx: 288,
-    sectionSpacingBefore: 300,
-    nameCentered: true,
-    sectionAllCaps: false,
-    sectionStyle: 'ruled-bottom',
-  },
-
-  /** Editorial Serif — Source Serif 4 + Inter, deep indigo accent, NYT op-ed character */
-  'editorial-serif': {
-    id: 'editorial-serif',
-    name: 'Editorial Serif',
-    nameColor: '1A1A1A',
-    sectionColor: '2D2B55',
-    accentColor: '2D2B55',
-    bodyColor: '1A1A1A',
-    dateColor: '5A5A5A',
-    emphasisColor: '2D2B55',
-    ruleColor: '2D2B55',
-    namePt: 22,
-    sectionPt: 11,
-    bodyPt: 11,
     marginIn: 1.0,
     lineSpacingDocx: 276,
     sectionSpacingBefore: 260,
@@ -148,73 +109,7 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
     sectionStyle: 'bold-only',
   },
 
-  /** Two Column — Inter, light sidebar tint */
-  'two-column': {
-    id: 'two-column',
-    name: 'Two Column',
-    nameColor: '141414',
-    sectionColor: '1E40AF',
-    accentColor: '1E40AF',
-    bodyColor: '1E1E1E',
-    dateColor: '646478',
-    emphasisColor: '1E40AF',
-    ruleColor: 'B4C8F0',
-    namePt: 22,
-    sectionPt: 10.5,
-    bodyPt: 10,
-    marginIn: 0.5,
-    lineSpacingDocx: 264,
-    sectionSpacingBefore: 200,
-    nameCentered: false,
-    sectionAllCaps: true,
-    sectionStyle: 'bold-only',
-  },
-
-  /** Mono Technical — JetBrains Mono headings, Inter body, cyan accent */
-  'mono-technical': {
-    id: 'mono-technical',
-    name: 'Mono Technical',
-    nameColor: '0A0A0A',
-    sectionColor: '0096B4',
-    accentColor: '00B4D8',
-    bodyColor: '1E1E1E',
-    dateColor: '647882',
-    emphasisColor: '0096B4',
-    ruleColor: '00B4D8',
-    namePt: 20,
-    sectionPt: 10.5,
-    bodyPt: 10.5,
-    marginIn: 1.0,
-    lineSpacingDocx: 276,
-    sectionSpacingBefore: 240,
-    nameCentered: false,
-    sectionAllCaps: true,
-    sectionStyle: 'ruled-bottom',
-  },
-
-  /** Refined Executive — Playfair Display name, warm gold accent */
-  'refined-executive': {
-    id: 'refined-executive',
-    name: 'Refined Executive',
-    nameColor: '141414',
-    sectionColor: '645032',
-    accentColor: '8B7355',
-    bodyColor: '282623',
-    dateColor: '78695F',
-    emphasisColor: '645032',
-    ruleColor: 'C8B9A0',
-    namePt: 26,
-    sectionPt: 11,
-    bodyPt: 10.5,
-    marginIn: 1.1,
-    lineSpacingDocx: 288,
-    sectionSpacingBefore: 300,
-    nameCentered: true,
-    sectionAllCaps: false,
-    sectionStyle: 'ruled-bottom',
-  },
-
-  /** Academic — Source Serif 4 throughout, forest green accent */
+  /** Academic — Source Serif 4 throughout, forest green accent, ruled headings */
   academic: {
     id: 'academic',
     name: 'Academic',
@@ -233,6 +128,130 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
     sectionSpacingBefore: 240,
     nameCentered: false,
     sectionAllCaps: false,
-    sectionStyle: 'underline',
+    sectionStyle: 'ruled-bottom',
+  },
+
+  /** Atelier — premium two-column, full-height sidebar rail, slate-indigo accent */
+  atelier: {
+    id: 'atelier',
+    name: 'Atelier',
+    nameColor: '16143A',
+    sectionColor: '4A4580',
+    accentColor: '4A4580',
+    bodyColor: '1E1C32',
+    dateColor: '6E69AB',
+    emphasisColor: '4A4580',
+    ruleColor: '4A4580',
+    namePt: 22,
+    sectionPt: 11,
+    bodyPt: 10.5,
+    marginIn: 0.55,
+    lineSpacingDocx: 276,
+    sectionSpacingBefore: 260,
+    nameCentered: false,
+    sectionAllCaps: true,
+    sectionStyle: 'ruled-bottom',
+  },
+
+  /** Meridian — header-forward tinted band, copper accent, airy single column */
+  meridian: {
+    id: 'meridian',
+    name: 'Meridian',
+    nameColor: '2A2A2A',
+    sectionColor: 'A0522D',
+    accentColor: 'A0522D',
+    bodyColor: '1E1E1E',
+    dateColor: '7A6A5A',
+    emphasisColor: 'A0522D',
+    ruleColor: 'A0522D',
+    namePt: 26,
+    sectionPt: 11,
+    bodyPt: 10.5,
+    marginIn: 0.9,
+    lineSpacingDocx: 276,
+    sectionSpacingBefore: 260,
+    nameCentered: false,
+    sectionAllCaps: true,
+    sectionStyle: 'ruled-bottom',
+  },
+
+  /** Throughline — vertical timeline spine, forest-teal accent */
+  throughline: {
+    id: 'throughline',
+    name: 'Throughline',
+    nameColor: '141E1E',
+    sectionColor: '1A5C52',
+    accentColor: '1A5C52',
+    bodyColor: '1E1E1E',
+    dateColor: '5A6E64',
+    emphasisColor: '1A5C52',
+    ruleColor: '1A5C52',
+    namePt: 22,
+    sectionPt: 11,
+    bodyPt: 10.5,
+    marginIn: 1.0,
+    lineSpacingDocx: 276,
+    sectionSpacingBefore: 260,
+    nameCentered: false,
+    sectionAllCaps: true,
+    sectionStyle: 'ruled-bottom',
+  },
+
+  /** Portrait — circular photo, name/title right, slate-teal accent (two-column) */
+  portrait: {
+    id: 'portrait',
+    name: 'Portrait',
+    nameColor: '16303A',
+    sectionColor: '2A6478',
+    accentColor: '2A6478',
+    bodyColor: '1E1E28',
+    dateColor: '5A7A88',
+    emphasisColor: '2A6478',
+    ruleColor: '2A6478',
+    namePt: 24,
+    sectionPt: 11,
+    bodyPt: 10.5,
+    marginIn: 0.55,
+    lineSpacingDocx: 276,
+    sectionSpacingBefore: 260,
+    nameCentered: false,
+    sectionAllCaps: true,
+    sectionStyle: 'ruled-bottom',
+  },
+
+  /** Lebenslauf — DACH DIN-style tabular CV, photo top-right, formal slate accent */
+  lebenslauf: {
+    id: 'lebenslauf',
+    name: 'Lebenslauf (DACH)',
+    nameColor: '1E1E28',
+    sectionColor: '3D4F6B',
+    accentColor: '3D4F6B',
+    bodyColor: '1E1E1E',
+    dateColor: '5A6478',
+    emphasisColor: '3D4F6B',
+    ruleColor: '3D4F6B',
+    namePt: 22,
+    sectionPt: 11,
+    bodyPt: 10.5,
+    marginIn: 0.9,
+    lineSpacingDocx: 264,
+    sectionSpacingBefore: 240,
+    nameCentered: false,
+    sectionAllCaps: false,
+    sectionStyle: 'ruled-bottom',
   },
 };
+
+/** Stable list of all template ids (kebab-case on the wire). */
+export const TEMPLATE_IDS = Object.keys(TEMPLATES) as TemplateId[];
+
+/**
+ * Templates with a true two-column layout that collapses to a single column under
+ * ATS mode — mirrors the backend `theme::is_two_column`. The ATS toggle + the
+ * recommendation auto-apply key off this rather than a hardcoded id.
+ */
+const TWO_COLUMN_TEMPLATE_IDS = new Set<TemplateId>(['atelier', 'portrait']);
+
+export function isTwoColumnTemplate(id: TemplateId): boolean {
+  return TWO_COLUMN_TEMPLATE_IDS.has(id);
+}

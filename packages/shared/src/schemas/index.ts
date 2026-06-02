@@ -254,8 +254,6 @@ export const JobPreferencesSchema = z.object({
   location: z.string().optional(),
   remote: z.string().optional(),
   seniority: z.string().optional(),
-  salaryMin: z.number().int().optional(),
-  salaryMax: z.number().int().optional(),
   techStack: z.array(TechStackItemSchema).optional(),
 });
 
