@@ -1,21 +1,32 @@
 /**
- * Lightweight markdown renderer for AI chat messages.
- * Handles the subset LLMs actually produce: headings, bold, italic, inline
- * code, code blocks, ordered/unordered lists, blockquotes, and horizontal rules.
- * No external dependency.
+ * Lightweight markdown renderer for AI chat messages and release notes.
+ * Handles the subset that LLMs and changelogs actually produce: headings, bold,
+ * italic, inline code, code blocks, ordered/unordered lists, blockquotes,
+ * horizontal rules, and `[text](url)` links. No external dependency.
+ *
+ * Links: the renderer is IPC-free, so it can't open a URL itself. Pass
+ * `onLinkClick` (e.g. wired to the Tauri opener) to make links clickable;
+ * without it, a link renders as plain label text — never a raw `<a href>` that
+ * would navigate the webview.
  */
 import { cn } from '../../lib/cn';
+
+type LinkClick = ((url: string) => void) | undefined;
 
 interface Props {
   content: string;
   className?: string;
+  /** Open a link's URL (e.g. via the system browser). Omit to render link text only. */
+  onLinkClick?: (url: string) => void;
 }
 
-export function MarkdownMessage({ content, className }: Props) {
-  return <div className={cn('markdown-message', className)}>{renderBlocks(content)}</div>;
+export function MarkdownMessage({ content, className, onLinkClick }: Props) {
+  return (
+    <div className={cn('markdown-message', className)}>{renderBlocks(content, onLinkClick)}</div>
+  );
 }
 
-function renderBlocks(text: string): React.ReactNode[] {
+function renderBlocks(text: string, onLinkClick: LinkClick): React.ReactNode[] {
   const lines = text.split('\n');
   const nodes: React.ReactNode[] = [];
   let i = 0;
@@ -63,7 +74,7 @@ function renderBlocks(text: string): React.ReactNode[] {
             : 'text-sm font-medium';
       nodes.push(
         <div key={nodes.length} className={cn('mb-1 mt-3 text-foreground/90', sizeClass)}>
-          {renderInline(headingMatch[2])}
+          {renderInline(headingMatch[2], onLinkClick)}
         </div>
       );
       i++;
@@ -87,7 +98,7 @@ function renderBlocks(text: string): React.ReactNode[] {
           key={nodes.length}
           className="my-2 border-l-2 border-brand/40 pl-3 italic text-foreground/60"
         >
-          {renderBlocks(quoteLines.join('\n'))}
+          {renderBlocks(quoteLines.join('\n'), onLinkClick)}
         </blockquote>
       );
       continue;
@@ -104,7 +115,7 @@ function renderBlocks(text: string): React.ReactNode[] {
           {items.map((item, idx) => (
             <li key={idx} className="flex gap-2 text-sm text-foreground/80">
               <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-brand/60" />
-              <span>{renderInline(item)}</span>
+              <span>{renderInline(item, onLinkClick)}</span>
             </li>
           ))}
         </ul>
@@ -123,7 +134,7 @@ function renderBlocks(text: string): React.ReactNode[] {
           {items.map((item, idx) => (
             <li key={idx} className="flex gap-2 text-sm text-foreground/80">
               <span className="shrink-0 font-medium tabular-nums text-brand/60">{idx + 1}.</span>
-              <span>{renderInline(item)}</span>
+              <span>{renderInline(item, onLinkClick)}</span>
             </li>
           ))}
         </ol>
@@ -154,7 +165,7 @@ function renderBlocks(text: string): React.ReactNode[] {
     if (paraLines.length > 0) {
       nodes.push(
         <p key={nodes.length} className="text-sm leading-relaxed text-foreground/85">
-          {renderInline(paraLines.join(' '))}
+          {renderInline(paraLines.join(' '), onLinkClick)}
         </p>
       );
     }
@@ -163,9 +174,39 @@ function renderBlocks(text: string): React.ReactNode[] {
   return nodes;
 }
 
-function renderInline(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*]+\*|_[^_]+_)/g);
+// `[label](url)` first so it wins over `*`/`_` emphasis inside the same string.
+const INLINE_SPLIT = /(\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*]+\*|_[^_]+_)/g;
+const LINK_RE = /^\[([^\]]+)\]\(([^)]+)\)$/;
+
+function renderInline(text: string, onLinkClick: LinkClick): React.ReactNode {
+  const parts = text.split(INLINE_SPLIT);
   return parts.map((part, i) => {
+    const link = LINK_RE.exec(part);
+    if (link) {
+      const label = link[1] ?? '';
+      const url = link[2] ?? '';
+      if (onLinkClick) {
+        return (
+          <a
+            key={i}
+            role="link"
+            tabIndex={0}
+            onClick={() => onLinkClick(url)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onLinkClick(url);
+              }
+            }}
+            className="cursor-pointer text-brand-soft underline underline-offset-2 hover:text-brand"
+          >
+            {label}
+          </a>
+        );
+      }
+      // No handler → show the label only (never a raw href that navigates the webview).
+      return <span key={i}>{label}</span>;
+    }
     if (part.startsWith('**') || part.startsWith('__'))
       return (
         <strong key={i} className="font-semibold text-foreground/95">
