@@ -515,6 +515,8 @@
     "error": "Fehler",
     "upload": "Hochladen",
     "regenerate": "Neu generieren",
+    "preview": "Vorschau",
+    "edit": "Bearbeiten",
     "placeholder": "Generierte Ausgabe erscheint hier…",
     "stages": {
       "analyzing": "Anforderungen werden analysiert…",

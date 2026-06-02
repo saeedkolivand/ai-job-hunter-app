@@ -1,8 +1,8 @@
-import { Check, Copy, Download, FileText, RotateCcw } from 'lucide-react';
+import { Check, Copy, Download, Eye, FileText, Pencil, RotateCcw } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 
-import { Button, cn, TextArea } from '@ajh/ui';
+import { Button, cn, MarkdownMessage, TextArea } from '@ajh/ui';
 
 import { buildFilename, type GenerationMeta, MODES, type TemplateId } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
@@ -42,6 +42,10 @@ export function OutputPanelDone({
 }: OutputPanelDoneProps) {
   const { t } = useTranslation();
   const [exportOpen, setExportOpen] = useState(false);
+  // Preview (prettified markdown) vs Edit (raw text). Display-only: the raw
+  // string stays canonical — copy, export, and the **keyword** emphasis markers
+  // are never touched, so a Preview/Edit switch can't change the exported file.
+  const [view, setView] = useState<'preview' | 'edit'>('preview');
 
   // If the active tab has no content but the other does, switch automatically
   useEffect(() => {
@@ -112,15 +116,50 @@ export function OutputPanelDone({
         </div>
       )}
 
-      {/* Editable output */}
-      <div className="flex-1 overflow-hidden px-6 py-4">
-        <TextArea
-          value={currentOutput}
-          onChange={(e) => onOutputChange(e.target.value)}
-          className="h-full w-full bg-transparent font-mono text-[12px] leading-relaxed text-foreground/80 placeholder:text-foreground/20"
-          spellCheck={false}
-          placeholder={t('aiGenerate.placeholder')}
-        />
+      {/* Output — prettified Preview or raw Edit (display-only; export uses the raw text) */}
+      <div className="flex flex-1 flex-col overflow-hidden px-6 py-4">
+        <div className="mb-2 flex shrink-0 items-center gap-0.5 self-end rounded-lg bg-white/[0.04] p-0.5">
+          <button
+            onClick={() => setView('preview')}
+            className={cn(
+              'flex items-center gap-1 rounded px-2 py-1 text-[10px] transition-colors',
+              view === 'preview'
+                ? 'bg-brand/15 text-brand-soft'
+                : 'text-foreground/45 hover:text-foreground/70'
+            )}
+          >
+            <Eye size={11} /> {t('aiGenerate.preview')}
+          </button>
+          <button
+            onClick={() => setView('edit')}
+            className={cn(
+              'flex items-center gap-1 rounded px-2 py-1 text-[10px] transition-colors',
+              view === 'edit'
+                ? 'bg-brand/15 text-brand-soft'
+                : 'text-foreground/45 hover:text-foreground/70'
+            )}
+          >
+            <Pencil size={11} /> {t('aiGenerate.edit')}
+          </button>
+        </div>
+
+        {view === 'edit' ? (
+          <TextArea
+            value={currentOutput}
+            onChange={(e) => onOutputChange(e.target.value)}
+            className="h-full w-full bg-transparent font-mono text-[12px] leading-relaxed text-foreground/80 placeholder:text-foreground/20"
+            spellCheck={false}
+            placeholder={t('aiGenerate.placeholder')}
+          />
+        ) : (
+          <div className="h-full w-full overflow-y-auto rounded-lg">
+            {currentOutput ? (
+              <MarkdownMessage content={currentOutput} className="text-[12px] text-foreground/80" />
+            ) : (
+              <p className="text-[12px] text-foreground/20">{t('aiGenerate.placeholder')}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Re-generate option */}
