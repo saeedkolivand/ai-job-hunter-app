@@ -6,8 +6,6 @@
 //!
 //! * providers / streaming / auth / capabilities — via [`Completer`] and the
 //!   centralized [`crate::commands::ai_provider`] layer
-//! * retries + regeneration — [`retry`]
-//! * validation — [`validation`]
 //! * research / enrichment — [`enrichment`]
 //! * caching — [`cache`]
 //! * tracing — [`StageTrace`] (per-stage) on top of the provider `RequestTrace`
@@ -16,8 +14,6 @@
 
 pub mod cache;
 pub mod enrichment;
-pub mod retry;
-pub mod validation;
 
 use async_trait::async_trait;
 use tauri::AppHandle;
@@ -71,18 +67,6 @@ impl Completer {
             provider: resolve(provider_id, base_url),
             model,
         })
-    }
-
-    /// Non-streaming completion through the active provider.
-    pub async fn complete(
-        &self,
-        system: &str,
-        user: &str,
-        temperature: Option<f64>,
-    ) -> AppResult<String> {
-        self.provider
-            .complete(&self.app, &self.model, system, user, temperature)
-            .await
     }
 
     /// Company-research brief through the active provider's **own** web search.

@@ -238,8 +238,6 @@ const R2_ALLOW: &[&str] = &[
     "autopilot_helpers/mod.rs",
     "autopilot_scheduler.rs",
     "conversations/mod.rs",
-    "cover_letter/leakage/mod.rs",
-    "cover_letter/mod.rs",
     "cover_letter/research/mod.rs",
     "documents/mod.rs",
     "pipeline/mod.rs",
