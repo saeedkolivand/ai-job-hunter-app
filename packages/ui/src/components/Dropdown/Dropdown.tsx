@@ -39,7 +39,7 @@ export function Dropdown({
 }: DropdownProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
+  const [position, setPosition] = useState({ top: 0, left: 0, width: 0, maxListHeight: 288 });
   const triggerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -67,7 +67,11 @@ export function Dropdown({
   useEffect(() => {
     if (open && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
-      setPosition({ top: rect.bottom + 6, left: rect.left, width: rect.width });
+      // Let the option list use the space below the trigger (minus the search
+      // box + a margin) instead of a fixed height, so trailing sections — e.g.
+      // "Ollama Cloud" after a long local list — aren't pushed below the fold.
+      const maxListHeight = Math.max(180, window.innerHeight - rect.bottom - 80);
+      setPosition({ top: rect.bottom + 6, left: rect.left, width: rect.width, maxListHeight });
     }
     if (open) {
       setQuery('');
@@ -157,7 +161,10 @@ export function Dropdown({
                 </div>
               )}
 
-              <div className="max-h-72 space-y-0.5 overflow-y-auto px-2 py-2">
+              <div
+                className="space-y-0.5 overflow-y-auto px-2 py-2"
+                style={{ maxHeight: position.maxListHeight }}
+              >
                 {filtered.length === 0 ? (
                   <div className="px-3 py-4 text-center text-xs text-foreground/35">No results</div>
                 ) : (
