@@ -10,6 +10,8 @@
 //! or auto-added.
 #![allow(dead_code)]
 
+pub mod letter;
+
 use crate::model::document::SectionId;
 
 /// Physical page size.

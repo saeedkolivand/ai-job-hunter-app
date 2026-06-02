@@ -160,6 +160,45 @@ fn test_generate_pdf_cover_letter_with_section_markers() {
     assert!(result.is_ok());
 }
 
+#[test]
+fn test_generate_pdf_cover_letter_german_market_with_betreff() {
+    // German market: a bold Betreff line + a German salutation + formal sign-off.
+    // Exercises the subject-line render, market date placement, and the
+    // locale-aware salutation/sign-off detection (previously English/German-only).
+    let text = "Max Mustermann\n\nBetreff: Bewerbung als Frontend Engineer\n\nSehr geehrte Damen und Herren,\n\nmit großem Interesse bewerbe ich mich.\n\nMit freundlichen Grüßen\nMax Mustermann";
+    let request = ExportRequest {
+        text: text.to_string(),
+        format: super::super::types::ExportFormat::Pdf,
+        document_type: DocumentType::CoverLetter,
+        template_id: super::super::types::TemplateId::Classic,
+        meta: None,
+        ats_mode: false,
+        locale: Some("de".to_string()),
+        contact: None,
+    };
+    let bytes = generate_pdf(&request).expect("German cover letter renders");
+    assert!(!bytes.is_empty());
+}
+
+#[test]
+fn test_generate_pdf_cover_letter_french_salutation() {
+    // French salutation/sign-off must be recognized (not dumped into the
+    // recipient block) now that detection is locale-aware.
+    let text = "Marie Dupont\n\nMadame, Monsieur,\n\nje vous écris pour le poste.\n\nCordialement,\nMarie Dupont";
+    let request = ExportRequest {
+        text: text.to_string(),
+        format: super::super::types::ExportFormat::Pdf,
+        document_type: DocumentType::CoverLetter,
+        template_id: super::super::types::TemplateId::Modern,
+        meta: None,
+        ats_mode: false,
+        locale: Some("fr".to_string()),
+        contact: None,
+    };
+    let bytes = generate_pdf(&request).expect("French cover letter renders");
+    assert!(!bytes.is_empty());
+}
+
 /// Recursively collect every `/URI` action target in a parsed PDF (link
 /// annotations store the URL nested under the annotation's `/A` action dict).
 fn collect_uris(doc: &lopdf::Document) -> Vec<String> {

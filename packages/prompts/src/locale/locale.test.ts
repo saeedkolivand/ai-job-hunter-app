@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import { detectSections, estimateTokens } from '../context-manager';
-import { charsPerToken, resumeConventions } from './index';
+import letterConventionsFixture from '../fixtures/letter-conventions.json';
+import {
+  charsPerToken,
+  countryToMarket,
+  hasLetterConventions,
+  LETTER_MARKET_CONVENTIONS,
+  letterConventions,
+  resolveMarket,
+  resumeConventions,
+} from './index';
 
 const GERMAN_RESUME = `Max Mustermann
 max@example.de
@@ -70,5 +79,69 @@ describe('resumeConventions', () => {
     expect(resumeConventions('de').headers.experience).toBe('Berufserfahrung');
     expect(resumeConventions('fr').headers.skills).toBe('Compétences');
     expect(resumeConventions('xx').headers.experience).toBe('Work Experience');
+  });
+});
+
+describe('letter-conventions parity (TS const ↔ JSON fixture ↔ Rust)', () => {
+  // The runtime const and the JSON fixture are the same data; the fixture is the
+  // pivot the Rust renderer also mirrors (same pattern as url-labels). They must
+  // never drift.
+  it('the TS const equals the JSON fixture exactly', () => {
+    expect(LETTER_MARKET_CONVENTIONS).toEqual(letterConventionsFixture.markets);
+  });
+
+  it('every market carries a non-empty salutation, sign-off and notes', () => {
+    for (const [id, c] of Object.entries(LETTER_MARKET_CONVENTIONS)) {
+      expect(c.country, id).toBeTruthy();
+      expect(c.salutations.generic, id).toBeTruthy();
+      expect(c.signoffs.length, id).toBeGreaterThan(0);
+      expect(c.notes.length, id).toBeGreaterThan(10);
+    }
+  });
+});
+
+describe('letterConventions', () => {
+  it('resolves a known market and the DACH salary/start-date inclusions', () => {
+    const de = letterConventions('de');
+    expect(de.country).toBe('Germany');
+    expect(de.subjectLine).toEqual({ use: true, label: 'Betreff' });
+    expect(de.inclusions.join(' ')).toMatch(/salary expectation/i);
+    expect(de.inclusions.join(' ')).toMatch(/start date/i);
+  });
+
+  it('falls back to the international baseline for an unknown market', () => {
+    expect(letterConventions('zz')).toBe(LETTER_MARKET_CONVENTIONS.intl);
+    expect(letterConventions(undefined)).toBe(LETTER_MARKET_CONVENTIONS.intl);
+    expect(hasLetterConventions('zz')).toBe(false);
+    expect(hasLetterConventions('de')).toBe(true);
+  });
+});
+
+describe('countryToMarket + resolveMarket', () => {
+  it('splits the country-sensitive markets', () => {
+    expect(countryToMarket('US')).toBe('us');
+    expect(countryToMarket('GB')).toBe('uk');
+    expect(countryToMarket('de')).toBe('de'); // case-insensitive
+    expect(countryToMarket('AT')).toBe('at');
+    expect(countryToMarket('CH')).toBe('ch');
+    expect(countryToMarket('BR')).toBe('br');
+    expect(countryToMarket('ZZ')).toBeUndefined();
+  });
+
+  it('prioritizes override → job country → brief country → language → intl', () => {
+    // Override wins over everything.
+    expect(resolveMarket({ override: 'uk', jobCountry: 'DE', targetLanguage: 'de' })).toBe('uk');
+    // The IXOPAY case: English letter, German job → German market.
+    expect(resolveMarket({ jobCountry: 'DE', targetLanguage: 'en' })).toBe('de');
+    // Ad silent on country → research-brief HQ country fills the gap.
+    expect(resolveMarket({ briefCountry: 'FR', targetLanguage: 'en' })).toBe('fr');
+    // Nothing but a language → that language's default market.
+    expect(resolveMarket({ targetLanguage: 'ja' })).toBe('jp');
+    // English with no country stays neutral (intl), not US.
+    expect(resolveMarket({ targetLanguage: 'en' })).toBe('intl');
+    // Truly nothing → intl.
+    expect(resolveMarket({})).toBe('intl');
+    // An invalid override is ignored (falls through to the chain).
+    expect(resolveMarket({ override: 'zz', jobCountry: 'US' })).toBe('us');
   });
 });
