@@ -515,6 +515,8 @@
     "error": "Error",
     "upload": "Upload",
     "regenerate": "Regenerate",
+    "preview": "Preview",
+    "edit": "Edit",
     "placeholder": "Generated output will appear here…",
     "stages": {
       "analyzing": "Analyzing job requirements…",
