@@ -6,6 +6,7 @@ import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useTranslation } from '@/lib/i18n';
 
 import { ActiveProviderSwitcher } from '../ActiveProviderSwitcher';
+import { CompanyResearchSettings } from '../CompanyResearchSettings';
 import { EmbeddingsSettings } from '../EmbeddingsSettings';
 import { ProviderDebugBadge } from '../ProviderDebugBadge';
 import { ProviderRow } from '../ProviderRow';
@@ -118,6 +119,9 @@ export function AISettingsTab() {
 
       {/* Embeddings — provider/model for matching & search, with re-indexing */}
       <EmbeddingsSettings />
+
+      {/* Company research — provider-native web search (Ollama needs the free key) */}
+      <CompanyResearchSettings />
     </motion.div>
   );
 }

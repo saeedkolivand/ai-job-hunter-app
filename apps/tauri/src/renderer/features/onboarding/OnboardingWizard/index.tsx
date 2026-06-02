@@ -8,6 +8,7 @@ import { useOnboardingCompleted, usePreferencesStore } from '@/store/preferences
 import { SpotlightTour } from '../SpotlightTour';
 import { AISelectionStep } from '../steps/AISelectionStep';
 import { BrowserStep } from '../steps/BrowserStep';
+import { ResearchStep } from '../steps/ResearchStep';
 import { ResumeStep } from '../steps/ResumeStep';
 import { WelcomeStep } from '../steps/WelcomeStep';
 import { ONBOARDING_STEPS, TOTAL_STEPS } from '../steps-config';
@@ -96,11 +97,21 @@ export function OnboardingWizard() {
             onNext={goNext}
           />
         )}
+        {stepId === 'research' && (
+          <ResearchStep
+            key="research"
+            direction={direction}
+            stepIndex={3}
+            totalSteps={TOTAL_STEPS}
+            onBack={goBack}
+            onNext={goNext}
+          />
+        )}
         {stepId === 'browser' && (
           <BrowserStep
             key="browser"
             direction={direction}
-            stepIndex={3}
+            stepIndex={4}
             totalSteps={TOTAL_STEPS}
             onBack={goBack}
             onNext={goNext}

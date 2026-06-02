@@ -81,22 +81,22 @@ former `packages/ai` and `packages/data` Node packages were removed.
 
 ## AI Generation (`apps/tauri/src/renderer/features/ai-generate/`)
 
-| Feature                    | Status | Notes                                                                                                             |
-| -------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------- |
-| Cover letter generation    | ✅     | Streaming                                                                                                         |
-| Resume generation          | ✅     | Streaming                                                                                                         |
-| Email generation           | ✅     |                                                                                                                   |
-| Summary generation         | ✅     |                                                                                                                   |
-| Bold keyword extraction    | ✅     | Post-processes output                                                                                             |
-| DOCX export                | ✅     | Canonical model engine (default): real two-column table + native ATS; A4 + font fallback; legacy fallback         |
-| PDF export                 | ✅     | Canonical layout engine; glyph-subset fonts (`pdf_renderer/fonts.rs`) ~120 KB vs ~3 MB full embed                 |
-| ATS-safe linearization     | ✅     | Two-column → single for ATS                                                                                       |
-| Universal thinking display | ✅     | All providers normalized via `think-split.ts`; `ThinkingBubble` UI (`ai-generate/components/`)                    |
-| Local model limits         | ✅     | `ai_inspect_model` IPC; `modelLimits` in preferences-store; `num_ctx`/`num_predict` on [Ollama][ollama] path only |
-| Company research           | ✅     | `ai_research_company` IPC; opt-in; Brave + provider synthesis; untrusted-fenced in prompt                         |
-| Application questions      | ✅     | `APPLICATION_QUESTIONS` registry + grounded answer prompt; answers persist on per-job record                      |
-| Locale-aware prompts       | ✅     | 11 languages                                                                                                      |
-| Template preview           | ✅     | OptionTile with live preview                                                                                      |
+| Feature                    | Status | Notes                                                                                                                   |
+| -------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------- |
+| Cover letter generation    | ✅     | Streaming                                                                                                               |
+| Resume generation          | ✅     | Streaming                                                                                                               |
+| Email generation           | ✅     |                                                                                                                         |
+| Summary generation         | ✅     |                                                                                                                         |
+| Bold keyword extraction    | ✅     | Post-processes output                                                                                                   |
+| DOCX export                | ✅     | Canonical model engine (default): real two-column table + native ATS; A4 + font fallback; legacy fallback               |
+| PDF export                 | ✅     | Canonical layout engine; glyph-subset fonts (`pdf_renderer/fonts.rs`) ~120 KB vs ~3 MB full embed                       |
+| ATS-safe linearization     | ✅     | Two-column → single for ATS                                                                                             |
+| Universal thinking display | ✅     | All providers normalized via `think-split.ts`; `ThinkingBubble` UI (`ai-generate/components/`)                          |
+| Local model limits         | ✅     | `ai_inspect_model` IPC; `modelLimits` in preferences-store; `num_ctx`/`num_predict` on [Ollama][ollama] path only       |
+| Company research           | ✅     | `ai_research_company` IPC; opt-in; active provider's own web search (native tool / Ollama Web Search); untrusted-fenced |
+| Application questions      | ✅     | `APPLICATION_QUESTIONS` registry + grounded answer prompt; answers persist on per-job record                            |
+| Locale-aware prompts       | ✅     | 11 languages                                                                                                            |
+| Template preview           | ✅     | OptionTile with live preview                                                                                            |
 
 ---
 

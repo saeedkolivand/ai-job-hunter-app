@@ -226,7 +226,7 @@ describe('generateCoverLetter', () => {
   });
 
   it('researchCompany degrades to an empty brief when the backend fails', async () => {
-    registerWithResearch(vi.fn().mockRejectedValue(new Error('no brave key')));
+    registerWithResearch(vi.fn().mockRejectedValue(new Error('provider cannot search')));
     expect(await researchCompany('Job ad', 'llama3')).toBe('');
   });
 });

@@ -23,11 +23,13 @@ export interface AiContract {
   inspectModel(req: { model: string }): Promise<ModelInspectResult | null>;
 
   /**
-   * Research the company named in a job ad and return a short factual brief for
-   * the cover-letter "fit" paragraph. Reuses the shared company-research enricher
-   * (Brave search + provider synthesis, cached). Degrades gracefully — an empty
-   * brief, never an error, when there's no Brave key or the search fails. The
-   * brief is reference context only; the prompt treats it as untrusted.
+   * Research the company named in a job ad and return a short factual brief —
+   * used by the cover-letter "fit" paragraph and company-specific application
+   * answers. Reuses the shared enricher: the active provider's own web search
+   * (native tool, or the Ollama Web Search API for Ollama), cached. Degrades
+   * gracefully — an empty brief, never an error, when the provider can't search
+   * or the search fails. The brief is reference context only; the prompt treats
+   * it as untrusted.
    */
   researchCompany(req: {
     jobAd: string;

@@ -12,12 +12,32 @@ use crate::jobs::JobTracker;
 
 use crate::error::{AppError, AppResult};
 
+use super::research;
 use super::{
     friendly_api_error, AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace,
     TokenParam,
 };
 
 const DEFAULT_BASE: &str = "https://api.openai.com/v1";
+
+/// Concatenate the assistant text from a Responses API result. The `output`
+/// array interleaves `web_search_call` items with the final `message`; we take
+/// the `output_text` blocks of message items. Pure + unit-tested.
+fn join_responses_text(data: &Value) -> String {
+    data.get("output")
+        .and_then(|o| o.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|it| it.get("type").and_then(|t| t.as_str()) == Some("message"))
+                .filter_map(|it| it.get("content").and_then(|c| c.as_array()))
+                .flatten()
+                .filter_map(|c| c.get("text").and_then(|t| t.as_str()))
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .unwrap_or_default()
+}
 
 /// OpenAI reasoning families (the `o`-series: o1, o3, o4, … and future `o`N)
 /// reject `temperature` and require `max_completion_tokens` instead of
@@ -287,6 +307,71 @@ impl AiProvider for OpenAiClient {
             })
     }
 
+    async fn research(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        company: &str,
+        role: &str,
+    ) -> AppResult<String> {
+        // Only native OpenAI exposes the Responses `web_search` tool. Generic
+        // OpenAI-compatible gateways can't be assumed to support it (and Ollama
+        // Cloud overrides `research()` in its own client), so they degrade to "".
+        if self.id != ProviderId::OpenAi {
+            return Ok(String::new());
+        }
+        let api_key = match get_provider_key(app, self.id.credential_key()) {
+            Some(k) if !k.trim().is_empty() => k,
+            _ => return Ok(String::new()),
+        };
+        let endpoint = format!("{}/responses", self.base_url);
+        let trace = RequestTrace::begin(
+            self.id,
+            model,
+            "/responses web_search",
+            &self.base_url,
+            false,
+        );
+
+        let body = json!({
+            "model": model,
+            "instructions": research::NATIVE_SYSTEM,
+            "input": research::native_user(company, role),
+            "tools": [{ "type": "web_search" }],
+        });
+        let resp = crate::net::http::shared()
+            .post(&endpoint)
+            .timeout(std::time::Duration::from_secs(25))
+            .bearer_auth(&api_key)
+            .json(&body)
+            .send()
+            .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                tracing::warn!("openai research unreachable: {e}");
+                return Ok(String::new());
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            tracing::warn!("openai research {status}: {body_text}");
+            return Ok(String::new());
+        }
+        let data: Value = match resp.json().await {
+            Ok(v) => v,
+            Err(_) => {
+                trace.end(Some(status.as_u16()), false);
+                return Ok(String::new());
+            }
+        };
+        trace.end(Some(status.as_u16()), true);
+        Ok(join_responses_text(&data))
+    }
+
     async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
         let endpoint = format!("{}/embeddings", self.base_url);
@@ -385,8 +470,26 @@ impl AiProvider for OpenAiClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_reasoning_model, parse_openai_delta};
+    use super::{is_reasoning_model, join_responses_text, parse_openai_delta};
     use serde_json::json;
+
+    #[test]
+    fn join_responses_text_takes_message_items_only() {
+        // The Responses `output` array interleaves the web_search_call with the
+        // final assistant message.
+        let data = json!({
+            "output": [
+                { "type": "web_search_call", "id": "ws_1", "status": "completed" },
+                { "type": "message", "role": "assistant", "content": [
+                    { "type": "output_text", "text": "Acme is a ", "annotations": [] },
+                    { "type": "output_text", "text": "widget maker.", "annotations": [] }
+                ]}
+            ]
+        });
+        assert_eq!(join_responses_text(&data), "Acme is a widget maker.");
+        assert_eq!(join_responses_text(&json!({})), "");
+        assert_eq!(join_responses_text(&json!({ "output": [] })), "");
+    }
 
     #[test]
     fn detects_o_series_including_future_models() {

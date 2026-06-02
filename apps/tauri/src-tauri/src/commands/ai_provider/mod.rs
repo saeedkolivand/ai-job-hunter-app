@@ -21,12 +21,15 @@ mod anthropic;
 pub mod cli_agent; // pub: its registry/detection back the CLI-agent health probe
 mod gemini;
 pub mod ollama; // pub: its Ollama-only helpers back the local model list / health / embeddings
+mod ollama_cloud;
 mod openai;
+mod research; // shared company-research prompt spec + helpers used by every `research()`
 
 use anthropic::AnthropicClient;
 use cli_agent::CliAgentClient;
 use gemini::GeminiClient;
 use ollama::OllamaClient;
+use ollama_cloud::OllamaCloudClient;
 use openai::OpenAiClient;
 
 // ── Provider identity ─────────────────────────────────────────────────────────
@@ -36,6 +39,10 @@ use openai::OpenAiClient;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderId {
     Ollama,
+    /// Ollama Cloud — hosted Ollama models over its OpenAI-compatible endpoint
+    /// (`ollama.com/v1`). Chat reuses the OpenAI client; the same account key
+    /// (`ai:ollama-cloud`) also powers Ollama Web Search for company research.
+    OllamaCloud,
     OpenAi,
     /// Any OpenAI-compatible server (LM Studio, vLLM, OpenRouter, Groq,
     /// Together, DeepSeek, Azure-style gateways…) addressed via a custom base URL.
@@ -58,6 +65,7 @@ impl ProviderId {
     pub fn parse(s: &str) -> AppResult<Self> {
         match s {
             "ollama" => Ok(Self::Ollama),
+            "ollama-cloud" => Ok(Self::OllamaCloud),
             "openai" => Ok(Self::OpenAi),
             "openai-compatible" => Ok(Self::OpenAiCompatible),
             "anthropic" => Ok(Self::Anthropic),
@@ -74,6 +82,7 @@ impl ProviderId {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Ollama => "ollama",
+            Self::OllamaCloud => "ollama-cloud",
             Self::OpenAi => "openai",
             Self::OpenAiCompatible => "openai-compatible",
             Self::Anthropic => "anthropic",
@@ -206,6 +215,23 @@ pub trait AiProvider: Send + Sync {
         temperature: Option<f64>,
     ) -> AppResult<String>;
 
+    /// Produce a ~150-word company-research brief using **this provider's own**
+    /// web search — a native search tool (OpenAI/Anthropic/Gemini), the agent's
+    /// own web tools (CLI agents), or the Ollama Web Search API (Ollama family).
+    /// Returns `""` (never an error) when the provider can't search or isn't
+    /// configured, so research degrades gracefully and generation always proceeds.
+    /// Default: no research. The brief is untrusted reference context — fenced
+    /// downstream and never a source of candidate facts.
+    async fn research(
+        &self,
+        _app: &AppHandle,
+        _model: &str,
+        _company: &str,
+        _role: &str,
+    ) -> AppResult<String> {
+        Ok(String::new())
+    }
+
     /// Embed a single text, returning the raw vector. Errors when this provider
     /// has no embeddings API (callers gate on `capabilities().supports_embeddings`).
     async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>>;
@@ -243,6 +269,7 @@ pub fn resolve(id: ProviderId, base_url: Option<String>) -> Box<dyn AiProvider> 
     }
     match id {
         ProviderId::Ollama => Box::new(OllamaClient),
+        ProviderId::OllamaCloud => Box::new(OllamaCloudClient::new()),
         ProviderId::OpenAi => Box::new(OpenAiClient::new(ProviderId::OpenAi, None)),
         ProviderId::OpenAiCompatible => {
             Box::new(OpenAiClient::new(ProviderId::OpenAiCompatible, base_url))
@@ -476,6 +503,7 @@ mod tests {
     fn provider_id_round_trips() {
         for id in [
             ProviderId::Ollama,
+            ProviderId::OllamaCloud,
             ProviderId::OpenAi,
             ProviderId::OpenAiCompatible,
             ProviderId::Anthropic,
@@ -487,6 +515,30 @@ mod tests {
             assert_eq!(ProviderId::parse(id.as_str()).unwrap(), id);
         }
         assert!(ProviderId::parse("nope").is_err());
+    }
+
+    #[test]
+    fn ollama_cloud_wire_and_credential_key() {
+        assert_eq!(ProviderId::OllamaCloud.as_str(), "ollama-cloud");
+        assert_eq!(
+            ProviderId::parse("ollama-cloud").unwrap(),
+            ProviderId::OllamaCloud
+        );
+        // Shares the `ai:ollama-cloud` credential slot used by Ollama Web Search.
+        assert_eq!(ProviderId::OllamaCloud.credential_key(), "ollama-cloud");
+        // Cloud, not a local CLI agent.
+        assert!(!ProviderId::OllamaCloud.is_cli_agent());
+        assert!(!ProviderId::OllamaCloud.is_local());
+    }
+
+    #[test]
+    fn resolve_ollama_cloud_returns_cloud_client() {
+        // Composed client reports its own id (chat is delegated to the inner
+        // OpenAI client against ollama.com/v1).
+        assert_eq!(
+            resolve(ProviderId::OllamaCloud, None).id(),
+            ProviderId::OllamaCloud
+        );
     }
 
     #[test]

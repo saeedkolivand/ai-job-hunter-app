@@ -30,6 +30,15 @@ export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
     color: 'text-emerald-400',
     models: [],
   },
+  'ollama-cloud': {
+    kind: 'cloud',
+    label: 'Ollama Cloud',
+    description:
+      'Run large hosted Ollama models with a free Ollama key — also powers company research.',
+    docsUrl: 'https://ollama.com/settings/keys',
+    color: 'text-emerald-400',
+    models: ['gpt-oss:120b', 'gpt-oss:20b', 'deepseek-v3.1:671b', 'qwen3-coder:480b'],
+  },
   openai: {
     kind: 'cloud',
     label: 'OpenAI',
@@ -91,6 +100,7 @@ export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
 
 export const PROVIDER_ORDER: AiProvider[] = [
   'ollama',
+  'ollama-cloud',
   'openai',
   'anthropic',
   'gemini',
@@ -99,3 +109,12 @@ export const PROVIDER_ORDER: AiProvider[] = [
   'codex',
   'gemini-cli',
 ];
+
+/**
+ * Ollama-family providers (local + cloud). They share the Ollama account key
+ * (`ai:ollama-cloud`) and use the Ollama Web Search API for company research —
+ * so unlike other providers they need that key before research can run.
+ */
+export function isOllamaFamily(provider: AiProvider): boolean {
+  return provider === 'ollama' || provider === 'ollama-cloud';
+}
