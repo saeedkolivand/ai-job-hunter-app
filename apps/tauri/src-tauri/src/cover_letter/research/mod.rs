@@ -40,7 +40,12 @@ impl Enricher for CompanyResearch {
         // share a single paid search.
         if let Some(cache) = app.try_state::<KvCache>() {
             if let Some(brief) = cache.get(CACHE_NS, &company, TTL_SECS) {
-                tracing::debug!(company = %company, "research: cache hit");
+                tracing::info!(
+                    company = %company,
+                    source = "cache",
+                    chars = brief.len(),
+                    "research: company brief\n{brief}"
+                );
                 return EnrichmentResult {
                     key: company,
                     content: brief,
@@ -67,7 +72,19 @@ impl Enricher for CompanyResearch {
             }
         };
 
-        if !brief.is_empty() {
+        if brief.is_empty() {
+            tracing::info!(
+                company = %company,
+                "research: no brief produced (provider can't search, isn't configured, or failed)"
+            );
+        } else {
+            tracing::info!(
+                company = %company,
+                role = %meta.role,
+                source = "provider",
+                chars = brief.len(),
+                "research: company brief\n{brief}"
+            );
             if let Some(cache) = app.try_state::<KvCache>() {
                 cache.set(CACHE_NS, &company, &brief);
             }
