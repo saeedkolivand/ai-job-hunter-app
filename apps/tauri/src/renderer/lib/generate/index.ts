@@ -9,5 +9,5 @@ export {
   MODES,
   researchCompany,
 } from './generation';
-export { type TemplateId, TEMPLATES } from './templates';
+export { isTwoColumnTemplate, TEMPLATE_IDS, type TemplateId, TEMPLATES } from './templates';
 export { LETTER_MARKET_IDS, letterConventions, resolveMarket } from '@ajh/prompts/generate';

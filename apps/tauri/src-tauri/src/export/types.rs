@@ -10,21 +10,56 @@ pub enum ExportFormat {
 }
 
 /// Template ID for styling.
-/// Serde uses kebab-case so "editorial-serif", "swiss-minimal", etc. round-trip
-/// correctly. Single-word IDs (classic, modern, executive) are unaffected.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+/// Serde uses kebab-case so "swiss-minimal" etc. round-trip correctly.
+/// Single-word IDs (classic, modern, academic) are unaffected.
+///
+/// Unknown / removed IDs (e.g. "two-column", "refined-executive", "bogus") are
+/// silently mapped to `Classic` via the custom `Deserialize` impl below —
+/// a stale frontend id degrades gracefully rather than breaking export.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum TemplateId {
     #[default]
     Classic,
     Modern,
-    Executive,
-    EditorialSerif,
     SwissMinimal,
-    TwoColumn,
-    MonoTechnical,
-    RefinedExecutive,
     Academic,
+    /// Premium two-column sidebar template — Atelier design (Phase 1b).
+    Atelier,
+    /// Phase 3a premium single-column: full-width tinted header band, airy body.
+    Meridian,
+    /// Phase 3a premium single-column: timeline spine for experience/projects.
+    Throughline,
+    /// Phase 3b-i: two-column photo template — circular photo top-left, name/title
+    /// stacked right, accent keyline, sidebar for contact/skills/education.
+    Portrait,
+    /// Phase 3b-i: DACH DIN-style tabular CV — photo top-right, formal A4,
+    /// left-label / right-value rows, restrained accent.
+    Lebenslauf,
+}
+
+impl<'de> serde::Deserialize<'de> for TemplateId {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        Ok(match s.as_str() {
+            "classic" => TemplateId::Classic,
+            "modern" => TemplateId::Modern,
+            "swiss-minimal" => TemplateId::SwissMinimal,
+            "academic" => TemplateId::Academic,
+            "atelier" => TemplateId::Atelier,
+            "meridian" => TemplateId::Meridian,
+            "throughline" => TemplateId::Throughline,
+            "portrait" => TemplateId::Portrait,
+            "lebenslauf" => TemplateId::Lebenslauf,
+            // Any unknown / removed id (e.g. "two-column", "refined-executive",
+            // "executive", "editorial-serif", "mono-technical", "bogus") falls
+            // back to Classic so a stale frontend never breaks export.
+            _ => {
+                log::warn!("TemplateId: unknown id {:?}, falling back to Classic", s);
+                TemplateId::Classic
+            }
+        })
+    }
 }
 
 /// Document type
@@ -35,16 +70,14 @@ pub enum DocumentType {
     CoverLetter,
 }
 
-/// Font family selector — shared between template config and PDF renderer.
-/// Defined here (types) to avoid a circular dependency between templates ↔ pdf_renderer.
+/// Font family selector — shared between template config and the Typst rendering engine.
+/// Defined here (types) to keep `templates` dependency-light (no direct dep on the engine).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FontFamily {
     Calibri,
     Inter,
     SourceSerif4,
     Manrope,
-    JetBrainsMono,
-    PlayfairDisplay,
 }
 
 /// Metadata for generation
@@ -155,4 +188,58 @@ pub struct ParsedDocument {
     pub has_name: bool,
     pub has_contact: bool,
     pub section_count: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A stale frontend that sends a removed template id (e.g. "two-column",
+    /// "refined-executive") or a completely unknown string must NEVER cause a
+    /// deserialisation error — it must silently fall back to `Classic`.
+    #[test]
+    fn unknown_template_id_falls_back_to_classic() {
+        for bad in &[
+            "two-column",
+            "refined-executive",
+            "executive",
+            "editorial-serif",
+            "mono-technical",
+            "bogus",
+            "BOGUS",
+            "",
+        ] {
+            let json = format!("\"{}\"", bad);
+            let id: TemplateId = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("deserialise {:?} failed: {e}", bad));
+            assert_eq!(
+                id,
+                TemplateId::Classic,
+                "unknown id {:?} should fall back to Classic, got {id:?}",
+                bad
+            );
+        }
+    }
+
+    /// Live ids must still round-trip correctly (no regression).
+    #[test]
+    fn live_template_ids_round_trip() {
+        let cases = [
+            (TemplateId::Classic, "\"classic\""),
+            (TemplateId::Modern, "\"modern\""),
+            (TemplateId::SwissMinimal, "\"swiss-minimal\""),
+            (TemplateId::Academic, "\"academic\""),
+            (TemplateId::Atelier, "\"atelier\""),
+            (TemplateId::Meridian, "\"meridian\""),
+            (TemplateId::Throughline, "\"throughline\""),
+            (TemplateId::Portrait, "\"portrait\""),
+            (TemplateId::Lebenslauf, "\"lebenslauf\""),
+        ];
+        for (id, expected_json) in cases {
+            let serialized = serde_json::to_string(&id).expect("serialize");
+            assert_eq!(serialized, expected_json, "{id:?} serialized wrong");
+            let deserialized: TemplateId = serde_json::from_str(&serialized).expect("deserialize");
+            assert_eq!(deserialized, id, "{id:?} did not round-trip");
+        }
+    }
 }

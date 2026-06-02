@@ -40,8 +40,6 @@ pub fn docx_fallback_font(family: FontFamily) -> &'static str {
         FontFamily::Inter => "Calibri",
         FontFamily::Manrope => "Calibri",
         FontFamily::SourceSerif4 => "Georgia",
-        FontFamily::PlayfairDisplay => "Cambria",
-        FontFamily::JetBrainsMono => "Consolas",
     }
 }
 
@@ -409,7 +407,5 @@ mod tests {
         assert_eq!(docx_fallback_font(FontFamily::Inter), "Calibri");
         assert_eq!(docx_fallback_font(FontFamily::Manrope), "Calibri");
         assert_eq!(docx_fallback_font(FontFamily::SourceSerif4), "Georgia");
-        assert_eq!(docx_fallback_font(FontFamily::PlayfairDisplay), "Cambria");
-        assert_eq!(docx_fallback_font(FontFamily::JetBrainsMono), "Consolas");
     }
 }

@@ -1,6 +1,6 @@
 # Architecture (map + boundaries + feature ownership)
 
-Last updated: 2026-06-01
+Last updated: 2026-06-02
 
 Canonical: [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md), [`docs/architecture-rules.md`](../architecture-rules.md) (the L0–L3 rules, tested by `cargo test --test architecture`), [`docs/PATTERNS.md`](../PATTERNS.md). Use `graphify explain "<module>"` for a scoped view.
 
@@ -23,7 +23,7 @@ L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints.
 
 ## Backend modules (`apps/tauri/src-tauri/src/`)
 
-- **Resume/export** — `export/` (pdf/, docx/, layout_pdf/, model_docx/, templates/, parser/, links/, types.rs), `model/`, `theme/`, `layout/`, `measure/`, `locale/`, `contact_profile/`, `validate/`.
+- **Resume/export** — `export/` (pdf/, docx/, typst_engine/, model_docx/, templates/, parser/, links/, types.rs), `model/`, `theme/`, `locale/`, `contact_profile/`, `validate/`.
 - **Job match / ATS** — `commands/match_resume.rs`, `commands/cover_letter.rs` + `cover_letter/`, `recommend/`, `validate/`.
 - **Automation** — `scraping/` (boards/, engine/, http/, linkedin/, board_login/), `applying/` (boards/, registry/, form_filler/, selectors/), `browser/`, `apply_helpers/`, `autopilot/`.
 - **AI** — `commands/ai_provider/` (ollama/openai/anthropic/gemini + cli_agent), `commands/ai.rs`, `documents/` (embeddings), `ai_generations/`, `conversations/`, `extraction/`, `recommend/`.
@@ -33,16 +33,16 @@ L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints.
 
 Renderer (`apps/tauri/src/renderer/`): ~14 features each owning a route + service hooks (`renderer/services/`, [TanStack Query][tanstack-query]), [Zustand][zustand] stores, state machines (`lib/machines/`). Map: jobs/search/monitoring → backend jobs/scraping; ai-generate/ai-workspace → AI + resume/export; resumes/resume → resume-export domain; autopilot/onboarding → automation; settings/privacy → platform/security.
 
-| Area                                 | Owner agent                                        | Key paths                                                                     |
-| ------------------------------------ | -------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Resume / export / templates          | `resume-export-expert` (impl `pdf-docx-generator`) | `export/`, `model/`, `theme/`, `layout/`, `measure/`, `locale/`, `templates/` |
-| ATS scoring / job match              | `job-match-expert`                                 | `commands/match_resume.rs`, `cover_letter`, `recommend/`, `validate/`         |
-| Scraping / applying                  | `scraping-applier-expert`                          | `scraping/`, `applying/`, `browser/`                                          |
-| AI providers / embeddings / prompts  | `ai-provider-expert`                               | `commands/ai_provider/`, `commands/ai.rs`, `documents/`, `packages/prompts`   |
-| Rust backend / data / migrations     | `rust-backend-architect`                           | rest of `src-tauri/src/**`, `db.rs`, `*Store`                                 |
-| Security (cross-cutting)             | `tauri-security-reviewer`                          | `capabilities/`, `net/`, `credentials/`, deps, `updater/`                     |
-| Frontend / UI / a11y / i18n          | `frontend-reviewer`                                | `apps/tauri/src/renderer/**`, `packages/ui`                                   |
-| Docs / knowledge / lessons / release | `project-steward`                                  | `docs/`, `docs/knowledge/`, release config                                    |
+| Area                                 | Owner agent                                        | Key paths                                                                      |
+| ------------------------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Resume / export / templates          | `resume-export-expert` (impl `pdf-docx-generator`) | `export/` (incl. `typst_engine/`), `model/`, `theme/`, `locale/`, `templates/` |
+| ATS scoring / job match              | `job-match-expert`                                 | `commands/match_resume.rs`, `cover_letter`, `recommend/`, `validate/`          |
+| Scraping / applying                  | `scraping-applier-expert`                          | `scraping/`, `applying/`, `browser/`                                           |
+| AI providers / embeddings / prompts  | `ai-provider-expert`                               | `commands/ai_provider/`, `commands/ai.rs`, `documents/`, `packages/prompts`    |
+| Rust backend / data / migrations     | `rust-backend-architect`                           | rest of `src-tauri/src/**`, `db.rs`, `*Store`                                  |
+| Security (cross-cutting)             | `tauri-security-reviewer`                          | `capabilities/`, `net/`, `credentials/`, deps, `updater/`                      |
+| Frontend / UI / a11y / i18n          | `frontend-reviewer`                                | `apps/tauri/src/renderer/**`, `packages/ui`                                    |
+| Docs / knowledge / lessons / release | `project-steward`                                  | `docs/`, `docs/knowledge/`, release config                                     |
 
 [tauri]: https://tauri.app
 [pnpm]: https://pnpm.io

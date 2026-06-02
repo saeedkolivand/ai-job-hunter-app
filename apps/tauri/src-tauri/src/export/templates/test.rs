@@ -16,13 +16,6 @@ fn test_template_get_modern() {
 }
 
 #[test]
-fn test_template_get_executive() {
-    let template = Template::get(TemplateId::Executive);
-    assert_eq!(template.id, TemplateId::Executive);
-    assert_eq!(template.name, "Executive");
-}
-
-#[test]
 fn test_template_classic_colors() {
     let template = Template::classic();
     assert_eq!(template.name_color, (17, 17, 17));
@@ -34,12 +27,6 @@ fn test_template_modern_colors() {
     let template = Template::modern();
     assert_eq!(template.name_color, (13, 31, 60));
     assert_eq!(template.section_color, (13, 31, 60));
-}
-
-#[test]
-fn test_template_executive_centered() {
-    let template = Template::executive();
-    assert!(template.name_centered);
 }
 
 #[test]

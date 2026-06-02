@@ -15,7 +15,7 @@ const CTX_MAX = 131072;
 const OUT_MIN = 512;
 const OUT_MAX = 8192;
 
-// Shared slider styling — mirrors the SalaryPreferences range inputs.
+// Range-input styling shared by the two limit sliders below.
 const SLIDER_CLASS =
   'w-full h-2 appearance-none rounded-lg bg-white/5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-brand-soft [&::-webkit-slider-thumb]:cursor-pointer';
 

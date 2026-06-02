@@ -4,4 +4,4 @@
 //! model). These thin re-exports keep existing renderer imports
 //! (`crate::export::links::{…}`) working unchanged.
 
-pub use crate::model::rich::{display_text, split_urls, Span};
+pub use crate::model::rich::{split_urls, Span};

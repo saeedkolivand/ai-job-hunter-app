@@ -78,28 +78,23 @@ fn cover_letter_docx_declares_a4_page_size() {
 
 #[test]
 fn resume_docx_uses_fallback_fonts_not_bundled_names() {
-    // MonoTechnical: name/heading JetBrains Mono → Consolas, body Inter → Calibri.
-    let bytes = generate_docx(&resume_request(TemplateId::MonoTechnical)).expect("docx");
+    // Modern: name/heading/body all Inter → Calibri.
+    let bytes = generate_docx(&resume_request(TemplateId::Modern)).expect("docx");
     let xml = document_xml(&bytes);
-    assert!(
-        xml.contains(r#"w:ascii="Consolas""#),
-        "JetBrains Mono should fall back to Consolas"
-    );
     assert!(
         xml.contains(r#"w:ascii="Calibri""#),
         "Inter should fall back to Calibri"
     );
     // Both ranges are set so accented Latin renders in the same face.
     assert!(
-        xml.contains(r#"w:hAnsi="Consolas""#),
+        xml.contains(r#"w:hAnsi="Calibri""#),
         "fallback must also cover the high-ANSI range"
     );
-    for bundled in ["JetBrains Mono", "Inter"] {
-        assert!(
-            !xml.contains(&format!(r#""{bundled}""#)),
-            "un-embedded bundled font {bundled:?} must not be referenced in the DOCX"
-        );
-    }
+    let bundled = "Inter";
+    assert!(
+        !xml.contains(&format!(r#""{bundled}""#)),
+        "un-embedded bundled font {bundled:?} must not be referenced in the DOCX"
+    );
 }
 
 #[test]
@@ -114,18 +109,6 @@ fn serif_and_display_templates_fall_back_predictably() {
     assert!(
         !academic.contains(r#""Source Serif 4""#),
         "bundled Source Serif 4 must not leak"
-    );
-
-    // RefinedExecutive: name Playfair Display → Cambria.
-    let refined =
-        document_xml(&generate_docx(&resume_request(TemplateId::RefinedExecutive)).expect("docx"));
-    assert!(
-        refined.contains(r#"w:ascii="Cambria""#),
-        "Playfair Display should fall back to Cambria"
-    );
-    assert!(
-        !refined.contains(r#""Playfair Display""#),
-        "bundled Playfair Display must not leak"
     );
 
     // SwissMinimal: Manrope → Calibri.
@@ -218,7 +201,7 @@ fn test_generate_resume_with_meta() {
         text: "John Doe\njohn@example.com".to_string(),
         format: super::super::types::ExportFormat::Docx,
         document_type: DocumentType::Resume,
-        template_id: TemplateId::Executive,
+        template_id: TemplateId::Modern,
         meta: Some(GenerationMeta {
             candidate_name: Some("Jane Smith".to_string()),
             job_title: Some("Software Engineer".to_string()),

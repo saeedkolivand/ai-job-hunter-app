@@ -29,6 +29,12 @@ export interface ContactProfile {
   github?: string;
   website?: string;
   extraLinks?: ContactLink[];
+  /**
+   * Optional candidate photo as a `data:image/…;base64,…` URL produced by the
+   * photo-upload control (decoded, square-cropped, downscaled, EXIF-stripped).
+   * File paths are never accepted — local-only, never sent over the network.
+   */
+  photo?: string;
 }
 
 export interface ContactProfileContract {

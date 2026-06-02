@@ -273,7 +273,15 @@
       "linkLabelPlaceholder": "Dribbble",
       "linkUrl": "URL",
       "linkUrlPlaceholder": "https://…",
-      "removeLink": "Link entfernen"
+      "removeLink": "Link entfernen",
+      "photo": "Foto",
+      "photoHint": "Optional. Wird von den Foto-Vorlagen (Portrait, Lebenslauf) verwendet. Nur auf Ihrem Gerät gespeichert — niemals hochgeladen.",
+      "photoAlt": "Profilfoto",
+      "photoUpload": "Foto hochladen",
+      "photoRemove": "Foto entfernen",
+      "photoErrorType": "Bitte wählen Sie ein PNG-, JPEG-, WebP- oder GIF-Bild.",
+      "photoErrorSize": "Dieses Bild ist zu groß. Wählen Sie eines unter 10 MB.",
+      "photoErrorDecode": "Dieses Bild konnte nicht gelesen werden. Versuchen Sie eine andere Datei."
     },
     "developer": {
       "title": "Entwickler-Werkzeuge",
@@ -372,18 +380,6 @@
       "searchPlaceholder": "Standort suchen...",
       "recent": "Kürzlich"
     },
-    "remote": {
-      "title": "Arbeitspräferenz",
-      "description": "Wählen Sie Ihre bevorzugte Arbeitsweise, um Job-Empfehlungen zu personalisieren.",
-      "remote": "Remote",
-      "remoteDescription": "Von überall arbeiten",
-      "hybrid": "Hybrid",
-      "hybridDescription": "Mix aus Remote und Büro",
-      "onSite": "Vor Ort",
-      "onSiteDescription": "Im Büro arbeiten",
-      "any": "Beliebig",
-      "anyDescription": "Keine Präferenz"
-    },
     "techStack": {
       "title": "Tech-Stack",
       "description": "Fügen Sie Ihre technischen Fähigkeiten hinzu, um Job-Empfehlungen und KI-Analyse zu personalisieren.",
@@ -404,15 +400,6 @@
         "mayLagRam": "Ein großes Kontextfenster kann bei Ihrem verfügbaren RAM ruckeln",
         "mayLagVram": "Ein großes Kontextfenster kann bei Ihrem verfügbaren VRAM ruckeln"
       }
-    },
-    "salary": {
-      "title": "Gehaltserwartungen",
-      "description": "Legen Sie Ihre Gehaltserwartungen fest, um Job-Empfehlungen zu filtern.",
-      "currency": "Währung",
-      "period": "Zeitraum",
-      "range": "Bereich",
-      "minimum": "Minimum",
-      "maximum": "Maximum"
     },
     "outputTone": {
       "title": "KI-Ausgabestil",
@@ -498,6 +485,7 @@
     "company": "Unternehmen",
     "languages": "Sprachen",
     "languageMismatch": "Sprachkonflikt — Ausgabe wird lokalisiert nach {{lang}}",
+    "cjkUnsupported": "Chinesisch, Japanisch und Koreanisch werden im PDF-Export noch nicht unterstützt — diese Zeichen werden nicht dargestellt. DOCX- und Textexport funktionieren weiterhin.",
     "generate": "Generieren",
     "style": "Stil",
     "resume": "Lebenslauf",

@@ -398,4 +398,116 @@ SPEAKING ENGAGEMENTS
             assert!(haystack.contains(needle), "lost content: {needle:?}");
         }
     }
+
+    /// Comma + parenthesized date format (AI documented output) yields
+    /// Block::Entry (bold title) not Block::Paragraph (non-bold text).
+    #[test]
+    fn comma_paren_date_yields_entry_block() {
+        let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+Senior Engineer, Acme Corp (January 2021 \u{2013} March 2023)
+- Led a team of five engineers
+- Shipped three major features
+";
+        let m = model_from_resume_text(resume);
+        let experience = m
+            .sections
+            .iter()
+            .find(|s| s.id == SectionId::Experience)
+            .expect("experience section must be present");
+
+        let entries: Vec<&EntryBlock> = experience
+            .blocks
+            .iter()
+            .filter_map(|b| match b {
+                Block::Entry(e) => Some(e),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            entries.len(),
+            1,
+            "expected one Entry block for the job header"
+        );
+
+        let title_text = flat(&entries[0].title);
+        assert!(
+            title_text.contains("Senior Engineer"),
+            "entry title must contain the role; got: {title_text:?}"
+        );
+        assert!(
+            title_text.contains("Acme Corp"),
+            "entry title must contain the company; got: {title_text:?}"
+        );
+        assert!(
+            title_text.contains("January 2021"),
+            "entry title must contain the date (whole line is bold); got: {title_text:?}"
+        );
+        assert!(
+            entries[0].date.is_none(),
+            "date must be None for comma+paren format (date is embedded in title); got: {:?}",
+            entries[0].date
+        );
+        assert_eq!(
+            entries[0].bullets.len(),
+            2,
+            "both bullets must attach to the entry"
+        );
+    }
+
+    /// Pipe-separated with a date segment yields Block::Entry (bold title).
+    #[test]
+    fn pipe_date_segment_yields_entry_block() {
+        let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+Principal Engineer | Meridian Systems | 2019 \u{2013} Present
+- Scaled the platform to 500 k events per second
+";
+        let m = model_from_resume_text(resume);
+        let experience = m
+            .sections
+            .iter()
+            .find(|s| s.id == SectionId::Experience)
+            .expect("experience section must be present");
+
+        let entries: Vec<&EntryBlock> = experience
+            .blocks
+            .iter()
+            .filter_map(|b| match b {
+                Block::Entry(e) => Some(e),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            entries.len(),
+            1,
+            "expected one Entry block for the pipe-date line"
+        );
+
+        let title_text = flat(&entries[0].title);
+        assert!(
+            title_text.contains("Principal Engineer"),
+            "entry title must contain role; got: {title_text:?}"
+        );
+        assert!(
+            title_text.contains("Meridian Systems"),
+            "entry title must contain company; got: {title_text:?}"
+        );
+        assert!(
+            entries[0].date.is_none(),
+            "date must be None for pipe-date format (date is embedded in title); got: {:?}",
+            entries[0].date
+        );
+        assert_eq!(
+            entries[0].bullets.len(),
+            1,
+            "bullet must attach to the entry"
+        );
+    }
 }

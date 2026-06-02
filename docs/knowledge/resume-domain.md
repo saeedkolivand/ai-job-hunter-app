@@ -1,6 +1,6 @@
 # Resume domain (resume + ATS + export)
 
-Last updated: 2026-06-01
+Last updated: 2026-06-02
 
 Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `job-match-expert` (ATS scoring). Canonical: [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md). Source is authoritative for literals (template count, scoring weights).
 
@@ -10,7 +10,7 @@ Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `j
 
 ## Templates
 
-`export/templates/` — the template set (count lives in `export/templates/mod.rs`; do not copy a number here). Each must be **ATS-safe** (linear, parseable, predictable rendering, sensible section naming) and may be industry-specific. Country/locale standards (US Letter vs A4, regional conventions) via `locale/` + `theme/`.
+Nine templates. `TemplateId` in `export/types.rs`; registry/styling data in `export/templates/mod.rs`; `.typ` sources embedded at build time in `export/typst_engine/templates/`. Unknown IDs fall back to `Classic` via the custom `Deserialize` impl (serde-tolerant). Two-column set: `Atelier` + `Portrait` — gate via `theme::is_two_column`. Section→column routing: `theme::placement_for` (single source of truth). See [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md) for the full table; do not copy counts here.
 
 ## ATS — two distinct concerns (don't conflate)
 
@@ -19,20 +19,27 @@ Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `j
 
 ## Export contract & pipeline
 
-- Contract: `ExportRequest`/`ExportResult` in `export/types.rs` (format, template, ATS mode, locale).
-- **PDF**: `export/pdf/`, `export/pdf_renderer/`, `export/layout_pdf/` — [printpdf][printpdf] + ttf-parser; embed fonts; pre-measure layout before render; compute pagination once (avoid overflow). Prefer **golden tests**.
-- **DOCX**: `export/docx/`, `export/model_docx/`, `export/docx_renderer.rs` — [docx-rs][docx-rs]; fallback fonts; structural fidelity. Prefer **golden tests**.
+- Contract: `ExportRequest`/`ExportResult` in `export/types.rs` (format, template, ATS mode, locale, optional `contact: ContactProfile`).
+- **PDF**: `export/pdf/mod.rs` dispatches to `export/typst_engine/` (Typst adapter — sole PDF engine). Templates are `.typ` files embedded via `include_bytes!`. Only `engine.rs` + `render.rs` import the `typst`/`typst_pdf` crates (isolation boundary). Round-trip tests + validate gate in `export/typst_engine/test.rs`. Prefer **golden tests**.
+- **DOCX**: `export/docx/`, `export/model_docx.rs` — [docx-rs][docx-rs]; fallback fonts; structural fidelity. Prefer **golden tests**.
 - **Golden parity** — keep PDF and DOCX outputs aligned where the design requires; deterministic snapshots, reviewed on update.
-- **Validate gate** — `validate/` checks ATS compliance before/at export.
+- **Validate gate** — `validate/` checks ATS compliance at export; content-based URL checks; `page_annot_dicts` reads Typst inline-dict `/Annots`.
 
-## PDF glyph subsetting
+## Cover-letter PDF
 
-`export/pdf_renderer/fonts.rs: parse_font` subsets each embedded font to rendered codepoints via [printpdf][printpdf]'s `subset_font`; falls back to full-font on failure. A size-budget guardrail test (`export/pdf/test.rs: classic_resume_pdf_is_glyph_subset_under_budget`, 800 KB limit) catches subsetting regressions. See [ADR-008](decision-records/adr-008-pdf-glyph-subsetting.md).
+`render_letter_pdf` in `typst_engine/engine.rs`. Market conventions (date placement, recipient block, sign-off) come from `locale/letter.rs` (`LetterMarketConventions`). `parse_cover_letter` in `typst_engine/letter.rs` produces a `LetterModel` serialised to JSON — no user content concatenated into Typst markup.
+
+## Candidate photo
+
+`ContactProfile.photo` — **`data:` URI only** (file paths rejected at `typst_engine/photo.rs: resolve_photo`). Client pipeline: `apps/tauri/src/renderer/lib/photo.ts` (crop/scale/EXIF-strip → JPEG data URL). Used by `Portrait` + `Lebenslauf` templates.
+
+## CJK deferred
+
+CJK (zh/ja/ko) renders as tofu — no CJK font bundle yet. `isCjkLanguage` in `packages/shared/src/language-detection.ts` gates the `aiGenerate.cjkUnsupported` UI notice.
 
 ## Review heuristics
 
-- HIGH: a template/layout change that breaks ATS parseability; a scoring change that violates the documented model without an ADR; an untested export error path; a header-link regression (links must come from `contact_profile/`).
+- HIGH: a template/layout change that breaks ATS parseability; a scoring change that violates the documented model without an ADR; an untested export error path; a header-link regression (links must come from `contact_profile/`); a photo path that accepts file URIs.
 - MEDIUM: missing golden/edge-case test, non-deterministic snapshot, avoidable re-shaping in the render loop (perf → `performance-profiler`).
 
-[printpdf]: https://github.com/fschutt/printpdf
 [docx-rs]: https://github.com/bokuweb/docx-rs

@@ -12,7 +12,13 @@ import { motion } from 'motion/react';
 
 import { Button, cn } from '@ajh/ui';
 
-import { type GenerationMode, MODES, type TemplateId, TEMPLATES } from '@/lib/generate';
+import {
+  type GenerationMode,
+  isTwoColumnTemplate,
+  MODES,
+  type TemplateId,
+  TEMPLATES,
+} from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 import type { PromptQuality } from '@/store/preferences-schema';
 import { usePreferencesStore, usePromptQuality } from '@/store/preferences-store';
@@ -180,8 +186,8 @@ export function GenerationConfig({
         </div>
       </div>
 
-      {/* ATS safe mode — only for two-column template */}
-      {templateId === 'two-column' && (
+      {/* ATS safe mode — only for two-column templates (Atelier, Portrait) */}
+      {isTwoColumnTemplate(templateId) && (
         <button
           type="button"
           onClick={() => onAtsModeChange(!atsMode)}

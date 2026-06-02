@@ -22,7 +22,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::export::parser::{parse_resume, strip_md};
-use crate::export::types::{DocumentType, ExportFormat, ExportRequest, LineKind, TemplateId};
+use crate::export::types::{DocumentType, ExportFormat, ExportRequest, LineKind};
 
 static EMAIL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[\w.+-]+@[\w-]+\.[\w.-]+").unwrap());
@@ -110,7 +110,7 @@ pub fn validate_and_fix(
 
     // Auto-fix: a two-column layout whose sections interleave when read back is
     // re-exported single-column (linearized), then re-checked.
-    let can_linearize = matches!(request.template_id, TemplateId::TwoColumn) && !request.ats_mode;
+    let can_linearize = crate::theme::is_two_column(request.template_id) && !request.ats_mode;
     if has_critical(&issues) && can_linearize {
         request.ats_mode = true;
         bytes = generate(&request)?;
@@ -196,7 +196,7 @@ fn run_validators(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> {
     let expected = expected_from_request(request);
     // Column interleaving is only possible for a two-column layout that has not
     // been linearized to a single column.
-    let two_column = matches!(request.template_id, TemplateId::TwoColumn) && !request.ats_mode;
+    let two_column = crate::theme::is_two_column(request.template_id) && !request.ats_mode;
     let mut issues = evaluate(&expected, &extracted, two_column, request.document_type);
 
     // Render-correctness gates that must hold for EVERY generated document, so the
@@ -235,8 +235,6 @@ struct PdfLink {
 
 /// Render-level checks over the actual PDF bytes (renderer-agnostic, so the modern
 /// résumé engine and the legacy cover-letter path are both covered):
-///   * `empty_anchor_link` — every link rect overlaps rendered text (catches the
-///     header links dumped to the page bottom with no glyphs under them).
 ///   * `header_url_mismatch` (critical) — when a contact profile is the source of
 ///     truth, every header-region link URL must be one of the profile's named
 ///     fields (catches a company-link displacing a personal profile / site).
@@ -252,37 +250,22 @@ fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> 
 
     let pages: Vec<(usize, lopdf::ObjectId)> = doc.get_pages().into_values().enumerate().collect();
     let mut links: Vec<PdfLink> = Vec::new();
-    let mut baselines_by_page: Vec<Vec<f32>> = Vec::new();
 
     for (idx, page_id) in &pages {
-        baselines_by_page.push(text_baseline_ys(&doc, *page_id));
         links.extend(page_link_annotations(&doc, *page_id, *idx));
     }
 
     let mut issues = Vec::new();
 
-    // (1) Every link must overlap text on its page (no empty-anchor / floating rect).
-    for link in &links {
-        let y0 = link.rect[1].min(link.rect[3]);
-        let y1 = link.rect[1].max(link.rect[3]);
-        let baselines = baselines_by_page
-            .get(link.page)
-            .map(Vec::as_slice)
-            .unwrap_or(&[]);
-        let anchored = baselines.iter().any(|&y| y >= y0 - 3.0 && y <= y1 + 3.0);
-        if !anchored {
-            issues.push(ExportIssue::critical(
-                "empty_anchor_link",
-                format!(
-                    "A hyperlink to {} has no text beneath it — the clickable area is \
-                     misplaced (likely a coordinate-origin flip).",
-                    link.url
-                ),
-            ));
-        }
-    }
+    // The former `empty_anchor_link` geometric check (link rect vs text-baseline
+    // overlap) was removed at the Typst cutover: it guarded the legacy renderer's
+    // manually-placed link rects (coordinate-origin flips). Typst's
+    // `link(url, body)` wraps real glyphs, so an annotation is structurally always
+    // anchored to its text; the geometric approach was renderer-fragile (text-matrix
+    // vs /Rect coordinate spaces) and false-flagged every valid Typst link. The
+    // URL-correctness checks below (content-based, not geometric) still run.
 
-    // (2) Header URL correctness against the contact profile (when supplied).
+    // Header URL correctness against the contact profile (when supplied).
     if let Some(profile) = request
         .contact
         .as_ref()
@@ -329,42 +312,17 @@ fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> 
     issues
 }
 
-/// Collect text baseline Y positions (points, bottom-up) from a page's content
-/// stream, from the text-positioning operators the renderers emit.
-fn text_baseline_ys(doc: &lopdf::Document, page_id: lopdf::ObjectId) -> Vec<f32> {
-    let Ok(content) = doc.get_page_content(page_id) else {
-        return Vec::new();
-    };
-    let Ok(decoded) = lopdf::content::Content::decode(&content) else {
-        return Vec::new();
-    };
-    let mut ys = Vec::new();
-    for op in &decoded.operations {
-        let y = match op.operator.as_str() {
-            // `x y Td` / `x y TD` — operand[1] is the baseline y.
-            "Td" | "TD" => op.operands.get(1).and_then(|o| o.as_float().ok()),
-            // `a b c d e f Tm` — operand[5] is the baseline y.
-            "Tm" => op.operands.get(5).and_then(|o| o.as_float().ok()),
-            _ => None,
-        };
-        if let Some(y) = y {
-            ys.push(y);
-        }
-    }
-    ys
-}
-
 /// Read a page's `/Annots` entries as concrete dictionaries, handling BOTH the
 /// inline-dictionary and the indirect-reference encodings — at the array level
 /// and per element.
 ///
 /// lopdf's own [`lopdf::Document::get_page_annotations`] keeps only entries that
-/// are *indirect references* (`flat_map(Object::as_reference)`). Our PDF renderer
-/// (printpdf) writes `/Annots` as an array of **inline dictionaries**, so that
+/// are *indirect references* (`flat_map(Object::as_reference)`). Typst (our PDF
+/// renderer) writes `/Annots` as an array of **inline dictionaries**, so that
 /// helper returns nothing for every PDF we generate — which silently made the
 /// header-link checks below see zero links and report every profile URL as
 /// "missing", blocking any export that had a contact profile. Reading the array
-/// ourselves keeps the validator working against our own renderer's output.
+/// ourselves keeps the validator working against Typst's output.
 fn page_annot_dicts(doc: &lopdf::Document, page_id: lopdf::ObjectId) -> Vec<lopdf::Dictionary> {
     let Ok(page) = doc.get_dictionary(page_id) else {
         return Vec::new();

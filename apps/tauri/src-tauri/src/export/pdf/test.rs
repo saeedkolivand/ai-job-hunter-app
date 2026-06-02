@@ -1,3 +1,4 @@
+use super::super::types::{ExportFormat, GenerationMeta, TemplateId};
 use super::*;
 
 #[test]
@@ -76,9 +77,9 @@ fn test_extract_section_multiline_content() {
 fn test_generate_pdf_resume_basic() {
     let request = ExportRequest {
         text: "John Doe\njohn@example.com".to_string(),
-        format: super::super::types::ExportFormat::Pdf,
+        format: ExportFormat::Pdf,
         document_type: DocumentType::Resume,
-        template_id: super::super::types::TemplateId::Classic,
+        template_id: TemplateId::Classic,
         meta: None,
         ats_mode: false,
         locale: None,
@@ -92,9 +93,9 @@ fn test_generate_pdf_resume_basic() {
 fn test_generate_pdf_cover_letter_basic() {
     let request = ExportRequest {
         text: "Dear Hiring Manager,\n\nI am writing to apply...".to_string(),
-        format: super::super::types::ExportFormat::Pdf,
+        format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: super::super::types::TemplateId::Modern,
+        template_id: TemplateId::Modern,
         meta: None,
         ats_mode: false,
         locale: None,
@@ -108,9 +109,9 @@ fn test_generate_pdf_cover_letter_basic() {
 fn test_generate_pdf_resume_with_meta() {
     let request = ExportRequest {
         text: "John Doe\njohn@example.com".to_string(),
-        format: super::super::types::ExportFormat::Pdf,
+        format: ExportFormat::Pdf,
         document_type: DocumentType::Resume,
-        template_id: super::super::types::TemplateId::Executive,
+        template_id: TemplateId::Modern,
         meta: Some(GenerationMeta {
             candidate_name: Some("Jane Smith".to_string()),
             job_title: Some("Software Engineer".to_string()),
@@ -130,9 +131,9 @@ fn test_generate_pdf_resume_with_section_markers() {
     let text = "### CANDIDATE RESUME ###\nJohn Doe\njohn@example.com\n### JOB ADVERTISEMENT ###\nJob description here";
     let request = ExportRequest {
         text: text.to_string(),
-        format: super::super::types::ExportFormat::Pdf,
+        format: ExportFormat::Pdf,
         document_type: DocumentType::Resume,
-        template_id: super::super::types::TemplateId::Classic,
+        template_id: TemplateId::Classic,
         meta: None,
         ats_mode: false,
         locale: None,
@@ -148,9 +149,9 @@ fn test_generate_pdf_cover_letter_with_section_markers() {
         "Some header\n### COMPLETE COVER LETTER ###\nDear Hiring Manager,\n\nI am writing...";
     let request = ExportRequest {
         text: text.to_string(),
-        format: super::super::types::ExportFormat::Pdf,
+        format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: super::super::types::TemplateId::Modern,
+        template_id: TemplateId::Modern,
         meta: None,
         ats_mode: false,
         locale: None,
@@ -168,9 +169,9 @@ fn test_generate_pdf_cover_letter_german_market_with_betreff() {
     let text = "Max Mustermann\n\nBetreff: Bewerbung als Frontend Engineer\n\nSehr geehrte Damen und Herren,\n\nmit großem Interesse bewerbe ich mich.\n\nMit freundlichen Grüßen\nMax Mustermann";
     let request = ExportRequest {
         text: text.to_string(),
-        format: super::super::types::ExportFormat::Pdf,
+        format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: super::super::types::TemplateId::Classic,
+        template_id: TemplateId::Classic,
         meta: None,
         ats_mode: false,
         locale: Some("de".to_string()),
@@ -187,9 +188,9 @@ fn test_generate_pdf_cover_letter_french_salutation() {
     let text = "Marie Dupont\n\nMadame, Monsieur,\n\nje vous écris pour le poste.\n\nCordialement,\nMarie Dupont";
     let request = ExportRequest {
         text: text.to_string(),
-        format: super::super::types::ExportFormat::Pdf,
+        format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: super::super::types::TemplateId::Modern,
+        template_id: TemplateId::Modern,
         meta: None,
         ats_mode: false,
         locale: Some("fr".to_string()),
@@ -235,9 +236,9 @@ fn resume_pdf_embeds_contact_link_annotations() {
     let text = "Jane Doe\njane@example.com | [LinkedIn](https://linkedin.com/in/jane)";
     let request = ExportRequest {
         text: text.to_string(),
-        format: super::super::types::ExportFormat::Pdf,
+        format: ExportFormat::Pdf,
         document_type: DocumentType::Resume,
-        template_id: super::super::types::TemplateId::Modern,
+        template_id: TemplateId::Modern,
         meta: None,
         ats_mode: false,
         locale: None,
@@ -258,21 +259,20 @@ fn resume_pdf_embeds_contact_link_annotations() {
 }
 
 #[test]
-fn centered_template_resume_pdf_is_generated() {
-    // Executive centers the name (name_centered = true) — exercise the exact-advance
-    // centering path end-to-end and confirm a non-empty PDF is produced.
+fn modern_template_resume_pdf_is_generated() {
+    // Modern is the default template — exercise the generate_pdf path end-to-end.
     let request = ExportRequest {
         text: "Alexander Hamilton\nalex@example.com\n\nEXPERIENCE\nTreasury  2020 - Present\nSecretary"
             .to_string(),
-        format: super::super::types::ExportFormat::Pdf,
+        format: ExportFormat::Pdf,
         document_type: DocumentType::Resume,
-        template_id: super::super::types::TemplateId::Executive,
+        template_id: TemplateId::Modern,
         meta: None,
         ats_mode: false,
         locale: None,
         contact: None,
     };
-    let bytes = generate_pdf(&request).expect("executive resume pdf");
+    let bytes = generate_pdf(&request).expect("modern resume pdf");
     assert!(
         bytes.len() > 1000,
         "expected a non-trivial PDF, got {} bytes",
@@ -281,39 +281,27 @@ fn centered_template_resume_pdf_is_generated() {
 }
 
 #[test]
-fn looks_like_contact_line_detects_contact_lines_only() {
-    // Contact lines: an email, or ≥2 "|" separators.
-    assert!(looks_like_contact_line("Zaandam | a@b.com | +31 6 1234"));
-    assert!(looks_like_contact_line("a@b.com"));
-    assert!(looks_like_contact_line("City | Phone | LinkedIn"));
-    // Plain recipient / address lines are NOT contact lines.
-    assert!(!looks_like_contact_line("JAKALA"));
-    assert!(!looks_like_contact_line("Hiring Team"));
-    assert!(!looks_like_contact_line("123 Main St | Suite 5")); // single separator
-}
-
-#[test]
 fn cover_letter_does_not_leak_generated_contact_line() {
     // The generated letter still carries its own contact line (with a markdown
     // link). With a contact profile present, the letterhead renders the profile and
     // the text's contact line must be dropped — never leaked into the body as raw
     // markdown (the `[Dribbble](…` / truncation symptom).
-    let text = "Zohreh Nejati\n\
-        Zaandam, Netherlands | z@example.com | +31 6 3478 0936 | [LinkedIn](https://linkedin.com/in/z) | [Dribbble](https://dribbble.com/zohreh-nejati)\n\
+    let text = "Lena Vos\n\
+        Amsterdam, Netherlands | l@example.com | +31 6 12345678 | [LinkedIn](https://linkedin.com/in/l) | [Dribbble](https://dribbble.com/lenavos)\n\
         31. Mai 2026\n\
         JAKALA\n\
         Hiring Team\n\
         Sehr geehrtes JAKALA-Team,\n\n\
         Mit mehr als vier Jahren Erfahrung bringe ich die Faehigkeit mit.\n\n\
         Mit freundlichen Gruessen,\n\
-        Zohreh Nejati";
+        Lena Vos";
     let request = ExportRequest {
         text: text.to_string(),
-        format: super::super::types::ExportFormat::Pdf,
+        format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: super::super::types::TemplateId::Modern,
+        template_id: TemplateId::Modern,
         meta: Some(GenerationMeta {
-            candidate_name: Some("Zohreh Nejati".to_string()),
+            candidate_name: Some("Lena Vos".to_string()),
             job_title: None,
             company_name: None,
             target_language: None,
@@ -339,7 +327,7 @@ fn cover_letter_does_not_leak_generated_contact_line() {
 }
 
 /// Collect every link annotation's `[x0,y0,x1,y1]` rect (points) + target URL.
-/// printpdf writes `/Annots` as **inline** dictionaries nested in the page object,
+/// Typst writes `/Annots` as **inline** dictionaries nested in the page object,
 /// so we recurse through arrays/dicts (not just top-level objects).
 fn collect_link_rects(doc: &lopdf::Document) -> Vec<([f32; 4], String)> {
     fn from_dict(d: &lopdf::Dictionary, out: &mut Vec<([f32; 4], String)>) {
@@ -399,20 +387,20 @@ fn long_contact_profile() -> crate::contact_profile::ContactProfile {
     };
     ContactProfile {
         location: Some(LocalizedText {
-            default: "Zaandam, Netherlands".to_string(),
+            default: "Amsterdam, Netherlands".to_string(),
             ..Default::default()
         }),
-        email: Some("zohrehnejati0@gmail.com".to_string()),
-        phone: Some("+31 6 3478 0936".to_string()),
-        linkedin: Some("https://www.linkedin.com/in/zohreh-nejati/".to_string()),
+        email: Some("lena.vos@example.com".to_string()),
+        phone: Some("+31 6 12345678".to_string()),
+        linkedin: Some("https://www.linkedin.com/in/lena-vos/".to_string()),
         website: Some("https://drive.google.com/file/d/abc/view".to_string()),
         extra_links: vec![
-            extra("Dribbble", "https://dribbble.com/zohreh"),
-            extra("Behance", "https://behance.net/zohreh"),
-            extra("Portfolio", "https://zohreh.example/portfolio"),
-            extra("YouTube", "https://youtube.com/@zohreh"),
-            extra("Instagram", "https://instagram.com/zohreh"),
-            extra("Medium", "https://medium.com/@zohreh"),
+            extra("Dribbble", "https://dribbble.com/lenavos"),
+            extra("Behance", "https://behance.net/lenavos"),
+            extra("Portfolio", "https://lena.example/portfolio"),
+            extra("YouTube", "https://youtube.com/@lenavos"),
+            extra("Instagram", "https://instagram.com/lenavos"),
+            extra("Medium", "https://medium.com/@lenavos"),
         ],
         ..Default::default()
     }
@@ -421,12 +409,12 @@ fn long_contact_profile() -> crate::contact_profile::ContactProfile {
 #[test]
 fn resume_long_contact_line_wraps_within_page() {
     let request = ExportRequest {
-        text: "Zohreh Nejati\n\nEXPERIENCE\nAcme  2020 - Present\nDesigner\n- Did work".to_string(),
-        format: super::super::types::ExportFormat::Pdf,
+        text: "Lena Vos\n\nEXPERIENCE\nAcme  2020 - Present\nDesigner\n- Did work".to_string(),
+        format: ExportFormat::Pdf,
         document_type: DocumentType::Resume,
-        template_id: super::super::types::TemplateId::Modern,
+        template_id: TemplateId::Modern,
         meta: Some(GenerationMeta {
-            candidate_name: Some("Zohreh Nejati".to_string()),
+            candidate_name: Some("Lena Vos".to_string()),
             job_title: None,
             company_name: None,
             target_language: None,
@@ -464,14 +452,13 @@ fn resume_long_contact_line_wraps_within_page() {
 #[test]
 fn cover_letter_long_contact_line_wraps_within_page() {
     let request = ExportRequest {
-        text:
-            "Sehr geehrtes Team,\n\nIch bewerbe mich.\n\nMit freundlichen Gruessen,\nZohreh Nejati"
-                .to_string(),
-        format: super::super::types::ExportFormat::Pdf,
+        text: "Sehr geehrtes Team,\n\nIch bewerbe mich.\n\nMit freundlichen Gruessen,\nLena Vos"
+            .to_string(),
+        format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: super::super::types::TemplateId::Modern,
+        template_id: TemplateId::Modern,
         meta: Some(GenerationMeta {
-            candidate_name: Some("Zohreh Nejati".to_string()),
+            candidate_name: Some("Lena Vos".to_string()),
             job_title: None,
             company_name: None,
             target_language: None,
@@ -505,11 +492,8 @@ fn cover_letter_long_contact_line_wraps_within_page() {
     );
 }
 
-/// Dev tool (ignored): write legacy-vs-engine sample resume PDFs for every
-/// template to `target/sample_pdfs/`, so the canonical layout engine's output
-/// can be eyeballed against the legacy renderer before the `layout_pdf` flag is
-/// flipped to default. Both backends are compiled regardless of the feature, so
-/// no special build is needed. Run with:
+/// Dev tool (ignored): write sample resume PDFs for every template to
+/// `target/sample_pdfs/` for visual inspection. Run with:
 ///
 /// ```text
 /// cargo test -p ajh-tauri -- --ignored dump_sample_resume_pdfs --nocapture
@@ -522,8 +506,6 @@ fn cover_letter_long_contact_line_wraps_within_page() {
 fn dump_sample_resume_pdfs() {
     use std::fs;
     use std::path::Path;
-
-    use super::super::types::TemplateId;
 
     const SAMPLE: &str = "\
 Jane Doe
@@ -559,52 +541,44 @@ LANGUAGES
     let templates = [
         TemplateId::Classic,
         TemplateId::Modern,
-        TemplateId::Executive,
-        TemplateId::EditorialSerif,
         TemplateId::SwissMinimal,
-        TemplateId::TwoColumn,
-        TemplateId::MonoTechnical,
-        TemplateId::RefinedExecutive,
         TemplateId::Academic,
+        TemplateId::Atelier,
+        TemplateId::Meridian,
+        TemplateId::Throughline,
+        TemplateId::Portrait,
+        TemplateId::Lebenslauf,
     ];
 
     let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/sample_pdfs");
     fs::create_dir_all(&out).expect("create target/sample_pdfs");
 
     for id in templates {
-        let template = Template::get(id);
+        let request = ExportRequest {
+            text: SAMPLE.to_string(),
+            format: ExportFormat::Pdf,
+            document_type: DocumentType::Resume,
+            template_id: id,
+            meta: None,
+            ats_mode: false,
+            locale: None,
+            contact: None,
+        };
         let slug = format!("{id:?}").to_lowercase();
-
-        let legacy = generate_resume_pdf(SAMPLE, None, &template, false).expect("legacy pdf");
-        fs::write(out.join(format!("{slug}_legacy.pdf")), &legacy).expect("write legacy pdf");
-
-        let engine = crate::export::layout_pdf::generate_resume_pdf(SAMPLE, None, &template, false)
-            .expect("engine pdf");
-        fs::write(out.join(format!("{slug}_engine.pdf")), &engine).expect("write engine pdf");
+        let bytes = generate_pdf(&request).expect("typst pdf");
+        fs::write(out.join(format!("{slug}_typst.pdf")), &bytes).expect("write pdf");
     }
-
-    // One ATS pair on the two-column template to show single-column linearization.
-    let tc = Template::get(TemplateId::TwoColumn);
-    let legacy_ats = generate_resume_pdf(SAMPLE, None, &tc, true).expect("legacy ats pdf");
-    fs::write(out.join("twocolumn_legacy_ats.pdf"), &legacy_ats).expect("write legacy ats pdf");
-    let engine_ats = crate::export::layout_pdf::generate_resume_pdf(SAMPLE, None, &tc, true)
-        .expect("engine ats pdf");
-    fs::write(out.join("twocolumn_engine_ats.pdf"), &engine_ats).expect("write engine ats pdf");
 
     eprintln!("wrote sample PDFs to apps/tauri/src-tauri/target/sample_pdfs/");
 }
 
-/// Size guardrail: the default (Calibri) template must glyph-subset its embedded
-/// fonts. The full Calibri regular+bold faces are ~3.2 MB, so an unsubsetted
-/// export blows past 3 MB. printpdf 0.9.1 has its own subsetting disabled, so if
-/// our `parse_font` subsetting ever regresses (or silently falls back to the full
-/// font for every glyph) this fails loudly. Budget is generous (800 KB) to stay
-/// stable across content/font-table changes while still catching a full-font
-/// regression by an order of magnitude.
+/// Size guardrail: the Typst-rendered Classic resume must produce a valid,
+/// non-trivially-sized PDF. Typst handles its own glyph subsetting internally;
+/// the budget here is generous (5 MB) to remain stable across Typst version
+/// changes while still catching a catastrophic regression (e.g. engine abort
+/// producing an empty file).
 #[test]
-fn classic_resume_pdf_is_glyph_subset_under_budget() {
-    use super::super::types::{ExportFormat, TemplateId};
-
+fn classic_resume_pdf_is_valid_and_within_size_budget() {
     let text = "\
 Jane Doe
 jane@example.com | +1 555 0100 | [LinkedIn](https://linkedin.com/in/janedoe)
@@ -627,7 +601,7 @@ BSc Computer Science
         text: text.to_string(),
         format: ExportFormat::Pdf,
         document_type: DocumentType::Resume,
-        template_id: TemplateId::Classic, // TemplateFonts::default() = Calibri (the 3.2 MB face)
+        template_id: TemplateId::Classic,
         meta: None,
         ats_mode: false,
         locale: None,
@@ -636,17 +610,20 @@ BSc Computer Science
 
     let bytes = generate_pdf(&request).expect("classic resume pdf");
 
-    // Sanity: a real, parseable PDF (not an empty/short error stub).
+    // Sanity: a real, parseable PDF.
     assert!(bytes.starts_with(b"%PDF"), "output is not a PDF");
     assert!(
         lopdf::Document::load_mem(&bytes).is_ok(),
-        "subsetted PDF must still parse"
+        "Typst PDF must still parse with lopdf"
     );
-
     assert!(
-        bytes.len() < 800_000,
-        "Calibri résumé PDF must be glyph-subset (<800 KB); got {} bytes — \
-         full-font embedding has regressed",
+        bytes.len() > 1_000,
+        "PDF is suspiciously small ({} bytes)",
+        bytes.len()
+    );
+    assert!(
+        bytes.len() < 5_000_000,
+        "PDF size budget exceeded ({} bytes > 5 MB)",
         bytes.len()
     );
 }

@@ -1,24 +1,27 @@
 # Export Templates — the resume/cover-letter rendering contract
 
-Last updated: 2026-06-01
+Last updated: 2026-06-02
 
 The normative reference for the document export system: the nine templates, the
-two backends, and the cross-cutting rules (page size, ATS mode, links, fonts,
+single PDF engine, and the cross-cutting rules (page size, ATS mode, links, fonts,
 validation). This is a **contract** — behavior described here is locked by tests;
 changing it means changing the tests too.
 
 Source of truth in code:
 
-| Concern                          | Where                                                      |
-| -------------------------------- | ---------------------------------------------------------- |
-| Template registry (styling data) | `apps/tauri/src-tauri/src/export/templates/mod.rs`         |
-| Canonical document model         | `apps/tauri/src-tauri/src/model/`                          |
-| PDF layout engine (fixed)        | `apps/tauri/src-tauri/src/layout/`, `export/layout_pdf.rs` |
-| DOCX backend (flow)              | `apps/tauri/src-tauri/src/export/model_docx.rs`            |
-| Section placement / link style   | `apps/tauri/src-tauri/src/theme/mod.rs`                    |
-| Locale profiles (page size, …)   | `apps/tauri/src-tauri/src/locale/mod.rs`                   |
-| Validation + ATS gate            | `apps/tauri/src-tauri/src/validate/mod.rs`                 |
-| IPC contract                     | `packages/shared/src/ipc/contracts/documents.ts`           |
+| Concern                           | Where                                                           |
+| --------------------------------- | --------------------------------------------------------------- |
+| Template registry (styling data)  | `apps/tauri/src-tauri/src/export/templates/mod.rs`              |
+| Template IDs + serde fallback     | `apps/tauri/src-tauri/src/export/types.rs` (`TemplateId`)       |
+| Canonical document model          | `apps/tauri/src-tauri/src/model/`                               |
+| PDF engine (Typst adapter)        | `apps/tauri/src-tauri/src/export/typst_engine/`                 |
+| DOCX backend (flow)               | `apps/tauri/src-tauri/src/export/docx/`, `export/model_docx.rs` |
+| Section placement / two-col rules | `apps/tauri/src-tauri/src/theme/mod.rs`                         |
+| Locale profiles (page size, …)    | `apps/tauri/src-tauri/src/locale/mod.rs`                        |
+| Cover-letter market conventions   | `apps/tauri/src-tauri/src/locale/letter.rs`                     |
+| Validation + ATS gate             | `apps/tauri/src-tauri/src/validate/mod.rs`                      |
+| IPC contract                      | `packages/shared/src/ipc/contracts/documents.ts`                |
+| CJK detection (UI notice gate)    | `packages/shared/src/language-detection.ts` (`isCjkLanguage`)   |
 
 ---
 
@@ -29,45 +32,59 @@ sections of paragraphs / bullets / entries with rich-text runs). Backends
 **translate** the model; they never re-parse text:
 
 ```
-resume text ──adapter──▶ DocumentModel ──▶ layout engine ──▶ PDF   (fixed pages)
+resume text ──adapter──▶ DocumentModel ──▶ Typst engine  ──▶ PDF   (fixed pages)
                                        └──▶ model_docx    ──▶ DOCX  (Word reflow)
                               TXT = stripped markdown
 ```
 
 The two backends are **asymmetric by design** and this is intentional:
 
-- **PDF** is a _fixed_ backend — the engine measures glyphs (real font metrics),
-  places every line at an absolute position, paginates itself, and draws the
-  two-column sidebar band per page. Deterministic, pixel-stable.
+- **PDF** is a _fixed_ backend — the Typst engine (`typst_engine/`) compiles
+  `.typ` template sources (embedded at build time via `include_str!`) with a
+  `ResumeWorld` offline world, producing deterministic paginated bytes. No
+  network, no disk access at runtime.
 - **DOCX** is a _flow_ backend — it emits paragraphs / a borderless table and
   lets Word measure, wrap, and paginate. `keepNext` / `keepLines` keep headings
   with their content and bullets intact.
 
-The shared layer is `DocumentModel` + `MeasureText` + `Theme` + `LocaleProfile` +
-section routing — **not** a shared paginator.
+### Typst adapter isolation boundary
+
+`engine.rs` and `render.rs` are the **only** files that import the `typst` and
+`typst_pdf` crates. No `typst` or `typst_pdf` types appear in any `pub` signature
+outside `typst_engine/` — callers only see `AppResult<Vec<u8>>`. This keeps the
+typst dependency ring-fenced behind the adapter.
+
+The shared layer is `DocumentModel` + `Theme` + `LocaleProfile` + section routing
+— **not** a shared paginator.
 
 ---
 
 ## The nine templates
 
-`TemplateId` (kebab-case on the wire) → template. Fonts list `name / heading /
-body`; the DOCX backend substitutes a system fallback (see [Fonts](#fonts)).
+`TemplateId` (kebab-case on the wire) in `export/types.rs`. Unknown / removed IDs
+(e.g. stale frontend sending `"two-column"` or `"refined-executive"`) are silently
+mapped to `Classic` via the custom `Deserialize` impl — a stale frontend id
+degrades gracefully rather than breaking export.
 
-| Id                  | Name              | Fonts                                            | Character                                    | Layout         | Best for                                            |
-| ------------------- | ----------------- | ------------------------------------------------ | -------------------------------------------- | -------------- | --------------------------------------------------- |
-| `classic`           | ATS Classic       | Calibri / Calibri / Calibri                      | Black, no color, underlined headings         | Single column  | Maximum ATS safety; finance / legal / public sector |
-| `modern`            | Modern Technical  | Calibri / Calibri / Calibri                      | Navy, ruled headings                         | Single column  | Software / engineering                              |
-| `executive`         | Executive         | Calibri / Calibri / Calibri                      | Charcoal, centered name, generous whitespace | Single column  | Senior / leadership                                 |
-| `editorial-serif`   | Editorial Serif   | Source Serif 4 / Source Serif 4 / Inter          | Indigo accent, op-ed serif                   | Single column  | Editorial / communications                          |
-| `swiss-minimal`     | Swiss Minimal     | Manrope / Manrope / Manrope                      | Geometric sans, minimal                      | Single column  | Design-adjacent / product                           |
-| `two-column`        | Two Column        | Inter / Inter / Inter                            | Shaded sidebar band                          | **Two column** | Design; skills-forward                              |
-| `mono-technical`    | Mono Technical    | JetBrains Mono / JetBrains Mono / Inter          | Monospace headings                           | Single column  | Systems / low-level engineering                     |
-| `refined-executive` | Refined Executive | Playfair Display / Inter / Inter                 | Display-serif name                           | Single column  | Executive / brand-forward                           |
-| `academic`          | Academic          | Source Serif 4 / Source Serif 4 / Source Serif 4 | Full serif, formal                           | Single column  | Academia / research                                 |
+| Id              | Name          | Layout         | Character                                | Best for                                            |
+| --------------- | ------------- | -------------- | ---------------------------------------- | --------------------------------------------------- |
+| `classic`       | ATS Classic   | Single column  | Black, no color, underlined headings     | Maximum ATS safety; finance / legal / public sector |
+| `modern`        | Modern        | Single column  | Navy ruled headings                      | Software / engineering                              |
+| `swiss-minimal` | Swiss Minimal | Single column  | Geometric sans, minimal                  | Design-adjacent / product                           |
+| `academic`      | Academic      | Single column  | Full serif, formal                       | Academia / research                                 |
+| `atelier`       | Atelier       | **Two column** | Shaded sidebar, premium                  | Design; skills-forward                              |
+| `meridian`      | Meridian      | Single column  | Full-width tinted header band, airy body | Creative / modern professional                      |
+| `throughline`   | Throughline   | Single column  | Timeline spine for experience/projects   | Engineering / product; tenure-story emphasis        |
+| `portrait`      | Portrait      | **Two column** | Circular photo top-left, accent keyline  | European market; personal brand                     |
+| `lebenslauf`    | Lebenslauf    | Single column  | DACH DIN-style tabular, photo top-right  | German-speaking market                              |
+
+`classic`, `modern`, `swiss-minimal`, `academic` are the original ported set.
+`atelier`, `meridian`, `throughline`, `portrait`, `lebenslauf` are premium additions.
 
 Adding a template is **localized and additive**: one `TemplateId` variant + one
-`Template::*` constructor in the registry. The backends, validation, and locale
-logic consume it unchanged.
+`Template::*` constructor in `export/templates/mod.rs` + one `.typ` source under
+`export/typst_engine/templates/`. The backends, validation, and locale logic
+consume it unchanged.
 
 ---
 
@@ -91,8 +108,8 @@ agree on the page size for a given request.
 
 - The model is **linearized** (`transform::linearize`) into a single canonical
   reading order, and two-column templates collapse to one column.
-- The DOCX backend therefore emits **no table** in ATS mode; the PDF backend lays
-  out a single column.
+- The DOCX backend therefore emits **no table** in ATS mode; the Typst engine
+  lays out a single column.
 
 ATS mode is the answer to position-based parsers (e.g. some modern ATS) that can
 still interleave a visually two-column PDF. The recommender suggests it for
@@ -102,19 +119,70 @@ conservative fields.
 
 ## Two-column layout
 
-Only `two-column` is two-column. Section → column assignment is the canonical
-`theme::placement_for` decision (not a per-template string list):
+`Atelier` and `Portrait` are the two two-column templates. Section → column
+assignment is the canonical `theme::placement_for` decision (single source of
+truth — not a per-template string list):
 
 - **Sidebar**: Skills, Education, Languages, Certifications.
 - **Main**: everything else (Summary, Experience, Projects, custom sections).
 
+`theme::is_two_column(id)` is the authoritative boolean gate.
+
 The header (name + contact) always spans the full width above the columns.
 
-- **PDF**: a shaded sidebar band drawn per page behind an independent sidebar
-  flow; the main flow paginates separately and pages are merged.
+- **PDF**: handled inside the respective `.typ` template; each two-column template
+  manages its own sidebar band and column flows entirely within Typst.
 - **DOCX**: a borderless, single-row two-cell table — a shaded sidebar cell
   (`Shading.fill` = the template tint) + a main cell, fixed layout, borders
   cleared — so Word flows and paginates it.
+
+---
+
+## Cover-letter PDF (`letter.typ`)
+
+`render_letter_pdf` in `typst_engine/engine.rs` compiles a finished cover-letter
+text through `letter.typ`. The letter is **not** template-specific — it uses a
+neutral style — but it is **market-aware**: `letter::conventions` (from
+`locale/letter.rs`) provides `LetterMarketConventions` (date placement, recipient
+block position, sign-off style) derived from the job ad's detected locale.
+
+`parse_cover_letter` in `typst_engine/letter.rs` splits the text into
+`LetterModel` fields (letterhead / date / recipient / subject / salutation / body /
+signoff / signature). The model is serialised to JSON and injected via the Typst
+virtual `data.json` — no user content is ever concatenated into Typst markup
+(injection-safe).
+
+---
+
+## Candidate photo
+
+The `ContactProfile.photo` field carries an optional candidate photo used by
+`Portrait` and `Lebenslauf`. **Only `data:image/<mime>;base64,<payload>` URIs are
+accepted.** File paths are rejected unconditionally by `resolve_photo` in
+`typst_engine/photo.rs` — there is no path-traversal surface from IPC.
+
+Additional safety measures in `photo.rs`:
+
+- Raw input capped at 10 MB before decoding.
+- Only raster formats accepted (PNG/JPEG/WebP/GIF); SVG and HDR rejected.
+- Longest edge downscaled to at most 1 200 px before re-encode.
+- Output always re-encoded as lossless PNG — strips all EXIF/XMP/ICC metadata.
+- All errors swallowed; `resolve_photo` returns `None` and templates render
+  without a photo rather than failing.
+
+Client-side pipeline (`apps/tauri/src/renderer/lib/photo.ts`): decodes, square-crops,
+downscales, EXIF-strips, and produces a bounded JPEG data URL before the IPC call.
+Upload UI lives in `ContactProfileForm`.
+
+---
+
+## CJK deferred
+
+CJK languages (zh/ja/ko) are not yet supported. The Typst engine has no CJK font
+bundle — text renders as tofu. When `meta.targetLanguage` is a CJK locale
+(detected via `isCjkLanguage` in `packages/shared/src/language-detection.ts`) the
+renderer surfaces a `aiGenerate.cjkUnsupported` notice (en + de i18n keys) rather
+than silently producing a broken PDF.
 
 ---
 
@@ -133,28 +201,22 @@ the relationships part). The visible label is shown, never the raw URL.
 
 ## Fonts
 
-Six families are bundled as TTFs and embedded in the PDF. Each font is
-**glyph-subsetted per export** to only the codepoints actually rendered
-(`export/pdf_renderer/fonts.rs: parse_font`), using [printpdf][printpdf]'s `subset_font` with
-a safe fallback to the full font on failure. This reduces typical PDF size from
-~3 MB (full embed) to ~120 KB. A size-budget guardrail test in
-`export/pdf/test.rs` enforces this.
+Two font families are vendored and embedded via `include_bytes!` in the Typst
+world (`typst_engine/world.rs`):
 
-The DOCX is **not** embedded yet, so it references a widely-available fallback so
-output is predictable on machines without the bundled fonts (true OOXML embedding
-is a tracked follow-up):
+| Bundled family                       | Used by                               | License |
+| ------------------------------------ | ------------------------------------- | ------- |
+| Carlito (Calibri-metric-compatible)  | `classic`, `modern` (body + headings) | OFL     |
+| Noto Sans (Latin + Cyrillic subsets) | all templates (body fallback)         | OFL     |
 
-| Bundled family   | DOCX fallback |
-| ---------------- | ------------- |
-| Calibri          | Calibri       |
-| Inter            | Calibri       |
-| Manrope          | Calibri       |
-| Source Serif 4   | Georgia       |
-| Playfair Display | Cambria       |
-| JetBrains Mono   | Consolas      |
+Carlito provides Calibri-metric compatibility so exported PDFs measure identically
+to the DOCX Calibri fallback. Noto Sans covers Latin/Cyrillic scripts.
 
-The fallback is applied to both the ASCII and high-ANSI ranges so accented Latin
-(common in DACH names) renders in the same face.
+**CJK (zh/ja/ko)** is deferred — the world has no CJK font bundle; see
+[CJK deferred](#cjk-deferred) above.
+
+The DOCX backend references widely-available system fallbacks (not embedded); OOXML
+true embedding is a tracked follow-up.
 
 ---
 
@@ -171,6 +233,11 @@ Every PDF/DOCX export runs through `validate::validate_and_fix` after rendering:
    extractable text at all). Missing name/email/section and single-column order
    quirks are warnings, never blocks.
 
+The validate gate uses **content-based** URL checks and reads Typst inline-dict
+`/Annots` (`page_annot_dicts`) for link-annotation verification. The old
+printpdf-era geometric checks (`empty_anchor_link`, `text_baseline_ys`) have been
+removed.
+
 The report (`ok`, `atsMode`, `issues`, `fixed`) rides back on the export result.
 
 ---
@@ -179,5 +246,3 @@ The report (`ok`, `atsMode`, `issues`, `fixed`) rides back on the export result.
 
 `txt` is produced client-side: the markdown is stripped of `**bold**` markers.
 No layout, no validation report.
-
-[printpdf]: https://github.com/fschutt/printpdf

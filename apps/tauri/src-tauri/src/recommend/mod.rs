@@ -178,26 +178,26 @@ fn pick_template(field: Field, senior_exec: bool, h: &str) -> (TemplateId, &'sta
         Field::Design => {
             if senior_exec {
                 (
-                    TemplateId::RefinedExecutive,
-                    "Senior design leadership → Refined Executive.",
+                    TemplateId::Meridian,
+                    "Senior design leadership → Meridian header-forward template.",
                 )
             } else {
                 (
-                    TemplateId::TwoColumn,
-                    "Design role → Two-Column visual template.",
+                    TemplateId::Atelier,
+                    "Design role → Atelier two-column visual template.",
                 )
             }
         }
         Field::Software => {
             if senior_exec {
                 (
-                    TemplateId::RefinedExecutive,
-                    "Senior engineering leadership → Refined Executive.",
+                    TemplateId::Meridian,
+                    "Senior engineering leadership → Meridian header-forward template.",
                 )
             } else if is_systems_role(h) {
                 (
-                    TemplateId::MonoTechnical,
-                    "Systems / low-level role → Mono Technical.",
+                    TemplateId::Modern,
+                    "Systems / low-level role → Modern clean template.",
                 )
             } else {
                 (
@@ -209,8 +209,8 @@ fn pick_template(field: Field, senior_exec: bool, h: &str) -> (TemplateId, &'sta
         Field::General => {
             if senior_exec {
                 (
-                    TemplateId::RefinedExecutive,
-                    "Senior leadership → Refined Executive.",
+                    TemplateId::Meridian,
+                    "Senior leadership → Meridian header-forward template.",
                 )
             } else {
                 (TemplateId::Modern, "General role → Modern template.")

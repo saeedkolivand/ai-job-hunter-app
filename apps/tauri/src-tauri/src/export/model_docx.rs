@@ -1,8 +1,8 @@
 //! DOCX backend for the canonical document model (Phase 5).
 //!
-//! Strangler-fig step mirroring [`super::layout_pdf`]: builds a [`DocumentModel`]
-//! from resume text and translates it to a `docx-rs` document. Unlike the legacy
-//! DOCX path (which re-parses text and always collapses to one column), this
+//! Builds a [`DocumentModel`] from resume text and translates it to a `docx-rs`
+//! document. Unlike the legacy DOCX path (which re-parses text and always
+//! collapses to one column), this
 //! backend renders a genuine **two-column** layout as a borderless, single-row
 //! two-cell table (shaded sidebar cell + main cell) and honors `ats_mode`
 //! natively by linearizing the model to a single column before rendering.

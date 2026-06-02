@@ -4,7 +4,7 @@ use docx_rs::*;
 use super::{
     parser::{parse_resume, strip_md},
     templates::{calculate_spacing, Template},
-    types::{DocumentType, ExportRequest, GenerationMeta, LineKind, TemplateId},
+    types::{DocumentType, ExportRequest, GenerationMeta, LineKind},
 };
 use crate::locale::LocaleProfile;
 
@@ -330,12 +330,11 @@ fn extract_section<'a>(text: &'a str, start_marker: &str, end_marker: Option<&st
 pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
     let template = Template::get(request.template_id);
 
-    // The legacy DOCX path can't lay out columns, so it collapses two-column
-    // templates to a single column. The model path renders a real two-column
-    // table, so it keeps the config.
+    // The DOCX path collapses two-column templates to a single column since
+    // DOCX doesn't replicate the sidebar layout.
     let single_column = || {
         let mut t = template.clone();
-        if matches!(request.template_id, TemplateId::TwoColumn) {
+        if crate::theme::is_two_column(request.template_id) {
             t.two_column = None;
             t.margin_in = 1.0;
         }

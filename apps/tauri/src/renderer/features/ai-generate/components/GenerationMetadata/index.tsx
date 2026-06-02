@@ -1,5 +1,7 @@
-import { Globe } from 'lucide-react';
+import { AlertTriangle, Globe } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+
+import { isCjkLanguage } from '@ajh/shared/language-detection';
 
 import type { GenerationMeta } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
@@ -46,6 +48,11 @@ export function GenerationMetadata({ meta }: GenerationMetadataProps) {
           <div className="flex items-center gap-1.5 rounded-lg border border-amber-400/15 bg-amber-400/[0.05] px-2.5 py-1.5 text-[10px] text-amber-300/80">
             <Globe size={10} />{' '}
             {t('aiGenerate.languageMismatch', { lang: meta.jobAdLanguage.toUpperCase() })}
+          </div>
+        )}
+        {isCjkLanguage(meta.targetLanguage) && (
+          <div className="flex items-start gap-1.5 rounded-lg border border-amber-400/15 bg-amber-400/[0.05] px-2.5 py-1.5 text-[10px] text-amber-300/80">
+            <AlertTriangle size={10} className="mt-0.5 shrink-0" /> {t('aiGenerate.cjkUnsupported')}
           </div>
         )}
       </motion.div>

@@ -65,12 +65,12 @@ fn text_of(xml: &str) -> String {
 
 #[test]
 fn two_column_renders_a_borderless_shaded_table() {
-    let xml = part(&build(TemplateId::TwoColumn, false), "word/document.xml");
+    let xml = part(&build(TemplateId::Atelier, false), "word/document.xml");
     assert!(xml.contains("<w:tbl"), "two-column DOCX must use a table");
-    // Sidebar tint (240,244,248) → F0F4F8 fill on the sidebar cell.
+    // Atelier sidebar tint (240,239,248) → F0EFF8 fill on the sidebar cell.
     assert!(
-        xml.contains(r#"w:fill="F0F4F8""#),
-        "sidebar cell should carry the template tint"
+        xml.contains(r#"w:fill="F0EFF8""#),
+        "sidebar cell should carry the Atelier tint"
     );
 }
 
@@ -79,7 +79,7 @@ fn two_column_splits_sections_between_columns() {
     // SKILLS + EDUCATION are sidebar sections; EXPERIENCE is a main section.
     // All three must survive somewhere in the document.
     let text = text_of(&part(
-        &build(TemplateId::TwoColumn, false),
+        &build(TemplateId::Atelier, false),
         "word/document.xml",
     ));
     for needle in ["EXPERIENCE", "SKILLS", "EDUCATION", "Acme Corp", "Rust"] {
@@ -90,7 +90,7 @@ fn two_column_splits_sections_between_columns() {
 #[test]
 fn ats_mode_emits_no_table() {
     // ATS mode linearizes to a single column — no two-column table.
-    let xml = part(&build(TemplateId::TwoColumn, true), "word/document.xml");
+    let xml = part(&build(TemplateId::Atelier, true), "word/document.xml");
     assert!(
         !xml.contains("<w:tbl"),
         "ATS mode must not emit a two-column table"
@@ -156,24 +156,19 @@ fn contact_links_become_hyperlinks_with_correct_targets() {
 
 #[test]
 fn declares_a4_page_size_and_fallback_fonts() {
-    // MonoTechnical: name/heading JetBrains Mono → Consolas, body Inter → Calibri.
-    let xml = part(
-        &build(TemplateId::MonoTechnical, false),
-        "word/document.xml",
-    );
+    // Academic: name/heading/body all SourceSerif4 → Georgia.
+    let xml = part(&build(TemplateId::Academic, false), "word/document.xml");
     assert!(
         xml.contains(r#"w:w="11906""#) && xml.contains(r#"w:h="16838""#),
         "A4 page size"
     );
     assert!(
-        xml.contains(r#"w:ascii="Consolas""#),
-        "JetBrains Mono → Consolas"
+        xml.contains(r#"w:ascii="Georgia""#),
+        "SourceSerif4 → Georgia"
     );
-    assert!(xml.contains(r#"w:ascii="Calibri""#), "Inter → Calibri");
-    for bundled in ["JetBrains Mono", "Inter"] {
-        assert!(
-            !xml.contains(&format!(r#""{bundled}""#)),
-            "bundled font {bundled:?} must not leak"
-        );
-    }
+    let bundled = "Source Serif 4";
+    assert!(
+        !xml.contains(&format!(r#""{bundled}""#)),
+        "bundled font {bundled:?} must not leak"
+    );
 }

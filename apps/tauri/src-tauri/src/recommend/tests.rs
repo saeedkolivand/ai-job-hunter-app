@@ -11,6 +11,57 @@ fn signals(title: &str, seniority: &str, reqs: &[&str]) -> RecommendSignals {
     }
 }
 
+/// The nine live template IDs — the recommender must never return anything outside
+/// this set.
+const LIVE_TEMPLATES: [TemplateId; 9] = [
+    TemplateId::Classic,
+    TemplateId::Modern,
+    TemplateId::SwissMinimal,
+    TemplateId::Academic,
+    TemplateId::Atelier,
+    TemplateId::Meridian,
+    TemplateId::Throughline,
+    TemplateId::Portrait,
+    TemplateId::Lebenslauf,
+];
+
+#[test]
+fn recommender_never_returns_a_deleted_id() {
+    // Exhaustive sweep over representative job signals.  Every result must be a
+    // member of the nine live templates — none of the deleted five may slip through.
+    let cases: &[(&str, &str, &[&str])] = &[
+        ("Frontend Engineer", "mid", &["React", "TypeScript"]),
+        ("Embedded Software Engineer", "mid", &["C++", "firmware"]),
+        ("Compliance Auditor", "senior", &["finance", "SOX"]),
+        ("Postdoctoral Researcher", "mid", &["PhD", "publications"]),
+        ("Product Designer", "mid", &["Figma", "UX"]),
+        (
+            "VP of Engineering",
+            "executive",
+            &["leadership", "strategy"],
+        ),
+        (
+            "Chief Financial Officer",
+            "executive",
+            &["finance", "audit"],
+        ),
+        ("Software Engineer", "mid", &["Go", "Kubernetes"]),
+        ("Art Director", "lead", &["brand", "motion design"]),
+        ("Data Scientist", "mid", &["machine learning", "Python"]),
+        // Blank / default signals
+        ("", "", &[]),
+    ];
+
+    for (title, seniority, reqs) in cases {
+        let r = recommend(&signals(title, seniority, reqs));
+        assert!(
+            LIVE_TEMPLATES.contains(&r.template_id),
+            "recommend({title:?}, {seniority:?}) returned deleted/unknown id {:?}",
+            r.template_id
+        );
+    }
+}
+
 #[test]
 fn software_role_gets_modern() {
     let r = recommend(&signals(
@@ -23,13 +74,14 @@ fn software_role_gets_modern() {
 }
 
 #[test]
-fn systems_role_gets_mono_technical() {
+fn systems_role_gets_modern() {
+    // MonoTechnical was deleted; systems roles now map to Modern.
     let r = recommend(&signals(
         "Embedded Software Engineer",
         "mid",
         &["C++", "firmware"],
     ));
-    assert_eq!(r.template_id, TemplateId::MonoTechnical);
+    assert_eq!(r.template_id, TemplateId::Modern);
 }
 
 #[test]
@@ -57,19 +109,21 @@ fn academia_gets_academic() {
 }
 
 #[test]
-fn design_role_gets_two_column() {
+fn design_role_gets_atelier() {
+    // TwoColumn was deleted; design roles now map to Atelier.
     let r = recommend(&signals("Product Designer", "mid", &["Figma", "UX"]));
-    assert_eq!(r.template_id, TemplateId::TwoColumn);
+    assert_eq!(r.template_id, TemplateId::Atelier);
 }
 
 #[test]
-fn executive_overrides_to_refined_executive() {
+fn executive_gets_meridian() {
+    // RefinedExecutive was deleted; senior/exec roles now map to Meridian.
     let r = recommend(&signals(
         "VP of Engineering",
         "executive",
         &["leadership", "strategy"],
     ));
-    assert_eq!(r.template_id, TemplateId::RefinedExecutive);
+    assert_eq!(r.template_id, TemplateId::Meridian);
 }
 
 #[test]

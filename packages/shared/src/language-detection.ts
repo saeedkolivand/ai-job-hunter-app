@@ -100,6 +100,22 @@ export function getLanguageName(code: string): string {
 }
 
 /**
+ * Languages whose scripts the bundled PDF fonts do not yet cover (Chinese,
+ * Japanese, Korean). These render as tofu in PDF export until Noto CJK ships, so
+ * the UI warns the user when an output language is one of these.
+ */
+export const CJK_LANGUAGES = ['zh', 'ja', 'ko'] as const;
+
+/**
+ * True when an ISO 639-1 language code (any case, an optional region subtag is
+ * ignored) is one of the not-yet-supported CJK scripts. Empty/unknown → false.
+ */
+export function isCjkLanguage(code: string | null | undefined): boolean {
+  if (!code) return false;
+  return (CJK_LANGUAGES as readonly string[]).includes(code.slice(0, 2).toLowerCase());
+}
+
+/**
  * Detect languages for both resume and job ad.
  * Returns detected languages and whether they match.
  */
