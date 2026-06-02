@@ -88,6 +88,13 @@ AI Job Hunter is a desktop application built with **[Tauri][tauri]** (a [Rust][r
 
 The only outbound calls are to the AI provider **you** configure (and an optional web search you explicitly enable). Everything else — jobs, résumés, generations, applications — lives in a local database on your machine.
 
+<p align="center">
+  <img src="docs/assets/templates-showcase.png" alt="The nine résumé templates rendered side by side: Classic, Modern, Swiss Minimal, Academic, Atelier, Meridian, Throughline, Portrait, and Lebenslauf" width="100%">
+</p>
+<p align="center">
+  <sub>Nine ATS-safe résumé templates — Classic · Modern · Swiss Minimal · Academic · Atelier · Meridian · Throughline · Portrait · Lebenslauf</sub>
+</p>
+
 ---
 
 ## ✨ Features

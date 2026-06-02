@@ -108,7 +108,10 @@ impl TypstTemplate {
     ///
     /// This is what gets passed to the World as `/main.typ`.  The scale
     /// constants declared in `_scale.typ` are therefore always in scope.
-    fn source_with_scale(self) -> String {
+    ///
+    /// `pub(super)` so the sibling `test` module can call it for the showcase
+    /// banner generator without exposing the raw source outside this module.
+    pub(super) fn source_with_scale(self) -> String {
         format!("{}\n{}", SCALE_TYP, self.raw_source())
     }
 
