@@ -1,12 +1,8 @@
-//! Reusable research / enrichment stage infrastructure.
+//! Research / enrichment result type.
 //!
-//! An [`Enricher`] fetches external context for a workflow (e.g. company research
-//! for a cover letter) and is expected to degrade gracefully — returning an empty
-//! result rather than failing the pipeline when the source is unavailable.
-
-use async_trait::async_trait;
-
-use super::Completer;
+//! An enricher fetches external context for a workflow (e.g. company research for
+//! a cover letter) and degrades gracefully — returning an empty result rather
+//! than failing when the source is unavailable.
 
 /// The product of an enrichment pass: a `key` identifying the subject (e.g. a
 /// company name) and the enrichment `content` (empty when nothing was found).
@@ -22,12 +18,4 @@ impl EnrichmentResult {
             content: String::new(),
         }
     }
-}
-
-/// Fetches and (optionally) caches external context for a workflow. Reaches
-/// managed state / credentials via `completer.app()`; runs LLM synthesis through
-/// the centralized provider via `completer`.
-#[async_trait]
-pub trait Enricher: Send + Sync {
-    async fn enrich(&self, completer: &Completer, input: &str) -> EnrichmentResult;
 }

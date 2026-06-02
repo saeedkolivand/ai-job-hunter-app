@@ -417,8 +417,6 @@ fn main() {
             commands::ai_generations::ai_generations_list,
             commands::ai_generations::ai_generations_save,
             commands::ai_generations::ai_generations_remove,
-            // cover letter pipeline
-            commands::cover_letter::generate_cover_letter,
             // profile import
             commands::profile_import::profile_import_from_url,
             // export

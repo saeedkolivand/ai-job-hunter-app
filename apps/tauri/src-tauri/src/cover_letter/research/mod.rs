@@ -2,11 +2,10 @@ pub mod extractor;
 
 use std::time::Duration;
 
-use async_trait::async_trait;
 use tauri::Manager;
 
 use crate::pipeline::cache::KvCache;
-use crate::pipeline::enrichment::{Enricher, EnrichmentResult};
+use crate::pipeline::enrichment::EnrichmentResult;
 use crate::pipeline::Completer;
 
 const CACHE_NS: &str = "company_brief";
@@ -131,16 +130,6 @@ fn is_no_info(brief: &str) -> bool {
         || b.contains("could not find")
         || b.contains("unable to find")
         || b.contains("no relevant")
-}
-
-#[async_trait]
-impl Enricher for CompanyResearch {
-    /// Heuristic-only path (no AI-extracted company available, e.g. the Rust
-    /// cover-letter pipeline). Prefer [`enrich_with`](Self::enrich_with) when the
-    /// caller already knows the company.
-    async fn enrich(&self, completer: &Completer, input: &str) -> EnrichmentResult {
-        self.enrich_with(completer, input, None).await
-    }
 }
 
 #[cfg(test)]

@@ -8,7 +8,6 @@ pub mod autopilot;
 pub mod boards;
 pub mod contact_profile;
 pub mod conversations;
-pub mod cover_letter;
 pub mod credentials;
 pub mod data;
 pub mod dialog;
