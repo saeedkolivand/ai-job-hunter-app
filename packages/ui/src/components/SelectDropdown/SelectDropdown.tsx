@@ -171,7 +171,7 @@ export function SelectDropdown({
               transition={{ duration: 0.13, ease: [0.22, 1, 0.36, 1] }}
               style={dropdownStyle}
               onKeyDown={handleKeyDown}
-              className="overflow-hidden rounded-xl border border-white/8 bg-black/60 shadow-2xl shadow-black/60 backdrop-blur-xl"
+              className="dropdown-surface overflow-hidden rounded-xl"
             >
               {/* Search */}
               {showSearch && (

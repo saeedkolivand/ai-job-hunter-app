@@ -134,10 +134,13 @@ export function Dropdown({
                 position: 'fixed',
                 top: position.top,
                 left: position.left,
-                width: position.width,
+                // At least as wide as the trigger, but never so narrow that
+                // options truncate (e.g. the model picker in the slim workspace
+                // header). Capped so it can't overrun a small viewport.
+                width: Math.min(Math.max(position.width, 240), 420),
                 zIndex: 9999,
               }}
-              className="glass-elevated overflow-hidden rounded-xl shadow-2xl"
+              className="dropdown-surface overflow-hidden rounded-xl"
             >
               {showSearch && (
                 <div className="border-b border-white/[0.06] px-3 py-2.5">
