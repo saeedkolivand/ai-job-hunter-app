@@ -39,6 +39,22 @@ fn join_responses_text(data: &Value) -> String {
         .unwrap_or_default()
 }
 
+/// Whether a model id returned by `/v1/models` should be offered in the picker.
+/// Native OpenAI exposes a large non-chat catalog (embeddings, audio, image,
+/// moderation…), so restrict it to chat-capable families. Every *other*
+/// OpenAI-compatible backend (custom gateways, Ollama Cloud, …) returns a curated
+/// catalog of its own models under arbitrary names, so pass those through
+/// unfiltered — that way a new composed provider lists its full catalog with no
+/// code change here.
+fn should_list_model(provider: ProviderId, id: &str) -> bool {
+    provider != ProviderId::OpenAi
+        || id.starts_with("gpt-")
+        || id.starts_with("o1")
+        || id.starts_with("o3")
+        || id.starts_with("o4")
+        || id.starts_with("chatgpt")
+}
+
 /// OpenAI reasoning families (the `o`-series: o1, o3, o4, … and future `o`N)
 /// reject `temperature` and require `max_completion_tokens` instead of
 /// `max_tokens`. Matched by the `o`+digit convention so new o-series models are
@@ -429,16 +445,10 @@ impl AiProvider for OpenAiClient {
                     return data
                         .iter()
                         .filter_map(|m| m.get("id").and_then(|id| id.as_str()))
-                        // OpenAI proper: only chat-capable families. Compatible
-                        // servers expose arbitrary names, so don't filter those.
-                        .filter(|id| {
-                            self.id == ProviderId::OpenAiCompatible
-                                || id.starts_with("gpt-")
-                                || id.starts_with("o1")
-                                || id.starts_with("o3")
-                                || id.starts_with("o4")
-                                || id.starts_with("chatgpt")
-                        })
+                        // OpenAI proper: only chat-capable families. Every other
+                        // OpenAI-compatible backend (incl. Ollama Cloud) lists its
+                        // own curated catalog, so pass those through unfiltered.
+                        .filter(|id| should_list_model(self.id, id))
                         .map(|id| json!({ "name": id }))
                         .collect();
                 }
@@ -470,8 +480,37 @@ impl AiProvider for OpenAiClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_reasoning_model, join_responses_text, parse_openai_delta};
+    use super::{is_reasoning_model, join_responses_text, parse_openai_delta, should_list_model};
+    use crate::commands::ai_provider::ProviderId;
     use serde_json::json;
+
+    #[test]
+    fn list_filter_only_restricts_native_openai() {
+        // Native OpenAI exposes a large non-chat catalog — keep only chat families.
+        assert!(should_list_model(ProviderId::OpenAi, "gpt-4o"));
+        assert!(should_list_model(ProviderId::OpenAi, "o3-mini"));
+        assert!(should_list_model(ProviderId::OpenAi, "chatgpt-4o-latest"));
+        for non_chat in ["text-embedding-3-small", "dall-e-3", "whisper-1", "tts-1"] {
+            assert!(
+                !should_list_model(ProviderId::OpenAi, non_chat),
+                "{non_chat} should be filtered out for native OpenAI"
+            );
+        }
+
+        // Ollama Cloud + generic OpenAI-compatible servers return their own
+        // curated catalog under arbitrary names — never filter those, so the
+        // full Ollama Cloud list (not just gpt-oss:*) reaches the picker.
+        for id in [
+            "gpt-oss:120b",
+            "qwen3-coder:480b",
+            "deepseek-v3.1:671b",
+            "kimi-k2:1t",
+            "glm-4.6",
+        ] {
+            assert!(should_list_model(ProviderId::OllamaCloud, id), "{id}");
+            assert!(should_list_model(ProviderId::OpenAiCompatible, id), "{id}");
+        }
+    }
 
     #[test]
     fn join_responses_text_takes_message_items_only() {
