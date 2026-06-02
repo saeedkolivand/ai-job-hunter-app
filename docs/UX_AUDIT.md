@@ -475,6 +475,7 @@ Captured from the running renderer (e2e mock harness, Chromium 1280×800 @2x). D
 - **Reduced-glass / High-contrast variants:** `docs/assets/ux-audit/{reduced-glass,high-contrast}/{dashboard,analyze,support,settings}.png`
 - **States:** `docs/assets/ux-audit/states/{autopilot-wizard,settings-general,onboarding-1}.png`
 - **Settings tabs (all 9):** `docs/assets/ux-audit/settings/{general,contact,ai,job,resume,accounts,privacy,performance,developer}.png` — see §10A
+- **Flow walkthroughs:** `docs/assets/ux-audit/flows/{jobs-1-board…jobs-5-apply-drawer, auto-1-empty…auto-11-questions}.png` — see §14
 
 **Exhibit A — the glass thesis** (cards read as flat dark panels, nested pipeline tiles opaque, dead-end "Open a job…" text):
 ![Dashboard](assets/ux-audit/default/dashboard.png)
@@ -484,6 +485,56 @@ Captured from the running renderer (e2e mock harness, Chromium 1280×800 @2x). D
 
 **Exhibit C — Autopilot wizard with the auto-apply surface** (Target → Filter → **Action** → Schedule; the Action step carries `auto_apply` + auto-submit, §9.1):
 ![Autopilot wizard](assets/ux-audit/states/autopilot-wizard.png)
+
+---
+
+## 14. End-to-end flow walkthroughs (captured, step-by-step)
+
+> Driven through the **real UI** in the e2e harness with a **seeded mock backend** (the
+> renderer has no live Rust backend in capture), so every screen is the actual component
+> tree responding to real clicks — only the data is seeded. Two flows captured at the
+> owner's request. Screens under `docs/assets/ux-audit/flows/`.
+
+### 14.1 Jobs — scrape → view results → apply
+
+1. Empty board · 2. Scrape form (query "frontend developer") · 3. Scraping (progress) · 4. Results (5 postings) · 5. Apply drawer.
+
+![Jobs: empty board](assets/ux-audit/flows/jobs-1-board.png)
+![Jobs: scrape form with query](assets/ux-audit/flows/jobs-2-scrape-form.png)
+![Jobs: scraping progress](assets/ux-audit/flows/jobs-3-scraping.png)
+![Jobs: results](assets/ux-audit/flows/jobs-4-results.png)
+![Jobs: apply drawer](assets/ux-audit/flows/jobs-5-apply-drawer.png)
+
+**Flow-1 UX findings**
+
+- **[M]** Step 1 empty board has no inline CTA — the only "Scrape Jobs" trigger is the toolbar button (§2, §5). The empty state should host the primary action.
+- **[M]** `ScrapeForm/index.tsx:145` — step 3's progress bar is a **fake fixed animation** (`transition.fakeProgress` → animates to 85% regardless of real progress). On a slow scrape it stalls at 85% then jumps; premium apps show indeterminate shimmer or real per-page progress. **Fix:** indeterminate bar, or wire real `job.stream` page counts.
+- **[H/§9]** Step 5 `ApplyDrawer` exposes an **Auto-submit checkbox** + "automated access may be restricted" ToS warning — the same auto-apply automation that §9 says to de-emphasize app-wide, not just in Autopilot.
+- **[M]** Step 5 leads with "Resume match → _Save a resume first_" (a dead-ish prerequisite). Add an inline "Import résumé" CTA (§6.2) instead of a disabled Score button.
+
+### 14.2 Autopilot — create → run → apply (on-demand)
+
+1. Empty state · 2. Wizard·Target · 3. Target filled · 4. Wizard·Filter · 5. Wizard·Action ("Save only") · 6. Wizard·Schedule · 7. Created card · 8. After Run · 9. Found jobs (scored) · 10. Apply modal (JD filled) · 11. Application questions.
+
+![Autopilot: empty](assets/ux-audit/flows/auto-1-empty.png)
+![Autopilot: wizard target](assets/ux-audit/flows/auto-2-wizard-target.png)
+![Autopilot: target filled](assets/ux-audit/flows/auto-3-target-filled.png)
+![Autopilot: wizard filter](assets/ux-audit/flows/auto-4-filter.png)
+![Autopilot: wizard action — save only](assets/ux-audit/flows/auto-5-action-manual.png)
+![Autopilot: wizard schedule](assets/ux-audit/flows/auto-6-schedule.png)
+![Autopilot: created card](assets/ux-audit/flows/auto-7-created.png)
+![Autopilot: after run](assets/ux-audit/flows/auto-8-run-done.png)
+![Autopilot: found jobs](assets/ux-audit/flows/auto-9-found-list.png)
+![Autopilot: apply modal with JD](assets/ux-audit/flows/auto-10-apply-modal.png)
+![Autopilot: application questions](assets/ux-audit/flows/auto-11-questions.png)
+
+**Flow-2 UX findings**
+
+- **[M]** Step 2 (Target) — the board grid renders every board equal with **no auth/"not connected" hint** (§9.5). Reuse Jobs' `AuthHint`/`AuthModeBadge`.
+- **[H]** Step 5 (Action) still presents **"Apply & review" / "Auto-apply" (Coming soon)** beside "Save only" — the auto-apply surface §9.1 recommends removing. (The whole step should become an informational summary.)
+- **[H]** Step 7 card shows a permanent **"Applied 0"** counter + an `action` pill (§9.1) — remove both.
+- **[GOOD — keep] Steps 9–11 _are_ the find-&-notify target done right:** results are surfaced with scores + NEW badges, and application generation is strictly **on-demand** in a modal — job description auto-filled, résumé pre-filled from the autopilot, model + company-research + résumé/cover target + an **application-questions assistant** (résumé-grounded answers). This is the model to preserve. Two refinements: (a) label the score "keyword match" not a bare "%" (§9.3); (b) the modal shows "_Select an AI model first_" — gate that prerequisite inline (§6.2).
+- **Glass note:** the wizard modal (`CreationWizard/index.tsx:133`) uses the densest, milkiest glass in the app (`blur(32px) saturate(180%)` + Apple-style top hairline) — **this is the quality bar**; the §3 material refactor should lift flat cards up to _this_ level.
 
 ---
 
