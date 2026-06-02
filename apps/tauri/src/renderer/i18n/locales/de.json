@@ -905,6 +905,8 @@
   },
   "ai": {
     "title": "KI-Arbeitsbereich",
+    "model": "Modell",
+    "promptQuality": "Prompt-Qualität",
     "placeholder": "Frag alles. Die KI antwortet in deiner Sprache.",
     "send": "Senden",
     "processing": "Verarbeitung...",

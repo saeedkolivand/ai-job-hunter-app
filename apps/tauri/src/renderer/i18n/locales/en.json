@@ -905,6 +905,8 @@
   },
   "ai": {
     "title": "AI Workspace",
+    "model": "Model",
+    "promptQuality": "Prompt Quality",
     "placeholder": "Ask anything about jobs, resumes, or career advice...",
     "send": "Send message",
     "processing": "Processing...",
