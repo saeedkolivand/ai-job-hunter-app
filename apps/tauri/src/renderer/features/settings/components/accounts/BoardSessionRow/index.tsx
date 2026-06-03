@@ -111,14 +111,14 @@ export function BoardSessionRow({ board }: { board: Board }) {
         {/* Info */}
         <div className="relative min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-white/90">{board.name}</span>
+            <span className="text-sm font-semibold text-foreground/90">{board.name}</span>
             {connected && (
               <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
                 <Check size={9} strokeWidth={2.5} /> Connected
               </span>
             )}
           </div>
-          <div className="mt-0.5 text-xs text-white/40 leading-snug">
+          <div className="mt-0.5 text-xs text-foreground/40 leading-snug">
             {connected && accountEmail ? accountEmail : board.hint}
           </div>
         </div>

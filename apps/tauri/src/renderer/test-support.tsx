@@ -36,7 +36,7 @@ export function createMockClient(
           return target[method];
         },
       }
-    ) as Record<string, unknown>;
+    );
 
   return new Proxy(
     {},

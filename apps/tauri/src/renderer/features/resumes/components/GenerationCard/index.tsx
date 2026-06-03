@@ -136,7 +136,7 @@ export function GenerationCard({ gen }: GenerationCardProps) {
               {gen.mode}
             </span>
             {gen.board && (
-              <span className="rounded-full border border-white/[0.06] bg-white/[0.03] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-foreground/45">
+              <span className="rounded-full border border-white/[0.06] bg-white/[0.03] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-foreground/55">
                 {gen.board}
               </span>
             )}
@@ -202,8 +202,9 @@ export function GenerationCard({ gen }: GenerationCardProps) {
           {/* Format picker */}
           <div className="flex items-center gap-0.5 rounded-lg border border-white/[0.06] bg-white/[0.03] p-0.5">
             {EXPORT_FORMATS.map((fmt) => (
-              <button
+              <Button
                 key={fmt}
+                variant="unstyled"
                 onClick={() => setExportFormat(fmt)}
                 className={cn(
                   'rounded-md px-2 py-0.5 text-[10px] uppercase tracking-wider transition-colors',
@@ -213,7 +214,7 @@ export function GenerationCard({ gen }: GenerationCardProps) {
                 )}
               >
                 {fmt}
-              </button>
+              </Button>
             ))}
           </div>
 
@@ -221,8 +222,9 @@ export function GenerationCard({ gen }: GenerationCardProps) {
           {exportFormat !== 'txt' && (
             <div className="flex items-center gap-0.5 rounded-lg border border-white/[0.06] bg-white/[0.03] p-0.5">
               {TEMPLATE_OPTIONS.map(({ id, label }) => (
-                <button
+                <Button
                   key={id}
+                  variant="unstyled"
                   onClick={() => setExportTemplate(id)}
                   className={cn(
                     'rounded-md px-2 py-0.5 text-[10px] transition-colors',
@@ -232,7 +234,7 @@ export function GenerationCard({ gen }: GenerationCardProps) {
                   )}
                 >
                   {label}
-                </button>
+                </Button>
               ))}
             </div>
           )}
@@ -314,7 +316,8 @@ export function GenerationCard({ gen }: GenerationCardProps) {
         .filter((s) => s.text)
         .map(({ key, label, text, icon: SectionIcon }) => (
           <div key={key} className="border-t border-white/[0.04]">
-            <button
+            <Button
+              variant="unstyled"
               onClick={() => setExpanded(expanded === key ? null : key)}
               className="flex w-full items-center justify-between px-4 py-2.5 text-left text-xs text-foreground/50 hover:text-foreground/70 transition-colors"
             >
@@ -325,7 +328,7 @@ export function GenerationCard({ gen }: GenerationCardProps) {
                 size={12}
                 className={cn('transition-transform', expanded === key && 'rotate-180')}
               />
-            </button>
+            </Button>
             <AnimatePresence initial={false}>
               {expanded === key && (
                 <motion.div
@@ -347,7 +350,8 @@ export function GenerationCard({ gen }: GenerationCardProps) {
       {/* Application answers — structured Q/A from the questions assistant. */}
       {gen.applicationAnswers.length > 0 && (
         <div className="border-t border-white/[0.04]">
-          <button
+          <Button
+            variant="unstyled"
             onClick={() => setExpanded(expanded === 'answers' ? null : 'answers')}
             className="flex w-full items-center justify-between px-4 py-2.5 text-left text-xs text-foreground/50 transition-colors hover:text-foreground/70"
           >
@@ -361,7 +365,7 @@ export function GenerationCard({ gen }: GenerationCardProps) {
               size={12}
               className={cn('transition-transform', expanded === 'answers' && 'rotate-180')}
             />
-          </button>
+          </Button>
           <AnimatePresence initial={false}>
             {expanded === 'answers' && (
               <motion.div

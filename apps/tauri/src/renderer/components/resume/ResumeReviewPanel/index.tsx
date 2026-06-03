@@ -32,9 +32,9 @@ function FieldRow({ label, field }: { label: string; field?: ResumeField<string>
   const { t } = useTranslation();
   return (
     <div className="flex items-center justify-between gap-3 py-1.5">
-      <span className="text-sm text-white/60">{label}</span>
+      <span className="text-sm text-foreground/60">{label}</span>
       <span className="flex items-center gap-2">
-        <span className={cn('text-sm', field ? 'text-foreground' : 'italic text-white/40')}>
+        <span className={cn('text-sm', field ? 'text-foreground' : 'italic text-foreground/40')}>
           {field?.value || t('resumeReview.notDetected')}
         </span>
         {field && <ConfidenceBadge level={field.confidence} />}
@@ -56,7 +56,7 @@ export function ResumeReviewPanel({ review, onDismiss }: Props) {
     <GlassCard className="select-text space-y-4 p-4">
       <header className="space-y-1">
         <h3 className="text-sm font-semibold text-foreground">{t('resumeReview.title')}</h3>
-        <p className="text-xs text-white/60">{t('resumeReview.subtitle')}</p>
+        <p className="text-xs text-foreground/60">{t('resumeReview.subtitle')}</p>
       </header>
 
       {review.warnings.length > 0 && (
@@ -79,7 +79,7 @@ export function ResumeReviewPanel({ review, onDismiss }: Props) {
 
       {review.links.length > 0 && (
         <div className="space-y-1.5">
-          <span className="text-xs font-medium text-white/60">{t('resumeReview.links')}</span>
+          <span className="text-xs font-medium text-foreground/60">{t('resumeReview.links')}</span>
           <div className="flex flex-wrap gap-1.5">
             {review.links.map((link) => (
               <span
@@ -96,7 +96,9 @@ export function ResumeReviewPanel({ review, onDismiss }: Props) {
 
       {review.sections.length > 0 && (
         <div className="space-y-1.5">
-          <span className="text-xs font-medium text-white/60">{t('resumeReview.sections')}</span>
+          <span className="text-xs font-medium text-foreground/60">
+            {t('resumeReview.sections')}
+          </span>
           <div className="flex flex-wrap gap-1.5">
             {review.sections.map((section) => (
               <span

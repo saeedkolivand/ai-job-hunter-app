@@ -19,7 +19,7 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
   return (
     <div className="mb-4 grid grid-cols-4 gap-2">
       <div className="col-span-2">
-        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.18em] text-foreground/35">
+        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
           {t('jobs.location')}
         </label>
         <LocationInput
@@ -31,7 +31,7 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
         />
       </div>
       <div>
-        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.18em] text-foreground/35">
+        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
           {t('jobs.posted')}
         </label>
         <SelectDropdown
@@ -59,7 +59,7 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
         />
       </div>
       <div>
-        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.18em] text-foreground/35">
+        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
           {t('jobs.pages')}
         </label>
         <Input
@@ -76,7 +76,7 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
       {/* Indeed region */}
       {form.board === 'indeed' && (
         <div className="col-span-4">
-          <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.18em] text-foreground/35">
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
             {t('jobs.region')}
           </label>
           <SelectDropdown

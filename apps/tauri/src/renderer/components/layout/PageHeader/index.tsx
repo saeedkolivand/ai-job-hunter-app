@@ -20,7 +20,7 @@ export function PageHeader({ title, subtitle, badge, actions, className }: PageH
               {badge}
             </div>
           )}
-          <h1 className="text-gradient text-2xl font-semibold tracking-tight">{title}</h1>
+          <h1 className="text-gradient text-3xl font-bold tracking-tight">{title}</h1>
           {subtitle && <p className="mt-2 max-w-2xl text-sm text-foreground/55">{subtitle}</p>}
         </div>
         {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}

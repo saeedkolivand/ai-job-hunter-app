@@ -1,4 +1,5 @@
 import type { MODEL_RECS } from '@ajh/shared';
+import { Button } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 
@@ -28,7 +29,8 @@ export function ModelCard({
   const { t } = useTranslation();
 
   return (
-    <button
+    <Button
+      variant="unstyled"
       onClick={() => !tooHeavy && onSelect()}
       disabled={tooHeavy}
       className={`group relative w-full rounded-xl border px-4 py-3 text-left transition-all duration-150 ${
@@ -76,6 +78,6 @@ export function ModelCard({
           <span className="text-xs text-foreground/30">{rec.sizeGb} GB</span>
         </div>
       </div>
-    </button>
+    </Button>
   );
 }

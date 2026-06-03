@@ -100,7 +100,7 @@ export function TechStackPreferences() {
   return (
     <GlassCard>
       <div className="mb-4 flex items-center justify-between">
-        <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
           Tech Stack
         </div>
       </div>
@@ -223,7 +223,7 @@ export function TechStackPreferences() {
       {/* Quick Add Suggestions */}
       {techStack.length === 0 && (
         <div className="mt-4">
-          <div className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
             {t('settings.techStack.popular')}
           </div>
           <div className="flex flex-wrap gap-2">

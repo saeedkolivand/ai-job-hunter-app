@@ -69,10 +69,10 @@ export function ApplyJobModal({ job, resumeText, board, onClose }: Props) {
     setUploading(true);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const res = (await extractTextMutation.mutateAsync({
+      const res = await extractTextMutation.mutateAsync({
         name: file.name,
         bytes,
-      })) as { text: string };
+      });
       const text = (res?.text ?? '').trim();
       if (text) setResume(text);
     } finally {
@@ -152,8 +152,9 @@ export function ApplyJobModal({ job, resumeText, board, onClose }: Props) {
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1 rounded-lg bg-white/[0.04] p-0.5">
               {targets.map(({ id, label }) => (
-                <button
+                <Button
                   key={id}
+                  variant="unstyled"
                   type="button"
                   onClick={() => setTarget(id)}
                   className={cn(
@@ -164,7 +165,7 @@ export function ApplyJobModal({ job, resumeText, board, onClose }: Props) {
                   )}
                 >
                   {label}
-                </button>
+                </Button>
               ))}
             </div>
             <div className="flex items-center gap-2">

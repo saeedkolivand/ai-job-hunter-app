@@ -66,7 +66,7 @@ export function AISettingsTab() {
 
       {/* Provider list */}
       <GlassCard>
-        <div className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+        <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
           {t('settings.aiProvider.title')}
         </div>
         <div className="space-y-2">

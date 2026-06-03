@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 
 import type { DocumentRecord } from '@ajh/shared';
-import { Button, cn, FloatingIcon, useNotification } from '@ajh/ui';
+import { Button, cn, FloatingIcon, useNotification, withDelay } from '@ajh/ui';
 
 import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
@@ -28,7 +28,7 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
   const [dragActive, setDragActive] = useState(false);
 
   const { data: documentsRaw = [] } = useDocuments();
-  const documents = documentsRaw as DocumentRecord[];
+  const documents = documentsRaw;
   const { importFile, isPending: uploading, isOcr } = useImportWithOcr();
   const setResume = usePreferencesStore((s) => s.setResume);
 
@@ -73,7 +73,7 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
       <motion.div
         initial={{ y: 10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.05 }}
+        transition={withDelay(0.05)}
         className="mb-6 text-center"
       >
         <div className="mx-auto mb-4 relative flex justify-center">
@@ -87,7 +87,7 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
       <motion.div
         initial={{ y: 10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.1 }}
+        transition={withDelay(0.1)}
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
         onDragOver={handleDrag}
@@ -144,7 +144,7 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
       <motion.div
         initial={{ y: 10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.15 }}
+        transition={withDelay(0.15)}
         className="mb-5"
       >
         <ProfileUrlImport
@@ -158,7 +158,7 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
       <motion.div
         initial={{ y: 10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.1 }}
+        transition={withDelay(0.1)}
         className="flex items-center justify-between"
       >
         <Button variant="ghost" size="sm" onClick={onBack}>

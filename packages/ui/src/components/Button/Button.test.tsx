@@ -43,4 +43,21 @@ describe('Button', () => {
     expect(btn.className).toContain('custom');
     expect(btn.className).toContain('h-10');
   });
+
+  it('injects no chrome for the unstyled variant but keeps a11y essentials', () => {
+    render(
+      <Button variant="unstyled" className="custom-surface">
+        Bare
+      </Button>
+    );
+    const btn = screen.getByRole('button');
+    // Call site owns the look…
+    expect(btn.className).toContain('custom-surface');
+    // …so no layout/size chrome is injected.
+    expect(btn.className).not.toContain('inline-flex');
+    expect(btn.className).not.toContain('h-8');
+    // Focus + disabled handling still apply (the reason to route through Button).
+    expect(btn.className).toContain('focus-visible:ring-2');
+    expect(btn.className).toContain('disabled:opacity-45');
+  });
 });

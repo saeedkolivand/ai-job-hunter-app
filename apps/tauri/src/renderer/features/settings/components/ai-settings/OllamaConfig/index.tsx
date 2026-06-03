@@ -56,7 +56,7 @@ export function OllamaConfig({
         </div>
       )}
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
           {t('settings.aiModel.title')}
         </span>
         <Button
@@ -73,8 +73,9 @@ export function OllamaConfig({
           <p className="text-sm text-foreground/50">{t('settings.aiModel.noModels')}</p>
           {connected &&
             QUICK_MODELS.map((qm) => (
-              <button
+              <Button
                 key={qm}
+                variant="unstyled"
                 onClick={() => void onPull(qm)}
                 disabled={pulling !== null}
                 className="flex w-full items-center justify-between rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-left text-sm hover:bg-white/[0.04] disabled:opacity-50"
@@ -85,7 +86,7 @@ export function OllamaConfig({
                 ) : (
                   <Download size={13} className="text-foreground/30" />
                 )}
-              </button>
+              </Button>
             ))}
         </div>
       ) : (

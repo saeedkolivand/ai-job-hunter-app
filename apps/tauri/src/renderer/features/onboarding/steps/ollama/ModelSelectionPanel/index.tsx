@@ -82,7 +82,7 @@ export function ModelSelectionPanel({
 
       {/* Model list */}
       <div className="space-y-2">
-        <p className="text-xs font-medium uppercase tracking-widest text-foreground/30">
+        <p className="text-xs font-semibold uppercase tracking-widest text-foreground/55">
           {t('onboarding.ai.chooseModel')}
         </p>
         {MODEL_RECS.map((rec) => {
@@ -169,7 +169,7 @@ export function ModelSelectionPanel({
                       pullState === 'done' ? 'bg-emerald-500' : ''
                     }`}
                     animate={{ width: `${pullProgress}%` }}
-                    transition={{ duration: 0.4 }}
+                    transition={transition.slow}
                   />
                 </div>
               </motion.div>

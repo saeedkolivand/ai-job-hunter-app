@@ -52,7 +52,8 @@ export function SavedResumeMenu({
                 isSelected ? 'bg-brand/15' : 'hover:bg-white/[0.05]'
               )}
             >
-              <button
+              <Button
+                variant="unstyled"
                 type="button"
                 onClick={() => onSelect(doc)}
                 className={cn(
@@ -63,7 +64,7 @@ export function SavedResumeMenu({
                 <FileText size={11} className="shrink-0" />
                 <span className="truncate flex-1">{doc.title}</span>
                 {isSelected && <Check size={11} className="shrink-0 text-brand-soft" />}
-              </button>
+              </Button>
 
               {doc.isDefault ? (
                 <span

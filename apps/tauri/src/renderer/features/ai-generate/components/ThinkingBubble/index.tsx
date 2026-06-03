@@ -2,7 +2,7 @@ import { Brain, ChevronDown } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
-import { transition } from '@ajh/ui';
+import { Button, transition } from '@ajh/ui';
 
 interface ThinkingBubbleProps {
   thinking: string;
@@ -35,7 +35,8 @@ export function ThinkingBubble({ thinking, done = false }: ThinkingBubbleProps) 
       className="mx-1 mb-3 rounded-xl border border-violet-500/20 bg-violet-500/[0.04]"
     >
       {/* Header */}
-      <button
+      <Button
+        variant="unstyled"
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-center gap-2 px-3 py-2 text-left"
       >
@@ -57,7 +58,7 @@ export function ThinkingBubble({ thinking, done = false }: ThinkingBubbleProps) 
         <motion.div animate={{ rotate: expanded ? 0 : -90 }} transition={transition.fast}>
           <ChevronDown size={12} className="text-violet-400/40" />
         </motion.div>
-      </button>
+      </Button>
 
       {/* Content */}
       <AnimatePresence initial={false}>

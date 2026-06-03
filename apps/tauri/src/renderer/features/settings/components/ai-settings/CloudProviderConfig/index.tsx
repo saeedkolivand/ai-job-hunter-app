@@ -80,12 +80,13 @@ export function CloudProviderConfig({
         <div className="space-y-2">
           <p className="text-xs text-foreground/40">
             {t('settings.aiProvider.getKeyAt')}{' '}
-            <button
+            <Button
+              variant="unstyled"
               onClick={onOpenDocs}
               className="text-brand-soft/70 underline underline-offset-2 hover:text-brand-soft"
             >
               {meta.docsUrl.replace('https://', '')}
-            </button>
+            </Button>
           </p>
           <div className="flex flex-col gap-2">
             <div className="relative">
@@ -97,12 +98,13 @@ export function CloudProviderConfig({
                 placeholder={t('settings.aiProvider.keyPlaceholder')}
                 className="w-full pr-9 text-sm"
               />
-              <button
+              <Button
+                variant="unstyled"
                 onClick={onToggleShowKey}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-foreground/30 hover:text-foreground/60"
               >
                 {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
+              </Button>
             </div>
             <div className="flex justify-end gap-2">
               <Button
@@ -126,7 +128,7 @@ export function CloudProviderConfig({
       {/* Base URL for openai-compatible */}
       {provider === 'openai-compatible' && (
         <div className="space-y-1.5">
-          <label className="text-xs font-medium uppercase tracking-widest text-foreground/30">
+          <label className="text-xs font-semibold uppercase tracking-widest text-foreground/55">
             {t('settings.aiProvider.baseUrl')}
           </label>
           <div className="flex gap-2">
@@ -155,7 +157,7 @@ export function CloudProviderConfig({
       {/* Model selector */}
       {connected && (
         <div className="space-y-1.5">
-          <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
             {t('settings.aiModel.title')}
           </div>
           <Dropdown

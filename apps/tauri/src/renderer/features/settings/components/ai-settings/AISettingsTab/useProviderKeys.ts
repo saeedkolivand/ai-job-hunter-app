@@ -131,7 +131,7 @@ export function useProviderKeys() {
             : `${meta.label} key saved, but no models returned. Double-check the key.`,
           count > 0 ? 'success' : 'warning'
         );
-        qc.invalidateQueries({ queryKey: [...keys.ai.models, 'provider-models', provider] });
+        void qc.invalidateQueries({ queryKey: [...keys.ai.models, 'provider-models', provider] });
       } catch {
         notify(
           `${meta.label} key saved, but couldn't verify it. Check that it's correct.`,
@@ -181,7 +181,7 @@ export function useProviderKeys() {
     setPulling(model);
     try {
       await pullModel.mutateAsync(model);
-      qc.invalidateQueries({ queryKey: keys.ai.models });
+      void qc.invalidateQueries({ queryKey: keys.ai.models });
       handleSelectModel('ollama', model);
       notify(`${model} downloaded and selected.`, 'success');
     } catch (err) {
@@ -198,8 +198,8 @@ export function useProviderKeys() {
   };
 
   const recheck = () => {
-    qc.invalidateQueries({ queryKey: keys.system.health });
-    qc.invalidateQueries({ queryKey: keys.ai.models });
+    void qc.invalidateQueries({ queryKey: keys.system.health });
+    void qc.invalidateQueries({ queryKey: keys.ai.models });
   };
 
   const openDocs = (url: string) => void openExternal.mutateAsync(url);

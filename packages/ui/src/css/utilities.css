@@ -25,18 +25,18 @@
   line-height: 1.02;
 }
 .label-caps {
-  font-size: 0.625rem;
+  font-size: 0.75rem; /* 12px floor */
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.5);
 }
 .section-label {
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.55);
 }
 
 /* ── Cinematic gradient text ─────────────────────────────────────────────── */
@@ -53,42 +53,42 @@
    glass-card → glass-surface → glass-elevated → glass-dropdown → glass-modal
 */
 .glass-card {
-  background-color: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(var(--blur-sm)) saturate(var(--sat-low));
-  -webkit-backdrop-filter: blur(var(--blur-sm)) saturate(var(--sat-low));
+  background-color: rgb(var(--glass-rgb) / var(--glass-alpha-card));
+  backdrop-filter: blur(var(--blur-md)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--blur-md)) saturate(var(--glass-sat));
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-md), var(--glass-specular);
 }
 .glass {
-  background-color: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(var(--blur-sm));
-  -webkit-backdrop-filter: blur(var(--blur-sm));
+  background-color: rgb(var(--glass-rgb) / var(--glass-alpha-card));
+  backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--blur-sm)) saturate(var(--glass-sat));
   border: 1px solid var(--border-soft);
 }
 .glass-surface {
-  background: rgba(20, 20, 30, 0.6);
-  backdrop-filter: blur(var(--blur-md)) saturate(var(--sat-mid));
-  -webkit-backdrop-filter: blur(var(--blur-md)) saturate(var(--sat-mid));
+  background: rgb(var(--glass-rgb) / var(--glass-alpha-surface));
+  backdrop-filter: blur(var(--blur-md)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--blur-md)) saturate(var(--glass-sat));
   border: 1px solid var(--border-soft);
   box-shadow: var(--shadow-md);
 }
 .glass-elevated {
-  background: rgba(15, 15, 25, 0.7);
+  background: rgb(var(--glass-rgb) / var(--glass-alpha-elevated));
   backdrop-filter: blur(var(--blur-lg)) saturate(var(--sat-high));
   -webkit-backdrop-filter: blur(var(--blur-lg)) saturate(var(--sat-high));
   border: 1px solid var(--border-mid);
   box-shadow: var(--shadow-lg), var(--shadow-inset-top);
 }
 .glass-dropdown {
-  background: rgba(15, 15, 25, 0.45);
+  background: rgb(var(--glass-rgb) / var(--glass-alpha-dropdown));
   backdrop-filter: blur(var(--blur-xl)) saturate(var(--sat-high));
   -webkit-backdrop-filter: blur(var(--blur-xl)) saturate(var(--sat-high));
   border: 1px solid var(--border-dim);
   box-shadow: var(--shadow-lg), var(--shadow-inset-top);
 }
 .glass-modal {
-  background: rgba(10, 10, 20, 0.85);
+  background: rgb(var(--glass-rgb) / var(--glass-alpha-modal));
   backdrop-filter: blur(var(--blur-2xl)) saturate(var(--sat-max));
   -webkit-backdrop-filter: blur(var(--blur-2xl)) saturate(var(--sat-max));
   border: 1px solid var(--border-clear);
@@ -100,7 +100,7 @@
    stacking contexts, so the panel must never bleed the content behind it (e.g.
    a page's empty-state text) even when the blur doesn't apply. */
 .dropdown-surface {
-  background: rgba(12, 12, 20, 0.92);
+  background: rgba(34, 34, 42, 0.96);
   backdrop-filter: blur(var(--blur-xl)) saturate(var(--sat-high));
   -webkit-backdrop-filter: blur(var(--blur-xl)) saturate(var(--sat-high));
   border: 1px solid var(--border-mid);
@@ -114,9 +114,7 @@
   -webkit-backdrop-filter: blur(var(--blur-md)) saturate(var(--sat-high));
   border: 1px solid rgba(196, 181, 253, 0.1);
   border-radius: var(--radius);
-  box-shadow:
-    var(--shadow-2xl),
-    0 0 40px -10px rgba(139, 92, 246, 0.25);
+  box-shadow: var(--shadow-2xl), var(--glow-brand-md);
 }
 .glass-indigo {
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(59, 130, 246, 0.04) 100%);
@@ -124,12 +122,10 @@
   -webkit-backdrop-filter: blur(var(--blur-md)) saturate(var(--sat-high));
   border: 1px solid rgba(165, 180, 252, 0.1);
   border-radius: var(--radius);
-  box-shadow:
-    var(--shadow-2xl),
-    0 0 40px -10px rgba(99, 102, 241, 0.22);
+  box-shadow: var(--shadow-2xl), var(--glow-blue-md);
 }
 .glass-graphite {
-  background: linear-gradient(135deg, rgba(20, 20, 28, 0.6) 0%, rgba(10, 10, 16, 0.4) 100%);
+  background: linear-gradient(135deg, rgba(46, 46, 55, 0.72) 0%, rgba(38, 38, 46, 0.55) 100%);
   backdrop-filter: blur(var(--blur-lg)) saturate(var(--sat-max));
   -webkit-backdrop-filter: blur(var(--blur-lg)) saturate(var(--sat-max));
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -168,7 +164,7 @@
 
 /* ── Surface utilities ───────────────────────────────────────────────────── */
 .toast-panel {
-  background: linear-gradient(135deg, rgba(30, 27, 50, 0.92) 0%, rgba(20, 18, 38, 0.96) 100%);
+  background: linear-gradient(135deg, rgba(40, 40, 48, 0.94) 0%, rgba(32, 32, 40, 0.96) 100%);
   backdrop-filter: blur(var(--blur-md));
   -webkit-backdrop-filter: blur(var(--blur-md));
   border: 1px solid var(--border-dim);
@@ -516,6 +512,40 @@
   outline: none;
 }
 
+/* ── Theme-switch crossfade (View Transition API) ────────────────────────────
+   applyThemeAnimated() wraps the scheme flip in a view transition; tune the root
+   cross-dissolve so dark↔light eases (~320ms) instead of snapping (no flashbang).
+   Reduced-motion users never trigger it — the JS skips startViewTransition. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 320ms;
+  animation-timing-function: var(--ease-smooth);
+}
+
+/* ── Text size (UI scale) ────────────────────────────────────────────────────
+   applyTheme() sets data-text-scale on <html>; scaling the rem root grows every
+   rem-based size together. Default is the browser 16px (left unset). */
+html[data-text-scale='small'] {
+  font-size: 15px;
+}
+html[data-text-scale='large'] {
+  font-size: 18px;
+}
+
+/* ── Minimum legible text floor ──────────────────────────────────────────────
+   Sub-12px arbitrary sizes read as too small in a 96dpi WebView (vs macOS Retina
+   2x). Lift them to a 12px floor (13px→14px) in REM so they also track the text
+   size setting. Unlayered here, so they win over Tailwind's layered px utilities. */
+.text-\[8px\],
+.text-\[9px\],
+.text-\[10px\],
+.text-\[11px\] {
+  font-size: 0.75rem; /* 12px at default scale */
+}
+.text-\[13px\] {
+  font-size: 0.875rem; /* 14px at default scale */
+}
+
 /* ── Reduced motion ──────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -525,4 +555,188 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ── Reduced transparency (a11y) ─────────────────────────────────────────────
+   Forced via [data-reduce-transparency] (set by the theme engine, manually or
+   auto from the OS query). Solidify every frosted surface and drop the blur so
+   translucency never harms legibility. The @media rule is a JS-independent
+   safety net that fires from CSS alone. */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-alpha-card: 0.97;
+    --glass-alpha-surface: 0.98;
+    --glass-alpha-elevated: 0.98;
+    --glass-alpha-dropdown: 0.99;
+    --glass-alpha-modal: 0.99;
+  }
+}
+[data-reduce-transparency] {
+  --glass-alpha-card: 0.97;
+  --glass-alpha-surface: 0.98;
+  --glass-alpha-elevated: 0.98;
+  --glass-alpha-dropdown: 0.99;
+  --glass-alpha-modal: 0.99;
+}
+[data-reduce-transparency] .glass-card,
+[data-reduce-transparency] .glass,
+[data-reduce-transparency] .glass-surface,
+[data-reduce-transparency] .glass-elevated,
+[data-reduce-transparency] .glass-dropdown,
+[data-reduce-transparency] .glass-modal,
+[data-reduce-transparency] .glass-violet,
+[data-reduce-transparency] .glass-indigo,
+[data-reduce-transparency] .glass-graphite,
+[data-reduce-transparency] .dropdown-surface {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ── High contrast (a11y) ────────────────────────────────────────────────── */
+[data-contrast='more'] {
+  --border-faint: rgba(255, 255, 255, 0.14);
+  --border-dim: rgba(255, 255, 255, 0.2);
+  --border-soft: rgba(255, 255, 255, 0.26);
+  --border-mid: rgba(255, 255, 255, 0.32);
+  --border-clear: rgba(255, 255, 255, 0.4);
+}
+[data-color-scheme='light'][data-contrast='more'] {
+  --border-faint: rgba(15, 20, 40, 0.18);
+  --border-dim: rgba(15, 20, 40, 0.24);
+  --border-soft: rgba(15, 20, 40, 0.3);
+  --border-mid: rgba(15, 20, 40, 0.38);
+  --border-clear: rgba(15, 20, 40, 0.46);
+}
+
+/* Secondary/muted text uses foreground-opacity (text-foreground/NN). The SAME
+   opacity reads as comfortable light-gray on the dark canvas but as a too-faint
+   near-black on the light canvas (the asymmetry: near-white@45% over black has
+   far more contrast than near-black@45% over white). Rather than touch ~360
+   sites, lift the faint steps in light only so secondary lands on the macOS
+   hierarchy (~#6E6E73) and muted (~#8E8E93) — nothing disappears. */
+[data-color-scheme='light'] .text-foreground\/20 {
+  color: color-mix(in oklab, var(--color-foreground) 44%, transparent);
+}
+[data-color-scheme='light'] .text-foreground\/25 {
+  color: color-mix(in oklab, var(--color-foreground) 48%, transparent);
+}
+[data-color-scheme='light'] .text-foreground\/30 {
+  color: color-mix(in oklab, var(--color-foreground) 52%, transparent);
+}
+[data-color-scheme='light'] .text-foreground\/35 {
+  color: color-mix(in oklab, var(--color-foreground) 55%, transparent);
+}
+[data-color-scheme='light'] .text-foreground\/40 {
+  color: color-mix(in oklab, var(--color-foreground) 58%, transparent);
+}
+[data-color-scheme='light'] .text-foreground\/45 {
+  color: color-mix(in oklab, var(--color-foreground) 62%, transparent);
+}
+[data-color-scheme='light'] .text-foreground\/50 {
+  color: color-mix(in oklab, var(--color-foreground) 65%, transparent);
+}
+
+/* ── Light-scheme fixups for utilities that hardcode white ───────────────── */
+[data-color-scheme='light'] .label-caps {
+  color: rgba(18, 22, 40, 0.6);
+}
+[data-color-scheme='light'] .section-label {
+  color: rgba(18, 22, 40, 0.65);
+}
+[data-color-scheme='light'] .glass-highlight::before {
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.85), transparent);
+}
+[data-color-scheme='light'] .text-gradient {
+  background: linear-gradient(135deg, #1e1b2e 0%, #7c3aed 50%, #4f46e5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+[data-color-scheme='light'] *::-webkit-scrollbar-thumb {
+  background: rgba(18, 22, 40, 0.18);
+  background-clip: padding-box;
+}
+[data-color-scheme='light'] *::-webkit-scrollbar-thumb:hover {
+  background: rgba(18, 22, 40, 0.3);
+  background-clip: padding-box;
+}
+
+/* Named dark surfaces hard-code a dark substrate (graphite gradient, near-opaque
+   dropdown/toast panels). Without a light counterpart they punch dark holes into
+   the light UI (e.g. the Jobs rows, Analyze input cards, dropdown menus). Flip
+   them centrally here so every consumer inherits the fix. */
+[data-color-scheme='light'] .glass-graphite {
+  background: linear-gradient(135deg, rgb(255 255 255 / 0.82) 0%, rgb(247 248 252 / 0.72) 100%);
+  border-color: var(--border-soft);
+  box-shadow: var(--shadow-md), var(--glass-specular);
+}
+[data-color-scheme='light'] .dropdown-surface {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: var(--border-mid);
+}
+[data-color-scheme='light'] .toast-panel {
+  background: linear-gradient(135deg, rgb(255 255 255 / 0.95) 0%, rgb(247 248 252 / 0.97) 100%);
+  border-color: var(--border-soft);
+}
+
+/* Two-tone chrome (macOS System Settings): the sidebar sits on the gray canvas
+   tone (lightly translucent) while content cards stay near-opaque white. We
+   override only the sidebar here so the glass elevation ladder stays intact. */
+[data-color-scheme='light'] .app-sidebar {
+  background: rgb(232 235 242 / 0.72);
+}
+
+/* The main content area is a near-opaque white panel in dark mode (intended),
+   but in light that fills ~85% of the screen with white — the "flashbang". In
+   light we dissolve it to the gray canvas so the actual cards float on gray with
+   gutters between them (macOS System Settings), instead of one white sheet. */
+[data-color-scheme='light'] .app-main {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Cinematic background fixups for light. The ambient layers hard-code white /
+   black, which on a light canvas turns the corners muddy (dark vignette),
+   hides the grid (white lines), and makes streaks invisible (white on white). */
+[data-color-scheme='light'] .bg-radial-vignette {
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(120, 130, 170, 0.1) 100%);
+}
+[data-color-scheme='light'] .bg-grid-texture {
+  background-image:
+    linear-gradient(rgba(30, 35, 70, 0.5) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 35, 70, 0.5) 1px, transparent 1px);
+}
+[data-color-scheme='light'] .bg-film-grain {
+  mix-blend-mode: multiply;
+  opacity: 0.025;
+}
+/* Mouse-following glow + orbs: keep, toned down (not removed) on light so the
+   canvas keeps a hint of life without smudging white content. The streak
+   hairlines flip from white to a faint ink. */
+[data-color-scheme='light'] .cursor-glow,
+[data-color-scheme='light'] .glow-orb {
+  opacity: 0.4;
+}
+[data-color-scheme='light'] .light-streak {
+  background: rgba(30, 35, 70, 0.12);
+}
+
+/* Dark ambient FX: keep the aurora as the signature flourish but DIM it on the
+   new neutral charcoal — the bright ribbons over-saturate a calm gray — and tone
+   the mouse-following glow/orbs down. Brand soul, just quieter (macOS-grade). */
+[data-color-scheme='dark'] .animate-aurora-1,
+[data-color-scheme='dark'] .animate-aurora-2,
+[data-color-scheme='dark'] .animate-aurora-3,
+[data-color-scheme='dark'] .animate-aurora-4 {
+  opacity: 0.2;
+}
+[data-color-scheme='dark'] .animate-nebula-1,
+[data-color-scheme='dark'] .animate-nebula-2 {
+  opacity: 0.22;
+}
+[data-color-scheme='dark'] .cursor-glow,
+[data-color-scheme='dark'] .glow-orb {
+  opacity: 0.5;
 }

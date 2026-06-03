@@ -62,6 +62,12 @@ export const transition = {
   spin: { duration: 1, repeat: Infinity, ease: 'linear' },
   /** Pulsing / breathing ambient animation */
   pulse: { duration: 1.5, repeat: Infinity, ease: 'easeInOut' },
+  /** Slow continuous rotation — large loader rings (half the speed of `spin`) */
+  spinSlow: { duration: 2, repeat: Infinity, ease: 'linear' },
+  /** Gentle floating / breathing motion — hero icons (slower than `pulse`) */
+  breathe: { duration: 3, repeat: Infinity, ease: 'easeInOut' },
+  /** Expanding ring ripple / ping halo */
+  ping: { duration: 2, repeat: Infinity },
   /** Progress bar fill */
   progress: { duration: 0.8, ease: 'easeOut' },
   /** Data / score bar fill with smooth ease */
@@ -83,6 +89,12 @@ export const staggeredItem = (index: number, maxDelay = 0.2) => ({
   ...transition.normal,
   delay: Math.min(index * 0.01, maxDelay),
 });
+
+/**
+ * `transition.normal` with an explicit entrance delay — for sequenced reveals
+ * (headings → content → actions) where the delay is hand-tuned, not index-based.
+ */
+export const withDelay = (delay: number) => ({ ...transition.normal, delay });
 
 // ── Animation variant sets ────────────────────────────────────────────────
 // Spread onto motion elements: `{...variants.fadeSlideUp}`

@@ -107,7 +107,7 @@ export function OutputPanelPreview({ focus }: Props) {
             className="absolute inset-0 flex flex-col overflow-y-auto px-8 pb-8"
           >
             <div className="shrink-0 pb-4">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/30">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
                 {t(`aiGenerate.previewPanel.groups.${focus.group}`)}
               </div>
               <div className="mt-1 text-lg font-semibold text-foreground/80">{label}</div>

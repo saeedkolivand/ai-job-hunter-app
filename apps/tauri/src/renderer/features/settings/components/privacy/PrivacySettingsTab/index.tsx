@@ -81,11 +81,7 @@ export function PrivacySettingsTab() {
 
   const handleImport = async () => {
     try {
-      const res = (await importData.mutateAsync()) as {
-        success: boolean;
-        imported?: Record<string, number | { error: string }>;
-        error?: string;
-      };
+      const res = await importData.mutateAsync();
       if (res.success) {
         const count = Object.values(res.imported ?? {}).reduce<number>(
           (sum, v) => sum + (typeof v === 'number' ? v : 0),

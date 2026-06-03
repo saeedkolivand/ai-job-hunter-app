@@ -24,7 +24,7 @@ export function AnalysisRecommendations({ result, t }: AnalysisRecommendationsPr
     <GlassCard>
       <div className="mb-4 flex items-center gap-2">
         <Sparkles size={13} className="text-brand-soft" />
-        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/40">
+        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
           {t('analyze.recommendations')}
         </span>
         <span className="ml-auto text-[10px] text-foreground/30">
@@ -43,7 +43,7 @@ export function AnalysisRecommendations({ result, t }: AnalysisRecommendationsPr
             <div key={i} className="flex items-start gap-3 rounded-lg bg-white/[0.02] px-3 py-2.5">
               <span className={cn('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', priorityColor)} />
               <div className="flex-1 text-sm text-foreground/75">{r.text}</div>
-              <span className="shrink-0 rounded-md border border-white/[0.06] bg-white/[0.03] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-foreground/30">
+              <span className="shrink-0 rounded-md border border-white/[0.06] bg-white/[0.03] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-foreground/55">
                 {categoryBadge[r.category]}
               </span>
             </div>

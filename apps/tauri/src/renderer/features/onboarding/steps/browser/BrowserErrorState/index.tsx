@@ -1,7 +1,7 @@
 import { ArrowLeft, X } from 'lucide-react';
 import { motion } from 'motion/react';
 
-import { Button } from '@ajh/ui';
+import { Button, transition } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 
@@ -19,7 +19,7 @@ export function BrowserErrorState({ onBack, onNext }: BrowserErrorStateProps) {
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.4 }}
+          transition={transition.slow}
           className="relative"
         >
           <div className="absolute inset-0 rounded-full bg-orange-500/20 blur-xl" />

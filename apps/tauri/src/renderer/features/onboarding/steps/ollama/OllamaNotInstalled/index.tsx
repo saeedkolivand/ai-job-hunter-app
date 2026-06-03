@@ -32,7 +32,7 @@ export function OllamaNotInstalled({ onRecheck }: OllamaNotInstalledProps) {
       </div>
 
       <div className="space-y-2">
-        <p className="text-xs font-medium uppercase tracking-widest text-foreground/30">
+        <p className="text-xs font-semibold uppercase tracking-widest text-foreground/55">
           Installation steps
         </p>
         {['Download Ollama', 'Install the app', 'Run Ollama'].map((step, i) => (

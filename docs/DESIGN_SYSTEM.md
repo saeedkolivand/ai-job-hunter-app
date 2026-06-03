@@ -86,22 +86,42 @@ TailwindCSS default scale plus:
 
 ## Theming
 
-The app ships **light** and **dark** themes, selectable in Settings → General. Theme IDs are typed:
+The design target is **macOS-grade in both schemes** with the brand violet kept as the
+accent: light is a calm gray-canvas/white-card System-Settings model; dark is a neutral
+cool charcoal with cards that read _lighter_ than the canvas (macOS elevation). Theme is
+**orthogonal axes**, selectable in Settings → General → Appearance and persisted to
+`localStorage`:
 
 ```typescript
-// packages/ui
-export type ThemeId = 'light' | 'dark' | 'system';
+// packages/ui — lib/theme.ts
+export type ColorScheme = 'light' | 'dark' | 'system'; // system follows the OS
+export type TextScale = 'small' | 'default' | 'large'; // scales the rem root (15/16/18px)
+export interface ThemePrefs {
+  scheme: ColorScheme;
+  reduceTransparency: boolean; // false = follow the OS preference
+  contrast: 'normal' | 'more'; // 'normal' = follow the OS preference
+  textScale: TextScale; // sizes UI text; default 16px
+}
 ```
 
-Theme switching is handled by a CSS class on `<html>`:
+The engine (`applyTheme` / `applyThemeAnimated` / `restoreTheme` / `getThemePrefs`) writes
+data attributes on `<html>` that the token layer keys off:
 
 ```html
-<html class="dark">
-  <!-- or "light" -->
+<html data-color-scheme="dark" data-contrast="normal" data-text-scale="default">
+  <!-- data-reduce-transparency present when reduced -->
 </html>
 ```
 
-All tokens switch automatically via `@media (prefers-color-scheme: dark)` plus a manual override class. Never hard-code colors that don't exist in the token system.
+- **Color scheme** — `dark` is the default token set (`tokens.css` `:root`). `[data-color-scheme='light']` overrides only the tokens that change, so flipping the tokens flips the whole UI. `system` resolves from `prefers-color-scheme` and tracks live OS changes. User-initiated scheme changes go through `applyThemeAnimated()`, which crossfades via the View Transition API (reduced-motion / unsupported-API guarded).
+- **Light legibility** — light overrides only what changes, but two systemic remaps live in `utilities.css`: bright Tailwind palette text steps (`--color-emerald-400`, …) map to their deeper `600/700` so accent/status/gradient text stays legible on white, and faint `text-foreground/NN` steps are lifted to the macOS hierarchy (secondary `~#6E6E73`, muted `~#8E8E93`) — no per-site sweep.
+- **Text size** — `data-text-scale` sets the rem root (`small 15px` / `default 16px` / `large 18px`); a 12px floor in `utilities.css` lifts sub-12px arbitrary sizes. Both are rem-based, so they scale together.
+- **Accessibility modifiers** — `[data-reduce-transparency]` solidifies all glass (also wired to `@media (prefers-reduced-transparency)` as a JS-independent fallback); `[data-contrast='more']` strengthens borders. Each is either forced on or "auto" (follows the matching OS query).
+- **Fonts** — `--font-sans` prefers native San Francisco on macOS (`-apple-system`, `BlinkMacSystemFont`, `SF Pro`), falling back to bundled Inter on Windows/Linux.
+
+Glass surfaces read a single material token set (`--glass-rgb`, `--glass-alpha-*`,
+`--glass-sat`, `--glass-specular`) — see `utilities.css`. Never hard-code colors that
+don't exist in the token system.
 
 ---
 
@@ -118,18 +138,24 @@ import { Button, Input, GlassCard, Modal } from '@ajh/ui';
 #### `Button`
 
 ```typescript
-<Button variant="primary" size="md" loading={false} disabled={false}>
+<Button variant="default" size="md" loading={false} disabled={false}>
   Apply Now
 </Button>
 ```
 
-| Prop                     | Type      | Values                                             |
-| ------------------------ | --------- | -------------------------------------------------- |
-| `variant`                | string    | `primary` `secondary` `ghost` `destructive` `link` |
-| `size`                   | string    | `xs` `sm` `md` `lg`                                |
-| `loading`                | boolean   | Shows spinner, disables click                      |
-| `disabled`               | boolean   | Greyed out, no interaction                         |
-| `leftIcon` / `rightIcon` | ReactNode | Lucide icon component                              |
+| Prop       | Type    | Values                                                                   |
+| ---------- | ------- | ------------------------------------------------------------------------ |
+| `variant`  | string  | `default` `glass` `ghost` `danger` `warning` `info` `success` `unstyled` |
+| `size`     | string  | `sm` `md` `lg`                                                           |
+| `loading`  | boolean | Shows spinner, disables click                                            |
+| `disabled` | boolean | Greyed out, no interaction                                               |
+
+> **`unstyled`** is an escape hatch for custom interactive surfaces — segmented controls,
+> icon toggles, inline text links, clickable cards — that supply their own appearance via
+> `className`. It injects no chrome (no border / background / size / layout) but still routes
+> through `Button` for consistent focus-visible + disabled handling. Prefer a semantic variant;
+> reach for `unstyled` only when a styled variant would fight the call site. `Input` ships the
+> same `unstyled` variant for inline/borderless fields.
 
 #### `Input`
 
@@ -411,15 +437,16 @@ import { cn } from "@/lib/cn";
 
 These are enforced in CI (`pnpm lint:strict`) by [ESLint][eslint]:
 
-| Rule                                 | What it prevents                 |
-| ------------------------------------ | -------------------------------- |
-| No `[#RRGGBB]` in className          | Hardcoded hex colors             |
-| No `<button>` raw element            | Missing Button primitive         |
-| No `<select>` raw element            | Missing SelectDropdown primitive |
-| No `<textarea>` raw element          | Missing TextArea primitive       |
-| No inline `{duration, ease}` objects | Missing motion token             |
-| No `window.api.*` in features/routes | Direct IPC bypass                |
-| No `react-i18next` direct import     | Missing i18n wrapper             |
+| Rule                                 | What it prevents                                                                 |
+| ------------------------------------ | -------------------------------------------------------------------------------- |
+| No `[#RRGGBB]` in className          | Hardcoded hex colors                                                             |
+| No `<button>` raw element            | Missing Button primitive (use `variant="unstyled"` for custom surfaces)          |
+| No `<select>` raw element            | Missing SelectDropdown primitive                                                 |
+| No `<textarea>` raw element          | Missing TextArea primitive                                                       |
+| No `<input>` raw element             | Missing Input primitive — `type=range\|file\|checkbox\|radio\|hidden` are exempt |
+| No inline `{duration, ease}` objects | Missing motion token (use `transition.*`, `withDelay()`)                         |
+| No `window.api.*` in features/routes | Direct IPC bypass                                                                |
+| No `react-i18next` direct import     | Missing i18n wrapper                                                             |
 
 ---
 

@@ -1,7 +1,7 @@
 import { Bookmark, Briefcase, Clock, ExternalLink, FileText, type LucideIcon } from 'lucide-react';
 import { useMemo } from 'react';
 
-import type { DocumentRecord, JobInteraction } from '@ajh/shared';
+import type { JobInteraction } from '@ajh/shared';
 import { GlassCard } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
@@ -32,7 +32,7 @@ export function RecentActivity() {
   const { data: interactionsRaw = [] } = useInteractions();
 
   const items = useMemo<ActivityItem[]>(() => {
-    const docs = (docsRaw as DocumentRecord[]).map((d) => ({
+    const docs = docsRaw.map((d) => ({
       key: `doc-${d.id}`,
       title: d.title,
       sub: d.source.toUpperCase(),
@@ -65,7 +65,7 @@ export function RecentActivity() {
   return (
     <GlassCard>
       <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
           <Clock size={14} />
           {t('dashboard.recentActivity')}
         </div>

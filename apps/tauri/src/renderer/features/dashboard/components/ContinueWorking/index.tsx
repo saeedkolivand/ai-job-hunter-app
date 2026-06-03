@@ -1,7 +1,7 @@
 import { Bookmark, Briefcase, FileText, Play } from 'lucide-react';
 import { useMemo } from 'react';
 
-import type { DocumentRecord, JobInteraction } from '@ajh/shared';
+import type { JobInteraction } from '@ajh/shared';
 import { GlassCard } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
@@ -24,7 +24,7 @@ export function ContinueWorking() {
   const { data: appliedRaw = [] } = useInteractions('applied');
 
   const items = useMemo(() => {
-    const docs = (docsRaw as DocumentRecord[]).slice(0, 3).map((d) => ({
+    const docs = docsRaw.slice(0, 3).map((d) => ({
       id: `doc-${d.id}`,
       name: d.title,
       sub: d.source.toUpperCase(),
@@ -57,7 +57,7 @@ export function ContinueWorking() {
   return (
     <GlassCard>
       <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
           <Play size={14} />
           {t('dashboard.continueWorking')}
         </div>

@@ -37,8 +37,9 @@ export function GenerationOutput({
         {target === 'both' ? (
           <div className="flex items-center gap-1">
             {(['resume', 'cover'] as const).map((o) => (
-              <button
+              <Button
                 key={o}
+                variant="unstyled"
                 type="button"
                 onClick={() => setActiveOut(o)}
                 className={cn(
@@ -51,11 +52,11 @@ export function GenerationOutput({
                 {o === 'resume'
                   ? t('autopilot.apply.target.resume')
                   : t('autopilot.apply.target.cover')}
-              </button>
+              </Button>
             ))}
           </div>
         ) : (
-          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/35">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">
             {activeOut === 'resume'
               ? t('autopilot.apply.target.resume')
               : t('autopilot.apply.target.cover')}
@@ -84,15 +85,16 @@ export function GenerationOutput({
                 <div className="fixed inset-0 z-[650]" onClick={() => setExportOpen(false)} />
                 <div className="absolute right-0 top-full z-[700] mt-1.5 w-32 overflow-hidden rounded-lg border border-white/10 bg-secondary shadow-2xl">
                   {(['pdf', 'docx', 'txt'] as const).map((fmt) => (
-                    <button
+                    <Button
                       key={fmt}
+                      variant="unstyled"
                       type="button"
                       onClick={() => void onExport(fmt)}
                       className="flex w-full items-center gap-2 px-3 py-2 text-[11px] text-foreground/65 transition-colors hover:bg-white/[0.05] hover:text-foreground"
                     >
                       <Download size={10} />
                       {t('aiGenerate.download', { fmt: fmt.toUpperCase() })}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </>

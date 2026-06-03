@@ -55,8 +55,8 @@ export function ActionCard({
 
       {/* Text */}
       <div className="relative min-w-0 flex-1">
-        <div className="text-sm font-semibold text-white/90">{title}</div>
-        <div className="text-xs text-white/40 leading-snug mt-0.5">{description}</div>
+        <div className="text-sm font-semibold text-foreground/90">{title}</div>
+        <div className="text-xs text-foreground/40 leading-snug mt-0.5">{description}</div>
       </div>
 
       {/* Outlined action button */}

@@ -1,8 +1,8 @@
-import i18n from 'i18next';
 import { useState } from 'react';
 
 import type { StructuredResume } from '@ajh/shared';
 
+import i18n from '@/i18n';
 import { ocrFile } from '@/lib/ocr';
 import { useImportDocument } from '@/services';
 

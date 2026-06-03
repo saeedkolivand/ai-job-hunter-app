@@ -16,7 +16,7 @@ export function AnalysisSkills({ result, t }: AnalysisSkillsProps) {
         <GlassCard>
           <div className="mb-3 flex items-center gap-2">
             <CheckCircle2 size={12} className="text-emerald-400" />
-            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/40">
+            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
               {t('analyze.matchedSkills')}
             </span>
           </div>
@@ -36,7 +36,7 @@ export function AnalysisSkills({ result, t }: AnalysisSkillsProps) {
         <GlassCard>
           <div className="mb-3 flex items-center gap-2">
             <AlertCircle size={12} className="text-amber-400" />
-            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/40">
+            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
               {t('analyze.gaps')}
             </span>
           </div>

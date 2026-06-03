@@ -14,7 +14,7 @@ export function AnalysisSectionAnalysis({ result, t }: AnalysisSectionAnalysisPr
     <GlassCard>
       <div className="mb-4 flex items-center gap-2">
         <FileText size={13} className="text-brand-soft" />
-        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/40">
+        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
           {t('analyze.sectionAnalysis')}
         </span>
       </div>

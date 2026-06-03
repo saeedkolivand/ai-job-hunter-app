@@ -92,6 +92,6 @@ export const useAutopilotStepEvents = (onStep?: (event: AutopilotStepEvent) => v
     const off = api.autopilot.onStep((event: unknown) => {
       onStep?.(event as AutopilotStepEvent);
     });
-    return () => (off as unknown as () => void)?.();
+    return () => off?.();
   }, [api, onStep]);
 };

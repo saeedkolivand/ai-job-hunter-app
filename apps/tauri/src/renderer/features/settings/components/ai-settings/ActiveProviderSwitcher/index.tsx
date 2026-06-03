@@ -1,6 +1,6 @@
 import { Bot, CheckCircle2 } from 'lucide-react';
 
-import { GlassCard } from '@ajh/ui';
+import { Button, GlassCard } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import type { AiProvider } from '@/store/preferences-schema';
@@ -24,7 +24,7 @@ export function ActiveProviderSwitcher({ providers, meta, activeProvider, onSetA
 
   return (
     <GlassCard>
-      <div className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+      <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
         {t('settings.aiProvider.activeProvider')}
       </div>
       <div className="flex flex-wrap gap-1.5">
@@ -32,8 +32,9 @@ export function ActiveProviderSwitcher({ providers, meta, activeProvider, onSetA
           const m = meta[p];
           const isActive = p === activeProvider;
           return (
-            <button
+            <Button
               key={p}
+              variant="unstyled"
               onClick={() => onSetActive(p)}
               className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
                 isActive
@@ -44,7 +45,7 @@ export function ActiveProviderSwitcher({ providers, meta, activeProvider, onSetA
               <Bot size={11} className={isActive ? m.color : ''} />
               {m.label}
               {isActive && <CheckCircle2 size={10} className="text-brand-soft" />}
-            </button>
+            </Button>
           );
         })}
       </div>

@@ -58,12 +58,12 @@ export function useApplyRun(posting: Posting) {
     setOutcome(null);
     setRunning(true);
     try {
-      const res = (await applyJob.mutateAsync({
+      const res = await applyJob.mutateAsync({
         board: posting.source,
         url: posting.url,
         ...(coverLetter.trim() ? { coverLetter: coverLetter.trim() } : {}),
         autoSubmit,
-      })) as { jobId: string };
+      });
       jobRef.current = res.jobId;
       setJobId(res.jobId);
     } catch (err) {

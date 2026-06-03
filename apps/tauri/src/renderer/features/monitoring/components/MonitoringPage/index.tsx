@@ -20,21 +20,20 @@ export function MonitoringPage() {
   const { t } = useTranslation();
 
   const KIND_LABEL_MAP = useMemo(
-    () =>
-      ({
-        'ai.generate': t('monitoring.jobKinds.aiGenerate'),
-        'ai.embed': t('monitoring.jobKinds.aiEmbed'),
-        'document.import': t('monitoring.jobKinds.documentImport'),
-        'document.ocr': t('monitoring.jobKinds.documentOcr'),
-        'document.chunk': t('monitoring.jobKinds.documentChunk'),
-        'document.index': t('monitoring.jobKinds.documentIndex'),
-        'scrape.board': t('monitoring.jobKinds.scrapeBoard'),
-        'scrape.url': t('monitoring.jobKinds.scrapeUrl'),
-        'persist.job': t('monitoring.jobKinds.persistJob'),
-        'match.resume': t('monitoring.jobKinds.matchResume'),
-        'apply.job': t('monitoring.jobKinds.applyJob'),
-        'autopilot.run': t('monitoring.jobKinds.autopilotRun'),
-      }) as Record<string, string>,
+    () => ({
+      'ai.generate': t('monitoring.jobKinds.aiGenerate'),
+      'ai.embed': t('monitoring.jobKinds.aiEmbed'),
+      'document.import': t('monitoring.jobKinds.documentImport'),
+      'document.ocr': t('monitoring.jobKinds.documentOcr'),
+      'document.chunk': t('monitoring.jobKinds.documentChunk'),
+      'document.index': t('monitoring.jobKinds.documentIndex'),
+      'scrape.board': t('monitoring.jobKinds.scrapeBoard'),
+      'scrape.url': t('monitoring.jobKinds.scrapeUrl'),
+      'persist.job': t('monitoring.jobKinds.persistJob'),
+      'match.resume': t('monitoring.jobKinds.matchResume'),
+      'apply.job': t('monitoring.jobKinds.applyJob'),
+      'autopilot.run': t('monitoring.jobKinds.autopilotRun'),
+    }),
     [t]
   );
 
@@ -45,7 +44,7 @@ export function MonitoringPage() {
   };
   const { data: allJobsData } = useJobQueue();
   const { data: appVersionData } = useAppVersion();
-  const appVersion = (appVersionData as string | undefined) ?? '';
+  const appVersion = appVersionData ?? '';
 
   const allJobs = useMemo(() => (allJobsData ?? []) as JobRecord[], [allJobsData]);
 
@@ -141,7 +140,7 @@ export function MonitoringPage() {
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <BarChart3 size={12} className="text-brand-soft" />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/40">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
                 {t('monitoring.sections.hourlyActivity')}
               </span>
             </div>

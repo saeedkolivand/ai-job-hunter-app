@@ -38,10 +38,14 @@ export function useChat() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedModel = useRef('');
-  const generateConfig = useRef({
+  const generateConfig = useRef<{
+    provider: string;
+    baseUrl: string | undefined;
+    effort: string | undefined;
+  }>({
     provider: 'ollama',
-    baseUrl: '' as string | undefined,
-    effort: undefined as string | undefined,
+    baseUrl: '',
+    effort: undefined,
   });
 
   const getOrCreateConversation = useGetOrCreateConversation();
@@ -126,7 +130,7 @@ export function useChat() {
     setUploading(true);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const res = (await extractText.mutateAsync({ name: file.name, bytes })) as { text: string };
+      const res = await extractText.mutateAsync({ name: file.name, bytes });
       const text = (res?.text ?? '').trim();
       if (!text) {
         alert(t('ai.errors.failedToExtractText'));
@@ -184,7 +188,7 @@ export function useChat() {
         ...history,
       ];
 
-      const res = (await generateAI.mutateAsync({
+      const res = await generateAI.mutateAsync({
         model: selectedModel.current,
         messages: contextMessages,
         locale,
@@ -192,7 +196,7 @@ export function useChat() {
         provider: generateConfig.current.provider,
         baseUrl: generateConfig.current.baseUrl,
         effort: generateConfig.current.effort,
-      })) as { jobId: string };
+      });
 
       activeJobRef.current = res.jobId;
     } catch {

@@ -71,7 +71,7 @@ export function GenerationConfig({
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="px-6 pb-4 space-y-4">
       {/* What to generate */}
       <div>
-        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/30">
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
           {t('aiGenerate.generate')}
         </div>
         <div className="grid grid-cols-3 gap-1.5">
@@ -104,7 +104,7 @@ export function GenerationConfig({
 
       {/* Mode */}
       <div>
-        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/30">
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
           {t('aiGenerate.style')}
         </div>
         <div className="space-y-1">
@@ -136,7 +136,7 @@ export function GenerationConfig({
 
       {/* Prompt quality */}
       <div>
-        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/30">
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
           Prompt Quality
         </div>
         <div className="grid grid-cols-3 gap-1.5">
@@ -179,7 +179,7 @@ export function GenerationConfig({
 
       {/* Template */}
       <div>
-        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/30">
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
           Template
         </div>
         <div className="grid grid-cols-3 gap-1.5">
@@ -205,7 +205,8 @@ export function GenerationConfig({
 
       {/* ATS safe mode — only for two-column templates (Atelier, Portrait) */}
       {isTwoColumnTemplate(templateId) && (
-        <button
+        <Button
+          variant="unstyled"
           type="button"
           onClick={() => onAtsModeChange(!atsMode)}
           className={cn(
@@ -241,7 +242,7 @@ export function GenerationConfig({
               )}
             />
           </div>
-        </button>
+        </Button>
       )}
 
       <Button
