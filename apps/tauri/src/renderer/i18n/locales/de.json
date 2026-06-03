@@ -881,15 +881,23 @@
     "modeGuestNote": "Begrenzte Ergebnisse · nur 24h / Woche / Monat"
   },
   "resumes": {
-    "title": "Lebensläufe",
-    "subtitle": "Verfolgen Sie Ihre beworbenen, angesehenen und gespeicherten Jobs über alle Boards hinweg.",
-    "badge": "Interaktionen",
+    "title": "Dokumente",
+    "subtitle": "Deine maßgeschneiderten Lebensläufe und Anschreiben sowie deine Job-Aktivität über alle Boards hinweg.",
+    "badge": "Dokumente",
     "tabs": {
+      "resumes": "Lebensläufe",
+      "coverLetters": "Anschreiben",
+      "activity": "Aktivität"
+    },
+    "activity": {
       "applied": "Beworben",
       "viewed": "Angesehen",
       "bookmarked": "Gespeichert",
-      "generated": "Generiert"
+      "empty": "Noch keine Aktivität",
+      "emptyDesc": "Jobs, die du ansiehst, speicherst oder auf die du dich bewirbst, erscheinen hier."
     },
+    "coverLettersEmpty": "Noch keine Anschreiben",
+    "coverLettersEmptyDesc": "Generiere ein maßgeschneidertes Anschreiben, um es hier zu sehen.",
     "generated": {
       "noGenerationsYet": "Noch keine KI-generierten Dokumente",
       "noGenerationsDesc": "Generiere einen angepassten Lebenslauf oder ein Anschreiben, um es hier zu sehen.",
@@ -926,8 +934,6 @@
     },
     "filterPlaceholder": "Nach Titel oder Unternehmen suchen...",
     "noResults": "Keine Ergebnisse gefunden",
-    "noJobsYet": "Noch keine {{tab}} Jobs",
-    "jobsWillAppear": "Jobs erscheinen hier, wenn Sie mit Job-Anzeigen interagieren.",
     "unknownPosition": "Unbekannte Position",
     "open": "Öffnen"
   },

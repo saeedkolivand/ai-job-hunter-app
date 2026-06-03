@@ -31,8 +31,8 @@ describe('useSessionStore', () => {
     useSessionStore.getState().setJobs({ filter: 'react', sortBy: 'company' });
     expect(useSessionStore.getState().jobs).toEqual({ filter: 'react', sortBy: 'company' });
 
-    useSessionStore.getState().setResumes({ tab: 'generated' });
-    expect(useSessionStore.getState().resumes.tab).toBe('generated');
+    useSessionStore.getState().setResumes({ tab: 'activity' });
+    expect(useSessionStore.getState().resumes.tab).toBe('activity');
 
     useSessionStore.getState().setSettings({ activeSection: 'ai' });
     expect(useSessionStore.getState().settings.activeSection).toBe('ai');

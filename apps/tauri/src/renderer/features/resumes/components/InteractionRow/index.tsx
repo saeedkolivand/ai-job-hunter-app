@@ -1,33 +1,10 @@
-import { Building2, Clock, ExternalLink, MapPin } from 'lucide-react';
+import { Building2, Clock, ExternalLink, MapPin, Tag } from 'lucide-react';
 
 import { Button, cn, GlassCard } from '@ajh/ui';
 
+import { type Interaction, INTERACTION_TYPES } from '@/features/resumes/constants';
 import { useTranslation } from '@/lib/i18n';
 import { useOpenExternal } from '@/services/use-system';
-
-interface Interaction {
-  jobId: string;
-  interactionType: string;
-  timestamp: number;
-  title: string;
-  company: string;
-  url: string;
-  source: string;
-  location: string;
-}
-
-interface TabConfig {
-  id: string;
-  labelKey: string;
-  icon: React.ElementType;
-  color: string;
-  ringColor: string;
-}
-
-interface InteractionRowProps {
-  row: Interaction;
-  tabCfg: TabConfig;
-}
 
 function formatRelative(ts: number, t: ReturnType<typeof useTranslation>['t']): string {
   const diff = Date.now() - ts;
@@ -41,10 +18,20 @@ function formatRelative(ts: number, t: ReturnType<typeof useTranslation>['t']): 
   return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-export function InteractionRow({ row, tabCfg }: InteractionRowProps) {
+interface InteractionRowProps {
+  row: Interaction;
+}
+
+export function InteractionRow({ row }: InteractionRowProps) {
   const { t } = useTranslation();
   const openExternal = useOpenExternal();
-  const Icon = tabCfg.icon;
+
+  // Self-describing: the Activity feed mixes applied / viewed / bookmarked in one
+  // list, so each row's badge reflects its own interaction type. Unknown types
+  // (forward-compat) fall back to a neutral badge showing the raw type string.
+  const cfg = INTERACTION_TYPES[row.interactionType];
+  const Icon = cfg?.icon ?? Tag;
+  const label = cfg ? t(cfg.labelKey) : row.interactionType;
 
   return (
     <GlassCard
@@ -61,11 +48,11 @@ export function InteractionRow({ row, tabCfg }: InteractionRowProps) {
           <span
             className={cn(
               'flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] uppercase tracking-wider',
-              tabCfg.ringColor,
-              tabCfg.color
+              cfg?.ringColor ?? 'border-white/10 bg-white/5',
+              cfg?.color ?? 'text-foreground/50'
             )}
           >
-            <Icon size={8} /> {t(tabCfg.labelKey)}
+            <Icon size={8} /> {label}
           </span>
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-foreground/50">

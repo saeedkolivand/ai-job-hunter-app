@@ -1,4 +1,4 @@
-import { RefreshCw, Search, Wand2 } from 'lucide-react';
+import { Activity, Mail, RefreshCw, Search, Wand2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useMemo } from 'react';
 
@@ -8,7 +8,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { GenerationCard } from '@/features/resumes/components/GenerationCard';
 import { InteractionRow } from '@/features/resumes/components/InteractionRow';
-import { type Interaction, type Tab, TAB_CONFIG } from '@/features/resumes/constants';
+import { DOC_TABS, type DocTab, type Interaction } from '@/features/resumes/constants';
 import { useTranslation } from '@/lib/i18n';
 import { useAiGenerations } from '@/services/use-ai-generations';
 import { useInteractions } from '@/services/use-postings';
@@ -18,39 +18,50 @@ function ResumesPage() {
   const { t } = useTranslation();
   const { resumes, setResumes } = useSessionStore();
   const { tab, filter } = resumes;
-  const setTab = (v: Tab) => setResumes({ tab: v });
+  const setTab = (v: DocTab) => setResumes({ tab: v });
   const setFilter = (v: string) => setResumes({ filter: v });
 
-  const isGeneratedTab = tab === 'generated';
+  const isActivity = tab === 'activity';
 
-  const { data: rows = [], isLoading, refetch } = useInteractions(isGeneratedTab ? 'applied' : tab);
-
+  // Activity = the full interaction log (all types, recent first). Résumés and
+  // Cover Letters are lenses over the same generations list.
+  const { data: interactions = [], isLoading, refetch } = useInteractions();
   const { data: generations = [] } = useAiGenerations();
 
-  const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    return q
-      ? (rows as Interaction[]).filter(
-          (r) => r.title.toLowerCase().includes(q) || r.company.toLowerCase().includes(q)
-        )
-      : rows;
-  }, [rows, filter]);
+  const q = filter.trim().toLowerCase();
 
-  const filteredGenerations = useMemo(() => {
-    const q = filter.trim().toLowerCase();
+  const counts: Record<DocTab, number> = useMemo(
+    () => ({
+      resumes: generations.filter((g) => g.resumeText.trim()).length,
+      coverLetters: generations.filter((g) => g.coverLetterText.trim()).length,
+      activity: interactions.length,
+    }),
+    [generations, interactions]
+  );
+
+  const generationDocs = useMemo(() => {
+    const base =
+      tab === 'coverLetters'
+        ? generations.filter((g) => g.coverLetterText.trim())
+        : generations.filter((g) => g.resumeText.trim());
     return q
-      ? generations.filter(
+      ? base.filter(
           (g) =>
             g.jobTitle.toLowerCase().includes(q) ||
             g.companyName.toLowerCase().includes(q) ||
             g.candidateName.toLowerCase().includes(q)
         )
-      : generations;
-  }, [generations, filter]);
+      : base;
+  }, [generations, tab, q]);
 
-  const tabCfg = TAB_CONFIG.find((c) => c.id === tab) as (typeof TAB_CONFIG)[number];
-
-  const tabCount = isGeneratedTab ? generations.length : rows.length;
+  const activityRows = useMemo(() => {
+    const sorted = [...(interactions as Interaction[])].sort((a, b) => b.timestamp - a.timestamp);
+    return q
+      ? sorted.filter(
+          (r) => r.title.toLowerCase().includes(q) || r.company.toLowerCase().includes(q)
+        )
+      : sorted;
+  }, [interactions, q]);
 
   return (
     <PageTransition className="flex h-full flex-col overflow-hidden">
@@ -58,7 +69,6 @@ function ResumesPage() {
         <PageHeader
           title={t('resumes.title')}
           subtitle={t('resumes.subtitle')}
-          badge={t('resumes.badge')}
           actions={
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-1.5 transition-colors focus-within:border-brand/35">
@@ -71,8 +81,13 @@ function ResumesPage() {
                   variant="default"
                 />
               </div>
-              {!isGeneratedTab && (
-                <Button size="sm" variant="ghost" onClick={() => void refetch()} title="Refresh">
+              {isActivity && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void refetch()}
+                  title={t('resumes.open')}
+                >
                   <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} />
                 </Button>
               )}
@@ -82,7 +97,7 @@ function ResumesPage() {
 
         {/* Tabs */}
         <div className="mb-5 flex items-center gap-1">
-          {TAB_CONFIG.map(({ id, labelKey, icon: Icon, color }) => (
+          {DOC_TABS.map(({ id, labelKey, icon: Icon, color }) => (
             <Button
               key={id}
               onClick={() => {
@@ -98,72 +113,83 @@ function ResumesPage() {
             >
               <Icon size={12} className={tab === id ? color : ''} />
               {t(labelKey)}
-              {tab === id && tabCount > 0 && (
+              {counts[id] > 0 && (
                 <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] text-foreground/60">
-                  {tabCount}
+                  {counts[id]}
                 </span>
               )}
             </Button>
           ))}
         </div>
 
-        {/* Generated tab content */}
-        {isGeneratedTab ? (
-          filteredGenerations.length === 0 ? (
+        {/* Activity tab — the job-interaction log */}
+        {isActivity ? (
+          isLoading ? (
+            <div className="space-y-2">
+              <CardSkeleton /> <CardSkeleton /> <CardSkeleton />
+            </div>
+          ) : activityRows.length === 0 ? (
             <EmptyState
-              icon={Wand2}
-              title={t('resumes.generated.noGenerationsYet')}
-              description={t('resumes.generated.noGenerationsDesc')}
+              icon={Activity}
+              title={filter ? t('resumes.noResults') : t('resumes.activity.empty')}
+              description={!filter ? t('resumes.activity.emptyDesc') : undefined}
             />
           ) : (
             <motion.div
-              className="flex flex-col gap-3"
+              className="flex flex-col gap-2"
               variants={stagger.container}
               initial="hidden"
               animate="show"
             >
               <AnimatePresence initial={false}>
-                {filteredGenerations.map((gen) => (
+                {activityRows.map((row) => (
                   <motion.div
-                    key={gen.id}
+                    key={`${row.jobId}-${row.interactionType}`}
                     variants={stagger.item}
                     transition={transition.normal}
                     exit={{ opacity: 0, y: -6 }}
                   >
-                    <GenerationCard gen={gen} />
+                    <InteractionRow row={row} />
                   </motion.div>
                 ))}
               </AnimatePresence>
             </motion.div>
           )
-        ) : isLoading ? (
-          <div className="space-y-2">
-            <CardSkeleton /> <CardSkeleton /> <CardSkeleton />
-          </div>
-        ) : filtered.length === 0 ? (
+        ) : /* Résumés / Cover Letters — lenses over the generations list */
+        generationDocs.length === 0 ? (
           <EmptyState
-            icon={tabCfg.icon}
+            icon={tab === 'coverLetters' ? Mail : Wand2}
             title={
-              filter ? t('resumes.noResults') : t('resumes.noJobsYet', { tab: t(tabCfg.labelKey) })
+              filter
+                ? t('resumes.noResults')
+                : tab === 'coverLetters'
+                  ? t('resumes.coverLettersEmpty')
+                  : t('resumes.generated.noGenerationsYet')
             }
-            description={!filter ? t('resumes.jobsWillAppear') : undefined}
+            description={
+              filter
+                ? undefined
+                : tab === 'coverLetters'
+                  ? t('resumes.coverLettersEmptyDesc')
+                  : t('resumes.generated.noGenerationsDesc')
+            }
           />
         ) : (
           <motion.div
-            className="flex flex-col gap-2"
+            className="flex flex-col gap-3"
             variants={stagger.container}
             initial="hidden"
             animate="show"
           >
             <AnimatePresence initial={false}>
-              {filtered.map((row) => (
+              {generationDocs.map((gen) => (
                 <motion.div
-                  key={`${row.jobId}-${row.interactionType}`}
+                  key={gen.id}
                   variants={stagger.item}
                   transition={transition.normal}
                   exit={{ opacity: 0, y: -6 }}
                 >
-                  <InteractionRow row={row} tabCfg={tabCfg} />
+                  <GenerationCard gen={gen} />
                 </motion.div>
               ))}
             </AnimatePresence>
