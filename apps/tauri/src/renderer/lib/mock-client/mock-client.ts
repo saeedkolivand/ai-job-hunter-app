@@ -160,11 +160,6 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       resetApp: noop,
     },
 
-    apply: {
-      start: noop,
-      catalog: emptyList,
-    },
-
     updater: {
       check: noop,
       download: noop,

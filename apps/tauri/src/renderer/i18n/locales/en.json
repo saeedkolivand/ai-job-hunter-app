@@ -194,7 +194,6 @@
       "scrapeUrl": "URL scrape",
       "persistJob": "Interaction saved",
       "matchResume": "Resume match",
-      "applyJob": "Application",
       "autopilotRun": "Autopilot run"
     },
     "jobKindsShort": {
@@ -205,7 +204,6 @@
       "scrapeUrl": "Scrape",
       "persistJob": "Save",
       "matchResume": "Match",
-      "applyJob": "Apply",
       "autopilotRun": "Autopilot"
     }
   },
@@ -706,19 +704,15 @@
         "excludePlaceholder": "intern, junior"
       },
       "action": {
-        "title": "What should happen with matched jobs?",
-        "subtitle": "Choose how much automation you want.",
-        "saveOnly": "Save only",
-        "saveOnlyDesc": "Collect matching jobs to your list. You review and apply manually.",
-        "applyReview": "Apply & review",
-        "applyReviewDesc": "Start the application but stop before submitting. You confirm each one.",
-        "autoApply": "Auto-apply",
-        "autoApplyDesc": "Submit applications automatically. Use with care — cannot be undone.",
-        "coverLetter": "Cover letter",
+        "title": "How you'll apply",
+        "subtitle": "Autopilot finds and ranks matching jobs, then notifies you — you apply with the tailoring assistant.",
+        "flowFind": "Finds and ranks jobs matching your search on the schedule you choose.",
+        "flowNotify": "Surfaces new matches in the found-jobs list (and notifies you).",
+        "flowTailor": "Open a match and the assistant tailors your résumé and cover letter for it — you submit it yourself. Autopilot never applies for you.",
+        "coverLetter": "Base cover letter",
         "coverLetterOptional": "(optional)",
-        "coverLetterPlaceholder": "Add a cover letter to attach to applications…",
-        "autoSubmitWarning": "Auto-submit is off by default.",
-        "autoSubmitDesc": "Applications will stop at the final review page. Enable auto-submit only if you trust the form-fill accuracy."
+        "coverLetterHint": "Reused as the starting point the assistant tailors to each job.",
+        "coverLetterPlaceholder": "Add a base cover letter the assistant tailors per job…"
       },
       "schedule": {
         "title": "How often should this run?",
@@ -735,7 +729,6 @@
         "summaryName": "Name",
         "summaryBoard": "Board",
         "summaryQuery": "Query",
-        "summaryAction": "Action",
         "summarySchedule": "Schedule",
         "summaryMinScore": "Min score"
       },
@@ -746,8 +739,7 @@
       "run": "Run",
       "never": "Never",
       "lastRun": "Last run:",
-      "found": "Found",
-      "applied": "Applied"
+      "found": "Found"
     }
   },
   "dashboard": {
@@ -792,14 +784,14 @@
   "jobs": {
     "eyebrow": "Live postings",
     "title": "Job board",
-    "subtitle": "Scraped job postings from your configured boards. Filter, view, and apply directly.",
+    "subtitle": "Scraped job postings from your configured boards. Filter, open a posting, and tailor your application.",
     "searchPlaceholder": "Search by title, company, location…",
     "empty": "No postings yet. Start a scrape to populate this board.",
     "emptyCta": "Search jobs",
     "open": "Open",
     "copyLink": "Copy link",
-    "apply": "Apply",
-    "applyNotSupported": "Apply not supported for this board",
+    "tailor": "Tailor",
+    "tailorHint": "Tailor your résumé & cover letter for this job and open the posting",
     "scrapeJobs": "Scrape Jobs",
     "scrapeFailed": "Scraping failed",
     "cancel": "Cancel",
@@ -881,23 +873,6 @@
       "in": "🇮🇳 India — in.indeed.com",
       "sg": "🇸🇬 Singapore — sg.indeed.com",
       "jp": "🇯🇵 Japan — jp.indeed.com"
-    },
-    "applyDrawer": {
-      "eyebrow": "Apply to",
-      "warningTitle": "Use your own accounts and follow each platform's Terms of Service.",
-      "warningBody": "Automated access may be restricted. This tool stops before final submission for review.",
-      "coverLetter": "Cover letter",
-      "coverLetterPlaceholder": "Optional: Add a custom cover letter…",
-      "autoSubmit": "Auto-submit",
-      "autoSubmitHint": "Automatically submit after filling forms (use with caution)",
-      "steps": "Application steps",
-      "submitted": "Application submitted",
-      "reviewPending": "Review pending",
-      "localized": "Localized",
-      "failed": "Failed",
-      "cancel": "Cancel",
-      "running": "Running…",
-      "start": "Start application"
     },
     "authHint": "Connect your account in Settings for more results and better accuracy.",
     "authHintLink": "Connect account",

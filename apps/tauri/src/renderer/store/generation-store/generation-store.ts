@@ -59,6 +59,9 @@ export interface RunTailorParams {
   target: TailorTarget;
   /** Opt-in: research the company and fold a brief into the cover-letter prompt. */
   researchCompany?: boolean;
+  /** Optional base cover letter folded into the cover-letter prompt as the
+   *  starting point to tailor for this job. */
+  baseCoverLetter?: string;
   /** Translator for the failure message. */
   t: (key: string) => string;
   /**
@@ -129,6 +132,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
       mode,
       target,
       researchCompany,
+      baseCoverLetter,
       t,
       onComplete,
     }) => {
@@ -182,7 +186,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
             'en',
             controller.signal,
             onThink,
-            { researchCompany }
+            { researchCompany, baseCoverLetter }
           );
           patch(id, { coverOut: coverLetterText });
         }

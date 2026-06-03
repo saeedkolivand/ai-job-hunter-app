@@ -25,7 +25,7 @@ L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints.
 
 - **Resume/export** — `export/` (pdf/, docx/, typst_engine/, model_docx/, templates/, parser/, links/, types.rs), `model/`, `theme/`, `locale/`, `contact_profile/`, `validate/`.
 - **Job match / ATS** — `commands/match_resume.rs`, `commands/cover_letter.rs` + `cover_letter/`, `recommend/`, `validate/`.
-- **Automation** — `scraping/` (boards/, engine/, http/, linkedin/, board_login/), `applying/` (boards/, registry/, form_filler/, selectors/), `browser/`, `apply_helpers/`, `autopilot/`.
+- **Automation** — `scraping/` (boards/, engine/, http/, linkedin/, board*login/), `browser/`, `autopilot/` + `autopilot_scheduler`. *(No auto-apply engine: the app is an apply **assistant** — autopilot finds → ranks → notifies; the user tailors & submits.)\_
 - **AI** — `commands/ai_provider/` (ollama/openai/anthropic/gemini + cli_agent), `commands/ai.rs`, `documents/` (embeddings), `ai_generations/`, `conversations/`, `extraction/`, `recommend/`.
 - **Platform/data** — `platform/` (`config.rs` `data_dir()`), `net/` (`http.rs` `shared()`), `error.rs`, `observability.rs` (`Span`), `db.rs`, `data_store.rs`, `credentials/`, `updater/`, `pipeline/`, `jobs/`, `postings/`, `job_preferences/`, `profile_import/`.
 
@@ -37,7 +37,7 @@ Renderer (`apps/tauri/src/renderer/`): ~14 features each owning a route + servic
 | ------------------------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------ |
 | Resume / export / templates          | `resume-export-expert` (impl `pdf-docx-generator`) | `export/` (incl. `typst_engine/`), `model/`, `theme/`, `locale/`, `templates/` |
 | ATS scoring / job match              | `job-match-expert`                                 | `commands/match_resume.rs`, `cover_letter`, `recommend/`, `validate/`          |
-| Scraping / applying                  | `scraping-applier-expert`                          | `scraping/`, `applying/`, `browser/`                                           |
+| Scraping / apply assistant           | `scraping-applier-expert`                          | `scraping/`, `browser/`, `autopilot/`                                          |
 | AI providers / embeddings / prompts  | `ai-provider-expert`                               | `commands/ai_provider/`, `commands/ai.rs`, `documents/`, `packages/prompts`    |
 | Rust backend / data / migrations     | `rust-backend-architect`                           | rest of `src-tauri/src/**`, `db.rs`, `*Store`                                  |
 | Security (cross-cutting)             | `tauri-security-reviewer`                          | `capabilities/`, `net/`, `credentials/`, deps, `updater/`                      |

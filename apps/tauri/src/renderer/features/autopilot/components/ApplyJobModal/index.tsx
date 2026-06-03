@@ -19,6 +19,9 @@ interface Props {
   job: AutopilotFoundJob;
   /** The resume the autopilot used — pre-fills the resume input. */
   resumeText?: string;
+  /** The autopilot's base cover letter — reused as the starting point the
+   *  cover-letter generation tailors to this job. */
+  baseCoverLetter?: string;
   /** The board this autopilot searches — stored on the saved application record. */
   board: string;
   onClose: () => void;
@@ -28,7 +31,7 @@ interface Props {
  * Tailor a resume / cover letter for a single autopilot-found job, inline.
  * Reuses the AI Generate primitives so the user never leaves the Autopilot page.
  */
-export function ApplyJobModal({ job, resumeText, board, onClose }: Props) {
+export function ApplyJobModal({ job, resumeText, baseCoverLetter, board, onClose }: Props) {
   const { t } = useTranslation();
   const model = useSelectedModel();
   const { canUse, reason } = useCanUseAI();
@@ -59,6 +62,7 @@ export function ApplyJobModal({ job, resumeText, board, onClose }: Props) {
     jobUrl: job.url,
     board,
     researchCompany,
+    baseCoverLetter,
   });
 
   // Closing the modal no longer cancels — generation finishes in the background

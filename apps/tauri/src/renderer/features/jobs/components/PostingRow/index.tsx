@@ -6,15 +6,17 @@ import {
   ExternalLink,
   Eye,
   MapPin,
-  Send,
+  Wand2,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 
-import { Button, cn, SourceBadge, transition, useNotification } from '@ajh/ui';
+import { Button, SourceBadge, transition, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { useOpenExternal, usePersistJob } from '@/services';
+import { useSessionStore } from '@/store/session-store';
 
 interface Posting {
   id: string;
@@ -33,16 +35,14 @@ interface Posting {
 
 interface PostingRowProps {
   posting: Posting;
-  onApply: () => void;
   formatRelativeTime: (timestamp?: number) => string;
 }
 
-const APPLIABLE = new Set(['linkedin', 'indeed', 'greenhouse', 'workday', 'xing', 'glassdoor']);
-
-export function PostingRow({ posting, onApply, formatRelativeTime }: PostingRowProps) {
+export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
   const { t } = useTranslation();
   const notify = useNotification();
-  const canApply = APPLIABLE.has(posting.source);
+  const navigate = useNavigate();
+  const setAIGenerate = useSessionStore((s) => s.setAIGenerate);
   const openExternalMutation = useOpenExternal();
   const persistJobMutation = usePersistJob();
 
@@ -87,9 +87,14 @@ export function PostingRow({ posting, onApply, formatRelativeTime }: PostingRowP
     }
   };
 
-  const handleApply = () => {
+  // Apply assistant: seed the AI Generate workspace with this posting, open the
+  // posting so the user can submit it there, mark it applied, and route to the
+  // tailoring flow. Tailoring is board-agnostic, so this works for every source.
+  const handleTailor = () => {
     void trackInteraction('applied');
-    onApply();
+    setAIGenerate({ jobAd: posting.description, stage: 'idle', meta: null });
+    void openExternalMutation.mutateAsync(posting.url);
+    void navigate({ to: '/ai-generate' });
   };
 
   return (
@@ -173,16 +178,12 @@ export function PostingRow({ posting, onApply, formatRelativeTime }: PostingRowP
           </Button>
           <Button
             size="sm"
-            variant={canApply ? 'glass' : 'ghost'}
-            onClick={handleApply}
-            disabled={!canApply}
-            title={canApply ? '' : t('jobs.applyNotSupported')}
-            className={cn(
-              'transition-all duration-150 ease-out',
-              canApply ? '' : 'cursor-not-allowed'
-            )}
+            variant="glass"
+            onClick={handleTailor}
+            title={t('jobs.tailorHint')}
+            className="transition-all duration-150 ease-out"
           >
-            <Send size={11} /> {t('jobs.apply')}
+            <Wand2 size={11} /> {t('jobs.tailor')}
           </Button>
         </div>
       </div>

@@ -93,13 +93,13 @@ pub struct Autopilot {
     pub status: AutopilotStatus,
     pub target: AutopilotTarget,
     pub filter: AutopilotFilter,
-    pub action: String,
     pub schedule: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resume_text: Option<String>,
+    /// Optional base cover letter reused as the starting point when tailoring a
+    /// found job in the apply assistant.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cover_letter: Option<String>,
-    pub auto_submit: bool,
     pub total_found: u32,
     pub total_applied: u32,
     /// Jobs surfaced by the most recent run. Defaulted so older records load.
@@ -164,11 +164,9 @@ impl AutopilotStore {
                     exclude_keywords: None,
                 }
             }),
-            action: str_field(&input, "action"),
             schedule: str_field(&input, "schedule"),
             resume_text: input["resumeText"].as_str().map(String::from),
             cover_letter: input["coverLetter"].as_str().map(String::from),
-            auto_submit: input["autoSubmit"].as_bool().unwrap_or(false),
             total_found: 0,
             total_applied: 0,
             found_jobs: Vec::new(),
@@ -202,9 +200,6 @@ impl AutopilotStore {
         if let Ok(f) = serde_json::from_value::<AutopilotFilter>(patch["filter"].clone()) {
             ap.filter = f;
         }
-        if let Some(v) = patch.get("action").and_then(|v| v.as_str()) {
-            ap.action = v.to_string();
-        }
         if let Some(v) = patch.get("schedule").and_then(|v| v.as_str()) {
             ap.schedule = v.to_string();
         }
@@ -213,9 +208,6 @@ impl AutopilotStore {
         }
         if let Some(v) = patch.get("coverLetter").and_then(|v| v.as_str()) {
             ap.cover_letter = Some(v.to_string());
-        }
-        if let Some(v) = patch.get("autoSubmit").and_then(|v| v.as_bool()) {
-            ap.auto_submit = v;
         }
         let result = ap.clone();
         self.save(map);
@@ -277,6 +269,11 @@ impl AutopilotStore {
     // ── Persistence ───────────────────────────────────────────────────────────
 
     fn load(&self) -> HashMap<String, Autopilot> {
+        // Silent migration off auto-apply: records written before the apply engine
+        // was removed carry `action` (save/review/auto_apply) and `autoSubmit`
+        // fields. Serde ignores unknown fields on deserialize, so every saved
+        // autopilot loads cleanly as a find-&-save agent and the dead keys are
+        // dropped on the next save — no explicit rewrite needed.
         let mut guard = self.cache.lock();
         if let Some(ref c) = *guard {
             return c.clone();

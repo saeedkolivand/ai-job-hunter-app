@@ -40,6 +40,9 @@ interface Params {
   board: string;
   /** Opt-in: research the company and fold a brief into the cover-letter prompt. */
   researchCompany: boolean;
+  /** Optional base cover letter — the autopilot's reusable template, folded into
+   *  the cover-letter prompt as the starting point to tailor for this job. */
+  baseCoverLetter?: string;
 }
 
 /**
@@ -57,6 +60,7 @@ export function useTailorGeneration({
   jobUrl,
   board,
   researchCompany,
+  baseCoverLetter,
 }: Params) {
   const { t } = useTranslation();
   const api = useAppClient();
@@ -117,6 +121,7 @@ export function useTailorGeneration({
       mode: MODE,
       target,
       researchCompany,
+      baseCoverLetter,
       t,
       onComplete: persist,
     });

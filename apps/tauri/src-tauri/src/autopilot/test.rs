@@ -51,6 +51,58 @@ fn test_now_ms() {
 }
 
 #[test]
+fn legacy_auto_apply_records_load_and_strip_dead_keys_on_save() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+
+    // A record persisted before the auto-apply engine was removed: it still
+    // carries the now-dropped `action` / `autoSubmit` keys. Loading must not
+    // fail (serde ignores unknown fields) — the silent find-&-save migration.
+    let legacy = r#"[{
+        "_id": "ap-legacy",
+        "name": "Legacy AP",
+        "status": "active",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 50.0 },
+        "action": "auto_apply",
+        "schedule": "daily",
+        "autoSubmit": true,
+        "coverLetter": "Dear team",
+        "totalFound": 4,
+        "totalApplied": 2,
+        "foundJobs": [],
+        "createdAt": 1,
+        "updatedAt": 1
+    }]"#;
+    std::fs::write(dir.join("autopilots.json"), legacy).unwrap();
+
+    let store = AutopilotStore::new(&dir);
+    let list = store.list();
+    assert_eq!(list.len(), 1, "legacy record loads despite dropped keys");
+    let ap = &list[0];
+    assert_eq!(ap.id, "ap-legacy");
+    assert_eq!(ap.schedule, "daily");
+    assert_eq!(ap.status, AutopilotStatus::Active);
+    assert_eq!(ap.cover_letter.as_deref(), Some("Dear team"));
+
+    // Touching the record rewrites the file from the new struct — the dead
+    // auto-apply keys are gone from disk going forward.
+    store.stamp_last_run("ap-legacy");
+    let on_disk = std::fs::read_to_string(dir.join("autopilots.json")).unwrap();
+    assert!(!on_disk.contains("\"action\""), "action stripped on save");
+    assert!(
+        !on_disk.contains("autoSubmit"),
+        "autoSubmit stripped on save"
+    );
+    assert!(
+        on_disk.contains("Dear team"),
+        "kept fields survive the rewrite"
+    );
+}
+
+#[test]
 fn test_clear_all_removes_every_autopilot() {
     use tempfile::TempDir;
 
@@ -61,7 +113,6 @@ fn test_clear_all_removes_every_autopilot() {
             "name": name,
             "target": { "board": "linkedin", "query": "rust", "pages": 1 },
             "filter": { "minMatchScore": 50.0 },
-            "action": "save",
             "schedule": "manual",
         }));
     }
@@ -82,7 +133,6 @@ fn test_data_store_export_import_preserves_id() {
         "name": "Test AP",
         "target": { "board": "linkedin", "query": "rust", "pages": 1 },
         "filter": { "minMatchScore": 50.0 },
-        "action": "save",
         "schedule": "manual",
     }));
     let id = created.id.clone();

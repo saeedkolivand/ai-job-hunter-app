@@ -25,6 +25,14 @@ minimumReleaseAgeExclude:
   - '@typescript-eslint/utils@8.59.4'
   - '@typescript-eslint/visitor-keys@8.59.4'
   - typescript-eslint@8.59.4
+  - '@storybook/addon-vitest@10.4.2'
+  - '@storybook/builder-vite@10.4.2'
+  - '@storybook/csf-plugin@10.4.2'
+  - '@storybook/react-dom-shim@10.4.2'
+  - '@storybook/react-vite@10.4.2'
+  - '@storybook/react@10.4.2'
+  - eslint-plugin-storybook@10.4.2
+  - storybook@10.4.2
 
 # Dependency hoisting settings
 nodeLinker: isolated

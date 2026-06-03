@@ -3,7 +3,6 @@
 pub mod ai;
 pub mod ai_generations;
 pub mod ai_provider;
-pub mod apply;
 pub mod autopilot;
 pub mod boards;
 pub mod contact_profile;

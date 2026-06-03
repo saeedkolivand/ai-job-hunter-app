@@ -26,9 +26,6 @@ pub enum AppError {
     /// Decoding/encoding: serde, document text extraction.
     #[error("{0}")]
     Parse(String),
-    /// A requested entity does not exist.
-    #[error("{0}")]
-    NotFound(String),
     /// Input failed validation / a precondition was not met.
     #[error("{0}")]
     Validation(String),
@@ -61,7 +58,6 @@ impl AppError {
             AppError::Provider(_) => "PROVIDER",
             AppError::Storage(_) => "STORAGE",
             AppError::Parse(_) => "PARSE",
-            AppError::NotFound(_) => "NOT_FOUND",
             AppError::Validation(_) => "VALIDATION",
             AppError::Cancelled => "CANCELLED",
             AppError::Message(_) => "ERROR",
@@ -139,18 +135,5 @@ impl From<anyhow::Error> for AppError {
 impl From<crate::extraction::types::ExtractionError> for AppError {
     fn from(e: crate::extraction::types::ExtractionError) -> Self {
         AppError::Parse(e.to_string())
-    }
-}
-
-impl From<crate::applying::error_handler::ApplyError> for AppError {
-    fn from(e: crate::applying::error_handler::ApplyError) -> Self {
-        use crate::applying::error_handler::ApplyError as A;
-        let msg = e.to_string();
-        match e {
-            A::RateLimited | A::NetworkError(_) => AppError::Network(msg),
-            A::SessionExpired => AppError::Config(msg),
-            A::FormNotFound => AppError::NotFound(msg),
-            A::CaptchaDetected | A::Unknown(_) => AppError::Message(msg),
-        }
     }
 }
