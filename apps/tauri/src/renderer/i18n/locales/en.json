@@ -896,15 +896,23 @@
     "modeGuestNote": "Limited results · 24h / week / month filters only"
   },
   "resumes": {
-    "title": "Resumes",
-    "subtitle": "Track your applied, viewed, and bookmarked jobs across all boards.",
-    "badge": "Interactions",
+    "title": "Documents",
+    "subtitle": "Your tailored résumés and cover letters, plus your job activity across every board.",
+    "badge": "Documents",
     "tabs": {
+      "resumes": "Résumés",
+      "coverLetters": "Cover Letters",
+      "activity": "Activity"
+    },
+    "activity": {
       "applied": "Applied",
       "viewed": "Viewed",
       "bookmarked": "Bookmarked",
-      "generated": "Generated"
+      "empty": "No activity yet",
+      "emptyDesc": "Jobs you view, bookmark, or apply to will appear here."
     },
+    "coverLettersEmpty": "No cover letters yet",
+    "coverLettersEmptyDesc": "Generate a tailored cover letter to see it here.",
     "generated": {
       "noGenerationsYet": "No AI-generated documents yet",
       "noGenerationsDesc": "Generate a tailored resume or cover letter to see it here.",
@@ -941,8 +949,6 @@
     },
     "filterPlaceholder": "Search by title or company...",
     "noResults": "No results found",
-    "noJobsYet": "No {{tab}} jobs yet",
-    "jobsWillAppear": "Jobs will appear here as you interact with job listings.",
     "unknownPosition": "Unknown position",
     "open": "Open"
   },

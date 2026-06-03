@@ -39,7 +39,7 @@ interface JobsSlice {
   sortBy: 'newest' | 'oldest' | 'company';
 }
 
-type ResumesTab = 'applied' | 'viewed' | 'bookmarked' | 'generated';
+type ResumesTab = 'resumes' | 'coverLetters' | 'activity';
 
 interface ResumesSlice {
   tab: ResumesTab;
@@ -126,7 +126,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   aiGenerate: { ...AI_GENERATE_DEFAULTS },
   analyze: { ...ANALYZE_DEFAULTS },
   jobs: { filter: '', sortBy: 'newest' },
-  resumes: { tab: 'applied', filter: '' },
+  resumes: { tab: 'resumes', filter: '' },
   settings: { activeSection: 'general' },
   autopilot: { creating: false, editingId: null, wizardStep: 0, wizardForm: null, focusedId: null },
 
