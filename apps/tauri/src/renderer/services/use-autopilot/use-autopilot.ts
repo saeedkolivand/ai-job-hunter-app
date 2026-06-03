@@ -123,3 +123,11 @@ export const useAutopilotFocusEvents = (onFocus?: (event: AutopilotFocusEvent) =
     return () => off?.();
   }, [api, onFocus]);
 };
+
+export const useAutopilotNotificationClick = (onClick?: () => void) => {
+  const api = useAppClient();
+  useEffect(() => {
+    const off = api.autopilot.onNotificationClick(() => onClick?.());
+    return () => off?.();
+  }, [api, onClick]);
+};
