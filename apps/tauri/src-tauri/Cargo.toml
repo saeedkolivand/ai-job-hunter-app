@@ -28,9 +28,13 @@ model_docx = []
 [profile.dev]
 incremental = true
 
+# Tuned for build speed over the last few % of size/perf: thin LTO compiles
+# much faster than fat LTO (it parallelizes across crates) and codegen-units =
+# 16 lets the large ajh-tauri crate codegen in parallel. opt-level "s" + strip
+# keep installers (and so auto-update downloads) small.
 [profile.release]
-codegen-units = 1
-lto = true
+codegen-units = 16
+lto = "thin"
 opt-level = "s"
 panic = "abort"
 strip = true
