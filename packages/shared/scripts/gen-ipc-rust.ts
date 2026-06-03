@@ -18,7 +18,6 @@ import { z } from 'zod';
 import {
   AiGenerateRequestSchema,
   AiGenerationSaveSchema,
-  ApplyStartSchema,
   AutopilotCreateSchema,
   AutopilotUpdateSchema,
   ConversationSaveMessageSchema,
@@ -89,10 +88,6 @@ const MODULES: ModuleSpec[] = [
       { rustName: 'AutopilotCreateRequest', schema: AutopilotCreateSchema },
       { rustName: 'AutopilotUpdateRequest', schema: AutopilotUpdateSchema },
     ],
-  },
-  {
-    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/apply.rs',
-    structs: [{ rustName: 'ApplyStartRequest', schema: ApplyStartSchema }],
   },
   {
     outFile: 'apps/tauri/src-tauri/src/ipc_contracts/matching.rs',

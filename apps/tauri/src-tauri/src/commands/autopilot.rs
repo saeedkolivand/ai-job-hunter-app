@@ -166,8 +166,8 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     );
 
     // Snapshot each posting, scored 0–100 against the resume when one is set, then
-    // sorted highest-first. Applying is deferred (coming soon) — a run only fetches
-    // and saves results for the user to review.
+    // sorted highest-first. Autopilot is a discovery agent: a run only finds, ranks,
+    // and saves results — the user applies with the tailoring assistant.
     let resume = autopilot.resume_text.as_deref().unwrap_or("");
     let found_at = now_ms();
     let mut found_jobs: Vec<FoundJob> = postings

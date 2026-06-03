@@ -42,8 +42,6 @@ const STEP_ICON: Record<string, string> = {
   scrape_start: '⟳',
   scrape_done: '✓',
   rank_done: '★',
-  apply_start: '→',
-  apply_done: '✓',
   cancelled: '⊘',
   complete: '✓',
 };
@@ -58,7 +56,7 @@ export function AutopilotCard({
   onDelete,
 }: AutopilotCardProps) {
   const paused = ap.status === 'paused';
-  const running = runState === 'scraping' || runState === 'ranking' || runState === 'applying';
+  const running = runState === 'scraping' || runState === 'ranking';
   const { t } = useTranslation();
   const openExternal = useOpenExternal();
   const [showFound, setShowFound] = useState(false);
@@ -95,9 +93,6 @@ export function AutopilotCard({
               {ap.target.board}
             </span>
             <span className="text-[10px] text-foreground/30 bg-white/[0.04] px-1.5 py-0.5 rounded capitalize">
-              {ap.action.replace('_', ' ')}
-            </span>
-            <span className="text-[10px] text-foreground/30 bg-white/[0.04] px-1.5 py-0.5 rounded capitalize">
               {ap.schedule.replace('_', ' ')}
             </span>
           </div>
@@ -108,8 +103,7 @@ export function AutopilotCard({
               · {t('autopilot.wizard.lastRun')} {lastRun}
             </span>
             <span>
-              · {t('autopilot.wizard.found')} {ap.totalFound} · {t('autopilot.wizard.applied')}{' '}
-              {ap.totalApplied}
+              · {t('autopilot.wizard.found')} {ap.totalFound}
             </span>
           </div>
         </div>
@@ -276,6 +270,7 @@ export function AutopilotCard({
         <ApplyJobModal
           job={applyJob}
           resumeText={ap.resumeText}
+          baseCoverLetter={ap.coverLetter}
           board={ap.target.board}
           onClose={() => setApplyJob(null)}
         />

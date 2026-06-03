@@ -19,9 +19,7 @@ export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
     keywords: jobPrefs?.techStack?.map((t) => t.name).join(', ') ?? '',
     excludeKeywords: '',
     resumeText: '',
-    action: 'save',
     coverLetter: '',
-    autoSubmit: false,
     schedule: 'daily',
   };
 }
@@ -40,9 +38,7 @@ export function autopilotToWizardState(ap: Autopilot): WizardState {
     keywords: ap.filter.keywords?.join(', ') ?? '',
     excludeKeywords: ap.filter.excludeKeywords?.join(', ') ?? '',
     resumeText: ap.resumeText ?? '',
-    action: ap.action,
     coverLetter: ap.coverLetter ?? '',
-    autoSubmit: ap.autoSubmit,
     schedule: ap.schedule,
   };
 }

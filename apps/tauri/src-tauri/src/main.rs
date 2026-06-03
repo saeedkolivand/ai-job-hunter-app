@@ -5,8 +5,6 @@
 #![deny(clippy::await_holding_lock)]
 
 mod ai_generations;
-mod apply_helpers;
-mod applying;
 mod autopilot;
 mod autopilot_helpers;
 mod autopilot_scheduler;
@@ -388,9 +386,6 @@ fn main() {
             commands::privacy::privacy_clear_interactions,
             commands::privacy::privacy_sign_out_all,
             commands::privacy::privacy_reset_app,
-            // apply
-            commands::apply::apply_start,
-            commands::apply::apply_catalog,
             // support
             commands::support::support_export_logs,
             commands::support::support_get_system_info,

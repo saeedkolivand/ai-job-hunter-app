@@ -1,5 +1,5 @@
 import { Plus, Search, Trash2 } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import { useMemo, useState } from 'react';
 
 import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
@@ -10,13 +10,11 @@ import {
   Input,
   SelectDropdown,
   staggeredItem,
-  transition,
   useNotification,
 } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
-import { ApplyDrawer } from '@/features/jobs/components/ApplyDrawer';
 import { PostingRow } from '@/features/jobs/components/PostingRow';
 import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
 import { useFormatRelativeTime } from '@/features/jobs/hooks/useFormatRelativeTime';
@@ -42,7 +40,6 @@ export function JobsPage() {
   const { filter, sortBy } = jobs;
   const setFilter = (v: string) => setJobs({ filter: v });
   const setSortBy = (v: 'newest' | 'oldest' | 'company') => setJobs({ sortBy: v });
-  const [active, setActive] = useState<Posting | null>(null);
   const [showScrapeForm, setShowScrapeForm] = useState(false);
   const [scrapeForm, setScrapeForm] = useState({
     board: 'linkedin',
@@ -237,30 +234,12 @@ export function JobsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={staggeredItem(i)}
               >
-                <PostingRow
-                  posting={p}
-                  onApply={() => setActive(p)}
-                  formatRelativeTime={formatRelativeTime}
-                />
+                <PostingRow posting={p} formatRelativeTime={formatRelativeTime} />
               </motion.div>
             ))}
           </div>
         )}
       </div>
-
-      <AnimatePresence>
-        {active && (
-          <motion.aside
-            initial={{ x: 480, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: 480, opacity: 0 }}
-            transition={transition.relaxed}
-            className="glass-elevated m-3 ml-0 flex w-[460px] flex-col rounded-2xl overflow-hidden"
-          >
-            <ApplyDrawer posting={active} onClose={() => setActive(null)} />
-          </motion.aside>
-        )}
-      </AnimatePresence>
     </PageTransition>
   );
 }

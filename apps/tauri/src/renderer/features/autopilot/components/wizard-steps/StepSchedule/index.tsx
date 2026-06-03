@@ -81,7 +81,6 @@ export function StepSchedule({ form, set }: StepScheduleProps) {
           [t('autopilot.wizard.schedule.summaryName'), form.name || '—'],
           [t('autopilot.wizard.schedule.summaryBoard'), form.board],
           [t('autopilot.wizard.schedule.summaryQuery'), form.query || '—'],
-          [t('autopilot.wizard.schedule.summaryAction'), form.action.replace('_', ' ')],
           [t('autopilot.wizard.schedule.summarySchedule'), form.schedule.replace('_', ' ')],
           [t('autopilot.wizard.schedule.summaryMinScore'), `${form.minMatchScore}%`],
         ].map(([k, v]) => (

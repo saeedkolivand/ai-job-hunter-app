@@ -1,4 +1,5 @@
 import { Download, Sparkles, Trash2 } from 'lucide-react';
+import { expect } from 'storybook/test';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { Button } from '../Button';
@@ -75,4 +76,22 @@ export const Loading: Story = {
 
 export const Disabled: Story = {
   args: { children: 'Disabled', variant: 'glass', disabled: true },
+};
+
+// Proof that the shared preview actually loaded Tailwind + the @ajh/ui design
+// system. `toBeVisible` passes even on an unstyled button, so we assert concrete
+// computed values from base classes the Button always applies: `inline-flex`
+// (display) and `font-medium` (font-weight 500). If the CSS layer fails to load
+// — the exact failure mode this preview guards against — the button falls back
+// to the UA defaults `inline-block` / 400 and this story fails. Runs live in the
+// Interactions panel (and any future Storybook/vitest browser runner).
+export const CssCheck: Story = {
+  tags: ['ai-generated'],
+  args: { children: 'Submit', variant: 'default', size: 'md' },
+  play: async ({ canvas }) => {
+    const button = canvas.getByRole('button', { name: /submit/i });
+    const styles = getComputedStyle(button);
+    await expect(styles.display).toBe('inline-flex');
+    await expect(styles.fontWeight).toBe('500');
+  },
 };

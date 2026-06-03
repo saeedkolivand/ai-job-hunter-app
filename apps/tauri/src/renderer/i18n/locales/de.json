@@ -194,7 +194,6 @@
       "scrapeUrl": "URL-Scraping",
       "persistJob": "Interaktion gespeichert",
       "matchResume": "Lebenslauf-Match",
-      "applyJob": "Bewerbung",
       "autopilotRun": "Autopilot-Lauf"
     },
     "jobKindsShort": {
@@ -205,7 +204,6 @@
       "scrapeUrl": "Scrape",
       "persistJob": "Save",
       "matchResume": "Match",
-      "applyJob": "Apply",
       "autopilotRun": "Autopilot"
     }
   },
@@ -691,19 +689,15 @@
         "excludePlaceholder": "Praktikant, Junior"
       },
       "action": {
-        "title": "Was soll mit passenden Jobs passieren?",
-        "subtitle": "Wählen Sie, wie viel Automatisierung Sie wünschen.",
-        "saveOnly": "Nur speichern",
-        "saveOnlyDesc": "Sammeln Sie passende Jobs in Ihrer Liste. Sie überprüfen und bewerben sich manuell.",
-        "applyReview": "Bewerben & Überprüfen",
-        "applyReviewDesc": "Starten Sie die Bewerbung, stoppen Sie jedoch vor dem Absenden. Sie bestätigen jede.",
-        "autoApply": "Auto-Bewerbung",
-        "autoApplyDesc": "Senden Sie Bewerbungen automatisch. Vorsicht — kann nicht rückgängig gemacht werden.",
-        "coverLetter": "Anschreiben",
+        "title": "So bewerben Sie sich",
+        "subtitle": "Autopilot findet und bewertet passende Jobs und benachrichtigt Sie — Sie bewerben sich mit dem Anschreib-Assistenten.",
+        "flowFind": "Findet und bewertet Jobs, die zu Ihrer Suche passen, im von Ihnen gewählten Zeitplan.",
+        "flowNotify": "Zeigt neue Treffer in der Gefundene-Jobs-Liste an (und benachrichtigt Sie).",
+        "flowTailor": "Öffnen Sie einen Treffer und der Assistent passt Lebenslauf und Anschreiben dafür an — Sie senden die Bewerbung selbst. Autopilot bewirbt sich nie für Sie.",
+        "coverLetter": "Basis-Anschreiben",
         "coverLetterOptional": "(optional)",
-        "coverLetterPlaceholder": "Anschreiben für Bewerbungen hinzufügen…",
-        "autoSubmitWarning": "Auto-Absenden ist standardmäßig deaktiviert.",
-        "autoSubmitDesc": "Bewerbungen stoppen auf der finalen Überprüfungsseite. Aktivieren Sie nur, wenn Sie der Formularfüllgenauigkeit vertrauen."
+        "coverLetterHint": "Wird als Ausgangspunkt verwendet, den der Assistent an jeden Job anpasst.",
+        "coverLetterPlaceholder": "Basis-Anschreiben hinzufügen, das der Assistent pro Job anpasst…"
       },
       "schedule": {
         "title": "Wie oft soll dies laufen?",
@@ -720,7 +714,6 @@
         "summaryName": "Name",
         "summaryBoard": "Board",
         "summaryQuery": "Abfrage",
-        "summaryAction": "Aktion",
         "summarySchedule": "Zeitplan",
         "summaryMinScore": "Min. Bewertung"
       },
@@ -731,8 +724,7 @@
       "run": "Ausführen",
       "never": "Nie",
       "lastRun": "Letzte Ausführung:",
-      "found": "Gefunden",
-      "applied": "Beworben"
+      "found": "Gefunden"
     }
   },
   "dashboard": {
@@ -777,14 +769,14 @@
   "jobs": {
     "eyebrow": "Live-Anzeigen",
     "title": "Jobbörse",
-    "subtitle": "Gescrapte Job-Anzeigen von Ihren konfigurierten Boards. Filtern, ansehen und direkt bewerben.",
+    "subtitle": "Gescrapte Job-Anzeigen von Ihren konfigurierten Boards. Filtern, öffnen und Bewerbung anpassen.",
     "searchPlaceholder": "Nach Titel, Unternehmen, Ort suchen…",
     "empty": "Noch keine Anzeigen. Starten Sie einen Scrape, um dieses Board zu füllen.",
     "emptyCta": "Jobs suchen",
     "open": "Öffnen",
     "copyLink": "Link kopieren",
-    "apply": "Bewerben",
-    "applyNotSupported": "Bewerbung für dieses Board nicht unterstützt",
+    "tailor": "Anpassen",
+    "tailorHint": "Lebenslauf & Anschreiben für diesen Job anpassen und die Stellenanzeige öffnen",
     "scrapeJobs": "Jobs scrapen",
     "scrapeFailed": "Scraping fehlgeschlagen",
     "cancel": "Abbrechen",
@@ -866,23 +858,6 @@
       "in": "🇮🇳 Indien — in.indeed.com",
       "sg": "🇸🇬 Singapur — sg.indeed.com",
       "jp": "🇯🇵 Japan — jp.indeed.com"
-    },
-    "applyDrawer": {
-      "eyebrow": "Bewerben bei",
-      "warningTitle": "Verwenden Sie Ihre eigenen Konten und befolgen Sie die Nutzungsbedingungen jeder Plattform.",
-      "warningBody": "Automatisierter Zugriff kann eingeschränkt sein. Dieses Tool stoppt vor der finalen Einreichung zur Überprüfung.",
-      "coverLetter": "Anschreiben",
-      "coverLetterPlaceholder": "Optional: Ein benutzerdefiniertes Anschreiben hinzufügen…",
-      "autoSubmit": "Automatisch einreichen",
-      "autoSubmitHint": "Automatisch nach dem Ausfüllen von Formularen einreichen (mit Vorsicht verwenden)",
-      "steps": "Bewerbungsschritte",
-      "submitted": "Bewerbung eingereicht",
-      "reviewPending": "Überprüfung ausstehend",
-      "localized": "Lokalisiert",
-      "failed": "Fehlgeschlagen",
-      "cancel": "Abbrechen",
-      "running": "Läuft…",
-      "start": "Bewerbung starten"
     },
     "authHint": "Verbinde dein Konto in den Einstellungen für mehr Ergebnisse und bessere Genauigkeit.",
     "authHintLink": "Konto verbinden",

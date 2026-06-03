@@ -31,7 +31,6 @@ const L0: &[&str] = &[
 ];
 const L1: &[&str] = &[
     "scraping",
-    "applying",
     "extraction",
     "export",
     "documents",
@@ -56,7 +55,6 @@ const L2: &[&str] = &[
     "autopilot",
     "autopilot_scheduler",
     "autopilot_helpers",
-    "apply_helpers",
     "recommend",
 ];
 const L3: &[&str] = &["commands", "ipc_contracts", "main", "updater"];
@@ -234,7 +232,6 @@ fn r1_tauri_command_only_in_command_surfaces() {
 // Debt allowlist: modules that currently use `emit`/`AppHandle` for progress streaming
 // or resource resolution. Target: inject an emitter/resource port (TODO(arch)).
 const R2_ALLOW: &[&str] = &[
-    "apply_helpers/mod.rs",
     "autopilot_helpers/mod.rs",
     "autopilot_scheduler.rs",
     "conversations/mod.rs",
@@ -392,7 +389,6 @@ fn r6_no_stringly_result() {
 const R7_ALLOW: &[(&str, &str)] = &[
     // W-9: error's From<DomainError> impls reference these domain error enums.
     ("error", "extraction"),
-    ("error", "applying"),
     // W-1: ai_provider lives under commands/ today; consumers reach up until it is
     // relocated to a top-level module. autopilot_scheduler invokes the autopilot command.
     ("pipeline", "commands"),

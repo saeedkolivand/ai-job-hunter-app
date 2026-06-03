@@ -308,7 +308,7 @@ export async function generateCoverLetter(
   locale = 'en',
   signal?: AbortSignal,
   onThinking?: (tok: string) => void,
-  opts?: { researchCompany?: boolean; market?: string }
+  opts?: { researchCompany?: boolean; market?: string; baseCoverLetter?: string }
 ): Promise<string> {
   const providerConfig = usePreferencesStore.getState().aiProviderConfig;
   const activeProvider = providerConfig?.activeProvider ?? 'ollama';
@@ -333,7 +333,7 @@ export async function generateCoverLetter(
   const applicant = usePreferencesStore.getState().applicant;
 
   const system = buildCoverLetterSystemPrompt(mode, tier);
-  const user = buildCoverLetterPrompt(
+  let user = buildCoverLetterPrompt(
     resume,
     jobAd,
     meta,
@@ -343,6 +343,14 @@ export async function generateCoverLetter(
     market,
     applicant
   );
+  // Fold in the user's own base cover letter (the autopilot template) as a
+  // starting point — fenced as reference content, not an instruction, and to be
+  // adapted to THIS job rather than copied verbatim. It is the user's own text
+  // applied to their own generation, so it carries no cross-user injection risk.
+  const base = opts?.baseCoverLetter?.trim();
+  if (base) {
+    user += `\n\n--- BASE COVER LETTER (the candidate's reusable template — reuse its tone and any genuine details, but rewrite it to fit THIS job; do not copy verbatim) ---\n${base}\n--- END BASE COVER LETTER ---`;
+  }
   // Cover letters are prose: a little more temperature loosens the phrasing so it
   // reads human, not mechanical. Small models stay lower to limit drift.
   const temperature = tier === 'small' ? 0.4 : 0.55;

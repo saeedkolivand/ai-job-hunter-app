@@ -10,12 +10,9 @@ pub struct AutopilotCreateRequest {
     pub name: String,
     pub target: AutopilotCreateRequestTarget,
     pub filter: AutopilotCreateRequestFilter,
-    pub action: String,
     pub schedule: String,
     pub resume_text: Option<String>,
     pub cover_letter: Option<String>,
-    #[serde(default = "default_autopilot_create_request_auto_submit")]
-    pub auto_submit: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -48,11 +45,9 @@ pub struct AutopilotUpdateRequest {
     pub name: Option<String>,
     pub target: Option<AutopilotUpdateRequestTarget>,
     pub filter: Option<AutopilotUpdateRequestFilter>,
-    pub action: Option<String>,
     pub schedule: Option<String>,
     pub resume_text: Option<String>,
     pub cover_letter: Option<String>,
-    pub auto_submit: Option<bool>,
     pub status: Option<String>,
 }
 
@@ -77,10 +72,6 @@ pub struct AutopilotUpdateRequestFilter {
     pub min_match_score: f64,
     pub keywords: Option<Vec<String>>,
     pub exclude_keywords: Option<Vec<String>>,
-}
-
-fn default_autopilot_create_request_auto_submit() -> bool {
-    false
 }
 
 fn default_autopilot_create_request_target_pages() -> u32 {

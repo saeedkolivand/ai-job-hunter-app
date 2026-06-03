@@ -13,7 +13,6 @@ const KIND_SHORT: Record<string, string> = {
   'scrape.url': 'Scrape',
   'persist.job': 'Save',
   'match.resume': 'Match',
-  'apply.job': 'Apply',
   'autopilot.run': 'Autopilot',
 };
 
