@@ -122,6 +122,21 @@ export interface StructuredResume {
   warnings: string[];
 }
 
+/**
+ * A single identity field where the imported résumé's contact value conflicts
+ * with the saved contact profile (both non-empty, normalized values differ).
+ * The import never blocks on these — it still silently fills empty fields — but
+ * they are returned so the renderer can let the user resolve each one per-field.
+ * `field` is a stable key: `email`, `phone`, `fullName`, `linkedin`, `github`,
+ * `website`, or `location`. `current`/`suggested` are the original (un-normalized)
+ * values for faithful display.
+ */
+export interface ContactFieldConflict {
+  field: string;
+  current: string;
+  suggested: string;
+}
+
 /** Signals the recommender reads — a subset of the generation metadata. */
 export interface TemplateRecommendSignals {
   jobTitle?: string;
@@ -146,9 +161,13 @@ export interface TemplateRecommendation {
 export interface DocumentsContract {
   list(): Promise<DocumentRecord[]>;
 
-  import(
-    req: DocumentImportRequest
-  ): Promise<{ id: string; success: boolean; review?: StructuredResume }>;
+  import(req: DocumentImportRequest): Promise<{
+    id: string;
+    success: boolean;
+    review?: StructuredResume;
+    contactConflicts?: ContactFieldConflict[];
+    suggestedContact?: ContactProfile;
+  }>;
 
   /** Suggest a template + locale from the generation metadata signals. */
   recommendTemplate(req: TemplateRecommendSignals): Promise<TemplateRecommendation>;
