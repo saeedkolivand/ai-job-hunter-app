@@ -1,6 +1,6 @@
 import { AlertCircle, AlertTriangle, RefreshCw, ScanSearch, Sparkles, Zap } from 'lucide-react';
 
-import { Button, cn } from '@ajh/ui';
+import { Button, cn, SegmentedControl } from '@ajh/ui';
 
 import { JobAdField } from '@/components/job/JobAdField';
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
@@ -85,31 +85,17 @@ export function AnalyzeLeftPanel({
         <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
           Prompt Quality
         </div>
-        <div className="grid grid-cols-3 gap-1.5">
-          {(
-            [
-              { id: 'full' as PromptQuality, label: 'Full' },
-              { id: 'auto' as PromptQuality, label: 'Auto' },
-              { id: 'compact' as PromptQuality, label: 'Fast' },
-            ] as const
-          ).map(({ id, label }) => (
-            <Button
-              key={id}
-              variant="unstyled"
-              type="button"
-              onClick={() => setPromptQuality(id)}
-              className={cn(
-                'flex items-center justify-center gap-1 rounded-lg border py-1.5 text-[11px] font-medium transition-all',
-                promptQuality === id
-                  ? 'border-brand/40 bg-brand/10 text-brand-soft'
-                  : 'border-white/[0.06] bg-white/[0.02] text-foreground/45 hover:border-white/10 hover:text-foreground/70'
-              )}
-            >
-              {id === 'compact' && <Zap size={11} />}
-              {label}
-            </Button>
-          ))}
-        </div>
+        <SegmentedControl<PromptQuality>
+          variant="grid"
+          ariaLabel={t('ai.promptQuality')}
+          value={promptQuality}
+          onChange={setPromptQuality}
+          options={[
+            { value: 'full', label: 'Full' },
+            { value: 'auto', label: 'Auto' },
+            { value: 'compact', label: 'Fast', icon: Zap },
+          ]}
+        />
         {promptQuality === 'compact' && (
           <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
             <Zap size={11} className="text-amber-400 mt-0.5 shrink-0" />

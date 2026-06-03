@@ -2,7 +2,7 @@ import { Loader2, Sparkles, Wand2, X } from 'lucide-react';
 import { useState } from 'react';
 
 import type { AutopilotFoundJob } from '@ajh/shared';
-import { Button, cn, ModalShell } from '@ajh/ui';
+import { Button, ModalShell, SegmentedControl } from '@ajh/ui';
 
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
@@ -150,24 +150,12 @@ export function ApplyJobModal({ job, resumeText, board, onClose }: Props) {
 
           {/* Target + generate */}
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1 rounded-lg bg-white/[0.04] p-0.5">
-              {targets.map(({ id, label }) => (
-                <Button
-                  key={id}
-                  variant="unstyled"
-                  type="button"
-                  onClick={() => setTarget(id)}
-                  className={cn(
-                    'rounded-md px-3 py-1 text-[11px] font-medium transition-all',
-                    target === id
-                      ? 'bg-white/[0.08] text-foreground/90 shadow-sm'
-                      : 'text-foreground/40 hover:text-foreground/60'
-                  )}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
+            <SegmentedControl<TailorTarget>
+              ariaLabel={t('autopilot.apply.target.label')}
+              value={target}
+              onChange={setTarget}
+              options={targets.map(({ id, label }) => ({ value: id, label }))}
+            />
             <div className="flex items-center gap-2">
               {gen.generating && (
                 <Button

@@ -41,8 +41,9 @@ describe('OutputPanelDone — preview/edit', () => {
 
   it('switches to a raw textarea with markers intact (export source untouched)', () => {
     const { onOutputChange } = renderPanel();
-    // The toggle button's label resolves to "Edit" (or the raw i18n key) — both match.
-    fireEvent.click(screen.getByRole('button', { name: /edit/i }));
+    // The Preview/Edit switch is a SegmentedControl radio group; the "Edit" radio's
+    // accessible name resolves to "Edit" (or the raw i18n key) — both match.
+    fireEvent.click(screen.getByRole('radio', { name: /edit/i }));
 
     const textarea = screen.getByRole<HTMLTextAreaElement>('textbox');
     // Raw text — including the **payments** markers the export pipeline reads.

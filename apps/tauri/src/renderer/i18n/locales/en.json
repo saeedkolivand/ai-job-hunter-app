@@ -537,6 +537,7 @@
     "regenerate": "Regenerate",
     "preview": "Preview",
     "edit": "Edit",
+    "viewMode": "View mode",
     "placeholder": "Generated output will appear here…",
     "stages": {
       "analyzing": "Analyzing job requirements…",
@@ -626,6 +627,7 @@
         "copy": "Copy answer"
       },
       "target": {
+        "label": "Document type",
         "resume": "Resume",
         "cover": "Cover letter",
         "both": "Both"
@@ -914,6 +916,8 @@
       "noResume": "No resume generated",
       "noCoverLetter": "No cover letter generated",
       "export": "Export",
+      "format": "Export format",
+      "template": "Template",
       "exportResume": "Resume",
       "exportCoverLetter": "Cover Letter",
       "applied": "Applied",

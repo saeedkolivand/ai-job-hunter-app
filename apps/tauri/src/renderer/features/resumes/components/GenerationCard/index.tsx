@@ -17,7 +17,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
-import { Button, cn, transition } from '@ajh/ui';
+import { Button, cn, GlassCard, SegmentedControl, transition } from '@ajh/ui';
 
 import { ExternalLink } from '@/components/ui/ExternalLink';
 import {
@@ -110,7 +110,7 @@ export function GenerationCard({ gen }: GenerationCardProps) {
   };
 
   return (
-    <div className="glass-graphite glass-highlight rounded-xl overflow-hidden">
+    <GlassCard tone="graphite" className="rounded-xl overflow-hidden p-0">
       {/* Header */}
       <div className="flex items-center gap-4 p-4">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand/10">
@@ -200,43 +200,23 @@ export function GenerationCard({ gen }: GenerationCardProps) {
           </span>
 
           {/* Format picker */}
-          <div className="flex items-center gap-0.5 rounded-lg border border-white/[0.06] bg-white/[0.03] p-0.5">
-            {EXPORT_FORMATS.map((fmt) => (
-              <Button
-                key={fmt}
-                variant="unstyled"
-                onClick={() => setExportFormat(fmt)}
-                className={cn(
-                  'rounded-md px-2 py-0.5 text-[10px] uppercase tracking-wider transition-colors',
-                  exportFormat === fmt
-                    ? 'bg-white/10 text-foreground/80'
-                    : 'text-foreground/35 hover:text-foreground/60'
-                )}
-              >
-                {fmt}
-              </Button>
-            ))}
-          </div>
+          <SegmentedControl<ExportFormat>
+            ariaLabel={t('resumes.generated.format')}
+            size="sm"
+            value={exportFormat}
+            onChange={setExportFormat}
+            options={EXPORT_FORMATS.map((fmt) => ({ value: fmt, label: fmt.toUpperCase() }))}
+          />
 
           {/* Template picker — only for pdf/docx */}
           {exportFormat !== 'txt' && (
-            <div className="flex items-center gap-0.5 rounded-lg border border-white/[0.06] bg-white/[0.03] p-0.5">
-              {TEMPLATE_OPTIONS.map(({ id, label }) => (
-                <Button
-                  key={id}
-                  variant="unstyled"
-                  onClick={() => setExportTemplate(id)}
-                  className={cn(
-                    'rounded-md px-2 py-0.5 text-[10px] transition-colors',
-                    exportTemplate === id
-                      ? 'bg-white/10 text-foreground/80'
-                      : 'text-foreground/35 hover:text-foreground/60'
-                  )}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
+            <SegmentedControl<TemplateId>
+              ariaLabel={t('resumes.generated.template')}
+              size="sm"
+              value={exportTemplate}
+              onChange={setExportTemplate}
+              options={TEMPLATE_OPTIONS.map(({ id, label }) => ({ value: id, label }))}
+            />
           )}
 
           <div className="flex items-center gap-1 ml-auto">
@@ -390,6 +370,6 @@ export function GenerationCard({ gen }: GenerationCardProps) {
           </AnimatePresence>
         </div>
       )}
-    </div>
+    </GlassCard>
   );
 }

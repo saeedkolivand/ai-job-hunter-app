@@ -2,7 +2,7 @@ import { Check, Copy, Download, Eye, FileText, Pencil, RotateCcw } from 'lucide-
 import { motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 
-import { Button, cn, MarkdownMessage, TextArea } from '@ajh/ui';
+import { Button, cn, MarkdownMessage, SegmentedControl, TextArea } from '@ajh/ui';
 
 import { buildFilename, type GenerationMeta, MODES, type TemplateId } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
@@ -118,32 +118,18 @@ export function OutputPanelDone({
 
       {/* Output — prettified Preview or raw Edit (display-only; export uses the raw text) */}
       <div className="flex flex-1 flex-col overflow-hidden px-6 py-4">
-        <div className="mb-2 flex shrink-0 items-center gap-0.5 self-end rounded-lg bg-white/[0.04] p-0.5">
-          <Button
-            variant="unstyled"
-            onClick={() => setView('preview')}
-            className={cn(
-              'flex items-center gap-1 rounded px-2 py-1 text-[10px] transition-colors',
-              view === 'preview'
-                ? 'bg-brand/15 text-brand-soft'
-                : 'text-foreground/45 hover:text-foreground/70'
-            )}
-          >
-            <Eye size={11} /> {t('aiGenerate.preview')}
-          </Button>
-          <Button
-            variant="unstyled"
-            onClick={() => setView('edit')}
-            className={cn(
-              'flex items-center gap-1 rounded px-2 py-1 text-[10px] transition-colors',
-              view === 'edit'
-                ? 'bg-brand/15 text-brand-soft'
-                : 'text-foreground/45 hover:text-foreground/70'
-            )}
-          >
-            <Pencil size={11} /> {t('aiGenerate.edit')}
-          </Button>
-        </div>
+        <SegmentedControl<'preview' | 'edit'>
+          ariaLabel={t('aiGenerate.viewMode')}
+          size="sm"
+          tone="brand"
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'preview', label: t('aiGenerate.preview'), icon: Eye },
+            { value: 'edit', label: t('aiGenerate.edit'), icon: Pencil },
+          ]}
+          className="mb-2 shrink-0 self-end"
+        />
 
         {view === 'edit' ? (
           <TextArea
