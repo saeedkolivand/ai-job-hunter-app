@@ -9,15 +9,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 
-import {
-  Button,
-  cn,
-  GlassCard,
-  IconBadge,
-  MarkdownMessage,
-  RefreshButton,
-  SectionLabel,
-} from '@ajh/ui';
+import { Button, cn, MarkdownMessage, RefreshButton, SettingsSection } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { useAppVersion, useOpenExternal } from '@/services';
@@ -55,12 +47,7 @@ export function UpdateSection() {
     'https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/latest';
 
   return (
-    <GlassCard>
-      <div className="mb-4 flex items-center gap-2">
-        <IconBadge icon={Sparkles} size="sm" />
-        <SectionLabel>{t('settings.update.title')}</SectionLabel>
-      </div>
-
+    <SettingsSection icon={Sparkles} label={t('settings.update.title')}>
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs text-foreground/50">{t('settings.update.currentVersion')}</p>
@@ -225,6 +212,6 @@ export function UpdateSection() {
           </div>
         )}
       </div>
-    </GlassCard>
+    </SettingsSection>
   );
 }
