@@ -579,6 +579,9 @@
     "collapse": "Einklappen",
     "viewJob": "Anzeige öffnen",
     "applyJob": "Bewerben",
+    "delete": "Löschen",
+    "deleteTitle": "Diesen Autopilot löschen?",
+    "deleteDescription": "Dies stoppt den Zeitplan und entfernt den Autopilot und seinen Verlauf gefundener Jobs dauerhaft.",
     "badge": {
       "new": "Neu",
       "applied": "Beworben"
@@ -907,6 +910,9 @@
       "exportCoverLetter": "Anschreiben",
       "applied": "Beworben",
       "openPosting": "Anzeige öffnen",
+      "delete": "Löschen",
+      "deleteTitle": "Dieses Dokument löschen?",
+      "deleteDescription": "Dies entfernt den generierten Lebenslauf und das Anschreiben dauerhaft. Dies kann nicht rückgängig gemacht werden.",
       "companyResearch": "Unternehmensrecherche",
       "applicationAnswers": "Bewerbungsantworten"
     },
