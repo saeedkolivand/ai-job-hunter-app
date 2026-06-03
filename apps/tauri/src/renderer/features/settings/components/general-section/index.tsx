@@ -1,6 +1,6 @@
 import { Languages, Power, User, Wand2 } from 'lucide-react';
 
-import { Button, cn, GlassCard, IconBadge, Input, SectionLabel } from '@ajh/ui';
+import { Button, cn, Input, SettingsSection } from '@ajh/ui';
 
 import { AppearanceCard } from '@/features/settings/components/general-section/AppearanceCard';
 import { LanguageSelector } from '@/features/settings/components/shared/LanguageSelector';
@@ -32,11 +32,7 @@ export function GeneralSection({
 
   return (
     <>
-      <GlassCard>
-        <div className="mb-4 flex items-center gap-2">
-          <IconBadge icon={User} size="sm" />
-          <SectionLabel>{t('settings.profile.title')}</SectionLabel>
-        </div>
+      <SettingsSection icon={User} label={t('settings.profile.title')}>
         <div className="space-y-3">
           <label className="block">
             <div className="mb-1.5 text-[11px] font-medium text-foreground/50">
@@ -63,23 +59,15 @@ export function GeneralSection({
             </div>
           </label>
         </div>
-      </GlassCard>
+      </SettingsSection>
 
-      <GlassCard>
-        <div className="mb-4 flex items-center gap-2">
-          <IconBadge icon={Languages} size="sm" />
-          <SectionLabel>{t('settings.language.title')}</SectionLabel>
-        </div>
+      <SettingsSection icon={Languages} label={t('settings.language.title')}>
         <LanguageSelector />
-      </GlassCard>
+      </SettingsSection>
 
       <AppearanceCard />
 
-      <GlassCard>
-        <div className="mb-4 flex items-center gap-2">
-          <IconBadge icon={Wand2} size="sm" />
-          <SectionLabel>{t('settings.onboarding.title')}</SectionLabel>
-        </div>
+      <SettingsSection icon={Wand2} label={t('settings.onboarding.title')}>
         <div className="flex items-center justify-between">
           <p className="text-xs text-foreground/45">{t('settings.onboarding.description')}</p>
           <Button
@@ -92,13 +80,9 @@ export function GeneralSection({
             {t('settings.onboarding.replay')}
           </Button>
         </div>
-      </GlassCard>
+      </SettingsSection>
 
-      <GlassCard>
-        <div className="mb-4 flex items-center gap-2">
-          <IconBadge icon={Power} size="sm" />
-          <SectionLabel>{t('settings.startup.title')}</SectionLabel>
-        </div>
+      <SettingsSection icon={Power} label={t('settings.startup.title')}>
         <Button
           variant="unstyled"
           type="button"
@@ -140,7 +124,7 @@ export function GeneralSection({
             />
           </div>
         </Button>
-      </GlassCard>
+      </SettingsSection>
 
       <UpdateSection />
     </>

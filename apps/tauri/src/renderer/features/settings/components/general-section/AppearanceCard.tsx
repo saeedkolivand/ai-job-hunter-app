@@ -7,9 +7,7 @@ import {
   cn,
   type ColorScheme,
   getThemePrefs,
-  GlassCard,
-  IconBadge,
-  SectionLabel,
+  SettingsSection,
   type TextScale,
   type ThemePrefs,
 } from '@ajh/ui';
@@ -78,12 +76,7 @@ export function AppearanceCard() {
   };
 
   return (
-    <GlassCard>
-      <div className="mb-4 flex items-center gap-2">
-        <IconBadge icon={Palette} size="sm" />
-        <SectionLabel>{t('settings.appearance.title')}</SectionLabel>
-      </div>
-
+    <SettingsSection icon={Palette} label={t('settings.appearance.title')}>
       <div className="space-y-4">
         <div>
           <div className="mb-2 text-xs font-medium text-foreground/55">
@@ -163,6 +156,6 @@ export function AppearanceCard() {
           onChange={(v) => update({ contrast: v ? 'more' : 'normal' })}
         />
       </div>
-    </GlassCard>
+    </SettingsSection>
   );
 }

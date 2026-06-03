@@ -355,10 +355,12 @@
       "saveError": "Schlüssel konnte nicht gespeichert werden."
     },
     "accounts": {
+      "boardsTitle": "Jobbörsen-Konten",
       "credentialsWarning": "Anmeldedaten werden lokal verschlüsselt auf Ihrem Gerät gespeichert. Sie werden niemals an einen Server gesendet.",
       "noEncryptionWarning": "Sichere Speicherung von Anmeldedaten ist auf diesem System nicht verfügbar. Anmeldedaten können nicht gespeichert werden."
     },
     "privacy": {
+      "dataTitle": "Ihre Daten",
       "exportData": "Daten exportieren",
       "exportDataDescription": "Speichern Sie Ihre beworbenen, angesehenen und gespeicherten Jobs in einer JSON-Datei.",
       "export": "Exportieren",

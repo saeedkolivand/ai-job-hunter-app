@@ -1,7 +1,7 @@
 import { Check, Eye, EyeOff, Key, Loader2, Search, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, GlassCard, IconBadge, Input, SectionLabel, useNotification } from '@ajh/ui';
+import { Button, Input, SettingsSection, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import {
@@ -56,12 +56,7 @@ export function CompanyResearchSettings() {
   };
 
   return (
-    <GlassCard>
-      <div className="mb-3 flex items-center gap-2">
-        <IconBadge icon={Search} size="sm" />
-        <SectionLabel>{t('settings.companyResearch.title')}</SectionLabel>
-      </div>
-
+    <SettingsSection icon={Search} label={t('settings.companyResearch.title')}>
       <p className="mb-3 text-xs leading-relaxed text-foreground/50">
         {t('settings.companyResearch.description')}
       </p>
@@ -131,6 +126,6 @@ export function CompanyResearchSettings() {
           </div>
         </div>
       )}
-    </GlassCard>
+    </SettingsSection>
   );
 }

@@ -1,7 +1,7 @@
-import { Download, LogOut, RotateCcw, Trash2, Upload } from 'lucide-react';
+import { Download, LogOut, RotateCcw, Shield, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
 
-import { ConfirmModal, useNotification } from '@ajh/ui';
+import { ConfirmModal, SettingsSection, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import {
@@ -193,9 +193,13 @@ export function PrivacySettingsTab() {
 
   return (
     <div className="space-y-3">
-      {cards.map(({ key, ...card }) => (
-        <ActionCard key={key} {...card} />
-      ))}
+      <SettingsSection icon={Shield} label={t('settings.privacy.dataTitle')}>
+        <div className="space-y-3">
+          {cards.map(({ key, ...card }) => (
+            <ActionCard key={key} {...card} />
+          ))}
+        </div>
+      </SettingsSection>
 
       {/* ── Danger Zone ─────────────────────────────────────────────── */}
       <div className="mt-2 rounded-xl border border-rose-700/40 bg-rose-950/20 p-3">
