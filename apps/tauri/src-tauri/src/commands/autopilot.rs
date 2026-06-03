@@ -203,16 +203,41 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     });
 
     let scored_count = found_jobs.iter().filter(|f| f.score.is_some()).count();
+
+    // Honour the autopilot's minimum match score: drop postings we *could*
+    // score that fell below the bar. Unscored postings (no resume set, or no
+    // description to compare) are always kept — the threshold only filters jobs
+    // we were actually able to rank. Until now `minMatchScore` was dead config.
+    let threshold = filter.min_match_score;
+    found_jobs.retain(|j| passes_min_score(j, threshold));
+    let kept = found_jobs.len();
+    let dropped = total_found - kept;
+
     emit_step(
         &app,
         &job_id,
         "rank_done",
-        &format!("Scored {scored_count} of {total_found} jobs"),
+        &format!(
+            "Scored {scored_count}/{total_found}; kept {kept} at or above {threshold:.0}% (dropped {dropped})"
+        ),
     );
+
+    // Bail cleanly if the run was cancelled (tray/UI) any time before we commit
+    // — don't record results or fire a "new jobs" notification for an aborted
+    // run. `cancel(job_id)` flips the token this run registered (engine reuses,
+    // not overwrites, the slot), so cancels during scrape land here too.
+    if cancel_token.is_cancelled() {
+        engine.unregister_token(&job_id).await;
+        app.state::<Mutex<crate::jobs::JobTracker>>()
+            .lock()
+            .cancel(&job_id);
+        span.end_with("cancelled before recording results", false);
+        return json!({ "jobId": job_id, "cancelled": true });
+    }
 
     let new_count = store(&app)
         .lock()
-        .record_run(&autopilot_id, total_found as u32, 0, found_jobs);
+        .record_run(&autopilot_id, kept as u32, 0, found_jobs);
 
     // Surface genuinely-new finds while the user is away: a permission-gated
     // notification + a "New jobs: N" tray counter that jumps back to this run.
@@ -222,17 +247,17 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
 
     app.state::<Mutex<crate::jobs::JobTracker>>()
         .lock()
-        .complete(&job_id, json!({ "found": total_found, "applied": 0 }));
+        .complete(&job_id, json!({ "found": kept, "applied": 0 }));
 
     emit_step(
         &app,
         &job_id,
         "complete",
-        &format!("Found {total_found}, saved for review"),
+        &format!("Found {kept}, saved for review"),
     );
 
-    span.end_with(&format!("found={total_found} applied=0"), true);
-    json!({ "jobId": job_id, "found": total_found, "applied": 0 })
+    span.end_with(&format!("found={kept} applied=0"), true);
+    json!({ "jobId": job_id, "found": kept, "applied": 0 })
 }
 
 #[tauri::command]
@@ -289,6 +314,13 @@ fn matches_keyword_filters(posting: &JobPosting, filter: &AutopilotFilter) -> bo
     }
 
     true
+}
+
+/// Whether a found job clears the autopilot's `min_match_score`. Postings we
+/// could not score (no resume set, or no description to compare against) carry
+/// no score and are always kept — the threshold only gates rankable jobs.
+fn passes_min_score(job: &FoundJob, min_match_score: f64) -> bool {
+    job.score.is_none_or(|s| s >= min_match_score)
 }
 
 /// Word-overlap (Jaccard) similarity of a resume and a job description, scaled to
@@ -402,5 +434,33 @@ mod tests {
         assert_eq!(simple_similarity("rust", "java"), 0.0);
         let partial = simple_similarity("rust kubernetes", "rust docker");
         assert!(partial > 0.0 && partial < 100.0);
+    }
+
+    fn found(score: Option<f64>) -> FoundJob {
+        FoundJob {
+            title: "t".into(),
+            company: "c".into(),
+            url: "https://example.com/job".into(),
+            location: None,
+            description: None,
+            score,
+            found_at: 0,
+            is_new: false,
+            applied: false,
+        }
+    }
+
+    #[test]
+    fn min_score_gate_keeps_at_or_above_threshold() {
+        assert!(passes_min_score(&found(Some(80.0)), 50.0));
+        assert!(passes_min_score(&found(Some(50.0)), 50.0)); // boundary is inclusive
+        assert!(!passes_min_score(&found(Some(49.9)), 50.0));
+    }
+
+    #[test]
+    fn min_score_gate_keeps_unscored_jobs() {
+        // No resume / no description → no score → never filtered out by the gate.
+        assert!(passes_min_score(&found(None), 50.0));
+        assert!(passes_min_score(&found(None), 100.0));
     }
 }
