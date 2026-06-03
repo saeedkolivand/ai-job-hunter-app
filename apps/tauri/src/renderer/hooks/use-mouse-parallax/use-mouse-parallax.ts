@@ -1,22 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 /**
- * Tracks pointer position as normalized [-1..1] values relative to viewport center.
- * Returns x, y values and a CSS-var binder for `--mx` / `--my` percentages.
+ * Ref-based mouse parallax. Attach the returned ref to a container element; on
+ * pointer movement the hook writes the normalized pointer offset (each axis in
+ * `[-1..1]`, relative to viewport centre) to the CSS custom properties
+ * `--parallax-x` / `--parallax-y` on that element — directly, via RAF-throttled
+ * DOM mutation, with **no React state and no re-renders**.
  *
- * Use cases:
- *  - `transform: translate3d(calc(x * 30px), calc(y * 20px), 0)` for parallax orbs
- *  - `<div style={mouseVars}>` to drive `.bg-mouse-reactive`
+ * Children consume the vars in CSS, e.g.:
+ *   `transform: translate3d(calc(var(--parallax-x) * 30px), calc(var(--parallax-y) * 20px), 0)`
  */
-export function useMouseParallax(): {
-  x: number;
-  y: number;
-  mouseVars: { '--mx': string; '--my': string };
-} {
-  const [pos, setPos] = useState({ x: 0, y: 0 });
+export function useMouseParallax<T extends HTMLElement = HTMLDivElement>() {
+  const ref = useRef<T>(null);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    const el = ref.current;
+    if (!el || typeof window === 'undefined') return;
 
     let frame = 0;
     const onMove = (e: PointerEvent) => {
@@ -24,10 +23,12 @@ export function useMouseParallax(): {
       frame = requestAnimationFrame(() => {
         const x = (e.clientX / window.innerWidth) * 2 - 1;
         const y = (e.clientY / window.innerHeight) * 2 - 1;
-        setPos({ x, y });
+        el.style.setProperty('--parallax-x', x.toFixed(4));
+        el.style.setProperty('--parallax-y', y.toFixed(4));
         frame = 0;
       });
     };
+
     window.addEventListener('pointermove', onMove, { passive: true });
     return () => {
       window.removeEventListener('pointermove', onMove);
@@ -35,10 +36,5 @@ export function useMouseParallax(): {
     };
   }, []);
 
-  const mouseVars = {
-    '--mx': `${((pos.x + 1) / 2) * 100}%`,
-    '--my': `${((pos.y + 1) / 2) * 100}%`,
-  };
-
-  return { x: pos.x, y: pos.y, mouseVars };
+  return ref;
 }
