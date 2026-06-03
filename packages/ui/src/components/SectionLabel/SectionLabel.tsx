@@ -17,7 +17,7 @@ export function SectionLabel({ icon: Icon, children, className }: SectionLabelPr
   return (
     <div
       className={cn(
-        'flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-foreground/40',
+        'flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-foreground/55',
         className
       )}
     >

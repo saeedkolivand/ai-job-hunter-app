@@ -1,24 +1,24 @@
 # Homebrew cask for AI Job Hunter Assistant.
 #
-# STATUS: ready to use *once the release pipeline publishes signed installers*.
-# Today the GitHub releases carry version tags but no build artifacts, so there
-# is no `.dmg` for Homebrew to download yet. To make this live:
-#   1. Have the release workflow build + attach the macOS `.dmg`s to each GitHub
-#      release (Tauri names them "AI Job Hunter Assistant_<version>_<arch>.dmg").
-#   2. Either pin `sha256` per release (recommended — e.g. via `brew bump-cask-pr`
-#      in CI) or keep `sha256 :no_check` for unverified installs.
-#   3. Publish this file in a tap so users can `brew install --cask ai-job-hunter`
-#      (a dedicated `saeedkolivand/homebrew-tap` repo, or tap this repo directly).
+# Releases ship signed macOS .dmg artifacts, so this cask is installable. The
+# repo doubles as its own tap (it has this Casks/ directory):
+#   brew tap saeedkolivand/ai-job-hunter-assistant-app https://github.com/saeedkolivand/ai-job-hunter-assistant-app
+#   brew install --cask ai-job-hunter
 #
-# Until artifacts exist, `brew` will fail to fetch — that's expected.
+# Maintenance:
+#   • Keep `version` in sync with the latest GitHub release tag — CI can run
+#     `brew bump-cask-pr`. The dmg assets are named
+#     "AI-Job-Hunter-Assistant_<version>_<arch>.dmg".
+#   • `sha256 :no_check` skips hash verification; pin per-arch shas for a
+#     verified install once they are published with the release.
 
 cask "ai-job-hunter" do
-  version "0.47.0"
-  sha256 :no_check # TODO: pin the per-release .dmg sha256 once builds are published
+  version "0.52.0"
+  sha256 :no_check # TODO: pin per-arch .dmg sha256 for verified installs
 
-  arch arm: "aarch64", intel: "x64"
+  arch arm: "aarch64-apple-silicon", intel: "x64-intel"
 
-  url "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v#{version}/AI%20Job%20Hunter%20Assistant_#{version}_#{arch}.dmg",
+  url "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v#{version}/AI-Job-Hunter-Assistant_#{version}_#{arch}.dmg",
       verified: "github.com/saeedkolivand/ai-job-hunter-assistant-app/"
   name "AI Job Hunter Assistant"
   desc "Local-first, AI-native desktop assistant for job searching and applications"
