@@ -76,6 +76,25 @@ export function applyTheme(prefs: ThemePrefs): void {
   }
 }
 
+/**
+ * Apply prefs with a smooth full-page crossfade (View Transition API) when it's
+ * supported, so switching scheme — especially dark→light — eases instead of
+ * snapping (no "flashbang"). Falls back to an instant apply where the API is
+ * unavailable or the user prefers reduced motion. Use for user-initiated
+ * changes; boot and OS-driven re-applies stay instant.
+ */
+export function applyThemeAnimated(prefs: ThemePrefs): void {
+  const doc = document as Document & {
+    startViewTransition?: (callback: () => void) => unknown;
+  };
+  const reduceMotion = mq('(prefers-reduced-motion: reduce)')?.matches ?? false;
+  if (typeof doc.startViewTransition === 'function' && !reduceMotion) {
+    doc.startViewTransition(() => applyTheme(prefs));
+  } else {
+    applyTheme(prefs);
+  }
+}
+
 /** Read persisted prefs, migrating the legacy string format. */
 export function getThemePrefs(): ThemePrefs {
   try {

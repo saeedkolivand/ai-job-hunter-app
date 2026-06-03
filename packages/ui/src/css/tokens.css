@@ -148,30 +148,51 @@
  * <html> by the theme engine (lib/theme.ts).
  * ───────────────────────────────────────────────────────────────────────── */
 [data-color-scheme='light'] {
-  /* Semantic palette (OKLCH) */
-  --color-background: oklch(96% 0.4% 255);
-  --color-foreground: oklch(26% 2% 262);
-  --color-card: oklch(99% 0.3% 255);
-  --color-card-foreground: oklch(26% 2% 262);
-  --color-popover: oklch(99% 0.3% 255);
-  --color-popover-foreground: oklch(26% 2% 262);
-  --color-secondary: oklch(94% 0.6% 258);
-  --color-secondary-foreground: oklch(30% 2% 262);
-  --color-muted: oklch(94% 0.6% 258);
-  --color-muted-foreground: oklch(47% 1.5% 262);
-  --color-border: oklch(89% 0.8% 258);
-  --color-input: oklch(89% 0.8% 258);
+  /* ── Semantic palette (OKLCH) ──────────────────────────────────────────
+     macOS System Settings model: the canvas is a COOL LIGHT GRAY (not white),
+     so the near-opaque white cards float above it with real separation. White
+     cards on a white canvas were the "flashbang" — a bright wall with nothing
+     lifting off it. Primary text is near-black for crisp, native legibility. */
+  --color-background: oklch(90.5% 1.2% 264); /* #E4E7EF — present cool gray canvas */
+  --color-foreground: oklch(24% 0.8% 280); /* #1D1D20 — near-black label */
+  --color-card: oklch(98.5% 0.2% 270); /* soft off-white card (not stark pure white) */
+  --color-card-foreground: oklch(24% 0.8% 280);
+  --color-popover: oklch(99.5% 0.15% 270);
+  --color-popover-foreground: oklch(24% 0.8% 280);
+  --color-secondary: oklch(94% 0.6% 264);
+  --color-secondary-foreground: oklch(28% 0.8% 280);
+  --color-muted: oklch(94% 0.6% 264);
+  --color-muted-foreground: oklch(46% 1.4% 275); /* ~#5C5F69 secondary text */
+  --color-border: oklch(88% 1% 264);
+  --color-input: oklch(88% 1% 264);
 
-  /* Glass material — light substrate, ink hairline, brighter specular + more
-     saturation so the frost still feels alive on a light canvas. */
-  --glass-rgb: 255 255 255;
-  --glass-alpha-card: 0.62;
-  --glass-alpha-surface: 0.7;
-  --glass-alpha-elevated: 0.8;
-  --glass-alpha-dropdown: 0.85;
-  --glass-alpha-modal: 0.9;
+  /* Accent deepened for light: the bright #A855F7 washes out on white and
+     small accent text fails contrast, so brand/primary/accent/ring step down
+     to ~#7C3AED (still the same violet family, just legible on white). */
+  --color-brand: #7c3aed;
+  --color-brand-soft: #8b5cf6;
+  --color-brand-dim: oklch(50% 58% 285 / 0.12);
+  --color-primary: oklch(50% 58% 285);
+  --color-primary-foreground: oklch(99% 0.15% 270);
+  --color-accent: oklch(50% 58% 285);
+  --color-accent-foreground: oklch(99% 0.15% 270);
+  --color-ring: oklch(50% 58% 285);
+
+  /* Status colors retuned deeper so they read solid (not neon) on white. */
+  --color-destructive: oklch(52% 48% 25);
+  --color-destructive-foreground: oklch(99% 0.15% 270);
+
+  /* Glass material — white substrate; content cards near-opaque (crisp white),
+     ink hairlines, soft specular. (The sidebar/chrome two-tone is handled by a
+     light-only override in utilities.css, not by inverting the ladder.) */
+  --glass-rgb: 250 251 253; /* soft off-white substrate — calmer than pure 255 */
+  --glass-alpha-card: 0.85;
+  --glass-alpha-surface: 0.88;
+  --glass-alpha-elevated: 0.93;
+  --glass-alpha-dropdown: 0.92;
+  --glass-alpha-modal: 0.95;
   --glass-sat: var(--sat-high);
-  --glass-specular: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --glass-specular: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 
   /* Border veils flip white→ink so glass edges and dividers stay visible. */
   --border-faint: rgba(15, 20, 40, 0.05);
@@ -180,18 +201,19 @@
   --border-mid: rgba(15, 20, 40, 0.13);
   --border-clear: rgba(15, 20, 40, 0.16);
 
-  /* Soft, color-tinted shadows — heavy black shadows look dirty on light. */
-  --shadow-sm: 0 2px 8px oklch(50% 6% 270 / 0.08);
-  --shadow-md: 0 4px 16px oklch(50% 6% 270 / 0.1);
-  --shadow-lg: 0 8px 24px oklch(50% 6% 270 / 0.12);
-  --shadow-xl: 0 16px 48px oklch(45% 8% 270 / 0.16);
+  /* Soft, color-tinted shadows — heavy black shadows look dirty on light.
+     A hair stronger than before so white cards lift off the gray canvas. */
+  --shadow-sm: 0 1px 2px oklch(50% 6% 270 / 0.06), 0 2px 8px oklch(50% 6% 270 / 0.08);
+  --shadow-md: 0 2px 4px oklch(50% 6% 270 / 0.06), 0 6px 16px oklch(50% 6% 270 / 0.1);
+  --shadow-lg: 0 4px 8px oklch(50% 6% 270 / 0.07), 0 12px 28px oklch(50% 6% 270 / 0.12);
+  --shadow-xl: 0 8px 16px oklch(45% 8% 270 / 0.08), 0 20px 48px oklch(45% 8% 270 / 0.16);
   --shadow-2xl: 0 24px 60px -30px oklch(40% 8% 270 / 0.28);
   --shadow-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 
   /* Softer glows on a bright canvas. */
-  --glow-brand-sm: 0 0 20px rgba(168, 85, 247, 0.1);
-  --glow-brand-md: 0 0 36px rgba(168, 85, 247, 0.18);
-  --glow-blue-md: 0 0 36px rgba(99, 102, 241, 0.18);
+  --glow-brand-sm: 0 0 20px rgba(124, 58, 237, 0.08);
+  --glow-brand-md: 0 0 36px rgba(124, 58, 237, 0.14);
+  --glow-blue-md: 0 0 36px rgba(79, 70, 229, 0.14);
 
   /* Pastel the cinematic aurora so the light canvas stays calm and readable. */
   --aurora-violet: #c9b1f7;

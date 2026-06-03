@@ -2,7 +2,7 @@ import { Monitor, Moon, Palette, Sun } from 'lucide-react';
 import { useState } from 'react';
 
 import {
-  applyTheme,
+  applyThemeAnimated,
   Button,
   cn,
   type ColorScheme,
@@ -66,7 +66,7 @@ export function AppearanceCard() {
   const update = (patch: Partial<ThemePrefs>) => {
     const next = { ...prefs, ...patch };
     setPrefs(next);
-    applyTheme(next);
+    applyThemeAnimated(next);
   };
 
   return (

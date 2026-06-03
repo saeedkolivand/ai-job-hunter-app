@@ -3,6 +3,7 @@ export { cn } from './lib/cn';
 export * from './lib/motion';
 export {
   applyTheme,
+  applyThemeAnimated,
   type ColorScheme,
   type ContrastPref,
   DEFAULT_THEME_PREFS,

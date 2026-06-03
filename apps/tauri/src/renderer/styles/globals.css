@@ -35,11 +35,13 @@ html[data-color-scheme='light'] body,
 html[data-color-scheme='light'] #root {
   color-scheme: light;
 }
+/* Cool light-gray canvas (macOS System Settings), NOT near-white — white cards
+   must lift off it. Top is a touch lighter for a soft overhead-light feel. */
 html[data-color-scheme='light'] body {
-  background: radial-gradient(ellipse at 50% 0%, #f6f3fc 0%, #eef0f8 55%, #e8eaf3 100%);
+  background: radial-gradient(ellipse at 50% 0%, #eceef5 0%, #e4e7ef 55%, #dce0ea 100%);
 }
 html[data-color-scheme='light'][data-performance-mode='low-memory'] body {
-  background: #eef0f8;
+  background: #e4e7ef;
 }
 
 /* ── Modal background blur ───────────────────────────────────────────────── */
@@ -62,6 +64,13 @@ body[data-modal-open] .app-content {
     0 32px 80px rgba(0, 0, 0, 0.6),
     0 0 0 1px rgba(168, 85, 247, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+html[data-color-scheme='light'] .onboarding-glass-modal {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.98) 0%, rgba(247, 248, 252, 0.98) 100%);
+  box-shadow:
+    0 32px 80px oklch(45% 8% 270 / 0.18),
+    0 0 0 1px rgba(124, 58, 237, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 /* ── Low-memory mode ─────────────────────────────────────────────────────── */
