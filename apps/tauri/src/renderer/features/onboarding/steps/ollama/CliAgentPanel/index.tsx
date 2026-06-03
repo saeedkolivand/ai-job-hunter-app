@@ -75,8 +75,9 @@ export function CliAgentPanel({ selectedProvider, onProviderChange }: CliAgentPa
           const isSelected = selectedProvider === a.id;
           const isDetected = cliAgents[a.id]?.detected ?? false;
           return (
-            <button
+            <Button
               key={a.id}
+              variant="unstyled"
               onClick={() => onProviderChange(a.id)}
               className={`flex w-full items-center gap-3 rounded-xl border px-4 py-2.5 text-left transition-all duration-150 ${
                 isSelected
@@ -103,7 +104,7 @@ export function CliAgentPanel({ selectedProvider, onProviderChange }: CliAgentPa
                   </span>
                 )}
               </span>
-            </button>
+            </Button>
           );
         })}
       </div>

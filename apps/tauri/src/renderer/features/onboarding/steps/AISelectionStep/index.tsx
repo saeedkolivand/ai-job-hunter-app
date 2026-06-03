@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { getRecommended } from '@ajh/shared';
-import { Button, FloatingIcon } from '@ajh/ui';
+import { Button, FloatingIcon, withDelay } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { useAIModels, useSystemHealth, useSystemResources } from '@/services';
@@ -48,10 +48,7 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
 
   const { data: health, isLoading: healthLoading } = useSystemHealth();
   const { data: modelsRaw } = useAIModels();
-  const models = useMemo(
-    () => (modelsRaw as Array<{ name: string }> | undefined) ?? [],
-    [modelsRaw]
-  );
+  const models = useMemo(() => modelsRaw ?? [], [modelsRaw]);
 
   const ollamaReady = health?.ai.ready ?? false;
   const cliDetected = health?.cliAgents?.[cliProvider]?.detected ?? false;
@@ -114,8 +111,8 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
   };
 
   const handleRecheck = () => {
-    queryClient.invalidateQueries({ queryKey: keys.system.health });
-    queryClient.invalidateQueries({ queryKey: keys.ai.models });
+    void queryClient.invalidateQueries({ queryKey: keys.system.health });
+    void queryClient.invalidateQueries({ queryKey: keys.ai.models });
   };
 
   const canContinue =
@@ -143,7 +140,7 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
       <motion.div
         initial={{ y: 10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.1 }}
+        transition={withDelay(0.1)}
         className="mb-5 text-center"
       >
         <h1 className="mb-2 text-xl font-semibold text-foreground/95">
@@ -159,7 +156,7 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
       <motion.div
         initial={{ y: 10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.2 }}
+        transition={withDelay(0.2)}
         layout
         className="overflow-hidden"
       >
@@ -213,7 +210,7 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
       <motion.div
         initial={{ y: 10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.15 }}
+        transition={withDelay(0.15)}
         className="flex items-center gap-3"
       >
         <Button variant="ghost" size="sm" onClick={onBack} className="flex items-center gap-1.5">

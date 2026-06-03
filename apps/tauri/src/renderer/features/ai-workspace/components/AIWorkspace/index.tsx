@@ -1,6 +1,6 @@
 import { AlertTriangle, Sparkles, Zap } from 'lucide-react';
 
-import { cn } from '@ajh/ui';
+import { Button, cn } from '@ajh/ui';
 
 import { ModelSelector, useSelectedModel } from '@/components/ui/ModelSelector';
 import { useTranslation } from '@/lib/i18n';
@@ -53,8 +53,9 @@ export function AIWorkspace() {
               { id: 'compact' as PromptQuality, label: 'Fast' },
             ] as const
           ).map(({ id, label }) => (
-            <button
+            <Button
               key={id}
+              variant="unstyled"
               type="button"
               onClick={() => setPromptQuality(id)}
               className={cn(
@@ -66,7 +67,7 @@ export function AIWorkspace() {
             >
               {id === 'compact' && <Zap size={11} />}
               {label}
-            </button>
+            </Button>
           ))}
         </div>
         {promptQuality === 'compact' && (

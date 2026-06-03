@@ -1,6 +1,8 @@
 import { Cloud, Computer, type LucideIcon, Terminal } from 'lucide-react';
 import { motion } from 'motion/react';
 
+import { Button, withDelay } from '@ajh/ui';
+
 import { useTranslation } from '@/lib/i18n';
 
 export type TabMode = 'local' | 'cloud' | 'cli';
@@ -28,12 +30,13 @@ export function TabSwitcher({ mode, onModeChange }: TabSwitcherProps) {
     <motion.div
       initial={{ y: 10, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      transition={{ delay: 0.1 }}
+      transition={withDelay(0.1)}
       className="mb-5 flex rounded-xl border border-white/[0.07] bg-white/[0.02] p-1"
     >
       {TABS.map(({ id, label, icon: Icon }) => (
-        <button
+        <Button
           key={id}
+          variant="unstyled"
           onClick={() => onModeChange(id)}
           className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition-all duration-150 ${
             mode === id
@@ -43,7 +46,7 @@ export function TabSwitcher({ mode, onModeChange }: TabSwitcherProps) {
         >
           <Icon size={14} />
           {label}
-        </button>
+        </Button>
       ))}
     </motion.div>
   );

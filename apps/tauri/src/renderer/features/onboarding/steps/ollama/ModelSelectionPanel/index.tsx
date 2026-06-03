@@ -169,7 +169,7 @@ export function ModelSelectionPanel({
                       pullState === 'done' ? 'bg-emerald-500' : ''
                     }`}
                     animate={{ width: `${pullProgress}%` }}
-                    transition={{ duration: 0.4 }}
+                    transition={transition.slow}
                   />
                 </div>
               </motion.div>

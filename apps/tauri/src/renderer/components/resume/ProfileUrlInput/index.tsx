@@ -1,6 +1,6 @@
 import { Loader2, X } from 'lucide-react';
 
-import { Button } from '@ajh/ui';
+import { Button, Input } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 
@@ -30,7 +30,8 @@ export function ProfileUrlInput({
   return (
     <div className="flex flex-col border-t border-white/[0.05]">
       <div className="flex items-center gap-2 px-3 py-2">
-        <input
+        <Input
+          variant="unstyled"
           type="url"
           value={url}
           onChange={(e) => onChange(e.target.value)}

@@ -2,7 +2,7 @@ import { AlertCircle, Check, ChevronLeft, ChevronRight, X, Zap } from 'lucide-re
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useState } from 'react';
 
-import type { Autopilot, JobPreferences } from '@ajh/shared';
+import type { Autopilot } from '@ajh/shared';
 import { Button, cn, transition } from '@ajh/ui';
 
 import { StepAction } from '@/features/autopilot/components/wizard-steps/StepAction';
@@ -36,7 +36,7 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
     (v: WizardState) => setAutopilot({ wizardForm: v }),
     [setAutopilot]
   );
-  const form = wizardForm ?? buildDefaults(jobPrefs as JobPreferences | undefined);
+  const form = wizardForm ?? buildDefaults(jobPrefs);
   const [error, setError] = useState<string | null>(null);
   const createAutopilot = useCreateAutopilot();
   const updateAutopilot = useUpdateAutopilot();
@@ -45,7 +45,7 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
   // Initialize form in the store on first open (when wizardForm is null)
   useEffect(() => {
     if (!wizardForm) {
-      setWizardForm(buildDefaults(jobPrefs as JobPreferences | undefined));
+      setWizardForm(buildDefaults(jobPrefs));
     }
   }, [wizardForm, jobPrefs, setWizardForm]);
 
@@ -53,7 +53,7 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
   // Suppressed when editing — those values come from the autopilot, not settings.
   const prefilledFields = {
     location: !editing && !!jobPrefs?.location,
-    keywords: !editing && ((jobPrefs as JobPreferences | undefined)?.techStack?.length ?? 0) > 0,
+    keywords: !editing && (jobPrefs?.techStack?.length ?? 0) > 0,
   };
 
   const set: SetFn = <K extends keyof WizardState>(k: K, v: WizardState[K]) =>
@@ -99,11 +99,10 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
       schedule: form.schedule,
     };
     try {
-      const ap = (
+      const ap =
         editingId !== null
           ? await updateAutopilot.mutateAsync({ id: editingId, ...payload })
-          : await createAutopilot.mutateAsync(payload)
-      ) as Autopilot;
+          : await createAutopilot.mutateAsync(payload);
       onDone(ap);
     } catch (err) {
       setError(

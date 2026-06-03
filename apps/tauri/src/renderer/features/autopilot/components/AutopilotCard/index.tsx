@@ -170,7 +170,7 @@ export function AutopilotCard({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={transition.normal}
             className="overflow-hidden"
           >
             <div className="rounded-lg bg-white/[0.03] border border-white/[0.05] px-3 py-2 space-y-1 max-h-32 overflow-y-auto">
@@ -202,7 +202,8 @@ export function AutopilotCard({
                 <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">
                   {t('autopilot.foundJobs')} · {foundJobs.length}
                 </span>
-                <button
+                <Button
+                  variant="unstyled"
                   type="button"
                   onClick={() => setShowFound(false)}
                   aria-label={t('autopilot.collapse')}
@@ -210,7 +211,7 @@ export function AutopilotCard({
                   className="rounded p-0.5 text-foreground/30 transition-colors hover:text-foreground/70"
                 >
                   <ChevronUp size={12} />
-                </button>
+                </Button>
               </div>
               <div className="max-h-64 divide-y divide-white/[0.04] overflow-y-auto">
                 {foundJobs.map((job, i) => (
@@ -218,7 +219,8 @@ export function AutopilotCard({
                     key={`${job.url}-${i}`}
                     className="flex items-center gap-2 px-3 py-2 transition-colors hover:bg-white/[0.03]"
                   >
-                    <button
+                    <Button
+                      variant="unstyled"
                       type="button"
                       onClick={() => void openExternal.mutate(job.url)}
                       title={t('autopilot.viewJob')}
@@ -251,7 +253,7 @@ export function AutopilotCard({
                         </span>
                       )}
                       <ExternalLink size={11} className="shrink-0 text-foreground/25" />
-                    </button>
+                    </Button>
                     <Button
                       onClick={() => setApplyJob(job)}
                       title={t('autopilot.applyJob')}

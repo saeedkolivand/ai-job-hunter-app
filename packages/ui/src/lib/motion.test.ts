@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { prefersReducedMotion, resolveTransition, staggeredItem, transition } from './motion';
+import {
+  prefersReducedMotion,
+  resolveTransition,
+  staggeredItem,
+  transition,
+  withDelay,
+} from './motion';
 
 describe('staggeredItem', () => {
   it('scales the delay with the index', () => {
@@ -11,6 +17,15 @@ describe('staggeredItem', () => {
   it('caps the delay at maxDelay', () => {
     expect(staggeredItem(1000).delay).toBe(0.2);
     expect(staggeredItem(1000, 0.5).delay).toBe(0.5);
+  });
+});
+
+describe('withDelay', () => {
+  it('wraps transition.normal with an explicit delay', () => {
+    const t = withDelay(0.15);
+    expect(t.delay).toBe(0.15);
+    expect(t.duration).toBe(transition.normal.duration);
+    expect(t.ease).toBe(transition.normal.ease);
   });
 });
 

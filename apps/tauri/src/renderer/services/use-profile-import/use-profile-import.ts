@@ -16,7 +16,7 @@ export const useProfileImport = () => {
       api.linkedin.importProfileFromUrl(url) as Promise<ProfileImportResult>,
     onSuccess: (result) => {
       if (!('error' in result)) {
-        qc.invalidateQueries({ queryKey: keys.documents.all });
+        void qc.invalidateQueries({ queryKey: keys.documents.all });
       }
     },
   });
