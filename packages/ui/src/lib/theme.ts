@@ -17,6 +17,8 @@
 
 export type ColorScheme = 'light' | 'dark' | 'system';
 export type ContrastPref = 'normal' | 'more';
+/** UI text size — scales the rem root so every rem-based size grows together. */
+export type TextScale = 'small' | 'default' | 'large';
 
 export interface ThemePrefs {
   scheme: ColorScheme;
@@ -24,6 +26,8 @@ export interface ThemePrefs {
   reduceTransparency: boolean;
   /** 'more' forces high contrast on. 'normal' follows the OS preference. */
   contrast: ContrastPref;
+  /** UI text size; sets the rem root (small 15px / default 16px / large 18px). */
+  textScale: TextScale;
 }
 
 const STORAGE_KEY = 'ajh-theme';
@@ -32,6 +36,7 @@ export const DEFAULT_THEME_PREFS: ThemePrefs = {
   scheme: 'system',
   reduceTransparency: false,
   contrast: 'normal',
+  textScale: 'default',
 };
 
 const mq = (query: string): MediaQueryList | null =>
@@ -69,6 +74,9 @@ export function applyTheme(prefs: ThemePrefs): void {
   const moreContrast = prefs.contrast === 'more' || prefersMoreContrast();
   root.dataset.contrast = moreContrast ? 'more' : 'normal';
 
+  // Scales the rem root; CSS keys font-size off data-text-scale (small/large).
+  root.dataset.textScale = prefs.textScale;
+
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
   } catch {
@@ -101,11 +109,17 @@ export function getThemePrefs(): ThemePrefs {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_THEME_PREFS;
     // Legacy single-string themes → modifier flags on the dark scheme.
-    if (raw === 'default') return { scheme: 'dark', reduceTransparency: false, contrast: 'normal' };
+    if (raw === 'default')
+      return {
+        scheme: 'dark',
+        reduceTransparency: false,
+        contrast: 'normal',
+        textScale: 'default',
+      };
     if (raw === 'reduced-glass')
-      return { scheme: 'dark', reduceTransparency: true, contrast: 'normal' };
+      return { scheme: 'dark', reduceTransparency: true, contrast: 'normal', textScale: 'default' };
     if (raw === 'high-contrast')
-      return { scheme: 'dark', reduceTransparency: false, contrast: 'more' };
+      return { scheme: 'dark', reduceTransparency: false, contrast: 'more', textScale: 'default' };
     const parsed = JSON.parse(raw) as Partial<ThemePrefs>;
     if (parsed && typeof parsed === 'object' && typeof parsed.scheme === 'string') {
       return { ...DEFAULT_THEME_PREFS, ...parsed };

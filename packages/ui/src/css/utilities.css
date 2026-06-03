@@ -522,6 +522,30 @@
   animation-timing-function: var(--ease-smooth);
 }
 
+/* ── Text size (UI scale) ────────────────────────────────────────────────────
+   applyTheme() sets data-text-scale on <html>; scaling the rem root grows every
+   rem-based size together. Default is the browser 16px (left unset). */
+html[data-text-scale='small'] {
+  font-size: 15px;
+}
+html[data-text-scale='large'] {
+  font-size: 18px;
+}
+
+/* ── Minimum legible text floor ──────────────────────────────────────────────
+   Sub-12px arbitrary sizes read as too small in a 96dpi WebView (vs macOS Retina
+   2x). Lift them to a 12px floor (13px→14px) in REM so they also track the text
+   size setting. Unlayered here, so they win over Tailwind's layered px utilities. */
+.text-\[8px\],
+.text-\[9px\],
+.text-\[10px\],
+.text-\[11px\] {
+  font-size: 0.75rem; /* 12px at default scale */
+}
+.text-\[13px\] {
+  font-size: 0.875rem; /* 14px at default scale */
+}
+
 /* ── Reduced motion ──────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *,

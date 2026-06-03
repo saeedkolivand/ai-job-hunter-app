@@ -1,4 +1,4 @@
-import { Monitor, Moon, Palette, Sun } from 'lucide-react';
+import { Monitor, Moon, Palette, Sun, Type } from 'lucide-react';
 import { useState } from 'react';
 
 import {
@@ -10,6 +10,7 @@ import {
   GlassCard,
   IconBadge,
   SectionLabel,
+  type TextScale,
   type ThemePrefs,
 } from '@ajh/ui';
 
@@ -19,6 +20,13 @@ const SCHEMES: { id: ColorScheme; icon: typeof Sun; labelKey: string }[] = [
   { id: 'light', icon: Sun, labelKey: 'settings.appearance.light' },
   { id: 'dark', icon: Moon, labelKey: 'settings.appearance.dark' },
   { id: 'system', icon: Monitor, labelKey: 'settings.appearance.system' },
+];
+
+// Each button previews its own size via the text utility it sets.
+const SCALES: { id: TextScale; labelKey: string; size: string }[] = [
+  { id: 'small', labelKey: 'settings.appearance.textSmall', size: 'text-xs' },
+  { id: 'default', labelKey: 'settings.appearance.textDefault', size: 'text-sm' },
+  { id: 'large', labelKey: 'settings.appearance.textLarge', size: 'text-base' },
 ];
 
 function ToggleRow({
@@ -102,6 +110,39 @@ export function AppearanceCard() {
                   )}
                 >
                   <Icon size={16} />
+                  {t(labelKey)}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground/55">
+            <Type size={13} />
+            {t('settings.appearance.textSize')}
+          </div>
+          <div
+            role="radiogroup"
+            aria-label={t('settings.appearance.textSize')}
+            className="grid grid-cols-3 gap-2"
+          >
+            {SCALES.map(({ id, labelKey, size }) => {
+              const active = prefs.textScale === id;
+              return (
+                <Button
+                  key={id}
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => update({ textScale: id })}
+                  className={cn(
+                    'flex h-auto items-center justify-center rounded-xl border px-3 py-2.5 font-medium transition-all focus-visible:ring-2 focus-visible:ring-brand/50',
+                    size,
+                    active
+                      ? 'border-brand/40 bg-brand/10 text-brand-soft'
+                      : 'border-foreground/10 bg-foreground/[0.02] text-foreground/55 hover:text-foreground/80'
+                  )}
+                >
                   {t(labelKey)}
                 </Button>
               );

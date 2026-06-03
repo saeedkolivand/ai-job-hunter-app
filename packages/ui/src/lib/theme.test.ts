@@ -26,6 +26,7 @@ describe('theme engine', () => {
     document.documentElement.removeAttribute('data-color-scheme');
     document.documentElement.removeAttribute('data-reduce-transparency');
     document.documentElement.removeAttribute('data-contrast');
+    document.documentElement.removeAttribute('data-text-scale');
     document.documentElement.className = '';
     stubMatchMedia({});
   });
@@ -36,7 +37,12 @@ describe('theme engine', () => {
   });
 
   it('applies an explicit scheme to data-color-scheme + class + storage', () => {
-    applyTheme({ scheme: 'light', reduceTransparency: false, contrast: 'normal' });
+    applyTheme({
+      scheme: 'light',
+      reduceTransparency: false,
+      contrast: 'normal',
+      textScale: 'default',
+    });
     expect(document.documentElement.dataset.colorScheme).toBe('light');
     expect(document.documentElement.classList.contains('light')).toBe(true);
     expect(document.documentElement.classList.contains('dark')).toBe(false);
@@ -51,14 +57,24 @@ describe('theme engine', () => {
   });
 
   it('forces reduce-transparency and high-contrast attributes when set', () => {
-    applyTheme({ scheme: 'dark', reduceTransparency: true, contrast: 'more' });
+    applyTheme({
+      scheme: 'dark',
+      reduceTransparency: true,
+      contrast: 'more',
+      textScale: 'default',
+    });
     expect(document.documentElement.hasAttribute('data-reduce-transparency')).toBe(true);
     expect(document.documentElement.dataset.contrast).toBe('more');
   });
 
   it('auto-detects reduce-transparency from the OS preference', () => {
     stubMatchMedia({ '(prefers-reduced-transparency: reduce)': true });
-    applyTheme({ scheme: 'dark', reduceTransparency: false, contrast: 'normal' });
+    applyTheme({
+      scheme: 'dark',
+      reduceTransparency: false,
+      contrast: 'normal',
+      textScale: 'default',
+    });
     expect(document.documentElement.hasAttribute('data-reduce-transparency')).toBe(true);
   });
 
@@ -68,13 +84,19 @@ describe('theme engine', () => {
       scheme: 'dark',
       reduceTransparency: false,
       contrast: 'more',
+      textScale: 'default',
     });
     localStorage.setItem('ajh-theme', 'reduced-glass');
     expect(getThemePrefs().reduceTransparency).toBe(true);
   });
 
   it('restoreTheme reapplies the persisted prefs', () => {
-    applyTheme({ scheme: 'light', reduceTransparency: false, contrast: 'normal' });
+    applyTheme({
+      scheme: 'light',
+      reduceTransparency: false,
+      contrast: 'normal',
+      textScale: 'default',
+    });
     document.documentElement.removeAttribute('data-color-scheme');
     restoreTheme();
     expect(document.documentElement.dataset.colorScheme).toBe('light');
@@ -82,5 +104,17 @@ describe('theme engine', () => {
 
   it('defaults to the system scheme when nothing is persisted', () => {
     expect(getThemePrefs().scheme).toBe('system');
+  });
+
+  it('applies the text scale and defaults to "default"', () => {
+    expect(getThemePrefs().textScale).toBe('default');
+    applyTheme({
+      scheme: 'dark',
+      reduceTransparency: false,
+      contrast: 'normal',
+      textScale: 'large',
+    });
+    expect(document.documentElement.dataset.textScale).toBe('large');
+    expect(JSON.parse(localStorage.getItem('ajh-theme') ?? '{}').textScale).toBe('large');
   });
 });

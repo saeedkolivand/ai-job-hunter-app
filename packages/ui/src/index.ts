@@ -10,6 +10,7 @@ export {
   getResolvedScheme,
   getThemePrefs,
   restoreTheme,
+  type TextScale,
   type ThemePrefs,
 } from './lib/theme';
 

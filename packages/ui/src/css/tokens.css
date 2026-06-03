@@ -38,7 +38,11 @@
   --color-brand-soft: #c084fc;
   --color-brand-dim: oklch(65% 50% 270 / 0.15);
 
-  --font-sans: 'Inter', 'SF Pro Text', system-ui, -apple-system, sans-serif;
+  /* Native macOS font (San Francisco) where it exists — it can't be bundled, so
+     it only appears on real macOS via the OS; everyone else gets bundled Inter. */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Inter', system-ui,
+    'Segoe UI', sans-serif;
   --radius: 0.75rem;
 
   /* ── Z-index utilities — use z-overlay, z-modal, z-toast etc. ─────────── */
