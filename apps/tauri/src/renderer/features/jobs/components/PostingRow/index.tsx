@@ -8,11 +8,10 @@ import {
   MapPin,
   Wand2,
 } from 'lucide-react';
-import { motion } from 'motion/react';
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
-import { Button, SourceBadge, transition, useNotification } from '@ajh/ui';
+import { Button, SourceBadge, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { useOpenExternal, usePersistJob } from '@/services';
@@ -98,13 +97,13 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={transition.normal}
-      className="relative group"
-    >
-      <div className="glass-graphite glass-highlight relative flex items-center gap-5 rounded-xl p-4 pl-5 transition-all duration-300 hover:bg-white/[0.03] hover:shadow-lg hover:shadow-brand/5 overflow-hidden">
+    // No entry animation: rows are windowed (mount/unmount on scroll), so a
+    // per-mount fade would re-fire every time a row scrolls into view.
+    <div className="relative group">
+      {/* `no-backdrop-filter` drops glass-graphite's per-row backdrop blur —
+          compositing a blur for every row is the dominant paint cost on a long
+          list, and the gradient is opaque enough to read fine without it. */}
+      <div className="glass-graphite glass-highlight no-backdrop-filter relative flex items-center gap-5 rounded-xl p-4 pl-5 transition-all duration-300 hover:bg-white/[0.03] hover:shadow-lg hover:shadow-brand/5 overflow-hidden">
         {/* Subtle ambient glow for whole card */}
         <div
           className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ease-out"
@@ -187,6 +186,6 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
           </Button>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
