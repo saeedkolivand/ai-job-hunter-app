@@ -1,7 +1,6 @@
 import { ChevronRight } from 'lucide-react';
-import { motion } from 'motion/react';
 
-import { Button, cn, transition } from '@ajh/ui';
+import { Button, cn, NavPill } from '@ajh/ui';
 
 import type { NavGroup, SectionId } from '@/features/settings/constants';
 
@@ -24,13 +23,7 @@ export function SettingsSidebar({ navGroups, activeSection, onSectionChange }: P
               const active = activeSection === id;
               return (
                 <div key={id} className="relative">
-                  {active && (
-                    <motion.div
-                      layoutId="settings-pill"
-                      className="absolute inset-0 rounded-xl bg-white/[0.07]"
-                      transition={transition.spring}
-                    />
-                  )}
+                  {active && <NavPill layoutId="settings-pill" />}
                   <Button
                     variant="unstyled"
                     type="button"
@@ -48,7 +41,7 @@ export function SettingsSidebar({ navGroups, activeSection, onSectionChange }: P
                       className={cn(
                         'shrink-0 transition-colors duration-150',
                         active
-                          ? 'text-foreground/70'
+                          ? 'text-brand-soft'
                           : 'text-foreground/35 group-hover:text-foreground/55'
                       )}
                     />
