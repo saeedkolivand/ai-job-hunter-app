@@ -14,7 +14,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 
 import type { Autopilot, AutopilotFoundJob } from '@ajh/shared';
-import { Button, cn, GlassCard, transition } from '@ajh/ui';
+import { Button, cn, ConfirmModal, GlassCard, transition } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { type AutopilotRunState, RUN_STATE_LABEL } from '@/lib/machines/autopilot-run.machine';
@@ -63,6 +63,7 @@ export function AutopilotCard({
   const openExternal = useOpenExternal();
   const [showFound, setShowFound] = useState(false);
   const [applyJob, setApplyJob] = useState<AutopilotFoundJob | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const foundJobs = ap.foundJobs ?? [];
 
   const lastRun = ap.lastRunAt
@@ -155,7 +156,9 @@ export function AutopilotCard({
             <Pencil size={13} />
           </Button>
           <Button
-            onClick={onDelete}
+            onClick={() => setConfirmDelete(true)}
+            aria-label={t('autopilot.delete')}
+            title={t('autopilot.delete')}
             className="rounded-lg p-1.5 text-foreground/30 hover:bg-red-400/10 hover:text-red-400/70 transition-colors h-auto bg-transparent border-transparent"
           >
             <Trash2 size={13} />
@@ -277,6 +280,19 @@ export function AutopilotCard({
           onClose={() => setApplyJob(null)}
         />
       )}
+
+      <ConfirmModal
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          setConfirmDelete(false);
+          onDelete();
+        }}
+        title={t('autopilot.deleteTitle')}
+        description={t('autopilot.deleteDescription')}
+        confirmText={t('autopilot.delete')}
+        variant="danger"
+      />
     </GlassCard>
   );
 }
