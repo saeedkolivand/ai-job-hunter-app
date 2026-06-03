@@ -55,6 +55,20 @@ async fn test_cancel_nonexistent_job() {
 }
 
 #[tokio::test]
+async fn cancel_reaches_a_pre_registered_token() {
+    let engine = ScraperEngine::new();
+    let token = tokio_util::sync::CancellationToken::new();
+
+    // Autopilot registers its own token for the whole run, then scrape_board
+    // reuses (does not overwrite) that slot — so the clone the run keeps for
+    // its post-scrape phase must flip when a tray/UI cancel hits the job.
+    engine.register_token("run-1", token.clone()).await;
+    assert!(!token.is_cancelled());
+    engine.cancel("run-1").await;
+    assert!(token.is_cancelled());
+}
+
+#[tokio::test]
 async fn test_shutdown() {
     let engine = ScraperEngine::new();
     // Register some tokens

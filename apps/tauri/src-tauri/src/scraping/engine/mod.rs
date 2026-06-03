@@ -80,12 +80,16 @@ impl ScraperEngine {
             .await
             .map_err(|_| anyhow::anyhow!("scraper engine semaphore closed"))?;
 
-        // Register cancellation token under job_id so `cancel(job_id)` works.
-        let token = CancellationToken::new();
-        {
+        // Cancellation token under job_id so `cancel(job_id)` works. Reuse a
+        // token a caller pre-registered for this job (e.g. autopilot owns one
+        // for the whole run, spanning scrape + post-processing) rather than
+        // overwriting it; otherwise mint a fresh one.
+        let token = {
             let mut jobs = self.jobs.lock().await;
-            jobs.insert(job_id.clone(), token.clone());
-        }
+            jobs.entry(job_id.clone())
+                .or_insert_with(CancellationToken::new)
+                .clone()
+        };
 
         let ctx = ScrapeContext {
             signal: token,
