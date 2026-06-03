@@ -17,6 +17,13 @@
     "support": "Help & Support",
     "settings": "Settings"
   },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "navigate": "Navigate",
+    "actions": "Actions",
+    "help": "Show shortcuts",
+    "hint": "Press ? anytime to open this list"
+  },
   "analyze": {
     "title": "Resume Analyzer",
     "subtitle": "Paste your resume and a job ad. Get an instant local ATS score, semantic match, gap analysis, and tailored recommendations.",
