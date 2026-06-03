@@ -14,22 +14,24 @@ import {
   Wand2,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
 import { Button, cn, ConfirmModal, GlassCard, SegmentedControl, transition } from '@ajh/ui';
 
+import { EditableOutput } from '@/components/generation/EditableOutput';
 import { ExternalLink } from '@/components/ui/ExternalLink';
 import {
   buildFilename,
   exportDOCX,
   exportPDF,
   exportTXT,
+  PERSIST_DEBOUNCE_MS,
   type TemplateId,
   TEMPLATES,
 } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
-import { useRemoveAiGeneration } from '@/services/use-ai-generations';
+import { useRemoveAiGeneration, useUpdateAiGeneration } from '@/services/use-ai-generations';
 
 const EXPORT_FORMATS = ['pdf', 'docx', 'txt'] as const;
 type ExportFormat = (typeof EXPORT_FORMATS)[number];
@@ -46,6 +48,7 @@ interface GenerationCardProps {
 export function GenerationCard({ gen }: GenerationCardProps) {
   const { t } = useTranslation();
   const removeAiGeneration = useRemoveAiGeneration();
+  const updateAiGeneration = useUpdateAiGeneration();
   const [expanded, setExpanded] = useState<
     'resume' | 'cover' | 'jobAd' | 'brief' | 'answers' | null
   >(null);
@@ -55,13 +58,52 @@ export function GenerationCard({ gen }: GenerationCardProps) {
   const [exporting, setExporting] = useState<'resume' | 'cover' | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // Local editing buffers keep typing smooth and own the edit truth for the card's
+  // lifetime. The card is keyed by `gen.id` at the list (it remounts per record),
+  // so drafts are seeded once from the record on mount; thereafter the optimistic
+  // update hook patches the list cache (with rollback on failure) and we do NOT
+  // re-sync the drafts from `gen`. A re-sync here would let the post-`onSettled`
+  // refetch overwrite the buffer with debounce-stale text, clobbering keystrokes
+  // typed during the 800ms debounce window.
+  const [resumeDraft, setResumeDraft] = useState(gen.resumeText);
+  const [coverDraft, setCoverDraft] = useState(gen.coverLetterText);
+
+  // Debounced persistence — one timer per field; flushed on unmount.
+  const persistTimers = useRef<{
+    resume?: ReturnType<typeof setTimeout>;
+    cover?: ReturnType<typeof setTimeout>;
+  }>({});
+  useEffect(() => {
+    const timers = persistTimers.current;
+    return () => {
+      if (timers.resume) clearTimeout(timers.resume);
+      if (timers.cover) clearTimeout(timers.cover);
+    };
+  }, []);
+
+  const persistEdit = (type: 'resume' | 'cover', text: string) => {
+    const existing = persistTimers.current[type];
+    if (existing) clearTimeout(existing);
+    persistTimers.current[type] = setTimeout(() => {
+      updateAiGeneration.mutate(
+        type === 'resume' ? { id: gen.id, resumeText: text } : { id: gen.id, coverLetterText: text }
+      );
+    }, PERSIST_DEBOUNCE_MS);
+  };
+
+  const onEdit = (type: 'resume' | 'cover', text: string) => {
+    if (type === 'resume') setResumeDraft(text);
+    else setCoverDraft(text);
+    persistEdit(type, text);
+  };
+
   const handleDelete = () => {
     setConfirmDelete(false);
     removeAiGeneration.mutate(gen.id);
   };
 
   const copy = async (type: 'resume' | 'cover') => {
-    const text = type === 'resume' ? gen.resumeText : gen.coverLetterText;
+    const text = type === 'resume' ? resumeDraft : coverDraft;
     await navigator.clipboard.writeText(text);
     setCopied(type);
     setTimeout(() => setCopied(null), 1800);
@@ -79,7 +121,7 @@ export function GenerationCard({ gen }: GenerationCardProps) {
   };
 
   const doExport = async (type: 'resume' | 'cover') => {
-    const text = type === 'resume' ? gen.resumeText : gen.coverLetterText;
+    const text = type === 'resume' ? resumeDraft : coverDraft;
     if (!text) return;
     const docType = type === 'resume' ? 'resume' : 'cover-letter';
     const filename = buildFilename(meta, docType, exportFormat);
@@ -167,7 +209,7 @@ export function GenerationCard({ gen }: GenerationCardProps) {
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            {gen.resumeText && (
+            {resumeDraft && (
               <Button
                 onClick={() => void copy('resume')}
                 className="flex items-center gap-1 rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] text-foreground/60 transition-colors hover:text-foreground h-auto border-transparent"
@@ -178,7 +220,7 @@ export function GenerationCard({ gen }: GenerationCardProps) {
                   : t('resumes.generated.copyResume')}
               </Button>
             )}
-            {gen.coverLetterText && (
+            {coverDraft && (
               <Button
                 onClick={() => void copy('cover')}
                 className="flex items-center gap-1 rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] text-foreground/60 transition-colors hover:text-foreground h-auto border-transparent"
@@ -201,7 +243,7 @@ export function GenerationCard({ gen }: GenerationCardProps) {
         </div>
 
         {/* Export bar */}
-        {(gen.resumeText || gen.coverLetterText) && (
+        {(resumeDraft || coverDraft) && (
           <div className="border-t border-white/[0.04] px-4 py-2.5 flex items-center gap-2 flex-wrap">
             <Download size={11} className="text-foreground/30 shrink-0" />
             <span className="text-[11px] text-foreground/40 mr-1">
@@ -229,7 +271,7 @@ export function GenerationCard({ gen }: GenerationCardProps) {
             )}
 
             <div className="flex items-center gap-1 ml-auto">
-              {gen.resumeText && (
+              {resumeDraft && (
                 <Button
                   disabled={exporting === 'resume'}
                   onClick={() => void doExport('resume')}
@@ -243,7 +285,7 @@ export function GenerationCard({ gen }: GenerationCardProps) {
                   {t('resumes.generated.exportResume')}
                 </Button>
               )}
-              {gen.coverLetterText && (
+              {coverDraft && (
                 <Button
                   disabled={exporting === 'cover'}
                   onClick={() => void doExport('cover')}
@@ -275,35 +317,46 @@ export function GenerationCard({ gen }: GenerationCardProps) {
           </div>
         )}
 
-        {/* Expandable sections */}
-        {[
-          {
-            key: 'resume' as const,
-            label: t('resumes.generated.resume'),
-            text: gen.resumeText,
-            icon: FileText,
-          },
-          {
-            key: 'cover' as const,
-            label: t('resumes.generated.coverLetter'),
-            text: gen.coverLetterText,
-            icon: FileText,
-          },
-          {
-            key: 'jobAd' as const,
-            label: t('resumes.generated.jobAd'),
-            text: gen.jobAd,
-            icon: Building2,
-          },
-          {
-            key: 'brief' as const,
-            label: t('resumes.generated.companyResearch'),
-            text: gen.companyBrief,
-            icon: Search,
-          },
-        ]
+        {/* Expandable sections. Resume + cover letter are editable (F1 + inline
+            rewrite); the job ad and company brief stay read-only references. */}
+        {(
+          [
+            {
+              key: 'resume' as const,
+              label: t('resumes.generated.resume'),
+              text: resumeDraft,
+              icon: FileText,
+              editType: 'resume' as const,
+              docType: 'resume' as const,
+            },
+            {
+              key: 'cover' as const,
+              label: t('resumes.generated.coverLetter'),
+              text: coverDraft,
+              icon: FileText,
+              editType: 'cover' as const,
+              docType: 'cover-letter' as const,
+            },
+            {
+              key: 'jobAd' as const,
+              label: t('resumes.generated.jobAd'),
+              text: gen.jobAd,
+              icon: Building2,
+              editType: null,
+              docType: null,
+            },
+            {
+              key: 'brief' as const,
+              label: t('resumes.generated.companyResearch'),
+              text: gen.companyBrief,
+              icon: Search,
+              editType: null,
+              docType: null,
+            },
+          ] as const
+        )
           .filter((s) => s.text)
-          .map(({ key, label, text, icon: SectionIcon }) => (
+          .map(({ key, label, text, icon: SectionIcon, editType, docType }) => (
             <div key={key} className="border-t border-white/[0.04]">
               <Button
                 variant="unstyled"
@@ -327,9 +380,22 @@ export function GenerationCard({ gen }: GenerationCardProps) {
                     transition={transition.normal}
                     className="overflow-hidden"
                   >
-                    <pre className="select-text px-4 pb-4 whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-foreground/50 max-h-64 overflow-y-auto">
-                      {text}
-                    </pre>
+                    {editType && docType ? (
+                      <div className="flex h-72 flex-col px-4 pb-4">
+                        <EditableOutput
+                          value={text}
+                          onChange={(v) => onEdit(editType, v)}
+                          docType={docType}
+                          meta={meta}
+                          className="flex h-full flex-col overflow-hidden"
+                          textAreaClassName="h-full w-full bg-transparent font-mono text-[10px] leading-relaxed text-foreground/60 placeholder:text-foreground/20"
+                        />
+                      </div>
+                    ) : (
+                      <pre className="select-text px-4 pb-4 whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-foreground/50 max-h-64 overflow-y-auto">
+                        {text}
+                      </pre>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>

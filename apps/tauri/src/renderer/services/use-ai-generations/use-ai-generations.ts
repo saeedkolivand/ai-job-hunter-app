@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { AiGenerationRecord, AiGenerationSaveRequest } from '@ajh/shared/ipc';
+import type {
+  AiGenerationRecord,
+  AiGenerationSaveRequest,
+  AiGenerationUpdateRequest,
+} from '@ajh/shared/ipc';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
@@ -20,6 +24,39 @@ export const useSaveAiGeneration = () => {
   return useMutation({
     mutationFn: (req: AiGenerationSaveRequest) => api.aiGenerations.save(req),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.aiGenerations.all }),
+  });
+};
+
+export const useUpdateAiGeneration = () => {
+  const api = useAppClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: AiGenerationUpdateRequest) => api.aiGenerations.update(req),
+    // Optimistic edit: patch the matching record's text in place so the UI
+    // reflects the edit immediately; restore the snapshot if the backend fails.
+    // Patching (rather than refetching) avoids clobbering an in-flight edit.
+    onMutate: async (req) => {
+      await qc.cancelQueries({ queryKey: keys.aiGenerations.all });
+      const previous = qc.getQueryData<AiGenerationRecord[]>(keys.aiGenerations.all);
+      qc.setQueryData<AiGenerationRecord[]>(keys.aiGenerations.all, (old) =>
+        (old ?? []).map((g) =>
+          g.id === req.id
+            ? {
+                ...g,
+                ...(req.resumeText !== undefined ? { resumeText: req.resumeText } : {}),
+                ...(req.coverLetterText !== undefined
+                  ? { coverLetterText: req.coverLetterText }
+                  : {}),
+              }
+            : g
+        )
+      );
+      return { previous };
+    },
+    onError: (_err, _req, ctx) => {
+      if (ctx?.previous) qc.setQueryData(keys.aiGenerations.all, ctx.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.aiGenerations.all }),
   });
 };
 

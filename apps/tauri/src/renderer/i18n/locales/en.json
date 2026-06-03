@@ -561,6 +561,35 @@
     "edit": "Edit",
     "viewMode": "View mode",
     "placeholder": "Generated output will appear here…",
+    "rewrite": {
+      "trigger": "Rewrite with AI",
+      "title": "Rewrite selection",
+      "instructionPlaceholder": "Describe how to rewrite…",
+      "instructionLabel": "Rewrite instruction",
+      "submit": "Rewrite",
+      "accept": "Accept",
+      "cancel": "Cancel",
+      "regenerate": "Regenerate",
+      "selectionLabel": "Selected text",
+      "resultLabel": "Rewrite",
+      "streaming": "Rewriting…",
+      "empty": "The rewrite came back empty. Try a different instruction.",
+      "failed": "Rewrite failed. Try again.",
+      "presets": {
+        "shorten": "Shorten",
+        "expand": "Expand",
+        "rephrase": "Rephrase",
+        "impact": "More impact",
+        "grammar": "Fix grammar"
+      },
+      "presetInstructions": {
+        "shorten": "Make this more concise without losing any concrete facts.",
+        "expand": "Expand this with more relevant detail, without inventing new facts.",
+        "rephrase": "Rephrase this in different words while keeping the same meaning.",
+        "impact": "Rewrite this to be more impactful and confident, keeping every fact accurate.",
+        "grammar": "Fix any grammar, spelling, and punctuation issues while keeping the meaning and wording as close as possible."
+      }
+    },
     "stages": {
       "analyzing": "Analyzing job requirements…",
       "extracting": "Extracting recruiter priorities…",

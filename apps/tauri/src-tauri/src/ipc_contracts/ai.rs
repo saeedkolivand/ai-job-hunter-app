@@ -85,6 +85,15 @@ pub struct AiGenerationSaveRequestApplicationAnswer {
     pub answer: String,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+pub struct AiGenerationUpdateRequest {
+    pub id: String,
+    pub resume_text: Option<String>,
+    pub cover_letter_text: Option<String>,
+}
+
 fn default_ai_generation_save_request_candidate_name() -> String {
     "".to_string()
 }
