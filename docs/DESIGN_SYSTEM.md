@@ -1,6 +1,6 @@
 # Design System — AI Job Hunter
 
-Last updated: 2026-06-01
+Last updated: 2026-06-03
 
 The design system lives in `packages/ui` and is published as the `@ajh/ui` internal package. It provides design tokens, a component library, motion primitives, and theming infrastructure.
 
@@ -345,6 +345,42 @@ Selectable card for option groups (AI model selection, template picker):
 ---
 
 ### Layout Primitives
+
+#### `SegmentedControl`
+
+Radiogroup with roving arrow-key navigation. Two layout variants:
+
+```typescript
+<SegmentedControl
+  variant="track"   // or "grid"
+  value={tab}
+  onChange={setTab}
+  options={[
+    { value: "resumes", label: "Résumés" },
+    { value: "cover-letters", label: "Cover Letters" },
+    { value: "activity", label: "Activity" },
+  ]}
+/>
+```
+
+#### `SetupHint`
+
+Contextual setup nudge — used when a feature requires configuration (e.g. no AI provider set up). Generalises the former `AuthHint`.
+
+```typescript
+<SetupHint
+  label="No AI provider configured"
+  action={{ label: "Go to Settings", href: "/settings#ai" }}
+/>
+```
+
+#### `NavPill`
+
+Decorative sliding active-indicator for navigation lists. `aria-hidden` + `pointer-events-none`; scoped by `layoutId` so the pill animates within one list only.
+
+```typescript
+<NavPill layoutId="sidebar-nav" isActive={isActive} />
+```
 
 #### `ActionTile`
 

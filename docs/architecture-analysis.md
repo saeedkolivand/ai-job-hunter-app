@@ -1,6 +1,6 @@
 # Architecture Analysis — Rust/Tauri Core
 
-Last updated: 2026-06-01
+Last updated: 2026-06-03
 
 > **Status:** discovery report (Phase 1). Read-only — describes the architecture **as it
 > actually exists** in `apps/tauri/src-tauri/`, measured from the source tree, not an
@@ -54,8 +54,9 @@ replace them:
 - **Single-owner shared infrastructure** — `platform::config` (env + paths), `net::http`
   (one pooled rustls client), `error::AppError`/`AppResult` (typed errors),
   `observability::Span` (timed `→`/`←` traces). Each has exactly one owner.
-- **Registry dispatch** — `scraping::boards::SCRAPERS`, `applying::registry::APPLIERS`,
+- **Registry dispatch** — `scraping::boards::SCRAPERS`,
   `commands::ai_provider::resolve(ProviderId)`. Dispatch + catalog derive from one list.
+  _(Note: `applying::registry::APPLIERS` was removed in v0.58.0 — the auto-apply engine is gone; the app is an apply assistant.)_
 - **Store-per-domain behind one trait** — every persistent store implements
   `data_store::DataStore` (`export`/`import`); `commands/data.rs` assembles one versioned
   backup bundle.
@@ -241,17 +242,17 @@ blocks **new** drift.
 
 Extends the `docs/PATTERNS.md` §13 ownership table with the boundaries this analysis adds:
 
-| Concern                          | Sole owner                                                             | Rule                                                |
-| -------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------- |
-| env vars, data dir, FS paths     | `platform::config` (+ `platform::process`/`chrome` for OS-process env) | never read env elsewhere (W-5)                      |
-| HTTP client construction         | `net::http`                                                            | `shared()` / `build_client()` only                  |
-| timed trace spans                | `observability::Span`                                                  | never reimplement begin/elapsed/end                 |
-| error types                      | `error::AppError`                                                      | `AppResult<T>`; domain enums add `From`             |
-| SQLite handle + access           | `db` + per-domain `*/mod.rs` stores                                    | no `rusqlite` in logic/helper files (W-4)           |
-| AI provider routing + embeddings | **`ai_provider`** (to be relocated out of `commands/`)                 | `resolve(ProviderId)`, `embed_text`, `cosine` (W-1) |
-| job board scrapers / appliers    | `scraping::boards` / `applying::registry`                              | register in `SCRAPERS` / `APPLIERS`                 |
-| workflow orchestration           | `pipeline`                                                             | compose `Stage`/`Pipeline`                          |
-| Tauri command surface            | `commands/*`                                                           | the only place `#[tauri::command]` is defined (W-2) |
+| Concern                          | Sole owner                                                             | Rule                                                           |
+| -------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------- |
+| env vars, data dir, FS paths     | `platform::config` (+ `platform::process`/`chrome` for OS-process env) | never read env elsewhere (W-5)                                 |
+| HTTP client construction         | `net::http`                                                            | `shared()` / `build_client()` only                             |
+| timed trace spans                | `observability::Span`                                                  | never reimplement begin/elapsed/end                            |
+| error types                      | `error::AppError`                                                      | `AppResult<T>`; domain enums add `From`                        |
+| SQLite handle + access           | `db` + per-domain `*/mod.rs` stores                                    | no `rusqlite` in logic/helper files (W-4)                      |
+| AI provider routing + embeddings | **`ai_provider`** (to be relocated out of `commands/`)                 | `resolve(ProviderId)`, `embed_text`, `cosine` (W-1)            |
+| job board scrapers               | `scraping::boards`                                                     | register in `SCRAPERS` (no applier registry — removed v0.58.0) |
+| workflow orchestration           | `pipeline`                                                             | compose `Stage`/`Pipeline`                                     |
+| Tauri command surface            | `commands/*`                                                           | the only place `#[tauri::command]` is defined (W-2)            |
 
 ---
 
