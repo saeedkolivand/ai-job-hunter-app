@@ -546,6 +546,35 @@
     "edit": "Bearbeiten",
     "viewMode": "Ansichtsmodus",
     "placeholder": "Generierte Ausgabe erscheint hier…",
+    "rewrite": {
+      "trigger": "Mit KI umschreiben",
+      "title": "Auswahl umschreiben",
+      "instructionPlaceholder": "Beschreiben, wie umgeschrieben werden soll…",
+      "instructionLabel": "Anweisung zum Umschreiben",
+      "submit": "Umschreiben",
+      "accept": "Übernehmen",
+      "cancel": "Abbrechen",
+      "regenerate": "Neu generieren",
+      "selectionLabel": "Ausgewählter Text",
+      "resultLabel": "Umschreibung",
+      "streaming": "Wird umgeschrieben…",
+      "empty": "Die Umschreibung war leer. Versuche eine andere Anweisung.",
+      "failed": "Umschreiben fehlgeschlagen. Bitte erneut versuchen.",
+      "presets": {
+        "shorten": "Kürzen",
+        "expand": "Erweitern",
+        "rephrase": "Umformulieren",
+        "impact": "Mehr Wirkung",
+        "grammar": "Grammatik korrigieren"
+      },
+      "presetInstructions": {
+        "shorten": "Formuliere das prägnanter, ohne konkrete Fakten zu verlieren.",
+        "expand": "Erweitere das um relevante Details, ohne neue Fakten zu erfinden.",
+        "rephrase": "Formuliere das mit anderen Worten um, behalte aber die Bedeutung bei.",
+        "impact": "Schreibe das wirkungsvoller und selbstbewusster um, halte dabei alle Fakten korrekt.",
+        "grammar": "Korrigiere Grammatik, Rechtschreibung und Zeichensetzung, behalte Bedeutung und Wortwahl so weit wie möglich bei."
+      }
+    },
     "stages": {
       "analyzing": "Anforderungen werden analysiert…",
       "extracting": "Prioritäten werden extrahiert…",

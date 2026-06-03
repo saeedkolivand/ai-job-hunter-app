@@ -1,9 +1,10 @@
-import { Check, Copy, Download, Eye, FileText, Pencil, RotateCcw } from 'lucide-react';
+import { Check, Copy, Download, FileText, RotateCcw } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 
-import { Button, cn, MarkdownMessage, SegmentedControl, TextArea } from '@ajh/ui';
+import { Button, cn } from '@ajh/ui';
 
+import { EditableOutput } from '@/components/generation/EditableOutput';
 import { buildFilename, type GenerationMeta, MODES, type TemplateId } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 
@@ -42,10 +43,6 @@ export function OutputPanelDone({
 }: OutputPanelDoneProps) {
   const { t } = useTranslation();
   const [exportOpen, setExportOpen] = useState(false);
-  // Preview (prettified markdown) vs Edit (raw text). Display-only: the raw
-  // string stays canonical — copy, export, and the **keyword** emphasis markers
-  // are never touched, so a Preview/Edit switch can't change the exported file.
-  const [view, setView] = useState<'preview' | 'edit'>('preview');
 
   // If the active tab has no content but the other does, switch automatically
   useEffect(() => {
@@ -116,38 +113,17 @@ export function OutputPanelDone({
         </div>
       )}
 
-      {/* Output — prettified Preview or raw Edit (display-only; export uses the raw text) */}
+      {/* Output — prettified Preview or raw Edit; the raw string stays canonical,
+          so copy/export read exactly what's edited (incl. inline AI rewrites). */}
       <div className="flex flex-1 flex-col overflow-hidden px-6 py-4">
-        <SegmentedControl<'preview' | 'edit'>
-          ariaLabel={t('aiGenerate.viewMode')}
-          size="sm"
-          tone="brand"
-          value={view}
-          onChange={setView}
-          options={[
-            { value: 'preview', label: t('aiGenerate.preview'), icon: Eye },
-            { value: 'edit', label: t('aiGenerate.edit'), icon: Pencil },
-          ]}
-          className="mb-2 shrink-0 self-end"
+        <EditableOutput
+          value={currentOutput}
+          onChange={onOutputChange}
+          disabled={isGenerating}
+          docType={activeOut === 'resume' ? 'resume' : 'cover-letter'}
+          meta={meta}
+          className="flex h-full w-full flex-col overflow-hidden"
         />
-
-        {view === 'edit' ? (
-          <TextArea
-            value={currentOutput}
-            onChange={(e) => onOutputChange(e.target.value)}
-            className="h-full w-full bg-transparent font-mono text-[12px] leading-relaxed text-foreground/80 placeholder:text-foreground/20"
-            spellCheck={false}
-            placeholder={t('aiGenerate.placeholder')}
-          />
-        ) : (
-          <div className="h-full w-full overflow-y-auto rounded-lg">
-            {currentOutput ? (
-              <MarkdownMessage content={currentOutput} className="text-[12px] text-foreground/80" />
-            ) : (
-              <p className="text-[12px] text-foreground/20">{t('aiGenerate.placeholder')}</p>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Re-generate option */}

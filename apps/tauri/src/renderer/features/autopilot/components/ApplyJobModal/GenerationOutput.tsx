@@ -2,6 +2,8 @@ import { Check, Copy, Download } from 'lucide-react';
 
 import { Button, cn } from '@ajh/ui';
 
+import { EditableOutput } from '@/components/generation/EditableOutput';
+import type { GenerationMeta } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 
 import type { TailorTarget } from './useTailorGeneration';
@@ -11,6 +13,11 @@ interface Props {
   activeOut: 'resume' | 'cover';
   setActiveOut: (o: 'resume' | 'cover') => void;
   output: string;
+  /** Inline edit (F1) of the active document — session-immediate + debounced persist. */
+  onEdit: (text: string) => void;
+  /** Disable editing while a generation is still streaming. */
+  editable: boolean;
+  meta: GenerationMeta | null;
   copied: boolean;
   onCopy: () => void;
   exportOpen: boolean;
@@ -23,6 +30,9 @@ export function GenerationOutput({
   activeOut,
   setActiveOut,
   output,
+  onEdit,
+  editable,
+  meta,
   copied,
   onCopy,
   exportOpen,
@@ -102,8 +112,16 @@ export function GenerationOutput({
           </div>
         </div>
       </div>
-      <div className="max-h-56 overflow-y-auto whitespace-pre-wrap px-3 py-2 text-[11px] leading-relaxed text-foreground/75">
-        {output || '…'}
+      <div className="flex h-56 flex-col px-3 py-2">
+        <EditableOutput
+          value={output}
+          onChange={onEdit}
+          disabled={!editable}
+          docType={activeOut === 'resume' ? 'resume' : 'cover-letter'}
+          meta={meta}
+          className="flex h-full flex-col overflow-hidden"
+          textAreaClassName="h-full w-full bg-transparent text-[11px] leading-relaxed text-foreground/75 placeholder:text-foreground/20"
+        />
       </div>
     </div>
   );

@@ -404,6 +404,7 @@ fn main() {
             // ai generations
             commands::ai_generations::ai_generations_list,
             commands::ai_generations::ai_generations_save,
+            commands::ai_generations::ai_generations_update,
             commands::ai_generations::ai_generations_remove,
             // profile import
             commands::profile_import::profile_import_from_url,

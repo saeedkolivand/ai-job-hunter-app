@@ -165,3 +165,122 @@ fn save_application_inserts_separate_rows_when_unlinked() {
         "manual (unlinked) saves stay separate"
     );
 }
+
+// ── update_texts tests (F1 edit-before-export) ────────────────────────────────
+
+#[test]
+fn update_texts_resume_only_leaves_cover_untouched() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    store.insert(&record("g1", "")).unwrap();
+
+    store
+        .update_texts("g1", Some("new resume".into()), None)
+        .unwrap();
+
+    let list = store.list();
+    assert_eq!(list[0].resume_text, "new resume");
+    assert_eq!(list[0].cover_letter_text, "C", "cover must be untouched");
+}
+
+#[test]
+fn update_texts_cover_only_leaves_resume_untouched() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    store.insert(&record("g1", "")).unwrap();
+
+    store
+        .update_texts("g1", None, Some("new cover".into()))
+        .unwrap();
+
+    let list = store.list();
+    assert_eq!(list[0].resume_text, "R", "resume must be untouched");
+    assert_eq!(list[0].cover_letter_text, "new cover");
+}
+
+#[test]
+fn update_texts_both_fields_updates_both() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    store.insert(&record("g1", "")).unwrap();
+
+    store
+        .update_texts(
+            "g1",
+            Some("updated resume".into()),
+            Some("updated cover".into()),
+        )
+        .unwrap();
+
+    let list = store.list();
+    assert_eq!(list[0].resume_text, "updated resume");
+    assert_eq!(list[0].cover_letter_text, "updated cover");
+}
+
+#[test]
+fn update_texts_both_none_is_a_noop_and_returns_ok() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    store.insert(&record("g1", "")).unwrap();
+
+    // Both-None must succeed without issuing an UPDATE — no rows-changed path.
+    store.update_texts("g1", None, None).unwrap();
+
+    let list = store.list();
+    assert_eq!(list[0].resume_text, "R", "resume unchanged");
+    assert_eq!(list[0].cover_letter_text, "C", "cover unchanged");
+}
+
+#[test]
+fn update_texts_unknown_id_resume_only_returns_err() {
+    // (Some(resume), None) arm — rows==0 guard must surface an Err.
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    let result = store.update_texts("does-not-exist", Some("x".into()), None);
+    assert!(
+        result.is_err(),
+        "must return Err for an unknown id (resume-only arm)"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("does-not-exist"),
+        "error message must include the id: {msg}"
+    );
+}
+
+#[test]
+fn update_texts_unknown_id_cover_only_returns_err() {
+    // (None, Some(cover)) arm — each arm has its own rows==0 guard.
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    let result = store.update_texts("does-not-exist", None, Some("y".into()));
+    assert!(
+        result.is_err(),
+        "must return Err for an unknown id (cover-only arm)"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("does-not-exist"),
+        "error message must include the id: {msg}"
+    );
+}
+
+#[test]
+fn update_texts_unknown_id_both_fields_returns_err() {
+    // (Some(resume), Some(cover)) arm — rows==0 guard must also fire here.
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    let result = store.update_texts("does-not-exist", Some("x".into()), Some("y".into()));
+    assert!(
+        result.is_err(),
+        "must return Err for an unknown id (both-fields arm)"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("does-not-exist"),
+        "error message must include the id: {msg}"
+    );
+}

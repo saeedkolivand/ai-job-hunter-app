@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import {
@@ -8,11 +8,13 @@ import {
   exportTXT,
   type GenerationMeta,
   type GenerationMode,
+  PERSIST_DEBOUNCE_MS,
   type TemplateId,
 } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { keys } from '@/services/query-client';
+import { useUpdateAiGeneration } from '@/services/use-ai-generations';
 import {
   EMPTY_SESSION,
   type GenerationResult,
@@ -65,17 +67,34 @@ export function useTailorGeneration({
   const { t } = useTranslation();
   const api = useAppClient();
   const qc = useQueryClient();
+  const updateAiGeneration = useUpdateAiGeneration();
 
   const session = useGenerationStore((s) => s.sessions[contextId] ?? EMPTY_SESSION);
   const runTailor = useGenerationStore((s) => s.runTailor);
   const cancel = useGenerationStore((s) => s.cancel);
   const setActiveOutInStore = useGenerationStore((s) => s.setActiveOut);
+  const setOutputInStore = useGenerationStore((s) => s.setOutput);
+  const setSavedIdInStore = useGenerationStore((s) => s.setSavedId);
 
-  const { generating, phase, resumeOut, coverOut, thinking, activeOut, error, meta } = session;
+  const { generating, phase, resumeOut, coverOut, thinking, activeOut, error, meta, savedId } =
+    session;
 
   // Modal-local, ephemeral UI — fine to reset when the modal remounts.
   const [copied, setCopied] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+
+  // Debounced persistence of inline edits — one timer per field; flushed on unmount.
+  const persistTimers = useRef<{
+    resume?: ReturnType<typeof setTimeout>;
+    cover?: ReturnType<typeof setTimeout>;
+  }>({});
+  useEffect(() => {
+    const timers = persistTimers.current;
+    return () => {
+      if (timers.resume) clearTimeout(timers.resume);
+      if (timers.cover) clearTimeout(timers.cover);
+    };
+  }, []);
 
   const output = activeOut === 'resume' ? resumeOut : coverOut;
 
@@ -102,13 +121,35 @@ export function useTailorGeneration({
         jobUrl,
         board,
       })
-      .then(() => {
+      .then((res) => {
+        // Stash the persisted id on the session so later inline edits can patch
+        // this exact record (F1) without a separate save.
+        if (res?.id) setSavedIdInStore(contextId, res.id);
         void qc.invalidateQueries({ queryKey: keys.aiGenerations.all });
         void qc.invalidateQueries({ queryKey: keys.autopilot.all });
       })
       .catch(() => {
         /* best-effort persistence — the generation is already shown to the user */
       });
+  };
+
+  // Inline edit (F1) of the active document. Updates the session immediately for a
+  // smooth typing experience; once the record has been saved, debounced-persist
+  // the edit to that record. Before a save lands (`savedId === null`) the edit is
+  // session-only — the eventual `persist` will write the latest session text.
+  const editActiveOutput = (text: string) => {
+    setOutputInStore(contextId, activeOut, text);
+    if (!savedId) return;
+    const field = activeOut === 'resume' ? 'resume' : 'cover';
+    const existing = persistTimers.current[field];
+    if (existing) clearTimeout(existing);
+    persistTimers.current[field] = setTimeout(() => {
+      updateAiGeneration.mutate(
+        activeOut === 'resume'
+          ? { id: savedId, resumeText: text }
+          : { id: savedId, coverLetterText: text }
+      );
+    }, PERSIST_DEBOUNCE_MS);
   };
 
   const generate = (resume: string, target: TailorTarget) => {
@@ -185,6 +226,8 @@ export function useTailorGeneration({
     abort,
     copy,
     exportAs,
+    // Inline edit of the active document (F1) — session-immediate + debounced persist.
+    editActiveOutput,
     // Detected metadata — lets the questions assistant reuse it instead of re-extracting.
     meta,
   };

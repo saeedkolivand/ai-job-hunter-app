@@ -193,6 +193,14 @@ Async geocode lookup with debounce:
 <LocationInput value={location} onChange={setLocation} />
 ```
 
+#### `NumberField`
+
+Controlled numeric input with string-buffer internals: suppresses `onChange` while empty/NaN, clamps to `[min, max]` on blur, and re-syncs from the external value only when it genuinely changes. Eliminates the `Number('') === 0` snap-to-zero regression. Source: `packages/ui/src/components/NumberField/NumberField.tsx`.
+
+```typescript
+<NumberField value={count} onChange={setCount} min={1} max={100} step={1} />
+```
+
 ---
 
 ### Cards & Layout

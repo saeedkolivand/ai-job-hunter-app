@@ -122,6 +122,7 @@ export {
   type AiGenerationRecord,
   type AiGenerationSaveRequest,
   type AiGenerationsContract,
+  type AiGenerationUpdateRequest,
   type ApplicationAnswer,
 } from './aiGenerations.js';
 export {

@@ -82,6 +82,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     aiGenerations: {
       list: emptyList,
       save: noop,
+      update: noop,
       remove: noop,
     },
 

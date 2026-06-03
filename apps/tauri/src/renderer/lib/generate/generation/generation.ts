@@ -18,12 +18,14 @@ import {
   buildMetadataPrompt,
   buildResumePrompt,
   buildResumeSystemPrompt,
+  buildRewritePrompt,
   extractPlainText,
   type GenerationMeta,
   type GenerationMode,
   getLinkMap,
   injectLinksIntoGeneratedText,
   resolveMarket,
+  type RewriteDocType,
   validateMetadata,
 } from '@ajh/prompts/generate';
 import { detectLanguages } from '@ajh/shared/language-detection';
@@ -418,5 +420,52 @@ export async function generateApplicationAnswer(params: {
     meta.targetLanguage || 'en',
     signal
   );
+  return extractPlainText(raw);
+}
+
+/**
+ * Inline AI rewrite of a selected span (F4). Mirrors {@link generateApplicationAnswer}:
+ * reads the active provider config, computes the effective prompt tier, builds the
+ * grounded rewrite prompt, and streams through the shared pipeline — so it works
+ * for every provider with zero per-provider code and adds NO new IPC. The model is
+ * instructed to return ONLY the rewritten span; `extractPlainText` strips any
+ * stray markdown/thinking the model echoes. Pass `onToken` to stream the rewrite
+ * into a preview and `signal` to abort an in-flight rewrite.
+ */
+export async function rewriteSelection(params: {
+  selection: string;
+  instruction: string;
+  before: string;
+  after: string;
+  docType: RewriteDocType;
+  model: string;
+  /** Document language so the rewrite streams in the right locale (default 'en').
+   *  Pass the generation's `meta.targetLanguage`. `streamGenerate` clamps it to a
+   *  supported locale via `safeLocale`. */
+  locale?: string;
+  onToken?: (tok: string) => void;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const {
+    selection,
+    instruction,
+    before,
+    after,
+    docType,
+    model,
+    locale = 'en',
+    onToken,
+    signal,
+  } = params;
+  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
+  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+  const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
+  const tier = effectiveTier(activeModel, activeProvider);
+
+  const { system, user } = buildRewritePrompt(
+    { selection, instruction, before, after, docType },
+    tier
+  );
+  const raw = await streamGenerate(model, system, user, onToken ?? (() => {}), 0.3, locale, signal);
   return extractPlainText(raw);
 }
