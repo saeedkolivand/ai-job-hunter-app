@@ -78,6 +78,9 @@ playwright/.cache/
 test-results/
 vitest.config.*.timestamp-*
 
+# UX-audit screenshots — captured locally for review only; large binaries, never committed
+docs/assets/ux-audit/
+
 # ── OS files ───────────────────────────────────────────────────────────────────
 # macOS
 .DS_Store

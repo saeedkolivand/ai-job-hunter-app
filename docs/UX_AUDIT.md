@@ -1,543 +1,329 @@
 # Premium Glass UX/UI Audit — AI Job Hunter
 
-**Status:** Audit only — analysis + proposals. No code changed. The owner greenlights items individually.
-**Date:** 2026-06-03 · **Branch:** `feat/ux-audit-premium-glass`
+**Status:** Audit only — analysis + proposals. No code changed here. The owner greenlights items individually.
+**Regenerated:** 2026-06-03 against `main` @ `2627f1c6` (after #231 + #232 merged) · **Branch:** `feat/ux-audit-premium-glass`
 **Bar:** production-grade, premium, on par with a polished native macOS/iOS app. macOS/iOS glassmorphism is the signature.
 
-> **How this audit was produced.** I walked the running renderer (the real React app via the
-> in-repo e2e mock harness in Chromium — the same engine as the Tauri WebView2 shell, so the CSS
-> glass renders identically) and captured per-route screenshots, then orchestrated five domain
-> reviewer agents over the code:
-> `frontend-reviewer` (glass/consistency/a11y/friction/IA), `resume-export-expert` (Documents IA),
-> `scraping-applier-expert` (Autopilot), `tauri-security-reviewer` (native notification/tray + a11y
-> OS-pref wiring), `performance-profiler` (glass/animation cost). Findings below are synthesized and
-> de-duplicated; each carries the **owning agent** for the eventual fix.
+> **This is a regeneration.** The first pass (2026-06-02) recommended building a real theme system and
+> closing a set of consistency/a11y gaps. Since then **two PRs landed on `main`**: #231 (premium glass —
+> token material + Light/Dark/System theme) and #232 (design-system lint reactivation + primitive/motion
+> cleanup). The audit's **#1 deliverable shipped**, so this pass re-verifies every finding against current
+> code, marks what's closed, and **replaces all screenshots** with fresh captures of the **new Light + Dark
+> themes** (+ reduced-transparency / more-contrast modifiers).
 >
-> **Two caveats to read first.**
->
-> 1. **There is no Light theme.** `packages/ui/src/lib/theme.ts` ships only `default | reduced-glass | high-contrast` (all dark). `docs/DESIGN_SYSTEM.md` documents a `light | dark | system` theme that **does not exist in code**. Building a real **Light + Dark + System** system is the **#1 deliverable** (§7). Screenshots therefore show only the existing dark variants; Light is delivered as a spec + mockup.
-> 2. **macOS native vibrancy can't render on Windows** (the dev box). The CSS `backdrop-filter` glass **does** render in WebView2/Chromium, so the captures are a faithful proxy for the CSS material — but the _native_ `NSVisualEffectView` window vibrancy (true desktop-behind-window translucency) is a macOS-only layer the app does not yet use. Noted again in §3.
+> **Method.** Code review of `apps/tauri/src/renderer/**` + `packages/ui/**`, plus mock-client Playwright
+> captures (`apps/tauri/e2e` harness, `ajh-theme` seeded per scheme, Chromium 1440×900 — the same engine as
+> the Tauri WebView2 shell, so the CSS glass renders faithfully). Native macOS `NSVisualEffectView` vibrancy
+> is a macOS-only layer the app still doesn't use; CSS `backdrop-filter` is a faithful proxy on Windows.
 
 ---
 
-## 1. Executive summary — top 5 opportunities (in priority order)
+## 0. What shipped since the first audit ✅
 
-| #     | Opportunity                                                                                                                                                                                                                                                                     | Why it's the highest leverage                                                                                                                                                                                                                                                                                                 | Effort |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| **1** | **Rebuild the glass material on a token-driven, dual-theme model** — fix the flat `.glass-card`, unify vibrancy/border/radius/glow across the elevation ladder, add the missing inset specular highlight, and ship **Light + Dark + System** with a11y modifiers.               | The signature concern. Today the "primary card" (`.glass-card`) is a flat `rgba(255,255,255,0.1)` rectangle and the elevation ladder drifts per-surface, so cards read "cheap dark panel," not "frosted glass" (visible in every screenshot). One token refactor lifts **every** surface at once and unlocks the light theme. | **L**  |
-| **2** | **Fix the accessibility foundation that the glass currently breaks** — global `:focus-visible{outline:none}` with no compensating ring, inputs with _zero_ focus indicator, `div[role=button]` nav that's keyboard-unreachable, and no `prefers-reduced-transparency` fallback. | Premium must stay readable/operable. These are WCAG AA failures that also make the app _look_ broken for users with OS accessibility settings on. Cheap, high-trust wins.                                                                                                                                                     | **M**  |
-| **3** | **Consistency pass: kill primitive bypasses + a real silent bug** — ~20 raw `<button>`/toggles bypassing `@ajh/ui`, inline-style/token drift, and `bg-brand/08` (an invalid Tailwind opacity step that's **silently dropped**, so selected states have no fill) in 7 places.    | Removes the "AI-default / drifting" feel, fixes an actual invisible-selection bug, and makes every later change land consistently.                                                                                                                                                                                            | **M**  |
-| **4** | **Make local-first feel instant + surface setup in context** — optimistic updates for delete/move/bookmark mutations, inline empty-state CTAs (every dead-end empty state), and inline "connect account"/"install browser"/"add provider" where a prerequisite blocks a flow.   | The app is local-first but several mutations wait for a round-trip, and multiple flows dead-end into Settings. Low-friction is an explicit goal.                                                                                                                                                                              | **M**  |
-| **5** | **Re-aim Autopilot at "find & notify" and wire the native surface** — remove the auto-apply UI, send real OS notifications with deep-links, give the tray a job-count + pause-all, and catch up missed runs.                                                                    | Autopilot's UI implies auto-apply (contradicting the agreed target) and the installed notification/tray plugins are **unwired** — so the core "notify me" value isn't delivered.                                                                                                                                              | **L**  |
+The audit's centerpiece (the theme system) and most of the consistency lens are now done:
 
----
+| First-audit finding                                                    | Status        | Shipped by                                                                                                                  |
+| ---------------------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **No real light theme** — only dark variants (§7, the #1 deliverable)  | ✅ **Closed** | #231 — `ThemeId = light \| dark \| system`, macOS-grade light + charcoal dark, View-Transition crossfade                    |
+| **Glass material hardcoded dark / flat `.glass-card`** (§3.2)          | ✅ **Closed** | #231 — token-driven material in `tokens.css`/`utilities.css`, per-scheme surface flips                                      |
+| **No `prefers-reduced-transparency` / `prefers-contrast` wiring** (§5) | ✅ **Closed** | #231 — `reduceTransparency`/`contrast` prefs + `data-reduce-transparency` (12 CSS hooks) + `data-contrast`                  |
+| **~20 raw `<button>` / toggles bypassing `@ajh/ui`** (§4.2)            | ✅ **Closed** | #232 — **0** raw `<button>` left in features/routes/components; new `Button`/`Input` `unstyled` variant for custom surfaces |
+| **Inline `transition={{…}}` motion drift** (§4.3)                      | ✅ **Closed** | #232 — **0** inline transition objects left; `withDelay()` + `spinSlow`/`breathe`/`ping` tokens added                       |
+| **Type too small / no Text Size / no native fonts**                    | ✅ **Closed** | #231 — 16px base, 12px floor, Text Size S/M/L, SF-on-Mac font stack                                                         |
+| **Design-system ESLint rules inert (dead globs)**                      | ✅ **Closed** | #232 — rules retargeted + enforced in CI; `<input>` honors documented native-type exceptions                                |
 
-## 2. Per-route findings
-
-Severity legend: **H** high · **M** med · **L** low. Owner = agent that owns the fix.
-
-| Route                                              | Key issues                                                                                                                                                                                                                                                                                                                                                    | Sev | Owner                       |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | --------------------------- |
-| **Dashboard** (`features/dashboard`)               | `JobPipelineOverview` empty state is a bare `<p>` (dead-end, no icon/CTA); `AISystemStatus` has no `ErrorState` — a failed health fetch shows "Checking…" forever; nested pipeline tiles read as flat opaque panels (glass thesis).                                                                                                                           | H/M | frontend                    |
-| **Analyze / Resume Analyzer** (`features/analyze`) | Error shown as plain inline `<div>` with no retry; prompt-quality segmented control is raw `<button>`×3 (no focus ring, no `aria-pressed`), duplicated with AI Workspace.                                                                                                                                                                                     | M   | frontend                    |
-| **AI Generate** (`features/ai-generate`)           | `bg-brand/08` invalid opacity on the ATS toggle + raw `<button>` toggles without `role="switch"`; Preview/Edit + format/template pickers are raw `<button>`; generation error has no "Try again"; hardcoded English strings ("Prompt Quality", "Template", "Loading model…", step labels).                                                                    | H/M | frontend · resume-export    |
-| **Jobs** (`features/jobs`)                         | Empty state is a bare `GlassCard` with text, **no "Scrape jobs" CTA** (dead-end); `PostingRow` hover glow uses `filter:'blur-xl'` (invalid value → broken); 500 un-virtualized rows each carrying `backdrop-filter`; partial-optimistic bookmark (badge flips, counters lag); icon-only copy button has no `aria-label`; ScrapeForm state lost on navigation. | H/M | frontend · performance      |
-| **Autopilot** (`features/autopilot`)               | Wizard still presents `review`/`auto_apply` + a live `autoSubmit` toggle (contradicts find-&-notify); `· Applied {N}` counter is permanently 0; no inline board-auth hint; loading is text not `CardSkeleton`; no optimistic delete.                                                                                                                          | H   | scraping-applier · frontend |
-| **Résumés** (`features/resumes`)                   | Misnamed (it's a job-interaction log + a "Generated" tab); Generated empty state has no "Generate" CTA; Generated tab has no loading skeleton (flash of empty); **delete fires with no `ConfirmModal`** (unrecoverable); cards use raw `glass-graphite` utility instead of `<GlassCard>`.                                                                     | H/M | resume-export               |
-| **Search** (`features/search`)                     | Zero-results `EmptyState` has no CTA to scrape/index data first.                                                                                                                                                                                                                                                                                              | M   | frontend                    |
-| **AI Workspace** (`features/ai-workspace`)         | Conceptually overlaps "Analyze" + "Generate"; raw `<button>` segmented control; unclear when to use vs Analyze (IA).                                                                                                                                                                                                                                          | M   | frontend                    |
-| **Monitoring** (`features/monitoring`)             | Two dead-end empty states (`ActiveJobsSection`, `ActivityFeedSection`) are bare centered `<div>` text, no icon/`EmptyState`.                                                                                                                                                                                                                                  | H   | frontend                    |
-| **Support** (`features/support`)                   | Mostly static/OK; large surface — verify glass consistency after the material refactor.                                                                                                                                                                                                                                                                       | L   | frontend                    |
-| **Settings** (`features/settings`)                 | `SettingsSidebar` uses `div[role=button]` with no `tabIndex` → **keyboard-unreachable**; `DeveloperPreferences` toggle is raw `<button>` + `bg-brand/8` (invalid) + no switch semantics; settings active-pill styling diverges from main sidebar.                                                                                                             | H/M | frontend                    |
-| **Onboarding** (`features/onboarding`)             | Solid coverage of prerequisites (AI provider, browser, résumé) but multiple inline `transition={{…}}` objects bypass motion tokens; see §6.                                                                                                                                                                                                                   | M   | frontend                    |
+The two modes now read as **one macOS-grade system** (§1 gallery). Everything below is **what remains** —
+the still-valid turnkey detail from the first audit, re-verified and re-prioritized.
 
 ---
 
-## 3. Lens 1 — Glass & premium polish _(deepest dive — priority #1)_
+## 1. Executive summary — remaining opportunities (priority order)
 
-### 3.1 The core problem, in one picture
+| #     | Opportunity                                                                                                                                                                                                                                                                                 | Why it's the highest leverage now                                                                                                                  | Effort  |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| **1** | **Close the last consistency residue + a real silent bug.** `bg-brand/08` (invalid Tailwind opacity → **no fill**, so selected states are invisible) survives in **2 autopilot wizard files**; no lint rule catches it.                                                                     | One concrete invisible-selection bug; cheap, and a lint guard prevents the whole class.                                                            | **S**   |
+| **2** | **Finish the a11y foundation.** `:focus-visible { outline:none }` is still **global** + `.input-field:focus-visible{outline:none}` → inputs/links/custom rows can focus **invisibly** (Buttons now inject a ring, so they're OK). Add `ModalShell aria-labelledby`, switch ARIA on toggles. | WCAG 2.4.7; the reduced-transparency/contrast half already shipped, this is the other half.                                                        | **S–M** |
+| **3** | **Make local-first feel instant.** Optimistic updates on delete/move/bookmark/toggle mutations via TanStack Query.                                                                                                                                                                          | The biggest perceived-speed win, still untouched.                                                                                                  | **M**   |
+| **4** | **Re-aim Autopilot at "find & notify" and wire the native surface.** Remove the disabled auto-apply UI; send real OS notifications + deep-links; tray job-count/pause-all; fix missed-run catch-up.                                                                                         | The installed notification/tray plugins are still **unwired**, so the core "notify me" value isn't delivered; the wizard still implies auto-apply. | **L**   |
+| **5** | **Group the 11-item flat sidebar + Documents hub.** Sectioned nav; merge Résumés + Generated + cover letters.                                                                                                                                                                               | Lowest priority, highest structural clarity; cover letters still have no first-class home.                                                         | **M**   |
 
-Open `docs/assets/ux-audit/default/dashboard.png`: the Job-Pipeline card and its four stat tiles render as **flat opaque dark rectangles**. That is the "cheap flat rectangle" failure mode, and it is structural, not incidental:
-
-- **`.glass-card` is built wrong.** `packages/ui/src/css/utilities.css:55` fills with **bright white** `rgba(255,255,255,0.1)` + only `saturate(130%)`. On a dark substrate a bright-white translucent fill reads as opaque light-grey — the _opposite_ of macOS materials, which derive depth from a **dark** substrate + vibrancy. Meanwhile `.glass-surface`/`.glass-elevated` _do_ use dark fills + higher saturation. So the "primary card surface" is the weakest glass in the system. **[H]**
-- **The elevation ladder drifts.** `.glass` has **no** `saturate()` at all (`:63`); `.glass-elevated`/`.glass-modal` omit `border-radius` (`:83`,`:90`) so every consumer re-adds `rounded-2xl` inline; tonal variants hardcode glow radii (`0 0 40px -10px rgba(139,92,246,.25)`) instead of the `--glow-*` tokens; the inset specular highlight (`--shadow-inset-top`) is applied to some surfaces, not others. The blur/saturate/border/shadow scales **exist as tokens** but are applied unevenly. **[H/M]**
-- **Nested double-blur.** `__root.tsx:92` puts `glass-surface` (`backdrop-filter`) on the full main panel, and child `glass-card`/`glass-graphite` panels _also_ carry `backdrop-filter` — so child glass blurs the parent's already-blurred texture: muddy _and_ double-cost (perf §A). Glass should blur the layer directly above the cinematic background, and use opaque/semi-opaque fills for nested panels. **[M]**
-
-### 3.2 Turnkey fix — a token-driven material (the foundation for Light/Dark too)
-
-Replace per-surface hardcoded values with **per-mode CSS variables** so one set of recipes serves both themes (full light/dark token tables in §7). Concretely:
-
-```css
-/* tokens.css — material variables (dark shown; light in §7) */
-:root,
-[data-color-scheme='dark'] {
-  --glass-fill: 20 20 28; /* dark substrate, NOT white */
-  --glass-fill-card: 0.55;
-  --glass-fill-surface: 0.62;
-  --glass-fill-elevated: 0.72;
-  --glass-hairline: 255 255 255 / 0.1; /* border */
-  --glass-specular: 255 255 255 / 0.28; /* top inset highlight */
-  --glass-sat: var(--sat-mid);
-}
-/* utilities.css — every elevation references the variables */
-.glass-card {
-  background: rgb(var(--glass-fill) / var(--glass-fill-card));
-  backdrop-filter: blur(var(--blur-md)) saturate(var(--glass-sat));
-  -webkit-backdrop-filter: blur(var(--blur-md)) saturate(var(--glass-sat));
-  border: 1px solid rgb(var(--glass-hairline));
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-md), var(--shadow-inset-top); /* specular sparkle */
-}
-```
-
-Then: add `saturate(var(--sat-mid))` to `.glass`; add `border-radius: var(--radius)` to `.glass-surface/.glass-elevated/.glass-dropdown/.glass-modal`; replace tonal-variant hardcoded glows with `var(--glow-brand-md)`; remove `backdrop-filter` from the root `glass-surface` panel (use a flat `rgb(var(--glass-fill)/0.6)` + inset glow). **Owner: frontend-reviewer.**
-
-### 3.3 Other polish findings (turnkey)
-
-| Sev | File:line                 | Fix                                                                                                                                                                                                                           |
-| --- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M   | `Sidebar/index.tsx:82-88` | Active-pill inline gradient/shadow uses raw rgba bypassing tokens; glow weaker than `--glow-brand-sm`. → extract `.sidebar-pill` utility referencing `var(--color-brand-dim)`, `var(--border-clear)`, `var(--glow-brand-sm)`. |
-| M   | `utilities.css:32-33`     | `.label-caps`/`.section-label` hardcode `rgba(255,255,255,.3/.4)` → `color: var(--color-muted-foreground)` so they respond to theme/contrast.                                                                                 |
-| M   | `utilities.css:111-138`   | Tonal glow radii are magic numbers → `var(--glow-brand-md)`.                                                                                                                                                                  |
-| L   | `utilities.css:170-175`   | `.toast-panel` is a bespoke glass → compose `@apply glass-elevated` so overlays share one material.                                                                                                                           |
-| L   | `utilities.css:44-48`     | `.text-gradient` hardcodes `#a855f7`/`#6366f1` → `var(--aurora-violet)`/`var(--aurora-indigo)`.                                                                                                                               |
-| L   | `utilities.css:499-511`   | Scrollbar thumb raw rgba → `var(--border-faint)`/`var(--border-dim)`.                                                                                                                                                         |
-
-**Native-vibrancy note (macOS only, optional, M):** for true Apple-grade depth on macOS, set the window `WINDOW_EFFECT`/`vibrancy` (e.g. `NSVisualEffectMaterial::HudWindow/Sidebar`) via `tauri-plugin-window-vibrancy` so the desktop shows through the chrome behind the CSS glass. This is the one thing CSS `backdrop-filter` cannot do (it only blurs in-app content). Out of scope on Windows; recommended as a macOS-only enhancement. **Owner: rust-backend-architect + tauri-security-reviewer.**
+**The delivered theme.** Light = cool present-gray canvas, off-white cards with gutters, two-tone sidebar,
+deepened `#7C3AED` accent — the old "white-on-white flashbang" is gone. Dark = neutral charcoal (`~#1B1B22`),
+mostly-opaque cards, brand violet only as accent. (Screenshots are captured locally during review and are
+**not committed** — see §11.)
 
 ---
 
-## 4. Lens 2 — Consistency
+## 2. Per-route status (re-verified)
 
-### 4.1 The silent bug: `bg-brand/08`
+Severity: **H** high · **M** med · **L** low. "✅" = the first-audit finding for that route is now closed.
 
-`08` is **not** a valid Tailwind v4 opacity step (leading-zero), so the utility is **dropped at build** and the element gets **no fill** — selected states look identical to unselected. Found in **7 places**, incl. `autopilot/.../StepAction/index.tsx:64`, `settings/.../DeveloperPreferences/index.tsx`, `ai-generate/.../GenerationConfig/index.tsx`. → change every `bg-brand/08`→`bg-brand/10`. Add a lint guard (regex `/\/0\d\b/` on className) to prevent recurrence. **[H] frontend-reviewer.**
-
-### 4.2 Primitive bypasses (raw `<button>` / toggles → `@ajh/ui`)
-
-~20 instances bypass the design system and, because of the global `outline:none` (§5), most have **no visible focus**. Highest-value:
-
-| Sev | File:line                                                             | Fix                                                                                                    |
-| --- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| H   | `settings/.../DeveloperPreferences:29-65`                             | toggle → `<Button role="switch" aria-checked aria-label>`; fix opacity.                                |
-| H   | `ai-generate/.../GenerationConfig:208-244`                            | ATS-mode toggle → `<Button role="switch" aria-checked>`; fix opacity.                                  |
-| H   | `settings/.../SettingsSidebar:34-46`                                  | `div[role=button]` (no `tabIndex`, keyboard-unreachable) → real `<button>`/`<Button variant="ghost">`. |
-| M   | `ai-generate/.../OutputPanelDone:122-143`                             | Preview/Edit raw buttons → `<Button variant="ghost" size="sm" aria-pressed>`.                          |
-| M   | `resumes/.../GenerationCard:205,224,317,350`                          | 4 raw buttons (pickers/expanders) → `<Button>` + `aria-expanded`.                                      |
-| M   | `analyze/.../AnalyzeLeftPanel:96` + `ai-workspace/.../AIWorkspace:56` | duplicated segmented control → **extract `SegmentedControl` to `packages/ui`** (pattern repeats ≥4×).  |
-| M   | `settings/.../ActiveProviderSwitcher:35`, `OllamaConfig:75-88`        | raw buttons → `<Button aria-pressed>` with ring.                                                       |
-| L   | `jobs/.../PostingRow:162-168`                                         | raw `<a>`/copy `<button>` → focus ring + `aria-label`.                                                 |
-
-### 4.3 Motion-token drift (inline `transition={{…}}` in feature files — ESLint rule 4)
-
-`AutopilotCard:173` (`{duration:0.2}`), `SelectDropdown.tsx:163` (`{duration:0.13, ease:[…]}`), and **6+** onboarding states (`BrowserDetectedState`, `BrowserErrorState`, `BrowserLoadingState`, `OllamaCheckingState`) → map each to `transition.fast/normal/relaxed/spring` from `@ajh/ui`. These also currently ignore `prefers-reduced-motion`. **[M] frontend-reviewer.**
-
-### 4.4 Component-vs-utility drift
-
-`resumes/.../GenerationCard:113` and `InteractionRow:50` instantiate `glass-graphite glass-highlight` as raw classes on a `<div>` instead of `<GlassCard tone="graphite" highlight>` → future tone changes won't propagate. **[M] resume-export-expert.**
+| Route            | Remaining issues (closed items struck)                                                                                                                                                                                                     | Sev | Owner                       |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --- | --------------------------- |
+| **Dashboard**    | `JobPipelineOverview` empty state is a bare `<p>` (dead-end, no CTA); `AISystemStatus` has no `ErrorState` (failed health → "Checking…" forever). ✅ flat-glass tiles fixed by #231 material.                                              | M   | frontend                    |
+| **Analyze**      | Error shown as plain inline `<div>`, no retry. ✅ raw segmented control → `Button unstyled` (#232); add `aria-pressed`.                                                                                                                    | M   | frontend                    |
+| **AI Generate**  | Generation error has no "Try again"; some hardcoded English ("Prompt Quality", "Template", step labels). ✅ raw toggles/pickers converted (#232) — but ATS/Preview toggles still need `role="switch"`/`aria-pressed`.                      | M   | frontend                    |
+| **Jobs**         | Empty state `GlassCard` with text, **no inline "Scrape jobs" CTA**; 500 un-virtualized rows (perf §10); icon copy button needs `aria-label`; ScrapeForm state lost on nav (`JobsPage:45`). ✅ raw copy/segmented buttons converted (#232). | M   | frontend · perf             |
+| **Autopilot**    | Wizard still presents `auto_apply` + auto-submit (contradicts find-&-notify, §8); `· Applied {N}` permanently 0; no inline board-auth hint; loading is text not `CardSkeleton`; no optimistic delete.                                      | H   | scraping-applier · frontend |
+| **Résumés**      | Misnamed (job log + "Generated" tab); Generated empty state has no "Generate" CTA + no skeleton; **delete fires with no `ConfirmModal`**; cards use raw `glass-graphite` utility not `<GlassCard>`.                                        | H/M | resume-export               |
+| **Search**       | Zero-results `EmptyState` has no CTA to scrape/index first.                                                                                                                                                                                | M   | frontend                    |
+| **AI Workspace** | Conceptually overlaps Analyze + Generate (IA §7). ✅ raw segmented control converted (#232).                                                                                                                                               | M   | frontend                    |
+| **Monitoring**   | Two dead-end empty states (`ActiveJobsSection`, `ActivityFeedSection`) bare centered text, no `EmptyState`.                                                                                                                                | H   | frontend                    |
+| **Settings**     | `SettingsSidebar` `div[role=button]` no `tabIndex` → **keyboard-unreachable**; toggles need `role="switch"`; per-tab rhythm drift (§9). ✅ Developer/provider raw buttons converted (#232); `bg-brand/08` still present (§3.1).            | M   | frontend                    |
+| **Onboarding**   | Re-verify keyboard operability after a11y fixes. ✅ inline `transition` objects → tokens (#232).                                                                                                                                           | L   | frontend                    |
 
 ---
 
-## 5. Lens 3 — Accessibility & legibility _(pragmatic — premium that stays readable)_
+## 3. Lens — Consistency
 
-| Sev   | File:line                           | Finding → Fix                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ----- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **H** | `utilities.css:515`                 | Global `:focus-visible{outline:none}` with no compensating ring → **every** element without an explicit ring class is keyboard-invisible (WCAG 2.4.7). **Fix:** scope it — only `.has-focus-ring:focus-visible{outline:none}` (applied inside Button/Input/SelectDropdown); let the browser default ring stand elsewhere. Or set a global fallback `:focus-visible{outline:2px solid var(--color-ring);outline-offset:2px}`. |
-| **H** | `Input.tsx` + `utilities.css:191`   | `.input-field:focus-visible{box-shadow:none}` on top of global `outline:none` = inputs have **zero** focus indicator. **Fix:** base classes `focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-1`.                                                                                                                                                                                                  |
-| **H** | `SettingsSidebar:34-46`             | `div[role=button]` no `tabIndex` → keyboard-unreachable settings nav. **Fix:** real `<button>`.                                                                                                                                                                                                                                                                                                                              |
-| **H** | `PostingRow:166`                    | icon-only copy button, no `aria-label`. **Fix:** `aria-label={t('jobs.copyLink')}`.                                                                                                                                                                                                                                                                                                                                          |
-| **M** | `theme.ts:91` + `utilities.css:519` | No `prefers-reduced-transparency` handling (only `reduced-motion`). **Fix:** add a CSS `@media (prefers-reduced-transparency: reduce)` block forcing `backdrop-filter:none` + opaque fills, **and** auto-apply the `reduced-glass` modifier from `matchMedia` in `restoreTheme` (§7).                                                                                                                                        |
-| **M** | `ModalShell.tsx:79`                 | `role="dialog" aria-modal` but no `aria-labelledby`. **Fix:** add `aria-labelledby` prop wired to each modal's `<h2 id>`.                                                                                                                                                                                                                                                                                                    |
-| **M** | `StepAction:109` / `ApplyDrawer:85` | auto-submit "switch" lacks `role="switch"`/`aria-checked`; checkbox+text not a `<label>`. **Fix:** switch ARIA / wrap in `<label htmlFor>`.                                                                                                                                                                                                                                                                                  |
-| **M** | i18n                                | Hardcoded English: `GenerationConfig` ("Prompt Quality","Template"), `OllamaConfig` ("Currently active"), `OutputPanelGenerating` ("Loading model…","Step X of Y"). **Fix:** route through `t()` + add keys.                                                                                                                                                                                                                 |
+### 3.1 `bg-brand/08` — the silent bug _(STILL OPEN — the one concrete defect)_
 
-> Contrast over glass: after the §3.2 material refactor (dark substrate + scrim) text contrast improves; for any translucent surface where text sits directly over the cinematic background, add a 1-layer legibility scrim (`background: rgb(var(--glass-fill)/0.72)`) behind the text block — keeps the look, restores AA.
+`08` is **not** a valid Tailwind opacity step (leading zero) → the utility is dropped at build and the
+element gets **no fill**; selected states look identical to unselected. The first audit found 7; #232's
+button conversions incidentally cleared most, but it survives in **2** files:
 
----
+- `features/autopilot/components/wizard-steps/StepSchedule/index.tsx`
+- `features/autopilot/components/wizard-steps/StepAction/index.tsx`
 
-## 6. Lens 4 — Friction & accelerators _(also covers in-scope accelerators)_
+**Fix:** `bg-brand/08` → `bg-brand/10`. **Turnkey guard:** add an ESLint `no-restricted-syntax` rule for
+`/\/0\d\b/` opacity modifiers in `className` so this can never silently ship again. **[H] frontend-reviewer.**
 
-### 6.1 Optimistic updates (make local-first feel instant) — **frontend-reviewer**
+### 3.2 Primitive bypasses — ✅ CLOSED (#232)
 
-These mutations wait for a round-trip; add `onMutate` + rollback via TanStack Query:
+0 raw `<button>` in features/routes/components. Custom surfaces (segmented controls, icon toggles, inline
+links, clickable cards) route through `Button variant="unstyled"`. Raw `<input>` is limited to the
+documented native types (`range\|file\|checkbox\|radio\|hidden`), enforced by the corrected `RAW_INPUT`
+selector. **Residual:** the converted toggles still lack `role="switch"`/`aria-pressed` semantics (the
+`unstyled` variant carries no ARIA) — fold into the §4 a11y sweep. Consider extracting a shared
+`SegmentedControl` to `@ajh/ui` (the pattern still repeats ≥4×: Analyze, AI Workspace, Generate, OutputPanel).
 
-- `use-ai-generations.ts:26` delete generation — card lingers ~200ms. **H**
-- `use-autopilot.ts:44` delete autopilot — same. **H**
-- `PostingRow` bookmark/applied — badge is optimistic but the **counters** (Pipeline/Résumés) aren't → stale numbers; add `onMutate` `setQueryData` on the interactions list. **H**
-- Add board-move/toggle/save the same treatment.
+### 3.3 Motion-token drift — ✅ CLOSED (#232)
 
-### 6.2 Contextual-setup catalog (surface the prerequisite where the flow blocks) — **frontend-reviewer + scraping-applier-expert**
+0 inline `transition={{…}}` objects in feature files. Delayed/ambient animations use `transition.*` /
+`withDelay()`. Reduced-motion is honored by the motion library defaults.
 
-| Prerequisite missing          | Today                                   | Recommend inline                                                                                                                                                    |
-| ----------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No AI provider                | Generate/Analyze fail or sit idle       | Inline "Set up AI provider" card on Generate/Analyze (reuse onboarding's `AISelectionStep` panel)                                                                   |
-| Not connected to a board      | Autopilot/Jobs run silently degraded    | Reuse Jobs' `AuthHint`/`AuthModeBadge` inline on the **Autopilot wizard `StepTarget`** and on the **Autopilot card** when board ∈ `AUTH_BENEFITS` and not connected |
-| No browser (Chrome)           | "New Autopilot" → wizard → fails at run | Guard the button: inline "Chrome required → Install" banner before wizard                                                                                           |
-| Empty Jobs / Search / Résumés | Dead-end empty states                   | `EmptyState action=` CTA on every one (Jobs→Scrape, Search→Scrape first, Résumés→Generate, Monitoring idle states)                                                  |
+### 3.4 Component-vs-utility drift _(OPEN)_
 
-### 6.3 Keyboard shortcuts (NOT a command palette) — **frontend-reviewer**
+`resumes/.../GenerationCard:113` and `InteractionRow:50` still instantiate `glass-graphite glass-highlight`
+as raw classes on a `<div>` instead of `<GlassCard tone="graphite" highlight>` → tone changes won't
+propagate. **[M] resume-export-expert.**
 
-There's an unused `shortcuts.onCommandPalette` channel; **do not** build a palette (out of scope). Instead a small, discoverable set via a global key handler + a "?" cheat-sheet:
-`⌘1..⌘9` jump to sidebar routes · `⌘N` new autopilot (on Autopilot) · `⌘↵` generate (on Generate) · `⌘E` export (on a document) · `⌘K`→reuse for in-page search on Jobs · `Esc` closes modal/drawer (verify all overlays honor it) · `⌘,` Settings.
+### 3.5 State coverage _(OPEN)_
 
-### 6.4 Step-counts (app-open → done)
-
-- _Generate a tailored résumé:_ Dashboard → Generate → pick résumé → paste/select job → configure → Generate → export = **~6** (good, once provider is set). Risk: provider/résumé setup detours mid-task → §6.2.
-- _Track a job:_ Jobs → Scrape (form) → row → bookmark = ok, but empty-state dead-end if no jobs and ScrapeForm state is lost on nav (`JobsPage:45`).
+`ConfirmModal` is used in only **2** feature files; `EmptyState`/`ErrorState` in **7**. Destructive actions
+(delete generation/autopilot, disconnect account, remove key) should consistently confirm; every async
+surface should pair a skeleton with an `EmptyState` (primary action) + `ErrorState` (retry). **[M] frontend.**
 
 ---
 
-## 7. Theme system — **Light + Dark + System + a11y modifiers** _(centerpiece deliverable)_
+## 4. Lens — Accessibility & legibility
 
-### 7.1 Target model
+| Sev   | File:line                         | Finding → Fix                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ----- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **H** | `utilities.css:511`               | Global `:focus-visible{outline:none}` with no compensating ring → every non-`@ajh/ui` element (links, labels, custom rows) is keyboard-invisible. **Fix:** scope it (`.focus-ring-none:focus-visible{outline:none}` inside Button/Input) **or** set a global fallback `:focus-visible{outline:2px solid var(--color-brand);outline-offset:2px}`. ✅ `Button` (incl. `unstyled`) now injects `focus-visible:ring-2` — but that's not enough alone. |
+| **H** | `Input.tsx` + `utilities.css:187` | `.input-field:focus-visible{outline:none}` + global reset → inputs have **zero** focus indicator. **Fix:** base classes `focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-1`.                                                                                                                                                                                                                                           |
+| **H** | `SettingsSidebar`                 | `div[role=button]` no `tabIndex` → keyboard-unreachable settings nav. **Fix:** real `<button>` / `<Button variant="ghost">`.                                                                                                                                                                                                                                                                                                                      |
+| **M** | `ModalShell.tsx`                  | `role="dialog" aria-modal` but no `aria-labelledby`. **Fix:** add `aria-labelledby` wired to each modal's `<h2 id>`.                                                                                                                                                                                                                                                                                                                              |
+| **M** | converted toggles                 | The #232 `unstyled` toggles (ATS mode, debug mode, Preview/Edit, target pickers) carry no `role="switch"`/`role="tab"` + `aria-checked`/`aria-pressed`. **Fix:** add ARIA in the a11y sweep.                                                                                                                                                                                                                                                      |
+| **M** | i18n                              | Hardcoded English in `GenerationConfig` ("Prompt Quality","Template"), `OllamaConfig`, `OutputPanelGenerating` ("Loading model…","Step X of Y"). **Fix:** route through `t()`.                                                                                                                                                                                                                                                                    |
+| ✅    | `theme.ts` + `utilities.css`      | `prefers-reduced-transparency` + `prefers-contrast` now wired (#231): `data-reduce-transparency` drives 12 solid-fallback overrides; `data-contrast="more"` set (verified in the reduced-glass / more-contrast capture passes).                                                                                                                                                                                                                   |
 
-Separate **two orthogonal axes** that today are conflated into one mutually-exclusive `ThemeId`:
-
-- **Color scheme:** `light | dark | system` (`system` follows `prefers-color-scheme`). Applied as `data-color-scheme="light|dark"` on `<html>` (resolved from the OS when `system`).
-- **A11y modifiers (independent, combine with either scheme):** `reduce-transparency` (manual **or** auto from `prefers-reduced-transparency`) and `increase-contrast` (manual **or** auto from `prefers-contrast`). Applied as `data-reduce-transparency` / `data-contrast` attributes.
-
-This keeps the existing `reduced-glass`/`high-contrast` _intent_ but promotes them from "themes you lose dark mode to pick" into modifiers that layer on top — and wires them to the OS, fixing the §5 accessibility gaps.
-
-### 7.2 Token deltas (turnkey)
-
-The material variables from §3.2 flip per scheme; the semantic `--color-*` set (currently dark-only in `tokens.css`) gets a light counterpart:
-
-```css
-/* DARK (current cinematic) */
-:root,
-[data-color-scheme='dark'] {
-  --color-background: oklch(22% 3% 9%);
-  --color-foreground: oklch(98% 1% 210);
-  --glass-fill: 20 20 28;
-  --glass-hairline: 255 255 255 / 0.1;
-  --glass-specular: 255 255 255 / 0.28;
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
-}
-/* LIGHT (new) */
-[data-color-scheme='light'] {
-  --color-background: oklch(97% 1% 250);
-  --color-foreground: oklch(24% 3% 250);
-  --color-muted-foreground: oklch(45% 3% 250);
-  --color-border: oklch(88% 2% 250);
-  --glass-fill: 255 255 255; /* light substrate */
-  --glass-fill-card: 0.62;
-  --glass-fill-surface: 0.7;
-  --glass-fill-elevated: 0.8;
-  --glass-hairline: 15 20 35 / 0.1; /* DARK hairline on light glass */
-  --glass-specular: 255 255 255 / 0.7; /* brighter top highlight */
-  --glass-sat: var(--sat-high); /* light glass needs more saturation to feel alive */
-  /* color-based shadows, not pure black-at-high-alpha */
-  --shadow-md: 0 4px 16px oklch(50% 8% 270 / 0.12);
-  --shadow-lg: 0 8px 24px oklch(50% 8% 270 / 0.16);
-}
-/* SYSTEM = no attribute written; data-color-scheme resolved from matchMedia at boot + on change */
-
-/* A11y modifiers (combine with either scheme) */
-@media (prefers-reduced-transparency: reduce) {
-  :root {
-    --enable-blur: 0;
-  }
-}
-[data-reduce-transparency],
-:root[style*='--enable-blur: 0'] {
-  --glass-sat: 100%;
-}
-[data-reduce-transparency] .glass-card,
-[data-reduce-transparency] .glass-surface,
-[data-reduce-transparency] .glass-elevated,
-[data-reduce-transparency] .glass-modal {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  background: rgb(var(--glass-fill) / 0.96);
-}
-[data-contrast='more'] {
-  --glass-hairline: var(--color-foreground); /* + bump border alpha */
-}
-```
-
-Also: light-mode **aurora/nebula** need lighter tints + lower opacity (the `--aurora-*` palette stays, drop opacity to ~0.10–0.15 on light); **scrollbars** flip to dark-on-light; **`.text-gradient`** stays but verify legibility on light.
-
-### 7.3 Engine changes (`packages/ui/src/lib/theme.ts`) — turnkey
-
-```ts
-export type ColorScheme = 'light' | 'dark' | 'system';
-export interface ThemePrefs {
-  scheme: ColorScheme;
-  reduceTransparency: boolean;
-  contrast: 'normal' | 'more';
-}
-
-function resolveScheme(s: ColorScheme): 'light' | 'dark' {
-  if (s !== 'system') return s;
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-export function applyTheme(p: ThemePrefs) {
-  const root = document.documentElement;
-  root.dataset.colorScheme = resolveScheme(p.scheme);
-  root.toggleAttribute(
-    'data-reduce-transparency',
-    p.reduceTransparency || matchMedia('(prefers-reduced-transparency: reduce)').matches
-  );
-  root.dataset.contrast =
-    p.contrast === 'more' || matchMedia('(prefers-contrast: more)').matches ? 'more' : 'normal';
-  localStorage.setItem('ajh-theme', JSON.stringify(p));
-}
-// restoreTheme(): parse JSON; if absent, default { scheme:'system', reduceTransparency:false, contrast:'normal' }.
-// Register matchMedia('change') listeners for color-scheme / reduced-transparency / contrast so the
-// app tracks live OS changes when scheme==='system' or the modifier is in auto mode.
-```
-
-Settings UI: a 3-way **Light / Dark / System** segmented control + two switches (Reduce transparency, Increase contrast), each defaulting to "Auto (follows system)". Update `DESIGN_SYSTEM.md` to match reality. **Owner: frontend-reviewer (impl) · tauri-security-reviewer (OS-pref/privacy: `matchMedia` is renderer-local, no permission/leak) · project-steward (doc fix).**
-
-### 7.4 Migration note
-
-Existing persisted `ajh-theme` values (`'default'|'reduced-glass'|'high-contrast'` strings) must be migrated: `default→{scheme:'dark'}`, `reduced-glass→{scheme:'dark',reduceTransparency:true}`, `high-contrast→{scheme:'dark',contrast:'more'}`.
+**Light-mode contrast — verified legible:** the light captures read cleanly; secondary text lands on the
+macOS hierarchy (`#6E6E73`/`#8E8E93`), not the old invisible low-opacity grays.
 
 ---
 
-## 8. Lens 5 — Navigation & IA _(lowest priority — bold proposals, recommendations only)_
+## 5. Lens — Friction & accelerators _(OPEN)_
 
-### 8.1 Current sidebar — 11 flat peers, no grouping
+### 5.1 Optimistic updates — highest perceived-speed win, untouched
 
-`Sidebar/index.tsx:29` lists Dashboard · Analyze · Generate · Jobs · Autopilot · Résumés · Search · AI · Monitoring · Support · Settings. Three of these (Analyze, Generate, AI) are the _same_ AI-on-text job; "Résumés" is actually a job-interaction log + a Generated tab; "Search" burns a top-level slot for a power feature; cover letters have **no** first-class home.
+Add `onMutate` + rollback via TanStack Query to: `use-ai-generations.ts` delete generation; `use-autopilot.ts`
+delete autopilot; `PostingRow` bookmark/applied (badge is optimistic but **counters** lag → `setQueryData` on
+the interactions list); board-move / save / toggle. The data is local — the UI should never appear to "think."
 
-### 8.2 Proposed regroup (before → after)
+### 5.2 Contextual-setup catalog — surface the prerequisite where the flow blocks
+
+| Prerequisite missing      | Today                           | Recommend inline                                                                           |
+| ------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------ |
+| No AI provider            | Generate/Analyze idle/fail      | Inline "Set up AI provider" card (reuse onboarding's `AISelectionStep` panel)              |
+| Not connected to a board  | Autopilot/Jobs degrade silently | Reuse `AuthHint`/`AuthModeBadge` on the Autopilot wizard `StepTarget` + the Autopilot card |
+| No browser (Chrome)       | "New Autopilot" → fails at run  | Guard the button: inline "Chrome required → Install" before wizard                         |
+| Empty Jobs/Search/Résumés | Dead-end empty states           | `EmptyState action=` CTA on every one                                                      |
+
+### 5.3 Keyboard shortcuts (NOT a command palette)
+
+Small discoverable set + a "?" cheat-sheet: `⌘/Ctrl+K` focus search · `g`+`j/d/a/s` jump routes · `⌘/Ctrl+↵`
+run primary action (Analyze/Generate) · `⌘/Ctrl+E` export · `Esc` closes modal/drawer (verify all honor it) ·
+`⌘/Ctrl+,` Settings. Do **not** build a command palette (out of scope).
+
+---
+
+## 6. Lens — Navigation & IA _(OPEN — lowest priority, bold proposal)_
+
+The sidebar is still **11 flat peers**; three (Analyze, Generate, AI Workspace) are the same AI-on-text job,
+"Résumés" is really a job-log + Generated tab, and cover letters have no first-class home.
 
 ```
 BEFORE (flat 11)                AFTER (grouped, ~3 sections)
-┌─────────────────┐            ┌─────────────────────────────┐
-│ ◇ Dashboard     │            │  Dashboard                  │
-│ ◇ Analyze       │            │                             │
-│ ◇ Generate      │            │  WORKSPACE                  │
-│ ◇ Jobs          │            │   Jobs                      │
-│ ◇ Autopilot     │            │   Documents  ▸ Résumés      │
-│ ◇ Résumés       │            │              ▸ Cover Letters│
-│ ◇ Search        │            │              ▸ Activity     │
-│ ◇ AI            │            │   Generate                  │
-│ ◇ Monitoring    │            │   Analyze                   │
-│ ◇ Support       │            │   Chat (was “AI”)           │
-│ ◇ Settings      │            │                             │
-│                 │            │  AUTOMATION                 │
-│                 │            │   Autopilot                 │
-│                 │            │   Activity (was Monitoring) │
-│                 │            │                             │
-│                 │            │  ⌄ (pinned bottom)          │
-│                 │            │   Support · Settings        │
-└─────────────────┘            └─────────────────────────────┘
+ Dashboard                       Dashboard
+ Resume Analyzer                 ── WORKSPACE ──
+ AI Generate                      Jobs
+ Jobs                             Documents ▸ Résumés / Cover Letters / Activity
+ Autopilot                        Generate
+ Resumes                          Analyze
+ Search                           Chat (was "AI Workspace")
+ AI Workspace                    ── AUTOMATION ──
+ Monitoring                       Autopilot
+ Help & Support                   Activity (was Monitoring)
+ Settings                        ── (pinned bottom) ──
+                                  Support · Settings
    Search → ⌘K in-page on Jobs (toolbar icon), not a sidebar slot.
 ```
 
-- **Documents hub** (rename "Résumés"): tabs **Résumés** / **Cover Letters** (both filtered from `AiGenerationRecord`) / **Activity** (the old applied/viewed/bookmarked log). Gives cover letters a real home and matches the user's "my output artefacts" mental model. **Owner: resume-export-expert.**
-- **Rename "AI" → "Chat"** and keep distinct from Analyze/Generate, or fold it into a tab. **Demote Search** to `⌘K` on Jobs. Use the `.section-label` utility for group headers + a hairline divider. **Owner: frontend-reviewer.**
+**Documents hub** (rename "Résumés"): tabs Résumés / Cover Letters (both from `AiGenerationRecord`) / Activity
+(the applied/viewed/bookmarked log) — gives cover letters a real home. Use `.section-label` for group headers
+
+- hairline dividers. Recommendation only. **Owner: resume-export-expert · frontend-reviewer.**
 
 ---
 
-## 9. Autopilot — current vs. "find & notify" target
+## 7. Onboarding _(existing wizard; do NOT add a new one)_
 
-**Target:** find · score · dedupe · **notify** (native OS) — never auto-prepare/auto-submit; application generation stays **on-demand** from the job view. Tray-resident; catches up missed runs; battery-aware; launch-at-login optional (default OFF).
-
-### 9.1 Remove the auto-apply surface _(scraping-applier-expert)_
-
-- **[H]** `StepAction/index.tsx` presents `review`/`auto_apply` + a live `autoSubmit` toggle + `coverLetter` textarea, all wired end-to-end (IPC contract, Rust store, create/update payloads carry `action`/`autoSubmit`/`coverLetter`). **Delete `StepAction`**, replace wizard step 3 with a summary/confirm; remove `action`/`autoSubmit`/`coverLetter` from `WizardState`, the IPC contract, and the Rust `Autopilot` store. The only persisted intent should be `schedule`.
-- **[H]** `AutopilotCard:111` shows `· Applied {totalApplied}` (permanently 0; Rust always records `applied=0`) → remove. `:98` shows the `action` pill → remove. `:44` `STEP_ICON` has dead `apply_start/apply_done` → remove.
-- On-demand path already exists in `ApplyJobModal`; relabel any "Apply" affordance to "Tailor"/"Prepare".
-
-### 9.2 Wire native notifications + tray + deep-link _(tauri-security-reviewer · scraping-applier-expert)_
-
-- **[H]** Plugins installed (`tauri-plugin-notification`, `single-instance`, tray-icon) but **no notification is ever sent**. After `record_run`, if new-job count > 0, call `NotificationExt::notification(...).title("New jobs found").body(...).show()`, gated on permission state (`Prompt`→request, `Denied`→skip). Thread the `is_new` count from `merge_found_jobs` through `record_run`'s return.
-- **Deep-link:** tray click + notification click should emit an `autopilot.focus` event carrying `autopilot_id`; renderer listens and navigates to that card's found-jobs panel. Register an `ajh://` scheme and **validate** argv in `single-instance` against a route allowlist before navigating (injection guard).
-- **Tray menu:** add "New jobs: N" (updated on run-complete) + "Pause All" + "Reopen window". Currently the tray only focuses the window.
-
-### 9.3 Missed-run catch-up + reliability _(scraping-applier-expert)_
-
-- **[H]** `autopilot_scheduler.rs:60` — the first `interval.tick().await` swallows the immediate tick, so catch-up is delayed 60s after launch (a daily job closed within 60s slips a full day). **Fix:** run `tick()` once before the loop (one line).
-- **[M]** `stamp_last_run` before run completes with no `run_status` flag → interrupted runs look "completed, 0 found." Add `run_status: in_progress|completed|failed` + an amber "interrupted" badge.
-- **[M]** `min_match_score` is configured but never applied as a gate before `record_run` → sub-threshold jobs shown identically. Split passing/below-threshold (collapse the latter).
-- **[M]** Cancellation token registered but not threaded into `autopilot_scrape` → scheduler runs can't be cancelled mid-flight.
-- **[M]** Jaccard keyword score is shown as a precise "%" → label it "Keyword match" (or use the existing embedding cosine) to avoid implying ATS-grade relevance.
-
-### 9.4 Battery + launch-at-login _(tauri-security-reviewer)_
-
-- **[M]** Scheduler ticks regardless of power source. Add `sysinfo` battery check + an `allow-on-battery` pref (default: pause heavy browser-automation on battery). Add the global "Pause All" gate (tray).
-- **[L]** `tauri-plugin-autostart` absent → add for optional launch-at-login, **default false**, settings toggle, scoped to `main` window.
+Flow: Welcome → AI Selection → Browser → Résumé → Research → Prefs + `SpotlightTour`. It sets up the real
+prerequisites — good. ✅ inline `transition` objects → tokens (#232). **Open:** re-verify full keyboard
+operability after the §4 focus-ring fix (first thing a new user touches); ensure "skip" paths leave a usable
+contextual-setup trail (§5.2 — if AI setup is skipped, the inline Generate CTA must appear).
 
 ---
 
-## 10. Onboarding — audit (existing wizard; do NOT add a new one)
+## 8. Autopilot — current vs. "find & notify" target _(OPEN)_
 
-Flow: Welcome → AI Selection (Ollama model picker / cloud provider / CLI agent) → Browser → Résumé → Research → Prefs, plus a `SpotlightTour`. **It does set up the real prerequisites** (AI provider, browser, first résumé) — good. Gaps:
+**Target:** find · score · dedupe · **notify** (native OS) — never auto-prepare/auto-submit; application
+generation stays **on-demand** from the job view. Tray-resident; catches up missed runs; battery-aware.
 
-- **[M]** Multiple inline `transition={{…}}` objects across `BrowserDetectedState/ErrorState/LoadingState`, `OllamaCheckingState` bypass motion tokens and ignore `prefers-reduced-motion` → map to `transition.*`.
-- **[M]** After the §5 focus-ring + §4 primitive fixes, re-verify the wizard is fully keyboard-operable (it's the first thing a new user touches).
-- **[L]** Ensure the wizard's "skip" paths still leave the user with a usable contextual-setup trail (ties to §6.2 — if they skip AI setup, the inline Generate CTA must appear).
+### 8.1 Remove the auto-apply surface _(scraping-applier-expert)_
 
----
+- **[H]** `StepAction/index.tsx` still presents `review`/`auto_apply` + a live auto-submit toggle + cover-letter
+  textarea, wired end-to-end (IPC contract, Rust store). **Delete `StepAction`**, replace wizard step 3 with a
+  summary/confirm; drop `action`/`autoSubmit`/`coverLetter` from `WizardState`, the IPC contract, and the Rust
+  `Autopilot` store. The only persisted intent should be `schedule`. (Also clears the `bg-brand/08` here, §3.1.)
+- **[H]** `AutopilotCard` shows a permanent `· Applied 0` counter + an `action` pill + dead `apply_start/apply_done`
+  step icons → remove. On-demand `ApplyJobModal` already exists; relabel "Apply" → "Tailor"/"Prepare".
 
-## 10A. Settings — per-section consistency deep-dive
+### 8.2 Wire native notifications + tray + deep-link _(tauri-security-reviewer · scraping-applier-expert)_
 
-> Added in response to: _"what about each section of the settings page? … the UX is not good because it's not consistent."_ You're right. I captured all 9 tabs (`docs/assets/ux-audit/settings/`) and ran a focused consistency teardown. **Root cause: the shared `SettingsSection` primitive exists in `@ajh/ui` but only 2 of 9 sections use it — the other 7 hand-roll the same `GlassCard > IconBadge + SectionLabel` header by hand, so each tab drifts.**
+- **[H]** Plugins (`tauri-plugin-notification`, `single-instance`, tray-icon) installed but **no notification is
+  ever sent**. After `record_run`, if new-job count > 0, `NotificationExt::notification(...).show()`, gated on
+  permission (`Prompt`→request, `Denied`→skip). Thread the `is_new` count from `merge_found_jobs` through.
+- **Deep-link:** tray/notification click → `autopilot.focus` event with `autopilot_id`; renderer navigates to that
+  card's found-jobs panel. Register an `ajh://` scheme and **validate** argv in `single-instance` against a route
+  allowlist before navigating (injection guard).
+- **Tray menu:** "New jobs: N" (updated on run-complete) + "Pause All" + "Reopen window".
 
-### 10A.1 The five systemic inconsistencies (these explain the "it's not consistent" feeling)
+### 8.3 Missed-run catch-up + reliability _(scraping-applier-expert)_
 
-1. **Header primitive ignored.** `SettingsSection` (which _is_ `GlassCard > mb-4 flex gap-2 > IconBadge + SectionLabel`) is used only by Contact + Applicant. General, AI, Job, Résumé, Performance hand-roll it 12+ times with drifting values (the caps sub-header `tracking-[0.16em] text-foreground/40` is re-typed instead of `<SectionLabel>`; field-label opacity drifts across `/40 /50 /55 /70` for the same role). **[H]**
-2. **Two "you-are-here" languages.** Main sidebar active pill = violet gradient + glow + border; Settings sub-sidebar pill = flat `bg-white/[0.07]`, active icon `text-foreground/70` not `text-brand-soft`. Entering Settings changes the nav language entirely — and _every_ selection control (LanguageSelector, ActiveProviderSwitcher, Performance cards, OutputTone) invents its own active state. **[H]**
-3. **One concept, three row components.** "A connected-account row" is built 3 ways — `AccountRow` (`glass-surface`, `h-8` icon, Trash2), `BoardSessionRow` (inline gradient, `h-10` brand badge, danger/info buttons, ConfirmModal), `LinkedInSessionRow` (`bg-white/5`, no glass, `variant="glass"` disconnect, **no ConfirmModal**). Different chrome, icon sizes, action styles, destructive gating. **[H]**
-4. **Inconsistent destructive gating.** `BoardSessionRow` + Privacy gate behind `ConfirmModal`; `LinkedInSessionRow` disconnect and `AccountRow` credential-delete fire immediately. **[H]**
-5. **Large i18n + a11y gaps.** Whole sections are hardcoded English (PerformancePreferences entirely; TechStack title/description; OllamaResourcesPanel; EmbeddingsSettings description; Board/LinkedIn labels). A11y: `SettingsSidebar` `div[role=button]` keyboard-unreachable; Performance raw `motion.button` with no `role`/`aria-pressed`; Developer toggle no `role="switch"`; `bg-brand/8` invalid opacity in Résumé + Developer. **[H]**
+- **[H]** `autopilot_scheduler.rs` — the first `interval.tick().await` swallows the immediate tick → catch-up is
+  delayed 60s after launch (a daily job closed within 60s slips a full day). **Fix:** `tick()` once before the loop.
+- **[M]** `stamp_last_run` before completion + no `run_status` → interrupted runs look "completed, 0 found." Add
+  `run_status: in_progress|completed|failed` + an amber "interrupted" badge.
+- **[M]** `min_match_score` configured but never gated before `record_run` → split passing/below-threshold.
+- **[M]** Cancellation token registered but not threaded into `autopilot_scrape` → runs can't be cancelled.
+- **[M]** Jaccard keyword score shown as a precise "%" → label "Keyword match" (or use embedding cosine).
 
-### 10A.2 Per-section findings (turnkey)
+### 8.4 Battery + launch-at-login _(tauri-security-reviewer)_
 
-| Section                                  | Findings (sev)                                                                                                                                                                                                                                                                                                                                                                                                                | Turnkey fix                                                                                                                 |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **(all)** `SettingsContent:38`           | Header declares `border-white/[0.05]` but **no `border-b`** → separator invisible (M); outer `space-y-4` fought by per-section `space-y` (M)                                                                                                                                                                                                                                                                                  | add `border-b`; sections return fragments of bare `SettingsSection`                                                         |
-| **General** `general-section`            | hand-rolled header ×3 instead of `SettingsSection` (M); field label `text-[11px] /50` vs others' `/70` (M)                                                                                                                                                                                                                                                                                                                    | `<SettingsSection>`; one `FieldLabel` at `text-xs /55`                                                                      |
-| **Contact** `contact/*`                  | ✅ baseline — the only section using `SettingsSection` correctly (description opacity still unique, L)                                                                                                                                                                                                                                                                                                                        | standardize description token                                                                                               |
-| **AI** `ai-settings/*`                   | `ActiveProviderSwitcher:35` raw `<button>` no focus ring (H); CloudProvider/CompanyResearch raw `<button>` inline links (H); `AISettingsTab:50` self-wraps in `motion.div` → **double entrance animation** (M); 6+ raw caps headers vs `SectionLabel` (M); `EmbeddingsSettings` hardcoded English description (H); `OllamaResourcesPanel` zero i18n (M); a one-off monospace `provider=…endpoint=…` debug strip in a user tab | `Button`+rings; drop the extra `motion.div`; `SectionLabel`/`SettingsSection`; i18n; move debug strip behind Developer      |
-| **Jobs** `JobLocationPreferences`        | raw caps header not `SettingsSection` (M); inline chip motion with no `transition` token (M)                                                                                                                                                                                                                                                                                                                                  | `<SettingsSection icon={MapPin}>`; `transition.fast`                                                                        |
-| **Résumé** `ResumePreferences`           | `bg-brand/8` invalid opacity (H); raw caps header (M); bare `Loader2`/`AlertCircle` instead of `RowSkeleton`/`EmptyState` (M); `toLocaleDateString('en-GB')` hardcoded locale (L)                                                                                                                                                                                                                                             | `/10`; `<SettingsSection>`; skeleton/empty primitives; `i18n.language`                                                      |
-| **Tech stack** `TechStackPreferences`    | hardcoded "Tech Stack" title + description (H×2); raw category colors (M); chip motion no `transition` (M)                                                                                                                                                                                                                                                                                                                    | i18n keys; brand tokens; `transition.fast`                                                                                  |
-| **Accounts** `accounts/*`                | 3 divergent row components (H); `LinkedInSessionRow` disconnect = `variant="glass"` + no ConfirmModal (H×2); `AccountsSettingsTab` bare `div`, no card chrome (M); `BoardSessionRow` BOARD_STYLE hardcoded **`bg-[#0077B5]`** hex — ESLint-blocked (M); labels hardcoded English (L)                                                                                                                                          | one prop-driven `AccountRow` (BoardSessionRow as canonical); ConfirmModal on all disconnect; named board-color tokens; i18n |
-| **Privacy** `privacy/*`                  | section bare `div`, no card chrome (M); `ActionCard` inline gradient duplicated from BoardSessionRow + raw class-string props instead of `Button` variants (M/L)                                                                                                                                                                                                                                                              | wrap in `GlassCard`; `ActionCard` → `variant: danger\|warning\|success\|info` mapping to `Button`                           |
-| **Performance** `PerformancePreferences` | raw `motion.button` cards, no `role="radio"`/`aria-pressed` (H); **entire component hardcoded English** (H)                                                                                                                                                                                                                                                                                                                   | `role="radiogroup"`+`aria-checked`; i18n all options                                                                        |
-| **Developer** `DeveloperPreferences`     | raw `<button>` toggle, no `role="switch"`/`aria-checked` (H); `bg-brand/8` invalid (H)                                                                                                                                                                                                                                                                                                                                        | `role="switch"`/`<Button>`; `/10`                                                                                           |
-| **Nav** `SettingsSidebar`                | `div[role=button]` no `tabIndex` → keyboard-unreachable (H); flat-white pill vs app violet (H); active icon `/70` not `text-brand-soft` (M); `ChevronRight` not `aria-hidden` (L)                                                                                                                                                                                                                                             | real `<button>`; port the violet `.nav-pill`; `text-brand-soft`; `aria-hidden`                                              |
-| **Shared** `LanguageSelector`            | imports `i18n` from `@/i18n` directly, bypassing the `@/lib/i18n` wrapper (H); raw `motion.button` tiles, no focus ring (H)                                                                                                                                                                                                                                                                                                   | use `@/lib/i18n`; `Button`/rings                                                                                            |
-
-### 10A.3 Convergence plan — make all 9 tabs read as one app
-
-1. **One header primitive:** route every settings card through `<SettingsSection icon label>`; every in-card caps header through `<SectionLabel>`. _(Add a lint/snapshot guard: a `GlassCard` inside a settings route without `SettingsSection` fails.)_
-2. **One active-state pill:** extract the app Sidebar's violet-gradient pill into a shared `.nav-pill` / `NavPill`; apply in SettingsSidebar, LanguageSelector, ActiveProviderSwitcher, Performance/OutputTone selectors.
-3. **One destructive contract:** every disconnect/delete/reset → `ConfirmModal` (BoardSessionRow + Privacy are the reference).
-4. **One account-row:** collapse AccountRow / BoardSessionRow / LinkedInSessionRow into a single prop-driven row (BoardSessionRow chrome as canonical).
-5. **i18n + a11y sweep:** key every hardcoded string; give every toggle/selector a real `role`/`aria-*` + focus ring; make the nav keyboard-operable.
-
-**Exhibit S1 — AI tab** (provider cards + a one-off monospace `provider=…endpoint=…` debug strip that belongs in Developer):
-![Settings · AI](assets/ux-audit/settings/ai.png)
-
-**Exhibit S2 — Accounts** (info banners + "Connect" rows; this row pattern differs from the LinkedIn/Board session rows for the same concept):
-![Settings · Accounts](assets/ux-audit/settings/accounts.png)
-
-**Exhibit S3 — Developer** (the raw-`<button>` pill toggle with the invalid `bg-brand/8` and no `role="switch"`):
-![Settings · Developer](assets/ux-audit/settings/developer.png)
+- **[M]** Scheduler ticks regardless of power source → add `sysinfo` battery check + `allow-on-battery` pref
+  (default: pause heavy browser-automation on battery) + the tray "Pause All" gate.
+- **[L]** `tauri-plugin-autostart` absent → add for optional launch-at-login, **default false**, scoped to `main`.
 
 ---
 
-## 11. Lens (perf) — keeping the glass smooth _(performance-profiler; secondary lens)_
+## 9. Settings — per-section consistency _(largely OPEN; foundation helped)_
 
-| Sev | File:line                                 | Fix                                                                                                                                                                          |
-| --- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| H   | `CinematicBackground/index.tsx:35`        | RAF cursor-blob + parallax run forever, even when window hidden → pause on `visibilitychange`.                                                                               |
-| H   | `globals.css:32`                          | `body[data-modal-open] .app-content{filter:blur(6px)}` flattens the entire animated shell each frame → replace with a fixed overlay div above `.app-content` (iOS pattern).  |
-| H   | `use-mouse-parallax.ts:23`                | `setPos` React state on every pointermove re-renders ~20 background nodes → ref + direct style mutation (as the blob already does).                                          |
-| M   | `JobsPage:223`                            | 500 un-virtualized `motion.div` rows each with `backdrop-filter` → `@tanstack/react-virtual`; drop per-row blur (it blurs nothing meaningful behind the panel).              |
-| M   | `utilities.css:419`                       | 8 concurrent blurred aurora/nebula layers always composited → cut to 2 in default; `display:none` in reduced-glass/low-memory (today reduced-glass only halves blur radius). |
-| M   | `preferences-store.ts:49` + `globals.css` | `performanceMode:'balanced'` (default) does **nothing** → give it the blur-halving + 2-layer aurora; `low-memory` = no animation.                                            |
-| M   | `__root.tsx:92`                           | root `glass-surface` blur double-blurs child glass → flat fill on the shell (also §3.1).                                                                                     |
-| L   | `motion.ts:172`                           | `hover.glow` animates `filter:brightness` → use box-shadow/opacity.                                                                                                          |
-| L   | `PostingRow:107`                          | `filter:'blur-xl'` invalid value (no-op now; don't "fix" to a real blur — remove).                                                                                           |
+The token unification (#231) removed the worst color drift and the new **Appearance** card
+(`general-section/AppearanceCard.tsx`) is clean. #232 converted the raw
+`<button>` toggles/pills (Developer, provider switchers). **What remains is structural rhythm + semantics + i18n.**
 
----
+**The five systemic inconsistencies (re-verified):**
 
-## 12. Prioritized action plan (each item ≈ one PR)
+1. **Header primitive ignored.** `SettingsSection` (`GlassCard > IconBadge + SectionLabel`) is used by only ~2 of
+   9 sections; the rest hand-roll the header 12+ times with drifting caps-label tracking and field-label opacity
+   (`/40 /50 /55 /70` for the same role). **[H]**
+2. **Two "you-are-here" languages.** Main sidebar active pill = violet gradient + glow; Settings sub-sidebar pill =
+   flat `bg-white/[0.07]`, active icon `/70` not `text-brand-soft`. Every selector (Language, ActiveProvider,
+   Performance, OutputTone) invents its own active state. **[H]**
+3. **One concept, three row components.** `AccountRow` / `BoardSessionRow` / `LinkedInSessionRow` build "a connected
+   account" three ways (different chrome, icon sizes, action styles). **[H]**
+4. **Inconsistent destructive gating.** `BoardSessionRow` + Privacy gate behind `ConfirmModal`; `LinkedInSessionRow`
+   disconnect and `AccountRow` credential-delete fire immediately. **[H]**
+5. **i18n + a11y gaps.** Whole sections hardcoded English (PerformancePreferences, TechStack, OllamaResourcesPanel,
+   Embeddings); `SettingsSidebar` keyboard-unreachable; toggles lack `role="switch"`; `bg-brand/08` in StepSchedule/
+   StepAction (§3.1). ✅ the raw `<button>` elements themselves are converted (#232) — semantics still missing. **[H]**
 
-Ordered by the weighting (glass → consistency → a11y → friction → IA). Effort **S/M/L**. Owner = Primary implementer (reviewers per repo rules).
-
-| #   | PR                                                                                                                                                                                                                                      | Effort | Owner                                                 |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------- |
-| 1   | **Material refactor**: token-driven glass variables; fix `.glass-card` (dark substrate + vibrancy + inset specular), add `saturate` to `.glass`, unify radius/glow/border across the elevation ladder; de-nest root double-blur. (§3.2) | **L**  | frontend-reviewer                                     |
-| 2   | **Light + Dark + System theme + a11y modifiers**: theme engine rewrite, light token set, `matchMedia` wiring (color-scheme/reduced-transparency/contrast), Settings UI, migration, doc fix. (§7)                                        | **L**  | frontend-reviewer (+ tauri-security, project-steward) |
-| 3   | **Focus-ring + reduced-transparency foundation**: scope global `outline:none`, add input/Button rings, `@media prefers-reduced-transparency`, `ModalShell aria-labelledby`. (§5)                                                        | **M**  | frontend-reviewer                                     |
-| 4   | **`bg-brand/08` fix + lint guard** across 7 files. (§4.1)                                                                                                                                                                               | **S**  | frontend-reviewer                                     |
-| 5   | **Primitive sweep**: extract `SegmentedControl` to `@ajh/ui`; replace raw `<button>`/`div[role=button]` toggles with `Button`+ARIA; fix `SettingsSidebar` keyboard reachability. (§4.2)                                                 | **M**  | frontend-reviewer                                     |
-| 6   | **Motion-token + component-vs-utility drift**: inline `transition` → tokens; `GenerationCard`/`InteractionRow` → `<GlassCard>`. (§4.3–4.4)                                                                                              | **S**  | frontend-reviewer                                     |
-| 7   | **State-coverage pass**: `EmptyState` + CTA on Jobs/Search/Résumés/Monitoring/Dashboard-pipeline; `ErrorState`+retry on Dashboard health/Analyze/Generate; skeletons on Autopilot/Résumés-Generated. (§2, §5)                           | **M**  | frontend-reviewer (+ resume-export)                   |
-| 8   | **Optimistic updates** for delete/bookmark/move mutations. (§6.1)                                                                                                                                                                       | **M**  | frontend-reviewer                                     |
-| 9   | **Contextual setup**: inline provider/board/browser setup where a prerequisite blocks; persist ScrapeForm state. (§6.2)                                                                                                                 | **M**  | frontend-reviewer (+ scraping-applier)                |
-| 10  | **Autopilot: remove auto-apply UI** (delete `StepAction` action/autoSubmit/coverLetter end-to-end; remove Applied counter/action pill/dead step icons). (§9.1)                                                                          | **M**  | scraping-applier-expert                               |
-| 11  | **Autopilot: native notifications + tray + deep-link** (notify on new jobs, permission flow, tray count/pause-all, validated `ajh://` deep-link). (§9.2)                                                                                | **L**  | tauri-security-reviewer (+ scraping-applier)          |
-| 12  | **Autopilot: catch-up + reliability** (immediate first tick, `run_status`, min-score gate, thread cancel token, battery pause, optional autostart). (§9.3–9.4)                                                                          | **M**  | scraping-applier-expert                               |
-| 13  | **Documents IA**: rename Résumés→Documents with Résumés/Cover-Letters/Activity tabs; add `ConfirmModal` on delete. (§8.2, §2)                                                                                                           | **M**  | resume-export-expert                                  |
-| 14  | **Sidebar regroup + Search→⌘K + keyboard shortcuts + "?" cheat-sheet**. (§6.3, §8)                                                                                                                                                      | **M**  | frontend-reviewer                                     |
-| 15  | **Perf**: pause RAF offscreen; modal overlay (not subtree filter); ref-based parallax; virtualize Jobs; aurora layer budget per perf-mode. (§11)                                                                                        | **M**  | frontend-reviewer (perf-profiler review)              |
-| 16  | _(macOS only, optional)_ native window vibrancy via `tauri-plugin-window-vibrancy`. (§3.3)                                                                                                                                              | **S**  | rust-backend-architect                                |
-
-**17. Settings consistency convergence (L · frontend-reviewer, + resume-export for account rows):** adopt `SettingsSection` across all 9 tabs; extract one shared violet active-pill; consolidate the 3 account-row components into one; `ConfirmModal` on every destructive action; settings i18n + a11y sweep (keyboard-reachable nav, `role`/`aria` on every toggle/selector). (§10A)
-
-**Suggested sequencing:** 1→2→3 first (the material + theme + a11y foundation everything else sits on), then 4–6 **+ 17** (consistency), 7–9 (friction), 10–12 (Autopilot), 13–15 (IA/perf), 16 optional.
+**Convergence plan — make all 9 tabs read as one app:** (1) route every settings card through `<SettingsSection
+icon label>` + every caps header through `<SectionLabel>` (add a lint/snapshot guard); (2) extract the app
+sidebar's violet pill into a shared `NavPill`, apply to SettingsSidebar + every selector; (3) one destructive
+contract — `ConfirmModal` on every disconnect/delete/reset; (4) collapse the three account rows into one prop-driven
+row; (5) i18n + ARIA sweep + keyboard-reachable nav. **Owner: frontend-reviewer (+ resume-export for account rows).**
 
 ---
 
-## 13. Screenshots
+## 10. Lens — Performance _(OPEN; performance-profiler)_
 
-Captured from the running renderer (e2e mock harness, Chromium 1280×800 @2x). Dark variants only — Light doesn't exist yet (§7). Index:
+| Sev | File:line                       | Fix                                                                                                                                                   |
+| --- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| H   | `CinematicBackground/index.tsx` | RAF cursor-blob + parallax run forever, even when window hidden → pause on `visibilitychange`.                                                        |
+| H   | `globals.css`                   | `body[data-modal-open] .app-content{filter:blur(6px)}` flattens the whole animated shell each frame → fixed overlay div above `.app-content` instead. |
+| H   | `use-mouse-parallax.ts`         | `setPos` React state on every pointermove re-renders ~20 background nodes → ref + direct style mutation.                                              |
+| M   | `JobsPage`                      | 500 un-virtualized `motion.div` rows each with `backdrop-filter` → `@tanstack/react-virtual`; drop per-row blur.                                      |
+| M   | `utilities.css`                 | Several blurred aurora/nebula layers always composited → cut to 2 by default; `display:none` in reduced-glass/low-memory.                             |
+| M   | `preferences-store.ts`          | `performanceMode:'balanced'` (default) does little → give it the blur-halving + 2-layer aurora; `low-memory` = no animation.                          |
 
-- **Default (dark):** `docs/assets/ux-audit/default/{dashboard,analyze,generate,jobs,autopilot,resumes,search,ai,monitoring,support,settings}.png`
-- **Reduced-glass / High-contrast variants:** `docs/assets/ux-audit/{reduced-glass,high-contrast}/{dashboard,analyze,support,settings}.png`
-- **States:** `docs/assets/ux-audit/states/{autopilot-wizard,settings-general,onboarding-1}.png`
-- **Settings tabs (all 9):** `docs/assets/ux-audit/settings/{general,contact,ai,job,resume,accounts,privacy,performance,developer}.png` — see §10A
-- **Flow walkthroughs:** `docs/assets/ux-audit/flows/{jobs-1-board…jobs-5-apply-drawer, auto-1-empty…auto-11-questions}.png` — see §14
-
-**Exhibit A — the glass thesis** (cards read as flat dark panels, nested pipeline tiles opaque, dead-end "Open a job…" text):
-![Dashboard](assets/ux-audit/default/dashboard.png)
-
-**Exhibit B — dead-end empty state** (Jobs: "No postings yet" text, no inline CTA — the only Scrape button is in the toolbar):
-![Jobs empty state](assets/ux-audit/default/jobs.png)
-
-**Exhibit C — Autopilot wizard with the auto-apply surface** (Target → Filter → **Action** → Schedule; the Action step carries `auto_apply` + auto-submit, §9.1):
-![Autopilot wizard](assets/ux-audit/states/autopilot-wizard.png)
+(Re-verify line numbers against current `main` — these files moved in #231; the patterns persist.)
 
 ---
 
-## 14. End-to-end flow walkthroughs (captured, step-by-step)
+## 11. Screenshots — captured locally, not committed
 
-> Driven through the **real UI** in the e2e harness with a **seeded mock backend** (the
-> renderer has no live Rust backend in capture), so every screen is the actual component
-> tree responding to real clicks — only the data is seeded. Two flows captured at the
-> owner's request. Screens under `docs/assets/ux-audit/flows/`.
+Light + Dark + a11y-modifier captures of every route were taken **locally** during this review (mock-client
+Playwright harness, `apps/tauri/e2e`, 1440×900) to ground the visual claims above. They are **not committed**
+— screenshots are large binaries, so `docs/assets/ux-audit/` is gitignored; re-run the harness to regenerate
+them on demand. The first audit's stale pre-#231 flow/settings captures were removed; those flow findings
+(ScrapeForm fake-progress bar; ApplyDrawer auto-submit affordance; "Select an AI model first"
+dead-prerequisite) remain valid and are folded into §2, §5, and §8.
 
-### 14.1 Jobs — scrape → view results → apply
+---
 
-1. Empty board · 2. Scrape form (query "frontend developer") · 3. Scraping (progress) · 4. Results (5 postings) · 5. Apply drawer.
+## 12. Prioritized action plan _(remaining, each ≈ one PR)_
 
-![Jobs: empty board](assets/ux-audit/flows/jobs-1-board.png)
-![Jobs: scrape form with query](assets/ux-audit/flows/jobs-2-scrape-form.png)
-![Jobs: scraping progress](assets/ux-audit/flows/jobs-3-scraping.png)
-![Jobs: results](assets/ux-audit/flows/jobs-4-results.png)
-![Jobs: apply drawer](assets/ux-audit/flows/jobs-5-apply-drawer.png)
+Ordered by the weighting (consistency → a11y → friction → Autopilot → IA/perf). Effort **S/M/L**.
 
-**Flow-1 UX findings**
+| #   | PR                                                                                                                                                                                                      | Effort  | Owner                               |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ----------------------------------- |
+| 1   | `bg-brand/08` fix (2 files) + invalid-opacity ESLint guard                                                                                                                                              | **S**   | frontend-reviewer                   |
+| 2   | Focus foundation: scope global `:focus-visible{outline:none}` + add input ring + `ModalShell aria-labelledby` + toggle/segment ARIA                                                                     | **S–M** | frontend-reviewer · tauri-security  |
+| 3   | Extract shared `SegmentedControl` to `@ajh/ui`; `<GlassCard>` for GenerationCard/InteractionRow                                                                                                         | **S**   | frontend-reviewer                   |
+| 4   | State-coverage sweep: `EmptyState`+CTA (Jobs/Search/Résumés/Monitoring/Dashboard), `ErrorState`+retry (health/Analyze/Generate), skeletons (Autopilot/Generated), `ConfirmModal` on destructive actions | **M**   | frontend (+ resume-export)          |
+| 5   | Optimistic updates for delete/bookmark/move/toggle                                                                                                                                                      | **M**   | frontend-reviewer                   |
+| 6   | Contextual setup (generalize `AuthHint`) + persist ScrapeForm state + keyboard shortcuts/cheat-sheet                                                                                                    | **M**   | frontend (+ scraping-applier)       |
+| 7   | Autopilot: remove auto-apply UI (delete `StepAction` end-to-end; remove Applied counter/action pill/dead icons)                                                                                         | **M**   | scraping-applier-expert             |
+| 8   | Autopilot: native notifications + tray + validated `ajh://` deep-link                                                                                                                                   | **L**   | tauri-security (+ scraping-applier) |
+| 9   | Autopilot: catch-up + reliability (immediate first tick, `run_status`, min-score gate, thread cancel token, battery pause, optional autostart)                                                          | **M**   | scraping-applier-expert             |
+| 10  | Settings convergence: `SettingsSection` across 9 tabs; shared `NavPill`; one account-row; `ConfirmModal` everywhere; i18n + a11y sweep                                                                  | **L**   | frontend (+ resume-export)          |
+| 11  | Documents IA: rename Résumés→Documents (Résumés/Cover-Letters/Activity tabs) + sidebar regroup + Search→⌘K                                                                                              | **M**   | resume-export · frontend            |
+| 12  | Perf: pause RAF offscreen; modal overlay (not subtree filter); ref-based parallax; virtualize Jobs; aurora budget per perf-mode                                                                         | **M**   | frontend (perf-profiler review)     |
+| 13  | _(macOS only, optional)_ native window vibrancy via `tauri-plugin-window-vibrancy`                                                                                                                      | **S**   | rust-backend-architect              |
 
-- **[M]** Step 1 empty board has no inline CTA — the only "Scrape Jobs" trigger is the toolbar button (§2, §5). The empty state should host the primary action.
-- **[M]** `ScrapeForm/index.tsx:145` — step 3's progress bar is a **fake fixed animation** (`transition.fakeProgress` → animates to 85% regardless of real progress). On a slow scrape it stalls at 85% then jumps; premium apps show indeterminate shimmer or real per-page progress. **Fix:** indeterminate bar, or wire real `job.stream` page counts.
-- **[H/§9]** Step 5 `ApplyDrawer` exposes an **Auto-submit checkbox** + "automated access may be restricted" ToS warning — the same auto-apply automation that §9 says to de-emphasize app-wide, not just in Autopilot.
-- **[M]** Step 5 leads with "Resume match → _Save a resume first_" (a dead-ish prerequisite). Add an inline "Import résumé" CTA (§6.2) instead of a disabled Score button.
-
-### 14.2 Autopilot — create → run → apply (on-demand)
-
-1. Empty state · 2. Wizard·Target · 3. Target filled · 4. Wizard·Filter · 5. Wizard·Action ("Save only") · 6. Wizard·Schedule · 7. Created card · 8. After Run · 9. Found jobs (scored) · 10. Apply modal (JD filled) · 11. Application questions.
-
-![Autopilot: empty](assets/ux-audit/flows/auto-1-empty.png)
-![Autopilot: wizard target](assets/ux-audit/flows/auto-2-wizard-target.png)
-![Autopilot: target filled](assets/ux-audit/flows/auto-3-target-filled.png)
-![Autopilot: wizard filter](assets/ux-audit/flows/auto-4-filter.png)
-![Autopilot: wizard action — save only](assets/ux-audit/flows/auto-5-action-manual.png)
-![Autopilot: wizard schedule](assets/ux-audit/flows/auto-6-schedule.png)
-![Autopilot: created card](assets/ux-audit/flows/auto-7-created.png)
-![Autopilot: after run](assets/ux-audit/flows/auto-8-run-done.png)
-![Autopilot: found jobs](assets/ux-audit/flows/auto-9-found-list.png)
-![Autopilot: apply modal with JD](assets/ux-audit/flows/auto-10-apply-modal.png)
-![Autopilot: application questions](assets/ux-audit/flows/auto-11-questions.png)
-
-**Flow-2 UX findings**
-
-- **[M]** Step 2 (Target) — the board grid renders every board equal with **no auth/"not connected" hint** (§9.5). Reuse Jobs' `AuthHint`/`AuthModeBadge`.
-- **[H]** Step 5 (Action) still presents **"Apply & review" / "Auto-apply" (Coming soon)** beside "Save only" — the auto-apply surface §9.1 recommends removing. (The whole step should become an informational summary.)
-- **[H]** Step 7 card shows a permanent **"Applied 0"** counter + an `action` pill (§9.1) — remove both.
-- **[GOOD — keep] Steps 9–11 _are_ the find-&-notify target done right:** results are surfaced with scores + NEW badges, and application generation is strictly **on-demand** in a modal — job description auto-filled, résumé pre-filled from the autopilot, model + company-research + résumé/cover target + an **application-questions assistant** (résumé-grounded answers). This is the model to preserve. Two refinements: (a) label the score "keyword match" not a bare "%" (§9.3); (b) the modal shows "_Select an AI model first_" — gate that prerequisite inline (§6.2).
-- **Glass note:** the wizard modal (`CreationWizard/index.tsx:133`) uses the densest, milkiest glass in the app (`blur(32px) saturate(180%)` + Apple-style top hairline) — **this is the quality bar**; the §3 material refactor should lift flat cards up to _this_ level.
+**Suggested sequencing:** 1–3 (consistency/a11y residue) → 4–6 (state + friction) → 7–9 (Autopilot) → 10–11 (settings + IA) → 12–13.
 
 ---
 
 ## Appendix — method & attribution
 
-Five orchestrated reviewer agents produced the raw findings (frontend-reviewer, resume-export-expert, scraping-applier-expert, tauri-security-reviewer, performance-profiler); visual judgment + synthesis by the main session. Security-relevant items surfaced in passing (e.g. `system_open_external` URL allowlist, CSP loopback wildcard) are tracked separately by `tauri-security-reviewer` and are **out of scope for this UX audit** but noted here so they aren't lost.
+Regenerated against `main` @ `2627f1c6` (post-#231 + #232). Findings are from direct code review of
+`apps/tauri/src/renderer/**` and `packages/ui/**`; visual claims are grounded in the fresh Playwright captures
+(§11). The first audit's raw findings came from five orchestrated reviewer agents (frontend-reviewer,
+resume-export-expert, scraping-applier-expert, tauri-security-reviewer, performance-profiler); this regeneration
+re-verifies them against current code inline. Security items surfaced in passing (`system_open_external` URL
+allowlist, CSP loopback wildcard, the `ajh://` deep-link allowlist above) are tracked by `tauri-security-reviewer`
+and are out of scope for this UX audit but noted so they aren't lost. No code is changed by this document.
