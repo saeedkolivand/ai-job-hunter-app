@@ -622,6 +622,10 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          # This job has no pnpm/action-setup step (it only runs a dependency-free
+          # node script), so disable setup-node@v5's default package-manager cache,
+          # which would otherwise try to invoke pnpm and fail to locate it.
+          package-manager-cache: false
 
       - name: 🍺 Sync cask to the built dmgs
         env:
