@@ -2,9 +2,10 @@ import { AlertCircle, Download, FileText, Loader2, Sparkles, Trash2, Upload } fr
 import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 
-import type { DocumentRecord } from '@ajh/shared';
+import type { ContactFieldConflict, DocumentRecord } from '@ajh/shared';
 import { Button, cn, GlassCard, transition, useNotification } from '@ajh/ui';
 
+import { ContactConflictModal } from '@/components/contact/ContactConflictModal';
 import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
 import { useTranslation } from '@/lib/i18n';
@@ -36,12 +37,22 @@ export function ResumePreferences() {
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Contact-mismatch follow-up: surfaced after a successful import when the
+  // résumé's contact fields disagree with the saved profile. Never gates import.
+  const [conflicts, setConflicts] = useState<ContactFieldConflict[]>([]);
+  // Bumped per import so the modal remounts and re-seeds its rows cleanly.
+  const [importKey, setImportKey] = useState(0);
+
   const handleFileUpload = async (file: File) => {
     if (!file) return;
     try {
-      await importFile(file);
+      const result = await importFile(file);
       if (fileInputRef.current) fileInputRef.current.value = '';
       notify(t('settings.resume.uploaded'), 'success');
+      if (result.contactConflicts?.length) {
+        setConflicts(result.contactConflicts);
+        setImportKey((k) => k + 1);
+      }
     } catch (err) {
       notify(err instanceof Error ? err.message : t('settings.resume.uploadFailed'), 'error');
     }
@@ -261,6 +272,13 @@ export function ResumePreferences() {
           })}
         </div>
       )}
+
+      <ContactConflictModal
+        key={importKey}
+        open={conflicts.length > 0}
+        conflicts={conflicts}
+        onClose={() => setConflicts([])}
+      />
     </GlassCard>
   );
 }

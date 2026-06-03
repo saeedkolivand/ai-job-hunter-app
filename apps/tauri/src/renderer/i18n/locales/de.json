@@ -298,6 +298,21 @@
       "photoErrorSize": "Dieses Bild ist zu groß. Wählen Sie eines unter 10 MB.",
       "photoErrorDecode": "Dieses Bild konnte nicht gelesen werden. Versuchen Sie eine andere Datei."
     },
+    "contactConflict": {
+      "title": "Kontaktdaten aktualisieren?",
+      "description": "Ihr importierter Lebenslauf enthält Kontaktdaten, die von Ihrem gespeicherten Profil abweichen. Ihr Lebenslauf wurde unverändert importiert — wählen Sie unten für jedes Feld den gewünschten Wert. Beim Überspringen bleibt Ihr gespeichertes Profil unverändert.",
+      "keepMine": "Meine behalten",
+      "useResume": "Aus Lebenslauf",
+      "savedLabel": "Gespeichert",
+      "resumeLabel": "Lebenslauf",
+      "emptyValue": "—",
+      "choiceAria": "Wert für {{field}} wählen",
+      "editAria": "{{field}} bearbeiten",
+      "save": "Speichern",
+      "dismiss": "Kontaktdaten behalten",
+      "saved": "Kontaktprofil aktualisiert.",
+      "saveFailed": "Kontaktprofil konnte nicht aktualisiert werden."
+    },
     "developer": {
       "title": "Entwickler-Werkzeuge",
       "debugMode": "Debug-Modus",
