@@ -6,7 +6,7 @@ import {
   Gauge,
   HelpCircle,
   LayoutDashboard,
-  Search,
+  type LucideIcon,
   Settings,
   Sparkles,
   User,
@@ -26,19 +26,43 @@ import { useAICapability } from '@/providers/CapabilityProvider';
 import { useAppVersion } from '@/services/use-system';
 import { useAIModel, useAiProviderConfig, useUserName } from '@/store/preferences-store';
 
-const NAV_ITEMS = [
-  { to: ROUTES.DASHBOARD, label: 'nav.dashboard', icon: LayoutDashboard, tourId: 'dashboard' },
-  { to: ROUTES.ANALYZE, label: 'nav.analyze', icon: Gauge, tourId: 'analyze' },
-  { to: ROUTES.GENERATE, label: 'nav.generate', icon: Wand2, tourId: 'generate' },
-  { to: ROUTES.JOBS, label: 'nav.jobs', icon: Briefcase, tourId: 'jobs' },
-  { to: ROUTES.AUTOPILOT, label: 'nav.autopilot', icon: Zap, tourId: 'autopilot' },
-  { to: ROUTES.RESUMES, label: 'nav.resumes', icon: FileText, tourId: 'resumes' },
-  { to: ROUTES.SEARCH, label: 'nav.search', icon: Search, tourId: 'search' },
+interface NavItem {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  tourId: string;
+}
+
+// Scrollable nav, grouped by intent. Search is intentionally absent — it lives
+// on ⌘/Ctrl+K (and the dashboard quick-links); its route is unchanged.
+const NAV_SECTIONS: { labelKey: string; items: readonly NavItem[] }[] = [
+  {
+    labelKey: 'nav.sections.workspace',
+    items: [
+      { to: ROUTES.DASHBOARD, label: 'nav.dashboard', icon: LayoutDashboard, tourId: 'dashboard' },
+      { to: ROUTES.JOBS, label: 'nav.jobs', icon: Briefcase, tourId: 'jobs' },
+      { to: ROUTES.ANALYZE, label: 'nav.analyze', icon: Gauge, tourId: 'analyze' },
+      { to: ROUTES.GENERATE, label: 'nav.generate', icon: Wand2, tourId: 'generate' },
+      // tourId 'documents' matches the onboarding tour (the visible label is
+      // relabelled "Documents" in the IA pass; the route stays /resumes).
+      { to: ROUTES.RESUMES, label: 'nav.resumes', icon: FileText, tourId: 'documents' },
+    ],
+  },
+  {
+    labelKey: 'nav.sections.automation',
+    items: [
+      { to: ROUTES.AUTOPILOT, label: 'nav.autopilot', icon: Zap, tourId: 'autopilot' },
+      { to: ROUTES.MONITORING, label: 'nav.monitoring', icon: Activity, tourId: 'monitoring' },
+    ],
+  },
+];
+
+// Pinned to the bottom of the nav, above the user/status footer.
+const PINNED_ITEMS: readonly NavItem[] = [
   { to: ROUTES.AI, label: 'nav.ai', icon: Sparkles, tourId: 'ai' },
-  { to: ROUTES.MONITORING, label: 'nav.monitoring', icon: Activity, tourId: 'monitoring' },
   { to: ROUTES.SUPPORT, label: 'nav.support', icon: HelpCircle, tourId: 'support' },
   { to: ROUTES.SETTINGS, label: 'nav.settings', icon: Settings, tourId: 'settings' },
-] as const;
+];
 
 export function Sidebar() {
   const { t } = useTranslation();
@@ -68,38 +92,52 @@ export function Sidebar() {
     tooltipTimer.current = setTimeout(() => setVersionTooltip(false), 2000);
   };
 
+  const renderNavItem = ({ to, label, icon: Icon, tourId }: NavItem) => {
+    const active = pathname === to || (to !== '/' && pathname.startsWith(to + '/'));
+    return (
+      <div key={to} className="relative" data-tour-id={tourId}>
+        {active && <NavPill layoutId="sidebar-pill" />}
+        <Link
+          to={to}
+          className={cn(
+            'group relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors duration-150',
+            active
+              ? 'text-foreground'
+              : 'text-foreground/45 hover:bg-foreground/[0.04] hover:text-foreground/75'
+          )}
+        >
+          <Icon
+            size={15}
+            className={cn(
+              'shrink-0 transition-colors duration-150',
+              active ? 'text-brand-soft' : 'text-foreground/35 group-hover:text-foreground/55'
+            )}
+          />
+          <span className="flex-1 font-medium">{t(label)}</span>
+        </Link>
+      </div>
+    );
+  };
+
   return (
     <aside className="app-sidebar glass-surface m-3 mr-0 flex w-60 flex-col rounded-2xl p-3">
-      <nav className="flex flex-col gap-1">
-        {NAV_ITEMS.map(({ to, label, icon: Icon, tourId }) => {
-          const active = pathname === to || (to !== '/' && pathname.startsWith(to + '/'));
-          return (
-            <div key={to} className="relative" data-tour-id={tourId}>
-              {active && <NavPill layoutId="sidebar-pill" />}
-              <Link
-                to={to}
-                className={cn(
-                  'group relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors duration-150',
-                  active
-                    ? 'text-foreground'
-                    : 'text-foreground/45 hover:bg-foreground/[0.04] hover:text-foreground/75'
-                )}
-              >
-                <Icon
-                  size={15}
-                  className={cn(
-                    'shrink-0 transition-colors duration-150',
-                    active ? 'text-brand-soft' : 'text-foreground/35 group-hover:text-foreground/55'
-                  )}
-                />
-                <span className="flex-1 font-medium">{t(label)}</span>
-              </Link>
+      <nav className="flex flex-col gap-4">
+        {NAV_SECTIONS.map((section) => (
+          <div key={section.labelKey}>
+            <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-foreground/40">
+              {t(section.labelKey)}
             </div>
-          );
-        })}
+            <div className="flex flex-col gap-1">{section.items.map(renderNavItem)}</div>
+          </div>
+        ))}
       </nav>
 
-      <div className="mt-auto space-y-2  px-3 pb-3 pt-3">
+      {/* Pinned: AI config + support + settings, anchored to the bottom. */}
+      <nav className="mt-auto flex flex-col gap-1 border-t border-white/[0.06] pb-3 pt-3">
+        {PINNED_ITEMS.map(renderNavItem)}
+      </nav>
+
+      <div className="space-y-2 px-3 pb-3">
         {userName && (
           <div className="flex items-center gap-2.5 px-1">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-soft/25 to-brand/10 ring-1 ring-brand/20">

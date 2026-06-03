@@ -4,6 +4,10 @@
     "tagline": "Ruhig. Lokal. KI-nativ."
   },
   "nav": {
+    "sections": {
+      "workspace": "Arbeitsbereich",
+      "automation": "Automatisierung"
+    },
     "dashboard": "Übersicht",
     "analyze": "Lebenslauf-Analyse",
     "generate": "KI-Generator",
