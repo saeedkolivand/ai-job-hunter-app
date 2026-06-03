@@ -2,7 +2,7 @@ import { AlertCircle, Plus, X, Zap } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 
 import type { Autopilot } from '@ajh/shared';
-import { Button } from '@ajh/ui';
+import { Button, CardSkeleton } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
 import { AutopilotCard } from '@/features/autopilot/components/AutopilotCard';
@@ -78,8 +78,9 @@ function AutopilotPage() {
           )}
 
           {loading ? (
-            <div className="flex items-center justify-center h-40 text-foreground/30 text-sm">
-              {t('autopilot.loading')}
+            <div className="space-y-3">
+              <CardSkeleton />
+              <CardSkeleton />
             </div>
           ) : autopilots.length === 0 ? (
             <EmptyState onNew={() => setCreating(true)} />

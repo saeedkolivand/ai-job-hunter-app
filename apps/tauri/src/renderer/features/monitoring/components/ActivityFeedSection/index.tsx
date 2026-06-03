@@ -1,6 +1,7 @@
+import { Inbox } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 
-import { GlassCard } from '@ajh/ui';
+import { EmptyState, GlassCard } from '@ajh/ui';
 
 import { ActivityRow } from '@/features/monitoring/components/ActivityRow';
 import type { ActivityItem } from '@/features/monitoring/types';
@@ -29,9 +30,11 @@ export function ActivityFeedSection({ activity, t }: Props) {
       <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
         <AnimatePresence initial={false}>
           {activity.length === 0 ? (
-            <div className="py-8 text-center text-xs text-foreground/30">
-              {t('monitoring.emptyStates.waitingForActivity')}
-            </div>
+            <EmptyState
+              icon={Inbox}
+              title={t('monitoring.emptyStates.waitingForActivity')}
+              className="py-8"
+            />
           ) : (
             activity.map((a) => <ActivityRow key={a.id} a={a} />)
           )}
