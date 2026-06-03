@@ -314,6 +314,11 @@
       "description": "Den Einführungsassistenten erneut abspielen, um die Funktionsübersicht zu wiederholen.",
       "replay": "Assistent erneut abspielen"
     },
+    "startup": {
+      "title": "Start",
+      "launchAtLogin": "Beim Anmelden starten",
+      "launchAtLoginHint": "AI Job Hunter automatisch beim Anmelden öffnen, damit Autopiloten im Hintergrund weiter Jobs finden."
+    },
     "aiProvider": {
       "title": "KI-Anbieter",
       "description": "Wählen Sie, wo Ihre KI läuft — lokal über Ollama oder über eine Cloud-API.",

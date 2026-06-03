@@ -8,7 +8,9 @@ import { createMockClient, renderHookWithClient } from '@/test-support';
 import {
   useAppVersion,
   useGetPlatform,
+  useLaunchAtLogin,
   useProtocolVersionCheck,
+  useSetLaunchAtLogin,
   useSetLocale,
   useSystemHealth,
 } from './use-system';
@@ -58,5 +60,22 @@ describe('use-system services', () => {
     const { result } = renderHookWithClient(() => useSetLocale(), { client });
     result.current.mutate('de');
     await waitFor(() => expect(setLocale).toHaveBeenCalledWith('de'));
+  });
+
+  it('useLaunchAtLogin reads the current OS state', async () => {
+    const client = createMockClient({
+      'system.getLaunchAtLogin': vi.fn().mockResolvedValue(true),
+    });
+    const { result } = renderHookWithClient(() => useLaunchAtLogin(), { client });
+    await waitFor(() => expect(result.current.data).toBe(true));
+  });
+
+  it('useSetLaunchAtLogin toggles via system.setLaunchAtLogin and resolves to the applied state', async () => {
+    const setLaunchAtLogin = vi.fn().mockResolvedValue(true);
+    const client = createMockClient({ 'system.setLaunchAtLogin': setLaunchAtLogin });
+    const { result } = renderHookWithClient(() => useSetLaunchAtLogin(), { client });
+    result.current.mutate(true);
+    await waitFor(() => expect(setLaunchAtLogin).toHaveBeenCalledWith(true));
+    await waitFor(() => expect(result.current.data).toBe(true));
   });
 });

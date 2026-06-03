@@ -89,6 +89,25 @@ export const useSetPerformanceMode = () => {
   });
 };
 
+/** Current launch-at-login state, sourced from the OS (not local prefs). */
+export const useLaunchAtLogin = () => {
+  const api = useAppClient();
+  return useQuery({
+    queryKey: keys.system.launchAtLogin,
+    queryFn: () => api.system.getLaunchAtLogin(),
+    staleTime: Infinity,
+  });
+};
+
+/** Toggle launch-at-login; writes the resulting OS state straight into the cache. */
+export const useSetLaunchAtLogin = () => {
+  const api = useAppClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) => api.system.setLaunchAtLogin(enabled),
+    onSuccess: (actual) => queryClient.setQueryData(keys.system.launchAtLogin, actual),
+  });
+};
+
 /** Convenience: invalidate health cache to force an immediate recheck. */
 export const invalidateHealth = () =>
   queryClient.invalidateQueries({ queryKey: keys.system.health });

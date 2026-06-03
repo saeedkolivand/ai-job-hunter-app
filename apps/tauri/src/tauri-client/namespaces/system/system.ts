@@ -9,6 +9,9 @@ export const system = {
   openExternal: (url: string) => invoke('system_open_external', { url }),
   setPerformanceMode: (mode: 'low-memory' | 'balanced' | 'performance') =>
     invoke('system_set_performance_mode', { mode }),
+  getLaunchAtLogin: () => invoke<boolean>('system_get_launch_at_login'),
+  setLaunchAtLogin: (enabled: boolean) =>
+    invoke<boolean>('system_set_launch_at_login', { enabled }),
   getMetrics: () => invoke('system_get_metrics'),
   checkBrowser: () => invoke('system_check_browser'),
   openDevtools: () => invoke('system_open_devtools'),

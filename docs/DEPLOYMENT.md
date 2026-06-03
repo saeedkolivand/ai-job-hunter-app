@@ -64,7 +64,7 @@ pnpm tauri build
 
 ## Release Pipeline
 
-Releases are **fully automated** via [semantic-release][semantic-release] on push to `main`.
+Versioning and release notes are **automated** via [semantic-release][semantic-release] on push to `main`. The cross-platform **installer build is a separate manual step** — a 3-platform Tauri build is ~60 min/runner each, so it no longer runs on every merge. Trigger it from the Actions tab when you want to ship binaries (see [CI/CD Pipeline](#cicd-pipeline)).
 
 ### Commit → Version mapping
 
@@ -97,6 +97,7 @@ When semantic-release creates a new tag, a CI step automatically syncs the versi
 - `package.json` (root)
 - `apps/tauri/package.json`
 - `apps/tauri/src-tauri/Cargo.toml`
+- `apps/tauri/src-tauri/Cargo.lock` (the `ajh-tauri` package entry — kept in lockstep so local builds don't drift)
 - `apps/tauri/src-tauri/tauri.conf.json`
 
 **Never manually bump versions.** Commit with the correct prefix and the pipeline handles it.
@@ -107,25 +108,38 @@ When semantic-release creates a new tag, a CI step automatically syncs the versi
 
 ```mermaid
 graph LR
-    Push["git push to main"] --> Analysis["semantic-release\nanalyzes commits"]
-    Analysis --> Tag["creates git tag\n(if release commit)"]
-    Tag --> Build["GitHub Actions\nbuild matrix"]
-    Build --> Windows["Windows\nNSIS + MSI"]
-    Build --> Mac["macOS\nDMG + APP"]
-    Build --> Linux["Linux\nAppImage + DEB"]
-    Windows & Mac & Linux --> Upload["Upload to\nGitHub Release"]
-    Upload --> UpdateServer["Tauri Updater\nmanifest published"]
+    subgraph auto["On push to main — automatic"]
+        Push["git push to main"] --> Analysis["semantic-release\nanalyzes commits"]
+        Analysis --> Tag["git tag + GitHub\nrelease notes"]
+        Tag --> Sync["sync version files\n(commit to main)"]
+    end
+    subgraph manual["Manual — Actions ▸ Run workflow"]
+        Dispatch["workflow_dispatch\n(version input, or\nlatest tag if blank)"] --> Build["GitHub Actions\nbuild matrix"]
+        Build --> Windows["Windows\nNSIS + MSI"]
+        Build --> Mac["macOS\nDMG + APP"]
+        Build --> Linux["Linux\nAppImage + DEB"]
+        Windows & Mac & Linux --> Upload["Upload installers\nto the release"]
+        Upload --> UpdateServer["Tauri Updater\nlatest.json published"]
+    end
 ```
 
 ### GitHub Actions workflow
 
-The workflow triggers on `push` to `main` with a tag (`v*`):
+`.github/workflows/release.yml` runs in two phases:
 
-1. Checkout + install pnpm + Node
-2. Install Rust stable
-3. `pnpm build` — builds all packages
-4. `pnpm tauri build` — compiles Rust + bundles app
-5. Upload artifacts to GitHub Release
+**On `push` to `main` (automatic)** — `release` + `sync-version-files` jobs:
+
+1. semantic-release analyzes commits → creates the `v*` tag + GitHub release notes
+2. CI commits the synced version files back to `main`
+
+**Manual — Actions ▸ "🚀 Release" ▸ "Run workflow" (~60 min/platform)** — `build` + `generate-update-manifest` jobs:
+
+1. Resolve the version (the `version` input, or the latest tag when blank), then checkout that tag
+2. Install pnpm + Node + Rust stable; `pnpm build:packages`
+3. `pnpm tauri build` — compiles Rust + bundles installers for Windows / macOS / Linux
+4. Upload installers to the release, then generate + upload `latest.json` (the auto-updater manifest)
+
+> The heavy 3-platform build is decoupled from merges on purpose — run it from the Actions tab when you actually want to ship installers for a release.
 
 ---
 

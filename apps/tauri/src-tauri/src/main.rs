@@ -143,6 +143,13 @@ fn main() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_deep_link::init())
+        // Opt-in launch-at-login (default OFF; toggled via `system_*` commands).
+        // Registered after single-instance so a login launch focuses the
+        // existing window rather than spawning a duplicate. No launch args.
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(|app| {
             let handle = app.handle();
 
@@ -291,6 +298,8 @@ fn main() {
             commands::system::system_get_platform,
             commands::system::system_open_external,
             commands::system::system_set_performance_mode,
+            commands::system::system_get_launch_at_login,
+            commands::system::system_set_launch_at_login,
             commands::system::system_get_metrics,
             commands::system::system_check_browser,
             commands::system::system_open_devtools,
