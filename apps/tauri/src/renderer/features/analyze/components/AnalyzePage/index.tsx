@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import type { DocumentRecord } from '@ajh/shared';
+import { ErrorState } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
 import { useCanUseAI, useSelectedModel, useSelectedProvider } from '@/components/ui/ModelSelector';
@@ -209,9 +210,13 @@ function AnalyzePage() {
           </AnimatePresence>
 
           {error && (
-            <div className="shrink-0 mx-6 mb-4 rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2.5 text-xs text-red-300/80">
-              <div className="font-medium mb-0.5">{t('analyze.error')}</div>
-              <div className="text-red-300/60">{error}</div>
+            <div className="shrink-0 mx-6 mb-4">
+              <ErrorState
+                title={t('analyze.error')}
+                description={error}
+                onRetry={() => void run()}
+                className="rounded-lg border border-red-400/20 bg-red-400/5 py-6"
+              />
             </div>
           )}
         </div>

@@ -1,6 +1,8 @@
 import { AnimatePresence } from 'motion/react';
 import { useRef, useState } from 'react';
 
+import { ErrorState } from '@ajh/ui';
+
 import { ContactPromptModal } from '@/components/contact/ContactPromptModal';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
@@ -306,9 +308,13 @@ export function AIGeneratePage() {
           </AnimatePresence>
 
           {error && (
-            <div className="shrink-0 mx-6 mb-4 rounded-xl border border-red-400/20 bg-red-400/5 px-4 py-3 text-xs text-red-300/80">
-              <div className="font-medium mb-0.5">{t('aiGenerate.error')}</div>
-              {error}
+            <div className="shrink-0 mx-6 mb-4">
+              <ErrorState
+                title={t('aiGenerate.error')}
+                description={error}
+                onRetry={() => void handleGenerate()}
+                className="rounded-xl border border-red-400/20 bg-red-400/5 py-6"
+              />
             </div>
           )}
         </div>
