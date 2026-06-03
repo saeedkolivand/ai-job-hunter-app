@@ -32,6 +32,11 @@ export { ProgressBar, type ProgressBarProps } from './components/ProgressBar/ind
 export { RefreshButton } from './components/RefreshButton/index';
 export { SectionHeader } from './components/SectionHeader/index';
 export { SectionLabel } from './components/SectionLabel/index';
+export {
+  SegmentedControl,
+  type SegmentedControlProps,
+  type SegmentedOption,
+} from './components/SegmentedControl/index';
 export { SelectDropdown } from './components/SelectDropdown/index';
 export { SourceBadge, type SourceBadgeProps } from './components/SourceBadge/index';
 export { TextArea, type TextAreaProps } from './components/TextArea/index';
