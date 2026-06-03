@@ -24,8 +24,9 @@ For the live graph use **graphify** — `graphify query "what depends on <X>"`, 
 ## Registries (the extension points)
 
 - Scrapers — `scraping/boards/mod.rs` (`SCRAPERS`, `Scraper` trait).
-- Appliers — `applying/registry/mod.rs` (`APPLIERS`, `Applier` trait).
 - AI providers — `commands/ai_provider/` (one file per provider behind a shared interface; adding a provider = new adapter only).
+
+> No applier registry: the auto-apply engine was removed (the app is an apply **assistant**).
 
 > Drift note: dependency counts/versions live in the manifests — never copy them here; point at the manifest.
 

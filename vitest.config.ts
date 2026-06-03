@@ -5,7 +5,15 @@ import { defineConfig } from 'vitest/config';
 // its own environment + module aliases via its local vitest.config.ts.
 export default defineConfig({
   test: {
-    projects: ['packages/shared', 'packages/prompts', 'packages/ui', 'apps/tauri'],
+    projects: [
+      'packages/shared',
+      'packages/prompts',
+      'packages/ui',
+      // Storybook browser-test project (headless Chromium via Playwright). Runs
+      // every story as a test; selectable on its own with `--project storybook`.
+      'packages/ui/vitest.storybook.config.ts',
+      'apps/tauri',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary', 'json', 'html'],

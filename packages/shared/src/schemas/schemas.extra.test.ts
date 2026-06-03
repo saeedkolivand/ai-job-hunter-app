@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  ApplyStartSchema,
   AutopilotTargetSchema,
   AutopilotUpdateSchema,
   ConversationSaveMessageSchema,
@@ -116,26 +115,6 @@ describe('ResumeExtractTextSchema', () => {
     expect(() =>
       ResumeExtractTextSchema.parse({ name: 'r.pdf', bytes: new Uint8Array([9]) })
     ).not.toThrow();
-  });
-});
-
-describe('ApplyStartSchema', () => {
-  it('accepts a valid apply request', () => {
-    expect(() =>
-      ApplyStartSchema.parse({ board: 'greenhouse', url: 'https://jobs.example.com/1' })
-    ).not.toThrow();
-  });
-
-  it('rejects unsupported boards, bad urls, and overlong cover letters', () => {
-    expect(() => ApplyStartSchema.parse({ board: 'monster', url: 'https://x.com' })).toThrow();
-    expect(() => ApplyStartSchema.parse({ board: 'workday', url: 'nope' })).toThrow();
-    expect(() =>
-      ApplyStartSchema.parse({
-        board: 'workday',
-        url: 'https://x.com',
-        coverLetter: 'a'.repeat(20_001),
-      })
-    ).toThrow();
   });
 });
 

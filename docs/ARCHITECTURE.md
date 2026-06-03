@@ -87,14 +87,13 @@ The Tauri app is split into two processes:
 | `platform::config`   | **Sole owner** of env vars + data-dir / filesystem path resolution                                                        |
 | `net::http`          | **Sole owner** of `reqwest::Client` construction — one pooled rustls client; per-request timeouts                         |
 | `error` (`AppError`) | Unified typed error hierarchy (`AppResult`); serializes to its message string                                             |
-| `observability`      | Shared timed trace `Span`s (`→`/`←` + duration) for AI, scraping, apply, autopilot                                        |
+| `observability`      | Shared timed trace `Span`s (`→`/`←` + duration) for AI, scraping, autopilot                                               |
 | `scraping/`          | Board scrapers (chromiumoxide for browser boards, HTTP for API boards) via a single `SCRAPERS` registry + `Scraper` trait |
 | `documents/`         | Document import, OCR dispatch, [SQLite][sqlite] storage                                                                   |
 | `jobs/`              | Job tracker state machine (queued → running → done/failed)                                                                |
 | `credentials/`       | OS keychain CRUD via Tauri keychain plugin                                                                                |
 | `conversations/`     | Chat history persistence                                                                                                  |
-| `autopilot/`         | Workflow engine + step scheduler                                                                                          |
-| `apply_helpers/`     | Form-filling logic for auto-apply                                                                                         |
+| `autopilot/`         | Job-discovery agent + step scheduler (finds → ranks → notifies; the user tailors & applies)                               |
 | `ai_generations/`    | Metadata tracking for generated documents                                                                                 |
 | `export/`            | DOCX/PDF rendering — PDF via Typst (`export/typst_engine/`), DOCX via docx-rs (`export/docx/`)                            |
 | `updater/`           | Auto-update state (check, download, install)                                                                              |
@@ -421,7 +420,7 @@ Every persistent store (documents, AI generations, job preferences, autopilots, 
 
 ### 9. Shared Platform Infrastructure
 
-The Rust core composes a small set of **single-owner** infrastructure modules instead of re-rolling cross-cutting logic per feature: `platform::config` (env + paths), `net::http` (one pooled rustls client; per-request timeouts), `error::AppError` / `AppResult` (typed errors that serialize to their message string), and `observability::Span` (timed `→`/`←` trace logging). Expandable subsystems use registries that derive dispatch + catalogs from one list via traits — `commands::ai_provider` (`ProviderId` → `resolve`), `scraping::boards` (`SCRAPERS`), `applying::registry` (`APPLIERS`). A versioned architecture test (`apps/tauri/src-tauri/tests/architecture.rs`, run by CI) keeps ownership intact — e.g. `#[tauri::command]` only in the shell layer, `std::env::var` only in `platform/**`, `reqwest::Client::new/builder` only in `net/http.rs`, no `Result<_, String>` outside `error.rs`, and no upward cross-layer imports. Paginated scrapers isolate per-page failures (partial results instead of aborting the board). See [PATTERNS.md](PATTERNS.md) §13 for the principles and module-ownership table, [architecture-analysis.md](architecture-analysis.md) for the layered structure (L0–L3) + discovered weaknesses, and [architecture-rules.md](architecture-rules.md) for the enforced rules.
+The Rust core composes a small set of **single-owner** infrastructure modules instead of re-rolling cross-cutting logic per feature: `platform::config` (env + paths), `net::http` (one pooled rustls client; per-request timeouts), `error::AppError` / `AppResult` (typed errors that serialize to their message string), and `observability::Span` (timed `→`/`←` trace logging). Expandable subsystems use registries that derive dispatch + catalogs from one list via traits — `commands::ai_provider` (`ProviderId` → `resolve`), `scraping::boards` (`SCRAPERS`). A versioned architecture test (`apps/tauri/src-tauri/tests/architecture.rs`, run by CI) keeps ownership intact — e.g. `#[tauri::command]` only in the shell layer, `std::env::var` only in `platform/**`, `reqwest::Client::new/builder` only in `net/http.rs`, no `Result<_, String>` outside `error.rs`, and no upward cross-layer imports. Paginated scrapers isolate per-page failures (partial results instead of aborting the board). See [PATTERNS.md](PATTERNS.md) §13 for the principles and module-ownership table, [architecture-analysis.md](architecture-analysis.md) for the layered structure (L0–L3) + discovered weaknesses, and [architecture-rules.md](architecture-rules.md) for the enforced rules.
 
 ---
 

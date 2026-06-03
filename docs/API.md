@@ -23,8 +23,7 @@ All renderer ↔ Rust communication is defined as typed contracts in `packages/s
 | --------------------------------- | ------------------------------------------ |
 | [ai](#ai)                         | AI generation, model management, streaming |
 | [aiGenerations](#aigenerations)   | Generated document metadata                |
-| [apply](#apply)                   | Auto-apply to job postings                 |
-| [autopilot](#autopilot)           | Workflow automation engine                 |
+| [autopilot](#autopilot)           | Scheduled job-discovery agent              |
 | [boards](#boards)                 | Job board management                       |
 | [conversations](#conversations)   | Chat history                               |
 | [credentials](#credentials)       | Encrypted credential storage               |
@@ -187,36 +186,10 @@ interface AIGenerationRecord {
 
 ---
 
-## `apply`
-
-Automated job application.
-
-#### `apply.job(req: ApplyRequest): Promise<ApplyResult>`
-
-Applies to a job posting automatically using Playwright.
-
-```typescript
-interface ApplyRequest {
-  jobId: string;
-  resumeId: string;
-  coverLetterId?: string;
-  customMessage?: string;
-  credentials?: string; // credential key from OS keychain
-}
-
-interface ApplyResult {
-  success: boolean;
-  applicationId?: string;
-  error?: string;
-  screenshotPath?: string;
-}
-```
-
----
-
 ## `autopilot`
 
-Workflow automation engine — defines and executes multi-step job application workflows.
+Job-discovery agent — defines and runs scheduled searches that find, rank, and surface
+matching jobs (the user tailors & applies with the assistant; there is no auto-apply).
 
 #### `autopilot.create(workflow: WorkflowDefinition): Promise<string>` — returns workflow ID
 
@@ -265,7 +238,7 @@ interface WorkflowSchedule {
 ```typescript
 interface AutopilotStepEvent {
   workflowId: string;
-  step: 'scrape' | 'match' | 'generate' | 'apply' | 'complete' | 'error';
+  step: 'scrape_start' | 'scrape_done' | 'rank_done' | 'complete' | 'cancelled' | 'error';
   detail: string;
   timestamp: string;
   jobId?: string;

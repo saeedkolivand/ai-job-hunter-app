@@ -380,6 +380,30 @@ jobs:
           workspaces: apps/tauri/src-tauri
           cache-on-failure: true
 
+      # The @storybook/addon-vitest "storybook" project
+      # (packages/ui/vitest.storybook.config.ts) runs every story as a test in
+      # headless Chromium. The browser binary lives in ~/.cache/ms-playwright
+      # (outside node_modules), so cache it keyed on the lockfile (which changes
+      # when the playwright version bumps) to skip the ~120 MB download.
+      - name: 💾 Restore Playwright Browser Cache
+        id: playwright-cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      # Cache hit → only the apt system deps need (re)installing (fast); cache
+      # miss → download the browser binary and its deps.
+      - name: 🎭 Install Playwright Chromium
+        run: |
+          echo "::group::Installing Playwright Chromium"
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
+            pnpm --filter @ajh/ui exec playwright install-deps chromium
+          else
+            pnpm --filter @ajh/ui exec playwright install --with-deps chromium
+          fi
+          echo "::endgroup::"
+
       - name: 🧪 Run Tests + Coverage
         id: js-tests
         continue-on-error: true

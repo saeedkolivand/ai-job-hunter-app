@@ -19,8 +19,8 @@ a module under `src/`.
 ```
 L3  Shell / IPC        commands, ipc_contracts, main, updater
 L2  Application        pipeline, cover_letter, autopilot, autopilot_scheduler,
-                       autopilot_helpers, apply_helpers, recommend
-L1  Domain             scraping, applying, extraction, export, documents, jobs, postings,
+                       autopilot_helpers, recommend
+L1  Domain             scraping, extraction, export, documents, jobs, postings,
                        conversations, credentials, job_preferences, ai_generations,
                        profile_import, model, layout, measure, validate, locale, theme
 L0  Shared infra       error, observability, db, data_store, net, platform, browser
@@ -45,18 +45,17 @@ L0  Shared infra       error, observability, db, data_store, net, platform, brow
 - **Internal-only:** submodule helpers stay `pub(crate)` or private. `net::http`'s client
   builder internals are not re-exported.
 - **Ownership:** these modules are the **sole owners** of their concern (see table below).
-- **Documented exception (W-9):** `error` depends on `crate::extraction` and
-  `crate::applying` for `From<DomainError>` impls. Allowlisted; the alternative (moving the
-  `From` impls into the domain modules) is deferred. No new L0→L1 edges permitted.
+- **Documented exception (W-9):** `error` depends on `crate::extraction` for its
+  `From<DomainError>` impl. Allowlisted; the alternative (moving the `From` impl into the
+  domain module) is deferred. No new L0→L1 edges permitted.
 
-### L1 — Domain (`scraping`, `applying`, `extraction`, `export`, `documents`, …, `model`, `layout`, `measure`, `validate`, `locale`, `theme`)
+### L1 — Domain (`scraping`, `extraction`, `export`, `documents`, …, `model`, `layout`, `measure`, `validate`, `locale`, `theme`)
 
 - **Allowed deps:** L0 + sibling L1 modules (via their public `mod.rs` surface).
 - **Forbidden deps:** L2, L3. **No Tauri** — no `tauri::`, `tauri_plugin_*`, `AppHandle`,
   `tauri::State`, `Manager`, `.emit(`, `#[tauri::command]`.
 - **Public API:** the module root (`mod.rs`). Registry modules expose their list +
-  trait: `scraping::boards::SCRAPERS` (`Scraper`), `applying::registry::APPLIERS`
-  (`Applier`). The rendering cluster (`export`/`model`/`layout`/`measure`/`theme`/
+  trait: `scraping::boards::SCRAPERS` (`Scraper`). The rendering cluster (`export`/`model`/`layout`/`measure`/`theme`/
   `validate`/`locale`) is mutually cohesive (intra-L1; permitted).
 - **Internal-only:** board/provider/parser impls are `pub(crate)`; only the registry +
   trait are public across modules.
@@ -66,7 +65,7 @@ L0  Shared infra       error, observability, db, data_store, net, platform, brow
   reach-ups and Tauri `emit`/`AppHandle` usage that exist today are grandfathered with
   `TODO(arch)`; **no new instances allowed**.
 
-### L2 — Application / orchestration (`pipeline`, `cover_letter`, `autopilot*`, `apply_helpers`, `recommend`)
+### L2 — Application / orchestration (`pipeline`, `cover_letter`, `autopilot*`, `recommend`)
 
 - **Allowed deps:** L0 + L1 + sibling L2.
 - **Forbidden deps:** L3 (`crate::commands`, etc.). **No `#[tauri::command]`** (handlers
@@ -108,7 +107,7 @@ Extends `docs/PATTERNS.md` §13. No other module may reconstruct these:
 | error types                      | `error::AppError`                                                 | return `AppResult<T>`; never `Result<_, String>` internally                     |
 | SQLite handle + access           | `db` + per-domain `*/mod.rs` stores                               | `db::open()` inside the domain store; no `rusqlite::` in logic/helper files     |
 | AI provider routing + embeddings | `ai_provider` _(relocating out of `commands/`)_                   | `resolve(ProviderId)`, `embed_text`, `cosine`, `compare`                        |
-| job board scrapers / appliers    | `scraping::boards` / `applying::registry`                         | register in `SCRAPERS` / `APPLIERS`                                             |
+| job board scrapers               | `scraping::boards`                                                | register in `SCRAPERS`                                                          |
 | workflow orchestration           | `pipeline`                                                        | compose `Stage`/`Pipeline`                                                      |
 | Tauri command surface            | `commands/**` (+ `export/commands`, `updater`)                    | put new commands in `commands/`, not in a domain module                         |
 
@@ -116,22 +115,22 @@ Extends `docs/PATTERNS.md` §13. No other module may reconstruct these:
 
 ## Enforced rules (each is a `#[test]` or CI gate)
 
-| ID      | Rule                                                                                                                                        | Enforcement                            | Current exceptions (allowlist)                                                                                                                                                      |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **R1**  | `#[tauri::command]` only under `commands/**`, `export/commands/**`, `updater/mod.rs`                                                        | arch test                              | none after W-2 fix (extraction’s command relocated)                                                                                                                                 |
-| **R2**  | No Tauri (`tauri::`/`tauri_plugin_*`/`AppHandle`/`.emit(`) in L0/L1/L2 (shell-role files such as `export/commands/**` are exempt, not debt) | arch test                              | `platform/config`, `pipeline`, `cover_letter/{mod,leakage,research}`, `documents`, `conversations`, `apply_helpers`, `autopilot_helpers`, `autopilot_scheduler` — each `TODO(arch)` |
-| **R3**  | `rusqlite::` only in `db.rs`, `error.rs`, and per-domain store `mod.rs`                                                                     | arch test                              | the 8 genuine owners (documents, conversations, jobs, job_preferences, ai_generations, pipeline/cache, db, error)                                                                   |
-| **R4**  | `std::env::var` / `AJH_DATA_DIR` only in `platform/**`                                                                                      | arch test                              | `commands/ai_provider/{cli_agent,ollama}` (provider env: `OLLAMA_HOST`, `<AGENT>_BIN`) — `TODO(arch)`                                                                               |
-| **R5**  | `reqwest::Client::new/builder` only in `net/http.rs`                                                                                        | arch test                              | none (clean)                                                                                                                                                                        |
-| **R6**  | `Result<_, String>` forbidden outside `error.rs` (non-test)                                                                                 | arch test                              | none (clean)                                                                                                                                                                        |
-| **R7**  | No upward layer imports (L0→L1+, L1→L2+, L2→L3) via `crate::<mod>`                                                                          | arch test                              | the 7 edges in W-1/W-9: `error→{extraction,applying}`; `{pipeline,documents,postings,autopilot_helpers,autopilot_scheduler}→commands`                                               |
-| **R8**  | No source module > 1100 LOC (warn > 600)                                                                                                    | arch test (soft)                       | the 10 W-6 files, capped at current size; may not grow                                                                                                                              |
-| **R9**  | `cargo fmt --all -- --check` clean                                                                                                          | CI + `rustfmt.toml`                    | —                                                                                                                                                                                   |
-| **R10** | `cargo clippy --all-targets --all-features -- -D warnings`, no blanket crate-level `#![allow]`                                              | CI + `clippy.toml` + scoped allows     | unavoidable lints use a **scoped** `#[allow]` + reason at the site                                                                                                                  |
-| **R11** | `cargo deny check` (advisories, licenses, bans, sources)                                                                                    | CI + `deny.toml`                       | documented `deny.toml` entries for transitive licenses                                                                                                                              |
-| **R12** | `cargo audit` on every PR                                                                                                                   | CI                                     | RUSTSEC ignores listed in `deny.toml`/`audit.toml` if unfixable                                                                                                                     |
-| **R13** | No unused dependencies                                                                                                                      | CI (`cargo machete`)                   | `machete` ignore list if a dep is used only via macro/cfg                                                                                                                           |
-| **R14** | No lock held across `.await`                                                                                                                | `#![deny(clippy::await_holding_lock)]` | —                                                                                                                                                                                   |
+| ID      | Rule                                                                                                                                        | Enforcement                            | Current exceptions (allowlist)                                                                                                                                     |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **R1**  | `#[tauri::command]` only under `commands/**`, `export/commands/**`, `updater/mod.rs`                                                        | arch test                              | none after W-2 fix (extraction’s command relocated)                                                                                                                |
+| **R2**  | No Tauri (`tauri::`/`tauri_plugin_*`/`AppHandle`/`.emit(`) in L0/L1/L2 (shell-role files such as `export/commands/**` are exempt, not debt) | arch test                              | `platform/config`, `pipeline`, `cover_letter/{mod,leakage,research}`, `documents`, `conversations`, `autopilot_helpers`, `autopilot_scheduler` — each `TODO(arch)` |
+| **R3**  | `rusqlite::` only in `db.rs`, `error.rs`, and per-domain store `mod.rs`                                                                     | arch test                              | the 8 genuine owners (documents, conversations, jobs, job_preferences, ai_generations, pipeline/cache, db, error)                                                  |
+| **R4**  | `std::env::var` / `AJH_DATA_DIR` only in `platform/**`                                                                                      | arch test                              | `commands/ai_provider/{cli_agent,ollama}` (provider env: `OLLAMA_HOST`, `<AGENT>_BIN`) — `TODO(arch)`                                                              |
+| **R5**  | `reqwest::Client::new/builder` only in `net/http.rs`                                                                                        | arch test                              | none (clean)                                                                                                                                                       |
+| **R6**  | `Result<_, String>` forbidden outside `error.rs` (non-test)                                                                                 | arch test                              | none (clean)                                                                                                                                                       |
+| **R7**  | No upward layer imports (L0→L1+, L1→L2+, L2→L3) via `crate::<mod>`                                                                          | arch test                              | the 6 edges in W-1/W-9: `error→extraction`; `{pipeline,documents,postings,autopilot_helpers,autopilot_scheduler}→commands`                                         |
+| **R8**  | No source module > 1100 LOC (warn > 600)                                                                                                    | arch test (soft)                       | the 10 W-6 files, capped at current size; may not grow                                                                                                             |
+| **R9**  | `cargo fmt --all -- --check` clean                                                                                                          | CI + `rustfmt.toml`                    | —                                                                                                                                                                  |
+| **R10** | `cargo clippy --all-targets --all-features -- -D warnings`, no blanket crate-level `#![allow]`                                              | CI + `clippy.toml` + scoped allows     | unavoidable lints use a **scoped** `#[allow]` + reason at the site                                                                                                 |
+| **R11** | `cargo deny check` (advisories, licenses, bans, sources)                                                                                    | CI + `deny.toml`                       | documented `deny.toml` entries for transitive licenses                                                                                                             |
+| **R12** | `cargo audit` on every PR                                                                                                                   | CI                                     | RUSTSEC ignores listed in `deny.toml`/`audit.toml` if unfixable                                                                                                    |
+| **R13** | No unused dependencies                                                                                                                      | CI (`cargo machete`)                   | `machete` ignore list if a dep is used only via macro/cfg                                                                                                          |
+| **R14** | No lock held across `.await`                                                                                                                | `#![deny(clippy::await_holding_lock)]` | —                                                                                                                                                                  |
 
 > **Allowlists are debt, not absolution.** Every `TODO(arch)` entry is a tracked exception
 > that keeps the suite green **today** while making the rule block **new** violations.
@@ -141,9 +140,9 @@ Extends `docs/PATTERNS.md` §13. No other module may reconstruct these:
 
 ## How to extend the system (stays within the rules)
 
-- **New job board** → 1 scraper module under `scraping/boards/` + 1 line in `SCRAPERS`
-  (and `applying/registry::APPLIERS` if applyable). Compose `net::http`, `error`,
-  `observability`, `platform::config`. No new Tauri, no new env reads.
+- **New job board** → 1 scraper module under `scraping/boards/` + 1 line in `SCRAPERS`.
+  Compose `net::http`, `error`, `observability`, `platform::config`. No new Tauri, no new
+  env reads.
 - **New AI provider** → 1 client module under `ai_provider/` + 1 `ProviderId` arm + 1
   `resolve` arm. (Until relocated, that is `commands/ai_provider/`.)
 - **New IPC command** → a `#[tauri::command]` in `commands/<namespace>.rs` that routes to

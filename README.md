@@ -346,7 +346,7 @@ IPC request shapes have a single source of truth: **[Zod][zod] schemas in `packa
 <summary><strong>Add an AI provider / a job board (config + adapter, no business-logic changes)</strong></summary>
 
 - **AI provider** — implement the provider adapter and register it; the rest of the app routes through the centralized provider abstraction (`Completer` / streaming contract). Reasoning, limits, and job state are normalized at the adapter boundary, so the renderer holds one contract and zero per-provider branching.
-- **Job board** — add an entry to the scraper registry (`scraping/boards/mod.rs` `SCRAPERS`) / applier registry (`applying/registry/mod.rs` `APPLIERS`); discovery is registry-driven, so no caller changes.
+- **Job board** — add an entry to the scraper registry (`scraping/boards/mod.rs` `SCRAPERS`); discovery is registry-driven, so no caller changes.
 
 </details>
 

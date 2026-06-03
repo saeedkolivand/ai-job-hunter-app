@@ -58,9 +58,7 @@ describe('AutopilotCreateSchema', () => {
     name: 'My autopilot',
     target: { board: 'linkedin', query: 'react developer', pages: 2 },
     filter: { minMatchScore: 60 },
-    action: 'save',
     schedule: 'daily',
-    autoSubmit: false,
   };
 
   it('accepts a valid autopilot', () => {
@@ -69,10 +67,6 @@ describe('AutopilotCreateSchema', () => {
 
   it('rejects empty name', () => {
     expect(() => AutopilotCreateSchema.parse({ ...valid, name: '' })).toThrow();
-  });
-
-  it('rejects invalid action', () => {
-    expect(() => AutopilotCreateSchema.parse({ ...valid, action: 'unknown' })).toThrow();
   });
 
   it('rejects invalid schedule', () => {

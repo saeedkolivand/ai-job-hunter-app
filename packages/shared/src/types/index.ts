@@ -25,7 +25,6 @@ export type JobKind =
   | 'scrape.url'
   | 'persist.job'
   | 'match.resume'
-  | 'apply.job'
   | 'autopilot.run';
 
 export interface JobRecord<TPayload = unknown, TResult = unknown> {
@@ -191,10 +190,10 @@ export const AUTH_CAPABLE_BOARDS = ['linkedin', 'indeed', 'xing', 'glassdoor'] a
 export type AuthCapableBoard = (typeof AUTH_CAPABLE_BOARDS)[number];
 
 export type AutopilotStatus = 'active' | 'paused' | 'archived';
-export type AutopilotAction = 'save' | 'review' | 'auto_apply';
 export type AutopilotSchedule = 'manual' | 'hourly' | 'daily' | 'twice_daily';
 
-/** Autopilot job application agent — persisted entity. */
+/** Autopilot job-discovery agent — persisted entity. Finds & ranks matching
+ *  jobs on a schedule and notifies you; you apply with the tailoring assistant. */
 export interface Autopilot {
   _id: string;
   name: string;
@@ -212,12 +211,13 @@ export interface Autopilot {
     keywords?: string[];
     excludeKeywords?: string[];
   };
-  action: 'save' | 'review' | 'auto_apply';
   schedule: 'manual' | 'hourly' | 'daily' | 'twice_daily';
   resumeText?: string;
+  /** Optional base cover letter — the reusable starting point the apply
+   *  assistant tailors per found job. */
   coverLetter?: string;
-  autoSubmit: boolean;
   totalFound: number;
+  /** Found jobs the user has applied to (derived from saved generations). */
   totalApplied: number;
   /** Jobs surfaced by the most recent run. */
   foundJobs?: AutopilotFoundJob[];
