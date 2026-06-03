@@ -24,6 +24,12 @@
     "help": "Kürzel anzeigen",
     "hint": "Drücke jederzeit ?, um diese Liste zu öffnen"
   },
+  "aiSetup": {
+    "addApiKey": "Füge einen KI-Anbieter-Schlüssel hinzu, um zu generieren.",
+    "selectModel": "Wähle ein KI-Modell, um zu generieren.",
+    "installCli": "Installiere deinen KI-CLI-Agenten, um fortzufahren.",
+    "action": "KI-Einstellungen öffnen"
+  },
   "analyze": {
     "title": "Lebenslauf-Analyse",
     "subtitle": "Füge deinen Lebenslauf und eine Stellenanzeige ein. Erhalte sofort einen lokalen ATS-Score, semantischen Abgleich, Lückenanalyse und maßgeschneiderte Empfehlungen.",
