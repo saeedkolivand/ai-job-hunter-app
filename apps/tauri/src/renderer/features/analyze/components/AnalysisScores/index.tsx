@@ -28,19 +28,14 @@ export function AnalysisScores({ result, t }: AnalysisScoresProps) {
         return (
           <div
             key={key}
-            className="relative overflow-hidden rounded-xl border border-white/[0.07] px-4 py-4"
-            style={{
-              background: 'linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))',
-            }}
+            className="relative overflow-hidden rounded-xl border border-foreground/[0.08] bg-foreground/[0.03] px-4 py-4"
           >
             <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-foreground/35">
               {label}
             </div>
-            <div className="mt-1.5 text-3xl font-semibold tabular-nums text-foreground/90">
-              {val}
-            </div>
+            <div className="mt-1.5 text-3xl font-bold tabular-nums text-foreground">{val}</div>
             <div className={cn('mt-0.5 text-[10px] font-medium', color)}>{sl}</div>
-            <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/[0.06]">
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-foreground/10">
               <motion.div
                 initial={{ width: 0 }}
                 animate={{ width: `${val}%` }}

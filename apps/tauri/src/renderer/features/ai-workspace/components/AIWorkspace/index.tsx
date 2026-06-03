@@ -93,7 +93,7 @@ export function AIWorkspace() {
             <div className="glass-elevated mb-5 flex h-14 w-14 items-center justify-center rounded-2xl ring-1 ring-brand/20">
               <Sparkles size={22} className="text-brand-soft" />
             </div>
-            <h2 className="text-gradient text-2xl font-semibold tracking-tight">{t('nav.ai')}</h2>
+            <h2 className="text-gradient text-3xl font-bold tracking-tight">{t('nav.ai')}</h2>
             <QuickSuggestions onSelect={chat.setInput} />
           </div>
         ) : (
