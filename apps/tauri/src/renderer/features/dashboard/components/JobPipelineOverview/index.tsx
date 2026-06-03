@@ -46,7 +46,7 @@ export function JobPipelineOverview() {
 
   return (
     <GlassCard>
-      <div className="mb-4 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+      <div className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
         <Briefcase size={14} />
         {t('dashboard.jobPipeline')}
       </div>

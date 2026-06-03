@@ -25,18 +25,18 @@
   line-height: 1.02;
 }
 .label-caps {
-  font-size: 0.625rem;
+  font-size: 0.75rem; /* 12px floor */
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.5);
 }
 .section-label {
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.55);
 }
 
 /* ── Cinematic gradient text ─────────────────────────────────────────────── */
@@ -638,10 +638,10 @@ html[data-text-scale='large'] {
 
 /* ── Light-scheme fixups for utilities that hardcode white ───────────────── */
 [data-color-scheme='light'] .label-caps {
-  color: rgba(18, 22, 40, 0.45);
+  color: rgba(18, 22, 40, 0.6);
 }
 [data-color-scheme='light'] .section-label {
-  color: rgba(18, 22, 40, 0.55);
+  color: rgba(18, 22, 40, 0.65);
 }
 [data-color-scheme='light'] .glass-highlight::before {
   background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.85), transparent);

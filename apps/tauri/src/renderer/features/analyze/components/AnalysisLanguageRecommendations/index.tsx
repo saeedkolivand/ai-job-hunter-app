@@ -19,7 +19,7 @@ export function AnalysisLanguageRecommendations({
     <GlassCard>
       <div className="mb-3 flex items-center gap-2">
         <Globe size={13} className="text-blue-400" />
-        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/40">
+        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
           {t('analyze.languageRecommendations')}
         </span>
       </div>

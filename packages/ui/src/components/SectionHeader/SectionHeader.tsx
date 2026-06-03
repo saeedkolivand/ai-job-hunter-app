@@ -28,14 +28,11 @@ export function SectionHeader({
       <IconBadge icon={icon} size={size === 'sm' ? 'sm' : 'md'} />
       <div>
         <div
-          className={cn(
-            'font-semibold text-foreground/90',
-            size === 'sm' ? 'text-sm' : 'text-base'
-          )}
+          className={cn('font-semibold text-foreground', size === 'sm' ? 'text-sm' : 'text-base')}
         >
           {title}
         </div>
-        {description && <div className="text-[11px] text-foreground/40">{description}</div>}
+        {description && <div className="text-xs text-foreground/55">{description}</div>}
       </div>
     </div>
   );

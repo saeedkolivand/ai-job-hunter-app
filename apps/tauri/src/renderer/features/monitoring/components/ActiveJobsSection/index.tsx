@@ -18,7 +18,7 @@ export function ActiveJobsSection({ activeJobs, kindLabel, t }: Props) {
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Activity size={12} className="text-brand-soft" />
-          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/40">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
             Active Jobs
           </span>
         </div>

@@ -134,7 +134,7 @@ export function UpdateSection() {
         'releaseNotes' in status &&
         status.releaseNotes && (
           <div className="mt-4 space-y-1.5">
-            <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-foreground/30">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">
               {t('settings.update.whatsNew')} {'version' in status ? status.version : ''}
             </div>
             <div className="max-h-36 overflow-y-auto rounded-lg border border-white/[0.05] bg-white/[0.02] p-3">
@@ -200,7 +200,7 @@ export function UpdateSection() {
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs text-foreground/80">v{release.version}</span>
                     {isCurrent && (
-                      <span className="rounded-full bg-brand/15 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-brand-soft">
+                      <span className="rounded-full bg-brand/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-brand-soft">
                         {t('settings.update.current')}
                       </span>
                     )}

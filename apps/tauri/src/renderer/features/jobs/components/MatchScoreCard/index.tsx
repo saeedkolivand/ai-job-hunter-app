@@ -82,7 +82,7 @@ export function MatchScoreCard({ jobId }: { jobId: string }) {
 
           {result.gaps.length > 0 && (
             <div>
-              <div className="mb-1.5 text-[10px] uppercase tracking-[0.18em] text-foreground/40">
+              <div className="mb-1.5 text-[10px] uppercase tracking-[0.18em] text-foreground/55">
                 Missing keywords
               </div>
               <div className="flex flex-wrap gap-1.5">

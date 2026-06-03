@@ -37,12 +37,12 @@ export function AIWorkspace() {
       {/* Model + prompt quality */}
       <div className="px-4 pt-3 pb-2 border-b border-white/5">
         <div className="mb-3">
-          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/30">
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
             {t('ai.model')}
           </div>
           <ModelSelector className="w-full" />
         </div>
-        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/30">
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
           {t('ai.promptQuality')}
         </div>
         <div className="grid grid-cols-3 gap-1.5">

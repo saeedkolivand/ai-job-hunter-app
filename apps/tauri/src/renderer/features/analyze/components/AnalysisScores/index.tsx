@@ -30,7 +30,7 @@ export function AnalysisScores({ result, t }: AnalysisScoresProps) {
             key={key}
             className="relative overflow-hidden rounded-xl border border-foreground/[0.08] bg-foreground/[0.03] px-4 py-4"
           >
-            <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-foreground/35">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">
               {label}
             </div>
             <div className="mt-1.5 text-3xl font-bold tabular-nums text-foreground">{val}</div>
