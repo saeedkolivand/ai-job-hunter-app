@@ -192,6 +192,10 @@ export type AuthCapableBoard = (typeof AUTH_CAPABLE_BOARDS)[number];
 export type AutopilotStatus = 'active' | 'paused' | 'archived';
 export type AutopilotSchedule = 'manual' | 'hourly' | 'daily' | 'twice_daily';
 
+/** Outcome of an autopilot's most recent run. `interrupted` is reconciled at
+ *  startup from a run left running when the app closed/crashed mid-run. */
+export type AutopilotRunStatus = 'inProgress' | 'completed' | 'failed' | 'interrupted';
+
 /** Autopilot job-discovery agent — persisted entity. Finds & ranks matching
  *  jobs on a schedule and notifies you; you apply with the tailoring assistant. */
 export interface Autopilot {
@@ -221,6 +225,9 @@ export interface Autopilot {
   totalApplied: number;
   /** Jobs surfaced by the most recent run. */
   foundJobs?: AutopilotFoundJob[];
+  /** Outcome of the most recent run — drives the live/failed/interrupted
+   *  badge. Absent until the first run. */
+  runStatus?: AutopilotRunStatus;
   lastRunAt?: number;
   createdAt: number;
   updatedAt: number;
