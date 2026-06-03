@@ -24,6 +24,12 @@
     "help": "Show shortcuts",
     "hint": "Press ? anytime to open this list"
   },
+  "aiSetup": {
+    "addApiKey": "Add an AI provider key to start generating.",
+    "selectModel": "Choose an AI model to start generating.",
+    "installCli": "Install your AI CLI agent to continue.",
+    "action": "Open AI settings"
+  },
   "analyze": {
     "title": "Resume Analyzer",
     "subtitle": "Paste your resume and a job ad. Get an instant local ATS score, semantic match, gap analysis, and tailored recommendations.",

@@ -4,6 +4,7 @@ import { Button, SelectDropdown } from '@ajh/ui';
 
 import { JobAdField } from '@/components/job/JobAdField';
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
+import { AiSetupHint } from '@/components/ui/AiSetupHint';
 import { ModelSelector } from '@/components/ui/ModelSelector';
 import { GenerationConfig } from '@/features/ai-generate/components/GenerationConfig';
 import { GenerationMetadata } from '@/features/ai-generate/components/GenerationMetadata';
@@ -138,6 +139,11 @@ export function LeftPanel({
       {/* Model selector */}
       <div className="px-6 pb-4">
         <ModelSelector />
+      </div>
+
+      {/* One-click AI setup when no provider is ready */}
+      <div className="px-6">
+        <AiSetupHint show={!canUseAI} reason={aiReason} />
       </div>
 
       <div className="px-6 space-y-3 pb-4">
