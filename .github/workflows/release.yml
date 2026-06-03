@@ -3,19 +3,20 @@ name: 🚀 Release
 # ──────────────────────────────────────────────────────────────────────
 # Release Pipeline
 # ──────────────────────────────────────────────────────────────────────
-# Purpose: Automated semantic release + cross-platform Tauri installer builds
+# Purpose: Automated semantic release (on push) + on-demand Tauri installer builds
 # Triggers:
-#   - push to main      → release + sync-version-files, then auto-build installers
-#   - workflow_dispatch → build installers for a chosen tag (on-demand rebuild)
+#   - push to main      → create the GitHub release + sync version files (NO build)
+#   - workflow_dispatch → build installers for a chosen tag (the only build path)
 # Jobs:
 #   - release: Determine version and create GitHub release (push only)
 #   - sync-version-files: Commit tracked version files for the release (push only)
-#   - build: Build Tauri apps for Windows, Linux, and macOS (push release OR manual)
+#   - build: Build Tauri apps for Windows, Linux, and macOS (manual / dispatch only)
 #   - generate-update-manifest: Publish latest.json for the auto-updater
 #
-# On a release push the whole chain runs automatically. The same build can also
-# be triggered manually from the Actions tab ("Run workflow") to rebuild a tag —
-# leave the version input blank for the latest tag, or pass one to pick another.
+# Merging to main publishes the release + version bump but does NOT build
+# installers — those cross-platform compiles are slow, so they're decoupled from
+# the every-merge release flow. Build installers on demand from the Actions tab
+# ("Run workflow") — leave the version input blank for the latest tag, or pass one.
 # ──────────────────────────────────────────────────────────────────────
 
 on:
@@ -184,17 +185,12 @@ jobs:
 
   build:
     name: 🏗️ Build Tauri Apps
-    # Runs in two ways:
-    #   - automatically after a release on push (needs sync-version-files so the
-    #     tag exists before "latest" is resolved), and
-    #   - manually from the Actions tab to (re)build any tag on demand.
-    # `if: always()` lets the manual path run even though sync-version-files is
-    # skipped on workflow_dispatch.
-    needs: sync-version-files
-    if: >-
-      always() &&
-      (github.event_name == 'workflow_dispatch' ||
-       needs.sync-version-files.outputs.released == 'true')
+    # Manual-only: installers are built on demand from the Actions tab
+    # ("Run workflow"), never automatically on a release push — the cross-platform
+    # compiles are slow, so they're decoupled from the every-merge release flow.
+    # The build self-syncs version files and checks out the resolved tag, so it
+    # needs nothing from the push-only release / sync-version-files jobs.
+    if: github.event_name == 'workflow_dispatch'
 
     # Exposed so generate-update-manifest targets the same release.
     outputs:
