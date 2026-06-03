@@ -522,6 +522,7 @@
     "regenerate": "Neu generieren",
     "preview": "Vorschau",
     "edit": "Bearbeiten",
+    "viewMode": "Ansichtsmodus",
     "placeholder": "Generierte Ausgabe erscheint hier…",
     "stages": {
       "analyzing": "Anforderungen werden analysiert…",
@@ -611,6 +612,7 @@
         "copy": "Antwort kopieren"
       },
       "target": {
+        "label": "Dokumenttyp",
         "resume": "Lebenslauf",
         "cover": "Anschreiben",
         "both": "Beides"
@@ -899,6 +901,8 @@
       "noResume": "Kein Lebenslauf generiert",
       "noCoverLetter": "Kein Anschreiben generiert",
       "export": "Exportieren",
+      "format": "Exportformat",
+      "template": "Vorlage",
       "exportResume": "Lebenslauf",
       "exportCoverLetter": "Anschreiben",
       "applied": "Beworben",
