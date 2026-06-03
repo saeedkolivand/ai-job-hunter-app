@@ -30,7 +30,7 @@ export function SupportPage() {
                   >
                     <Icon size={14} className={section.color} />
                   </div>
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-foreground/40">
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-foreground/55">
                     {section.label}
                   </span>
                 </div>

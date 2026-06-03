@@ -25,7 +25,7 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
         <span className="text-foreground/60">{label}</span>
         <span className="text-foreground/80">{Math.round(value)}%</span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-white/5">
+      <div className="h-1.5 overflow-hidden rounded-full bg-foreground/10">
         <div className="h-full rounded-full bg-brand" style={{ width: `${Math.round(value)}%` }} />
       </div>
     </div>
@@ -72,7 +72,7 @@ export function MatchScoreCard({ jobId }: { jobId: string }) {
       {result && !result.error && (
         <div className="space-y-3">
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-semibold text-foreground">
+            <span className="text-3xl font-bold tabular-nums text-foreground">
               {Math.round(result.combined)}%
             </span>
             <span className="text-[11px] text-foreground/45">overall match</span>
@@ -82,14 +82,14 @@ export function MatchScoreCard({ jobId }: { jobId: string }) {
 
           {result.gaps.length > 0 && (
             <div>
-              <div className="mb-1.5 text-[10px] uppercase tracking-[0.18em] text-foreground/40">
+              <div className="mb-1.5 text-[10px] uppercase tracking-[0.18em] text-foreground/55">
                 Missing keywords
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {result.gaps.map((g) => (
                   <span
                     key={g}
-                    className="rounded-md bg-white/5 px-2 py-0.5 text-[11px] text-foreground/70"
+                    className="rounded-md bg-foreground/10 px-2 py-0.5 text-[11px] text-foreground/70"
                   >
                     {g}
                   </span>

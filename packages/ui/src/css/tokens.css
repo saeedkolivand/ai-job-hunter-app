@@ -8,25 +8,29 @@
  */
 
 @theme {
-  /* Semantic color palette (OKLCH — perceptually uniform) */
-  --color-background: oklch(22% 3% 9%);
-  --color-foreground: oklch(98% 1% 210);
-  --color-card: oklch(22% 3% 9%);
-  --color-card-foreground: oklch(98% 1% 210);
-  --color-popover: oklch(22% 3% 9%);
-  --color-popover-foreground: oklch(98% 1% 210);
+  /* Semantic color palette (OKLCH — perceptually uniform)
+     Dark is a NEUTRAL CHARCOAL with a faint cool tint (macOS dark), not the old
+     saturated violet/blue. The brand violet survives only in primary/accent/ring
+     (the accent), keeping identity without colouring every surface. Surfaces use
+     a single cool hue (~285) at very low chroma so the elevation ladder is clean. */
+  --color-background: oklch(20.5% 1% 285); /* #1B1B22 — charcoal, faint cool */
+  --color-foreground: oklch(97% 0.4% 285);
+  --color-card: oklch(24% 1% 285); /* elevated surfaces read LIGHTER than canvas */
+  --color-card-foreground: oklch(97% 0.4% 285);
+  --color-popover: oklch(25% 1% 285);
+  --color-popover-foreground: oklch(97% 0.4% 285);
   --color-primary: oklch(65% 50% 270);
   --color-primary-foreground: oklch(98% 1% 210);
-  --color-secondary: oklch(17% 10% 217);
-  --color-secondary-foreground: oklch(98% 1% 210);
-  --color-muted: oklch(17% 10% 217);
-  --color-muted-foreground: oklch(65% 5% 215);
+  --color-secondary: oklch(27% 0.8% 285);
+  --color-secondary-foreground: oklch(97% 0.4% 285);
+  --color-muted: oklch(27% 0.8% 285);
+  --color-muted-foreground: oklch(67% 1.2% 285);
   --color-accent: oklch(65% 50% 270);
   --color-accent-foreground: oklch(98% 1% 210);
   --color-destructive: oklch(30% 20% 0);
   --color-destructive-foreground: oklch(98% 1% 210);
-  --color-border: oklch(17% 10% 217);
-  --color-input: oklch(17% 10% 217);
+  --color-border: oklch(29% 1% 285);
+  --color-input: oklch(29% 1% 285);
   --color-ring: oklch(65% 50% 270);
 
   /* Brand aliases — use text-brand, bg-brand in Tailwind classes */
@@ -34,7 +38,11 @@
   --color-brand-soft: #c084fc;
   --color-brand-dim: oklch(65% 50% 270 / 0.15);
 
-  --font-sans: 'Inter', 'SF Pro Text', system-ui, -apple-system, sans-serif;
+  /* Native macOS font (San Francisco) where it exists — it can't be bundled, so
+     it only appears on real macOS via the OS; everyone else gets bundled Inter. */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Inter', system-ui,
+    'Segoe UI', sans-serif;
   --radius: 0.75rem;
 
   /* ── Z-index utilities — use z-overlay, z-modal, z-toast etc. ─────────── */
@@ -95,6 +103,27 @@
   --border-mid: rgba(255, 255, 255, 0.12);
   --border-clear: rgba(255, 255, 255, 0.15);
 
+  /* ── Glass material ───────────────────────────────────────────────────
+     The single source of truth for every frosted surface. The glass-* utility
+     classes compose these; the theme layer overrides only these vars per
+     color-scheme (light/dark), so one definition drives the whole elevation
+     ladder. `--glass-rgb` is a space-separated RGB triplet consumed via
+     `rgb(var(--glass-rgb) / <alpha>)`. */
+  /* Neutral charcoal substrate, a touch LIGHTER than the canvas so cards lift
+     off it (macOS dark: elevated = lighter). Mostly-opaque so the elevation
+     reads cleanly; the blur still adds subtle vibrancy. */
+  --glass-rgb: 42 42 50; /* #2A2A32 — neutral, lighter than the #1B1B22 canvas */
+  --glass-alpha-card: 0.7;
+  --glass-alpha-surface: 0.78;
+  --glass-alpha-elevated: 0.86;
+  --glass-alpha-dropdown: 0.8;
+  --glass-alpha-modal: 0.9;
+  /* Vibrancy: saturation paired with the blur to make the backdrop feel alive
+     (the macOS material signature). */
+  --glass-sat: var(--sat-mid);
+  /* Top-edge specular highlight — the bright hairline that reads as real glass. */
+  --glass-specular: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+
   /* ── Aurora / nebula palette (for CinematicBackground) ───────────────── */
   --aurora-violet: #a855f7;
   --aurora-indigo: #6366f1;
@@ -120,4 +149,140 @@
   --stagger-2: calc(var(--stagger-base, 50ms) * 2);
   --stagger-3: calc(var(--stagger-base, 50ms) * 3);
   --stagger-4: calc(var(--stagger-base, 50ms) * 4);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Theme layer — Light color-scheme overrides.
+ * Dark is the default (the values above). Light overrides only what changes;
+ * because the glass-* utilities and most surfaces read these tokens, flipping
+ * the tokens flips the whole UI. Applied via data-color-scheme="light" on
+ * <html> by the theme engine (lib/theme.ts).
+ * ───────────────────────────────────────────────────────────────────────── */
+[data-color-scheme='light'] {
+  /* ── Semantic palette (OKLCH) ──────────────────────────────────────────
+     macOS System Settings model: the canvas is a COOL LIGHT GRAY (not white),
+     so the near-opaque white cards float above it with real separation. White
+     cards on a white canvas were the "flashbang" — a bright wall with nothing
+     lifting off it. Primary text is near-black for crisp, native legibility. */
+  --color-background: oklch(90.5% 1.2% 264); /* #E4E7EF — present cool gray canvas */
+  --color-foreground: oklch(24% 0.8% 280); /* #1D1D20 — near-black label */
+  --color-card: oklch(98.5% 0.2% 270); /* soft off-white card (not stark pure white) */
+  --color-card-foreground: oklch(24% 0.8% 280);
+  --color-popover: oklch(99.5% 0.15% 270);
+  --color-popover-foreground: oklch(24% 0.8% 280);
+  --color-secondary: oklch(94% 0.6% 264);
+  --color-secondary-foreground: oklch(28% 0.8% 280);
+  --color-muted: oklch(94% 0.6% 264);
+  --color-muted-foreground: oklch(50% 1.3% 280); /* ~#6E6E73 — macOS secondary label */
+  --color-border: oklch(88% 1% 264);
+  --color-input: oklch(88% 1% 264);
+
+  /* Accent deepened for light: the bright #A855F7 washes out on white and
+     small accent text fails contrast, so brand/primary/accent/ring step down
+     to ~#7C3AED (still the same violet family, just legible on white). */
+  --color-brand: #7c3aed;
+  --color-brand-soft: #8b5cf6;
+  --color-brand-dim: oklch(50% 58% 285 / 0.12);
+  --color-primary: oklch(50% 58% 285);
+  --color-primary-foreground: oklch(99% 0.15% 270);
+  --color-accent: oklch(50% 58% 285);
+  --color-accent-foreground: oklch(99% 0.15% 270);
+  --color-ring: oklch(50% 58% 285);
+
+  /* Status colors retuned deeper so they read solid (not neon) on white. */
+  --color-destructive: oklch(52% 48% 25);
+  --color-destructive-foreground: oklch(99% 0.15% 270);
+
+  /* Bright palette steps used as accent/status TEXT (emerald/amber/red/blue…)
+     are tuned to glow on dark and wash out on white. Remap the light/text steps
+     (300/400/500) to the palette's own deeper 600/700 so every `text-emerald-400`,
+     gradient `from-blue-400`, etc. becomes legible on white — one place, no sweep.
+     (Yellow/amber stay readable only when quite dark, so they map to 700.) */
+  --color-red-300: var(--color-red-600);
+  --color-red-400: var(--color-red-600);
+  --color-red-500: var(--color-red-600);
+  --color-rose-300: var(--color-rose-600);
+  --color-rose-400: var(--color-rose-600);
+  --color-rose-500: var(--color-rose-600);
+  --color-orange-300: var(--color-orange-600);
+  --color-orange-400: var(--color-orange-600);
+  --color-orange-500: var(--color-orange-600);
+  --color-amber-300: var(--color-amber-700);
+  --color-amber-400: var(--color-amber-700);
+  --color-amber-500: var(--color-amber-700);
+  --color-yellow-300: var(--color-yellow-700);
+  --color-yellow-400: var(--color-yellow-700);
+  --color-yellow-500: var(--color-yellow-700);
+  --color-lime-400: var(--color-lime-700);
+  --color-lime-500: var(--color-lime-700);
+  --color-green-300: var(--color-green-600);
+  --color-green-400: var(--color-green-600);
+  --color-green-500: var(--color-green-600);
+  --color-emerald-300: var(--color-emerald-600);
+  --color-emerald-400: var(--color-emerald-600);
+  --color-emerald-500: var(--color-emerald-600);
+  --color-teal-300: var(--color-teal-600);
+  --color-teal-400: var(--color-teal-600);
+  --color-teal-500: var(--color-teal-600);
+  --color-cyan-400: var(--color-cyan-600);
+  --color-cyan-500: var(--color-cyan-600);
+  --color-sky-400: var(--color-sky-600);
+  --color-sky-500: var(--color-sky-600);
+  --color-blue-300: var(--color-blue-600);
+  --color-blue-400: var(--color-blue-600);
+  --color-blue-500: var(--color-blue-600);
+  --color-indigo-300: var(--color-indigo-600);
+  --color-indigo-400: var(--color-indigo-600);
+  --color-indigo-500: var(--color-indigo-600);
+  --color-violet-300: var(--color-violet-600);
+  --color-violet-400: var(--color-violet-600);
+  --color-violet-500: var(--color-violet-600);
+  --color-purple-300: var(--color-purple-600);
+  --color-purple-400: var(--color-purple-600);
+  --color-purple-500: var(--color-purple-600);
+  --color-fuchsia-400: var(--color-fuchsia-600);
+  --color-fuchsia-500: var(--color-fuchsia-600);
+  --color-pink-400: var(--color-pink-600);
+  --color-pink-500: var(--color-pink-600);
+
+  /* Glass material — white substrate; content cards near-opaque (crisp white),
+     ink hairlines, soft specular. (The sidebar/chrome two-tone is handled by a
+     light-only override in utilities.css, not by inverting the ladder.) */
+  --glass-rgb: 250 251 253; /* soft off-white substrate — calmer than pure 255 */
+  --glass-alpha-card: 0.85;
+  --glass-alpha-surface: 0.88;
+  --glass-alpha-elevated: 0.93;
+  --glass-alpha-dropdown: 0.92;
+  --glass-alpha-modal: 0.95;
+  --glass-sat: var(--sat-high);
+  --glass-specular: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  /* Border veils flip white→ink so glass edges and dividers stay visible. */
+  --border-faint: rgba(15, 20, 40, 0.05);
+  --border-dim: rgba(15, 20, 40, 0.08);
+  --border-soft: rgba(15, 20, 40, 0.1);
+  --border-mid: rgba(15, 20, 40, 0.13);
+  --border-clear: rgba(15, 20, 40, 0.16);
+
+  /* Soft, color-tinted shadows — heavy black shadows look dirty on light.
+     A hair stronger than before so white cards lift off the gray canvas. */
+  --shadow-sm: 0 1px 2px oklch(50% 6% 270 / 0.06), 0 2px 8px oklch(50% 6% 270 / 0.08);
+  --shadow-md: 0 2px 4px oklch(50% 6% 270 / 0.06), 0 6px 16px oklch(50% 6% 270 / 0.1);
+  --shadow-lg: 0 4px 8px oklch(50% 6% 270 / 0.07), 0 12px 28px oklch(50% 6% 270 / 0.12);
+  --shadow-xl: 0 8px 16px oklch(45% 8% 270 / 0.08), 0 20px 48px oklch(45% 8% 270 / 0.16);
+  --shadow-2xl: 0 24px 60px -30px oklch(40% 8% 270 / 0.28);
+  --shadow-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+
+  /* Softer glows on a bright canvas. */
+  --glow-brand-sm: 0 0 20px rgba(124, 58, 237, 0.08);
+  --glow-brand-md: 0 0 36px rgba(124, 58, 237, 0.14);
+  --glow-blue-md: 0 0 36px rgba(79, 70, 229, 0.14);
+
+  /* Pastel the cinematic aurora so the light canvas stays calm and readable. */
+  --aurora-violet: #c9b1f7;
+  --aurora-indigo: #adb6f7;
+  --aurora-pink: #f3bcd8;
+  --aurora-cyan: #aee5ef;
+  --nebula-violet: #dcccfb;
+  --nebula-indigo: #c1c8f7;
 }

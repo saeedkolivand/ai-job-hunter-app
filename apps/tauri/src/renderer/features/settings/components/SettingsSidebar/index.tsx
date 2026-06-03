@@ -16,7 +16,7 @@ export function SettingsSidebar({ navGroups, activeSection, onSectionChange }: P
     <aside className="flex w-56 shrink-0 flex-col gap-6 overflow-y-auto border-white/[0.05] px-3 py-8">
       {navGroups.map((group) => (
         <div key={group.label}>
-          <div className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-widest text-foreground/30">
+          <div className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-widest text-foreground/55">
             {group.label}
           </div>
           <nav className="flex flex-col gap-1">

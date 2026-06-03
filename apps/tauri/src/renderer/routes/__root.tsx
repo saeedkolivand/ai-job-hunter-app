@@ -89,7 +89,7 @@ function RootLayout() {
             <Titlebar />
             <div className="flex flex-1 overflow-hidden">
               <Sidebar />
-              <main className="glass-surface m-3 flex-1 overflow-hidden rounded-2xl">
+              <main className="app-main glass-surface m-3 flex-1 overflow-hidden rounded-2xl">
                 <Outlet />
               </main>
             </div>

@@ -90,7 +90,7 @@ export function EmbeddingsSettings() {
 
   return (
     <GlassCard>
-      <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+      <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
         <Database size={12} /> Embeddings
       </div>
       <p className="mb-3 text-xs text-foreground/40">
@@ -100,7 +100,7 @@ export function EmbeddingsSettings() {
 
       <div className="space-y-3">
         <div className="space-y-1.5">
-          <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
             Provider
           </div>
           <Dropdown
@@ -111,7 +111,7 @@ export function EmbeddingsSettings() {
         </div>
 
         <div className="space-y-1.5">
-          <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
             Model
           </div>
           <Input
@@ -126,7 +126,7 @@ export function EmbeddingsSettings() {
 
         {provider === 'openai-compatible' && (
           <div className="space-y-1.5">
-            <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
               Base URL
             </div>
             <Input

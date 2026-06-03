@@ -89,7 +89,7 @@ export function OutputPanelGenerating({
           </div>
         )}
 
-        <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/25 mb-3">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55 mb-3">
           {activeOut === 'resume'
             ? t('aiGenerate.generatingResume')
             : t('aiGenerate.generatingCoverLetter')}

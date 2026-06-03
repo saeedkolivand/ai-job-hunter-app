@@ -82,7 +82,7 @@ export function AnalyzeLeftPanel({
 
       {/* Prompt quality selector */}
       <div className="px-6 pb-4">
-        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/30">
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
           Prompt Quality
         </div>
         <div className="grid grid-cols-3 gap-1.5">

@@ -46,7 +46,7 @@ export function JobPipelineOverview() {
 
   return (
     <GlassCard>
-      <div className="mb-4 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+      <div className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
         <Briefcase size={14} />
         {t('dashboard.jobPipeline')}
       </div>
@@ -57,14 +57,12 @@ export function JobPipelineOverview() {
           return (
             <div
               key={stat.label}
-              className="flex flex-col items-center gap-2 rounded-xl border border-white/[0.05] bg-white/[0.03] px-3 py-3.5"
+              className="flex flex-col items-center gap-2 rounded-xl border border-foreground/[0.06] bg-foreground/[0.03] px-3 py-3.5"
             >
               <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${stat.bg}`}>
                 <Icon size={15} className={stat.color} />
               </div>
-              <div className="text-2xl font-semibold tabular-nums text-foreground">
-                {stat.value}
-              </div>
+              <div className="text-3xl font-bold tabular-nums text-foreground">{stat.value}</div>
               <div className="text-center text-[11px] text-foreground/40">{stat.label}</div>
             </div>
           );

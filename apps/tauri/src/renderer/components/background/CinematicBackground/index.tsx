@@ -124,17 +124,17 @@ export function CinematicBackground() {
       />
 
       {/* Soft streaks */}
-      <div className="absolute top-[20%] left-1/4 h-px w-[40vw] bg-white/10 animate-streak-1" />
-      <div className="absolute top-[55%] left-1/3 h-px w-[35vw] bg-white/10 animate-streak-2" />
-      <div className="absolute top-[75%] left-1/4 h-px w-[30vw] bg-white/5  animate-streak-3" />
-      <div className="absolute top-[35%] left-1/2 h-px w-[25vw] bg-white/5  animate-streak-4" />
+      <div className="light-streak absolute top-[20%] left-1/4 h-px w-[40vw] bg-white/10 animate-streak-1" />
+      <div className="light-streak absolute top-[55%] left-1/3 h-px w-[35vw] bg-white/10 animate-streak-2" />
+      <div className="light-streak absolute top-[75%] left-1/4 h-px w-[30vw] bg-white/5  animate-streak-3" />
+      <div className="light-streak absolute top-[35%] left-1/2 h-px w-[25vw] bg-white/5  animate-streak-4" />
 
       {/* Cursor blob — 900px lerp-smoothed glow.
           Position is updated every RAF tick via ref mutation (no React renders).
           Gradient has three stops for a soft centre → hard falloff shape. */}
       <div
         ref={blobRef}
-        className="absolute pointer-events-none"
+        className="cursor-glow absolute pointer-events-none"
         style={{
           width: 900,
           height: 900,
@@ -154,7 +154,7 @@ export function CinematicBackground() {
 
       {/* Floating glow orbs with mouse parallax */}
       <div
-        className="absolute top-[15%] right-[10%] h-40 w-40 rounded-full transition-transform duration-75"
+        className="glow-orb absolute top-[15%] right-[10%] h-40 w-40 rounded-full transition-transform duration-75"
         style={{
           ...orbA,
           background:
@@ -163,7 +163,7 @@ export function CinematicBackground() {
         }}
       />
       <div
-        className="absolute bottom-[12%] left-[8%] h-32 w-32 rounded-full transition-transform duration-75"
+        className="glow-orb absolute bottom-[12%] left-[8%] h-32 w-32 rounded-full transition-transform duration-75"
         style={{
           ...orbB,
           background:
@@ -172,7 +172,7 @@ export function CinematicBackground() {
         }}
       />
       <div
-        className="absolute top-[40%] left-[55%] h-24 w-24 rounded-full transition-transform duration-75"
+        className="glow-orb absolute top-[40%] left-[55%] h-24 w-24 rounded-full transition-transform duration-75"
         style={{
           ...orbC,
           background:

@@ -15,7 +15,7 @@ export function JobDescriptionPanel({ jobDesc, hasDesc, fetchingDesc, jobUrl }: 
 
   return (
     <div>
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/35">
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">
         {t('autopilot.apply.jobDescription')}
       </div>
       {fetchingDesc ? (

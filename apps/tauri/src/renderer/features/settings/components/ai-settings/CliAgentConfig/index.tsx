@@ -73,7 +73,7 @@ export function CliAgentConfig({
       {connected && (
         <>
           <div className="space-y-1.5">
-            <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
               {t('settings.aiModel.title')}
             </div>
             <Dropdown
@@ -86,7 +86,7 @@ export function CliAgentConfig({
 
           {efforts.length > 0 && (
             <div className="space-y-1.5">
-              <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
                 {t('settings.aiProvider.reasoningEffort')}
               </div>
               <Dropdown

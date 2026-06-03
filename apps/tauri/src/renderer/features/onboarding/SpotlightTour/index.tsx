@@ -189,7 +189,7 @@ export function SpotlightTour({ onFinish }: Props) {
           }}
         >
           {/* Header */}
-          <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-widest text-foreground/30">
+          <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-widest text-foreground/55">
             {t('onboarding.tour.title')}
           </div>
 

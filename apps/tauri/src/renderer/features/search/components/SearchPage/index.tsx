@@ -75,7 +75,7 @@ export function SearchPage() {
                   <div className="text-sm font-semibold text-brand">
                     {Math.round(hit.score * 100)}%
                   </div>
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-foreground/35">
+                  <div className="text-[10px] uppercase tracking-[0.2em] text-foreground/55">
                     match
                   </div>
                 </div>

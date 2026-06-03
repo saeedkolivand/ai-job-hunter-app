@@ -24,7 +24,7 @@ export function ActiveProviderSwitcher({ providers, meta, activeProvider, onSetA
 
   return (
     <GlassCard>
-      <div className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+      <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
         {t('settings.aiProvider.activeProvider')}
       </div>
       <div className="flex flex-wrap gap-1.5">

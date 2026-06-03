@@ -74,7 +74,7 @@ export function WelcomeStep({ onNext, direction, stepIndex, totalSteps }: Props)
 
       {/* Name input */}
       <div className="mb-6 space-y-2">
-        <label className="text-xs font-medium uppercase tracking-widest text-foreground/35">
+        <label className="text-xs font-semibold uppercase tracking-widest text-foreground/55">
           {t('onboarding.welcome.nameLabel')}
         </label>
         <Input
@@ -89,7 +89,7 @@ export function WelcomeStep({ onNext, direction, stepIndex, totalSteps }: Props)
 
       {/* Language */}
       <div className="mb-8 space-y-2">
-        <label className="text-xs font-medium uppercase tracking-widest text-foreground/35">
+        <label className="text-xs font-semibold uppercase tracking-widest text-foreground/55">
           {t('onboarding.prefs.languageLabel')}
         </label>
         <div className="grid grid-cols-4 gap-1.5 mt-1">

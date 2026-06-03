@@ -16,7 +16,7 @@ export function AnalysisATSRisks({ result, t }: AnalysisATSRisksProps) {
     <GlassCard>
       <div className="mb-4 flex items-center gap-2">
         <ShieldAlert size={13} className="text-red-400" />
-        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/40">
+        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
           {t('analyze.atsRisks')}
         </span>
       </div>

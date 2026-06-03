@@ -83,7 +83,7 @@ export function PrefsStep({ onBack, onNext, direction }: Props) {
 
         {/* Language */}
         <div className="mb-6">
-          <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-widest text-foreground/35">
+          <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-widest text-foreground/55">
             {t('onboarding.prefs.languageLabel')}
           </div>
           <div className="grid grid-cols-4 gap-1.5">
@@ -111,7 +111,7 @@ export function PrefsStep({ onBack, onNext, direction }: Props) {
 
         {/* Remote preference */}
         <div className="mb-8">
-          <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-widest text-foreground/35">
+          <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-widest text-foreground/55">
             {t('onboarding.prefs.remoteLabel')}
           </div>
           <div className="grid grid-cols-4 gap-1.5">

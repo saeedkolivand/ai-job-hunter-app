@@ -199,7 +199,7 @@ export function AutopilotCard({
           >
             <div className="overflow-hidden rounded-lg border border-white/[0.05] bg-white/[0.03]">
               <div className="flex items-center justify-between border-b border-white/[0.05] px-3 py-2">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/40">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">
                   {t('autopilot.foundJobs')} · {foundJobs.length}
                 </span>
                 <button

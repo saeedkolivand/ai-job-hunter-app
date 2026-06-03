@@ -15,7 +15,7 @@ export function AnalysisMissingSkills({ result }: AnalysisMissingSkillsProps) {
     <GlassCard>
       <div className="mb-3 flex items-center gap-2">
         <XCircle size={12} className="text-red-400" />
-        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/40">
+        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
           Missing Skills (Broader Gaps)
         </span>
       </div>

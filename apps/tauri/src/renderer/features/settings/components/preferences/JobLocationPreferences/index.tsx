@@ -72,7 +72,7 @@ export function JobLocationPreferences() {
   return (
     <GlassCard>
       <div className="mb-4 flex items-center justify-between">
-        <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
           {t('settings.location.title')}
         </div>
       </div>
@@ -172,7 +172,7 @@ export function JobLocationPreferences() {
       {/* Recent Locations */}
       {recentLocations.length > 0 && (
         <div className="mt-4">
-          <div className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
             {t('settings.location.recent')}
           </div>
           <div className="flex flex-wrap gap-2">

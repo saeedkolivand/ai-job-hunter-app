@@ -57,7 +57,7 @@ export function ContinueWorking() {
   return (
     <GlassCard>
       <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
           <Play size={14} />
           {t('dashboard.continueWorking')}
         </div>

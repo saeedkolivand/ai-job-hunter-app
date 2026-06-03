@@ -74,7 +74,7 @@ export function StepSchedule({ form, set }: StepScheduleProps) {
 
       {/* Summary */}
       <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 space-y-1.5">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/30">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">
           {t('autopilot.wizard.schedule.summary')}
         </div>
         {[

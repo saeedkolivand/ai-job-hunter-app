@@ -208,7 +208,7 @@ export function LeftPanel({
           Auto-detected from the job's country; override here. */}
       {(target === 'cover' || target === 'both') && (
         <div className="px-6 pb-2">
-          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/30">
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
             {t('aiGenerate.market.label')}
           </div>
           <SelectDropdown
