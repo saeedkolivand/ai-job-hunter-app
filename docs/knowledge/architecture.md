@@ -29,6 +29,10 @@ L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints.
 - **AI** — `commands/ai_provider/` (ollama/openai/anthropic/gemini + cli_agent), `commands/ai.rs`, `documents/` (embeddings), `ai_generations/`, `conversations/`, `extraction/`, `recommend/`.
 - **Platform/data** — `platform/` (`config.rs` `data_dir()`), `net/` (`http.rs` `shared()`), `error.rs`, `observability.rs` (`Span`), `db.rs`, `data_store.rs`, `credentials/`, `updater/`, `pipeline/`, `jobs/`, `postings/`, `job_preferences/`, `profile_import/`.
 
+## Shared renderer generation components
+
+`apps/tauri/src/renderer/components/generation/EditableOutput/` — app-level (not `@ajh/ui`) shared component used by AI Generate, saved `GenerationCard`, and the autopilot apply modal. Renders a Preview/Edit toggle for `resumeText` / `coverLetterText`; inline AI rewrite via `RewritePopover` calls `rewriteSelection` (in `renderer/lib/generate/generation/generation.ts`) which reuses `streamGenerate` with `buildRewritePrompt` (`packages/prompts/src/generate/rewrite.ts`) — no new IPC command. Edits persist through `useUpdateAiGeneration` (`services/use-ai-generations/`) → `aiGenerations.update` IPC → `update_texts` in `ai_generations/mod.rs`. See ADR-007 addendum for the optimistic-cache contract.
+
 ## Feature ownership (frontend ↔ domain ↔ agent)
 
 Renderer (`apps/tauri/src/renderer/`): ~14 features each owning a route + service hooks (`renderer/services/`, [TanStack Query][tanstack-query]), [Zustand][zustand] stores, state machines (`lib/machines/`). Map: jobs/search/monitoring → backend jobs/scraping; ai-generate/ai-workspace → AI + resume/export; resumes/resume → resume-export domain; autopilot/onboarding → automation; settings/privacy → platform/security.

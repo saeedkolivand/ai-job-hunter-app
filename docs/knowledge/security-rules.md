@@ -26,6 +26,7 @@ For `tauri-security-reviewer` (cross-cutting authority). Security/data findings 
 ## Data / privacy (GDPR)
 
 - `commands/privacy.rs` + `db.rs`/`data_store.rs`: retention + deletion honored; temp/export files cleaned up; resume/PII protected at rest and in caches. A retention/cleanup regression is HIGH.
+- **Additive IPC PII fields** — when an IPC response gains a field carrying PII (e.g. `contactConflicts`/`suggestedContact` on `documents.import`): never `tracing`/log the values; render via JSX text nodes, not HTML/auto-anchors; the save path must re-read a validated IPC round-trip (not raw scraped data); allowlist the key before any dynamic property write (prototype-pollution guard); never `let _ =` a profile write. See `contact_profile/mod.rs: detect_contact_conflicts` as the reference implementation.
 - **Full reset** — `privacy_reset_app` wipes every persistent store via a `Resettable` registry: stores are wired with `manage_resettable` at their `.manage()` site (which registers their reset), and the command just iterates the registry — so a new store is covered automatically. Backups (`commands/data.rs::build_bundle`) remain a separate explicit list. See [ADR-009](decision-records/adr-009-resettable-reset-registry.md).
 
 ## Abuse / cost (DoS & spend)

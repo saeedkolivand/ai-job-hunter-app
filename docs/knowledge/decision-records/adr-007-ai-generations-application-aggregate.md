@@ -22,3 +22,7 @@ The `applied` status of a job (whether the user has generated documents for it) 
 - `applied` derivation eliminates dual-write risk; autopilot reads `applied_job_urls()` to skip already-applied jobs.
 - `merge_application` is a pure function, independently testable (`ai_generations/test.rs`).
 - New fields on the aggregate require an additive migration; the lockstep comment in `commands/data.rs::build_bundle` must be updated to include any new persistent fields in exports/backups.
+
+## Addendum — field-selective text edit (F1, v0.65)
+
+`AiGenerationsContract.update(req: AiGenerationUpdateRequest)` (`aiGenerations:update` channel) allows post-save editing of `resumeText` / `coverLetterText` without touching the rest of the aggregate. Rust: `update_texts` in `ai_generations/mod.rs` — must verify `rows_changed > 0` and error on 0 (silent Ok diverges the optimistic cache). Frontend optimistic path: `useUpdateAiGeneration` in `renderer/services/use-ai-generations/`; no re-sync `useEffect` — the optimistic cache owns truth, rollback handles failure. See `AiGenerationUpdateRequest` in `packages/shared/src/ipc/contracts/aiGenerations.ts`.

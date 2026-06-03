@@ -59,6 +59,13 @@ pub async fn documents_import(app: AppHandle, req: DocumentsImportRequest) -> Va
     // completed with the résumé's email / phone / location / extra links. The
     // header builds from these named fields, which is what keeps a company link
     // out of the document header.
+    // Conflicts between the imported contact and the saved profile (both sides
+    // non-empty, normalized values differ). The import NEVER blocks on these — it
+    // still silently fills empty fields below — but they (plus the full extracted
+    // contact) are returned so the renderer can let the user resolve each one. If
+    // there is no contact-profile state, conflicts are empty and `suggested` null.
+    let mut contact_conflicts: Vec<crate::contact_profile::ContactFieldConflict> = Vec::new();
+    let mut suggested_contact: Value = json!(null);
     if let Some(cp_store) = app.try_state::<crate::contact_profile::ContactProfileStore>() {
         let mut suggested = crate::contact_profile::classify_contact_links(&extraction.links);
         if let Some(email) = structured.email.as_ref().map(|f| f.value.clone()) {
@@ -77,12 +84,22 @@ pub async fn documents_import(app: AppHandle, req: DocumentsImportRequest) -> Va
                     });
             }
         }
+        let current = cp_store.get();
+        contact_conflicts = crate::contact_profile::detect_contact_conflicts(&current, &suggested);
+        suggested_contact = serde_json::to_value(&suggested).unwrap_or(json!(null));
         if !suggested.is_effectively_empty() {
-            let mut current = cp_store.get();
-            current.fill_empty_from(&suggested);
-            let _ = cp_store.set(&current);
+            // Empty fields still fill silently; conflicting (already-set) fields
+            // are preserved and reported above for the user to resolve.
+            let mut merged = current.clone();
+            merged.fill_empty_from(&suggested);
+            if let Err(e) = cp_store.set(&merged) {
+                // Import still succeeds; only the autofill persist failed. Log the
+                // error WITHOUT any contact values (no email/phone/name/url — PII).
+                tracing::warn!(error = %e, "failed to persist autofilled contact profile on import");
+            }
         }
     }
+    let conflicts_json = serde_json::to_value(&contact_conflicts).unwrap_or(json!([]));
 
     let store = app.state::<crate::documents::DocumentStore>();
     let doc_id = crate::documents::make_doc_id();
@@ -98,7 +115,13 @@ pub async fn documents_import(app: AppHandle, req: DocumentsImportRequest) -> Va
         is_default: false,
     };
     match store.insert(&record) {
-        Ok(()) => json!({ "id": doc_id, "success": true, "review": review }),
+        Ok(()) => json!({
+            "id": doc_id,
+            "success": true,
+            "review": review,
+            "contactConflicts": conflicts_json,
+            "suggestedContact": suggested_contact,
+        }),
         Err(e) => json!({ "error": e.to_string() }),
     }
 }

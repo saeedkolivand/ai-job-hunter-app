@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import type { StructuredResume } from '@ajh/shared';
+import type { ContactFieldConflict, ContactProfile, StructuredResume } from '@ajh/shared';
 
 import i18n from '@/i18n';
 import { ocrFile } from '@/lib/ocr';
@@ -13,6 +13,8 @@ type ImportResult = {
   success?: boolean;
   error?: string;
   review?: StructuredResume;
+  contactConflicts?: ContactFieldConflict[];
+  suggestedContact?: ContactProfile;
 };
 
 /**

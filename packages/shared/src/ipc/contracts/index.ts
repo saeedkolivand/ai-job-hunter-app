@@ -145,6 +145,7 @@ export { DATA_CHANNELS, type DataContract } from './data.js';
 export { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
 export {
   type ConfidenceLevel,
+  type ContactFieldConflict,
   DOCUMENTS_CHANNELS,
   type DocumentsContract,
   type ResumeField,
