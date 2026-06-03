@@ -4,22 +4,31 @@ import { type ButtonHTMLAttributes, forwardRef } from 'react';
 import { cn } from '../../lib/cn';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'default' | 'glass' | 'ghost' | 'danger' | 'warning' | 'info' | 'success';
+  variant?: 'default' | 'glass' | 'ghost' | 'danger' | 'warning' | 'info' | 'success' | 'unstyled';
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant = 'default', size = 'md', loading, disabled, children, ...props }, ref) => {
+    // `unstyled` is an escape hatch for custom interactive surfaces (clickable
+    // cards, segmented controls, icon toggles, inline text links) that supply
+    // their own appearance via className. It still routes through this primitive
+    // for consistent focus-visible + disabled handling, but injects no chrome.
+    const unstyled = variant === 'unstyled';
     return (
       <button
         ref={ref}
         disabled={disabled || loading}
         className={cn(
-          // Base
-          'inline-flex items-center gap-2 rounded-lg font-medium transition-all duration-150',
+          // Base (skipped for `unstyled` — the call site owns layout/look)
+          !unstyled && [
+            'inline-flex items-center gap-2 rounded-lg font-medium transition-all duration-150',
+            'active:scale-[0.97]',
+          ],
+          // Accessibility essentials apply to every variant
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
-          'active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45',
+          'disabled:pointer-events-none disabled:opacity-45',
 
           // Variants
           variant === 'ghost' && [
@@ -51,10 +60,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
             'hover:border-emerald-500/40 hover:bg-emerald-500/20 hover:text-emerald-200',
           ],
 
-          // Sizes
-          size === 'sm' && 'h-7 px-2.5 text-xs',
-          size === 'md' && 'h-8 px-3.5 text-sm',
-          size === 'lg' && 'h-10 px-5 text-sm',
+          // Sizes (skipped for `unstyled`)
+          !unstyled && size === 'sm' && 'h-7 px-2.5 text-xs',
+          !unstyled && size === 'md' && 'h-8 px-3.5 text-sm',
+          !unstyled && size === 'lg' && 'h-10 px-5 text-sm',
 
           className
         )}

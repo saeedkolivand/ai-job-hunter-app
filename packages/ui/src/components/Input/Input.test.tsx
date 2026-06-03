@@ -25,4 +25,12 @@ describe('Input', () => {
     render(<Input variant="default" placeholder="x" />);
     expect(screen.getByPlaceholderText('x').className).toContain('bg-white/5');
   });
+
+  it('injects no field chrome for the unstyled variant', () => {
+    render(<Input variant="unstyled" className="bare" placeholder="u" />);
+    const input = screen.getByPlaceholderText('u');
+    expect(input.className).toContain('bare');
+    expect(input.className).not.toContain('input-field');
+    expect(input.className).not.toContain('glass-dropdown');
+  });
 });
