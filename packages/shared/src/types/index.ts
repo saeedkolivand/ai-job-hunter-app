@@ -178,13 +178,6 @@ export interface AppMetrics {
   snapshotAt: number;
 }
 
-/** Renderer-safe credential metadata. Never includes the password. */
-export interface CredentialMetadata {
-  boardId: string;
-  username: string;
-  savedAt: number;
-}
-
 /** Identifies which boards support credential-based authentication. */
 export const AUTH_CAPABLE_BOARDS = ['linkedin', 'indeed', 'xing', 'glassdoor'] as const;
 export type AuthCapableBoard = (typeof AUTH_CAPABLE_BOARDS)[number];
