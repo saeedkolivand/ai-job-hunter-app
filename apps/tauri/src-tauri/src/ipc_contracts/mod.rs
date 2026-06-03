@@ -5,7 +5,6 @@
 //! and regenerate. CI runs `pnpm gen:ipc --check` to catch drift.
 
 pub mod ai;
-pub mod apply;
 pub mod autopilot;
 pub mod conversations;
 pub mod documents;

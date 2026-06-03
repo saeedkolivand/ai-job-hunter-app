@@ -23,7 +23,7 @@ Describes the **shape**; the source is authoritative for field-level detail. Use
 ## Automation traits + registries
 
 - **`Scraper`** + **`SCRAPERS`** — `scraping/boards/mod.rs`; `ScraperMode` (Http/Browser); `ScrapeContext` carries a cancellation token + progress/item callbacks.
-- **`Applier`** + **`APPLIERS`** — `applying/registry/mod.rs`; `ApplyContext` (form filling via `form_filler/`, `selectors/`, captcha via `captcha_handler.rs`).
+- _(No applier registry: the auto-apply engine was removed — the app is an apply **assistant**. See [automation-domain.md](automation-domain.md).)_
 
 ## AI / providers
 

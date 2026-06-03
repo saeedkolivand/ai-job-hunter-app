@@ -93,9 +93,7 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
           : undefined,
       },
       resumeText: form.resumeText || undefined,
-      action: form.action,
       coverLetter: form.coverLetter || undefined,
-      autoSubmit: form.autoSubmit,
       schedule: form.schedule,
     };
     try {

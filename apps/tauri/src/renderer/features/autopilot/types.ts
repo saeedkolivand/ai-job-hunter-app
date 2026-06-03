@@ -1,4 +1,4 @@
-import type { AutopilotAction, AutopilotSchedule } from '@ajh/shared';
+import type { AutopilotSchedule } from '@ajh/shared';
 
 export interface WizardState {
   name: string;
@@ -14,10 +14,8 @@ export interface WizardState {
   keywords: string;
   excludeKeywords: string;
   resumeText: string;
-  // Step 3 — Action
-  action: AutopilotAction;
+  // Step 3 — Apply assistant (optional base cover letter the assistant tailors)
   coverLetter: string;
-  autoSubmit: boolean;
   // Step 4 — Schedule
   schedule: AutopilotSchedule;
 }

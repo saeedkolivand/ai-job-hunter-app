@@ -18,7 +18,6 @@
 
 import { AI_CHANNELS, type AiContract } from './ai.js';
 import { AI_GENERATIONS_CHANNELS, type AiGenerationsContract } from './aiGenerations.js';
-import { APPLY_CHANNELS, type ApplyContract } from './apply.js';
 import { AUTOPILOT_CHANNELS, type AutopilotContract } from './autopilot.js';
 import { BOARDS_CHANNELS, type BoardsContract } from './boards.js';
 import { CONTACT_PROFILE_CHANNELS, type ContactProfileContract } from './contactProfile.js';
@@ -59,7 +58,6 @@ export interface IpcContract {
   linkedin: LinkedinContract;
   boards: BoardsContract;
   privacy: PrivacyContract;
-  apply: ApplyContract;
   resume: ResumeContract;
   support: SupportContract;
   conversations: ConversationsContract;
@@ -88,7 +86,6 @@ export const IPC_CHANNELS = {
   linkedin: LINKEDIN_CHANNELS,
   boards: BOARDS_CHANNELS,
   privacy: PRIVACY_CHANNELS,
-  apply: APPLY_CHANNELS,
   resume: RESUME_CHANNELS,
   support: SUPPORT_CHANNELS,
   conversations: CONVERSATIONS_CHANNELS,
@@ -127,7 +124,6 @@ export {
   type AiGenerationsContract,
   type ApplicationAnswer,
 } from './aiGenerations.js';
-export { APPLY_CHANNELS, type ApplyContract } from './apply.js';
 export {
   AUTOPILOT_CHANNELS,
   type AutopilotContract,

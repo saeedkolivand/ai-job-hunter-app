@@ -16,7 +16,6 @@ import type { AppClient } from '@/lib/app-client';
 
 import { ai } from './namespaces/ai/index.js';
 import { aiGenerations } from './namespaces/aiGenerations/index.js';
-import { apply } from './namespaces/apply/index.js';
 import { autopilot } from './namespaces/autopilot/index.js';
 import { boards } from './namespaces/boards/index.js';
 import { contactProfile } from './namespaces/contactProfile/index.js';
@@ -56,7 +55,6 @@ export function createTauriInvokeClient(): AppClient {
     linkedin: linkedin as AppClient['linkedin'],
     boards: boards as AppClient['boards'],
     privacy: privacy as AppClient['privacy'],
-    apply: apply as AppClient['apply'],
     updater: updater as AppClient['updater'],
     shortcuts: shortcuts as AppClient['shortcuts'],
     resume: resume as AppClient['resume'],

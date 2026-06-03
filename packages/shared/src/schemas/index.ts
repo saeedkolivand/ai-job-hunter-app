@@ -199,18 +199,6 @@ export const ResumeExtractTextSchema = z.object({
 });
 export type ResumeExtractTextRequest = z.infer<typeof ResumeExtractTextSchema>;
 
-export const APPLIER_IDS = ['linkedin', 'indeed', 'greenhouse', 'workday'] as const;
-export type ApplierId = (typeof APPLIER_IDS)[number];
-
-export const ApplyStartSchema = z.object({
-  board: z.enum(APPLIER_IDS),
-  url: z.string().url(),
-  coverLetter: z.string().max(20_000).optional(),
-  resumePath: z.string().optional(),
-  autoSubmit: z.boolean().optional(),
-});
-export type ApplyStartRequest = z.infer<typeof ApplyStartSchema>;
-
 // ─── Autopilot schemas ────────────────────────────────────────────────────────
 
 export const AutopilotTargetSchema = z.object({
@@ -232,11 +220,12 @@ export const AutopilotCreateSchema = z.object({
   name: z.string().min(1).max(100),
   target: AutopilotTargetSchema,
   filter: AutopilotFilterSchema,
-  action: z.enum(['save', 'review', 'auto_apply']),
   schedule: z.enum(['manual', 'hourly', 'daily', 'twice_daily']),
   resumeText: z.string().optional(),
+  // Optional base cover letter — reused as the starting point when tailoring a
+  // found job in the apply assistant. (Auto-apply was removed; this field is a
+  // reusable template, not an instruction to submit anything.)
   coverLetter: z.string().optional(),
-  autoSubmit: z.boolean().default(false),
 });
 
 export const AutopilotUpdateSchema = AutopilotCreateSchema.partial().extend({

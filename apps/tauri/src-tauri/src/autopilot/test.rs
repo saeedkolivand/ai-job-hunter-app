@@ -61,7 +61,6 @@ fn test_clear_all_removes_every_autopilot() {
             "name": name,
             "target": { "board": "linkedin", "query": "rust", "pages": 1 },
             "filter": { "minMatchScore": 50.0 },
-            "action": "save",
             "schedule": "manual",
         }));
     }
@@ -82,7 +81,6 @@ fn test_data_store_export_import_preserves_id() {
         "name": "Test AP",
         "target": { "board": "linkedin", "query": "rust", "pages": 1 },
         "filter": { "minMatchScore": 50.0 },
-        "action": "save",
         "schedule": "manual",
     }));
     let id = created.id.clone();

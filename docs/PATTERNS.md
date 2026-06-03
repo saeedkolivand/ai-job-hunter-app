@@ -445,20 +445,20 @@ principles and how each is enforced:
 **Module ownership** — each cross-cutting concern has exactly **one** owner; no
 other module may reconstruct its logic:
 
-| Concern                              | Sole owner                                | Use instead of rolling your own                                                                                                          |
-| ------------------------------------ | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| env vars, data dir, filesystem paths | `platform::config`                        | `platform::config::data_dir()` — never read `AJH_DATA_DIR` or rebuild `~/.ajh` yourself                                                  |
-| AI provider routing + capabilities   | `commands::ai_provider`                   | `resolve(ProviderId, ..)`                                                                                                                |
-| HTTP clients (TLS, pool, user-agent) | `net::http`                               | `net::http::shared()` + per-request `.timeout()`, or `build_client()` for a cookie jar — never `reqwest::Client::new/builder`            |
-| timed/structured trace spans         | `observability::Span`                     | `Span::begin(target, fields)` + `end`/`end_with` — never reimplement begin/elapsed/end logging (RequestTrace/StageTrace wrap it)         |
-| job board scrapers / appliers        | `scraping::boards` / `applying::registry` | register in the `SCRAPERS` / `APPLIERS` list — dispatch + catalog derive from it via the trait; never a parallel match + hardcoded array |
-| error types                          | `error::AppError`                         | return `AppResult<T>` from fallible internals — never `Result<_, String>` (domain enums like `ExtractionError` add `From`)               |
-| workflow orchestration               | `pipeline`                                | compose `Stage`/`Pipeline`                                                                                                               |
+| Concern                              | Sole owner              | Use instead of rolling your own                                                                                                  |
+| ------------------------------------ | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| env vars, data dir, filesystem paths | `platform::config`      | `platform::config::data_dir()` — never read `AJH_DATA_DIR` or rebuild `~/.ajh` yourself                                          |
+| AI provider routing + capabilities   | `commands::ai_provider` | `resolve(ProviderId, ..)`                                                                                                        |
+| HTTP clients (TLS, pool, user-agent) | `net::http`             | `net::http::shared()` + per-request `.timeout()`, or `build_client()` for a cookie jar — never `reqwest::Client::new/builder`    |
+| timed/structured trace spans         | `observability::Span`   | `Span::begin(target, fields)` + `end`/`end_with` — never reimplement begin/elapsed/end logging (RequestTrace/StageTrace wrap it) |
+| job board scrapers                   | `scraping::boards`      | register in the `SCRAPERS` list — dispatch + catalog derive from it via the trait; never a parallel match + hardcoded array      |
+| error types                          | `error::AppError`       | return `AppResult<T>` from fallible internals — never `Result<_, String>` (domain enums like `ExtractionError` add `From`)       |
+| workflow orchestration               | `pipeline`              | compose `Stage`/`Pipeline`                                                                                                       |
 
 **Adding capability is uniform** — one implementation file + one registration:
 
 - New AI provider → 1 client module + 1 `ProviderId` arm + 1 `resolve` arm.
-- New job board → 1 scraper/applier module + 1 line in the `SCRAPERS` / `APPLIERS` list.
+- New job board → 1 scraper module + 1 line in the `SCRAPERS` list.
 - New exporter / parser / integration → register in its registry; compose
   `net::http`, `error::AppError`, `observability::Span`, `platform::config`.
 

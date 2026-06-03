@@ -31,7 +31,6 @@ export function MonitoringPage() {
       'scrape.url': t('monitoring.jobKinds.scrapeUrl'),
       'persist.job': t('monitoring.jobKinds.persistJob'),
       'match.resume': t('monitoring.jobKinds.matchResume'),
-      'apply.job': t('monitoring.jobKinds.applyJob'),
       'autopilot.run': t('monitoring.jobKinds.autopilotRun'),
     }),
     [t]
