@@ -1,7 +1,5 @@
-export { AccountRow } from './components/accounts/AccountRow';
 export { AccountsSettingsTab } from './components/accounts/AccountsSettingsTab';
 export { BoardSessionRow } from './components/accounts/BoardSessionRow';
-export { LinkedInSessionRow } from './components/accounts/LinkedInSessionRow';
 export { AISettingsTab } from './components/ai-settings/AISettingsTab';
 export { JobLocationPreferences } from './components/preferences/JobLocationPreferences';
 export { OutputTonePreferences } from './components/preferences/OutputTonePreferences';

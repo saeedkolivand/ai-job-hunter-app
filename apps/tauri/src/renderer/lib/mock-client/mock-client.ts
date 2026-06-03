@@ -138,9 +138,6 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
 
     credentials: {
       available: async () => false,
-      list: emptyList,
-      set: noop,
-      remove: noop,
     },
 
     linkedin: {

@@ -140,18 +140,6 @@ impl CredentialStore {
         Some((m.username.clone(), password))
     }
 
-    /// Returns every stored (boardId, username, password) tuple.
-    #[allow(dead_code)]
-    pub fn get_all_decrypted(&self) -> Vec<(String, String, String)> {
-        self.list()
-            .into_iter()
-            .filter_map(|m| {
-                self.get_decrypted(&m.board_id)
-                    .map(|(user, pass)| (m.board_id, user, pass))
-            })
-            .collect()
-    }
-
     // ── Meta persistence ──────────────────────────────────────────────────────
 
     fn load_meta(&self) -> HashMap<String, CredentialMeta> {

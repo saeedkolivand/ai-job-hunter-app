@@ -363,12 +363,8 @@ fn main() {
             // match
             commands::match_resume::match_resume,
             commands::match_resume::resume_extract_text,
-            // credentials
+            // credentials (board-login CRUD removed — sessions auth via boards.*)
             commands::credentials::credentials_available,
-            commands::credentials::credentials_set,
-            commands::credentials::credentials_get,
-            commands::credentials::credentials_remove,
-            commands::credentials::credentials_list,
             // boards
             commands::boards::boards_get_config,
             commands::boards::boards_list_configs,
