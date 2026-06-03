@@ -1,5 +1,5 @@
 import { BOARD_IDS } from '@ajh/shared';
-import { Button, cn, Input, LocationInput, SelectDropdown } from '@ajh/ui';
+import { Button, cn, Input, LocationInput, NumberField, SelectDropdown } from '@ajh/ui';
 
 import type { Prefilled, SetFn, WizardState } from '@/features/autopilot/types';
 import { useTranslation } from '@/lib/i18n';
@@ -106,13 +106,13 @@ export function StepTarget({ form, set, prefilled }: StepTargetProps) {
 
       <div className="grid grid-cols-2 gap-3">
         <WizardField label={t('autopilot.wizard.target.pages')}>
-          <Input
-            type="number"
+          <NumberField
             min={1}
             max={10}
+            fallback={1}
             className={inputCls}
             value={form.pages}
-            onChange={(e) => set('pages', Number(e.target.value))}
+            onChange={(n) => set('pages', n)}
           />
         </WizardField>
         <WizardField label={t('autopilot.wizard.target.postedWithin')}>
