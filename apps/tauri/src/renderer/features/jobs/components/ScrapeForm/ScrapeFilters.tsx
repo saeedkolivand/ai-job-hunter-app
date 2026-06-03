@@ -1,5 +1,5 @@
 import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
-import { Input, LocationInput, SelectDropdown } from '@ajh/ui';
+import { LocationInput, NumberField, SelectDropdown } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 
@@ -62,12 +62,12 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
         <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
           {t('jobs.pages')}
         </label>
-        <Input
-          type="number"
-          min="1"
-          max="20"
+        <NumberField
+          min={1}
+          max={20}
+          fallback={1}
           value={form.pages}
-          onChange={(e) => onFormChange({ pages: parseInt(e.target.value) || 1 })}
+          onChange={(n) => onFormChange({ pages: n })}
           disabled={scraping}
           className="w-full bg-white/[0.03] text-xs text-foreground disabled:opacity-50"
         />
