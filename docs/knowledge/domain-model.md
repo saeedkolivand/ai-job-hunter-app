@@ -8,7 +8,7 @@ Describes the **shape**; the source is authoritative for field-level detail. Use
 
 - **`DocumentModel`** — `apps/tauri/src-tauri/src/model/` (`document.rs`). The structured résumé: sections → blocks → rich text. The export pipeline and templates consume this; the renderer edits a serialized form via IPC.
 - **Sections / blocks / rich text** — section ordering, content hierarchy, and customization are owned by `resume-export-expert`; see `model/` + `docs/EXPORT_TEMPLATES.md`.
-- **Contact profile** — `contact_profile/` + `commands/contact_profile.rs` (header source of truth for links/contact).
+- **Contact profile** — `contact_profile/` + `commands/contact_profile.rs` (header source of truth for links/contact). Conflict detection on résumé import: `contact_profile/mod.rs: detect_contact_conflicts` (normalizers + per-field diffing); `documents.import` returns additive `contactConflicts` / `suggestedContact` fields (loose JSON, no schema change, import never gated). Renderer resolution: `components/generation/EditableOutput/` area → `ContactConflictModal` (keep-mine / use-résumé per field). Conflict resolution is **local-only** — no data leaves the device.
 
 ## Export contract
 
