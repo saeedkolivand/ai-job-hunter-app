@@ -44,18 +44,20 @@ html[data-color-scheme='light'][data-performance-mode='low-memory'] body {
   background: #e4e7ef;
 }
 
-/* ── Modal background blur ───────────────────────────────────────────────── */
-/* When any ModalShell is open, blur the entire app content layer.
-   ModalShell sets data-modal-open on document.body; we blur .app-content. */
-body[data-modal-open] .app-content {
-  filter: blur(6px) brightness(0.7);
-  transition: filter 200ms ease;
-  pointer-events: none;
+/* Opt an element out of inherited backdrop-filter. Used on long virtualized
+   lists (Jobs) where compositing a backdrop blur per row is the dominant paint
+   cost; the glass surface is opaque enough to read fine without it. */
+.no-backdrop-filter {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
-.app-content {
-  transition: filter 200ms ease;
-}
+/* ── Modal background blur ───────────────────────────────────────────────── */
+/* The blur + dim behind a modal comes from GlassOverlay's fixed-overlay
+   `backdrop-blur` + `bg-black/40` — which only composites the region behind the
+   overlay rect. We intentionally do NOT `filter: blur` the whole .app-content
+   subtree: that forces a full-subtree re-rasterization every frame of the
+   transition (and while open), which is far more expensive than the overlay. */
 
 /* ── Onboarding glass modal ─────────────────────────────────────────────────── */
 .onboarding-glass-modal {

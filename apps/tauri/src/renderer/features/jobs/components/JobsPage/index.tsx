@@ -1,17 +1,9 @@
 import { Plus, Search, Trash2 } from 'lucide-react';
-import { motion } from 'motion/react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 
 import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
-import {
-  Button,
-  EmptyState,
-  GlassCard,
-  Input,
-  SelectDropdown,
-  staggeredItem,
-  useNotification,
-} from '@ajh/ui';
+import { Button, EmptyState, GlassCard, Input, SelectDropdown, useNotification } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -139,9 +131,22 @@ export function JobsPage() {
     return result;
   }, [allPostings, filter, sortBy]);
 
+  // Windowed list: only the visible rows (plus a small overscan) are mounted, so
+  // a long postings list doesn't paint hundreds of glass rows at once. Keyed by
+  // posting id so measurement survives live-prepended rows during a scrape.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 88,
+    overscan: 6,
+    getItemKey: (index) => filtered[index]?.id ?? index,
+  });
+
   return (
-    <PageTransition className="flex h-full overflow-hidden">
-      <div className="flex-1 overflow-y-auto px-10 py-10">
+    <PageTransition className="flex h-full flex-col overflow-hidden">
+      {/* Pinned header + scrape form; the list below owns the scroll. */}
+      <div className="px-10 pt-10">
         <PageHeader
           title={t('jobs.title')}
           subtitle={t('jobs.subtitle')}
@@ -211,7 +216,9 @@ export function JobsPage() {
           onDisconnect={handleInlineDisconnect}
           onGeocode={(q) => api.geocode.suggest(q)}
         />
+      </div>
 
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-10 pb-10">
         {filtered.length === 0 ? (
           <GlassCard tone="graphite" highlight>
             <EmptyState
@@ -226,17 +233,31 @@ export function JobsPage() {
             />
           </GlassCard>
         ) : (
-          <div className="flex flex-col gap-2">
-            {filtered.map((p, i) => (
-              <motion.div
-                key={p.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={staggeredItem(i)}
-              >
-                <PostingRow posting={p} formatRelativeTime={formatRelativeTime} />
-              </motion.div>
-            ))}
+          <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
+            {virtualizer.getVirtualItems().map((vi) => {
+              const posting = filtered[vi.index];
+              if (!posting) return null;
+              return (
+                <div
+                  key={vi.key}
+                  data-index={vi.index}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${vi.start}px)`,
+                  }}
+                >
+                  {/* pb-2 reproduces the old gap-2 between rows (included in the
+                      measured height so virtual offsets stay correct). */}
+                  <div className="pb-2">
+                    <PostingRow posting={posting} formatRelativeTime={formatRelativeTime} />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
