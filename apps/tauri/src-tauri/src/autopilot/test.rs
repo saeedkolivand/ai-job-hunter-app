@@ -123,6 +123,59 @@ fn test_clear_all_removes_every_autopilot() {
 }
 
 #[test]
+fn mark_interrupted_runs_flips_only_in_progress() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+
+    let make = |name: &str| {
+        store.create(serde_json::json!({
+            "name": name,
+            "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+            "filter": { "minMatchScore": 50.0 },
+            "schedule": "manual",
+        }))
+    };
+    let running = make("running");
+    let done = make("done");
+
+    store.set_run_status(&running.id, RunStatus::InProgress);
+    store.set_run_status(&done.id, RunStatus::Completed);
+
+    let reconciled = store.mark_interrupted_runs();
+    assert_eq!(reconciled, 1, "only the in-progress run is reconciled");
+
+    let status = |id: &str| store.get(id).unwrap().run_status;
+    assert_eq!(status(&running.id), Some(RunStatus::Interrupted));
+    assert_eq!(status(&done.id), Some(RunStatus::Completed));
+
+    // Idempotent: a second startup sweep finds nothing to reconcile.
+    assert_eq!(store.mark_interrupted_runs(), 0);
+}
+
+#[test]
+fn record_run_marks_the_run_completed() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let ap = store.create(serde_json::json!({
+        "name": "ap",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 50.0 },
+        "schedule": "manual",
+    }));
+    store.set_run_status(&ap.id, RunStatus::InProgress);
+
+    store.record_run(&ap.id, 3, 0, Vec::new());
+    assert_eq!(
+        store.get(&ap.id).unwrap().run_status,
+        Some(RunStatus::Completed)
+    );
+}
+
+#[test]
 fn test_data_store_export_import_preserves_id() {
     use crate::data_store::DataStore;
     use tempfile::TempDir;

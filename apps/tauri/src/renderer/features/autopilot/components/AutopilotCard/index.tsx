@@ -111,6 +111,22 @@ export function AutopilotCard({
             <span className="text-[10px] text-foreground/30 bg-white/[0.04] px-1.5 py-0.5 rounded capitalize">
               {ap.schedule.replace('_', ' ')}
             </span>
+            {!running && (ap.runStatus === 'failed' || ap.runStatus === 'interrupted') && (
+              <span
+                className={cn(
+                  'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
+                  ap.runStatus === 'failed'
+                    ? 'bg-red-400/15 text-red-300'
+                    : 'bg-amber-400/15 text-amber-300'
+                )}
+              >
+                {t(
+                  ap.runStatus === 'failed'
+                    ? 'autopilot.badge.failed'
+                    : 'autopilot.badge.interrupted'
+                )}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-4 text-[10px] text-foreground/35">
             <span>"{ap.target.query}"</span>

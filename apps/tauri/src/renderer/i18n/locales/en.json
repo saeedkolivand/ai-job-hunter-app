@@ -610,7 +610,9 @@
     "deleteDescription": "This stops its schedule and permanently removes the autopilot and its found-jobs history.",
     "badge": {
       "new": "New",
-      "applied": "Applied"
+      "applied": "Applied",
+      "failed": "Failed",
+      "interrupted": "Interrupted"
     },
     "apply": {
       "jobDescription": "Job description",

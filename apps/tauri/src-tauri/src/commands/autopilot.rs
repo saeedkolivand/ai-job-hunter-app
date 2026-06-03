@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
-use crate::autopilot::{AutopilotFilter, AutopilotStatus, AutopilotStore, FoundJob};
+use crate::autopilot::{AutopilotFilter, AutopilotStatus, AutopilotStore, FoundJob, RunStatus};
 use crate::autopilot_helpers::autopilot_scrape;
 use crate::scraping::{JobPosting, ScraperEngine};
 use serde_json::{json, Value};
@@ -118,6 +118,12 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         .lock()
         .start(&job_id, "autopilot.run");
 
+    // Mark the run live so the UI shows a "running" badge and a crash mid-run
+    // is later reconciled to "interrupted" (see `mark_interrupted_runs`).
+    store(&app)
+        .lock()
+        .set_run_status(&autopilot_id, RunStatus::InProgress);
+
     let engine = app.state::<Arc<ScraperEngine>>().inner().clone();
     let cancel_token = CancellationToken::new();
     engine.register_token(&job_id, cancel_token.clone()).await;
@@ -141,6 +147,9 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         Ok(p) => p,
         Err(e) => {
             engine.unregister_token(&job_id).await;
+            store(&app)
+                .lock()
+                .set_run_status(&autopilot_id, RunStatus::Failed);
             app.state::<Mutex<crate::jobs::JobTracker>>()
                 .lock()
                 .fail(&job_id, e.to_string());
@@ -228,6 +237,11 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     // not overwrites, the slot), so cancels during scrape land here too.
     if cancel_token.is_cancelled() {
         engine.unregister_token(&job_id).await;
+        // User-initiated stop, not a failure or crash — clear the live status so
+        // it isn't later reconciled to "interrupted".
+        store(&app)
+            .lock()
+            .set_run_status(&autopilot_id, RunStatus::Completed);
         app.state::<Mutex<crate::jobs::JobTracker>>()
             .lock()
             .cancel(&job_id);

@@ -595,7 +595,9 @@
     "deleteDescription": "Dies stoppt den Zeitplan und entfernt den Autopilot und seinen Verlauf gefundener Jobs dauerhaft.",
     "badge": {
       "new": "Neu",
-      "applied": "Beworben"
+      "applied": "Beworben",
+      "failed": "Fehlgeschlagen",
+      "interrupted": "Unterbrochen"
     },
     "apply": {
       "jobDescription": "Stellenbeschreibung",

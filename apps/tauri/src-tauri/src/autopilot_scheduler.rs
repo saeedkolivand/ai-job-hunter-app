@@ -59,6 +59,11 @@ pub fn start(app: AppHandle) {
     let store: Arc<Mutex<AutopilotStore>> =
         app.state::<Arc<Mutex<AutopilotStore>>>().inner().clone();
 
+    // Reconcile any run left mid-flight by a crash/close before the first sweep
+    // could start a new one, so the UI shows an honest "interrupted" badge
+    // rather than a stuck "running" state.
+    store.lock().mark_interrupted_runs();
+
     tauri::async_runtime::spawn(async move {
         // Catch up on autopilots that fell overdue while the app was closed:
         // run one sweep shortly after launch rather than waiting a full tick
@@ -125,6 +130,7 @@ mod test {
             total_found: 0,
             total_applied: 0,
             found_jobs: Vec::new(),
+            run_status: None,
             last_run_at,
             created_at: 0,
             updated_at: 0,
