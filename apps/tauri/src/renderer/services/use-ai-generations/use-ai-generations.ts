@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { AiGenerationSaveRequest } from '@ajh/shared/ipc';
+import type { AiGenerationRecord, AiGenerationSaveRequest } from '@ajh/shared/ipc';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
@@ -28,6 +28,18 @@ export const useRemoveAiGeneration = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.aiGenerations.remove(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.aiGenerations.all }),
+    // Optimistic delete: drop the card immediately, restore it if the backend fails.
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: keys.aiGenerations.all });
+      const previous = qc.getQueryData<AiGenerationRecord[]>(keys.aiGenerations.all);
+      qc.setQueryData<AiGenerationRecord[]>(keys.aiGenerations.all, (old) =>
+        (old ?? []).filter((g) => g.id !== id)
+      );
+      return { previous };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.previous) qc.setQueryData(keys.aiGenerations.all, ctx.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.aiGenerations.all }),
   });
 };

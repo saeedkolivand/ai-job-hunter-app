@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { AutopilotCreate, AutopilotStepEvent, AutopilotUpdate } from '@ajh/shared';
+import type { Autopilot, AutopilotCreate, AutopilotStepEvent, AutopilotUpdate } from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
@@ -46,7 +46,19 @@ export const useRemoveAutopilot = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.autopilot.remove({ autopilotId: id }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.autopilot.all }),
+    // Optimistic delete: remove the card immediately, restore it if the backend fails.
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: keys.autopilot.all });
+      const previous = qc.getQueryData<Autopilot[]>(keys.autopilot.all);
+      qc.setQueryData<Autopilot[]>(keys.autopilot.all, (old) =>
+        (old ?? []).filter((a) => a._id !== id)
+      );
+      return { previous };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.previous) qc.setQueryData(keys.autopilot.all, ctx.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.autopilot.all }),
   });
 };
 
