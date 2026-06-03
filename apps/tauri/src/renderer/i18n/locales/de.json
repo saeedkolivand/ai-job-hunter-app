@@ -767,6 +767,7 @@
     "subtitle": "Gescrapte Job-Anzeigen von Ihren konfigurierten Boards. Filtern, ansehen und direkt bewerben.",
     "searchPlaceholder": "Nach Titel, Unternehmen, Ort suchen…",
     "empty": "Noch keine Anzeigen. Starten Sie einen Scrape, um dieses Board zu füllen.",
+    "emptyCta": "Jobs suchen",
     "open": "Öffnen",
     "copyLink": "Link kopieren",
     "apply": "Bewerben",

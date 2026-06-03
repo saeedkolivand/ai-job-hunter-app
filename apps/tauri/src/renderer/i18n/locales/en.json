@@ -782,6 +782,7 @@
     "subtitle": "Scraped job postings from your configured boards. Filter, view, and apply directly.",
     "searchPlaceholder": "Search by title, company, location…",
     "empty": "No postings yet. Start a scrape to populate this board.",
+    "emptyCta": "Search jobs",
     "open": "Open",
     "copyLink": "Copy link",
     "apply": "Apply",

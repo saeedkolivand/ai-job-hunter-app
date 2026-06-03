@@ -1,7 +1,7 @@
 import { Activity } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 
-import { GlassCard } from '@ajh/ui';
+import { EmptyState, GlassCard } from '@ajh/ui';
 
 import { ActiveJobRow } from '@/features/monitoring/components/ActiveJobRow';
 import type { JobRecord } from '@/features/monitoring/types';
@@ -31,9 +31,11 @@ export function ActiveJobsSection({ activeJobs, kindLabel, t }: Props) {
 
       <div className="space-y-2 min-h-[120px]">
         {activeJobs.length === 0 ? (
-          <div className="flex h-24 items-center justify-center text-xs text-foreground/25">
-            {t('monitoring.emptyStates.noActiveJobs')}
-          </div>
+          <EmptyState
+            icon={Activity}
+            title={t('monitoring.emptyStates.noActiveJobs')}
+            className="py-8"
+          />
         ) : (
           <AnimatePresence initial={false}>
             {activeJobs.map((job) => (

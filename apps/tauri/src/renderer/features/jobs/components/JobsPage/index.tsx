@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
 import {
   Button,
+  EmptyState,
   GlassCard,
   Input,
   SelectDropdown,
@@ -215,8 +216,17 @@ export function JobsPage() {
         />
 
         {filtered.length === 0 ? (
-          <GlassCard tone="graphite" highlight className="text-center text-sm text-foreground/55">
-            {t('jobs.empty')}
+          <GlassCard tone="graphite" highlight>
+            <EmptyState
+              icon={Search}
+              title={t('jobs.empty')}
+              action={
+                <Button variant="glass" size="sm" onClick={() => setShowScrapeForm(true)}>
+                  <Search size={13} /> {t('jobs.emptyCta')}
+                </Button>
+              }
+              className="py-10"
+            />
           </GlassCard>
         ) : (
           <div className="flex flex-col gap-2">
