@@ -584,6 +584,34 @@
   --border-clear: rgba(15, 20, 40, 0.46);
 }
 
+/* Secondary/muted text uses foreground-opacity (text-foreground/NN). The SAME
+   opacity reads as comfortable light-gray on the dark canvas but as a too-faint
+   near-black on the light canvas (the asymmetry: near-white@45% over black has
+   far more contrast than near-black@45% over white). Rather than touch ~360
+   sites, lift the faint steps in light only so secondary lands on the macOS
+   hierarchy (~#6E6E73) and muted (~#8E8E93) — nothing disappears. */
+[data-color-scheme='light'] .text-foreground\/20 {
+  color: color-mix(in oklab, var(--color-foreground) 44%, transparent);
+}
+[data-color-scheme='light'] .text-foreground\/25 {
+  color: color-mix(in oklab, var(--color-foreground) 48%, transparent);
+}
+[data-color-scheme='light'] .text-foreground\/30 {
+  color: color-mix(in oklab, var(--color-foreground) 52%, transparent);
+}
+[data-color-scheme='light'] .text-foreground\/35 {
+  color: color-mix(in oklab, var(--color-foreground) 55%, transparent);
+}
+[data-color-scheme='light'] .text-foreground\/40 {
+  color: color-mix(in oklab, var(--color-foreground) 58%, transparent);
+}
+[data-color-scheme='light'] .text-foreground\/45 {
+  color: color-mix(in oklab, var(--color-foreground) 62%, transparent);
+}
+[data-color-scheme='light'] .text-foreground\/50 {
+  color: color-mix(in oklab, var(--color-foreground) 65%, transparent);
+}
+
 /* ── Light-scheme fixups for utilities that hardcode white ───────────────── */
 [data-color-scheme='light'] .label-caps {
   color: rgba(18, 22, 40, 0.45);
