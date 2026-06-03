@@ -1,7 +1,7 @@
 import { ChevronRight } from 'lucide-react';
 import { motion } from 'motion/react';
 
-import { cn, transition } from '@ajh/ui';
+import { Button, cn, transition } from '@ajh/ui';
 
 import type { NavGroup, SectionId } from '@/features/settings/constants';
 
@@ -31,11 +31,13 @@ export function SettingsSidebar({ navGroups, activeSection, onSectionChange }: P
                       transition={transition.spring}
                     />
                   )}
-                  <div
-                    role="button"
+                  <Button
+                    variant="unstyled"
+                    type="button"
+                    aria-current={active ? 'page' : undefined}
                     onClick={() => onSectionChange(id)}
                     className={cn(
-                      'group relative flex cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors duration-150',
+                      'group relative flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm transition-colors duration-150',
                       active
                         ? 'text-foreground'
                         : 'text-foreground/45 hover:bg-white/[0.04] hover:text-foreground/75'
@@ -52,7 +54,7 @@ export function SettingsSidebar({ navGroups, activeSection, onSectionChange }: P
                     />
                     <span className="flex-1 font-medium">{label}</span>
                     {active && <ChevronRight size={12} className="text-foreground/30" />}
-                  </div>
+                  </Button>
                 </div>
               );
             })}
