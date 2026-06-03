@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-06-02
+Last updated: 2026-06-03
 
 ---
 
@@ -25,7 +25,7 @@ Last updated: 2026-06-02
 | [TypeScript][typescript] 6 across all packages   | ✅     | Strict mode enabled                                                                                                                                                                             |
 | [Vite][vite] + HMR for renderer                  | ✅     |                                                                                                                                                                                                 |
 | [TanStack Router][tanstack-router] (file-based)  | ✅     | All 9 routes                                                                                                                                                                                    |
-| [TanStack Query][tanstack-query] + service hooks | ✅     | All 21 namespaces                                                                                                                                                                               |
+| [TanStack Query][tanstack-query] + service hooks | ✅     | All 23 namespaces                                                                                                                                                                               |
 | [Zustand][zustand] stores                        | ✅     | preferences-store, generation-store (`store/generation-store/`), others                                                                                                                         |
 | AppClient / mock transport                       | ✅     | [Tauri][tauri] + mock implementations                                                                                                                                                           |
 | [ESLint][eslint] + [Prettier][prettier]          | ✅     | Enforced in CI                                                                                                                                                                                  |
@@ -117,43 +117,56 @@ former `packages/ai` and `packages/data` Node packages were removed.
 
 ## Autopilot (`apps/tauri/src-tauri/src/autopilot/`)
 
-| Feature                      | Status | Notes                                                                                                          |
-| ---------------------------- | ------ | -------------------------------------------------------------------------------------------------------------- |
-| Workflow definition wizard   | ✅     | 3-step UI                                                                                                      |
-| Workflow persistence         | ✅     | [SQLite][sqlite]                                                                                               |
-| Manual trigger               | ✅     |                                                                                                                |
-| Scheduled execution          | ✅     | Cron-like scheduler                                                                                            |
-| Real-time step events        | ✅     | autopilot:step stream                                                                                          |
-| Pause / resume               | ✅     |                                                                                                                |
-| Found-job dedup + tracking   | ✅     | `merge_found_jobs` dedup by URL; `FoundJob.is_new`; `applied` derived from `ai_generations.job_url`            |
-| Generation-session store     | ✅     | `store/generation-store/` — app-wide, keyed by context id, survives navigation; Apply modal uses it            |
-| `ai_generations` aggregate   | ✅     | `job_url`, `board`, `application_answers`, `company_brief` columns; per-job merge-upsert (`merge_application`) |
-| Applications/History view    | ✅     | Generated tab — new/applied badges; per-job record in history card                                             |
-| Auto-apply integration       | 🚧     | Apply success rate varies by board                                                                             |
-| Batch application throttling | 🚧     | Rate limiting per board                                                                                        |
+| Feature                     | Status | Notes                                                                                                            |
+| --------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------- |
+| Workflow definition wizard  | ✅     | 3-step UI                                                                                                        |
+| Workflow persistence        | ✅     | [SQLite][sqlite]                                                                                                 |
+| Manual trigger              | ✅     |                                                                                                                  |
+| Scheduled execution         | ✅     | Cron-like scheduler                                                                                              |
+| Real-time step events       | ✅     | autopilot:step stream                                                                                            |
+| Pause / resume              | ✅     |                                                                                                                  |
+| Found-job dedup + tracking  | ✅     | `merge_found_jobs` dedup by URL; `FoundJob.is_new`; `applied` derived from `ai_generations.job_url`              |
+| Generation-session store    | ✅     | `store/generation-store/` — app-wide, keyed by context id, survives navigation; Tailor modal uses it             |
+| `ai_generations` aggregate  | ✅     | `job_url`, `board`, `application_answers`, `company_brief` columns; per-job merge-upsert (`merge_application`)   |
+| `run_status` + status badge | ✅     | `inProgress\|completed\|failed\|interrupted`; amber/red chip on `AutopilotCard`; crash reconciliation on startup |
+| OS notification on new jobs | ✅     | Permission-gated; clicking the notification navigates to `/autopilot`                                            |
+| Tray module                 | ✅     | Dynamic "New jobs: N" click→focus; "Pause all" — `apps/tauri/src-tauri/src/tray/`                                |
+| Deep-link focus guard       | ✅     | `ajh://autopilot/<id>` validated against strict allowlist; registered OS scheme — `deeplink/`                    |
+| Startup catch-up sweep      | ✅     | Fires ~5 s after launch instead of waiting a full tick interval                                                  |
+| `minMatchScore` enforcement | ✅     | Scorable postings below threshold dropped before `record_run`; unscored postings kept                            |
+| Cancellation token reuse    | ✅     | Tray/UI cancel reaches the running token across the whole run                                                    |
+| Launch-at-login             | ✅     | Opt-in (default OFF); `system_get/set_launch_at_login` via `tauri-plugin-autostart`                              |
 
 ---
 
 ## UI / UX
 
-| Feature                   | Status | Notes                                    |
-| ------------------------- | ------ | ---------------------------------------- |
-| Dashboard route           | ✅     | Pipeline overview, recent activity       |
-| Jobs route                | ✅     | List, filter, interaction history        |
-| Search route              | ✅     | Hybrid semantic search                   |
-| AI route                  | ✅     | Model selection, [Ollama][ollama] health |
-| AI Generate route         | ✅     | Full generation UI                       |
-| Analyze route             | ✅     | Resume analysis panels                   |
-| Autopilot route           | ✅     | Workflow builder + runner                |
-| Settings route            | ✅     | All settings tabs                        |
-| Support route             | ✅     | Diagnostics, FAQ, logs                   |
-| Onboarding wizard         | ✅     | First-run experience                     |
-| Light/dark theme          | ✅     |                                          |
-| i18n (11 languages)       | ✅     | UI translations                          |
-| Keyboard shortcuts        | ✅     | Configurable                             |
-| Auto-updater banner       | ✅     |                                          |
-| Performance mode selector | ✅     |                                          |
-| Spotlight tour            | ✅     | Interactive tutorial                     |
+| Feature                   | Status | Notes                                                                                                           |
+| ------------------------- | ------ | --------------------------------------------------------------------------------------------------------------- |
+| Dashboard route           | ✅     | Pipeline overview, recent activity                                                                              |
+| Jobs route                | ✅     | List (virtualized via `@tanstack/react-virtual`), filter, interaction history                                   |
+| Search route              | ✅     | Hybrid semantic search (⌘/Ctrl+K only — removed from sidebar)                                                   |
+| AI route                  | ✅     | Model selection, [Ollama][ollama] health                                                                        |
+| AI Generate route         | ✅     | Full generation UI                                                                                              |
+| Analyze route             | ✅     | Resume analysis panels                                                                                          |
+| Autopilot route           | ✅     | Workflow builder + runner                                                                                       |
+| Documents route           | ✅     | Three-tab view — Résumés / Cover Letters / Activity (lenses over `ai_generations`); route stays `/resumes`      |
+| Settings route            | ✅     | All settings tabs; keyboard-reachable sidebar (`@ajh/ui Button` + `aria-current`); `SettingsSection` throughout |
+| Support route             | ✅     | Diagnostics, FAQ, logs                                                                                          |
+| Onboarding wizard         | ✅     | First-run experience                                                                                            |
+| Light/dark/system theme   | ✅     |                                                                                                                 |
+| i18n (11 languages)       | ✅     | UI translations                                                                                                 |
+| Keyboard shortcuts        | ✅     | Global handler + `?` cheat-sheet modal (`useKeyboardShortcuts`)                                                 |
+| Auto-updater banner       | ✅     |                                                                                                                 |
+| Performance mode selector | ✅     |                                                                                                                 |
+| Spotlight tour            | ✅     | Interactive tutorial                                                                                            |
+| Sidebar nav groups        | ✅     | Workspace / Automation / pinned — `nav.sections.workspace\|automation` i18n keys                                |
+| Grouped nav pill          | ✅     | `@ajh/ui NavPill` slides within each list (`layoutId` scoped per group)                                         |
+| `SegmentedControl`        | ✅     | `@ajh/ui` — radiogroup + roving arrow-key nav; `track`/`grid` variants                                          |
+| `SetupHint`               | ✅     | `@ajh/ui` — generalized contextual setup nudge (AI + future board/chrome)                                       |
+| Visible focus rings       | ✅     | Global `:focus-visible` ring; `ModalShell` `aria-labelledby`; `role="switch"` toggles                           |
+| Optimistic delete         | ✅     | `onMutate` snapshot+filter / `onError` rollback on generations + autopilots                                     |
+| macOS window vibrancy     | ⬜     | Deferred — requires a Mac-capable dev session (`window-vibrancy` crate)                                         |
 
 ---
 

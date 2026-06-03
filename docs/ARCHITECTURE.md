@@ -1,6 +1,6 @@
 # Architecture — AI Job Hunter
 
-Last updated: 2026-06-01
+Last updated: 2026-06-03
 
 ## High-Level Overview
 
@@ -22,7 +22,7 @@ graph TB
     end
 
     subgraph Tauri["Tauri Core (Rust)"]
-        Commands["IPC Commands\n(21 namespaces)"]
+        Commands["IPC Commands\n(23 namespaces)"]
         Keychain["OS Keychain\n(credentials)"]
         Updater["Auto-Updater"]
         Window["Window / Tray / Menu"]
@@ -81,31 +81,33 @@ The Tauri app is split into two processes:
 
 **Rust core (`src-tauri/`)** — thin orchestration layer:
 
-| Module               | Responsibility                                                                                                            |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `commands/`          | IPC endpoint handlers; routes invocations to the appropriate runtime                                                      |
-| `platform::config`   | **Sole owner** of env vars + data-dir / filesystem path resolution                                                        |
-| `net::http`          | **Sole owner** of `reqwest::Client` construction — one pooled rustls client; per-request timeouts                         |
-| `error` (`AppError`) | Unified typed error hierarchy (`AppResult`); serializes to its message string                                             |
-| `observability`      | Shared timed trace `Span`s (`→`/`←` + duration) for AI, scraping, autopilot                                               |
-| `scraping/`          | Board scrapers (chromiumoxide for browser boards, HTTP for API boards) via a single `SCRAPERS` registry + `Scraper` trait |
-| `documents/`         | Document import, OCR dispatch, [SQLite][sqlite] storage                                                                   |
-| `jobs/`              | Job tracker state machine (queued → running → done/failed)                                                                |
-| `credentials/`       | OS keychain CRUD via Tauri keychain plugin                                                                                |
-| `conversations/`     | Chat history persistence                                                                                                  |
-| `autopilot/`         | Job-discovery agent + step scheduler (finds → ranks → notifies; the user tailors & applies)                               |
-| `ai_generations/`    | Metadata tracking for generated documents                                                                                 |
-| `export/`            | DOCX/PDF rendering — PDF via Typst (`export/typst_engine/`), DOCX via docx-rs (`export/docx/`)                            |
-| `updater/`           | Auto-update state (check, download, install)                                                                              |
-| `browser/`           | System browser detection and launch                                                                                       |
-| `data_store.rs`      | `DataStore` trait (export/import) implemented by every persistent store                                                   |
-| `commands/data.rs`   | Full backup/restore — one versioned bundle across all stores                                                              |
+| Module               | Responsibility                                                                                                                                              |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `commands/`          | IPC endpoint handlers; routes invocations to the appropriate runtime                                                                                        |
+| `platform::config`   | **Sole owner** of env vars + data-dir / filesystem path resolution                                                                                          |
+| `net::http`          | **Sole owner** of `reqwest::Client` construction — one pooled rustls client; per-request timeouts                                                           |
+| `error` (`AppError`) | Unified typed error hierarchy (`AppResult`); serializes to its message string                                                                               |
+| `observability`      | Shared timed trace `Span`s (`→`/`←` + duration) for AI, scraping, autopilot                                                                                 |
+| `scraping/`          | Board scrapers (chromiumoxide for browser boards, HTTP for API boards) via a single `SCRAPERS` registry + `Scraper` trait                                   |
+| `documents/`         | Document import, OCR dispatch, [SQLite][sqlite] storage                                                                                                     |
+| `jobs/`              | Job tracker state machine (queued → running → done/failed)                                                                                                  |
+| `credentials/`       | OS keychain — AI provider keys (`ai:*`) + `credentials_available` encryption-check; board login uses the separate `boards.*`/`linkedin.*` session-auth path |
+| `conversations/`     | Chat history persistence                                                                                                                                    |
+| `autopilot/`         | Job-discovery agent + step scheduler (finds → ranks → notifies; the user tailors & applies); `run_status` + crash reconciliation                            |
+| `tray/`              | System-tray module — dynamic "New jobs: N" + "Pause all autopilots" (L3 entrypoint)                                                                         |
+| `deeplink/`          | Deep-link guard — `ajh://autopilot/<id>` validated against strict allowlist; OS scheme registered via `tauri-plugin-deep-link`                              |
+| `ai_generations/`    | Metadata tracking for generated documents                                                                                                                   |
+| `export/`            | DOCX/PDF rendering — PDF via Typst (`export/typst_engine/`), DOCX via docx-rs (`export/docx/`)                                                              |
+| `updater/`           | Auto-update state (check, download, install)                                                                                                                |
+| `browser/`           | System browser detection and launch                                                                                                                         |
+| `data_store.rs`      | `DataStore` trait (export/import) implemented by every persistent store                                                                                     |
+| `commands/data.rs`   | Full backup/restore — one versioned bundle across all stores                                                                                                |
 
 **[React][react] renderer (`src/renderer/`)** — feature-scoped UI:
 
 | Directory            | Responsibility                                                      |
 | -------------------- | ------------------------------------------------------------------- |
-| `routes/`            | [TanStack Router][tanstack-router] file-based pages (9 routes)      |
+| `routes/`            | [TanStack Router][tanstack-router] file-based pages                 |
 | `features/`          | Feature-scoped component trees (never cross-import)                 |
 | `services/`          | [TanStack Query][tanstack-query] hooks wrapping every IPC namespace |
 | `lib/`               | Pure utilities: motion tokens, i18n, state machine, `cn()`          |
@@ -123,14 +125,15 @@ The single source of truth for renderer ↔ Rust communication:
 ```
 packages/shared/src/
 ├── ipc/
-│   ├── contracts/          # 21 typed namespace definitions
+│   ├── contracts/          # 23 typed namespace definitions
 │   │   ├── ai.ts
 │   │   ├── aiGenerations.ts
-│   │   ├── apply.ts
 │   │   ├── autopilot.ts
 │   │   ├── boards.ts
+│   │   ├── contactProfile.ts
 │   │   ├── conversations.ts
 │   │   ├── credentials.ts
+│   │   ├── data.ts
 │   │   ├── dialog.ts
 │   │   ├── documents.ts
 │   │   ├── geocode.ts
