@@ -23,7 +23,7 @@ export function GenerationMetadata({ meta }: GenerationMetadataProps) {
         exit={{ opacity: 0 }}
         className="mx-6 mb-4 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 space-y-2"
       >
-        <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/30">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
           {t('aiGenerate.detectedContext')}
         </div>
         {[

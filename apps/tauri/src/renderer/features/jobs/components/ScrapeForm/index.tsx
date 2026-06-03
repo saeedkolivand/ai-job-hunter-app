@@ -93,7 +93,7 @@ export function ScrapeForm({
 
             {/* Board picker */}
             <div className="mb-4">
-              <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.18em] text-foreground/35">
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
                 {t('jobs.board')}
               </div>
               <div className="flex flex-wrap gap-1.5">

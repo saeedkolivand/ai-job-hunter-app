@@ -69,7 +69,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="glass-surface m-3 mr-0 flex w-60 flex-col rounded-2xl p-3">
+    <aside className="app-sidebar glass-surface m-3 mr-0 flex w-60 flex-col rounded-2xl p-3">
       <nav className="flex flex-col gap-1">
         {NAV_ITEMS.map(({ to, label, icon: Icon, tourId }) => {
           const active = pathname === to || (to !== '/' && pathname.startsWith(to + '/'));
@@ -94,7 +94,7 @@ export function Sidebar() {
                   'group relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors duration-150',
                   active
                     ? 'text-foreground'
-                    : 'text-foreground/45 hover:bg-white/[0.04] hover:text-foreground/75'
+                    : 'text-foreground/45 hover:bg-foreground/[0.04] hover:text-foreground/75'
                 )}
               >
                 <Icon
@@ -118,23 +118,21 @@ export function Sidebar() {
               <User size={15} className="text-brand-soft" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px] font-medium leading-tight text-foreground/85">
+              <div className="truncate text-sm font-medium leading-tight text-foreground/85">
                 {userName}
               </div>
-              <div className="text-[10px] leading-tight text-foreground/35">
-                {getTimeGreeting()}
-              </div>
+              <div className="text-xs leading-tight text-foreground/40">{getTimeGreeting()}</div>
             </div>
             <Link
               to={ROUTES.SETTINGS}
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-foreground/30 transition-colors hover:bg-white/[0.06] hover:text-foreground/60"
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-foreground/30 transition-colors hover:bg-foreground/[0.06] hover:text-foreground/60"
             >
               <Settings size={12} />
             </Link>
           </div>
         )}
 
-        <div className="flex items-center gap-2 rounded-lg border border-white/[0.05] bg-white/[0.03] px-2 py-1.5">
+        <div className="flex items-center gap-2 rounded-lg border border-foreground/[0.06] bg-foreground/[0.03] px-2 py-1.5">
           <Cpu
             size={11}
             className={cn(
@@ -158,7 +156,7 @@ export function Sidebar() {
                       : 'animate-pulse bg-foreground/20'
                 )}
               />
-              <span className="truncate text-[10px] text-foreground/45">
+              <span className="truncate text-xs text-foreground/55">
                 {aiStatus === 'ready'
                   ? currentModel
                     ? currentModel.length > 30
@@ -176,7 +174,7 @@ export function Sidebar() {
         <div className="relative flex justify-center">
           <button
             onClick={showVersion}
-            className="font-mono text-[9px] tabular-nums text-foreground/20 transition-colors hover:text-foreground/40"
+            className="font-mono text-[11px] tabular-nums text-foreground/25 transition-colors hover:text-foreground/45"
           >
             {appVersion}
           </button>
@@ -185,7 +183,7 @@ export function Sidebar() {
               <motion.div
                 {...variants.fadeSlideDown}
                 transition={transition.fast}
-                className="absolute bottom-full mb-1.5 whitespace-nowrap rounded-lg border border-white/10 bg-secondary px-2.5 py-1.5 text-[10px] text-foreground/60 shadow-xl"
+                className="absolute bottom-full mb-1.5 whitespace-nowrap rounded-lg border border-border bg-secondary px-2.5 py-1.5 text-xs text-foreground/60 shadow-xl"
               >
                 {appVersion} · local build
               </motion.div>

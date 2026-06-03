@@ -19,7 +19,7 @@ export function AnalysisVerdict({ result, t }: AnalysisVerdictProps) {
           <Sparkles size={20} className="text-brand-soft" />
         </div>
         <div className="flex-1">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/35">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
             {t('analyze.verdict')}
           </div>
           <div
@@ -32,7 +32,7 @@ export function AnalysisVerdict({ result, t }: AnalysisVerdictProps) {
           </div>
           {result.recruiterPerspective && (
             <div className="mt-2 text-sm text-foreground/55 leading-relaxed">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-foreground/30">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-foreground/55">
                 {t('analyze.recruiterView')}{' '}
               </span>
               {result.recruiterPerspective}
