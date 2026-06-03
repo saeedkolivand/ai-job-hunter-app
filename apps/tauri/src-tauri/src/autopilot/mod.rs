@@ -84,6 +84,22 @@ pub enum AutopilotStatus {
     Archived,
 }
 
+/// Outcome of the most recent run. Distinct from [`AutopilotStatus`] (the
+/// agent's enabled/paused lifecycle): this tracks a single run so the UI can
+/// show a live/failed/interrupted indicator.
+///
+/// `Interrupted` is not set by a run — it's reconciled at startup from a run
+/// left `InProgress` when the app closed or crashed mid-run (see
+/// [`AutopilotStore::mark_interrupted_runs`]).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RunStatus {
+    InProgress,
+    Completed,
+    Failed,
+    Interrupted,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Autopilot {
@@ -105,6 +121,10 @@ pub struct Autopilot {
     /// Jobs surfaced by the most recent run. Defaulted so older records load.
     #[serde(default)]
     pub found_jobs: Vec<FoundJob>,
+    /// Outcome of the most recent run. `None` until the first run. Drives the
+    /// live/failed/interrupted badge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_status: Option<RunStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_run_at: Option<u64>,
     pub created_at: u64,
@@ -170,6 +190,7 @@ impl AutopilotStore {
             total_found: 0,
             total_applied: 0,
             found_jobs: Vec::new(),
+            run_status: None,
             last_run_at: None,
             created_at: now,
             updated_at: now,
@@ -234,6 +255,37 @@ impl AutopilotStore {
         self.save(map);
     }
 
+    /// Set the most-recent-run outcome. `InProgress` is set at run start,
+    /// `Failed` on a run error; `record_run` sets `Completed` on success.
+    pub fn set_run_status(&self, id: &str, status: RunStatus) {
+        let mut map = self.load();
+        if let Some(ap) = map.get_mut(id) {
+            ap.run_status = Some(status);
+            ap.updated_at = now_ms();
+        }
+        self.save(map);
+    }
+
+    /// Reconcile runs left mid-flight: any autopilot still marked `InProgress`
+    /// when the app starts was interrupted by a crash or close, so flip it to
+    /// `Interrupted` for an honest badge instead of a stuck "running" state.
+    /// Returns how many were reconciled. Called once at startup.
+    pub fn mark_interrupted_runs(&self) -> usize {
+        let mut map = self.load();
+        let mut count = 0;
+        for ap in map.values_mut() {
+            if ap.run_status == Some(RunStatus::InProgress) {
+                ap.run_status = Some(RunStatus::Interrupted);
+                ap.updated_at = now_ms();
+                count += 1;
+            }
+        }
+        if count > 0 {
+            self.save(map);
+        }
+        count
+    }
+
     /// Persist the outcome of a run: counts, last-run time, and the found-jobs
     /// list **merged** with prior runs by URL — so re-running keeps history
     /// (first-seen + any state) instead of replacing it, and genuinely new
@@ -256,6 +308,7 @@ impl AutopilotStore {
             ap.found_jobs = merge_found_jobs(&ap.found_jobs, found_jobs);
             // `merge_found_jobs` flags only never-before-seen URLs as `is_new`.
             new_count = ap.found_jobs.iter().filter(|j| j.is_new).count() as u32;
+            ap.run_status = Some(RunStatus::Completed);
             ap.last_run_at = Some(now);
             ap.updated_at = now;
         }
