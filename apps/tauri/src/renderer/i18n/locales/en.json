@@ -594,6 +594,9 @@
     "collapse": "Collapse",
     "viewJob": "Open posting",
     "applyJob": "Apply",
+    "delete": "Delete",
+    "deleteTitle": "Delete this autopilot?",
+    "deleteDescription": "This stops its schedule and permanently removes the autopilot and its found-jobs history.",
     "badge": {
       "new": "New",
       "applied": "Applied"
@@ -922,6 +925,9 @@
       "exportCoverLetter": "Cover Letter",
       "applied": "Applied",
       "openPosting": "Open posting",
+      "delete": "Delete",
+      "deleteTitle": "Delete this document?",
+      "deleteDescription": "This permanently removes the generated resume and cover letter. This can't be undone.",
       "companyResearch": "Company research",
       "applicationAnswers": "Application answers"
     },
