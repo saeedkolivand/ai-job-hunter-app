@@ -142,8 +142,36 @@ fn main() {
         // width/height/center in tauri.conf.json become first-run defaults only.
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             let handle = app.handle();
+
+            // `ajh://` deep links. The OS routes a cold/click-launched URL here
+            // (macOS via `on_open_url`; Windows/Linux a second instance forwards
+            // it as argv → the single-instance guard above). Every URL is funneled
+            // through the same strict allowlist (`deeplink::parse_focus_target`)
+            // before any navigation — a hostile URL focuses the window and stops.
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                // Register the scheme at runtime (no-op once the installer has;
+                // required for Linux + `pnpm dev`). Best-effort.
+                let _ = app.deep_link().register_all();
+                let dl_handle = handle.clone();
+                app.deep_link().on_open_url(move |event| {
+                    let urls: Vec<String> = event.urls().iter().map(|u| u.to_string()).collect();
+                    if let Some(deeplink::FocusTarget::Autopilot(id)) =
+                        deeplink::parse_focus_target(&urls)
+                    {
+                        if let Some(win) = dl_handle.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.unminimize();
+                            let _ = win.set_focus();
+                        }
+                        tray::emit_focus(&dl_handle, &id);
+                    }
+                });
+            }
 
             // Data dir for all persistent state. Resolved + exported once here so
             // AppHandle-less workers (scrapers/appliers) reach the same path.
