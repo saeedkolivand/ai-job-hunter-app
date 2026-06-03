@@ -43,9 +43,9 @@ const NAV_SECTIONS: { labelKey: string; items: readonly NavItem[] }[] = [
       { to: ROUTES.JOBS, label: 'nav.jobs', icon: Briefcase, tourId: 'jobs' },
       { to: ROUTES.ANALYZE, label: 'nav.analyze', icon: Gauge, tourId: 'analyze' },
       { to: ROUTES.GENERATE, label: 'nav.generate', icon: Wand2, tourId: 'generate' },
-      // tourId 'documents' matches the onboarding tour (the visible label is
-      // relabelled "Documents" in the IA pass; the route stays /resumes).
-      { to: ROUTES.RESUMES, label: 'nav.resumes', icon: FileText, tourId: 'documents' },
+      // Labelled "Documents" (résumés + cover letters + activity); the route
+      // stays /resumes and the tour anchor is 'documents'.
+      { to: ROUTES.RESUMES, label: 'nav.documents', icon: FileText, tourId: 'documents' },
     ],
   },
   {
