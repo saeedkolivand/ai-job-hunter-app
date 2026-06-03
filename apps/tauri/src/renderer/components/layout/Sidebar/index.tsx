@@ -17,7 +17,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useRef, useState } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 
-import { Button, cn, transition, variants } from '@ajh/ui';
+import { Button, cn, NavPill, transition, variants } from '@ajh/ui';
 
 import { ROUTES } from '@/constants/routes';
 import { getTimeGreeting } from '@/lib/greeting';
@@ -75,19 +75,7 @@ export function Sidebar() {
           const active = pathname === to || (to !== '/' && pathname.startsWith(to + '/'));
           return (
             <div key={to} className="relative" data-tour-id={tourId}>
-              {active && (
-                <motion.div
-                  layoutId="sidebar-pill"
-                  className="absolute inset-0 rounded-xl"
-                  style={{
-                    background:
-                      'linear-gradient(135deg, rgba(168,85,247,0.18) 0%, rgba(99,102,241,0.10) 100%)',
-                    border: '1px solid rgba(168,85,247,0.25)',
-                    boxShadow: '0 0 16px rgba(168,85,247,0.12)',
-                  }}
-                  transition={transition.spring}
-                />
-              )}
+              {active && <NavPill layoutId="sidebar-pill" />}
               <Link
                 to={to}
                 className={cn(
