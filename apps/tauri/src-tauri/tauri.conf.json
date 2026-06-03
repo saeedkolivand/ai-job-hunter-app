@@ -52,6 +52,11 @@
   },
   "plugins": {
     "dialog": null,
+    "deep-link": {
+      "desktop": {
+        "schemes": ["ajh"]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQxQzk4NkM0NEJGQkQ0RjkKUldUNTFQdEx4SWJKUWJNU29HRk9JU3RRL0luZ3pmK1hzVmljajFvWjJicEJ2MEJ3Zzg4Q3hwSmsK",
       "endpoints": [
