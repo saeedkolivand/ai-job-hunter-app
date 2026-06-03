@@ -1,7 +1,7 @@
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, X } from 'lucide-react';
 import { motion } from 'motion/react';
 
-import { Button } from '@ajh/ui';
+import { Button, transition, withDelay } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { useOpenExternal } from '@/services';
@@ -27,7 +27,7 @@ export function BrowserNotDetectedState({ onBack, onNext }: BrowserNotDetectedSt
     <motion.div
       initial={{ y: 10, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      transition={{ delay: 0.1 }}
+      transition={withDelay(0.1)}
       className="space-y-5"
     >
       {/* Icon */}
@@ -36,7 +36,7 @@ export function BrowserNotDetectedState({ onBack, onNext }: BrowserNotDetectedSt
           animate={{
             y: [0, -8, 0],
           }}
-          transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+          transition={transition.breathe}
           className="relative"
         >
           <div className="absolute inset-0 rounded-full bg-brand/20 blur-xl" />

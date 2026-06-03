@@ -93,8 +93,9 @@ export function AnalyzeLeftPanel({
               { id: 'compact' as PromptQuality, label: 'Fast' },
             ] as const
           ).map(({ id, label }) => (
-            <button
+            <Button
               key={id}
+              variant="unstyled"
               type="button"
               onClick={() => setPromptQuality(id)}
               className={cn(
@@ -106,7 +107,7 @@ export function AnalyzeLeftPanel({
             >
               {id === 'compact' && <Zap size={11} />}
               {label}
-            </button>
+            </Button>
           ))}
         </div>
         {promptQuality === 'compact' && (

@@ -28,7 +28,7 @@ export function StepFilter({ form, set, prefilled }: StepFilterProps) {
     setUploadingResume(true);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const res = (await extractText.mutateAsync({ name: file.name, bytes })) as { text: string };
+      const res = await extractText.mutateAsync({ name: file.name, bytes });
       const text = (res?.text ?? '').trim();
       if (text) set('resumeText', text);
     } finally {

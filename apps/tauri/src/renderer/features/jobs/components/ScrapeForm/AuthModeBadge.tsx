@@ -1,7 +1,7 @@
 import { Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
-import { transition } from '@ajh/ui';
+import { Button, transition } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 
@@ -40,7 +40,8 @@ export function AuthModeBadge({
                 {t('jobs.modeAuthenticated')}
               </span>
               <span className="text-[10px] text-foreground/35">{t('jobs.modeAuthNote')}</span>
-              <button
+              <Button
+                variant="unstyled"
                 type="button"
                 disabled={disconnectPending}
                 onClick={onDisconnect}
@@ -51,7 +52,7 @@ export function AuthModeBadge({
                 ) : (
                   t('jobs.disconnect')
                 )}
-              </button>
+              </Button>
             </>
           ) : (
             <>

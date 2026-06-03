@@ -77,7 +77,7 @@ interface CapabilityProviderProps {
  */
 export function CapabilityProvider({ children }: CapabilityProviderProps) {
   const { data: health } = useSystemHealth();
-  const caps = parseHealth(health as RuntimeHealth | undefined);
+  const caps = parseHealth(health);
 
   return <CapabilityContext.Provider value={caps}>{children}</CapabilityContext.Provider>;
 }

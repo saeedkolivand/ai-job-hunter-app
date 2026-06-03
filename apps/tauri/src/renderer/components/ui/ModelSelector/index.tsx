@@ -64,10 +64,7 @@ export function ModelSelector({ className }: ModelSelectorProps) {
     })),
   });
   const cloudModelNames = new Map<AiProvider, string[]>(
-    cloudProviders.map((p, i) => [
-      p,
-      ((modelQueries[i]?.data as Array<{ name: string }> | undefined) ?? []).map((m) => m.name),
-    ])
+    cloudProviders.map((p, i) => [p, (modelQueries[i]?.data ?? []).map((m) => m.name)])
   );
 
   // CLI-agent availability (binary detected) from the system health probe.

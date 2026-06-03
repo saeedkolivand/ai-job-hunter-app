@@ -1,7 +1,7 @@
 import { Info, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
-import { transition } from '@ajh/ui';
+import { Button, transition } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 
@@ -28,7 +28,8 @@ export function AuthHint({ show, connectPending, onConnect }: Props) {
           <div className="flex items-center gap-2 rounded-lg border border-blue-400/15 bg-blue-400/5 px-3 py-2 text-[11px] text-blue-200/75">
             <Info size={12} className="shrink-0 text-blue-400/60" />
             <span>{t('jobs.authHint')}</span>
-            <button
+            <Button
+              variant="unstyled"
               type="button"
               disabled={connectPending}
               onClick={onConnect}
@@ -39,7 +40,7 @@ export function AuthHint({ show, connectPending, onConnect }: Props) {
               ) : (
                 t('jobs.authHintLink')
               )}
-            </button>
+            </Button>
           </div>
         </motion.div>
       )}

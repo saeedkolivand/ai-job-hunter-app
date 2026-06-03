@@ -23,12 +23,9 @@ function normalise(raw: RawDoc): DocumentRecord {
     ...raw,
     id: raw._id,
     importedAt: raw.createdAt,
-    source: (raw.source ??
-      (raw.name?.endsWith('.pdf')
-        ? 'pdf'
-        : raw.name?.endsWith('.docx')
-          ? 'docx'
-          : 'txt')) as DocumentRecord['source'],
+    source:
+      raw.source ??
+      (raw.name?.endsWith('.pdf') ? 'pdf' : raw.name?.endsWith('.docx') ? 'docx' : 'txt'),
   };
 }
 

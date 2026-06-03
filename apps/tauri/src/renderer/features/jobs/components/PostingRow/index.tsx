@@ -163,13 +163,14 @@ export function PostingRow({ posting, onApply, formatRelativeTime }: PostingRowP
           >
             <ExternalLink size={10} /> {t('jobs.open')}
           </a>
-          <button
+          <Button
+            variant="unstyled"
             onClick={handleCopyLink}
             className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] text-foreground/70 hover:text-foreground hover:bg-white/10 transition-all duration-200"
             title={t('jobs.copyLink')}
           >
             <Copy size={10} />
-          </button>
+          </Button>
           <Button
             size="sm"
             variant={canApply ? 'glass' : 'ghost'}

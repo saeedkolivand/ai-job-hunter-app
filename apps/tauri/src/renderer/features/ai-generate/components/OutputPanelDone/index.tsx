@@ -119,7 +119,8 @@ export function OutputPanelDone({
       {/* Output — prettified Preview or raw Edit (display-only; export uses the raw text) */}
       <div className="flex flex-1 flex-col overflow-hidden px-6 py-4">
         <div className="mb-2 flex shrink-0 items-center gap-0.5 self-end rounded-lg bg-white/[0.04] p-0.5">
-          <button
+          <Button
+            variant="unstyled"
             onClick={() => setView('preview')}
             className={cn(
               'flex items-center gap-1 rounded px-2 py-1 text-[10px] transition-colors',
@@ -129,8 +130,9 @@ export function OutputPanelDone({
             )}
           >
             <Eye size={11} /> {t('aiGenerate.preview')}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="unstyled"
             onClick={() => setView('edit')}
             className={cn(
               'flex items-center gap-1 rounded px-2 py-1 text-[10px] transition-colors',
@@ -140,7 +142,7 @@ export function OutputPanelDone({
             )}
           >
             <Pencil size={11} /> {t('aiGenerate.edit')}
-          </button>
+          </Button>
         </div>
 
         {view === 'edit' ? (

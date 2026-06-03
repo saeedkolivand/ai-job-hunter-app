@@ -26,11 +26,15 @@ const WINDOW_API_DIRECT =
 const RAW_BUTTON = 'JSXOpeningElement[name.name="button"]';
 const RAW_SELECT = 'JSXOpeningElement[name.name="select"]';
 const RAW_TEXTAREA = 'JSXOpeningElement[name.name="textarea"]';
-const RAW_INPUT = 'JSXOpeningElement[name.name="input"]';
+// <Input> is a styled text field; native structural types (range slider, file
+// picker, checkbox, radio, hidden) must NOT be forced through it. The selector
+// excludes those literal types so it matches its own documented message.
+const RAW_INPUT =
+  'JSXOpeningElement[name.name="input"]:not(:has(JSXAttribute[name.name="type"] > Literal[value=/^(?:range|file|checkbox|radio|hidden)$/]))';
 
 // ── Forbidden deep UI import paths (all resolve to @ajh/ui exports) ──────────
 // UpdateBanner is intentionally omitted — it is app-specific and lives only
-// in apps/desktop/src/renderer/components/ui/UpdateBanner.tsx.
+// in apps/tauri/src/renderer/components/ui/UpdateBanner.tsx.
 const DEEP_UI_IMPORTS = [
   '@/components/ui/ActionTile',
   '@/components/ui/Button',
@@ -203,7 +207,7 @@ export default tseslint.config(
 
   // ── All renderer source — i18n adapter + package boundary ──────────────────
   {
-    files: ['apps/desktop/src/renderer/**/*.ts', 'apps/desktop/src/renderer/**/*.tsx'],
+    files: ['apps/tauri/src/renderer/**/*.ts', 'apps/tauri/src/renderer/**/*.tsx'],
     rules: {
       'no-restricted-imports': ['error', { ...I18N_IMPORT_RESTRICTION }],
     },
@@ -213,9 +217,9 @@ export default tseslint.config(
   // These files have the full set of design system + architecture restrictions.
   {
     files: [
-      'apps/desktop/src/renderer/features/**/*.tsx',
-      'apps/desktop/src/renderer/routes/**/*.tsx',
-      'apps/desktop/src/renderer/components/**/*.tsx',
+      'apps/tauri/src/renderer/features/**/*.tsx',
+      'apps/tauri/src/renderer/routes/**/*.tsx',
+      'apps/tauri/src/renderer/components/**/*.tsx',
     ],
     rules: {
       // Extends the renderer-level restriction with deep UI import ban
@@ -281,7 +285,7 @@ export default tseslint.config(
   // To disable: comment out this entire block. Rules here catch async misuse
   // that plain type checking won't surface until runtime.
   {
-    files: ['apps/desktop/src/renderer/**/*.ts', 'apps/desktop/src/renderer/**/*.tsx'],
+    files: ['apps/tauri/src/renderer/**/*.ts', 'apps/tauri/src/renderer/**/*.tsx'],
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -300,7 +304,7 @@ export default tseslint.config(
 
   // ── Service layer — allowed to call window.api directly ───────────────────
   {
-    files: ['apps/desktop/src/renderer/services/**/*.ts'],
+    files: ['apps/tauri/src/renderer/services/**/*.ts'],
     rules: {
       'no-restricted-syntax': 'off',
     },
@@ -309,26 +313,32 @@ export default tseslint.config(
   // ── React Query boundary — only services can use React Query directly ───────
   {
     files: [
-      'apps/desktop/src/renderer/features/**/*.tsx',
-      'apps/desktop/src/renderer/routes/**/*.tsx',
-      'apps/desktop/src/renderer/components/**/*.tsx',
+      'apps/tauri/src/renderer/features/**/*.tsx',
+      'apps/tauri/src/renderer/routes/**/*.tsx',
+      'apps/tauri/src/renderer/components/**/*.tsx',
     ],
     rules: {
       'no-restricted-imports': [
         'error',
         {
-          ...I18N_IMPORT_RESTRICTION,
-          patterns: [
-            {
-              group: DEEP_UI_IMPORTS,
-              message:
-                "Import from '@ajh/ui' directly instead of deep component paths. Example: import { Button } from '@ajh/ui'. The only exception is UpdateBanner: import { UpdateBanner } from '@/components/ui/UpdateBanner'.",
-            },
+          // `paths` restricts named modules (name + importNames); `patterns`
+          // restricts globs (group). React Query is a named module, so it must
+          // live in `paths` — putting it in `patterns` is a schema error that
+          // was masked while this block's glob matched no files.
+          paths: [
+            ...I18N_IMPORT_RESTRICTION.paths,
             {
               name: '@tanstack/react-query',
               importNames: ['useQuery', 'useMutation', 'useQueryClient', 'QueryClient'],
               message:
                 "Don't use React Query hooks directly in UI components. Use service hooks from '@/services/' instead (e.g. useDocuments, useJobs). This enforces the Ports & Adapters boundary.",
+            },
+          ],
+          patterns: [
+            {
+              group: DEEP_UI_IMPORTS,
+              message:
+                "Import from '@ajh/ui' directly instead of deep component paths. Example: import { Button } from '@ajh/ui'. The only exception is UpdateBanner: import { UpdateBanner } from '@/components/ui/UpdateBanner'.",
             },
           ],
         },
@@ -338,7 +348,7 @@ export default tseslint.config(
 
   // ── i18n adapter and setup — allowed to import react-i18next directly ──────
   {
-    files: ['apps/desktop/src/renderer/lib/i18n.ts', 'apps/desktop/src/renderer/i18n/index.ts'],
+    files: ['apps/tauri/src/renderer/lib/i18n/i18n.ts', 'apps/tauri/src/renderer/i18n/index.ts'],
     rules: {
       'no-restricted-imports': 'off',
     },
@@ -368,17 +378,6 @@ export default tseslint.config(
       ),
       // Stories intentionally use raw <button> for demo content
       'no-restricted-syntax': 'off',
-    },
-  },
-
-  // ── Approved `any` exceptions — complex dynamic ESM types ──────────────────
-  // These files use dynamic import() with external libraries whose types are
-  // only resolvable at runtime. Inline suppression is banned; this is the
-  // approved exception point.
-  {
-    files: ['apps/desktop/src/main/updater.ts', 'apps/desktop/src/renderer/lib/generate-ai.ts'],
-    rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
 

@@ -17,7 +17,7 @@ export function SettingsPage() {
   const { t } = useTranslation();
 
   const { settings, setSettings } = useSessionStore();
-  const activeSection = settings.activeSection as SectionId;
+  const activeSection = settings.activeSection;
   const setActiveSection = (v: SectionId) => setSettings({ activeSection: v });
   const userName = useUserName();
   const setUserName = usePreferencesStore((s) => s.setUserName);

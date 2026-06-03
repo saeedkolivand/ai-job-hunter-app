@@ -2,7 +2,7 @@ import { ArrowLeft, ArrowRight, Check, Eye, EyeOff, Key, Loader2, Search } from 
 import { motion } from 'motion/react';
 import { useState } from 'react';
 
-import { Button, FloatingIcon, Input, useNotification } from '@ajh/ui';
+import { Button, FloatingIcon, Input, useNotification, withDelay } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { useHasProviderKey, useOpenExternal, useSetProviderKey } from '@/services';
@@ -66,7 +66,7 @@ export function ResearchStep({ onBack, onNext, direction, stepIndex, totalSteps 
       <motion.div
         initial={{ y: 10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.1 }}
+        transition={withDelay(0.1)}
         className="mb-5 text-center"
       >
         <h1 className="mb-2 text-xl font-semibold text-foreground/95">
@@ -78,7 +78,7 @@ export function ResearchStep({ onBack, onNext, direction, stepIndex, totalSteps 
       <motion.div
         initial={{ y: 10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.15 }}
+        transition={withDelay(0.15)}
         className="mb-6"
       >
         {connected ? (
@@ -90,12 +90,13 @@ export function ResearchStep({ onBack, onNext, direction, stepIndex, totalSteps 
           <div className="space-y-2">
             <p className="text-xs text-foreground/40">
               {t('onboarding.research.getKeyAt')}{' '}
-              <button
+              <Button
+                variant="unstyled"
                 onClick={() => void openExternal.mutateAsync(KEYS_URL)}
                 className="text-brand-soft/70 underline underline-offset-2 hover:text-brand-soft"
               >
                 {KEYS_URL.replace('https://', '')}
-              </button>
+              </Button>
             </p>
             <div className="relative">
               <Input
@@ -106,12 +107,13 @@ export function ResearchStep({ onBack, onNext, direction, stepIndex, totalSteps 
                 placeholder={t('onboarding.research.keyPlaceholder')}
                 className="w-full pr-9 text-sm"
               />
-              <button
+              <Button
+                variant="unstyled"
                 onClick={() => setShowKey((v) => !v)}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-foreground/30 hover:text-foreground/60"
               >
                 {showKey ? <EyeOff size={13} /> : <Eye size={13} />}
-              </button>
+              </Button>
             </div>
             <div className="flex justify-end">
               <Button
@@ -140,7 +142,7 @@ export function ResearchStep({ onBack, onNext, direction, stepIndex, totalSteps 
       <motion.div
         initial={{ y: 10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.2 }}
+        transition={withDelay(0.2)}
         className="flex items-center gap-3"
       >
         <Button variant="ghost" size="sm" onClick={onBack} className="flex items-center gap-1.5">

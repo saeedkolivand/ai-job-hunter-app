@@ -138,18 +138,24 @@ import { Button, Input, GlassCard, Modal } from '@ajh/ui';
 #### `Button`
 
 ```typescript
-<Button variant="primary" size="md" loading={false} disabled={false}>
+<Button variant="default" size="md" loading={false} disabled={false}>
   Apply Now
 </Button>
 ```
 
-| Prop                     | Type      | Values                                             |
-| ------------------------ | --------- | -------------------------------------------------- |
-| `variant`                | string    | `primary` `secondary` `ghost` `destructive` `link` |
-| `size`                   | string    | `xs` `sm` `md` `lg`                                |
-| `loading`                | boolean   | Shows spinner, disables click                      |
-| `disabled`               | boolean   | Greyed out, no interaction                         |
-| `leftIcon` / `rightIcon` | ReactNode | Lucide icon component                              |
+| Prop       | Type    | Values                                                                   |
+| ---------- | ------- | ------------------------------------------------------------------------ |
+| `variant`  | string  | `default` `glass` `ghost` `danger` `warning` `info` `success` `unstyled` |
+| `size`     | string  | `sm` `md` `lg`                                                           |
+| `loading`  | boolean | Shows spinner, disables click                                            |
+| `disabled` | boolean | Greyed out, no interaction                                               |
+
+> **`unstyled`** is an escape hatch for custom interactive surfaces — segmented controls,
+> icon toggles, inline text links, clickable cards — that supply their own appearance via
+> `className`. It injects no chrome (no border / background / size / layout) but still routes
+> through `Button` for consistent focus-visible + disabled handling. Prefer a semantic variant;
+> reach for `unstyled` only when a styled variant would fight the call site. `Input` ships the
+> same `unstyled` variant for inline/borderless fields.
 
 #### `Input`
 
@@ -431,15 +437,16 @@ import { cn } from "@/lib/cn";
 
 These are enforced in CI (`pnpm lint:strict`) by [ESLint][eslint]:
 
-| Rule                                 | What it prevents                 |
-| ------------------------------------ | -------------------------------- |
-| No `[#RRGGBB]` in className          | Hardcoded hex colors             |
-| No `<button>` raw element            | Missing Button primitive         |
-| No `<select>` raw element            | Missing SelectDropdown primitive |
-| No `<textarea>` raw element          | Missing TextArea primitive       |
-| No inline `{duration, ease}` objects | Missing motion token             |
-| No `window.api.*` in features/routes | Direct IPC bypass                |
-| No `react-i18next` direct import     | Missing i18n wrapper             |
+| Rule                                 | What it prevents                                                                 |
+| ------------------------------------ | -------------------------------------------------------------------------------- |
+| No `[#RRGGBB]` in className          | Hardcoded hex colors                                                             |
+| No `<button>` raw element            | Missing Button primitive (use `variant="unstyled"` for custom surfaces)          |
+| No `<select>` raw element            | Missing SelectDropdown primitive                                                 |
+| No `<textarea>` raw element          | Missing TextArea primitive                                                       |
+| No `<input>` raw element             | Missing Input primitive — `type=range\|file\|checkbox\|radio\|hidden` are exempt |
+| No inline `{duration, ease}` objects | Missing motion token (use `transition.*`, `withDelay()`)                         |
+| No `window.api.*` in features/routes | Direct IPC bypass                                                                |
+| No `react-i18next` direct import     | Missing i18n wrapper                                                             |
 
 ---
 

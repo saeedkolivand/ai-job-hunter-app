@@ -26,12 +26,8 @@ export function ResumePreferences() {
     ...d,
     id: d._id,
     importedAt: d.createdAt,
-    source: (d.source ??
-      (d.name?.endsWith('.pdf')
-        ? 'pdf'
-        : d.name?.endsWith('.docx')
-          ? 'docx'
-          : 'txt')) as DocumentRecord['source'],
+    source:
+      d.source ?? (d.name?.endsWith('.pdf') ? 'pdf' : d.name?.endsWith('.docx') ? 'docx' : 'txt'),
   }));
   const { importFile, isPending: uploading, isOcr } = useImportWithOcr();
   const removeDocument = useRemoveDocument();

@@ -1,21 +1,17 @@
 import { Bug, Terminal } from 'lucide-react';
-import { useMutation } from '@tanstack/react-query';
 
 import { Button, cn, GlassCard, SectionLabel } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
-import { useAppClient } from '@/providers/AppClientProvider';
+import { useOpenDevtools } from '@/services';
 import { useDebugMode, usePreferencesStore } from '@/store/preferences-store';
 
 export function DeveloperPreferences() {
   const { t } = useTranslation();
-  const api = useAppClient();
   const debugMode = useDebugMode();
   const setDebugMode = usePreferencesStore((s) => s.setDebugMode);
 
-  const { mutate: openDevtools, isPending } = useMutation({
-    mutationFn: () => api.system.openDevtools() as Promise<void>,
-  });
+  const { mutate: openDevtools, isPending } = useOpenDevtools();
 
   return (
     <GlassCard>
@@ -26,7 +22,8 @@ export function DeveloperPreferences() {
 
       <div className="space-y-3">
         {/* Debug mode toggle */}
-        <button
+        <Button
+          variant="unstyled"
           type="button"
           onClick={() => setDebugMode(!debugMode)}
           className={cn(
@@ -62,7 +59,7 @@ export function DeveloperPreferences() {
               )}
             />
           </div>
-        </button>
+        </Button>
 
         {/* Open DevTools */}
         <Button

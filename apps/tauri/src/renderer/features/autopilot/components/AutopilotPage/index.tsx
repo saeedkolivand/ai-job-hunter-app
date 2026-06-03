@@ -17,7 +17,7 @@ import { useSessionStore } from '@/store/session-store';
 function AutopilotPage() {
   const { t } = useTranslation();
   const { data: autopilotList = [], isLoading: loading } = useAutopilots();
-  const autopilots = autopilotList as Autopilot[];
+  const autopilots = autopilotList;
   const { autopilot, setAutopilot, resetAutopilotWizard } = useSessionStore();
   const { creating } = autopilot;
   const setCreating = (v: boolean) => setAutopilot({ creating: v });

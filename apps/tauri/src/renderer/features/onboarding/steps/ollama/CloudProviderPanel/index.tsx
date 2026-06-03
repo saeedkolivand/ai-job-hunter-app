@@ -140,8 +140,9 @@ export function CloudProviderPanel({
       {/* Provider selector */}
       <div className="space-y-2">
         {CLOUD_PROVIDERS.map((p) => (
-          <button
+          <Button
             key={p.id}
+            variant="unstyled"
             onClick={() => onProviderChange(p.id)}
             className={`flex w-full items-center gap-3 rounded-xl border px-4 py-2.5 text-left transition-all duration-150 ${
               selectedProvider === p.id
@@ -160,7 +161,7 @@ export function CloudProviderPanel({
             {selectedProvider === p.id && hasKey && (
               <CheckCircle2 size={12} className="ml-auto text-emerald-400" />
             )}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -192,12 +193,13 @@ export function CloudProviderPanel({
         <div className="space-y-2">
           <p className="text-xs text-foreground/35">
             {t('onboarding.ai.getApiKeyAt')}{' '}
-            <button
+            <Button
+              variant="unstyled"
               onClick={() => void openExternal.mutateAsync(cloudMeta?.docsUrl ?? '')}
               className="text-brand-soft/70 underline underline-offset-2 hover:text-brand-soft"
             >
               {(cloudMeta?.docsUrl ?? '').replace('https://', '')}
-            </button>
+            </Button>
           </p>
           <div className="flex flex-col gap-2">
             <div className="relative">
@@ -209,12 +211,13 @@ export function CloudProviderPanel({
                 placeholder={cloudMeta?.placeholder ?? '…'}
                 className="w-full pr-9 text-sm"
               />
-              <button
+              <Button
+                variant="unstyled"
                 onClick={() => setShowKey((v) => !v)}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-foreground/30 hover:text-foreground/60"
               >
                 {showKey ? <EyeOff size={13} /> : <Eye size={13} />}
-              </button>
+              </Button>
             </div>
             <div className="flex justify-end">
               <Button

@@ -70,10 +70,7 @@ export function ContactFeedback() {
           loading={exportDiagnostics.isPending}
           onClick={async () => {
             try {
-              const res = (await exportDiagnostics.mutateAsync()) as {
-                success: boolean;
-                bundlePath?: string;
-              };
+              const res = await exportDiagnostics.mutateAsync();
               if (res.success) notify('Diagnostics bundle exported.', 'success');
               else notify('Export failed.', 'error');
             } catch (err) {

@@ -96,7 +96,7 @@ export async function runAnalysis({
   const providerConfig = usePreferencesStore.getState().aiProviderConfig;
   const activeProvider = providerConfig?.activeProvider ?? 'ollama';
   const providerSettings = providerConfig?.providers?.[activeProvider];
-  const res = (await api.ai.generate({
+  const res = await api.ai.generate({
     model: providerSettings?.model || model,
     messages: [
       { role: 'system', content: systemPrompt },
@@ -109,7 +109,7 @@ export async function runAnalysis({
     baseUrl: providerSettings?.baseUrl,
     // Reasoning effort for CLI agents that support it (e.g. Codex).
     effort: providerSettings?.effort,
-  } as Parameters<typeof api.ai.generate>[0])) as { jobId: string };
+  });
 
   const jobId = res.jobId;
   onJobId?.(jobId);

@@ -26,4 +26,4 @@ export const TEMPLATE_PREVIEWS: Partial<Record<TemplateId, string>> = Object.fro
         ?.replace(/\.png$/, '') ?? '';
     return [id, url];
   })
-) as Partial<Record<TemplateId, string>>;
+);

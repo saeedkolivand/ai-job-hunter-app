@@ -75,6 +75,12 @@ export const useOpenExternal = () => {
   return useMutation({ mutationFn: (url: string) => api.system.openExternal(url) });
 };
 
+/** Open the webview devtools (Developer settings). On-demand, so a mutation. */
+export const useOpenDevtools = () => {
+  const api = useAppClient();
+  return useMutation({ mutationFn: () => api.system.openDevtools() });
+};
+
 export const useSetPerformanceMode = () => {
   const api = useAppClient();
   return useMutation({

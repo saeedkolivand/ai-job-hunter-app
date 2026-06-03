@@ -62,7 +62,7 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
     setPullProgress(0);
     try {
       const result = await pullModel.mutateAsync(selectedModel);
-      setPullJobId((result as { jobId: string }).jobId);
+      setPullJobId(result.jobId);
     } catch (err) {
       setPullState('error');
       notify(err instanceof Error ? err.message : 'Download failed.', 'error');

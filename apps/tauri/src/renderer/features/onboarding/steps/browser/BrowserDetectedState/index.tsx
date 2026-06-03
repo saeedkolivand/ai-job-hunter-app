@@ -2,7 +2,7 @@ import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Globe } from 'lucide-rea
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 
-import { Button } from '@ajh/ui';
+import { Button, transition, withDelay } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 
@@ -23,14 +23,14 @@ export function BrowserDetectedState({ browserPath, onBack, onNext }: BrowserDet
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.5, type: 'spring' }}
+          transition={transition.spring}
           className="relative"
         >
           <motion.div
             animate={{
               boxShadow: ['0 0 0 0 rgba(52, 211, 153, 0.4)', '0 0 0 20px rgba(52, 211, 153, 0)'],
             }}
-            transition={{ duration: 2, repeat: Infinity }}
+            transition={transition.ping}
             className="absolute inset-0 rounded-full bg-emerald-500/20 blur-xl"
           />
           <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-emerald-500/10 ring-1 ring-emerald-500/30">
@@ -44,7 +44,7 @@ export function BrowserDetectedState({ browserPath, onBack, onNext }: BrowserDet
         <motion.h2
           initial={{ y: 10, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.1 }}
+          transition={withDelay(0.1)}
           className="text-2xl font-semibold text-foreground/95"
         >
           Chrome Ready
@@ -52,7 +52,7 @@ export function BrowserDetectedState({ browserPath, onBack, onNext }: BrowserDet
         <motion.p
           initial={{ y: 10, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.1 }}
+          transition={withDelay(0.1)}
           className="mt-2 text-sm text-foreground/50"
         >
           We'll use Chrome for secure LinkedIn authentication
@@ -63,7 +63,7 @@ export function BrowserDetectedState({ browserPath, onBack, onNext }: BrowserDet
       <motion.div
         initial={{ y: 10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.2 }}
+        transition={withDelay(0.2)}
         className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4"
       >
         <div className="flex items-center gap-3">
@@ -81,11 +81,12 @@ export function BrowserDetectedState({ browserPath, onBack, onNext }: BrowserDet
       <motion.div
         initial={{ y: 10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.15 }}
+        transition={withDelay(0.15)}
       >
-        <button
+        <Button
+          variant="default"
           onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
-          className="flex w-full items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-2.5 text-left transition-all hover:border-white/10 hover:bg-white/[0.04]"
+          className="h-auto w-full justify-between rounded-lg border-white/[0.06] bg-white/[0.02] px-4 py-2.5 text-left font-normal hover:border-white/10 hover:bg-white/[0.04]"
         >
           <span className="text-xs text-foreground/40">View technical details</span>
           {showTechnicalDetails ? (
@@ -93,14 +94,14 @@ export function BrowserDetectedState({ browserPath, onBack, onNext }: BrowserDet
           ) : (
             <ChevronDown size={14} className="text-foreground/30" />
           )}
-        </button>
+        </Button>
         <AnimatePresence>
           {showTechnicalDetails && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              transition={transition.normal}
               className="overflow-hidden"
             >
               <div className="mt-2 rounded-lg border border-white/[0.06] bg-black/30 p-3">

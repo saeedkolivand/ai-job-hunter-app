@@ -205,7 +205,8 @@ export function GenerationConfig({
 
       {/* ATS safe mode — only for two-column templates (Atelier, Portrait) */}
       {isTwoColumnTemplate(templateId) && (
-        <button
+        <Button
+          variant="unstyled"
           type="button"
           onClick={() => onAtsModeChange(!atsMode)}
           className={cn(
@@ -241,7 +242,7 @@ export function GenerationConfig({
               )}
             />
           </div>
-        </button>
+        </Button>
       )}
 
       <Button

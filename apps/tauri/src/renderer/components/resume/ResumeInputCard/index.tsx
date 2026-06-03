@@ -186,7 +186,8 @@ export function ResumeInputCard({
         <div className="px-3 pb-3 space-y-2">
           {/* Segmented control */}
           <div className="flex items-center gap-1 rounded-lg bg-white/[0.04] p-0.5 w-fit">
-            <button
+            <Button
+              variant="unstyled"
               onClick={() => setInputMode('upload')}
               className={cn(
                 'flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-medium transition-all',
@@ -197,8 +198,9 @@ export function ResumeInputCard({
             >
               <Upload size={10} />
               {t('resumeInput.modeUpload')}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="unstyled"
               onClick={() => setInputMode('paste')}
               className={cn(
                 'flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-medium transition-all',
@@ -209,7 +211,7 @@ export function ResumeInputCard({
             >
               <ClipboardPaste size={10} />
               {t('resumeInput.modePaste')}
-            </button>
+            </Button>
           </div>
 
           {/* Upload zone */}

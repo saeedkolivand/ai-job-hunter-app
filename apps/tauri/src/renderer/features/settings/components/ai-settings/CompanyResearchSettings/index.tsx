@@ -84,12 +84,13 @@ export function CompanyResearchSettings() {
         <div className="space-y-2">
           <p className="text-xs text-foreground/40">
             {t('settings.companyResearch.getKeyAt')}{' '}
-            <button
+            <Button
+              variant="unstyled"
               onClick={() => void openExternal.mutateAsync(KEYS_URL)}
               className="text-brand-soft/70 underline underline-offset-2 hover:text-brand-soft"
             >
               {KEYS_URL.replace('https://', '')}
-            </button>
+            </Button>
           </p>
           <div className="relative">
             <Input
@@ -100,12 +101,13 @@ export function CompanyResearchSettings() {
               placeholder={t('settings.companyResearch.keyPlaceholder')}
               className="w-full pr-9 text-sm"
             />
-            <button
+            <Button
+              variant="unstyled"
               onClick={() => setShowKey((v) => !v)}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-foreground/30 hover:text-foreground/60"
             >
               {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-            </button>
+            </Button>
           </div>
           <div className="flex items-center justify-between gap-2">
             <span className="text-[10px] text-foreground/30">
