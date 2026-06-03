@@ -1,7 +1,7 @@
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-use crate::ipc_contracts::ai::AiGenerationSaveRequest;
+use crate::ipc_contracts::ai::{AiGenerationSaveRequest, AiGenerationUpdateRequest};
 
 #[tauri::command]
 pub async fn ai_generations_list(app: AppHandle) -> Value {
@@ -46,6 +46,18 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
     // résumé/cover/answers/brief from separate actions land on one record.
     match store.save_application(rec) {
         Ok(id) => json!({ "id": id, "success": true }),
+        Err(e) => json!({ "error": e }),
+    }
+}
+
+#[tauri::command]
+pub async fn ai_generations_update(app: AppHandle, req: AiGenerationUpdateRequest) -> Value {
+    let store = app.state::<crate::ai_generations::AiGenerationStore>();
+    // Direct overwrite of exactly the provided text fields, selected by id —
+    // distinct from the save merge-upsert, so a user edit can replace text the
+    // merge would have kept.
+    match store.update_texts(&req.id, req.resume_text, req.cover_letter_text) {
+        Ok(()) => json!({ "success": true }),
         Err(e) => json!({ "error": e }),
     }
 }

@@ -218,6 +218,9 @@ export function ApplyJobModal({ job, resumeText, baseCoverLetter, board, onClose
               activeOut={gen.activeOut}
               setActiveOut={gen.setActiveOut}
               output={gen.output}
+              onEdit={gen.editActiveOutput}
+              editable={!gen.generating}
+              meta={gen.meta}
               copied={gen.copied}
               onCopy={gen.copy}
               exportOpen={gen.exportOpen}

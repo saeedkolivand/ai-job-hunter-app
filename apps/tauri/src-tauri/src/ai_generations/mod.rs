@@ -279,6 +279,48 @@ impl AiGenerationStore {
             .map_err(|e| e.to_string())?;
         Ok(())
     }
+
+    /// Edit the résumé and/or cover-letter text of an existing row, selected by
+    /// `id`. Unlike the per-job merge-upsert ([`save_application`]) this is a
+    /// direct overwrite of exactly the provided fields, so a user editing a saved
+    /// generation can blank out or fully replace text the merge would have kept.
+    /// Each `None` field is left untouched; passing both `None` is a no-op.
+    /// (The schema has no `updated_at` column, so there is no timestamp to bump.)
+    pub fn update_texts(
+        &self,
+        id: &str,
+        resume_text: Option<String>,
+        cover_letter_text: Option<String>,
+    ) -> AppResult<()> {
+        let conn = self.conn.lock();
+        let changed = match (resume_text, cover_letter_text) {
+            (Some(resume), Some(cover)) => conn
+                .execute(
+                    "UPDATE ai_generations SET resume_text = ?2, cover_letter_text = ?3 WHERE id = ?1",
+                    params![id, resume, cover],
+                )
+                .map_err(|e| e.to_string())?,
+            (Some(resume), None) => conn
+                .execute(
+                    "UPDATE ai_generations SET resume_text = ?2 WHERE id = ?1",
+                    params![id, resume],
+                )
+                .map_err(|e| e.to_string())?,
+            (None, Some(cover)) => conn
+                .execute(
+                    "UPDATE ai_generations SET cover_letter_text = ?2 WHERE id = ?1",
+                    params![id, cover],
+                )
+                .map_err(|e| e.to_string())?,
+            // Both fields absent: no UPDATE is issued, so there is no
+            // rows-changed count to check — an explicit no-op success.
+            (None, None) => return Ok(()),
+        };
+        if changed == 0 {
+            return Err(format!("generation not found: {id}").into());
+        }
+        Ok(())
+    }
 }
 
 /// Map a DB row (the full 18-column projection) to a record. Shared by `list`

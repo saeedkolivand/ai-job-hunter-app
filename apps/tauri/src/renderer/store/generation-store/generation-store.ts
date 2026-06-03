@@ -29,6 +29,9 @@ export interface GenerationSession {
   activeOut: 'resume' | 'cover';
   error: string | null;
   meta: GenerationMeta | null;
+  /** Persisted record id once {@link RunTailorParams.onComplete} has saved this
+   *  session's result — lets the modal persist later edits to the right record. */
+  savedId: string | null;
 }
 
 /** Stable empty session — returned for unknown ids so selectors keep one reference. */
@@ -41,6 +44,7 @@ export const EMPTY_SESSION: GenerationSession = {
   activeOut: 'cover',
   error: null,
   meta: null,
+  savedId: null,
 };
 
 /** The finished documents + detected metadata, handed to {@link RunTailorParams.onComplete}. */
@@ -78,6 +82,10 @@ interface GenerationStore {
   /** Current session for a context id (or the stable empty session). */
   getSession: (id: string) => GenerationSession;
   setActiveOut: (id: string, which: 'resume' | 'cover') => void;
+  /** Replace one document's text in a session (e.g. an inline edit/rewrite). */
+  setOutput: (id: string, which: 'resume' | 'cover', text: string) => void;
+  /** Record the persisted id after a clean run saves the session's result. */
+  setSavedId: (id: string, savedId: string) => void;
   /** Cancel an in-flight run for a context id. */
   cancel: (id: string) => void;
   /** Drop a session entirely. */
@@ -113,6 +121,11 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
     getSession: (id) => get().sessions[id] ?? EMPTY_SESSION,
 
     setActiveOut: (id, which) => patch(id, { activeOut: which }),
+
+    setOutput: (id, which, text) =>
+      patch(id, which === 'resume' ? { resumeOut: text } : { coverOut: text }),
+
+    setSavedId: (id, savedId) => patch(id, { savedId }),
 
     cancel: (id) => controllers.get(id)?.abort(),
 
