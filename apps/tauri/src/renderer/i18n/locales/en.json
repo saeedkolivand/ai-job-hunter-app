@@ -329,6 +329,11 @@
       "description": "Replay the introductory wizard to revisit the feature tour.",
       "replay": "Replay wizard"
     },
+    "startup": {
+      "title": "Startup",
+      "launchAtLogin": "Launch at login",
+      "launchAtLoginHint": "Open AI Job Hunter automatically when you sign in, so autopilots keep finding jobs in the background."
+    },
     "aiProvider": {
       "title": "AI Provider",
       "description": "Choose where your AI runs — locally via Ollama or through a cloud API.",

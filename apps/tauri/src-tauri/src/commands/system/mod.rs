@@ -116,6 +116,29 @@ pub async fn system_set_performance_mode(app: AppHandle, mode: String) -> Value 
     json!(null)
 }
 
+/// Whether the app is registered to launch at login. Off by default; a read
+/// error (e.g. the OS autostart entry is missing) reports `false`.
+#[tauri::command]
+pub fn system_get_launch_at_login(app: AppHandle) -> bool {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+/// Enable or disable launch-at-login. Returns the resulting state so the UI
+/// reflects what the OS actually applied rather than the requested value.
+#[tauri::command]
+pub fn system_set_launch_at_login(app: AppHandle, enabled: bool) -> AppResult<bool> {
+    use tauri_plugin_autostart::ManagerExt;
+    let manager = app.autolaunch();
+    if enabled {
+        manager.enable()
+    } else {
+        manager.disable()
+    }
+    .map_err(|e| AppError::Message(e.to_string()))?;
+    Ok(manager.is_enabled().unwrap_or(enabled))
+}
+
 #[cfg(windows)]
 fn get_gpu_info() -> Vec<Value> {
     use serde::Deserialize;
