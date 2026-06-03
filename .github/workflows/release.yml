@@ -3,12 +3,19 @@ name: 🚀 Release
 # ──────────────────────────────────────────────────────────────────────
 # Release Pipeline
 # ──────────────────────────────────────────────────────────────────────
-# Purpose: Automated semantic release and cross-platform Tauri app builds
-# Triggers: push to main, manual workflow_dispatch
+# Purpose: Automated semantic release; cross-platform Tauri builds on demand
+# Triggers:
+#   - push to main      → release + sync-version-files (NO installer build)
+#   - workflow_dispatch → build: compile + attach installers for a release
 # Jobs:
-#   - release: Determine version and create GitHub release
-#   - sync-version-files: Commit tracked version files for the published release
-#   - build: Build Tauri apps for Windows, Linux, and macOS
+#   - release: Determine version and create GitHub release (push only)
+#   - sync-version-files: Commit tracked version files for the release (push only)
+#   - build: Build Tauri apps for Windows, Linux, and macOS (manual only)
+#
+# Rationale: a 3-platform Tauri build is ~60 min/runner each, so it no longer
+# runs on every merge. semantic-release still versions + drafts release notes on
+# push; click "Run workflow" in the Actions tab to build + attach the installers
+# (defaults to the latest tag, or pass a version to (re)build a specific one).
 # ──────────────────────────────────────────────────────────────────────
 
 on:
@@ -17,6 +24,11 @@ on:
       - main
 
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build installers for, e.g. 0.61.0 (blank = latest tag)'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -30,6 +42,9 @@ concurrency:
 jobs:
   release:
     name: 📦 Create Release
+    # Versioning + release notes run automatically on merge; the installer build
+    # is a separate manual step (see the `build` job).
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -169,8 +184,14 @@ jobs:
 
   build:
     name: 🏗️ Build Tauri Apps
-    needs: sync-version-files
-    if: needs.sync-version-files.outputs.released == 'true'
+    # Manual only — trigger from the Actions tab ("Run workflow") to build and
+    # attach installers for a release. Runs independently of the push-time
+    # release jobs, so it can (re)build any existing tag on demand.
+    if: github.event_name == 'workflow_dispatch'
+
+    # Exposed so generate-update-manifest targets the same release.
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
 
     strategy:
       fail-fast: false
@@ -187,10 +208,36 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - name: 📥 Checkout Repository
+      - name: 📥 Checkout Repository (for tag lookup)
         uses: actions/checkout@v6
         with:
-          ref: v${{ needs.sync-version-files.outputs.version }}
+          ref: main
+          fetch-depth: 0
+
+      - name: 🏷️ Resolve Version
+        id: resolve
+        shell: bash
+        env:
+          # Passed via env (not inline) to avoid script injection from the input.
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="$(git tag --sort=-version:refname | head -n1)"
+          fi
+          VERSION="${VERSION#v}"
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
+            echo "::error::Could not resolve a valid version (got '$VERSION'). Pass one via the workflow input."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building installers for v$VERSION"
+
+      - name: 📥 Checkout Release Tag
+        uses: actions/checkout@v6
+        with:
+          ref: v${{ steps.resolve.outputs.version }}
           fetch-depth: 1
 
       - name: 📦 Setup pnpm
@@ -237,7 +284,7 @@ jobs:
       - name: 🔖 Sync Release Version
         run: |
           echo "::group::Syncing Tauri release metadata"
-          node scripts/sync-tauri-version.cjs ${{ needs.sync-version-files.outputs.version }}
+          node scripts/sync-tauri-version.cjs ${{ steps.resolve.outputs.version }}
           echo "::endgroup::"
 
       - name: 🔨 Build Workspace
@@ -354,7 +401,7 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v${{ needs.sync-version-files.outputs.version }}
+          tag_name: v${{ steps.resolve.outputs.version }}
           # Tauri only emits .sig files for NSIS, AppImage, and macOS .app.tar.gz
           # bundles (the targets the auto-updater consumes). MSI/DEB/RPM never
           # produce .sig artifacts so they're not listed.
@@ -400,7 +447,7 @@ jobs:
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Platform | \`${{ matrix.platform }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Status | ${{ steps.tauri-build.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Version | \`v${{ needs.sync-version-files.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`v${{ steps.resolve.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
           echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
@@ -428,8 +475,9 @@ jobs:
 
   generate-update-manifest:
     name: 📝 Generate Update Manifest
-    needs: [sync-version-files, build]
-    if: needs.sync-version-files.outputs.released == 'true'
+    # Runs after the manual installer build to (re)generate latest.json from the
+    # uploaded signatures. Auto-skipped if the build was skipped or failed.
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -437,7 +485,7 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v6
         with:
-          ref: v${{ needs.sync-version-files.outputs.version }}
+          ref: v${{ needs.build.outputs.version }}
           fetch-depth: 1
 
       - name: 📦 Setup pnpm
@@ -454,7 +502,7 @@ jobs:
       - name: 🏷️ Generate latest.json
         run: |
           echo "::group::Generating latest.json"
-          VERSION="${{ needs.sync-version-files.outputs.version }}"
+          VERSION="${{ needs.build.outputs.version }}"
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
           # Start JSON structure
@@ -541,7 +589,7 @@ jobs:
       - name: 📤 Upload latest.json to Release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v${{ needs.sync-version-files.outputs.version }}
+          tag_name: v${{ needs.build.outputs.version }}
           files: latest.json
           fail_on_unmatched_files: true
         env:
