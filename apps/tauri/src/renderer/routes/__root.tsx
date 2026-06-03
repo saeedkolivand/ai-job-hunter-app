@@ -5,6 +5,7 @@ import { NotificationProvider } from '@ajh/ui';
 
 import { CinematicBackground } from '@/components/background/CinematicBackground';
 import { ProtocolVersionGate } from '@/components/layout/ProtocolVersionGate';
+import { ShortcutsOverlay } from '@/components/layout/ShortcutsOverlay';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { StatusBar } from '@/components/layout/StatusBar';
 import { Titlebar } from '@/components/layout/Titlebar';
@@ -96,6 +97,7 @@ function RootLayout() {
             <StatusBar />
             <OnboardingWizard />
             <UpdateBanner />
+            <ShortcutsOverlay />
           </div>
         </CapabilityProvider>
       </ProtocolVersionGate>

@@ -17,6 +17,13 @@
     "support": "Hilfe & Support",
     "settings": "Einstellungen"
   },
+  "shortcuts": {
+    "title": "Tastenkürzel",
+    "navigate": "Navigieren",
+    "actions": "Aktionen",
+    "help": "Kürzel anzeigen",
+    "hint": "Drücke jederzeit ?, um diese Liste zu öffnen"
+  },
   "analyze": {
     "title": "Lebenslauf-Analyse",
     "subtitle": "Füge deinen Lebenslauf und eine Stellenanzeige ein. Erhalte sofort einen lokalen ATS-Score, semantischen Abgleich, Lückenanalyse und maßgeschneiderte Empfehlungen.",
