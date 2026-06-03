@@ -19,6 +19,11 @@ export interface AutopilotContract {
   resume(req: { autopilotId: string }): Promise<void>;
 
   onStep(handler: (event: AutopilotStepEvent) => void): () => void;
+
+  /** Fired by the shell (tray "New jobs" click or a validated deep link) to
+   *  focus an autopilot's found-jobs panel. An empty `autopilotId` is a pure
+   *  "refresh the list" signal (e.g. after a tray Pause-All) with no navigation. */
+  onFocus(handler: (event: AutopilotFocusEvent) => void): () => void;
 }
 
 export interface AutopilotStepEvent {
@@ -26,6 +31,10 @@ export interface AutopilotStepEvent {
   autopilotId: string;
   step: string;
   detail: string;
+}
+
+export interface AutopilotFocusEvent {
+  autopilotId: string;
 }
 
 export const AUTOPILOT_CHANNELS = {
@@ -37,4 +46,5 @@ export const AUTOPILOT_CHANNELS = {
   run: 'autopilot:run',
   pause: 'autopilot:pause',
   resume: 'autopilot:resume',
+  focus: 'autopilot:focus',
 } as const;

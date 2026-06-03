@@ -16,6 +16,7 @@ mod cover_letter;
 mod credentials;
 mod data_store;
 mod db;
+mod deeplink;
 mod documents;
 mod error;
 mod export;
@@ -34,15 +35,13 @@ mod profile_import;
 mod recommend;
 mod scraping;
 mod theme;
+mod tray;
 mod updater;
 mod validate;
 
 use parking_lot::Mutex;
 
-use tauri::menu::{
-    AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
-};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::menu::{AboutMetadataBuilder, MenuBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{AppHandle, Manager};
 
 use autopilot::AutopilotStore;
@@ -102,50 +101,6 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
         .build()
 }
 
-// ── System tray ───────────────────────────────────────────────────────────────
-
-fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let show = MenuItemBuilder::with_id("tray_show", "Show AI Job Hunter").build(app)?;
-    let quit = MenuItemBuilder::with_id("tray_quit", "Quit").build(app)?;
-    let tray_menu = MenuBuilder::new(app)
-        .item(&show)
-        .separator()
-        .item(&quit)
-        .build()?;
-
-    TrayIconBuilder::new()
-        .menu(&tray_menu)
-        .tooltip("AI Job Hunter")
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "tray_show" => {
-                if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.show();
-                    let _ = win.set_focus();
-                }
-            }
-            "tray_quit" => app.exit(0),
-            _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            // Left-click on the tray icon shows/focuses the main window.
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                let app = tray.app_handle();
-                if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.show();
-                    let _ = win.set_focus();
-                }
-            }
-        })
-        .build(app)?;
-
-    Ok(())
-}
-
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 fn main() {
@@ -153,12 +108,19 @@ fn main() {
 
     tauri::Builder::default()
         // Single-instance must be the FIRST plugin: on a second launch it focuses
-        // the already-running window instead of spawning another process.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        // the already-running window instead of spawning another process. If that
+        // launch carried an `ajh://autopilot/<id>` deep link, the guard validates
+        // it against a strict route allowlist before driving any navigation — a
+        // hostile argv navigates nowhere (see `deeplink`).
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.show();
                 let _ = win.unminimize();
                 let _ = win.set_focus();
+            }
+            if let Some(deeplink::FocusTarget::Autopilot(id)) = deeplink::parse_focus_target(&argv)
+            {
+                tray::emit_focus(app, &id);
             }
         }))
         .plugin(
@@ -280,7 +242,7 @@ fn main() {
             }
 
             // Build system tray.
-            if let Err(e) = build_tray(handle) {
+            if let Err(e) = tray::build(handle) {
                 log::warn!("[setup] tray build error (non-fatal): {e}");
             }
 

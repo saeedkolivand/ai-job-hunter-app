@@ -67,6 +67,9 @@ interface AutopilotSlice {
   editingId: string | null;
   wizardStep: number;
   wizardForm: WizardState | null;
+  // Set by a tray "New jobs" click / deep link to auto-expand & scroll to a
+  // card's found-jobs; the card clears it once handled.
+  focusedId: string | null;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -125,7 +128,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   jobs: { filter: '', sortBy: 'newest' },
   resumes: { tab: 'applied', filter: '' },
   settings: { activeSection: 'general' },
-  autopilot: { creating: false, editingId: null, wizardStep: 0, wizardForm: null },
+  autopilot: { creating: false, editingId: null, wizardStep: 0, wizardForm: null, focusedId: null },
 
   setAIGenerate: (patch) => set((s) => ({ aiGenerate: { ...s.aiGenerate, ...patch } })),
   resetAIGenerate: () => set({ aiGenerate: { ...AI_GENERATE_DEFAULTS } }),
