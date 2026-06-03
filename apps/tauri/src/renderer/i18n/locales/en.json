@@ -298,6 +298,21 @@
       "photoErrorSize": "That image is too large. Choose one under 10 MB.",
       "photoErrorDecode": "That image couldn't be read. Try a different file."
     },
+    "contactConflict": {
+      "title": "Update your contact details?",
+      "description": "Your imported résumé lists contact details that differ from your saved profile. Your résumé was imported as-is — choose which value to keep for each field below. Skipping leaves your saved profile unchanged.",
+      "keepMine": "Keep mine",
+      "useResume": "Use résumé's",
+      "savedLabel": "Saved",
+      "resumeLabel": "Résumé",
+      "emptyValue": "—",
+      "choiceAria": "Choose value for {{field}}",
+      "editAria": "Edit {{field}}",
+      "save": "Save",
+      "dismiss": "Keep my contact info",
+      "saved": "Contact profile updated.",
+      "saveFailed": "Couldn't update your contact profile."
+    },
     "developer": {
       "title": "Developer Tools",
       "debugMode": "Debug mode",

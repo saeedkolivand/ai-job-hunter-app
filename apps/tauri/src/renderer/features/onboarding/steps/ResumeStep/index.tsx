@@ -2,9 +2,10 @@ import { ArrowLeft, ArrowRight, FileText, Loader2, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 
-import type { DocumentRecord } from '@ajh/shared';
+import type { ContactFieldConflict, DocumentRecord } from '@ajh/shared';
 import { Button, cn, FloatingIcon, useNotification, withDelay } from '@ajh/ui';
 
+import { ContactConflictModal } from '@/components/contact/ContactConflictModal';
 import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
 import { useTranslation } from '@/lib/i18n';
@@ -32,15 +33,25 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
   const { importFile, isPending: uploading, isOcr } = useImportWithOcr();
   const setResume = usePreferencesStore((s) => s.setResume);
 
+  // Contact-mismatch follow-up — only fires if the user already saved contact
+  // fields (e.g. revisiting onboarding) that disagree with the imported résumé.
+  const [conflicts, setConflicts] = useState<ContactFieldConflict[]>([]);
+  // Bumped per import so the modal remounts and re-seeds its rows cleanly.
+  const [importKey, setImportKey] = useState(0);
+
   const hasResume = documents.length > 0;
 
   const handleFileUpload = async (file: File) => {
     try {
-      await importFile(file);
+      const result = await importFile(file);
       const first = (documentsRaw as (DocumentRecord & { _id?: string })[]).find(Boolean);
       const id = first?._id ?? first?.id;
       if (id) setResume({ defaultId: String(id), autoIndex: true, autoParse: true });
       notify(t('onboarding.resume.uploaded'), 'success');
+      if (result.contactConflicts?.length) {
+        setConflicts(result.contactConflicts);
+        setImportKey((k) => k + 1);
+      }
     } catch (err) {
       notify(err instanceof Error ? err.message : t('onboarding.resume.uploadFailed'), 'error');
     }
@@ -174,6 +185,13 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
           <ArrowRight size={14} />
         </Button>
       </motion.div>
+
+      <ContactConflictModal
+        key={importKey}
+        open={conflicts.length > 0}
+        conflicts={conflicts}
+        onClose={() => setConflicts([])}
+      />
     </OnboardingStepWrapper>
   );
 }
