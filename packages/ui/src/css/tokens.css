@@ -139,3 +139,65 @@
   --stagger-3: calc(var(--stagger-base, 50ms) * 3);
   --stagger-4: calc(var(--stagger-base, 50ms) * 4);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Theme layer — Light color-scheme overrides.
+ * Dark is the default (the values above). Light overrides only what changes;
+ * because the glass-* utilities and most surfaces read these tokens, flipping
+ * the tokens flips the whole UI. Applied via data-color-scheme="light" on
+ * <html> by the theme engine (lib/theme.ts).
+ * ───────────────────────────────────────────────────────────────────────── */
+[data-color-scheme='light'] {
+  /* Semantic palette (OKLCH) */
+  --color-background: oklch(96% 0.4% 255);
+  --color-foreground: oklch(26% 2% 262);
+  --color-card: oklch(99% 0.3% 255);
+  --color-card-foreground: oklch(26% 2% 262);
+  --color-popover: oklch(99% 0.3% 255);
+  --color-popover-foreground: oklch(26% 2% 262);
+  --color-secondary: oklch(94% 0.6% 258);
+  --color-secondary-foreground: oklch(30% 2% 262);
+  --color-muted: oklch(94% 0.6% 258);
+  --color-muted-foreground: oklch(47% 1.5% 262);
+  --color-border: oklch(89% 0.8% 258);
+  --color-input: oklch(89% 0.8% 258);
+
+  /* Glass material — light substrate, ink hairline, brighter specular + more
+     saturation so the frost still feels alive on a light canvas. */
+  --glass-rgb: 255 255 255;
+  --glass-alpha-card: 0.62;
+  --glass-alpha-surface: 0.7;
+  --glass-alpha-elevated: 0.8;
+  --glass-alpha-dropdown: 0.85;
+  --glass-alpha-modal: 0.9;
+  --glass-sat: var(--sat-high);
+  --glass-specular: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+
+  /* Border veils flip white→ink so glass edges and dividers stay visible. */
+  --border-faint: rgba(15, 20, 40, 0.05);
+  --border-dim: rgba(15, 20, 40, 0.08);
+  --border-soft: rgba(15, 20, 40, 0.1);
+  --border-mid: rgba(15, 20, 40, 0.13);
+  --border-clear: rgba(15, 20, 40, 0.16);
+
+  /* Soft, color-tinted shadows — heavy black shadows look dirty on light. */
+  --shadow-sm: 0 2px 8px oklch(50% 6% 270 / 0.08);
+  --shadow-md: 0 4px 16px oklch(50% 6% 270 / 0.1);
+  --shadow-lg: 0 8px 24px oklch(50% 6% 270 / 0.12);
+  --shadow-xl: 0 16px 48px oklch(45% 8% 270 / 0.16);
+  --shadow-2xl: 0 24px 60px -30px oklch(40% 8% 270 / 0.28);
+  --shadow-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+
+  /* Softer glows on a bright canvas. */
+  --glow-brand-sm: 0 0 20px rgba(168, 85, 247, 0.1);
+  --glow-brand-md: 0 0 36px rgba(168, 85, 247, 0.18);
+  --glow-blue-md: 0 0 36px rgba(99, 102, 241, 0.18);
+
+  /* Pastel the cinematic aurora so the light canvas stays calm and readable. */
+  --aurora-violet: #c9b1f7;
+  --aurora-indigo: #adb6f7;
+  --aurora-pink: #f3bcd8;
+  --aurora-cyan: #aee5ef;
+  --nebula-violet: #dcccfb;
+  --nebula-indigo: #c1c8f7;
+}

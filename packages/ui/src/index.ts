@@ -1,7 +1,16 @@
 // ── Design utilities ──────────────────────────────────────────────────────
 export { cn } from './lib/cn';
 export * from './lib/motion';
-export { applyTheme, getActiveTheme, restoreTheme, type ThemeId, THEMES } from './lib/theme';
+export {
+  applyTheme,
+  type ColorScheme,
+  type ContrastPref,
+  DEFAULT_THEME_PREFS,
+  getResolvedScheme,
+  getThemePrefs,
+  restoreTheme,
+  type ThemePrefs,
+} from './lib/theme';
 
 // ── Primitives ────────────────────────────────────────────────────────────
 export { Accordion, type AccordionProps } from './components/Accordion/index';

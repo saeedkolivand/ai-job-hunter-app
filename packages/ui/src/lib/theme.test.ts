@@ -1,50 +1,86 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { applyTheme, getActiveTheme, restoreTheme, THEMES } from './theme';
+import { applyTheme, getResolvedScheme, getThemePrefs, restoreTheme } from './theme';
+
+// jsdom has no matchMedia — stub it so OS-preference probing is deterministic.
+function stubMatchMedia(matches: Record<string, boolean>) {
+  vi.stubGlobal(
+    'matchMedia',
+    (query: string) =>
+      ({
+        matches: matches[query] ?? false,
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+        onchange: null,
+      }) as unknown as MediaQueryList
+  );
+}
 
 describe('theme engine', () => {
   beforeEach(() => {
     localStorage.clear();
-    document.documentElement.removeAttribute('data-theme');
-    document.documentElement.removeAttribute('style');
+    document.documentElement.removeAttribute('data-color-scheme');
+    document.documentElement.removeAttribute('data-reduce-transparency');
+    document.documentElement.removeAttribute('data-contrast');
+    document.documentElement.className = '';
+    stubMatchMedia({});
   });
 
   afterEach(() => {
     localStorage.clear();
+    vi.unstubAllGlobals();
   });
 
-  it('exposes the three built-in themes', () => {
-    expect(THEMES.map((t) => t.id)).toEqual(['default', 'reduced-glass', 'high-contrast']);
+  it('applies an explicit scheme to data-color-scheme + class + storage', () => {
+    applyTheme({ scheme: 'light', reduceTransparency: false, contrast: 'normal' });
+    expect(document.documentElement.dataset.colorScheme).toBe('light');
+    expect(document.documentElement.classList.contains('light')).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    expect(JSON.parse(localStorage.getItem('ajh-theme') ?? '{}').scheme).toBe('light');
   });
 
-  it('applies a theme by setting CSS vars + dataset + storage', () => {
-    applyTheme('reduced-glass');
-    expect(document.documentElement.dataset.theme).toBe('reduced-glass');
-    expect(document.documentElement.style.getPropertyValue('--blur-sm')).toBe('4px');
-    expect(localStorage.getItem('ajh-theme')).toBe('reduced-glass');
+  it("resolves 'system' from prefers-color-scheme", () => {
+    stubMatchMedia({ '(prefers-color-scheme: dark)': true });
+    expect(getResolvedScheme('system')).toBe('dark');
+    stubMatchMedia({ '(prefers-color-scheme: dark)': false });
+    expect(getResolvedScheme('system')).toBe('light');
   });
 
-  it('clears previous theme vars when switching themes', () => {
-    applyTheme('reduced-glass');
-    applyTheme('high-contrast');
-    expect(document.documentElement.style.getPropertyValue('--blur-sm')).toBe('');
-    expect(document.documentElement.style.getPropertyValue('--border-faint')).not.toBe('');
+  it('forces reduce-transparency and high-contrast attributes when set', () => {
+    applyTheme({ scheme: 'dark', reduceTransparency: true, contrast: 'more' });
+    expect(document.documentElement.hasAttribute('data-reduce-transparency')).toBe(true);
+    expect(document.documentElement.dataset.contrast).toBe('more');
   });
 
-  it('getActiveTheme reflects the applied theme and defaults otherwise', () => {
-    expect(getActiveTheme()).toBe('default');
-    applyTheme('high-contrast');
-    expect(getActiveTheme()).toBe('high-contrast');
+  it('auto-detects reduce-transparency from the OS preference', () => {
+    stubMatchMedia({ '(prefers-reduced-transparency: reduce)': true });
+    applyTheme({ scheme: 'dark', reduceTransparency: false, contrast: 'normal' });
+    expect(document.documentElement.hasAttribute('data-reduce-transparency')).toBe(true);
   });
 
-  it('restoreTheme reapplies the persisted theme', () => {
+  it('migrates legacy string prefs', () => {
+    localStorage.setItem('ajh-theme', 'high-contrast');
+    expect(getThemePrefs()).toEqual({
+      scheme: 'dark',
+      reduceTransparency: false,
+      contrast: 'more',
+    });
     localStorage.setItem('ajh-theme', 'reduced-glass');
-    restoreTheme();
-    expect(getActiveTheme()).toBe('reduced-glass');
+    expect(getThemePrefs().reduceTransparency).toBe(true);
   });
 
-  it('restoreTheme is a no-op when nothing is persisted', () => {
+  it('restoreTheme reapplies the persisted prefs', () => {
+    applyTheme({ scheme: 'light', reduceTransparency: false, contrast: 'normal' });
+    document.documentElement.removeAttribute('data-color-scheme');
     restoreTheme();
-    expect(getActiveTheme()).toBe('default');
+    expect(document.documentElement.dataset.colorScheme).toBe('light');
+  });
+
+  it('defaults to the system scheme when nothing is persisted', () => {
+    expect(getThemePrefs().scheme).toBe('system');
   });
 });

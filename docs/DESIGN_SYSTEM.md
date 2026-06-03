@@ -86,22 +86,34 @@ TailwindCSS default scale plus:
 
 ## Theming
 
-The app ships **light** and **dark** themes, selectable in Settings → General. Theme IDs are typed:
+Theme is two **orthogonal axes**, selectable in Settings → General → Appearance and
+persisted to `localStorage`:
 
 ```typescript
-// packages/ui
-export type ThemeId = 'light' | 'dark' | 'system';
+// packages/ui — lib/theme.ts
+export type ColorScheme = 'light' | 'dark' | 'system'; // system follows the OS
+export interface ThemePrefs {
+  scheme: ColorScheme;
+  reduceTransparency: boolean; // false = follow the OS preference
+  contrast: 'normal' | 'more'; // 'normal' = follow the OS preference
+}
 ```
 
-Theme switching is handled by a CSS class on `<html>`:
+The engine (`applyTheme` / `restoreTheme` / `getThemePrefs`) writes data attributes on
+`<html>` that the token layer keys off:
 
 ```html
-<html class="dark">
-  <!-- or "light" -->
+<html data-color-scheme="dark" data-contrast="normal">
+  <!-- data-reduce-transparency present when reduced -->
 </html>
 ```
 
-All tokens switch automatically via `@media (prefers-color-scheme: dark)` plus a manual override class. Never hard-code colors that don't exist in the token system.
+- **Color scheme** — `dark` is the default token set (`tokens.css` `:root`). `[data-color-scheme='light']` overrides only the tokens that change, so flipping the tokens flips the whole UI. `system` resolves from `prefers-color-scheme` and tracks live OS changes.
+- **Accessibility modifiers** — `[data-reduce-transparency]` solidifies all glass (also wired to `@media (prefers-reduced-transparency)` as a JS-independent fallback); `[data-contrast='more']` strengthens borders. Each is either forced on or "auto" (follows the matching OS query).
+
+Glass surfaces read a single material token set (`--glass-rgb`, `--glass-alpha-*`,
+`--glass-sat`, `--glass-specular`) — see `utilities.css`. Never hard-code colors that
+don't exist in the token system.
 
 ---
 

@@ -26,6 +26,22 @@ body {
   overflow: hidden;
 }
 
+/* ── Light scheme: flip the canvas + native color-scheme ─────────────────── */
+/* The body gradient above is the app canvas (it overrides --color-background),
+   so it must be overridden per-scheme or light mode shows a dark canvas behind
+   the glass. */
+html[data-color-scheme='light'],
+html[data-color-scheme='light'] body,
+html[data-color-scheme='light'] #root {
+  color-scheme: light;
+}
+html[data-color-scheme='light'] body {
+  background: radial-gradient(ellipse at 50% 0%, #f6f3fc 0%, #eef0f8 55%, #e8eaf3 100%);
+}
+html[data-color-scheme='light'][data-performance-mode='low-memory'] body {
+  background: #eef0f8;
+}
+
 /* ── Modal background blur ───────────────────────────────────────────────── */
 /* When any ModalShell is open, blur the entire app content layer.
    ModalShell sets data-modal-open on document.body; we blur .app-content. */

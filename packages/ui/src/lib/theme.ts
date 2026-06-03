@@ -1,103 +1,115 @@
 /**
  * Theme Engine
  * ─────────────────────────────────────────────────────────────────────────
- * Manages the active visual theme via CSS custom property overrides on
- * the document root. New themes only need to declare the properties they
- * change — the rest fall back to the defaults in globals.css.
+ * Two orthogonal axes:
+ *   • Color scheme — 'light' | 'dark' | 'system' (system follows the OS).
+ *   • Accessibility modifiers — independent of scheme, each either forced on
+ *     or "auto" (follows the matching OS preference):
+ *       - reduceTransparency → solidifies glass (prefers-reduced-transparency)
+ *       - contrast: 'more'   → stronger borders (prefers-contrast)
  *
- * Adding a theme:
- *   1. Add an entry to THEMES below.
- *   2. Call applyTheme('your-theme-id') from a settings toggle.
- *   3. Persist the selected theme in preferences-store.
- *
- * Accessibility:
- *   The 'reduced-glass' theme lowers backdrop-filter intensity for users
- *   with vestibular disorders or low-performance hardware.
+ * Applied to <html> as data attributes the CSS token layer keys off:
+ *   data-color-scheme="light|dark", data-reduce-transparency, data-contrast.
+ * The CSS layer overrides only the design tokens per scheme, so one definition
+ * drives every surface.
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-export type ThemeId = 'default' | 'reduced-glass' | 'high-contrast';
+export type ColorScheme = 'light' | 'dark' | 'system';
+export type ContrastPref = 'normal' | 'more';
 
-interface Theme {
-  id: ThemeId;
-  label: string;
-  description: string;
-  /** CSS custom property overrides applied to :root */
-  vars: Partial<Record<string, string>>;
+export interface ThemePrefs {
+  scheme: ColorScheme;
+  /** Force reduced transparency on. When false, follows the OS preference. */
+  reduceTransparency: boolean;
+  /** 'more' forces high contrast on. 'normal' follows the OS preference. */
+  contrast: ContrastPref;
 }
-
-export const THEMES: Theme[] = [
-  {
-    id: 'default',
-    label: 'Default',
-    description: 'Full glassmorphism — cinematic purple-violet.',
-    vars: {},
-  },
-  {
-    id: 'reduced-glass',
-    label: 'Reduced Glass',
-    description: 'Lower blur and opacity for better performance or motion sensitivity.',
-    vars: {
-      '--blur-sm': '4px',
-      '--blur-md': '8px',
-      '--blur-lg': '10px',
-      '--blur-xl': '12px',
-      '--blur-2xl': '16px',
-      '--blur-3xl': '24px',
-    },
-  },
-  {
-    id: 'high-contrast',
-    label: 'High Contrast',
-    description: 'Stronger borders and reduced opacity for accessibility.',
-    vars: {
-      '--border-faint': 'rgba(255, 255, 255, 0.12)',
-      '--border-dim': 'rgba(255, 255, 255, 0.18)',
-      '--border-soft': 'rgba(255, 255, 255, 0.22)',
-      '--border-mid': 'rgba(255, 255, 255, 0.28)',
-      '--border-clear': 'rgba(255, 255, 255, 0.35)',
-    },
-  },
-];
 
 const STORAGE_KEY = 'ajh-theme';
 
-/** Apply a theme by writing its CSS vars to :root. */
-export function applyTheme(id: ThemeId): void {
-  const theme = THEMES.find((t) => t.id === id) as (typeof THEMES)[number];
+export const DEFAULT_THEME_PREFS: ThemePrefs = {
+  scheme: 'system',
+  reduceTransparency: false,
+  contrast: 'normal',
+};
+
+const mq = (query: string): MediaQueryList | null =>
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia(query)
+    : null;
+
+const prefersDark = () => mq('(prefers-color-scheme: dark)')?.matches ?? true;
+const prefersReducedTransparency = () =>
+  mq('(prefers-reduced-transparency: reduce)')?.matches ?? false;
+const prefersMoreContrast = () => mq('(prefers-contrast: more)')?.matches ?? false;
+
+/** Resolve 'system' to a concrete scheme using the OS preference. */
+export function getResolvedScheme(scheme: ColorScheme): 'light' | 'dark' {
+  if (scheme === 'light' || scheme === 'dark') return scheme;
+  return prefersDark() ? 'dark' : 'light';
+}
+
+let current: ThemePrefs = DEFAULT_THEME_PREFS;
+
+/** Apply theme preferences to the document root and persist them. */
+export function applyTheme(prefs: ThemePrefs): void {
+  current = prefs;
   const root = document.documentElement;
 
-  // Clear any previous theme vars first
-  for (const t of THEMES) {
-    for (const key of Object.keys(t.vars)) {
-      root.style.removeProperty(key);
+  const resolved = getResolvedScheme(prefs.scheme);
+  root.dataset.colorScheme = resolved;
+  // Keep the legacy class in sync for any class-based styling.
+  root.classList.toggle('dark', resolved === 'dark');
+  root.classList.toggle('light', resolved === 'light');
+
+  const reduce = prefs.reduceTransparency || prefersReducedTransparency();
+  root.toggleAttribute('data-reduce-transparency', reduce);
+
+  const moreContrast = prefs.contrast === 'more' || prefersMoreContrast();
+  root.dataset.contrast = moreContrast ? 'more' : 'normal';
+
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Read persisted prefs, migrating the legacy string format. */
+export function getThemePrefs(): ThemePrefs {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_THEME_PREFS;
+    // Legacy single-string themes → modifier flags on the dark scheme.
+    if (raw === 'default') return { scheme: 'dark', reduceTransparency: false, contrast: 'normal' };
+    if (raw === 'reduced-glass')
+      return { scheme: 'dark', reduceTransparency: true, contrast: 'normal' };
+    if (raw === 'high-contrast')
+      return { scheme: 'dark', reduceTransparency: false, contrast: 'more' };
+    const parsed = JSON.parse(raw) as Partial<ThemePrefs>;
+    if (parsed && typeof parsed === 'object' && typeof parsed.scheme === 'string') {
+      return { ...DEFAULT_THEME_PREFS, ...parsed };
     }
-  }
-
-  // Apply the new theme
-  for (const [key, value] of Object.entries(theme.vars)) {
-    if (value) root.style.setProperty(key, value);
-  }
-
-  root.dataset.theme = id;
-  try {
-    localStorage.setItem(STORAGE_KEY, id);
   } catch {
     /* ignore */
   }
+  return DEFAULT_THEME_PREFS;
 }
 
-/** Restore the persisted theme on boot. */
+let listenersBound = false;
+/** Re-apply on OS changes so 'system' / 'auto' modifiers track live. */
+function bindOsListeners(): void {
+  if (listenersBound) return;
+  listenersBound = true;
+  const reapply = () => applyTheme(current);
+  mq('(prefers-color-scheme: dark)')?.addEventListener('change', reapply);
+  mq('(prefers-reduced-transparency: reduce)')?.addEventListener('change', reapply);
+  mq('(prefers-contrast: more)')?.addEventListener('change', reapply);
+}
+
+/** Restore persisted prefs on boot and start tracking OS changes. */
 export function restoreTheme(): void {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY) as ThemeId | null;
-    if (saved) applyTheme(saved);
-  } catch {
-    /* ignore */
-  }
-}
-
-/** Read the currently active theme id. */
-export function getActiveTheme(): ThemeId {
-  return (document.documentElement.dataset.theme as ThemeId) ?? 'default';
+  applyTheme(getThemePrefs());
+  bindOsListeners();
 }

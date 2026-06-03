@@ -522,3 +522,78 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── Reduced transparency (a11y) ─────────────────────────────────────────────
+   Forced via [data-reduce-transparency] (set by the theme engine, manually or
+   auto from the OS query). Solidify every frosted surface and drop the blur so
+   translucency never harms legibility. The @media rule is a JS-independent
+   safety net that fires from CSS alone. */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-alpha-card: 0.97;
+    --glass-alpha-surface: 0.98;
+    --glass-alpha-elevated: 0.98;
+    --glass-alpha-dropdown: 0.99;
+    --glass-alpha-modal: 0.99;
+  }
+}
+[data-reduce-transparency] {
+  --glass-alpha-card: 0.97;
+  --glass-alpha-surface: 0.98;
+  --glass-alpha-elevated: 0.98;
+  --glass-alpha-dropdown: 0.99;
+  --glass-alpha-modal: 0.99;
+}
+[data-reduce-transparency] .glass-card,
+[data-reduce-transparency] .glass,
+[data-reduce-transparency] .glass-surface,
+[data-reduce-transparency] .glass-elevated,
+[data-reduce-transparency] .glass-dropdown,
+[data-reduce-transparency] .glass-modal,
+[data-reduce-transparency] .glass-violet,
+[data-reduce-transparency] .glass-indigo,
+[data-reduce-transparency] .glass-graphite,
+[data-reduce-transparency] .dropdown-surface {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ── High contrast (a11y) ────────────────────────────────────────────────── */
+[data-contrast='more'] {
+  --border-faint: rgba(255, 255, 255, 0.14);
+  --border-dim: rgba(255, 255, 255, 0.2);
+  --border-soft: rgba(255, 255, 255, 0.26);
+  --border-mid: rgba(255, 255, 255, 0.32);
+  --border-clear: rgba(255, 255, 255, 0.4);
+}
+[data-color-scheme='light'][data-contrast='more'] {
+  --border-faint: rgba(15, 20, 40, 0.18);
+  --border-dim: rgba(15, 20, 40, 0.24);
+  --border-soft: rgba(15, 20, 40, 0.3);
+  --border-mid: rgba(15, 20, 40, 0.38);
+  --border-clear: rgba(15, 20, 40, 0.46);
+}
+
+/* ── Light-scheme fixups for utilities that hardcode white ───────────────── */
+[data-color-scheme='light'] .label-caps {
+  color: rgba(18, 22, 40, 0.45);
+}
+[data-color-scheme='light'] .section-label {
+  color: rgba(18, 22, 40, 0.55);
+}
+[data-color-scheme='light'] .glass-highlight::before {
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.85), transparent);
+}
+[data-color-scheme='light'] .text-gradient {
+  background: linear-gradient(135deg, #1e1b2e 0%, #7c3aed 50%, #4f46e5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+[data-color-scheme='light'] *::-webkit-scrollbar-thumb {
+  background: rgba(18, 22, 40, 0.18);
+  background-clip: padding-box;
+}
+[data-color-scheme='light'] *::-webkit-scrollbar-thumb:hover {
+  background: rgba(18, 22, 40, 0.3);
+  background-clip: padding-box;
+}

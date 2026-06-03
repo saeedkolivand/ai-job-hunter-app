@@ -298,6 +298,17 @@
     "language": {
       "title": "Language"
     },
+    "appearance": {
+      "title": "Appearance",
+      "scheme": "Theme",
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System",
+      "reduceTransparency": "Reduce transparency",
+      "reduceTransparencyHint": "Use solid surfaces instead of frosted glass.",
+      "increaseContrast": "Increase contrast",
+      "increaseContrastHint": "Stronger borders and separators."
+    },
     "onboarding": {
       "title": "Intro Wizard",
       "description": "Replay the introductory wizard to revisit the feature tour.",
