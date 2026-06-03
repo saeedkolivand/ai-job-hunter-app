@@ -64,7 +64,7 @@ pnpm tauri build
 
 ## Release Pipeline
 
-Releases are **fully automated** via [semantic-release][semantic-release] on push to `main`: a release commit versions the app, drafts the notes, syncs version files, then builds and attaches the cross-platform installers. The same installer build can **also be run manually** from the Actions tab to rebuild any tag on demand (see [CI/CD Pipeline](#cicd-pipeline)).
+Releases are **automated** via [semantic-release][semantic-release] on push to `main`: a release commit versions the app, drafts the notes, and syncs version files. Building the cross-platform **installers is a separate, manual step** — the compiles are slow, so they're decoupled from the every-merge release flow. Run **Actions ▸ "🚀 Release" ▸ "Run workflow"** when you want installers for a tag (see [CI/CD Pipeline](#cicd-pipeline)).
 
 ### Commit → Version mapping
 
@@ -111,8 +111,7 @@ graph LR
     Push["git push to main"] --> Analysis["semantic-release\nanalyzes commits"]
     Analysis --> Tag["git tag + GitHub\nrelease notes"]
     Tag --> Sync["sync version files\n(commit to main)"]
-    Sync --> Build["build matrix"]
-    Dispatch["Manual: Actions ▸\nRun workflow\n(version or latest)"] -.-> Build
+    Dispatch["Manual: Actions ▸\nRun workflow\n(version or latest)"] --> Build["build matrix"]
     Build --> Windows["Windows\nNSIS + MSI"]
     Build --> Mac["macOS\nDMG + APP"]
     Build --> Linux["Linux\nAppImage + DEB"]
@@ -122,16 +121,16 @@ graph LR
 
 ### GitHub Actions workflow
 
-`.github/workflows/release.yml`. A release push runs the whole chain automatically; the build can also be re-run manually.
+`.github/workflows/release.yml`. A release push publishes the release + version bump; installers are built only via the manual **Run workflow** dispatch.
 
 **On `push` to `main`** — `release` + `sync-version-files`:
 
 1. semantic-release analyzes commits → creates the `v*` tag + GitHub release notes
 2. CI commits the synced version files back to `main`
 
-**`build` + `generate-update-manifest`** — run automatically after a release push, **or** manually via **Actions ▸ "🚀 Release" ▸ "Run workflow"** (~60 min/platform):
+**`build` + `generate-update-manifest`** — run **only** via **Actions ▸ "🚀 Release" ▸ "Run workflow"** (~60 min/platform):
 
-1. Resolve the version (latest tag after a release push; or the `version` input / latest tag on manual dispatch), then checkout that tag
+1. Resolve the version (the `version` input, or the latest tag if left blank), then checkout that tag
 2. Install pnpm + Node + Rust stable; `pnpm build:packages`
 3. `pnpm tauri build` — compiles Rust + bundles installers for Windows / macOS / Linux
 4. Upload installers to the release, then generate + upload `latest.json` (the auto-updater manifest)
