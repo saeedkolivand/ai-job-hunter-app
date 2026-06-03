@@ -28,13 +28,13 @@ model_docx = []
 [profile.dev]
 incremental = true
 
-# Tuned for build speed over the last few % of size/perf: thin LTO compiles
-# much faster than fat LTO (it parallelizes across crates) and codegen-units =
-# 16 lets the large ajh-tauri crate codegen in parallel. opt-level "s" + strip
-# keep installers (and so auto-update downloads) small.
+# Maximally optimized release binary (smallest + fastest): fat LTO + a single
+# codegen unit + opt-level "s" + strip. The slow compile is acceptable — installer
+# builds are manual and infrequent (see release.yml), so we trade build time for
+# the best shipped artifact / smallest auto-update download.
 [profile.release]
-codegen-units = 16
-lto = "thin"
+codegen-units = 1
+lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
