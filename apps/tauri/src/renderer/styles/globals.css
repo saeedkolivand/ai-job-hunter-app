@@ -18,7 +18,7 @@ body {
   position: relative;
   background-color: var(--color-background);
   color: var(--color-foreground);
-  background: radial-gradient(ellipse at 50% 0%, #0d0a1f 0%, #07060f 55%, #050409 100%);
+  background: radial-gradient(ellipse at 50% 0%, #1d1d24 0%, #17171c 55%, #121216 100%);
   font-family: var(--font-sans);
   font-feature-settings: 'cv11', 'ss01', 'ss03';
   -webkit-font-smoothing: antialiased;
@@ -59,7 +59,7 @@ body[data-modal-open] .app-content {
 
 /* ── Onboarding glass modal ─────────────────────────────────────────────────── */
 .onboarding-glass-modal {
-  background: linear-gradient(145deg, rgba(20, 14, 36, 0.97) 0%, rgba(12, 10, 24, 0.97) 100%);
+  background: linear-gradient(145deg, rgba(32, 32, 40, 0.97) 0%, rgba(24, 24, 30, 0.97) 100%);
   box-shadow:
     0 32px 80px rgba(0, 0, 0, 0.6),
     0 0 0 1px rgba(168, 85, 247, 0.08),
@@ -87,7 +87,7 @@ html[data-performance-mode='low-memory'] {
 }
 html[data-performance-mode='low-memory'] body {
   /* Remove expensive radial gradient — flat colour is composited cheaply. */
-  background: #07060f;
+  background: #15151a;
 }
 
 /* ── SelectDropdown low-memory mode ─────────────────────────────────────────── */

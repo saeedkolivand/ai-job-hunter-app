@@ -100,7 +100,7 @@
    stacking contexts, so the panel must never bleed the content behind it (e.g.
    a page's empty-state text) even when the blur doesn't apply. */
 .dropdown-surface {
-  background: rgba(12, 12, 20, 0.92);
+  background: rgba(34, 34, 42, 0.96);
   backdrop-filter: blur(var(--blur-xl)) saturate(var(--sat-high));
   -webkit-backdrop-filter: blur(var(--blur-xl)) saturate(var(--sat-high));
   border: 1px solid var(--border-mid);
@@ -125,7 +125,7 @@
   box-shadow: var(--shadow-2xl), var(--glow-blue-md);
 }
 .glass-graphite {
-  background: linear-gradient(135deg, rgba(20, 20, 28, 0.6) 0%, rgba(10, 10, 16, 0.4) 100%);
+  background: linear-gradient(135deg, rgba(46, 46, 55, 0.72) 0%, rgba(38, 38, 46, 0.55) 100%);
   backdrop-filter: blur(var(--blur-lg)) saturate(var(--sat-max));
   -webkit-backdrop-filter: blur(var(--blur-lg)) saturate(var(--sat-max));
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -164,7 +164,7 @@
 
 /* ── Surface utilities ───────────────────────────────────────────────────── */
 .toast-panel {
-  background: linear-gradient(135deg, rgba(30, 27, 50, 0.92) 0%, rgba(20, 18, 38, 0.96) 100%);
+  background: linear-gradient(135deg, rgba(40, 40, 48, 0.94) 0%, rgba(32, 32, 40, 0.96) 100%);
   backdrop-filter: blur(var(--blur-md));
   -webkit-backdrop-filter: blur(var(--blur-md));
   border: 1px solid var(--border-dim);
@@ -697,4 +697,22 @@
 }
 [data-color-scheme='light'] .light-streak {
   background: rgba(30, 35, 70, 0.12);
+}
+
+/* Dark ambient FX: keep the aurora as the signature flourish but DIM it on the
+   new neutral charcoal — the bright ribbons over-saturate a calm gray — and tone
+   the mouse-following glow/orbs down. Brand soul, just quieter (macOS-grade). */
+[data-color-scheme='dark'] .animate-aurora-1,
+[data-color-scheme='dark'] .animate-aurora-2,
+[data-color-scheme='dark'] .animate-aurora-3,
+[data-color-scheme='dark'] .animate-aurora-4 {
+  opacity: 0.2;
+}
+[data-color-scheme='dark'] .animate-nebula-1,
+[data-color-scheme='dark'] .animate-nebula-2 {
+  opacity: 0.22;
+}
+[data-color-scheme='dark'] .cursor-glow,
+[data-color-scheme='dark'] .glow-orb {
+  opacity: 0.5;
 }

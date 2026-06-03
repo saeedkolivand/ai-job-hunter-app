@@ -8,25 +8,29 @@
  */
 
 @theme {
-  /* Semantic color palette (OKLCH — perceptually uniform) */
-  --color-background: oklch(22% 3% 9%);
-  --color-foreground: oklch(98% 1% 210);
-  --color-card: oklch(22% 3% 9%);
-  --color-card-foreground: oklch(98% 1% 210);
-  --color-popover: oklch(22% 3% 9%);
-  --color-popover-foreground: oklch(98% 1% 210);
+  /* Semantic color palette (OKLCH — perceptually uniform)
+     Dark is a NEUTRAL CHARCOAL with a faint cool tint (macOS dark), not the old
+     saturated violet/blue. The brand violet survives only in primary/accent/ring
+     (the accent), keeping identity without colouring every surface. Surfaces use
+     a single cool hue (~285) at very low chroma so the elevation ladder is clean. */
+  --color-background: oklch(20.5% 1% 285); /* #1B1B22 — charcoal, faint cool */
+  --color-foreground: oklch(97% 0.4% 285);
+  --color-card: oklch(24% 1% 285); /* elevated surfaces read LIGHTER than canvas */
+  --color-card-foreground: oklch(97% 0.4% 285);
+  --color-popover: oklch(25% 1% 285);
+  --color-popover-foreground: oklch(97% 0.4% 285);
   --color-primary: oklch(65% 50% 270);
   --color-primary-foreground: oklch(98% 1% 210);
-  --color-secondary: oklch(17% 10% 217);
-  --color-secondary-foreground: oklch(98% 1% 210);
-  --color-muted: oklch(17% 10% 217);
-  --color-muted-foreground: oklch(65% 5% 215);
+  --color-secondary: oklch(27% 0.8% 285);
+  --color-secondary-foreground: oklch(97% 0.4% 285);
+  --color-muted: oklch(27% 0.8% 285);
+  --color-muted-foreground: oklch(67% 1.2% 285);
   --color-accent: oklch(65% 50% 270);
   --color-accent-foreground: oklch(98% 1% 210);
   --color-destructive: oklch(30% 20% 0);
   --color-destructive-foreground: oklch(98% 1% 210);
-  --color-border: oklch(17% 10% 217);
-  --color-input: oklch(17% 10% 217);
+  --color-border: oklch(29% 1% 285);
+  --color-input: oklch(29% 1% 285);
   --color-ring: oklch(65% 50% 270);
 
   /* Brand aliases — use text-brand, bg-brand in Tailwind classes */
@@ -101,12 +105,15 @@
      color-scheme (light/dark), so one definition drives the whole elevation
      ladder. `--glass-rgb` is a space-separated RGB triplet consumed via
      `rgb(var(--glass-rgb) / <alpha>)`. */
-  --glass-rgb: 18 18 28; /* dark substrate — NOT a bright white fill */
-  --glass-alpha-card: 0.55;
-  --glass-alpha-surface: 0.6;
-  --glass-alpha-elevated: 0.72;
-  --glass-alpha-dropdown: 0.5;
-  --glass-alpha-modal: 0.85;
+  /* Neutral charcoal substrate, a touch LIGHTER than the canvas so cards lift
+     off it (macOS dark: elevated = lighter). Mostly-opaque so the elevation
+     reads cleanly; the blur still adds subtle vibrancy. */
+  --glass-rgb: 42 42 50; /* #2A2A32 — neutral, lighter than the #1B1B22 canvas */
+  --glass-alpha-card: 0.7;
+  --glass-alpha-surface: 0.78;
+  --glass-alpha-elevated: 0.86;
+  --glass-alpha-dropdown: 0.8;
+  --glass-alpha-modal: 0.9;
   /* Vibrancy: saturation paired with the blur to make the backdrop feel alive
      (the macOS material signature). */
   --glass-sat: var(--sat-mid);
