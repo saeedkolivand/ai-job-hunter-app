@@ -12,6 +12,7 @@ name: 🚀 Release
 #   - sync-version-files: Commit tracked version files for the release (push only)
 #   - build: Build Tauri apps for Windows, Linux, and macOS (manual / dispatch only)
 #   - generate-update-manifest: Publish latest.json for the auto-updater
+#   - update-cask: Pin the Homebrew cask to the built dmgs (version + per-arch sha256)
 #
 # Merging to main publishes the release + version bump but does NOT build
 # installers — those cross-platform compiles are slow, so they're decoupled from
@@ -595,3 +596,61 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-cask:
+    name: 🍺 Update Homebrew Cask
+    # Pins the cask to the just-built dmgs (version + per-arch sha256). Runs after
+    # the build because that's the only point the dmgs — and their hashes — exist;
+    # deliberately NOT in sync-version-files, which runs on every release push
+    # before any build (so there'd be nothing to hash, and bumping the version
+    # there would point the cask at dmgs that never ship). Reads each asset's
+    # sha256 digest straight from the GitHub API (no download) and commits the
+    # refreshed cask back to main. Skipped on the push path (build is manual).
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📥 Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 1
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: 🍺 Sync cask to the built dmgs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "::group::Reading dmg sha256 digests for v$VERSION"
+          arm="$(gh release view "v$VERSION" --json assets \
+            -q '.assets[] | select(.name | endswith("aarch64-apple-silicon.dmg")) | .digest' | sed 's/^sha256://')"
+          intel="$(gh release view "v$VERSION" --json assets \
+            -q '.assets[] | select(.name | endswith("x64-intel.dmg")) | .digest' | sed 's/^sha256://')"
+          if [ -z "$arm" ] || [ -z "$intel" ]; then
+            echo "::warning::dmg digests not found for v$VERSION — skipping cask update"
+            exit 0
+          fi
+          node scripts/sync-cask.cjs "$VERSION" "$arm" "$intel"
+          echo "::endgroup::"
+
+      - name: 📤 Commit cask
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- Casks/ai-job-hunter.rb; then
+            echo "Cask already up to date."
+            exit 0
+          fi
+          git add Casks/ai-job-hunter.rb
+          git commit -m "chore: sync homebrew cask to v${VERSION} [skip ci]"
+          git push git@github.com:saeedkolivand/ai-job-hunter-assistant-app.git HEAD:main
