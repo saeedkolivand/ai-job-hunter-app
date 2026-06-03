@@ -1,25 +1,26 @@
+import { createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 
 import { useMouseParallax } from './use-mouse-parallax';
+
+// Attaches the ref to a real DOM node so the hook can write CSS vars to it.
+function Probe() {
+  const ref = useMouseParallax<HTMLDivElement>();
+  return createElement('div', { ref, 'data-testid': 'bg' });
+}
 
 describe('useMouseParallax', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('starts centred with 50%/50% CSS vars', () => {
-    const { result } = renderHook(() => useMouseParallax());
-    expect(result.current.x).toBe(0);
-    expect(result.current.y).toBe(0);
-    expect(result.current.mouseVars).toEqual({ '--mx': '50%', '--my': '50%' });
-  });
-
-  it('updates normalized position on pointer movement', async () => {
+  it('writes normalized pointer offset to CSS vars on the ref element', () => {
     // rAF runs the update; run it synchronously for the test.
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
       cb(0);
       return 1;
     });
-    const { result } = renderHook(() => useMouseParallax());
+    const { getByTestId } = render(createElement(Probe));
+    const el = getByTestId('bg');
 
     act(() => {
       window.innerWidth = 1000;
@@ -29,15 +30,13 @@ describe('useMouseParallax', () => {
       window.dispatchEvent(new MouseEvent('pointermove', { clientX: 1000, clientY: 0 }));
     });
 
-    await waitFor(() => {
-      expect(result.current.x).toBeCloseTo(1);
-      expect(result.current.y).toBeCloseTo(-1);
-    });
+    expect(el.style.getPropertyValue('--parallax-x')).toBe('1.0000');
+    expect(el.style.getPropertyValue('--parallax-y')).toBe('-1.0000');
   });
 
   it('cleans up the listener on unmount', () => {
     const remove = vi.spyOn(window, 'removeEventListener');
-    const { unmount } = renderHook(() => useMouseParallax());
+    const { unmount } = render(createElement(Probe));
     unmount();
     expect(remove).toHaveBeenCalledWith('pointermove', expect.any(Function));
   });

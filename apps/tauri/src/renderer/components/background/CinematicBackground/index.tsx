@@ -16,13 +16,18 @@ import { usePerformanceMode } from '@/store/preferences-store';
  *   7. Film grain
  *   8. Radial vignette
  *
- * Cursor blob uses a JavaScript lerp loop (not CSS transition) for organic
- * smoothness: each RAF tick the blob moves 8% closer to the real cursor.
- * Transform is applied directly to the DOM node — zero React re-renders.
+ * Performance:
+ *   - Cursor blob uses a JavaScript lerp loop (not CSS transition) for organic
+ *     smoothness; the transform is applied directly to the DOM node — zero React
+ *     re-renders. The loop is paused while the tab/window is hidden.
+ *   - Parallax orbs read `--parallax-x/y` written by {@link useMouseParallax} on
+ *     the container ref — also zero re-renders (no state on pointer move).
+ *   - `low-memory` renders nothing; `balanced` renders a reduced layer budget;
+ *     `performance` adds the extra depth layers.
  */
 export function CinematicBackground() {
   const mode = usePerformanceMode();
-  const { x, y } = useMouseParallax();
+  const bgRef = useMouseParallax<HTMLDivElement>();
 
   // ── Lerp cursor blob ──────────────────────────────────────────────────────
   const blobRef = useRef<HTMLDivElement>(null);
@@ -58,11 +63,20 @@ export function CinematicBackground() {
       rafRef.current = requestAnimationFrame(tick);
     };
 
+    // Pause the loop while hidden (background tab / minimized window) so we don't
+    // burn frames animating something nobody can see; resume on return.
+    const onVisibility = () => {
+      cancelAnimationFrame(rafRef.current);
+      if (!document.hidden) rafRef.current = requestAnimationFrame(tick);
+    };
+
     window.addEventListener('pointermove', onMove, { passive: true });
-    rafRef.current = requestAnimationFrame(tick);
+    document.addEventListener('visibilitychange', onVisibility);
+    if (!document.hidden) rafRef.current = requestAnimationFrame(tick);
 
     return () => {
       window.removeEventListener('pointermove', onMove);
+      document.removeEventListener('visibilitychange', onVisibility);
       cancelAnimationFrame(rafRef.current);
     };
   }, [mode]); // re-run if mode changes so RAF is cleaned up correctly
@@ -71,12 +85,12 @@ export function CinematicBackground() {
   // Body is already #07060f in low-memory mode; skip all GPU layers.
   if (mode === 'low-memory') return null;
 
-  const orbA = { transform: `translate3d(${x * 30}px, ${y * 20}px, 0)` };
-  const orbB = { transform: `translate3d(${x * -25}px, ${y * 15}px, 0)` };
-  const orbC = { transform: `translate3d(${x * 15}px, ${y * -10}px, 0)` };
+  // Extra depth layers only on the high-end budget; balanced trims them to cut
+  // the number of large blurred/composited layers on the default mode.
+  const full = mode === 'performance';
 
   return (
-    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+    <div ref={bgRef} className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
       {/* Aurora ribbons */}
       <div
         className="absolute -top-1/4 left-0 h-[60vh] w-[60vw] rounded-full opacity-40 animate-aurora-1"
@@ -99,13 +113,15 @@ export function CinematicBackground() {
           willChange: 'transform',
         }}
       />
-      <div
-        className="absolute top-1/2 left-0 h-[45vh] w-[45vw] rounded-full opacity-25 animate-aurora-4"
-        style={{
-          background: 'radial-gradient(closest-side, var(--aurora-cyan) 0%, transparent 70%)',
-          willChange: 'transform',
-        }}
-      />
+      {full && (
+        <div
+          className="absolute top-1/2 left-0 h-[45vh] w-[45vw] rounded-full opacity-25 animate-aurora-4"
+          style={{
+            background: 'radial-gradient(closest-side, var(--aurora-cyan) 0%, transparent 70%)',
+            willChange: 'transform',
+          }}
+        />
+      )}
 
       {/* Nebulae */}
       <div
@@ -115,19 +131,25 @@ export function CinematicBackground() {
           willChange: 'transform',
         }}
       />
-      <div
-        className="absolute top-[60vh] left-0 h-[25vh] w-[25vw] rounded-full opacity-35 animate-nebula-2"
-        style={{
-          background: 'radial-gradient(closest-side, var(--nebula-indigo) 0%, transparent 70%)',
-          willChange: 'transform',
-        }}
-      />
+      {full && (
+        <div
+          className="absolute top-[60vh] left-0 h-[25vh] w-[25vw] rounded-full opacity-35 animate-nebula-2"
+          style={{
+            background: 'radial-gradient(closest-side, var(--nebula-indigo) 0%, transparent 70%)',
+            willChange: 'transform',
+          }}
+        />
+      )}
 
       {/* Soft streaks */}
       <div className="light-streak absolute top-[20%] left-1/4 h-px w-[40vw] bg-white/10 animate-streak-1" />
       <div className="light-streak absolute top-[55%] left-1/3 h-px w-[35vw] bg-white/10 animate-streak-2" />
-      <div className="light-streak absolute top-[75%] left-1/4 h-px w-[30vw] bg-white/5  animate-streak-3" />
-      <div className="light-streak absolute top-[35%] left-1/2 h-px w-[25vw] bg-white/5  animate-streak-4" />
+      {full && (
+        <>
+          <div className="light-streak absolute top-[75%] left-1/4 h-px w-[30vw] bg-white/5  animate-streak-3" />
+          <div className="light-streak absolute top-[35%] left-1/2 h-px w-[25vw] bg-white/5  animate-streak-4" />
+        </>
+      )}
 
       {/* Cursor blob — 900px lerp-smoothed glow.
           Position is updated every RAF tick via ref mutation (no React renders).
@@ -152,11 +174,13 @@ export function CinematicBackground() {
         }}
       />
 
-      {/* Floating glow orbs with mouse parallax */}
+      {/* Floating glow orbs — parallax driven by the container's --parallax-x/y
+          CSS vars (written on pointer move via the ref, no React re-renders). */}
       <div
         className="glow-orb absolute top-[15%] right-[10%] h-40 w-40 rounded-full transition-transform duration-75"
         style={{
-          ...orbA,
+          transform:
+            'translate3d(calc(var(--parallax-x, 0) * 30px), calc(var(--parallax-y, 0) * 20px), 0)',
           background:
             'radial-gradient(circle, rgba(168,85,247,0.35) 0%, rgba(168,85,247,0.12) 50%, transparent 75%)',
           filter: 'blur(12px)',
@@ -165,21 +189,25 @@ export function CinematicBackground() {
       <div
         className="glow-orb absolute bottom-[12%] left-[8%] h-32 w-32 rounded-full transition-transform duration-75"
         style={{
-          ...orbB,
+          transform:
+            'translate3d(calc(var(--parallax-x, 0) * -25px), calc(var(--parallax-y, 0) * 15px), 0)',
           background:
             'radial-gradient(circle, rgba(99,102,241,0.35) 0%, rgba(99,102,241,0.12) 50%, transparent 75%)',
           filter: 'blur(10px)',
         }}
       />
-      <div
-        className="glow-orb absolute top-[40%] left-[55%] h-24 w-24 rounded-full transition-transform duration-75"
-        style={{
-          ...orbC,
-          background:
-            'radial-gradient(circle, rgba(168,85,247,0.2) 0%, rgba(99,102,241,0.08) 50%, transparent 75%)',
-          filter: 'blur(8px)',
-        }}
-      />
+      {full && (
+        <div
+          className="glow-orb absolute top-[40%] left-[55%] h-24 w-24 rounded-full transition-transform duration-75"
+          style={{
+            transform:
+              'translate3d(calc(var(--parallax-x, 0) * 15px), calc(var(--parallax-y, 0) * -10px), 0)',
+            background:
+              'radial-gradient(circle, rgba(168,85,247,0.2) 0%, rgba(99,102,241,0.08) 50%, transparent 75%)',
+            filter: 'blur(8px)',
+          }}
+        />
+      )}
 
       {/* Grid + grain + vignette */}
       <div className="absolute inset-0 bg-grid-texture" />
