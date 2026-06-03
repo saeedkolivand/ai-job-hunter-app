@@ -195,7 +195,7 @@ brew install --cask ai-job-hunter
 
 The cask clears the Gatekeeper quarantine flag for you (the app isn't notarized). Prefer a one-off download? Grab the `.dmg` straight from the [Releases](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases) page.
 
-> The cask currently uses `sha256 :no_check` (no checksum verification). Pin per-arch checksums for a verified install.
+> The cask pins per-arch `sha256` checksums for a verified install, tracking the latest release that ships macOS `.dmg`s. Since the installer build is manual, bump the cask `version` + both checksums when a newer build publishes dmgs (`brew bump-cask-pr`).
 
 </details>
 
