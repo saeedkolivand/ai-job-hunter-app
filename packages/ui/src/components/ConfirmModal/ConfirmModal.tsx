@@ -1,4 +1,5 @@
 import { AlertOctagon, AlertTriangle, CheckCircle, Info, type LucideIcon, X } from 'lucide-react';
+import { useId } from 'react';
 
 import { cn } from '../../lib/cn';
 import { Button } from '../Button';
@@ -76,9 +77,16 @@ export function ConfirmModal({
 }: ConfirmModalProps) {
   const config = variantConfig[variant];
   const Icon = config.icon;
+  const titleId = useId();
 
   return (
-    <ModalShell open={open} onClose={onClose} borderClass={config.border} zIndex={600}>
+    <ModalShell
+      open={open}
+      onClose={onClose}
+      borderClass={config.border}
+      zIndex={600}
+      ariaLabelledby={titleId}
+    >
       {/* Header */}
       <div className="flex items-start justify-between border-b border-white/5 px-6 py-5">
         <div className="flex items-center gap-3">
@@ -91,7 +99,7 @@ export function ConfirmModal({
           >
             <Icon size={18} aria-hidden="true" />
           </div>
-          <div className="text-base font-medium text-foreground" id="modal-title">
+          <div className="text-base font-medium text-foreground" id={titleId}>
             {title}
           </div>
         </div>

@@ -19,6 +19,10 @@ export interface ModalShellProps {
   zIndex?: number;
   /** Border color class applied to the panel — e.g. "border-red-500/30" */
   borderClass?: string;
+  /** id of the element labelling the dialog (wired to aria-labelledby). */
+  ariaLabelledby?: string;
+  /** Accessible name when there is no visible title element to reference. */
+  ariaLabel?: string;
 }
 
 /**
@@ -33,6 +37,8 @@ export function ModalShell({
   className,
   zIndex = 600,
   borderClass,
+  ariaLabelledby,
+  ariaLabel,
 }: ModalShellProps) {
   const trapRef = useFocusTrap(open);
 
@@ -78,6 +84,8 @@ export function ModalShell({
               ref={trapRef as React.RefObject<HTMLDivElement>}
               role="dialog"
               aria-modal="true"
+              aria-labelledby={ariaLabelledby}
+              aria-label={ariaLabel}
               className={cn(
                 'glass-modal relative w-full overflow-hidden rounded-2xl border shadow-xl',
                 maxWidth,

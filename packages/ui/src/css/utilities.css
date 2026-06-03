@@ -186,7 +186,7 @@
 /* ── Input ───────────────────────────────────────────────────────────────── */
 .input-field:focus-visible {
   outline: none;
-  box-shadow: none;
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-brand) 50%, transparent);
 }
 
 /* ── Animations ──────────────────────────────────────────────────────────── */
@@ -508,8 +508,13 @@
 }
 
 /* ── Focus rings ─────────────────────────────────────────────────────────── */
+/* Visible default focus ring for every keyboard-focusable element. Components
+   that render their own ring pair `focus-visible:outline-none` with it (higher
+   specificity than this bare `:focus-visible`), so they opt out automatically —
+   no double ring. This closes the WCAG 2.4.7 hole left by a blanket reset. */
 :focus-visible {
-  outline: none;
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
 }
 
 /* ── Theme-switch crossfade (View Transition API) ────────────────────────────
