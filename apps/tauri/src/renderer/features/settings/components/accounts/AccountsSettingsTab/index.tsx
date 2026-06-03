@@ -1,4 +1,6 @@
-import { ShieldAlert } from 'lucide-react';
+import { Lock, ShieldAlert } from 'lucide-react';
+
+import { SettingsSection } from '@ajh/ui';
 
 import { AUTH_BOARDS } from '@/constants/auth';
 import { useTranslation } from '@/lib/i18n';
@@ -24,9 +26,13 @@ export function AccountsSettingsTab() {
         </div>
       )}
 
-      {AUTH_BOARDS.map((board) => (
-        <BoardSessionRow key={board.id} board={board} />
-      ))}
+      <SettingsSection icon={Lock} label={t('settings.accounts.boardsTitle')}>
+        <div className="space-y-3">
+          {AUTH_BOARDS.map((board) => (
+            <BoardSessionRow key={board.id} board={board} />
+          ))}
+        </div>
+      </SettingsSection>
     </div>
   );
 }

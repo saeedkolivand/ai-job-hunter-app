@@ -370,10 +370,12 @@
       "saveError": "Couldn't save the key."
     },
     "accounts": {
+      "boardsTitle": "Job board accounts",
       "credentialsWarning": "Credentials are stored locally and encrypted on your device. They are never sent to any server.",
       "noEncryptionWarning": "Secure credential storage is not available on this system. Credentials cannot be saved."
     },
     "privacy": {
+      "dataTitle": "Your data",
       "exportData": "Export Data",
       "exportDataDescription": "Save your applied, viewed, and bookmarked jobs to a JSON file.",
       "export": "Export",
