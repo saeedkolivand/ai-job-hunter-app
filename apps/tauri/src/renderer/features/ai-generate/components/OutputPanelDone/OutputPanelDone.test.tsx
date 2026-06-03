@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
-import type { TemplateId } from '@/lib/generate';
-
 import { OutputPanelDone } from './index';
 
 const RAW = 'Led **payments** migration at scale.';
@@ -18,7 +16,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof OutputPanelD
       activeOut="resume"
       meta={null}
       mode="ats"
-      templateId={'classic' as TemplateId}
+      templateId="classic"
       onActiveOutChange={vi.fn()}
       onCopy={onCopy}
       onExport={onExport}
@@ -46,7 +44,7 @@ describe('OutputPanelDone — preview/edit', () => {
     // The toggle button's label resolves to "Edit" (or the raw i18n key) — both match.
     fireEvent.click(screen.getByRole('button', { name: /edit/i }));
 
-    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    const textarea = screen.getByRole<HTMLTextAreaElement>('textbox');
     // Raw text — including the **payments** markers the export pipeline reads.
     expect(textarea.value).toBe(RAW);
     // Switching views must not mutate the canonical output.

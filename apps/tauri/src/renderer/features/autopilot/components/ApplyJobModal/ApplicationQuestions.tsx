@@ -64,7 +64,8 @@ export function ApplicationQuestions({
 
   return (
     <div className="overflow-hidden rounded-lg border border-white/[0.06] bg-white/[0.02]">
-      <button
+      <Button
+        variant="unstyled"
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center justify-between px-3 py-2.5 text-left"
@@ -82,7 +83,7 @@ export function ApplicationQuestions({
           size={13}
           className={cn('text-foreground/30 transition-transform', open && 'rotate-180')}
         />
-      </button>
+      </Button>
 
       <AnimatePresence initial={false}>
         {open && (
@@ -118,14 +119,15 @@ export function ApplicationQuestions({
                             <p className="whitespace-pre-wrap pr-6 text-[11px] leading-relaxed text-foreground/70">
                               {answer}
                             </p>
-                            <button
+                            <Button
+                              variant="unstyled"
                               type="button"
                               onClick={() => void copy(q.id, answer)}
                               title={t('autopilot.apply.questions.copy')}
                               className="absolute right-1.5 top-1.5 rounded p-0.5 text-foreground/30 transition-colors hover:text-foreground/70"
                             >
                               {copiedId === q.id ? <Check size={11} /> : <Copy size={11} />}
-                            </button>
+                            </Button>
                           </div>
                         </div>
                       )}

@@ -22,8 +22,8 @@ export const useSetProviderKey = () => {
     mutationFn: ({ provider, apiKey }: { provider: string; apiKey: string }) =>
       api.ai.setProviderKey({ provider, apiKey }),
     onSuccess: (_data, { provider }) => {
-      qc.invalidateQueries({ queryKey: [...keys.ai.models, 'provider-key', provider] });
-      qc.invalidateQueries({ queryKey: [...keys.ai.models, 'provider-models', provider] });
+      void qc.invalidateQueries({ queryKey: [...keys.ai.models, 'provider-key', provider] });
+      void qc.invalidateQueries({ queryKey: [...keys.ai.models, 'provider-models', provider] });
     },
   });
 };
@@ -34,7 +34,7 @@ export const useRemoveProviderKey = () => {
   return useMutation({
     mutationFn: ({ provider }: { provider: string }) => api.ai.removeProviderKey({ provider }),
     onSuccess: (_data, { provider }) => {
-      qc.invalidateQueries({ queryKey: [...keys.ai.models, 'provider-key', provider] });
+      void qc.invalidateQueries({ queryKey: [...keys.ai.models, 'provider-key', provider] });
     },
   });
 };
@@ -85,7 +85,7 @@ export const useSetEmbeddingConfig = () => {
     mutationFn: (req: { provider: string; model?: string; baseUrl?: string }) =>
       api.ai.setEmbeddingConfig(req),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.ai.embeddingStatus });
+      void qc.invalidateQueries({ queryKey: keys.ai.embeddingStatus });
     },
   });
 };

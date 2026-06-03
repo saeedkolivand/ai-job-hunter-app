@@ -2,7 +2,6 @@ import { RefreshCw, Search, Wand2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useMemo } from 'react';
 
-import type { AiGenerationRecord } from '@ajh/shared/ipc';
 import { Button, CardSkeleton, cn, EmptyState, Input, stagger, transition } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -34,19 +33,19 @@ function ResumesPage() {
       ? (rows as Interaction[]).filter(
           (r) => r.title.toLowerCase().includes(q) || r.company.toLowerCase().includes(q)
         )
-      : (rows as Interaction[]);
+      : rows;
   }, [rows, filter]);
 
   const filteredGenerations = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return q
-      ? (generations as AiGenerationRecord[]).filter(
+      ? generations.filter(
           (g) =>
             g.jobTitle.toLowerCase().includes(q) ||
             g.companyName.toLowerCase().includes(q) ||
             g.candidateName.toLowerCase().includes(q)
         )
-      : (generations as AiGenerationRecord[]);
+      : generations;
   }, [generations, filter]);
 
   const tabCfg = TAB_CONFIG.find((c) => c.id === tab) as (typeof TAB_CONFIG)[number];

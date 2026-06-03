@@ -35,7 +35,7 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
 export function MatchScoreCard({ jobId }: { jobId: string }) {
   const resumeId = useDefaultResumeId();
   const match = useMatchResume();
-  const result = match.data as (MatchScore & { error?: string }) | undefined;
+  const result: (MatchScore & { error?: string }) | undefined = match.data;
 
   return (
     <GlassCard tone="violet" className="mb-4">

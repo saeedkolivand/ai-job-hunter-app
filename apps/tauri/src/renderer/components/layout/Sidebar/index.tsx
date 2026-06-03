@@ -17,7 +17,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useRef, useState } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 
-import { cn, transition, variants } from '@ajh/ui';
+import { Button, cn, transition, variants } from '@ajh/ui';
 
 import { ROUTES } from '@/constants/routes';
 import { getTimeGreeting } from '@/lib/greeting';
@@ -174,12 +174,13 @@ export function Sidebar() {
         </div>
 
         <div className="relative flex justify-center">
-          <button
+          <Button
+            variant="unstyled"
             onClick={showVersion}
             className="font-mono text-[9px] tabular-nums text-foreground/20 transition-colors hover:text-foreground/40"
           >
             {appVersion}
-          </button>
+          </Button>
           <AnimatePresence>
             {versionTooltip && (
               <motion.div

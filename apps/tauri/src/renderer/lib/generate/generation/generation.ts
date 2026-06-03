@@ -79,7 +79,7 @@ async function streamGenerate(
   // Resume + cover-letter generation runs through the backend orchestration
   // pipeline (a composable Pipeline of stages), not the raw generate command.
   // Same streaming contract: emits `ai:stream` deltas under the returned jobId.
-  const res = (await api.ai.generatePipeline({
+  const res = await api.ai.generatePipeline({
     model: activeModel,
     messages: [
       { role: 'system', content: system },
@@ -97,7 +97,7 @@ async function streamGenerate(
     // (num_predict). Omitted (undefined) for cloud/CLI or when unset.
     maxTokens: localLimits?.maxTokens,
     contextWindow: localLimits?.contextWindow,
-  } as Parameters<typeof api.ai.generatePipeline>[0])) as { jobId: string };
+  });
 
   const jobId = res.jobId;
   let buffer = '';
@@ -283,7 +283,7 @@ export async function researchCompany(
     const providerConfig = usePreferencesStore.getState().aiProviderConfig;
     const activeProvider = providerConfig?.activeProvider ?? 'ollama';
     const providerSettings = providerConfig?.providers?.[activeProvider];
-    const res = (await getClient().ai.researchCompany({
+    const res = await getClient().ai.researchCompany({
       jobAd,
       // The AI-extracted company name is far more reliable than the backend's
       // heuristic job-ad scan (which can grab a tagline), so send it when known.
@@ -291,7 +291,7 @@ export async function researchCompany(
       provider: activeProvider,
       model: providerSettings?.model || model,
       baseUrl: providerSettings?.baseUrl,
-    })) as { company: string; brief: string };
+    });
     return res?.brief ?? '';
   } catch {
     return '';

@@ -76,7 +76,8 @@ export function ProviderRow({
       className={`rounded-xl border transition-all ${isExpanded ? 'border-white/15 bg-white/[0.03]' : 'border-white/[0.06] bg-white/[0.01]'}`}
     >
       {/* Row header */}
-      <button
+      <Button
+        variant="unstyled"
         onClick={onToggleExpand}
         className="flex w-full items-center gap-3 px-4 py-3 text-left"
       >
@@ -123,7 +124,7 @@ export function ProviderRow({
         ) : (
           <span className="text-[10px] text-foreground/30">Not connected</span>
         )}
-      </button>
+      </Button>
 
       {/* Expanded config */}
       {isExpanded && (
