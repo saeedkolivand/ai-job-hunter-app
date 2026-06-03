@@ -25,6 +25,8 @@ export function DeveloperPreferences() {
         <Button
           variant="unstyled"
           type="button"
+          role="switch"
+          aria-checked={debugMode}
           onClick={() => setDebugMode(!debugMode)}
           className={cn(
             'w-full flex items-center justify-between rounded-lg border px-3 py-2.5 transition-all text-left',
