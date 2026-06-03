@@ -50,20 +50,9 @@ export function ModalShell({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  // Blur the app content behind the modal by toggling a body attribute.
-  // CSS in globals.css targets [data-modal-open] .app-content to apply filter:blur().
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.dataset.modalDepth;
-    const depth = (parseInt(prev ?? '0', 10) || 0) + 1;
-    document.body.dataset.modalDepth = String(depth);
-    document.body.setAttribute('data-modal-open', '');
-    return () => {
-      const next = (parseInt(document.body.dataset.modalDepth ?? '1', 10) || 1) - 1;
-      document.body.dataset.modalDepth = String(next);
-      if (next <= 0) document.body.removeAttribute('data-modal-open');
-    };
-  }, [open]);
+  // The blur + dim behind the modal comes from GlassOverlay (fixed-overlay
+  // backdrop-blur), which only composites the area behind it — far cheaper than
+  // filtering the whole app subtree, so we no longer toggle a body attribute.
 
   return createPortal(
     <AnimatePresence>
