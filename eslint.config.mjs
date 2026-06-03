@@ -13,6 +13,12 @@ import globals from 'globals';
 const HARDCODED_HEX_IN_CLASSNAME =
   'JSXAttribute[name.name="className"] Literal[value=/\\[#[0-9a-fA-F]{3,6}/]';
 
+// Invalid Tailwind opacity modifier with a leading zero (e.g. `bg-brand/08`):
+// Tailwind drops it silently and the element renders with NO value, so a
+// "selected" state looks identical to unselected. Match `/0` directly followed
+// by a digit, anywhere in a className string literal.
+const INVALID_OPACITY_IN_CLASSNAME = 'JSXAttribute[name.name="className"] Literal[value=/\\/0\\d/]';
+
 const HARDCODED_HEX_IN_STYLE =
   'JSXAttribute[name.name="style"] Property > Literal[value=/#[0-9a-fA-F]{3,6}/]';
 
@@ -201,6 +207,11 @@ export default tseslint.config(
           message:
             'Use CSS custom properties (var(--color-brand), var(--color-brand-soft)) instead of hardcoded hex in style objects.',
         },
+        {
+          selector: INVALID_OPACITY_IN_CLASSNAME,
+          message:
+            'Invalid Tailwind opacity (leading zero, e.g. bg-brand/08) is silently dropped — use a valid step like /10.',
+        },
       ],
     },
   },
@@ -247,6 +258,11 @@ export default tseslint.config(
           selector: HARDCODED_HEX_IN_STYLE,
           message:
             'Use CSS custom properties (var(--color-brand)) instead of hardcoded hex in style objects.',
+        },
+        {
+          selector: INVALID_OPACITY_IN_CLASSNAME,
+          message:
+            'Invalid Tailwind opacity (leading zero, e.g. bg-brand/08) is silently dropped — use a valid step like /10.',
         },
         {
           selector: INLINE_TRANSITION_OBJECT,
