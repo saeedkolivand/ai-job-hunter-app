@@ -11,6 +11,7 @@ export * from './links.js';
 export * from './metadata.js';
 export * from './modes.js';
 export * from './resume.js';
+export * from './rewrite.js';
 export * from './text.js';
 
 // Market resolution lives in the locale module but is consumed alongside the

@@ -53,14 +53,29 @@ export interface AiGenerationSaveRequest {
   companyBrief?: string;
 }
 
+/**
+ * Edit the résumé/cover-letter text of an existing saved generation, selected by
+ * `id`. Unlike {@link AiGenerationSaveRequest} (a per-job merge-upsert that keeps
+ * existing non-empty text), this is a direct overwrite — so a user editing a
+ * saved generation can blank out or fully replace the text. Each text field is
+ * optional; an absent field is left unchanged.
+ */
+export interface AiGenerationUpdateRequest {
+  id: string;
+  resumeText?: string;
+  coverLetterText?: string;
+}
+
 export interface AiGenerationsContract {
   list(): Promise<AiGenerationRecord[]>;
   save(req: AiGenerationSaveRequest): Promise<{ id: string; success: boolean }>;
+  update(req: AiGenerationUpdateRequest): Promise<void>;
   remove(id: string): Promise<void>;
 }
 
 export const AI_GENERATIONS_CHANNELS = {
   list: 'aiGenerations:list',
   save: 'aiGenerations:save',
+  update: 'aiGenerations:update',
   remove: 'aiGenerations:remove',
 } as const;

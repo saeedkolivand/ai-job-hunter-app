@@ -18,6 +18,7 @@ import { z } from 'zod';
 import {
   AiGenerateRequestSchema,
   AiGenerationSaveSchema,
+  AiGenerationUpdateSchema,
   AutopilotCreateSchema,
   AutopilotUpdateSchema,
   ConversationSaveMessageSchema,
@@ -60,6 +61,7 @@ const MODULES: ModuleSpec[] = [
       { rustName: 'AiGenerateRequest', schema: AiGenerateRequestSchema },
       { rustName: 'AiEmbedRequest', schema: EmbedRequestSchema },
       { rustName: 'AiGenerationSaveRequest', schema: AiGenerationSaveSchema },
+      { rustName: 'AiGenerationUpdateRequest', schema: AiGenerationUpdateSchema },
     ],
   },
   {

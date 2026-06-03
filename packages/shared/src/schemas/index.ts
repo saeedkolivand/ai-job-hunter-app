@@ -182,6 +182,18 @@ export const AiGenerationSaveSchema = z.object({
 // Note: the `AiGenerationSaveRequest` type is declared in the aiGenerations IPC
 // contract (single source for that name); this schema validates the same shape.
 
+// Edit the résumé/cover-letter text of an existing saved generation, selected by
+// `id`. Unlike the save merge-upsert this is a direct overwrite, so the user can
+// blank out or fully replace text the merge would otherwise have kept. Each text
+// field is optional — absent means "leave that field unchanged".
+export const AiGenerationUpdateSchema = z.object({
+  id: z.string(),
+  resumeText: z.string().optional(),
+  coverLetterText: z.string().optional(),
+});
+// Note: the `AiGenerationUpdateRequest` type is declared in the aiGenerations IPC
+// contract (single source for that name); this schema validates the same shape.
+
 export const ConversationSaveMessageSchema = z.object({
   conversationId: z.string().default('default'),
   role: z.string().default('user'),
