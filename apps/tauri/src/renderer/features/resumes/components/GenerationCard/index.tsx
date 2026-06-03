@@ -136,7 +136,7 @@ export function GenerationCard({ gen }: GenerationCardProps) {
               {gen.mode}
             </span>
             {gen.board && (
-              <span className="rounded-full border border-white/[0.06] bg-white/[0.03] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-foreground/45">
+              <span className="rounded-full border border-white/[0.06] bg-white/[0.03] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-foreground/55">
                 {gen.board}
               </span>
             )}

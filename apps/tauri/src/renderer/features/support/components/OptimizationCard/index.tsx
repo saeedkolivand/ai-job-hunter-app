@@ -26,7 +26,9 @@ export function OptimizationCard({ title, description, action, priority }: Optim
     >
       <div>
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-xs font-medium uppercase tracking-wider">{priority} priority</span>
+          <span className="text-xs font-semibold uppercase tracking-wider">
+            {priority} priority
+          </span>
           <div className="text-sm font-medium text-foreground/90">{title}</div>
         </div>
         <div className="text-xs text-foreground/55">{description}</div>

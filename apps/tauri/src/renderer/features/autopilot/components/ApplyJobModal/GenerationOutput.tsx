@@ -56,7 +56,7 @@ export function GenerationOutput({
             ))}
           </div>
         ) : (
-          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/35">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">
             {activeOut === 'resume'
               ? t('autopilot.apply.target.resume')
               : t('autopilot.apply.target.cover')}

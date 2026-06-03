@@ -103,7 +103,7 @@ export function ResumePreferences() {
 
   return (
     <GlassCard>
-      <div className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
         {t('settings.resume.title')}
       </div>
       <p className="mb-4 text-sm text-foreground/55">{t('settings.resume.description')}</p>

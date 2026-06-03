@@ -56,7 +56,7 @@ export function OllamaConfig({
         </div>
       )}
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
           {t('settings.aiModel.title')}
         </span>
         <Button

@@ -128,7 +128,7 @@ export function CloudProviderConfig({
       {/* Base URL for openai-compatible */}
       {provider === 'openai-compatible' && (
         <div className="space-y-1.5">
-          <label className="text-xs font-medium uppercase tracking-widest text-foreground/30">
+          <label className="text-xs font-semibold uppercase tracking-widest text-foreground/55">
             {t('settings.aiProvider.baseUrl')}
           </label>
           <div className="flex gap-2">
@@ -157,7 +157,7 @@ export function CloudProviderConfig({
       {/* Model selector */}
       {connected && (
         <div className="space-y-1.5">
-          <div className="text-xs font-medium uppercase tracking-[0.16em] text-foreground/40">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
             {t('settings.aiModel.title')}
           </div>
           <Dropdown

@@ -186,14 +186,16 @@ xattr -cr "/Applications/AI Job Hunter Assistant.app"
 <details>
 <summary><strong>Homebrew (macOS)</strong></summary>
 
-> ⚠️ The cask definition lives in the repo at [`Casks/ai-job-hunter.rb`](Casks/ai-job-hunter.rb), but it is **not installable yet** — the GitHub releases don't carry `.dmg` artifacts for Homebrew to download. Once the release pipeline attaches the macOS installers (and the cask's `sha256` is pinned), publish the cask in a tap and install with:
+Releases ship signed macOS `.dmg`s, and the repo doubles as its own Homebrew tap (the [`Casks/ai-job-hunter.rb`](Casks/ai-job-hunter.rb) cask). Install with:
 
 ```bash
-brew tap saeedkolivand/tap
+brew tap saeedkolivand/ai-job-hunter-assistant-app https://github.com/saeedkolivand/ai-job-hunter-assistant-app
 brew install --cask ai-job-hunter
 ```
 
-Until then, use the `.dmg` from the [Releases](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases) page.
+The cask clears the Gatekeeper quarantine flag for you (the app isn't notarized). Prefer a one-off download? Grab the `.dmg` straight from the [Releases](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases) page.
+
+> The cask currently uses `sha256 :no_check` (no checksum verification). Pin per-arch checksums for a verified install.
 
 </details>
 

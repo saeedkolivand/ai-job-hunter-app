@@ -26,7 +26,7 @@ export function ApplyDrawer({ posting, onClose }: ApplyDrawerProps) {
     <div className="flex h-full flex-col">
       <header className="flex items-start justify-between border-b border-white/5 p-5">
         <div className="min-w-0">
-          <div className="text-[10px] uppercase tracking-[0.3em] text-foreground/40">
+          <div className="text-[10px] uppercase tracking-[0.3em] text-foreground/55">
             {t('jobs.applyDrawer.eyebrow')}
           </div>
           <div className="mt-1 truncate text-base font-medium text-foreground">{posting.title}</div>
@@ -106,7 +106,7 @@ export function ApplyDrawer({ posting, onClose }: ApplyDrawerProps) {
             {/* Step feed */}
             {steps.length > 0 && (
               <div className="mb-4">
-                <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.18em] text-foreground/40">
+                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
                   {t('jobs.applyDrawer.steps')}
                 </div>
                 <div className="space-y-1.5">
