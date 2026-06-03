@@ -19,6 +19,7 @@
     "notification:allow-request-permission",
     "notification:allow-check-permissions",
     "notification:allow-is-permission-granted",
-    "notification:allow-permission-state"
+    "notification:allow-permission-state",
+    "notification:allow-register-listener"
   ]
 }

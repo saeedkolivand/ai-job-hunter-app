@@ -24,6 +24,10 @@ export interface AutopilotContract {
    *  focus an autopilot's found-jobs panel. An empty `autopilotId` is a pure
    *  "refresh the list" signal (e.g. after a tray Pause-All) with no navigation. */
   onFocus(handler: (event: AutopilotFocusEvent) => void): () => void;
+
+  /** Fired when the user clicks the OS "new jobs" notification. Autopilot is the
+   *  only notification source, so any click opens the autopilot page. */
+  onNotificationClick(handler: () => void): () => void;
 }
 
 export interface AutopilotStepEvent {
