@@ -19,7 +19,7 @@ function AutopilotPage() {
   const { data: autopilotList = [], isLoading: loading } = useAutopilots();
   const autopilots = autopilotList;
   const { autopilot, setAutopilot, resetAutopilotWizard } = useSessionStore();
-  const { creating } = autopilot;
+  const { creating, focusedId } = autopilot;
   const setCreating = (v: boolean) => setAutopilot({ creating: v });
   const resetWizard = resetAutopilotWizard;
 
@@ -94,6 +94,8 @@ function AutopilotPage() {
                     autopilot={ap}
                     runState={runState}
                     stepLogs={stepLogs[ap._id] ?? []}
+                    focused={focusedId === ap._id}
+                    onFocusHandled={() => setAutopilot({ focusedId: null })}
                     onRun={() => void handleRun(ap._id)}
                     onTogglePause={() => void handleTogglePause(ap)}
                     onEdit={() => handleEdit(ap)}

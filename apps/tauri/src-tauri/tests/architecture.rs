@@ -57,7 +57,14 @@ const L2: &[&str] = &[
     "autopilot_helpers",
     "recommend",
 ];
-const L3: &[&str] = &["commands", "ipc_contracts", "main", "updater"];
+const L3: &[&str] = &[
+    "commands",
+    "ipc_contracts",
+    "main",
+    "updater",
+    "tray",
+    "deeplink",
+];
 
 fn layer_of(module: &str) -> Option<u8> {
     if L0.contains(&module) {

@@ -127,6 +127,7 @@ export {
 export {
   AUTOPILOT_CHANNELS,
   type AutopilotContract,
+  type AutopilotFocusEvent,
   type AutopilotStepEvent,
 } from './autopilot.js';
 export { BOARDS_CHANNELS, type BoardsContract } from './boards.js';

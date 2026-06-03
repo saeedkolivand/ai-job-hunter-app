@@ -210,9 +210,13 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         &format!("Scored {scored_count} of {total_found} jobs"),
     );
 
-    store(&app)
+    let new_count = store(&app)
         .lock()
         .record_run(&autopilot_id, total_found as u32, 0, found_jobs);
+
+    // Surface genuinely-new finds while the user is away: a permission-gated
+    // notification + a "New jobs: N" tray counter that jumps back to this run.
+    crate::tray::on_new_jobs(&app, &autopilot_id, &autopilot.name, new_count);
 
     engine.unregister_token(&job_id).await;
 

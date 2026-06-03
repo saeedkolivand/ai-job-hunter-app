@@ -210,6 +210,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       pause: noop,
       resume: noop,
       onStep: () => () => {},
+      onFocus: () => () => {},
     },
 
     dialog: {

@@ -1,7 +1,13 @@
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { Autopilot, AutopilotCreate, AutopilotStepEvent, AutopilotUpdate } from '@ajh/shared';
+import type {
+  Autopilot,
+  AutopilotCreate,
+  AutopilotFocusEvent,
+  AutopilotStepEvent,
+  AutopilotUpdate,
+} from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
@@ -106,4 +112,14 @@ export const useAutopilotStepEvents = (onStep?: (event: AutopilotStepEvent) => v
     });
     return () => off?.();
   }, [api, onStep]);
+};
+
+export const useAutopilotFocusEvents = (onFocus?: (event: AutopilotFocusEvent) => void) => {
+  const api = useAppClient();
+  useEffect(() => {
+    const off = api.autopilot.onFocus((event: unknown) => {
+      onFocus?.(event as AutopilotFocusEvent);
+    });
+    return () => off?.();
+  }, [api, onFocus]);
 };

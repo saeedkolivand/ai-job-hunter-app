@@ -204,3 +204,41 @@ fn merge_keeps_prior_jobs_not_in_the_new_run() {
     );
     assert!(merged.iter().any(|j| j.url == "old"));
 }
+
+#[test]
+fn record_run_reports_only_newly_surfaced_jobs() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let ap = store.create(serde_json::json!({
+        "name": "AP",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 50.0 },
+        "schedule": "manual",
+    }));
+    let id = ap.id;
+
+    // First run — both URLs are brand new → drives a "2 new jobs" notification.
+    assert_eq!(
+        store.record_run(&id, 2, 0, vec![found_job("u1", 1), found_job("u2", 2)]),
+        2
+    );
+    // Re-run with the two seen URLs + one unseen → only the unseen counts.
+    assert_eq!(
+        store.record_run(
+            &id,
+            3,
+            0,
+            vec![found_job("u1", 9), found_job("u2", 9), found_job("u3", 9)]
+        ),
+        1
+    );
+    // Nothing unseen → no notification.
+    assert_eq!(store.record_run(&id, 3, 0, vec![found_job("u1", 9)]), 0);
+    // Unknown autopilot → 0 (no panic).
+    assert_eq!(
+        store.record_run("missing", 5, 0, vec![found_job("x", 1)]),
+        0
+    );
+}

@@ -238,23 +238,29 @@ impl AutopilotStore {
     /// list **merged** with prior runs by URL — so re-running keeps history
     /// (first-seen + any state) instead of replacing it, and genuinely new
     /// postings are flagged `is_new`.
+    /// Returns the number of **newly surfaced** jobs in this run (postings whose
+    /// URL was never seen before) — drives the "N new jobs" notification + tray.
     pub fn record_run(
         &self,
         id: &str,
         total_found: u32,
         total_applied: u32,
         found_jobs: Vec<FoundJob>,
-    ) {
+    ) -> u32 {
         let mut map = self.load();
+        let mut new_count = 0u32;
         if let Some(ap) = map.get_mut(id) {
             let now = now_ms();
             ap.total_found = total_found;
             ap.total_applied = total_applied;
             ap.found_jobs = merge_found_jobs(&ap.found_jobs, found_jobs);
+            // `merge_found_jobs` flags only never-before-seen URLs as `is_new`.
+            new_count = ap.found_jobs.iter().filter(|j| j.is_new).count() as u32;
             ap.last_run_at = Some(now);
             ap.updated_at = now;
         }
         self.save(map);
+        new_count
     }
 
     pub fn stamp_last_run(&self, id: &str) {
