@@ -51,6 +51,10 @@ tauri-plugin-notification = "2"
 # `ajh://` deep links → focus a specific autopilot. Every incoming URL/argv is
 # validated against a strict route allowlist before navigation (see `deeplink`).
 tauri-plugin-deep-link = "2"
+# Opt-in launch-at-login (default OFF) so autopilot can run as a background
+# discovery agent. Toggled only via our own `system_*` commands (Rust API), so
+# no JS plugin capability is exposed; no extra launch args are registered.
+tauri-plugin-autostart = "2"
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -15,6 +15,12 @@ export interface SystemContract {
 
   setPerformanceMode(mode: 'low-memory' | 'balanced' | 'performance'): Promise<void>;
 
+  /** Whether the app is registered to launch at login (default off). */
+  getLaunchAtLogin(): Promise<boolean>;
+
+  /** Enable/disable launch-at-login; resolves to the resulting OS state. */
+  setLaunchAtLogin(enabled: boolean): Promise<boolean>;
+
   getMetrics(): Promise<AppMetrics>;
 
   checkBrowser(): Promise<{ detected: boolean; path?: string }>;
@@ -33,6 +39,8 @@ export const SYSTEM_CHANNELS = {
   getPlatform: 'system:getPlatform',
   openExternal: 'system:openExternal',
   setPerformanceMode: 'system:setPerformanceMode',
+  getLaunchAtLogin: 'system:getLaunchAtLogin',
+  setLaunchAtLogin: 'system:setLaunchAtLogin',
   getMetrics: 'system:getMetrics',
   checkBrowser: 'system:checkBrowser',
   openDevtools: 'system:openDevtools',
