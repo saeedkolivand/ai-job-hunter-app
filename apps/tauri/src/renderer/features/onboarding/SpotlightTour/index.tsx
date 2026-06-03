@@ -4,7 +4,6 @@ import {
   Gauge,
   LayoutDashboard,
   type LucideIcon,
-  Search,
   Sparkles,
   Wand2,
   Zap,
@@ -23,12 +22,20 @@ interface TourItem {
   descKey: string;
 }
 
+// Order follows the sidebar's top-to-bottom flow. Search isn't a tour step —
+// it's a ⌘/Ctrl+K shortcut, surfaced in the keyboard-shortcuts cheat sheet.
 const TOUR_ITEMS: TourItem[] = [
   {
     tourId: 'dashboard',
     icon: LayoutDashboard,
     titleKey: 'onboarding.tour.dashboard.title',
     descKey: 'onboarding.tour.dashboard.desc',
+  },
+  {
+    tourId: 'jobs',
+    icon: Briefcase,
+    titleKey: 'onboarding.tour.jobs.title',
+    descKey: 'onboarding.tour.jobs.desc',
   },
   {
     tourId: 'analyze',
@@ -43,28 +50,16 @@ const TOUR_ITEMS: TourItem[] = [
     descKey: 'onboarding.tour.generate.desc',
   },
   {
-    tourId: 'jobs',
-    icon: Briefcase,
-    titleKey: 'onboarding.tour.jobs.title',
-    descKey: 'onboarding.tour.jobs.desc',
-  },
-  {
-    tourId: 'autopilot',
-    icon: Zap,
-    titleKey: 'onboarding.tour.autopilot.title',
-    descKey: 'onboarding.tour.autopilot.desc',
-  },
-  {
     tourId: 'documents',
     icon: FileText,
     titleKey: 'onboarding.tour.documents.title',
     descKey: 'onboarding.tour.documents.desc',
   },
   {
-    tourId: 'search',
-    icon: Search,
-    titleKey: 'onboarding.tour.search.title',
-    descKey: 'onboarding.tour.search.desc',
+    tourId: 'autopilot',
+    icon: Zap,
+    titleKey: 'onboarding.tour.autopilot.title',
+    descKey: 'onboarding.tour.autopilot.desc',
   },
   {
     tourId: 'ai',

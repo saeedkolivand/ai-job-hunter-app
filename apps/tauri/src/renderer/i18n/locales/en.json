@@ -4,6 +4,10 @@
     "tagline": "Calm. Local. AI-native."
   },
   "nav": {
+    "sections": {
+      "workspace": "Workspace",
+      "automation": "Automation"
+    },
     "dashboard": "Dashboard",
     "analyze": "Resume Analyzer",
     "generate": "AI Generate",
