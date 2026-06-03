@@ -203,13 +203,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # macOS compiles each arch as its own parallel leg (one runner each)
+        # instead of building Intel then Apple Silicon sequentially on one
+        # runner — that serial double-build was the slowest leg of the matrix.
         include:
           - platform: windows-latest
-            args: ''
           - platform: ubuntu-22.04
-            args: ''
           - platform: macos-latest
-            args: ''
+            target: x86_64-apple-darwin
+            arch_suffix: intel
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            arch_suffix: apple-silicon
 
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 60
@@ -281,6 +286,9 @@ jobs:
         with:
           workspaces: apps/tauri/src-tauri
           cache-on-failure: true
+          # Separate cache per macOS arch so the two legs don't clobber each
+          # other (empty on Windows/Linux — single cache as before).
+          key: ${{ matrix.target }}
 
       - name: 📥 Install Dependencies
         run: |
@@ -300,18 +308,11 @@ jobs:
           pnpm build:packages
           echo "::endgroup::"
 
-      - name: Add Intel Target (macOS only)
+      - name: 🎯 Add Rust Target (macOS only)
         if: runner.os == 'macOS'
         run: |
-          echo "::group::Adding Intel target"
-          rustup target add x86_64-apple-darwin
-          echo "::endgroup::"
-
-      - name: 🔧 Add ARM64 Target (macOS only)
-        if: runner.os == 'macOS'
-        run: |
-          echo "::group::Adding ARM64 target"
-          rustup target add aarch64-apple-darwin
+          echo "::group::Adding ${{ matrix.target }} target"
+          rustup target add ${{ matrix.target }}
           echo "::endgroup::"
 
       - name: 🏗️ Build Tauri Application
@@ -324,10 +325,8 @@ jobs:
         run: |
           echo "::group::Building Tauri application"
           if [ "${{ runner.os }}" == "macOS" ]; then
-            # Build Intel
-            pnpm --filter @ajh/tauri tauri build --target x86_64-apple-darwin
-            # Build Apple Silicon
-            pnpm --filter @ajh/tauri tauri build --target aarch64-apple-darwin
+            # One arch per leg — the matrix runs Intel + Apple Silicon in parallel.
+            pnpm --filter @ajh/tauri tauri build --target ${{ matrix.target }}
           else
             # Build for current platform (Linux or Windows)
             pnpm --filter @ajh/tauri tauri build
@@ -379,10 +378,10 @@ jobs:
         run: |
           echo "::group::Tagging macOS artifacts with architecture suffix"
           shopt -s nullglob
-          # Both arch builds emit identically named .app.tar.gz / .dmg files.
-          # Uploading two assets with the same name to one release races in the
-          # upload action and intermittently fails the job. Suffix every macOS
-          # artifact (and its updater .sig) with its architecture so names are
+          # Each arch leg emits identically named .app.tar.gz / .dmg files and
+          # both upload to the same release — without a suffix the two legs would
+          # collide by name (and race the upload action). Suffix this leg's macOS
+          # artifacts (and the updater .sig) with its architecture so names are
           # unique and latest.json can serve the correct binary per arch.
           tag_macos_artifacts() {
             local triple="$1" suffix="$2" base
@@ -400,8 +399,7 @@ jobs:
               echo "Renamed (${suffix}): $(basename "$f")"
             done
           }
-          tag_macos_artifacts x86_64-apple-darwin intel
-          tag_macos_artifacts aarch64-apple-darwin apple-silicon
+          tag_macos_artifacts "${{ matrix.target }}" "${{ matrix.arch_suffix }}"
           echo "::endgroup::"
 
       - name: Upload Release Assets

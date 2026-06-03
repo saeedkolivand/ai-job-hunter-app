@@ -71,6 +71,7 @@ export { StreamingText } from './components/StreamingText/index';
 
 // ── Composition Helpers ───────────────────────────────────────────────────
 export { FloatingIcon } from './components/FloatingIcon/index';
+export { NavPill, type NavPillProps } from './components/NavPill/index';
 export { OptionTile } from './components/OptionTile/index';
 export { SettingsSection } from './components/SettingsSection/index';
 export { StepDots } from './components/StepDots/index';
