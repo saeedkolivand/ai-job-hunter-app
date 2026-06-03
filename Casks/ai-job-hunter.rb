@@ -6,15 +6,17 @@
 #   brew install --cask ai-job-hunter
 #
 # Maintenance:
-#   • Keep `version` in sync with the latest GitHub release tag — CI can run
-#     `brew bump-cask-pr`. The dmg assets are named
-#     "AI-Job-Hunter-Assistant_<version>_<arch>.dmg".
-#   • `sha256 :no_check` skips hash verification; pin per-arch shas for a
-#     verified install once they are published with the release.
+#   • `version` tracks the latest release that ships macOS .dmg artifacts (the
+#     installer build is manual, so not every release has them). The dmg assets
+#     are named "AI-Job-Hunter-Assistant_<version>_<arch>.dmg".
+#   • When a new build publishes dmgs, bump `version` and refresh both per-arch
+#     `sha256` values — `brew bump-cask-pr` does this, or read the assets'
+#     sha256 digests from `gh release view v<version> --json assets`.
 
 cask "ai-job-hunter" do
-  version "0.52.0"
-  sha256 :no_check # TODO: pin per-arch .dmg sha256 for verified installs
+  version "0.62.1"
+  sha256 arm:   "f530340469542496203149241fc9bc56ba90d9a51cfc201a62a1f81e063c8294",
+         intel: "72e258a33f6e5eba563ff26eb660a3d6db58e848fab82b6b95c9f217ac75a37b"
 
   arch arm: "aarch64-apple-silicon", intel: "x64-intel"
 
