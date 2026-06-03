@@ -12,6 +12,10 @@ export interface AutopilotStepEvent {
   detail: string;
 }
 
+export interface AutopilotFocusEvent {
+  autopilotId: string;
+}
+
 export const autopilot = {
   list: () => invoke('autopilot_list'),
   get: ({ autopilotId }: { autopilotId: string }) => invoke('autopilot_get', { autopilotId }),
@@ -24,4 +28,6 @@ export const autopilot = {
   resume: ({ autopilotId }: { autopilotId: string }) => invoke('autopilot_resume', { autopilotId }),
   onStep: (handler: (event: AutopilotStepEvent) => void) =>
     asyncUnsub(() => listen<AutopilotStepEvent>('autopilot.step', (e) => handler(e.payload))),
+  onFocus: (handler: (event: AutopilotFocusEvent) => void) =>
+    asyncUnsub(() => listen<AutopilotFocusEvent>('autopilot.focus', (e) => handler(e.payload))),
 };

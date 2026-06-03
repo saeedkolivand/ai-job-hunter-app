@@ -11,10 +11,14 @@ import { StatusBar } from '@/components/layout/StatusBar';
 import { Titlebar } from '@/components/layout/Titlebar';
 import { UpdateBanner } from '@/components/ui/UpdateBanner';
 import { OnboardingWizard } from '@/features/onboarding/OnboardingWizard';
+import { useAutopilotFocusNavigation } from '@/hooks/use-autopilot-focus-navigation';
 import { CapabilityProvider } from '@/providers/CapabilityProvider';
 
 function RootLayout() {
   const router = useRouter();
+
+  // Route to an autopilot's found-jobs when the tray/deep-link asks (app-global).
+  useAutopilotFocusNavigation();
   useEffect(() => {
     // Prevent mouse side-buttons (back/forward, buttons 3 & 4) from triggering
     // browser history navigation which leads to unhandled routes in the SPA.

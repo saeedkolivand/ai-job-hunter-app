@@ -11,7 +11,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { Autopilot, AutopilotFoundJob } from '@ajh/shared';
 import { Button, cn, ConfirmModal, GlassCard, transition } from '@ajh/ui';
@@ -32,6 +32,10 @@ interface AutopilotCardProps {
   autopilot: Autopilot;
   runState: AutopilotRunState;
   stepLogs: StepLog[];
+  /** When true (tray/deep-link focus), auto-expand found-jobs + scroll into view. */
+  focused?: boolean;
+  /** Called once the focus has been consumed, so the page can clear it. */
+  onFocusHandled?: () => void;
   onRun(): void;
   onTogglePause(): void;
   onEdit(): void;
@@ -50,6 +54,8 @@ export function AutopilotCard({
   autopilot: ap,
   runState,
   stepLogs,
+  focused,
+  onFocusHandled,
   onRun,
   onTogglePause,
   onEdit,
@@ -62,7 +68,17 @@ export function AutopilotCard({
   const [showFound, setShowFound] = useState(false);
   const [applyJob, setApplyJob] = useState<AutopilotFoundJob | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const headerRef = useRef<HTMLDivElement>(null);
   const foundJobs = ap.foundJobs ?? [];
+
+  // Tray "New jobs" / deep-link focus: open this card's found-jobs and scroll to
+  // it, then tell the page to clear the focus so a later click re-triggers.
+  useEffect(() => {
+    if (!focused) return;
+    setShowFound(true);
+    headerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    onFocusHandled?.();
+  }, [focused, onFocusHandled]);
 
   const lastRun = ap.lastRunAt
     ? new Date(ap.lastRunAt).toLocaleString()
@@ -70,7 +86,7 @@ export function AutopilotCard({
 
   return (
     <GlassCard className="flex flex-col gap-3">
-      <div className="flex items-center gap-4">
+      <div ref={headerRef} className="flex items-center gap-4">
         {/* Status dot */}
         <div
           className={cn(
