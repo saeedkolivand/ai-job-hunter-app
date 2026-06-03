@@ -120,8 +120,8 @@ The only outbound calls are to the AI provider **you** configure (and an optiona
 
 - **Autopilot workflows** — define a search (board, query, location, schedule, filters); it finds and scores matching jobs.
 - **Dedup + New/Applied badges** — re-running a workflow merges results by URL: prior finds are kept, genuinely new ones are badged **New**, and jobs you've generated for are badged **Applied** (derived automatically from your saved generations).
-- **One-click assisted apply** — from any found job, generate a tailored résumé + cover letter and **résumé-grounded answers** to common application questions, with optional company research.
-- **Applications / History** — every generated application is stored as a single per-job record (résumé, cover, answers, brief, board, date) and browsable in the Résumés → Generated tab.
+- **One-click tailoring** — from any found job, click **Tailor** to seed the AI Generate workspace, open the posting, and mark it applied — on any board. Generate a tailored résumé + cover letter and **résumé-grounded answers** to common application questions, with optional company research.
+- **Documents / Activity** — every generated application is stored as a single per-job record (résumé, cover, answers, brief, board, date) and browsable in the **Documents** page (Résumés / Cover Letters / Activity tabs).
 </details>
 
 <details>
@@ -262,10 +262,10 @@ pnpm dev
 ```
 1. Autopilot → New → set board, query, location, schedule, filters
 2. Run it → found jobs appear, scored and deduped (New badges on fresh results)
-3. Open a found job → Apply:
+3. Open a found job → Tailor:
    • generate a tailored résumé + cover letter (target: Both)
    • pick application questions → get résumé-grounded answers
-   • the job flips to "Applied" and is saved to Résumés → Generated
+   • the job flips to "Applied" and is saved in Documents → Activity
 ```
 
 </details>
@@ -300,23 +300,23 @@ The app uses the OS keychain for secrets — no `.env` files. Keys and credentia
 
 ## Tech Stack
 
-| Layer               | Technology                                                              |
-| ------------------- | ----------------------------------------------------------------------- |
-| Desktop shell       | [Tauri][tauri] 2.x — [Rust][rust] core + [React][react] renderer        |
-| UI framework        | [React][react] 19, [TypeScript][typescript] 6                           |
-| Routing             | [TanStack Router][tanstack-router] 1.x (file-based)                     |
-| Server state        | [TanStack Query][tanstack-query] 5.x                                    |
-| Client state        | [Zustand][zustand] 5                                                    |
-| Styling             | [Tailwind CSS][tailwindcss] v4 + CSS custom properties                  |
-| Animations          | [motion/react][motion-react]                                            |
-| Build system        | [Vite][vite] 8 + [Turborepo][turborepo] (monorepo)                      |
-| Package manager     | [pnpm][pnpm] 11 (workspaces)                                            |
-| Local AI            | [Ollama][ollama]                                                        |
-| Relational DB       | [SQLite][sqlite] via [rusqlite][rusqlite] ([Rust][rust] core)           |
-| Vector search       | Hybrid vector + keyword matching                                        |
-| Browser automation  | [chromiumoxide][chromiumoxide] ([Rust][rust]) — Playwright for e2e only |
-| Document generation | [printpdf][printpdf] + [docx-rs][docx-rs] ([Rust][rust])                |
-| Validation          | [Zod][zod] (shared schemas → generated [Rust][rust] structs)            |
+| Layer               | Technology                                                                |
+| ------------------- | ------------------------------------------------------------------------- |
+| Desktop shell       | [Tauri][tauri] 2.x — [Rust][rust] core + [React][react] renderer          |
+| UI framework        | [React][react] 19, [TypeScript][typescript] 6                             |
+| Routing             | [TanStack Router][tanstack-router] 1.x (file-based)                       |
+| Server state        | [TanStack Query][tanstack-query] 5.x                                      |
+| Client state        | [Zustand][zustand] 5                                                      |
+| Styling             | [Tailwind CSS][tailwindcss] v4 + CSS custom properties                    |
+| Animations          | [motion/react][motion-react]                                              |
+| Build system        | [Vite][vite] 8 + [Turborepo][turborepo] (monorepo)                        |
+| Package manager     | [pnpm][pnpm] 11 (workspaces)                                              |
+| Local AI            | [Ollama][ollama]                                                          |
+| Relational DB       | [SQLite][sqlite] via [rusqlite][rusqlite] ([Rust][rust] core)             |
+| Vector search       | Hybrid vector + keyword matching                                          |
+| Browser automation  | [chromiumoxide][chromiumoxide] ([Rust][rust]) — Playwright for e2e only   |
+| Document generation | Typst engine (`export/typst_engine/`) + [docx-rs][docx-rs] ([Rust][rust]) |
+| Validation          | [Zod][zod] (shared schemas → generated [Rust][rust] structs)              |
 
 ---
 
@@ -468,7 +468,6 @@ MIT — see [LICENSE](LICENSE).
 [sqlite]: https://www.sqlite.org
 [rusqlite]: https://github.com/rusqlite/rusqlite
 [chromiumoxide]: https://github.com/mattsse/chromiumoxide
-[printpdf]: https://github.com/fschutt/printpdf
 [docx-rs]: https://github.com/bokuweb/docx-rs
 [zod]: https://zod.dev
 [conventional-commits]: https://www.conventionalcommits.org

@@ -1,6 +1,6 @@
 # Deployment — AI Job Hunter
 
-Last updated: 2026-06-01
+Last updated: 2026-06-03
 
 AI Job Hunter is distributed as a native desktop installer built by [Tauri][tauri]. There is no server to deploy — the entire app runs on the end user's machine.
 
@@ -128,7 +128,7 @@ graph LR
 1. semantic-release analyzes commits → creates the `v*` tag + GitHub release notes
 2. CI commits the synced version files back to `main`
 
-**`build` + `generate-update-manifest`** — run **only** via **Actions ▸ "🚀 Release" ▸ "Run workflow"** (~60 min/platform):
+**`build` + `generate-update-manifest`** — run **only** via **Actions ▸ "🚀 Release" ▸ "Run workflow"** (macOS Intel + Apple Silicon build as two parallel matrix legs, so wall-clock is roughly the slowest single platform rather than the sum of all three):
 
 1. Resolve the version (the `version` input, or the latest tag if left blank), then checkout that tag
 2. Install pnpm + Node + Rust stable; `pnpm build:packages`

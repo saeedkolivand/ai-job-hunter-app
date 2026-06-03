@@ -1,6 +1,6 @@
 # Patterns — AI Job Hunter
 
-Last updated: 2026-06-01
+Last updated: 2026-06-03
 
 This document describes the recurring architectural and implementation patterns used throughout the codebase. Understanding these patterns is essential for contributing consistently.
 
@@ -364,17 +364,14 @@ Translation keys follow dot notation by feature:
 
 ## 10. Credential Storage Pattern
 
-Never store API keys or passwords in localStorage, SQLite, or env vars. Always use the keychain:
+Never store API keys or passwords in localStorage, SQLite, or env vars. Always use the keychain.
+
+**AI provider keys** are stored via `credentials.set` internally (the `ai:*` key namespace) and cleared via factory reset. Board login uses a separate session-auth path (`boards.*` / `linkedin.*`) — there is no board-level username/password CRUD.
+
+To check whether the OS supports encrypted storage (shows an encryption-warning banner if `false`):
 
 ```typescript
-// Store
-await client.credentials.set({ board: 'linkedin', username: 'user@email.com', password: '...' });
-
-// Check
-const has = await client.credentials.hasCredential('linkedin');
-
-// Remove
-await client.credentials.remove('linkedin');
+const { data: available } = useCredentialsAvailable(); // services/use-credentials
 ```
 
 The [Tauri][tauri] keychain plugin encrypts secrets using the OS credential store (Windows Credential Manager, macOS Keychain, libsecret on Linux).
@@ -484,7 +481,7 @@ it; `std::env::var` only in `platform/**`; `reqwest::Client::new/builder` only i
 | `// eslint-disable` comment                       | Fix the underlying issue or add a scoped `eslint.config.mjs` override                                                                        |
 | Inline `{ duration: 0.2, ease: "easeOut" }`       | `transition.fast` from `@/lib/motion`                                                                                                        |
 | Hardcoded colors in className                     | `text-brand`, `bg-brand`, etc.                                                                                                               |
-| Storing credentials in SQLite                     | OS keychain via `client.credentials`                                                                                                         |
+| Storing credentials in SQLite                     | OS keychain (AI keys via `credentials` module; board sessions via `boards.*`/`linkedin.*`)                                                   |
 | Reading `AJH_DATA_DIR` / rebuilding `~/.ajh`      | `platform::config::data_dir()`                                                                                                               |
 | Per-page `?` that aborts a partial scrape         | First-page error propagates as `Err`; a later page logs + `break`s, keeping the partial (P10)                                                |
 | `reqwest::Client::new()` / `::builder()`          | `net::http::shared()` or `net::http::build_client()`                                                                                         |
