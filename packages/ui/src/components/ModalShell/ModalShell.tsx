@@ -7,6 +7,26 @@ import { cn } from '../../lib/cn';
 import { transition, variants } from '../../lib/motion';
 import { GlassOverlay } from '../GlassOverlay';
 
+/**
+ * Number of currently-open ModalShells. WebView2 does not reliably composite the
+ * portaled overlay's `backdrop-filter`, so the frosted-glass effect comes from
+ * blurring the in-flow app shell instead (see the `.modal-blur-active` rule in
+ * the app CSS). The class is ref-counted so stacked modals keep the blur until
+ * the last one closes. Toggling a body class keeps this primitive app-agnostic.
+ */
+let openModalCount = 0;
+
+function setModalBlur(active: boolean): void {
+  if (typeof document === 'undefined') return;
+  if (active) {
+    openModalCount += 1;
+    document.body.classList.add('modal-blur-active');
+  } else {
+    openModalCount = Math.max(0, openModalCount - 1);
+    if (openModalCount === 0) document.body.classList.remove('modal-blur-active');
+  }
+}
+
 export interface ModalShellProps {
   open: boolean;
   onClose: () => void;
@@ -50,9 +70,16 @@ export function ModalShell({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  // The blur + dim behind the modal comes from GlassOverlay (fixed-overlay
-  // backdrop-blur), which only composites the area behind it — far cheaper than
-  // filtering the whole app subtree, so we no longer toggle a body attribute.
+  // Frost the app shell behind the modal. GlassOverlay supplies the dim scrim,
+  // but its `backdrop-filter` blur is unreliable across WebView2 portal stacking
+  // contexts, so the actual blur is an in-flow `filter` on the app shell driven
+  // by this body class (see `.modal-blur-active` in the app CSS). Ref-counted via
+  // `setModalBlur` so stacked modals don't clear it early.
+  useEffect(() => {
+    if (!open) return;
+    setModalBlur(true);
+    return () => setModalBlur(false);
+  }, [open]);
 
   return createPortal(
     <AnimatePresence>

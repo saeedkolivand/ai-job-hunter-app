@@ -483,6 +483,7 @@
       "install": "Neu starten & installieren",
       "error": "Prüfung fehlgeschlagen",
       "whatsNew": "Neu in",
+      "changesSince": "Änderungen seit v{{version}}",
       "downloadFromGitHub": "Von GitHub herunterladen",
       "viewChangelog": "Änderungsprotokoll anzeigen",
       "hideChangelog": "Änderungsprotokoll ausblenden",

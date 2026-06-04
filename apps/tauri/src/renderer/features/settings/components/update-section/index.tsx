@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 
+import { compareSemver } from '@ajh/shared';
 import { Button, cn, MarkdownMessage, RefreshButton, SettingsSection } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
@@ -39,8 +40,27 @@ export function UpdateSection() {
   const { status, check, download, install } = useUpdater();
   const openExternal = useOpenExternal();
   const [showChangelog, setShowChangelog] = useState(false);
-  const changelog = useChangelog(showChangelog);
   const currentVersion = String(versionRaw).replace(/^v/, '');
+
+  // An update is in flight (available, downloading, or staged). While it is, we
+  // surface the *accumulated* notes — not just the latest tag — so a user several
+  // versions behind sees everything they're about to get.
+  const updateInProgress =
+    status.state === 'available' || status.state === 'downloading' || status.state === 'downloaded';
+
+  // Fetch the release history as soon as an update is in flight (not only when the
+  // user expands "View changelog") so the "What's new" box can aggregate it.
+  const changelog = useChangelog(showChangelog || updateInProgress);
+
+  // Every stable release strictly newer than the installed version — i.e. the set
+  // of changes this update actually delivers. `releases` is newest-first; the
+  // newest is the available version, so a `> currentVersion` filter is the range.
+  const pendingReleases =
+    updateInProgress && currentVersion
+      ? (changelog.data?.releases ?? []).filter(
+          (r) => !r.prerelease && r.body && compareSemver(r.version, currentVersion) > 0
+        )
+      : [];
 
   const noRelease = status.state === 'error' && isNoReleaseError(status.message);
   const GITHUB_RELEASES_URL =
@@ -114,22 +134,40 @@ export function UpdateSection() {
         </div>
       )}
 
-      {/* What's new in the available update */}
-      {(status.state === 'available' ||
-        status.state === 'downloading' ||
-        status.state === 'downloaded') &&
-        'releaseNotes' in status &&
-        status.releaseNotes && (
+      {/* What's new in the available update — every release since the installed
+          version, falling back to the latest tag's note when the history is
+          unavailable (offline / GitHub error / version unknown). */}
+      {updateInProgress &&
+        (pendingReleases.length > 0 || ('releaseNotes' in status && status.releaseNotes)) && (
           <div className="mt-4 space-y-1.5">
             <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">
-              {t('settings.update.whatsNew')} {'version' in status ? status.version : ''}
+              {pendingReleases.length > 0 && currentVersion
+                ? t('settings.update.changesSince', { version: currentVersion })
+                : `${t('settings.update.whatsNew')} ${'version' in status ? status.version : ''}`}
             </div>
-            <div className="max-h-36 overflow-y-auto rounded-lg border border-white/[0.05] bg-white/[0.02] p-3">
-              <MarkdownMessage
-                content={status.releaseNotes}
-                className="text-xs text-foreground/60"
-                onLinkClick={(url) => openExternal.mutate(url)}
-              />
+            <div className="max-h-60 overflow-y-auto rounded-lg border border-white/[0.05] bg-white/[0.02] p-3">
+              {pendingReleases.length > 0 ? (
+                <div className="space-y-3">
+                  {pendingReleases.map((release) => (
+                    <div key={release.version} className="space-y-1">
+                      <span className="font-mono text-xs text-foreground/80">
+                        v{release.version}
+                      </span>
+                      <MarkdownMessage
+                        content={release.body ?? ''}
+                        className="text-xs text-foreground/60"
+                        onLinkClick={(url) => openExternal.mutate(url)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <MarkdownMessage
+                  content={'releaseNotes' in status ? (status.releaseNotes ?? '') : ''}
+                  className="text-xs text-foreground/60"
+                  onLinkClick={(url) => openExternal.mutate(url)}
+                />
+              )}
             </div>
           </div>
         )}
