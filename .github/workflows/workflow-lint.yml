@@ -41,7 +41,7 @@ jobs:
           reporter: github-pr-review
           filter_mode: added
           level: warning
-          fail_on_error: false
+          fail_level: none # advisory; was the deprecated `fail_on_error: false`
 
   zizmor:
     name: 🛡️ zizmor
