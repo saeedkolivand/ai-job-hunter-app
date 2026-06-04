@@ -17,6 +17,9 @@ export const useReferrals = (jobUrl?: string) => {
   return useQuery({
     queryKey: keys.referrals.list(jobUrl),
     queryFn: () => api.referrals.list(jobUrl),
+    // Skip the round-trip for callers without a job URL (e.g. a card whose
+    // generation has no jobUrl) instead of querying for an empty key.
+    enabled: !!jobUrl,
   });
 };
 

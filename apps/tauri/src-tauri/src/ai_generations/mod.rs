@@ -280,6 +280,23 @@ impl AiGenerationStore {
         Ok(())
     }
 
+    /// Delete all generations whose id is in `ids` in a single transaction.
+    /// Returns the number of rows actually deleted.
+    /// Empty input is a no-op that returns `Ok(0)` without touching the DB.
+    pub fn remove_many(&self, ids: &[String]) -> AppResult<usize> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        // Build "?,?,…" placeholders — never interpolate user-supplied ids.
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!("DELETE FROM ai_generations WHERE id IN ({placeholders})");
+        let conn = self.conn.lock();
+        let deleted = conn
+            .execute(&sql, rusqlite::params_from_iter(ids.iter()))
+            .map_err(|e| e.to_string())?;
+        Ok(deleted)
+    }
+
     /// Edit the résumé and/or cover-letter text of an existing row, selected by
     /// `id`. Unlike the per-job merge-upsert ([`save_application`]) this is a
     /// direct overwrite of exactly the provided fields, so a user editing a saved

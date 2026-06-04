@@ -627,15 +627,22 @@
     "resumePlaceholder": "Paste your resume text here…",
     "atsMode": "ATS-safe mode",
     "atsModeHint": "Recommended for ATS submissions — linearizes the two-column layout",
-    "previewPanel": {
-      "tag": "Sample",
-      "disclaimer": "Example output — not generated from your data.",
-      "imagePending": "Template preview will appear here.",
-      "groups": {
-        "template": "Template",
-        "style": "Style",
-        "target": "Document",
-        "quality": "Detail level"
+    "wizard": {
+      "steps": {
+        "0": "What to create",
+        "1": "Template",
+        "2": "Fine-tune"
+      },
+      "back": "Back",
+      "next": "Next",
+      "generate": "Generate",
+      "quality": {
+        "label": "Prompt quality",
+        "full": "Full",
+        "auto": "Auto",
+        "fast": "Fast",
+        "compactWarning": "Fast mode — rewrites and detailed suggestions are reduced for speed.",
+        "fullWarning": "Full mode on a small model may produce incomplete or noisy output."
       }
     },
     "coverLetterStrings": {
@@ -1021,11 +1028,26 @@
       "exportCoverLetter": "Cover Letter",
       "applied": "Applied",
       "openPosting": "Open posting",
-      "delete": "Delete",
       "deleteTitle": "Delete this document?",
       "deleteDescription": "This permanently removes the generated resume and cover letter. This can't be undone.",
       "companyResearch": "Company research",
-      "applicationAnswers": "Application answers"
+      "applicationAnswers": "Application answers",
+      "referralTitle": "Referral requests",
+      "referralCopyDraft": "Copy draft",
+      "referralCopied": "Copied draft to clipboard",
+      "referralMarkSent": "Mark as sent",
+      "referralMarkedSent": "Marked as sent",
+      "referralNoDraft": "No draft yet",
+      "referralChannel": {
+        "email": "Email",
+        "linkedin_message": "LinkedIn message",
+        "connection_note": "Connection note"
+      },
+      "referralStatus": {
+        "draft": "Draft",
+        "sent": "Sent",
+        "replied": "Replied"
+      }
     },
     "relativeTime": {
       "justNow": "Just now",
@@ -1036,7 +1058,16 @@
     "filterPlaceholder": "Search by title or company...",
     "noResults": "No results found",
     "unknownPosition": "Unknown position",
-    "open": "Open"
+    "open": "Open",
+    "select": {
+      "selectAll": "Select all",
+      "selectItem": "Select item",
+      "clear": "Clear selection",
+      "count": "{{count}} selected",
+      "deleteSelected": "Delete selected",
+      "confirmTitle": "Delete selected documents?",
+      "confirmBody": "This will permanently remove {{count}} generated document(s). This can't be undone."
+    }
   },
   "ai": {
     "title": "AI Workspace",

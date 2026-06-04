@@ -612,15 +612,22 @@
     "resumePlaceholder": "Lebenslauftext hier einfügen…",
     "atsMode": "ATS-sicherer Modus",
     "atsModeHint": "Empfohlen für ATS-Bewerbungen — linearisiert das zweispaltige Layout",
-    "previewPanel": {
-      "tag": "Beispiel",
-      "disclaimer": "Beispielausgabe – nicht aus deinen Daten generiert.",
-      "imagePending": "Vorlagenvorschau erscheint hier.",
-      "groups": {
-        "template": "Vorlage",
-        "style": "Stil",
-        "target": "Dokument",
-        "quality": "Detailgrad"
+    "wizard": {
+      "steps": {
+        "0": "Was erstellen",
+        "1": "Vorlage",
+        "2": "Feinabstimmung"
+      },
+      "back": "Zurück",
+      "next": "Weiter",
+      "generate": "Generieren",
+      "quality": {
+        "label": "Prompt-Qualität",
+        "full": "Vollständig",
+        "auto": "Automatisch",
+        "fast": "Schnell",
+        "compactWarning": "Schnellmodus — Umschreibungen und detaillierte Vorschläge werden für Geschwindigkeit reduziert.",
+        "fullWarning": "Vollständiger Modus auf einem kleinen Modell kann unvollständige oder fehlerhafte Ausgaben erzeugen."
       }
     },
     "coverLetterStrings": {
@@ -1006,11 +1013,26 @@
       "exportCoverLetter": "Anschreiben",
       "applied": "Beworben",
       "openPosting": "Anzeige öffnen",
-      "delete": "Löschen",
       "deleteTitle": "Dieses Dokument löschen?",
       "deleteDescription": "Dies entfernt den generierten Lebenslauf und das Anschreiben dauerhaft. Dies kann nicht rückgängig gemacht werden.",
       "companyResearch": "Unternehmensrecherche",
-      "applicationAnswers": "Bewerbungsantworten"
+      "applicationAnswers": "Bewerbungsantworten",
+      "referralTitle": "Empfehlungsanfragen",
+      "referralCopyDraft": "Entwurf kopieren",
+      "referralCopied": "Entwurf in die Zwischenablage kopiert",
+      "referralMarkSent": "Als gesendet markieren",
+      "referralMarkedSent": "Als gesendet markiert",
+      "referralNoDraft": "Noch kein Entwurf",
+      "referralChannel": {
+        "email": "E-Mail",
+        "linkedin_message": "LinkedIn-Nachricht",
+        "connection_note": "Kontaktnotiz"
+      },
+      "referralStatus": {
+        "draft": "Entwurf",
+        "sent": "Gesendet",
+        "replied": "Beantwortet"
+      }
     },
     "relativeTime": {
       "justNow": "Gerade eben",
@@ -1021,7 +1043,16 @@
     "filterPlaceholder": "Nach Titel oder Unternehmen suchen...",
     "noResults": "Keine Ergebnisse gefunden",
     "unknownPosition": "Unbekannte Position",
-    "open": "Öffnen"
+    "open": "Öffnen",
+    "select": {
+      "selectAll": "Alle auswählen",
+      "selectItem": "Element auswählen",
+      "clear": "Auswahl aufheben",
+      "count": "{{count}} ausgewählt",
+      "deleteSelected": "Auswahl löschen",
+      "confirmTitle": "Ausgewählte Dokumente löschen?",
+      "confirmBody": "Dadurch werden {{count}} generierte(s) Dokument(e) dauerhaft entfernt. Dies kann nicht rückgängig gemacht werden."
+    }
   },
   "ai": {
     "title": "KI-Arbeitsbereich",
