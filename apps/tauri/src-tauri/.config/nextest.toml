@@ -1,0 +1,8 @@
+# cargo-nextest configuration — https://nexte.st/book/configuration.html
+
+# CI profile (selected via NEXTEST_PROFILE=ci in ci-pipeline.yml).
+[profile.ci]
+# Retry flaky tests a couple of times before marking them failed.
+retries = 2
+# Report every failure instead of stopping at the first.
+fail-fast = false
