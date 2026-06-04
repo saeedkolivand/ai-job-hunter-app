@@ -752,17 +752,29 @@ fn portrait_multipage_sidebar_renders_once() {
     // page(background:) sidebar technique, so the page-1-only gate must hold here too.
     let model = model_from_resume_text(ATELIER_MULTIPAGE);
     let t = template_style(TemplateId::Portrait);
-    let bytes = render_pdf_with_photo(&model, TypstTemplate::Portrait, &opts_photo(false), Some(&t), None)
-        .expect("render_pdf_with_photo(portrait, multipage) should succeed");
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Portrait,
+        &opts_photo(false),
+        Some(&t),
+        None,
+    )
+    .expect("render_pdf_with_photo(portrait, multipage) should succeed");
     assert!(bytes.starts_with(b"%PDF"));
 
     let page_count = count_pdf_pages(&bytes);
-    assert!(page_count >= 2, "multi-page fixture must produce ≥2 pages; got {page_count}");
+    assert!(
+        page_count >= 2,
+        "multi-page fixture must produce ≥2 pages; got {page_count}"
+    );
 
     let extracted = pdf_extract::extract_text_from_mem(&bytes).expect("pdf-extract");
     let lower = extracted.to_lowercase();
     // Sidebar content present (on page 1) …
-    assert!(lower.contains("grafana"), "sidebar skill missing\n---\n{lower}");
+    assert!(
+        lower.contains("grafana"),
+        "sidebar skill missing\n---\n{lower}"
+    );
     // … and rendered exactly once, not repeated per page.
     assert_eq!(
         lower.matches("grafana").count(),

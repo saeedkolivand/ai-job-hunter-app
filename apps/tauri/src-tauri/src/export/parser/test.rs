@@ -99,7 +99,10 @@ fn thematic_breaks_are_dropped_as_blank() {
 #[test]
 fn em_dash_and_short_runs_are_not_thematic_breaks() {
     // A real em-dash (single glyph) and a 2-char run are content, not breaks.
-    assert!(!matches!(parse_line("\u{2014}", 3, &[]).kind, LineKind::Blank));
+    assert!(!matches!(
+        parse_line("\u{2014}", 3, &[]).kind,
+        LineKind::Blank
+    ));
     assert!(!matches!(parse_line("--", 3, &[]).kind, LineKind::Blank));
     // A dashed bullet keeps its text — only pure marker runs are breaks.
     assert!(!matches!(
