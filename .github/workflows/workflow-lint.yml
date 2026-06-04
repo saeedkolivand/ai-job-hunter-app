@@ -1,0 +1,62 @@
+name: 🧹 Workflow Lint
+
+# ──────────────────────────────────────────────────────────────────────
+# Lints + security-audits the GitHub Actions workflows & composite actions.
+# Runs only when CI config changes. Advisory (never blocks) until tuned —
+# actionlint posts inline; zizmor's findings (e.g. unpinned actions) print
+# to the log and are addressed in the SHA-pinning PR.
+# ──────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write # actionlint inline comments via reviewdog
+
+concurrency:
+  group: workflow-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    name: 🔍 actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: 🔍 actionlint (reviewdog)
+        uses: reviewdog/action-actionlint@v1
+        with:
+          reporter: github-pr-review
+          filter_mode: added
+          level: warning
+          fail_level: none # advisory; was the deprecated `fail_on_error: false`
+
+  zizmor:
+    name: 🛡️ zizmor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: 🐍 Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      # Advisory: prints findings (incl. unpinned actions, injection risks) but
+      # never fails the build yet. SHA-pinning lands in a follow-up PR.
+      - name: 🛡️ Run zizmor
+        run: uvx zizmor .github/workflows .github/actions || true

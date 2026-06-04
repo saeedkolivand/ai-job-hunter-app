@@ -1,0 +1,30 @@
+name: Setup Rust (Tauri)
+description: Install the Rust toolchain, the Linux Tauri system deps, and the shared Rust cache.
+
+inputs:
+  components:
+    description: Comma-separated rustup components (e.g. "clippy, rustfmt").
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: 🦀 Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: ${{ inputs.components }}
+
+    # NOTE: this third-party action internally pins actions/cache/restore@v4
+    # (Node 20), so it emits a deprecation warning we can't fix from here.
+    - name: 🐧 Install Linux Dependencies
+      uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+        version: latest
+
+    - name: 💾 Restore Rust Cache
+      uses: swatinem/rust-cache@v2
+      with:
+        workspaces: apps/tauri/src-tauri
+        cache-on-failure: true
