@@ -29,16 +29,24 @@ fn in_order_sections_are_clean() {
 }
 
 #[test]
-fn interleaved_two_column_is_critical() {
+fn interleaved_two_column_is_warning_not_blocking() {
     let e = expected(&["EXPERIENCE", "SKILLS", "EDUCATION"]);
-    // SKILLS (a sidebar section) surfaces before EXPERIENCE → reading order broken.
+    // SKILLS (a sidebar section) surfaces before EXPERIENCE in extraction order.
+    // That is inherent to a two-column layout (the sidebar is a separate column),
+    // not a defect — so it must be a non-blocking WARNING, never critical. A
+    // critical here made `validate_and_fix` silently re-render single-column,
+    // overriding the user's explicit two-column + ATS-off choice.
     let extracted = "Jane Doe jane@example.com SKILLS rust EXPERIENCE lots of work EDUCATION uni";
     let issues = evaluate(&e, extracted, true, DocumentType::Resume);
     assert!(
+        !has_critical(&issues),
+        "two-column reading order must not block: {issues:?}"
+    );
+    assert!(
         issues
             .iter()
-            .any(|i| i.code == "section_order" && i.severity == Severity::Critical),
-        "interleaved two-column must be critical: {issues:?}"
+            .any(|i| i.code == "section_order" && i.severity == Severity::Warning),
+        "interleaved two-column must surface as a warning: {issues:?}"
     );
 }
 

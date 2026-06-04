@@ -53,11 +53,22 @@ html[data-color-scheme='light'][data-performance-mode='low-memory'] body {
 }
 
 /* ── Modal background blur ───────────────────────────────────────────────── */
-/* The blur + dim behind a modal comes from GlassOverlay's fixed-overlay
-   `backdrop-blur` + `bg-black/40` — which only composites the region behind the
-   overlay rect. We intentionally do NOT `filter: blur` the whole .app-content
-   subtree: that forces a full-subtree re-rasterization every frame of the
-   transition (and while open), which is far more expensive than the overlay. */
+/* The frosted glass behind a modal. GlassOverlay supplies the dim scrim, but
+   WebView2 does not reliably composite its `backdrop-filter` because the overlay
+   is portaled to <body> (outside #root) — in-flow glass surfaces frost fine, the
+   portaled overlay does not. So the blur is an in-flow `filter` on the app shell
+   (#root), the same mechanism that frosts the sidebar. The portal (overlay +
+   panel) lives outside #root and stays sharp. `ModalShell` ref-counts the class.
+   The filter is toggled, never animated, so it costs a single raster while open
+   rather than a per-frame re-rasterization. Skipped in low-memory and
+   reduce-transparency modes, consistent with the rest of the glass system. */
+body.modal-blur-active #root {
+  filter: blur(8px);
+}
+html[data-performance-mode='low-memory'] body.modal-blur-active #root,
+[data-reduce-transparency] body.modal-blur-active #root {
+  filter: none;
+}
 
 /* ── Onboarding glass modal ─────────────────────────────────────────────────── */
 .onboarding-glass-modal {

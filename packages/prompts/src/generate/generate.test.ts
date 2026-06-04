@@ -230,6 +230,11 @@ describe('buildResumeSystemPrompt', () => {
     expect(prompt).toContain('NEVER BREAK THESE RULES');
     expect(prompt.length).toBeLessThan(buildResumeSystemPrompt('technical').length);
   });
+
+  it('forbids dropping work roles in every depth', () => {
+    expect(buildResumeSystemPrompt('ats')).toMatch(/NEVER drop, merge, or omit a work role/i);
+    expect(buildResumeSystemPrompt('ats', 'small')).toMatch(/NEVER omit a work role/i);
+  });
 });
 
 describe('buildResumePrompt', () => {
@@ -248,6 +253,16 @@ describe('buildResumePrompt', () => {
       'ats'
     );
     expect(prompt).toContain('Rewrite entirely');
+  });
+
+  it('keeps every role and drops the old culling instructions', () => {
+    const prompt = buildResumePrompt(RESUME_WITH_LINKS, 'Job ad', META, 'ats');
+    expect(prompt).toContain('Include EVERY role');
+    expect(prompt).toContain('Repeat the block above for EVERY role');
+    // The instructions that told the model to cull roles must be gone.
+    expect(prompt).not.toContain('remove bullets irrelevant');
+    expect(prompt).not.toContain('experience to minimize');
+    expect(prompt).not.toContain('experience items most relevant');
   });
 });
 
