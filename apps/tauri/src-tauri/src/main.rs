@@ -413,6 +413,7 @@ fn main() {
             commands::ai_generations::ai_generations_save,
             commands::ai_generations::ai_generations_update,
             commands::ai_generations::ai_generations_remove,
+            commands::ai_generations::ai_generations_remove_bulk,
             // referrals (manual referral helper)
             commands::referrals::referrals_list,
             commands::referrals::referrals_upsert,

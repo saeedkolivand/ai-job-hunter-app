@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
+import type * as AjhUi from '@ajh/ui';
 
 import type * as Generate from '@/lib/generate';
 import { PERSIST_DEBOUNCE_MS } from '@/lib/generate';
@@ -24,6 +25,18 @@ vi.mock('@/services/use-ai-generations', () => ({
   // don't edit, but the component calls it on render so the mock must provide it.
   useUpdateAiGeneration: () => ({ mutate: mockUpdateMutate, isPending: false }),
 }));
+
+// The card now display-joins referrals and toasts on copy/mark-sent; stub these
+// so it renders without a QueryClient/Notification provider tree.
+vi.mock('@/services/use-referrals/use-referrals', () => ({
+  useReferrals: () => ({ data: [] }),
+  useUpsertReferral: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
+vi.mock('@ajh/ui', async (importOriginal) => {
+  const actual = await importOriginal<typeof AjhUi>();
+  return { ...actual, useNotification: () => vi.fn() };
+});
 
 // Translate to the raw key so assertions don't depend on locale resolution.
 vi.mock('@/lib/i18n', () => ({

@@ -166,6 +166,35 @@ fn save_application_inserts_separate_rows_when_unlinked() {
     );
 }
 
+// ── remove_many tests ─────────────────────────────────────────────────────────
+
+#[test]
+fn remove_many_deletes_subset_and_returns_count() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    store.insert(&record("g1", "")).unwrap();
+    store.insert(&record("g2", "")).unwrap();
+    store.insert(&record("g3", "")).unwrap();
+
+    let deleted = store.remove_many(&["g1".into(), "g3".into()]).unwrap();
+
+    assert_eq!(deleted, 2, "should report 2 deleted rows");
+    let remaining: Vec<_> = store.list().iter().map(|r| r.id.clone()).collect();
+    assert_eq!(remaining, vec!["g2"], "only g2 should remain");
+}
+
+#[test]
+fn remove_many_empty_input_is_noop() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    store.insert(&record("g1", "")).unwrap();
+
+    let deleted = store.remove_many(&[]).unwrap();
+
+    assert_eq!(deleted, 0);
+    assert_eq!(store.list().len(), 1, "row must not be touched");
+}
+
 // ── update_texts tests (F1 edit-before-export) ────────────────────────────────
 
 #[test]

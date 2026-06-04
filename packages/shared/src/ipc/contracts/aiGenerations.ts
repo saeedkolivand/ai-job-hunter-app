@@ -71,6 +71,7 @@ export interface AiGenerationsContract {
   save(req: AiGenerationSaveRequest): Promise<{ id: string; success: boolean }>;
   update(req: AiGenerationUpdateRequest): Promise<void>;
   remove(id: string): Promise<void>;
+  removeBulk(ids: string[]): Promise<void>;
 }
 
 export const AI_GENERATIONS_CHANNELS = {
@@ -78,4 +79,5 @@ export const AI_GENERATIONS_CHANNELS = {
   save: 'aiGenerations:save',
   update: 'aiGenerations:update',
   remove: 'aiGenerations:remove',
+  removeBulk: 'aiGenerations:removeBulk',
 } as const;
