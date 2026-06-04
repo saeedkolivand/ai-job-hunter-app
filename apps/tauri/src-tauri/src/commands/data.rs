@@ -16,6 +16,7 @@ use crate::data_store::DataStore;
 use crate::documents::DocumentStore;
 use crate::job_preferences::JobPreferencesStore;
 use crate::postings::{InteractionRecord, InteractionStore};
+use crate::referrals::ReferralStore;
 
 const BUNDLE_VERSION: u32 = 1;
 
@@ -63,6 +64,9 @@ fn build_bundle(app: &AppHandle) -> Value {
         stores.insert(s.key().to_string(), s.export());
     }
     if let Some(s) = app.try_state::<ContactProfileStore>() {
+        stores.insert(s.key().to_string(), s.export());
+    }
+    if let Some(s) = app.try_state::<ReferralStore>() {
         stores.insert(s.key().to_string(), s.export());
     }
     if let Some(s) = app.try_state::<std::sync::Arc<Mutex<AutopilotStore>>>() {
@@ -178,6 +182,9 @@ pub async fn data_import(app: AppHandle) -> Value {
     }
     if let Some(s) = app.try_state::<ContactProfileStore>() {
         import_into("contactProfile", s.inner());
+    }
+    if let Some(s) = app.try_state::<ReferralStore>() {
+        import_into("referrals", s.inner());
     }
     if let Some(s) = app.try_state::<std::sync::Arc<Mutex<AutopilotStore>>>() {
         let guard = s.lock();

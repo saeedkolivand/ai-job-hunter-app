@@ -20,6 +20,13 @@ Describes the **shape**; the source is authoritative for field-level detail. Use
 - **Job posting / postings** — `jobs/`, `postings/`, `commands/jobs.rs`. The scraped/normalized job representation consumed by matching.
 - **Matching** — `commands/match_resume.rs` (`keywords()`, `keyword_coverage()`, the score model — a weighted blend of semantic similarity + keyword coverage; **read the source for exact weights**). Recommendations: `recommend/`. Cover letters: `cover_letter/` + `commands/cover_letter.rs`.
 
+## Referrals
+
+- **`referrals` store** — `referrals/mod.rs` (L1 domain); full CRUD via `commands/referrals.rs`. Each record captures a contact (name, company, role, relationship) plus a generated or hand-edited referral note in up to three formats (email, LinkedIn message, cold-ask). Local-only — no data leaves the device.
+- **`ReferralModal`** — `apps/tauri/src/renderer/features/autopilot/components/ReferralModal` (or adjacent apply-flow component); surfaced in the autopilot apply flow.
+- **Prompt layer** — `buildReferralPrompt` / `generateReferral` in `packages/prompts`; produces connection-note (≤ 300 chars), email, and LinkedIn-message variants; reuses `streamGenerate`.
+- **Data lifecycle** — wired into `manage_resettable` (full reset) and `commands/data.rs::build_bundle` (export/import). See [ADR-011](decision-records/adr-011-referral-helper-manual-only.md) for the decision to keep entry manual and discard LinkedIn scraping.
+
 ## Automation traits + registries
 
 - **`Scraper`** + **`SCRAPERS`** — `scraping/boards/mod.rs`; `ScraperMode` (Http/Browser); `ScrapeContext` carries a cancellation token + progress/item callbacks.

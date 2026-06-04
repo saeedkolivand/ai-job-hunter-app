@@ -26,6 +26,7 @@ import {
   EmbedRequestSchema,
   HybridSearchRequestSchema,
   MatchResumeRequestSchema,
+  ReferralUpsertSchema,
   ResumeExtractTextSchema,
   ScrapeBoardRequestSchema,
   ScrapeUrlRequestSchema,
@@ -104,6 +105,10 @@ const MODULES: ModuleSpec[] = [
     structs: [
       { rustName: 'ConversationSaveMessageRequest', schema: ConversationSaveMessageSchema },
     ],
+  },
+  {
+    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/referrals.rs',
+    structs: [{ rustName: 'ReferralUpsertRequest', schema: ReferralUpsertSchema }],
   },
 ];
 
