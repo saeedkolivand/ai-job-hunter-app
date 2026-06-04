@@ -42,6 +42,11 @@ jobs:
         language: [javascript-typescript]
 
     steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2
+        with:
+          egress-policy: audit
+
       - name: 📥 Checkout Repository
         uses: actions/checkout@v6
         with:
