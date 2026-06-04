@@ -16,6 +16,7 @@ use crate::job_preferences::JobPreferencesStore;
 use crate::jobs::JobTracker;
 use crate::pipeline::cache::KvCache;
 use crate::postings::{InteractionStore, PostingsCache};
+use crate::referrals::ReferralStore;
 
 // ── Full-reset registry ───────────────────────────────────────────────────────
 //
@@ -75,6 +76,11 @@ impl Resettable for JobPreferencesStore {
 impl Resettable for ContactProfileStore {
     fn reset(&self) {
         let _ = self.clear();
+    }
+}
+impl Resettable for ReferralStore {
+    fn reset(&self) {
+        self.clear_all();
     }
 }
 impl Resettable for KvCache {

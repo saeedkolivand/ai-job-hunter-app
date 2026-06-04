@@ -17,6 +17,7 @@
  * Every method is a jest/vitest spy-friendly async stub. Provide overrides as a
  * deep-partial — only the methods you care about need to be specified.
  */
+import type { ReferralContact, ReferralUpsertRequest } from '@ajh/shared';
 import type { SearchHit } from '@ajh/shared/types';
 
 import type { AppClient } from '../app-client';
@@ -30,6 +31,10 @@ const emptyList = () => Promise.resolve([]) as Promise<never>;
 const unsub = () => () => {};
 
 export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppClient {
+  // In-memory referral store so the renderer/tests can exercise list/upsert/remove
+  // offline without a backend. Scoped per client so each mock starts empty.
+  const referralRows: ReferralContact[] = [];
+
   const base: AppClient = {
     system: {
       health: noop,
@@ -158,6 +163,41 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       signOutAll: noop,
       clearInteractions: noop,
       resetApp: noop,
+    },
+
+    referrals: {
+      list: async (jobUrl?: string) =>
+        jobUrl ? referralRows.filter((r) => r.jobUrl === jobUrl) : [...referralRows],
+      upsert: async (req: ReferralUpsertRequest) => {
+        const now = Date.now();
+        const existing = req.id ? referralRows.find((r) => r.id === req.id) : undefined;
+        const record: ReferralContact = {
+          id: existing?.id ?? req.id ?? `ref-${now}-${Math.random().toString(36).slice(2, 10)}`,
+          jobUrl: req.jobUrl ?? '',
+          companyName: req.companyName ?? '',
+          personName: req.personName ?? '',
+          personRole: req.personRole ?? '',
+          linkedinUrl: req.linkedinUrl ?? '',
+          emailDraft: req.emailDraft ?? '',
+          messageDraft: req.messageDraft ?? '',
+          inviteNoteDraft: req.inviteNoteDraft ?? '',
+          channel: req.channel ?? 'email',
+          status: req.status ?? 'draft',
+          notes: req.notes ?? '',
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+        };
+        if (existing) {
+          referralRows.splice(referralRows.indexOf(existing), 1, record);
+        } else {
+          referralRows.push(record);
+        }
+        return record;
+      },
+      remove: async (id: string) => {
+        const i = referralRows.findIndex((r) => r.id === id);
+        if (i >= 0) referralRows.splice(i, 1);
+      },
     },
 
     updater: {

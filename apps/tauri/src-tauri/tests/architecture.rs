@@ -41,6 +41,7 @@ const L1: &[&str] = &[
     "job_preferences",
     "contact_profile",
     "ai_generations",
+    "referrals",
     "profile_import",
     "model",
     "layout",
@@ -299,6 +300,7 @@ const R3_ALLOW: &[&str] = &[
     "documents/mod.rs",
     "job_preferences/mod.rs",
     "contact_profile/mod.rs",
+    "referrals/mod.rs",
     "jobs/mod.rs",
     "pipeline/cache/mod.rs",
 ];

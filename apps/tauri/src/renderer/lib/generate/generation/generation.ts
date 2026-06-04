@@ -16,6 +16,7 @@ import {
   buildCoverLetterPrompt,
   buildCoverLetterSystemPrompt,
   buildMetadataPrompt,
+  buildReferralPrompt,
   buildResumePrompt,
   buildResumeSystemPrompt,
   buildRewritePrompt,
@@ -24,6 +25,7 @@ import {
   type GenerationMode,
   getLinkMap,
   injectLinksIntoGeneratedText,
+  type ReferralFormat,
   resolveMarket,
   type RewriteDocType,
   validateMetadata,
@@ -467,5 +469,56 @@ export async function rewriteSelection(params: {
     tier
   );
   const raw = await streamGenerate(model, system, user, onToken ?? (() => {}), 0.3, locale, signal);
+  return extractPlainText(raw);
+}
+
+/**
+ * Draft a single manual referral message (F3a) for the SELECTED format only —
+ * one LLM call per format, never all three eagerly. Mirrors
+ * {@link generateApplicationAnswer}: reads the active provider config, computes the
+ * effective prompt tier, builds the grounded referral prompt, and streams through
+ * the shared pipeline — so it works for every provider with zero per-provider code
+ * and adds NO new IPC. The person's details are user-typed (no LinkedIn fetch).
+ * `extractPlainText` strips any stray markdown/thinking the model echoes; the
+ * connection-note ≤300 cap is enforced in the prompt and re-checked by the UI.
+ */
+export async function generateReferral(params: {
+  personName: string;
+  personRole?: string;
+  companyName: string;
+  jobTitle: string;
+  resume: string;
+  format: ReferralFormat;
+  /** Hard char cap for the body (defaults to 300 for connection notes). */
+  charLimit?: number;
+  model: string;
+  /** Message language so it streams in the right locale (default 'en'). */
+  locale?: string;
+  onToken?: (tok: string) => void;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const {
+    personName,
+    personRole,
+    companyName,
+    jobTitle,
+    resume,
+    format,
+    charLimit,
+    model,
+    locale = 'en',
+    onToken,
+    signal,
+  } = params;
+  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
+  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+  const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
+  const tier = effectiveTier(activeModel, activeProvider);
+
+  const { system, user } = buildReferralPrompt(
+    { personName, personRole, companyName, jobTitle, resume, format, charLimit },
+    tier
+  );
+  const raw = await streamGenerate(model, system, user, onToken ?? (() => {}), 0.4, locale, signal);
   return extractPlainText(raw);
 }

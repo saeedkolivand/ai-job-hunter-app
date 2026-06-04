@@ -1,4 +1,4 @@
-import { Loader2, Sparkles, Wand2, X } from 'lucide-react';
+import { Loader2, Sparkles, UserPlus, Wand2, X } from 'lucide-react';
 import { useState } from 'react';
 
 import type { AutopilotFoundJob } from '@ajh/shared';
@@ -10,6 +10,7 @@ import { ThinkingBubble } from '@/features/ai-generate/components/ThinkingBubble
 import { useTranslation } from '@/lib/i18n';
 import { useExtractText, useResolveJobUrl } from '@/services';
 
+import { ReferralModal } from '../ReferralModal';
 import { ApplicationQuestions } from './ApplicationQuestions';
 import { GenerationOutput } from './GenerationOutput';
 import { JobDescriptionPanel } from './JobDescriptionPanel';
@@ -42,6 +43,8 @@ export function ApplyJobModal({ job, resumeText, baseCoverLetter, board, onClose
   const [uploading, setUploading] = useState(false);
   // Opt-in company research — default off, so no extra web/LLM call unless asked.
   const [researchCompany, setResearchCompany] = useState(false);
+  // Manual referral helper (F3a) — opens a side modal for this job.
+  const [referralOpen, setReferralOpen] = useState(false);
 
   // Fetch the description on demand when the board's list scrape omitted it.
   const initialDesc = (job.description ?? '').trim();
@@ -241,8 +244,23 @@ export function ApplyJobModal({ job, resumeText, baseCoverLetter, board, onClose
             jobUrl={job.url}
             board={board}
           />
+
+          {/* Manual referral helper (F3a) — draft a referral ask to someone at the company. */}
+          <Button
+            variant="glass"
+            size="sm"
+            onClick={() => setReferralOpen(true)}
+            className="w-full justify-center"
+          >
+            <UserPlus size={13} />
+            {t('autopilot.referral.open')}
+          </Button>
         </div>
       </div>
+
+      {referralOpen && (
+        <ReferralModal job={job} resume={resume} onClose={() => setReferralOpen(false)} />
+      )}
     </ModalShell>
   );
 }

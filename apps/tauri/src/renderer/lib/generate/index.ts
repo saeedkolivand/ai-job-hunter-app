@@ -3,6 +3,7 @@ export {
   extractMetadata,
   generateApplicationAnswer,
   generateCoverLetter,
+  generateReferral,
   generateResume,
   type GenerationMeta,
   type GenerationMode,
@@ -19,4 +20,9 @@ export { isTwoColumnTemplate, TEMPLATE_IDS, type TemplateId, TEMPLATES } from '.
  */
 export const PERSIST_DEBOUNCE_MS = 800;
 export type { RewriteDocType } from '@ajh/prompts/generate';
-export { LETTER_MARKET_IDS, letterConventions, resolveMarket } from '@ajh/prompts/generate';
+export {
+  CONNECTION_NOTE_LIMIT,
+  LETTER_MARKET_IDS,
+  letterConventions,
+  resolveMarket,
+} from '@ajh/prompts/generate';
