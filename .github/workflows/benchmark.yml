@@ -1,0 +1,76 @@
+name: 📈 Benchmarks (advisory)
+
+# ──────────────────────────────────────────────────────────────────────
+# Tracks export render hot-path performance (request → PDF/DOCX bytes) over
+# time — the most performance-sensitive, user-visible path in the app.
+#   - push to main : record the baseline (history committed to the gh-pages branch)
+#   - pull_request : compare against the baseline; comment on regressions
+# ADVISORY — never fails the build (comment-only) until thresholds are tuned.
+# Self-contained: history lives on gh-pages in this repo; no external dashboard.
+# ──────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/tauri/src-tauri/**'
+      - '.github/workflows/benchmark.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'apps/tauri/src-tauri/**'
+      - '.github/workflows/benchmark.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: 📈 Export render
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      # Commit benchmark history to the gh-pages branch (push-to-main runs only).
+      contents: write
+      # Comment on a PR when a result regresses past the threshold.
+      pull-requests: write
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: 🦀 Setup Rust
+        uses: ./.github/actions/setup-rust
+
+      # criterion's `--output-format bencher` emits the libtest bench format that
+      # github-action-benchmark parses with `tool: cargo`.
+      - name: 📈 Run export benchmarks
+        working-directory: apps/tauri/src-tauri
+        run: cargo bench --bench export_render -- --output-format bencher | tee output.txt
+
+      - name: 📊 Store result & alert on regression (advisory)
+        uses: benchmark-action/github-action-benchmark@52576c92bccf6ac60c8223ec7eb2565637cae9ba # v1.22.1
+        with:
+          name: Export render
+          tool: cargo
+          output-file-path: apps/tauri/src-tauri/output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Commit history to gh-pages only when landing on main; PRs compare only.
+          auto-push: ${{ github.event_name == 'push' }}
+          # PRs: leave a comment when a benchmark regresses past the threshold.
+          comment-on-alert: true
+          alert-threshold: '150%'
+          # Advisory: never fail the job — comment-only until thresholds are tuned.
+          fail-on-alert: false
+          alert-comment-cc-users: '@saeedkolivand'
