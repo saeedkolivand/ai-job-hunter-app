@@ -103,6 +103,94 @@ fn legacy_auto_apply_records_load_and_strip_dead_keys_on_save() {
 }
 
 #[test]
+fn test_u32_field_in_range_rejects_out_of_range_and_non_numeric() {
+    let v = serde_json::json!({
+        "good": 23,
+        "tooBig": 25,
+        "minOk": 59,
+        "minBad": 60,
+        "negative": -1,
+        "text": "9",
+    });
+    // In-range values pass through.
+    assert_eq!(u32_field_in_range(&v, "good", 23), Some(23));
+    assert_eq!(u32_field_in_range(&v, "minOk", 59), Some(59));
+    // Out-of-range / non-numeric / absent → None (falls back to scheduler default).
+    assert_eq!(u32_field_in_range(&v, "tooBig", 23), None);
+    assert_eq!(u32_field_in_range(&v, "minBad", 59), None);
+    assert_eq!(u32_field_in_range(&v, "negative", 23), None);
+    assert_eq!(u32_field_in_range(&v, "text", 23), None);
+    assert_eq!(u32_field_in_range(&v, "missing", 23), None);
+}
+
+#[test]
+fn create_drops_out_of_range_schedule_time_so_scheduler_falls_back() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+
+    // A client that bypassed the Zod range check sends scheduleHour: 25 /
+    // scheduleMinute: 60. Persisting those verbatim would make `local_at`
+    // return None forever → the autopilot is silently never due. Instead the
+    // storage boundary stores None, so the scheduler uses its safe default.
+    let ap = store.create(serde_json::json!({
+        "name": "Out of range",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 50.0 },
+        "schedule": "daily",
+        "scheduleHour": 25,
+        "scheduleMinute": 60,
+    }));
+    assert_eq!(ap.schedule_hour, None, "out-of-range hour is not persisted");
+    assert_eq!(
+        ap.schedule_minute, None,
+        "out-of-range minute is not persisted"
+    );
+
+    // A valid time is kept as-is.
+    let ok = store.create(serde_json::json!({
+        "name": "Valid",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 50.0 },
+        "schedule": "daily",
+        "scheduleHour": 18,
+        "scheduleMinute": 30,
+    }));
+    assert_eq!(ok.schedule_hour, Some(18));
+    assert_eq!(ok.schedule_minute, Some(30));
+}
+
+#[test]
+fn update_rejects_out_of_range_time_while_keeping_null_clear() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let ap = store.create(serde_json::json!({
+        "name": "AP",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 50.0 },
+        "schedule": "daily",
+        "scheduleHour": 10,
+        "scheduleMinute": 15,
+    }));
+
+    // Patching with an out-of-range hour clears it to None rather than poisoning.
+    let patched = store
+        .update(&ap.id, serde_json::json!({ "scheduleHour": 99 }))
+        .unwrap();
+    assert_eq!(patched.schedule_hour, None, "out-of-range patch → None");
+    assert_eq!(patched.schedule_minute, Some(15), "untouched field kept");
+
+    // Explicit null still clears (existing behavior preserved).
+    let cleared = store
+        .update(&ap.id, serde_json::json!({ "scheduleMinute": null }))
+        .unwrap();
+    assert_eq!(cleared.schedule_minute, None, "explicit null clears");
+}
+
+#[test]
 fn test_clear_all_removes_every_autopilot() {
     use tempfile::TempDir;
 

@@ -18,6 +18,10 @@ export interface WizardState {
   coverLetter: string;
   // Step 4 — Schedule
   schedule: AutopilotSchedule;
+  /** Local clock hour (0–23) recurring schedules fire at. Used by daily/twice_daily. */
+  scheduleHour: number;
+  /** Local clock minute (0–59). Used by daily/twice_daily and as "minute past the hour" for hourly. */
+  scheduleMinute: number;
 }
 
 export type SetFn = <K extends keyof WizardState>(k: K, v: WizardState[K]) => void;

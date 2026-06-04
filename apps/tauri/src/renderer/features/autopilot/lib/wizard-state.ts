@@ -21,6 +21,8 @@ export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
     resumeText: '',
     coverLetter: '',
     schedule: 'daily',
+    scheduleHour: 9,
+    scheduleMinute: 0,
   };
 }
 
@@ -40,5 +42,7 @@ export function autopilotToWizardState(ap: Autopilot): WizardState {
     resumeText: ap.resumeText ?? '',
     coverLetter: ap.coverLetter ?? '',
     schedule: ap.schedule,
+    scheduleHour: ap.scheduleHour ?? 9,
+    scheduleMinute: ap.scheduleMinute ?? 0,
   };
 }

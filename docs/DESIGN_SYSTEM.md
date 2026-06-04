@@ -185,6 +185,8 @@ import { Button, Input, GlassCard, Modal } from '@ajh/ui';
 />
 ```
 
+Accepts an optional `id` prop forwarded to the trigger button, enabling a `<label htmlFor>` to associate correctly with the control (label-click activates the dropdown; required for a11y when used inside a field wrapper such as `WizardField`).
+
 #### `LocationInput`
 
 Async geocode lookup with debounce:

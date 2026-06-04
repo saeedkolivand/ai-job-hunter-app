@@ -101,6 +101,50 @@ describe('AutopilotCreateSchema', () => {
       ).not.toThrow();
     }
   });
+
+  it('accepts scheduleHour boundary values 0 and 23', () => {
+    expect(AutopilotCreateSchema.safeParse({ ...valid, scheduleHour: 0 }).success).toBe(true);
+    expect(AutopilotCreateSchema.safeParse({ ...valid, scheduleHour: 23 }).success).toBe(true);
+  });
+
+  it('accepts scheduleMinute boundary values 0 and 59', () => {
+    expect(AutopilotCreateSchema.safeParse({ ...valid, scheduleMinute: 0 }).success).toBe(true);
+    expect(AutopilotCreateSchema.safeParse({ ...valid, scheduleMinute: 59 }).success).toBe(true);
+  });
+
+  it('accepts a record omitting scheduleHour and scheduleMinute (both optional)', () => {
+    const {
+      scheduleHour: _h,
+      scheduleMinute: _m,
+      ...withoutTime
+    } = {
+      ...valid,
+      scheduleHour: 9,
+      scheduleMinute: 0,
+    };
+    expect(AutopilotCreateSchema.safeParse(withoutTime).success).toBe(true);
+  });
+
+  it('rejects scheduleHour: 24 (out of range)', () => {
+    expect(AutopilotCreateSchema.safeParse({ ...valid, scheduleHour: 24 }).success).toBe(false);
+  });
+
+  it('rejects scheduleHour: -1 (below zero)', () => {
+    expect(AutopilotCreateSchema.safeParse({ ...valid, scheduleHour: -1 }).success).toBe(false);
+  });
+
+  it('rejects scheduleMinute: 60 (out of range)', () => {
+    expect(AutopilotCreateSchema.safeParse({ ...valid, scheduleMinute: 60 }).success).toBe(false);
+  });
+
+  it('rejects scheduleHour: 9.5 (enforces .int())', () => {
+    // A schema that drops .int() would accept 9.5 — this confirms the constraint is present.
+    expect(AutopilotCreateSchema.safeParse({ ...valid, scheduleHour: 9.5 }).success).toBe(false);
+  });
+
+  it('rejects scheduleMinute: -1 (below zero)', () => {
+    expect(AutopilotCreateSchema.safeParse({ ...valid, scheduleMinute: -1 }).success).toBe(false);
+  });
 });
 
 describe('ScrapeBoardRequestSchema', () => {
