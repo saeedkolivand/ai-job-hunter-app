@@ -1,0 +1,19 @@
+# zizmor configuration — https://docs.zizmor.sh/configuration/
+#
+# unpinned-uses policy: require a commit-SHA pin for third-party actions
+# (supply-chain hardening), but allow tag/branch refs for:
+#   - actions/* and github/*    → GitHub-owned, trusted
+#   - dtolnay/rust-toolchain    → the ref name (@stable) selects the toolchain;
+#                                 a SHA pin would break that unless an explicit
+#                                 `toolchain:` input is added
+#   - taiki-e/install-action    → uses a tool-name ref (@cargo-audit) to select
+#                                 what it installs
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        'actions/*': ref-pin
+        'github/*': ref-pin
+        'dtolnay/rust-toolchain': ref-pin
+        'taiki-e/install-action': ref-pin
+        '*': hash-pin
