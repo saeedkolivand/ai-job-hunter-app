@@ -1,0 +1,59 @@
+name: 🛡️ CodeQL
+
+# ──────────────────────────────────────────────────────────────────────
+# Semantic security scanning (free for public repos, zero external auth).
+# Complements security.yml (npm/cargo audit) and ci-pipeline.yml (cargo-deny).
+# Findings post to the Security tab + as PR annotations on changed lines.
+#
+# NOTE: this is the ADVANCED (workflow-based) setup. Do NOT also enable CodeQL
+# "Default setup" in repo Settings — the two conflict.
+#
+# Rust CodeQL support is in beta and needs a cargo build; this workflow covers
+# JS/TS (GA, build-mode: none). Add a `rust` matrix entry later if wanted.
+# ──────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 3 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: 🔍 Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: 🧰 Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - name: 🔬 Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:${{ matrix.language }}'
