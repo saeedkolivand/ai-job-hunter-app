@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "graphify": {
+      "command": "node",
+      "args": ["scripts/graphify-mcp.mjs"]
+    }
+  }
+}

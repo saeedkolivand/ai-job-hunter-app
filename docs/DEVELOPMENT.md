@@ -256,6 +256,27 @@ If a commit is rejected, check the terminal output for the specific lint error. 
 
 ---
 
+## Optional: Knowledge-Graph MCP (graphify)
+
+[graphify](https://pypi.org/project/graphifyy/) builds a queryable knowledge graph of the codebase under `graphify-out/`. It can also run as a local [MCP](https://modelcontextprotocol.io) server, exposing `query` / `explain` / `path` retrieval to AI dev tools (Claude Code, etc.) — usually far cheaper than grepping raw files.
+
+It is **opt-in and per-developer**: the active `.mcp.json` is gitignored (it's your personal MCP config), so nothing is forced on contributors who don't use it. To enable it:
+
+```bash
+# 1. Add the `mcp` dependency to graphify's environment (absent by default)
+uv tool install --with mcp graphifyy
+
+# 2. Build the graph (AST-only — no API cost)
+graphify update .
+
+# 3. Register the server in your own MCP config, then restart your AI tool
+cp .mcp.json.example .mcp.json
+```
+
+The committed `scripts/graphify-mcp.mjs` launcher resolves your machine's interpreter at runtime, so no local path is ever committed. Skip this entirely if you don't use graphify — nothing else depends on it.
+
+---
+
 ## Common Issues
 
 ### "cargo: command not found"
