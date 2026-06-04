@@ -50,19 +50,8 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: 📦 Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 11.1.3
-
-      - name: 🟢 Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: 📥 Install Dependencies
-        run: pnpm install --frozen-lockfile
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: 🐶 Setup reviewdog
         uses: reviewdog/action-setup@v1
@@ -117,22 +106,10 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: 🦀 Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: 🦀 Setup Rust (Tauri)
+        uses: ./.github/actions/setup-rust
         with:
           components: clippy
-
-      - name: 🐧 Install Linux Dependencies
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-          version: latest
-
-      - name: 💾 Restore Rust Cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: apps/tauri/src-tauri
-          cache-on-failure: true
 
       - name: 💬 Clippy → reviewdog
         uses: giraffate/clippy-action@v1
