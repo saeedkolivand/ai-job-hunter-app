@@ -16,7 +16,7 @@ export default defineConfig({
     ],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'text-summary', 'json', 'html'],
+      reporter: ['text', 'text-summary', 'json', 'json-summary', 'html'],
       reportsDirectory: './coverage',
       include: [
         'packages/shared/src/**/*.ts',

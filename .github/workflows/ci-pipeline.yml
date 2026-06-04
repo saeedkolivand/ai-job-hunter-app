@@ -369,6 +369,9 @@ jobs:
     timeout-minutes: 25
     needs: [changes, dependencies]
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.rust == 'true'
+    permissions:
+      contents: read
+      pull-requests: write # post the JS coverage PR comment
 
     steps:
       - name: 🛡️ Harden Runner
@@ -473,6 +476,14 @@ jobs:
               echo "_Coverage report not generated._"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Post the JS coverage as a PR comment (per-file + totals), replacing what
+      # Codecov would have shown — fully in-Actions. Advisory: fork PRs get a
+      # read-only token so the comment can't post (that's fine).
+      - name: 📊 JS Coverage PR Comment
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: davelosert/vitest-coverage-report-action@02f3c2e641286b7fa308cd3e430783103ce6103b # v2.12.0
 
       # cargo-llvm-cov collects coverage; cargo-nextest is the test runner
       # (parallel, flaky-retry, faster, clearer output). `cargo llvm-cov nextest`
