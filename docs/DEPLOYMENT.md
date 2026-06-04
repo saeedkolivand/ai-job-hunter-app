@@ -137,6 +137,16 @@ graph LR
 
 > Manual dispatch is for **rebuilding an existing tag** (e.g. a runner flaked, or you want to re-attach assets) — it does not create a new release. Leave the version blank for the latest tag, or pass one like `0.62.0`.
 
+### Pull-request checks & review
+
+PRs to `main` run three layers (all under [`.github/workflows/`](../.github/workflows/)):
+
+- **Gating** — `ci-pipeline.yml` (lint, type-check, tests, build, Rust quality + architecture R1–R8, `cargo-deny`, dependency-review). The only layer that blocks merge.
+- **Advisory inline review — free, no secrets, `GITHUB_TOKEN` only** — `pr-review.yml` posts ESLint + Clippy as inline comments via reviewdog and runs `dangerfile.ts` (deterministic PR rules — owner hint, missing-test, security/IPC reminders, hygiene — reusing `.claude/review-routes.json`); `codeql.yml` adds JS/TS security scanning (Security tab + PR annotations). Never blocks.
+- **On-demand AI review** — comment `@claude review` on a PR (repo owner only) to run `claude-review.yml`, which reviews the changed files as the routed `.claude/agents` owner. Requires the `CLAUDE_CODE_OAUTH_TOKEN` repo secret (from `claude setup-token`); do **not** also set `ANTHROPIC_API_KEY`.
+
+> Weekly `security.yml` (`npm`/`cargo audit`) runs outside PRs. On public-repo **fork** PRs, reviewdog/Danger can't post inline comments (read-only token) — those PRs still hit the gating layer. CodeQL **Default setup** must stay off; the `codeql.yml` advanced workflow conflicts with it.
+
 ---
 
 ## Auto-Update
