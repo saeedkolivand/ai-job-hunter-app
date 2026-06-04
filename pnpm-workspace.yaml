@@ -33,6 +33,7 @@ minimumReleaseAgeExclude:
   - '@storybook/react@10.4.2'
   - eslint-plugin-storybook@10.4.2
   - storybook@10.4.2
+  - i18next@26.3.1
 
 # Dependency hoisting settings
 nodeLinker: isolated
