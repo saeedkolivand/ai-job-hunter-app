@@ -1025,7 +1025,23 @@
       "deleteTitle": "Delete this document?",
       "deleteDescription": "This permanently removes the generated resume and cover letter. This can't be undone.",
       "companyResearch": "Company research",
-      "applicationAnswers": "Application answers"
+      "applicationAnswers": "Application answers",
+      "referralTitle": "Referral requests",
+      "referralCopyDraft": "Copy draft",
+      "referralCopied": "Copied draft to clipboard",
+      "referralMarkSent": "Mark as sent",
+      "referralMarkedSent": "Marked as sent",
+      "referralNoDraft": "No draft yet",
+      "referralChannel": {
+        "email": "Email",
+        "linkedin_message": "LinkedIn message",
+        "connection_note": "Connection note"
+      },
+      "referralStatus": {
+        "draft": "Draft",
+        "sent": "Sent",
+        "replied": "Replied"
+      }
     },
     "relativeTime": {
       "justNow": "Just now",

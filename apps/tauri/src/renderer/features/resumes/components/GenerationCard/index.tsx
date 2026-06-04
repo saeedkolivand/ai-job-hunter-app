@@ -10,14 +10,24 @@ import {
   HelpCircle,
   Loader2,
   Search,
+  Send,
   Trash2,
+  UserPlus,
   Wand2,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
-import type { AiGenerationRecord } from '@ajh/shared/ipc';
-import { Button, cn, ConfirmModal, GlassCard, SegmentedControl, transition } from '@ajh/ui';
+import type { AiGenerationRecord, ReferralChannel, ReferralContact } from '@ajh/shared/ipc';
+import {
+  Button,
+  cn,
+  ConfirmModal,
+  GlassCard,
+  SegmentedControl,
+  transition,
+  useNotification,
+} from '@ajh/ui';
 
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import { ExternalLink } from '@/components/ui/ExternalLink';
@@ -32,6 +42,7 @@ import {
 } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 import { useRemoveAiGeneration, useUpdateAiGeneration } from '@/services/use-ai-generations';
+import { useReferrals, useUpsertReferral } from '@/services/use-referrals/use-referrals';
 
 const EXPORT_FORMATS = ['pdf', 'docx', 'txt'] as const;
 type ExportFormat = (typeof EXPORT_FORMATS)[number];
@@ -41,18 +52,29 @@ const TEMPLATE_OPTIONS: { id: TemplateId; label: string }[] = Object.values(TEMP
   label: t.name,
 }));
 
+type SectionKey = 'resume' | 'cover' | 'jobAd' | 'brief' | 'answers' | 'referral';
+
+/** The persisted draft text for a contact depends on the chosen channel. */
+function referralDraft(contact: ReferralContact): string {
+  if (contact.channel === 'email') return contact.emailDraft ?? '';
+  if (contact.channel === 'linkedin_message') return contact.messageDraft ?? '';
+  return contact.inviteNoteDraft ?? '';
+}
+
 interface GenerationCardProps {
   gen: AiGenerationRecord;
 }
 
 export function GenerationCard({ gen }: GenerationCardProps) {
   const { t } = useTranslation();
+  const notify = useNotification();
   const removeAiGeneration = useRemoveAiGeneration();
   const updateAiGeneration = useUpdateAiGeneration();
-  const [expanded, setExpanded] = useState<
-    'resume' | 'cover' | 'jobAd' | 'brief' | 'answers' | null
-  >(null);
+  const referrals = useReferrals(gen.jobUrl);
+  const upsertReferral = useUpsertReferral();
+  const [expanded, setExpanded] = useState<SectionKey | null>(null);
   const [copied, setCopied] = useState<'resume' | 'cover' | null>(null);
+  const [copiedReferral, setCopiedReferral] = useState<string | null>(null);
   const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
   const [exportTemplate, setExportTemplate] = useState<TemplateId>('modern');
   const [exporting, setExporting] = useState<'resume' | 'cover' | null>(null);
@@ -109,6 +131,40 @@ export function GenerationCard({ gen }: GenerationCardProps) {
     setTimeout(() => setCopied(null), 1800);
   };
 
+  const copyReferralDraft = async (contact: ReferralContact) => {
+    const draft = referralDraft(contact);
+    if (!draft) return;
+    await navigator.clipboard.writeText(draft);
+    setCopiedReferral(contact.id);
+    notify(t('resumes.generated.referralCopied'), 'success');
+    setTimeout(() => setCopiedReferral((id) => (id === contact.id ? null : id)), 1800);
+  };
+
+  // Mark a referral as sent. The backend upsert overwrites the whole row by id
+  // (only `created_at` is preserved), so we re-send every field with the status
+  // flipped — passing a partial payload would blank the other columns.
+  const markReferralSent = (contact: ReferralContact) => {
+    upsertReferral.mutate(
+      {
+        id: contact.id,
+        jobUrl: contact.jobUrl,
+        companyName: contact.companyName,
+        personName: contact.personName,
+        personRole: contact.personRole,
+        linkedinUrl: contact.linkedinUrl,
+        emailDraft: contact.emailDraft,
+        messageDraft: contact.messageDraft,
+        inviteNoteDraft: contact.inviteNoteDraft,
+        channel: contact.channel,
+        status: 'sent',
+        notes: contact.notes,
+      },
+      {
+        onSuccess: () => notify(t('resumes.generated.referralMarkedSent'), 'success'),
+      }
+    );
+  };
+
   const meta = {
     candidateName: gen.candidateName,
     jobTitle: gen.jobTitle,
@@ -157,42 +213,50 @@ export function GenerationCard({ gen }: GenerationCardProps) {
     return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
 
+  const channelLabel = (channel: ReferralChannel) =>
+    t(`resumes.generated.referralChannel.${channel}`);
+  const contacts = referrals.data ?? [];
+
   return (
     <>
       <GlassCard tone="graphite" className="rounded-xl overflow-hidden p-0">
-        {/* Header */}
-        <div className="flex items-center gap-4 p-4">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand/10">
-            <Wand2 size={14} className="text-brand-soft" />
+        {/* Header — title / company on top, then meta + badges with room to breathe. */}
+        <div className="flex items-start gap-4 p-5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand/10">
+            <Wand2 size={16} className="text-brand-soft" />
           </div>
 
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 text-sm font-medium text-foreground/90">
-              <span className="truncate">{gen.jobTitle || t('resumes.unknownPosition')}</span>
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="min-w-0">
+              <h3 className="truncate text-[15px] font-semibold leading-tight text-foreground/90">
+                {gen.jobTitle || t('resumes.unknownPosition')}
+              </h3>
               {gen.companyName && (
-                <span className="text-foreground/40 text-xs font-normal shrink-0">
-                  @ {gen.companyName}
-                </span>
+                <p className="mt-1 flex items-center gap-1.5 truncate text-xs text-foreground/55">
+                  <Building2 size={11} className="shrink-0 text-foreground/35" />
+                  {gen.companyName}
+                </p>
               )}
             </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-foreground/50">
+
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-foreground/50">
               {gen.candidateName && <span>{gen.candidateName}</span>}
-              <span className="flex items-center gap-1 text-foreground/35">
-                <Calendar size={10} />
+              <span className="flex items-center gap-1 text-foreground/40">
+                <Calendar size={11} />
                 <span title={formatRelative(gen.createdAt)}>{generatedDate}</span>
               </span>
-              <span className="rounded-full border border-brand/20 bg-brand/8 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-brand-soft">
+              <span className="rounded-full border border-brand/20 bg-brand/8 px-2 py-0.5 text-[9px] uppercase tracking-wider text-brand-soft">
                 {gen.mode}
               </span>
               {gen.board && (
-                <span className="rounded-full border border-white/[0.06] bg-white/[0.03] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-foreground/55">
+                <span className="rounded-full border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 text-[9px] uppercase tracking-wider text-foreground/55">
                   {gen.board}
                 </span>
               )}
               {/* A linked job means this generation was an application — surface the
                 "Applied" state and a link back to the original posting. */}
               {gen.jobUrl && (
-                <span className="flex items-center gap-0.5 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-emerald-300">
+                <span className="flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-0.5 text-[9px] uppercase tracking-wider text-emerald-300">
                   <Check size={9} /> {t('resumes.generated.applied')}
                 </span>
               )}
@@ -200,21 +264,21 @@ export function GenerationCard({ gen }: GenerationCardProps) {
                 <ExternalLink
                   href={gen.jobUrl}
                   title={t('resumes.generated.openPosting')}
-                  className="flex items-center gap-1 text-foreground/35 transition-colors hover:text-brand-soft"
+                  className="flex items-center gap-1 text-foreground/40 transition-colors hover:text-brand-soft"
                 >
-                  <ExternalLinkIcon size={10} /> {t('resumes.generated.openPosting')}
+                  <ExternalLinkIcon size={11} /> {t('resumes.generated.openPosting')}
                 </ExternalLink>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex shrink-0 items-center gap-1.5">
             {resumeDraft && (
               <Button
                 onClick={() => void copy('resume')}
-                className="flex items-center gap-1 rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] text-foreground/60 transition-colors hover:text-foreground h-auto border-transparent"
+                className="flex h-auto items-center gap-1.5 rounded-lg border-transparent bg-white/5 px-3 py-1.5 text-[11px] text-foreground/60 transition-colors hover:text-foreground"
               >
-                <Copy size={10} />
+                <Copy size={11} />
                 {copied === 'resume'
                   ? t('resumes.generated.copied')
                   : t('resumes.generated.copyResume')}
@@ -223,9 +287,9 @@ export function GenerationCard({ gen }: GenerationCardProps) {
             {coverDraft && (
               <Button
                 onClick={() => void copy('cover')}
-                className="flex items-center gap-1 rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] text-foreground/60 transition-colors hover:text-foreground h-auto border-transparent"
+                className="flex h-auto items-center gap-1.5 rounded-lg border-transparent bg-white/5 px-3 py-1.5 text-[11px] text-foreground/60 transition-colors hover:text-foreground"
               >
-                <Copy size={10} />
+                <Copy size={11} />
                 {copied === 'cover'
                   ? t('resumes.generated.copied')
                   : t('resumes.generated.copyCoverLetter')}
@@ -235,52 +299,54 @@ export function GenerationCard({ gen }: GenerationCardProps) {
               onClick={() => setConfirmDelete(true)}
               aria-label={t('resumes.generated.delete')}
               title={t('resumes.generated.delete')}
-              className="flex items-center gap-1 rounded-lg bg-white/5 px-2 py-1.5 text-[11px] text-foreground/40 transition-colors hover:text-red-400 h-auto border-transparent"
+              className="flex h-auto items-center rounded-lg border-transparent bg-white/5 px-2.5 py-1.5 text-foreground/40 transition-colors hover:text-red-400"
             >
-              <Trash2 size={10} />
+              <Trash2 size={11} />
             </Button>
           </div>
         </div>
 
-        {/* Export bar */}
+        {/* Export bar — controls and actions stack onto their own rows so nothing
+            overflows horizontally on a narrow card. */}
         {(resumeDraft || coverDraft) && (
-          <div className="border-t border-white/[0.04] px-4 py-2.5 flex items-center gap-2 flex-wrap">
-            <Download size={11} className="text-foreground/30 shrink-0" />
-            <span className="text-[11px] text-foreground/40 mr-1">
-              {t('resumes.generated.export')}
-            </span>
+          <div className="space-y-3 border-t border-white/[0.04] px-5 py-3.5">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <span className="flex items-center gap-1.5 text-[11px] text-foreground/45">
+                <Download size={12} className="text-foreground/30" />
+                {t('resumes.generated.export')}
+              </span>
 
-            {/* Format picker */}
-            <SegmentedControl<ExportFormat>
-              ariaLabel={t('resumes.generated.format')}
-              size="sm"
-              value={exportFormat}
-              onChange={setExportFormat}
-              options={EXPORT_FORMATS.map((fmt) => ({ value: fmt, label: fmt.toUpperCase() }))}
-            />
-
-            {/* Template picker — only for pdf/docx */}
-            {exportFormat !== 'txt' && (
-              <SegmentedControl<TemplateId>
-                ariaLabel={t('resumes.generated.template')}
+              <SegmentedControl<ExportFormat>
+                ariaLabel={t('resumes.generated.format')}
                 size="sm"
-                value={exportTemplate}
-                onChange={setExportTemplate}
-                options={TEMPLATE_OPTIONS.map(({ id, label }) => ({ value: id, label }))}
+                value={exportFormat}
+                onChange={setExportFormat}
+                options={EXPORT_FORMATS.map((fmt) => ({ value: fmt, label: fmt.toUpperCase() }))}
               />
-            )}
 
-            <div className="flex items-center gap-1 ml-auto">
+              {/* Template picker — only for pdf/docx */}
+              {exportFormat !== 'txt' && (
+                <SegmentedControl<TemplateId>
+                  ariaLabel={t('resumes.generated.template')}
+                  size="sm"
+                  value={exportTemplate}
+                  onChange={setExportTemplate}
+                  options={TEMPLATE_OPTIONS.map(({ id, label }) => ({ value: id, label }))}
+                />
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
               {resumeDraft && (
                 <Button
                   disabled={exporting === 'resume'}
                   onClick={() => void doExport('resume')}
-                  className="flex items-center gap-1 rounded-lg bg-brand/10 border-brand/20 px-2.5 py-1.5 text-[11px] text-brand-soft transition-colors hover:bg-brand/20 h-auto"
+                  className="flex h-auto items-center gap-1.5 rounded-lg border-brand/20 bg-brand/10 px-3 py-1.5 text-[11px] text-brand-soft transition-colors hover:bg-brand/20"
                 >
                   {exporting === 'resume' ? (
-                    <Loader2 size={10} className="animate-spin" />
+                    <Loader2 size={11} className="animate-spin" />
                   ) : (
-                    <Download size={10} />
+                    <Download size={11} />
                   )}
                   {t('resumes.generated.exportResume')}
                 </Button>
@@ -289,12 +355,12 @@ export function GenerationCard({ gen }: GenerationCardProps) {
                 <Button
                   disabled={exporting === 'cover'}
                   onClick={() => void doExport('cover')}
-                  className="flex items-center gap-1 rounded-lg bg-white/5 border-white/[0.06] px-2.5 py-1.5 text-[11px] text-foreground/60 transition-colors hover:text-foreground h-auto"
+                  className="flex h-auto items-center gap-1.5 rounded-lg border-white/[0.06] bg-white/5 px-3 py-1.5 text-[11px] text-foreground/60 transition-colors hover:text-foreground"
                 >
                   {exporting === 'cover' ? (
-                    <Loader2 size={10} className="animate-spin" />
+                    <Loader2 size={11} className="animate-spin" />
                   ) : (
-                    <Download size={10} />
+                    <Download size={11} />
                   )}
                   {t('resumes.generated.exportCoverLetter')}
                 </Button>
@@ -303,13 +369,13 @@ export function GenerationCard({ gen }: GenerationCardProps) {
           </div>
         )}
 
-        {/* Top requirements */}
+        {/* Top requirements — every keyword is shown (wrapping, no hard cutoff). */}
         {gen.topRequirements.length > 0 && (
-          <div className="px-4 pb-3 flex flex-wrap gap-1">
-            {gen.topRequirements.slice(0, 8).map((req) => (
+          <div className="flex flex-wrap gap-1.5 px-5 pb-4">
+            {gen.topRequirements.map((req) => (
               <span
                 key={req}
-                className="rounded-full border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 text-[10px] text-foreground/50"
+                className="rounded-full border border-white/[0.06] bg-white/[0.03] px-2.5 py-1 text-[10px] text-foreground/55"
               >
                 {req}
               </span>
@@ -361,13 +427,13 @@ export function GenerationCard({ gen }: GenerationCardProps) {
               <Button
                 variant="unstyled"
                 onClick={() => setExpanded(expanded === key ? null : key)}
-                className="flex w-full items-center justify-between px-4 py-2.5 text-left text-xs text-foreground/50 hover:text-foreground/70 transition-colors"
+                className="flex w-full items-center justify-between px-5 py-3 text-left text-xs font-medium text-foreground/55 transition-colors hover:text-foreground/80"
               >
-                <span className="flex items-center gap-1.5">
-                  <SectionIcon size={11} /> {label}
+                <span className="flex items-center gap-2">
+                  <SectionIcon size={12} /> {label}
                 </span>
                 <ChevronDown
-                  size={12}
+                  size={13}
                   className={cn('transition-transform', expanded === key && 'rotate-180')}
                 />
               </Button>
@@ -381,18 +447,18 @@ export function GenerationCard({ gen }: GenerationCardProps) {
                     className="overflow-hidden"
                   >
                     {editType && docType ? (
-                      <div className="flex h-72 flex-col px-4 pb-4">
+                      <div className="flex h-72 flex-col px-5 pb-5">
                         <EditableOutput
                           value={text}
                           onChange={(v) => onEdit(editType, v)}
                           docType={docType}
                           meta={meta}
                           className="flex h-full flex-col overflow-hidden"
-                          textAreaClassName="h-full w-full bg-transparent font-mono text-[10px] leading-relaxed text-foreground/60 placeholder:text-foreground/20"
+                          textAreaClassName="h-full w-full bg-transparent font-mono text-[11px] leading-relaxed text-foreground/65 placeholder:text-foreground/20"
                         />
                       </div>
                     ) : (
-                      <pre className="select-text px-4 pb-4 whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-foreground/50 max-h-64 overflow-y-auto">
+                      <pre className="max-h-64 select-text overflow-y-auto whitespace-pre-wrap px-5 pb-5 font-mono text-[11px] leading-relaxed text-foreground/55">
                         {text}
                       </pre>
                     )}
@@ -408,16 +474,16 @@ export function GenerationCard({ gen }: GenerationCardProps) {
             <Button
               variant="unstyled"
               onClick={() => setExpanded(expanded === 'answers' ? null : 'answers')}
-              className="flex w-full items-center justify-between px-4 py-2.5 text-left text-xs text-foreground/50 transition-colors hover:text-foreground/70"
+              className="flex w-full items-center justify-between px-5 py-3 text-left text-xs font-medium text-foreground/55 transition-colors hover:text-foreground/80"
             >
-              <span className="flex items-center gap-1.5">
-                <HelpCircle size={11} /> {t('resumes.generated.applicationAnswers')}
+              <span className="flex items-center gap-2">
+                <HelpCircle size={12} /> {t('resumes.generated.applicationAnswers')}
                 <span className="rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-foreground/45">
                   {gen.applicationAnswers.length}
                 </span>
               </span>
               <ChevronDown
-                size={12}
+                size={13}
                 className={cn('transition-transform', expanded === 'answers' && 'rotate-180')}
               />
             </Button>
@@ -430,15 +496,119 @@ export function GenerationCard({ gen }: GenerationCardProps) {
                   transition={transition.normal}
                   className="overflow-hidden"
                 >
-                  <div className="select-text max-h-72 space-y-3 overflow-y-auto px-4 pb-4">
+                  <div className="max-h-72 select-text space-y-3 overflow-y-auto px-5 pb-5">
                     {gen.applicationAnswers.map((qa) => (
                       <div key={qa.id}>
                         <p className="text-[11px] font-medium text-foreground/70">{qa.question}</p>
-                        <p className="mt-0.5 whitespace-pre-wrap text-[11px] leading-relaxed text-foreground/50">
+                        <p className="mt-0.5 whitespace-pre-wrap text-[11px] leading-relaxed text-foreground/55">
                           {qa.answer}
                         </p>
                       </div>
                     ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
+        {/* Referral requests — these live in their own table keyed by job URL, so
+            we display-join them here by `gen.jobUrl`. Each contact exposes copy
+            and mark-as-sent quick actions. */}
+        {contacts.length > 0 && (
+          <div className="border-t border-white/[0.04]">
+            <Button
+              variant="unstyled"
+              onClick={() => setExpanded(expanded === 'referral' ? null : 'referral')}
+              className="flex w-full items-center justify-between px-5 py-3 text-left text-xs font-medium text-foreground/55 transition-colors hover:text-foreground/80"
+            >
+              <span className="flex items-center gap-2">
+                <UserPlus size={12} /> {t('resumes.generated.referralTitle')}
+                <span className="rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-foreground/45">
+                  {contacts.length}
+                </span>
+              </span>
+              <ChevronDown
+                size={13}
+                className={cn('transition-transform', expanded === 'referral' && 'rotate-180')}
+              />
+            </Button>
+            <AnimatePresence initial={false}>
+              {expanded === 'referral' && (
+                <motion.div
+                  initial={{ height: 0 }}
+                  animate={{ height: 'auto' }}
+                  exit={{ height: 0 }}
+                  transition={transition.normal}
+                  className="overflow-hidden"
+                >
+                  <div className="max-h-80 select-text space-y-2.5 overflow-y-auto px-5 pb-5">
+                    {contacts.map((contact) => {
+                      const draft = referralDraft(contact);
+                      return (
+                        <div
+                          key={contact.id}
+                          className="space-y-2.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3.5 py-3"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-[12px] font-medium text-foreground/85">
+                                {contact.personName}
+                                {contact.personRole ? (
+                                  <span className="font-normal text-foreground/45">
+                                    {' '}
+                                    · {contact.personRole}
+                                  </span>
+                                ) : null}
+                              </p>
+                              <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-foreground/45">
+                                <span>{channelLabel(contact.channel)}</span>
+                                <span className="text-foreground/25">·</span>
+                                <span>
+                                  {t(`resumes.generated.referralStatus.${contact.status}`)}
+                                </span>
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <Button
+                                disabled={!draft}
+                                onClick={() => void copyReferralDraft(contact)}
+                                title={t('resumes.generated.referralCopyDraft')}
+                                className="flex h-auto items-center gap-1.5 rounded-lg border-transparent bg-white/5 px-2.5 py-1.5 text-[10px] text-foreground/60 transition-colors hover:text-foreground"
+                              >
+                                {copiedReferral === contact.id ? (
+                                  <Check size={11} />
+                                ) : (
+                                  <Copy size={11} />
+                                )}
+                                {t('resumes.generated.referralCopyDraft')}
+                              </Button>
+                              {contact.status !== 'sent' && (
+                                <Button
+                                  disabled={upsertReferral.isPending}
+                                  onClick={() => markReferralSent(contact)}
+                                  title={t('resumes.generated.referralMarkSent')}
+                                  className="flex h-auto items-center gap-1.5 rounded-lg border-brand/20 bg-brand/10 px-2.5 py-1.5 text-[10px] text-brand-soft transition-colors hover:bg-brand/20"
+                                >
+                                  <Send size={11} />
+                                  {t('resumes.generated.referralMarkSent')}
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+
+                          {draft ? (
+                            <pre className="max-h-40 select-text overflow-y-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-foreground/55">
+                              {draft}
+                            </pre>
+                          ) : (
+                            <p className="text-[10px] italic text-foreground/35">
+                              {t('resumes.generated.referralNoDraft')}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </motion.div>
               )}

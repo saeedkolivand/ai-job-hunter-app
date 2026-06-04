@@ -1010,7 +1010,23 @@
       "deleteTitle": "Dieses Dokument löschen?",
       "deleteDescription": "Dies entfernt den generierten Lebenslauf und das Anschreiben dauerhaft. Dies kann nicht rückgängig gemacht werden.",
       "companyResearch": "Unternehmensrecherche",
-      "applicationAnswers": "Bewerbungsantworten"
+      "applicationAnswers": "Bewerbungsantworten",
+      "referralTitle": "Empfehlungsanfragen",
+      "referralCopyDraft": "Entwurf kopieren",
+      "referralCopied": "Entwurf in die Zwischenablage kopiert",
+      "referralMarkSent": "Als gesendet markieren",
+      "referralMarkedSent": "Als gesendet markiert",
+      "referralNoDraft": "Noch kein Entwurf",
+      "referralChannel": {
+        "email": "E-Mail",
+        "linkedin_message": "LinkedIn-Nachricht",
+        "connection_note": "Kontaktnotiz"
+      },
+      "referralStatus": {
+        "draft": "Entwurf",
+        "sent": "Gesendet",
+        "replied": "Beantwortet"
+      }
     },
     "relativeTime": {
       "justNow": "Gerade eben",
