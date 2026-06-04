@@ -1,0 +1,27 @@
+name: Setup Node + pnpm
+description: Install pnpm + Node 22 with the pnpm store cache, and optionally run a frozen install.
+
+inputs:
+  install:
+    description: Run `pnpm install --frozen-lockfile`.
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: 📦 Setup pnpm
+      uses: pnpm/action-setup@v6
+      with:
+        version: 11.1.3
+
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v5
+      with:
+        node-version: 22
+        cache: pnpm
+
+    - name: 📥 Install Dependencies
+      if: inputs.install == 'true'
+      shell: bash
+      run: pnpm install --frozen-lockfile
