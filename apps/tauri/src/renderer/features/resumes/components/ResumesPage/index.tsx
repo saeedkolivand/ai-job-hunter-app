@@ -53,7 +53,9 @@ function ResumesPage() {
 
   const handleBulkDelete = () => {
     removeBulk.mutate([...selection], {
-      onSuccess: () => setSelection(new Set()),
+      // Clear regardless of outcome: on error the optimistic cache rolls back,
+      // so the selection must reset too or the count desyncs from the list.
+      onSettled: () => setSelection(new Set()),
     });
     setConfirmBulkDelete(false);
   };

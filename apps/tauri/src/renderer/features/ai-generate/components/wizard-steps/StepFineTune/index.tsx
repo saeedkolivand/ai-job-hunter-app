@@ -159,7 +159,7 @@ export function StepFineTune({
               type="checkbox"
               checked={researchCompany}
               onChange={(e) => onResearchCompanyChange(e.target.checked)}
-              className="mt-0.5 accent-brand"
+              className="mt-0.5 accent-[color:var(--color-brand)]"
             />
             <span className="min-w-0">
               <span className="block text-[11px] font-medium text-foreground/80">

@@ -95,7 +95,7 @@ export function GenerateWizard({
       </div>
 
       {/* Step content */}
-      <div className="flex-1 overflow-y-auto px-8 pb-4">
+      <div className="flex-1 overflow-y-auto px-8 pb-4" aria-live="polite">
         <AnimatePresence mode="wait">
           <motion.div
             key={step}
