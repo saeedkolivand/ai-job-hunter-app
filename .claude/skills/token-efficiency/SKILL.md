@@ -30,6 +30,23 @@ description: Shared context-discipline contract every agent imports — context-
 
 Terse findings only: `SEVERITY · file:line · finding · one-line fix`. No prose essays.
 
+## Spawning implementation agents efficiently
+
+Implementation agents use `general-purpose` (read-write) type and lack the domain reviewers' graphify-first grounding. Cold repo re-exploration is the dominant token cost (~70–122 k per agent). The only lever in this harness is cold-start minimization — `SendMessage` agent-reuse is not available.
+
+**Pattern:**
+
+1. **Pre-harvest** — before spawning, run `graphify query` / `graphify explain` / `graphify path` yourself; collect exact file paths and the relevant function/type signatures. Hand them in the prompt. A pre-harvested spawn costs ~44 tool-uses vs ~120 for cold exploration.
+2. **Graphify-first directive in the prompt** — explicitly tell the spawned agent to run `graphify query "<question>"` before reading any source file. Domain reviewer agents get this from their system prompt; implementation agents do not.
+3. **Fewest + largest vertical-slice spawns** — one agent per full feature slice; avoid spawning separate agents for Rust, TS, and tests when they are the same slice.
+4. **Right-size the model** — reserve large-context / high-reasoning models for ambiguous design decisions; use smaller models for mechanical CRUD, test scaffolding, or renaming tasks.
+5. **Batch domain reviews** — collect all reviewable diffs and send them to domain agents in a single pass, not one per file.
+6. **Thin orchestration** — the orchestrator prepares context and sequences agents; agents execute. Orchestrators must not re-explore what agents will re-explore; agents must not re-explore what the orchestrator already harvested.
+
+**Reference files:** `.claude/skills/graphify/SKILL.md` (query/explain/path commands) · `.claude/agents/` (domain reviewer system prompts as grounding examples).
+
+**Future / not-yet-built — graphify MCP:** A planned enhancement is to expose `graphify query`, `graphify explain`, and `graphify path` as MCP tools so agents call structured graph retrieval instead of shelling out. `graphify --mcp` already starts a stdio MCP server (see the `--mcp` section of `.claude/skills/graphify/SKILL.md`) — the remaining work is wiring it into the Claude Code MCP config so it is always-on for this project. Until then, agents must shell out via `rtk graphify query …`.
+
 ## Lessons
 
 Propose durable lessons as `LESSON · <category> · Context: … · Decision: … · Outcome: …` (≤5 lines). Only `project-steward` persists them.
