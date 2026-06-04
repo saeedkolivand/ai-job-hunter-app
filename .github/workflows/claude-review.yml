@@ -57,21 +57,15 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Token levers: cap the agent loop + use Sonnet for routine reviews.
-          claude_args: --max-turns 6 --model claude-sonnet-4-6
-          prompt: |
-            Review the changes in this pull request. Work efficiently and stay
-            scoped — this runs on a metered subscription quota.
-
-            1. Follow the .claude/skills/token-efficiency contract: read the
-               minimum, stop at ~90% confidence, keep output terse.
-            2. Map the changed files to ONE primary owner using
-               .claude/review-routes.json (first matching primary glob wins) and
-               review ONLY the changed files against that agent's checklist in
-               .claude/agents/.
-            3. Apply the project severity rubric: only HIGH/CRITICAL are blocking
-               (architecture-rule violations; untested error/security paths on
-               changed code; credential/IPC/updater exploits; data loss). Treat
-               LOW/MEDIUM as advisory.
-            4. Post findings as inline review comments on the changed lines. Be
-               advisory only — do NOT approve or block the PR.
+          # Use the official code-review plugin so inline comments actually post.
+          # A bare custom prompt runs in automation mode WITHOUT the comment
+          # tools → Claude's posts get permission-denied ("No buffered inline
+          # comments"). `track_progress` only applies to pull_request/issues
+          # events, not issue_comment, so the plugin is the right path here.
+          # The plugin reads CLAUDE.md for project context; it reports findings
+          # without approving/blocking the PR.
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          plugins: 'code-review@claude-code-plugins'
+          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.issue.number || github.event.pull_request.number }}'
+          # Sonnet + a turn cap for cost control; the plugin manages the review.
+          claude_args: '--model claude-sonnet-4-6 --max-turns 30'
