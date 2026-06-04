@@ -3,10 +3,13 @@ name: 📈 Benchmarks (advisory)
 # ──────────────────────────────────────────────────────────────────────
 # Tracks export render hot-path performance (request → PDF/DOCX bytes) over
 # time — the most performance-sensitive, user-visible path in the app.
-#   - push to main : record the baseline (history committed to the gh-pages branch)
+#   - push to main : record the baseline (history committed to the `benchmarks` branch)
 #   - pull_request : compare against the baseline; comment on regressions
 # ADVISORY — never fails the build (comment-only) until thresholds are tuned.
-# Self-contained: history lives on gh-pages in this repo; no external dashboard.
+# Self-contained: history lives on a dedicated `benchmarks` data branch in this
+# repo; no external dashboard. NOTE: this is NOT the GitHub Pages source — the
+# landing page deploys the `landing/` artifact via pages.yml, so this branch
+# never affects the published site.
 # ──────────────────────────────────────────────────────────────────────
 
 on:
@@ -37,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      # Commit benchmark history to the gh-pages branch (push-to-main runs only).
+      # Commit benchmark history to the `benchmarks` branch (push-to-main runs only).
       contents: write
       # Comment on a PR when a result regresses past the threshold.
       pull-requests: write
@@ -66,7 +69,9 @@ jobs:
           tool: cargo
           output-file-path: apps/tauri/src-tauri/output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          # Commit history to gh-pages only when landing on main; PRs compare only.
+          # Store history on a dedicated data branch (NOT gh-pages — see header note).
+          gh-pages-branch: benchmarks
+          # Commit history only when landing on main; PRs compare against it only.
           auto-push: ${{ github.event_name == 'push' }}
           # PRs: leave a comment when a benchmark regresses past the threshold.
           comment-on-alert: true
