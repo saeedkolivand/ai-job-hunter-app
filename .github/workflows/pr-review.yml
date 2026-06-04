@@ -54,7 +54,7 @@ jobs:
         uses: ./.github/actions/setup-node-pnpm
 
       - name: 🐶 Setup reviewdog
-        uses: reviewdog/action-setup@v1
+        uses: reviewdog/action-setup@d8a7baabd7f3e8544ee4dbde3ee41d0011c3a93f # v1
         with:
           reviewdog_version: latest
 
@@ -112,7 +112,7 @@ jobs:
           components: clippy
 
       - name: 💬 Clippy → reviewdog
-        uses: giraffate/clippy-action@v1
+        uses: giraffate/clippy-action@13b9d32482f25d29ead141b79e7e04e7900281e0 # v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review
