@@ -45,7 +45,7 @@ Implementation agents use `general-purpose` (read-write) type and lack the domai
 
 **Reference files:** `.claude/skills/graphify/SKILL.md` (query/explain/path commands) · `.claude/agents/` (domain reviewer system prompts as grounding examples).
 
-**Future / not-yet-built — graphify MCP:** A planned enhancement is to expose `graphify query`, `graphify explain`, and `graphify path` as MCP tools so agents call structured graph retrieval instead of shelling out. `graphify --mcp` already starts a stdio MCP server (see the `--mcp` section of `.claude/skills/graphify/SKILL.md`) — the remaining work is wiring it into the Claude Code MCP config so it is always-on for this project. Until then, agents must shell out via `rtk graphify query …`.
+**graphify MCP (optional, local-only — not a quick win):** graphify ships a stdio MCP server, but there is **no `graphify --mcp` CLI flag** — it runs as `python -m graphify.serve graphify-out/graph.json` via graphify's bundled interpreter recorded in `graphify-out/.graphify_python`. That interpreter path is **machine-specific and contains a home path**, so it cannot live in a committed `.mcp.json` (portability + path-privacy) — it belongs only in a user/local Claude config. It also mostly benefits the **main session**: spawned sub-agents already reach the graph through Bash (`rtk graphify query …`), so the durable token lever for them stays the graphify-first prompt directive + pre-harvest above, not MCP.
 
 ## Lessons
 
