@@ -81,8 +81,11 @@ export async function exportDOCX(
       throw new Error('Invalid filename provided.');
     }
     if (!TEMPLATES[templateId]) {
-      console.warn(`Template "${templateId}" not found, using "modern" instead.`);
-      templateId = 'modern';
+      // Surface the failure instead of silently swapping in "modern" — a
+      // wrong-template export is indistinguishable from a correct one and hides
+      // the real bug. The Rust deserializer keeps a graceful, logged Classic
+      // fallback as the proper degradation layer if an unknown id ever arrives.
+      throw new Error(`Unknown export template: "${templateId}".`);
     }
 
     const api = getClient();
@@ -135,8 +138,11 @@ export async function exportPDF(
       throw new Error('Invalid filename provided.');
     }
     if (!TEMPLATES[templateId]) {
-      console.warn(`Template "${templateId}" not found, using "modern" instead.`);
-      templateId = 'modern';
+      // Surface the failure instead of silently swapping in "modern" — a
+      // wrong-template export is indistinguishable from a correct one and hides
+      // the real bug. The Rust deserializer keeps a graceful, logged Classic
+      // fallback as the proper degradation layer if an unknown id ever arrives.
+      throw new Error(`Unknown export template: "${templateId}".`);
     }
 
     const api = getClient();

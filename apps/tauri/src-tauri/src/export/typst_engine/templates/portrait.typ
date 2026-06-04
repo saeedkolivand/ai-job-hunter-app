@@ -415,12 +415,18 @@
     height: page-h,
     margin: (top: margin-v, bottom: margin-v, left: 0pt, right: margin-r),
     background: {
-      // Full-height tinted sidebar band.
+      // Full-height tinted sidebar band — drawn on EVERY page for visual continuity.
       place(left + top,
         rect(width: sidebar-w, height: 100%, fill: c-sidebar-bg)
       )
-      // Sidebar content placed over the band, starting at the top margin.
-      place(left + top, dx: sb-pad-l, dy: margin-v, sidebar-inner)
+      // Sidebar content — rendered ONCE, on page 1 only. Drawing it in the page
+      // background would otherwise repeat the whole sidebar on every page of a
+      // multi-page résumé. The band continues; the main column already clears it.
+      context {
+        if counter(page).get().first() == 1 {
+          place(left + top, dx: sb-pad-l, dy: margin-v, sidebar-inner)
+        }
+      }
     },
   )
 

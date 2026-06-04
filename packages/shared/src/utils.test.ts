@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   calculateDownloadSpeed,
   calculateTimeRemaining,
+  compareSemver,
   formatBytes,
   formatDownloadSpeed,
   formatTimeRemaining,
@@ -126,5 +127,44 @@ describe('calculateTimeRemaining', () => {
   it('returns 0 once fully downloaded', () => {
     expect(calculateTimeRemaining(1000, 1000, 100)).toBe(0);
     expect(calculateTimeRemaining(1000, 1200, 100)).toBe(0);
+  });
+});
+
+describe('compareSemver', () => {
+  it('orders by major, then minor, then patch', () => {
+    expect(compareSemver('1.0.0', '2.0.0')).toBeLessThan(0);
+    expect(compareSemver('0.69.0', '0.65.0')).toBeGreaterThan(0);
+    expect(compareSemver('0.65.2', '0.65.10')).toBeLessThan(0);
+  });
+
+  it('returns 0 for equal versions', () => {
+    expect(compareSemver('0.65.0', '0.65.0')).toBe(0);
+  });
+
+  it('tolerates a leading v on either side', () => {
+    expect(compareSemver('v0.69.0', '0.65.0')).toBeGreaterThan(0);
+    expect(compareSemver('0.65.0', 'v0.65.0')).toBe(0);
+  });
+
+  it('ignores prerelease and build suffixes for ordering', () => {
+    expect(compareSemver('0.69.0-beta.1', '0.69.0')).toBe(0);
+    expect(compareSemver('0.69.0+build5', '0.69.0')).toBe(0);
+  });
+
+  it('treats missing or malformed segments as zero', () => {
+    expect(compareSemver('1', '1.0.0')).toBe(0);
+    expect(compareSemver('1.2', '1.2.0')).toBe(0);
+    expect(compareSemver('', '0.0.0')).toBe(0);
+    expect(compareSemver('0.65.x', '0.65.0')).toBe(0);
+  });
+
+  it('sorts an array newest-first when negated', () => {
+    const versions = ['0.65.0', '0.69.0', '0.66.3', '0.66.0'];
+    expect([...versions].sort((a, b) => compareSemver(b, a))).toEqual([
+      '0.69.0',
+      '0.66.3',
+      '0.66.0',
+      '0.65.0',
+    ]);
   });
 });

@@ -25,6 +25,29 @@ use crate::export::types::{DocumentType, LineKind};
 use super::document::{Block, DocumentModel, EntryBlock, HeaderBlock, Section, SectionId};
 use super::rich::tokenize_rich;
 
+/// A short role/headline line (1–6 words, ≤60 chars, no terminal sentence
+/// punctuation) that sits directly after the name/contact and before any
+/// section — the candidate's professional title. Rejects summary prose (long or
+/// ends in punctuation), known section headings, and all-caps banners, so real
+/// content is never mistaken for the title.
+fn is_title_like(text: &str) -> bool {
+    let words = text.split_whitespace().count();
+    if !(1..=6).contains(&words) || text.chars().count() > 60 || text.ends_with(['.', '!', '?']) {
+        return false;
+    }
+    // Never promote a line that classifies as a known (non-Custom) section
+    // heading (e.g. "Skills", "Certifications") — that's section content, not a title.
+    if !matches!(SectionId::from_header(text), SectionId::Custom(_)) {
+        return false;
+    }
+    // Reject all-caps multi-word banners ("KEY HIGHLIGHTS"): a heading, not a title.
+    let alpha: String = text.chars().filter(|c| c.is_alphabetic()).collect();
+    if words >= 2 && !alpha.is_empty() && alpha == alpha.to_uppercase() {
+        return false;
+    }
+    true
+}
+
 /// Push a finished block into the active section, or into the preamble when no
 /// section has started yet (leading content under no heading).
 fn push_block(block: Block, current: &mut Option<Section>, preamble: &mut Vec<Block>) {
@@ -56,6 +79,7 @@ pub fn model_from_resume_text(text: &str) -> DocumentModel {
     let parsed = parse_resume(text);
 
     let mut name: Option<String> = None;
+    let mut title: Option<String> = None;
     let mut contact_parts: Vec<String> = Vec::new();
     let mut seen_section = false;
 
@@ -150,12 +174,27 @@ pub fn model_from_resume_text(text: &str) -> DocumentModel {
             },
 
             LineKind::Text => {
-                flush_entry(&mut entry, &mut current, &mut preamble);
-                push_block(
-                    Block::Paragraph(tokenize_rich(&line.raw)),
-                    &mut current,
-                    &mut preamble,
-                );
+                // Promote a short role line that sits directly after the
+                // name/contact (before any section, as the very first body line)
+                // into the header title slot — that's where every template
+                // renders it (italic, under the name), so it no longer floats as
+                // a redundant stray paragraph above the summary.
+                if !seen_section
+                    && title.is_none()
+                    && name.is_some()
+                    && entry.is_none()
+                    && preamble.is_empty()
+                    && is_title_like(&line.text)
+                {
+                    title = Some(line.text.clone());
+                } else {
+                    flush_entry(&mut entry, &mut current, &mut preamble);
+                    push_block(
+                        Block::Paragraph(tokenize_rich(&line.raw)),
+                        &mut current,
+                        &mut preamble,
+                    );
+                }
             }
         }
     }
@@ -188,7 +227,7 @@ pub fn model_from_resume_text(text: &str) -> DocumentModel {
     let mut model = DocumentModel::new(DocumentType::Resume);
     model.header = HeaderBlock {
         name: name.unwrap_or_default(),
-        title: None,
+        title,
         contact,
     };
     model.sections = sections;
@@ -509,5 +548,71 @@ Principal Engineer | Meridian Systems | 2019 \u{2013} Present
             1,
             "bullet must attach to the entry"
         );
+    }
+
+    /// A short role line directly after the contact is promoted to the header
+    /// title (not a floating paragraph), and a Markdown thematic break between
+    /// the title and the first section is dropped — never rendered as "---".
+    #[test]
+    fn role_line_becomes_header_title_and_breaks_are_dropped() {
+        let resume = "\
+Jane Doe
+jane@example.com
+
+Front-End Engineer
+---
+
+PROFESSIONAL SUMMARY
+Senior Front-End Engineer with 6+ years of experience.
+";
+        let m = model_from_resume_text(resume);
+        assert_eq!(m.header.title.as_deref(), Some("Front-End Engineer"));
+
+        // No body paragraph is a literal thematic break or the bare role line.
+        for s in &m.sections {
+            for b in &s.blocks {
+                if let Block::Paragraph(rt) = b {
+                    let t = flat(rt);
+                    assert_ne!(t, "---", "literal thematic break leaked into body");
+                    assert_ne!(
+                        t, "Front-End Engineer",
+                        "role should be the header title, not a paragraph"
+                    );
+                }
+            }
+        }
+
+        // The real summary section survives; no invented untitled preamble.
+        let summary = m
+            .sections
+            .iter()
+            .find(|s| s.id == SectionId::Summary)
+            .expect("summary section");
+        assert_eq!(summary.heading, "PROFESSIONAL SUMMARY");
+    }
+
+    /// A long leading sentence is prose, not a title — it must NOT be promoted.
+    #[test]
+    fn long_leading_sentence_is_not_promoted_to_title() {
+        // SAMPLE's first preamble line is a full sentence (>6 words, trailing ".").
+        let m = model();
+        assert_eq!(m.header.title, None);
+    }
+
+    /// The hardened heuristic: real titles promote; known section names, all-caps
+    /// banners, and prose are rejected so real content never becomes the title.
+    #[test]
+    fn is_title_like_distinguishes_titles_from_sections_and_prose() {
+        assert!(is_title_like("Front-End Engineer"));
+        assert!(is_title_like("Senior Backend Developer"));
+        // Known section headings (any case) are content, not titles.
+        assert!(!is_title_like("Skills"));
+        assert!(!is_title_like("Certifications"));
+        assert!(!is_title_like("Education"));
+        // An all-caps multi-word banner is a heading, not a title.
+        assert!(!is_title_like("KEY HIGHLIGHTS"));
+        // Prose (terminal punctuation / too long) is never a title.
+        assert!(!is_title_like("A passionate engineer who ships."));
+        assert!(!is_title_like("Lots and lots and lots of words here now"));
     }
 }

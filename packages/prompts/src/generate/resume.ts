@@ -25,6 +25,7 @@ NEVER BREAK THESE RULES:
 3. ONLY add keywords from the job ad when they embed naturally into EXISTING true statements
 4. Every bullet: Action Verb + What + Technology + Measurable Result (if number exists in original)
 5. Every skill, job title, company, date, and achievement MUST come from the original resume
+6. NEVER omit a work role — keep every employer/role from the original; only condense the bullets within each role
 
 REQUIRED SECTION HEADERS (exact spelling):
 Professional Summary · Work Experience · Education · Skills
@@ -53,6 +54,7 @@ HARD CONSTRAINTS (never violate):
 - Use only facts from the candidate's resume — never invent skills, employers, titles, dates, or numbers.
 - Only weave in job-ad keywords where they fit an EXISTING true statement.
 - Every bullet: action verb + what + technology + a measurable result that already exists in the source.
+- Keep every work role from the candidate's resume — never drop or merge roles; only tailor the bullets inside each role.
 
 ACCEPTANCE CHECKS — verify and revise until all pass:
 - Output is the rewritten resume only (no commentary), in the target language, using that market's standard section headers and one consistent date format.
@@ -77,6 +79,7 @@ CORE RULES — NEVER BREAK (violations = instant failure):
 4. Every bullet point must refer to work the candidate actually did
 5. NEVER fabricate numbers - only use metrics if they're in the original or can be reasonably inferred
 6. NEVER add technologies the candidate hasn't used
+7. NEVER drop, merge, or omit a work role — every employer/role in the original resume MUST appear in the output, with its real title and dates; you may only reorder and condense the bullets within each role
 
 ATS OPTIMIZATION RULES (CRITICAL - 40% of success):
 
@@ -252,9 +255,9 @@ Job ad requires: Python, Kubernetes, GCP
 Internally analyse before writing:
 1. Extract the 8–10 most important requirements from the job ad
 2. Map each requirement to the candidate's existing experience
-3. Identify the 2–3 experience items most relevant to this role
+3. For EACH role in <candidate_resume>, identify the bullets most relevant to this job
 4. Note which bullets lack quantification or strong action verbs
-5. List experience to minimize (irrelevant to this role)
+5. Decide a within-role bullet order for every role (most relevant first) — never decide which roles to keep, because every role is kept
 
 Rewriting rules:
 
@@ -265,11 +268,12 @@ Professional Summary (3 sentences max):
 - Include the job title from the ad naturally
 
 Work Experience (most recent first):
-- Reorder bullets: most relevant to this job first
+- Include EVERY role from <candidate_resume> — same employer, title, and dates. Never drop, merge, or summarise away a role, even if it seems less relevant to this job.
+- Within each role, reorder bullets so the most relevant to this job come first
 - Rewrite weak bullets to CAR format: Action Verb + What + Technology (bolded) + Result
 - Embed bolded keywords naturally into EXISTING true statements
-- Compress or remove bullets irrelevant to this role
-- Each role: 3–5 strong bullets max
+- Condense wording within a role, but keep at least one bullet for every role so no role is left empty
+- Aim for 3–5 strong bullets on the most relevant roles; older or less relevant roles may have fewer, but never zero
 
 Skills Section:
 - Order by relevance to this job ad (most relevant first)
@@ -303,6 +307,8 @@ ${conv.headers.experience.toUpperCase()}
 Role Title, Company Name (${conv.dateExample})
 • Bullet using CAR format with **bolded tech**
 • ...
+(blank line)
+Repeat the block above for EVERY role in <candidate_resume>, most recent first — one block per employer/role, none omitted.
 (blank line)
 ${conv.headers.skills.toUpperCase()}
 Category: Skill1, **Skill2**, Skill3

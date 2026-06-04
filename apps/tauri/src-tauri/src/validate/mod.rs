@@ -112,6 +112,18 @@ pub fn validate_and_fix(
     // re-exported single-column (linearized), then re-checked.
     let can_linearize = crate::theme::is_two_column(request.template_id) && !request.ats_mode;
     if has_critical(&issues) && can_linearize {
+        // A downgrade silently changes the user's chosen layout, so it must never
+        // be invisible (the lesson from the silent two-column→single-column bug).
+        let codes: Vec<&str> = issues
+            .iter()
+            .filter(|i| i.severity == Severity::Critical)
+            .map(|i| i.code.as_str())
+            .collect();
+        log::warn!(
+            "export: re-rendering two-column {:?} as single-column because critical issues survived validation: {:?}",
+            request.template_id,
+            codes,
+        );
         request.ats_mode = true;
         bytes = generate(&request)?;
         issues = run_validators(&request, &bytes);
@@ -463,10 +475,16 @@ fn evaluate(
             let out_of_order = positions.windows(2).any(|w| w[1] < w[0]);
             if out_of_order {
                 if two_column {
-                    issues.push(ExportIssue::critical(
+                    // A two-column layout extracting out of source order is inherent
+                    // to the design (the sidebar is a separate column), not a defect
+                    // — so this is advisory, NOT critical. Keeping it critical made
+                    // `validate_and_fix` silently re-render single-column, overriding
+                    // the user's explicit two-column + ATS-off choice. ATS mode is the
+                    // user's control for a guaranteed single-column reading order.
+                    issues.push(ExportIssue::warning(
                         "section_order",
-                        "The two-column layout's sections interleave when read top-to-bottom, \
-                         which ATS parsers misread.",
+                        "This two-column layout can read out of order in strict ATS parsers. \
+                         Enable ATS mode for a single-column, ATS-safe version.",
                     ));
                 } else {
                     issues.push(ExportIssue::warning(

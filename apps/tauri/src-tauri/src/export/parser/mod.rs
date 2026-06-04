@@ -316,6 +316,20 @@ fn is_likely_company_or_role(text: &str) -> bool {
     words.iter().any(|word| COMPANY_KEYWORDS.contains(word))
 }
 
+/// A Markdown thematic break: 3+ identical `-`, `*`, or `_` markers (optionally
+/// separated by spaces) and nothing else — e.g. `---`, `***`, `___`, `- - -`.
+/// The model emits these as section separators, but every template already draws
+/// its own section rules, so a literal break renders as stray "---" text AND
+/// doubles the divider. Recognized here so it can be dropped as a blank line.
+fn is_thematic_break(line: &str) -> bool {
+    let marks: String = line.chars().filter(|c| !c.is_whitespace()).collect();
+    if marks.len() < 3 {
+        return false;
+    }
+    let first = marks.chars().next().unwrap();
+    matches!(first, '-' | '*' | '_') && marks.chars().all(|c| c == first)
+}
+
 /// Parse a single line
 fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
     let trimmed = raw.trim();
@@ -325,6 +339,20 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
 
     // Blank line
     if clean.is_empty() {
+        return ParsedLine {
+            kind: LineKind::Blank,
+            raw: String::new(),
+            text: String::new(),
+            segments: Vec::new(),
+            right_text: None,
+        };
+    }
+
+    // Markdown thematic break (`---`, `***`, `___`): a visual separator, never
+    // content. Dropped as Blank so it doesn't render as a stray "---" paragraph
+    // on top of the template's own section rule. Checked on `trimmed` (not
+    // `clean`, which collapses `***` → `*` via the `**` bold strip).
+    if is_thematic_break(trimmed) {
         return ParsedLine {
             kind: LineKind::Blank,
             raw: String::new(),

@@ -74,14 +74,17 @@ describe('exportDOCX / exportPDF', () => {
     expect(arg.text.startsWith('Dear Hiring Team')).toBe(true);
   });
 
-  it('falls back to the modern template for an unknown id', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('throws on an unknown template id instead of silently falling back', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
     const exportAndSave = vi.fn().mockResolvedValue('/p');
     _registerClient(createMockClient({ documents: { exportAndSave } }));
 
-    await exportDOCX('Body', 'out.docx', 'resume', meta, 'does-not-exist' as never);
-    expect(warn).toHaveBeenCalled();
-    expect(exportAndSave).toHaveBeenCalledWith(expect.objectContaining({ templateId: 'modern' }));
+    // A wrong-template export is indistinguishable from a correct one, so the
+    // unknown id surfaces as an error rather than quietly swapping in "modern".
+    await expect(
+      exportDOCX('Body', 'out.docx', 'resume', meta, 'does-not-exist' as never)
+    ).rejects.toThrow(/Unknown export template/);
+    expect(exportAndSave).not.toHaveBeenCalled();
   });
 
   it('throws on empty content', async () => {
