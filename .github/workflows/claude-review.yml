@@ -57,15 +57,15 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Use the official code-review plugin so inline comments actually post.
-          # A bare custom prompt runs in automation mode WITHOUT the comment
-          # tools → Claude's posts get permission-denied ("No buffered inline
-          # comments"). `track_progress` only applies to pull_request/issues
-          # events, not issue_comment, so the plugin is the right path here.
-          # The plugin reads CLAUDE.md for project context; it reports findings
-          # without approving/blocking the PR.
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.issue.number || github.event.pull_request.number }}'
-          # Sonnet + a turn cap for cost control; the plugin manages the review.
-          claude_args: '--model claude-sonnet-4-6 --max-turns 30'
+          # NO `prompt` on purpose: a prompt forces "automation mode", where the
+          # inline-comment tools are DENIED (cause of the earlier "No buffered
+          # inline comments" + permission_denials). The `@claude review` mention
+          # runs the action in TAG mode, which grants the comment tools — this is
+          # the documented comment-triggered review path.
+          #
+          # `--append-system-prompt` injects our review standards WITHOUT flipping
+          # to automation mode, so the review still uses our agent routing + the
+          # token-efficiency contract while being able to post.
+          claude_args: |
+            --model claude-sonnet-4-6
+            --append-system-prompt "Review this pull request. Map the changed files to their owner in .claude/review-routes.json (first matching primary glob wins), apply that .claude/agents checklist plus the .claude/skills/token-efficiency contract, and review only the changed files. Severity: only HIGH or CRITICAL are blocking (architecture violations; untested error or security paths; credential, IPC, or updater exploits; data loss); treat the rest as advisory. Post findings as inline comments on the changed lines. Be advisory only and do not approve or block the PR."
