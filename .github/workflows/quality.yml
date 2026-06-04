@@ -84,3 +84,58 @@ jobs:
       - name: 🧹 Run knip (advisory)
         continue-on-error: true
         run: pnpm exec knip
+
+  i18n:
+    name: 🌐 i18n Keys
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      # i18next-parser rewrites the locale files from t() usage; a non-empty diff
+      # means missing/unused keys. Advisory: report the drift, then restore.
+      - name: 🌐 Check translation keys (advisory)
+        continue-on-error: true
+        run: |
+          pnpm exec i18next-parser
+          if git diff --quiet -- apps/tauri/src/renderer/i18n/locales; then
+            echo "Locale files are in sync with t() usage."
+          else
+            echo "::warning::i18next-parser would change the locale files (missing/unused keys):"
+            git --no-pager diff -- apps/tauri/src/renderer/i18n/locales
+            git checkout -- apps/tauri/src/renderer/i18n/locales
+          fi
+
+  a11y-lint:
+    name: ♿ a11y Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      # jsx-a11y via a SEPARATE config so the strict main lint is unaffected.
+      - name: ♿ ESLint jsx-a11y (advisory)
+        continue-on-error: true
+        run: pnpm exec eslint --config eslint.a11y.config.mjs 'apps/tauri/src/renderer/**/*.tsx'
