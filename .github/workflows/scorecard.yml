@@ -1,0 +1,59 @@
+name: 🏅 OpenSSF Scorecard
+
+# ──────────────────────────────────────────────────────────────────────
+# Automated security-posture score (branch protection, pinned deps, token
+# permissions, etc.). Self-contained: publish_results=false keeps results out
+# of the public OpenSSF dashboard; findings post to the Security tab (SARIF).
+# ──────────────────────────────────────────────────────────────────────
+
+on:
+  branch_protection_rule:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 5 * * 2'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analysis:
+    name: 🏅 Scorecard analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      security-events: write # upload SARIF to the Security tab
+      contents: read
+
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: 🏅 Run Scorecard
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # Keep results self-contained — do not publish to the public OpenSSF API.
+          publish_results: false
+
+      - name: 📤 Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+          category: scorecard

@@ -1,0 +1,62 @@
+name: 🔬 Semgrep
+
+# ──────────────────────────────────────────────────────────────────────
+# SAST via Semgrep OSS rulesets (no account, no cloud). Complements CodeQL.
+# Advisory: findings post to the Security tab (SARIF); the scan step never
+# fails the build. Runs on PRs, pushes to main, and weekly.
+# ──────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: semgrep-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semgrep:
+    name: 🔬 Semgrep SAST
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: 🐍 Setup uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+
+      # OSS rulesets pulled from the public registry (no login). Advisory: the
+      # scan never fails the job; results surface in the Security tab via SARIF.
+      - name: 🔬 Run Semgrep
+        run: |
+          uvx semgrep scan \
+            --config p/security-audit \
+            --config p/typescript \
+            --config p/react \
+            --sarif --output semgrep.sarif || true
+
+      - name: 📤 Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
