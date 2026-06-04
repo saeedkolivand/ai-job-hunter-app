@@ -1,0 +1,135 @@
+import { FileText } from 'lucide-react';
+
+import { Button, cn } from '@ajh/ui';
+
+import { isTwoColumnTemplate, type TemplateId, TEMPLATES } from '@/lib/generate';
+import { useTranslation } from '@/lib/i18n';
+
+import { TEMPLATE_CAPTIONS, TEMPLATE_PREVIEWS } from '../../../samples';
+
+interface StepTemplateProps {
+  templateId: TemplateId;
+  atsMode: boolean;
+  onTemplateChange: (id: TemplateId) => void;
+  onAtsModeChange: (enabled: boolean) => void;
+}
+
+export function StepTemplate({
+  templateId,
+  atsMode,
+  onTemplateChange,
+  onAtsModeChange,
+}: StepTemplateProps) {
+  const { t } = useTranslation();
+
+  const handleTemplateSelect = (id: TemplateId) => {
+    onTemplateChange(id);
+    // Single-column templates must never have ATS mode on — reset it.
+    if (!isTwoColumnTemplate(id)) {
+      onAtsModeChange(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-sm font-semibold text-foreground/70">{t('aiGenerate.wizard.steps.1')}</p>
+      </div>
+
+      {/* Template thumbnail gallery */}
+      <div className="grid grid-cols-3 gap-3">
+        {Object.values(TEMPLATES).map((tpl) => {
+          const image = TEMPLATE_PREVIEWS[tpl.id];
+          const caption = TEMPLATE_CAPTIONS[tpl.id];
+          const selected = templateId === tpl.id;
+
+          return (
+            <Button
+              key={tpl.id}
+              onClick={() => handleTemplateSelect(tpl.id)}
+              className={cn(
+                'flex flex-col items-start gap-1.5 rounded-xl border p-2 text-left transition-all h-auto',
+                selected
+                  ? 'border-brand/40 bg-brand/8 ring-1 ring-brand/25'
+                  : 'border-white/[0.06] bg-white/[0.02] hover:border-white/10'
+              )}
+            >
+              {/* Thumbnail */}
+              <div className="w-full rounded-lg overflow-hidden bg-white/[0.03] aspect-[3/4] flex items-center justify-center">
+                {image ? (
+                  <img
+                    src={image}
+                    alt={tpl.name}
+                    className="w-full h-full object-cover rounded-lg"
+                  />
+                ) : (
+                  <FileText size={20} className="text-foreground/20" />
+                )}
+              </div>
+
+              {/* Template name */}
+              <span
+                className={cn(
+                  'text-[10px] font-medium leading-tight w-full text-center',
+                  selected ? 'text-foreground/90' : 'text-foreground/50'
+                )}
+              >
+                {tpl.name}
+              </span>
+
+              {caption && (
+                <span className="text-[9px] text-foreground/30 leading-tight w-full text-center line-clamp-1">
+                  {caption}
+                </span>
+              )}
+            </Button>
+          );
+        })}
+      </div>
+
+      {/* ATS safe mode toggle — only relevant for two-column templates */}
+      {isTwoColumnTemplate(templateId) && (
+        <Button
+          variant="unstyled"
+          type="button"
+          role="switch"
+          aria-checked={atsMode}
+          onClick={() => onAtsModeChange(!atsMode)}
+          className={cn(
+            'w-full flex items-center justify-between rounded-xl border px-3 py-2.5 transition-all text-left',
+            atsMode
+              ? 'border-brand/35 bg-brand/8'
+              : 'border-white/[0.05] bg-transparent hover:border-white/[0.08]'
+          )}
+        >
+          <div>
+            <div
+              className={cn(
+                'text-[11px] font-medium',
+                atsMode ? 'text-foreground/90' : 'text-foreground/55'
+              )}
+            >
+              {t('aiGenerate.atsMode')}
+            </div>
+            <div className="text-[10px] text-foreground/35 mt-0.5">
+              {t('aiGenerate.atsModeHint')}
+            </div>
+          </div>
+          <div
+            className={cn(
+              'h-4 w-7 rounded-full transition-colors shrink-0 ml-3 relative',
+              atsMode ? 'bg-brand' : 'bg-white/10'
+            )}
+          >
+            <div
+              className={cn(
+                'absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform',
+                atsMode ? 'translate-x-3.5' : 'translate-x-0.5'
+              )}
+            />
+          </div>
+        </Button>
+      )}
+    </div>
+  );
+}

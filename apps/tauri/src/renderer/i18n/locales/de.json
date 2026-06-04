@@ -612,15 +612,22 @@
     "resumePlaceholder": "Lebenslauftext hier einfügen…",
     "atsMode": "ATS-sicherer Modus",
     "atsModeHint": "Empfohlen für ATS-Bewerbungen — linearisiert das zweispaltige Layout",
-    "previewPanel": {
-      "tag": "Beispiel",
-      "disclaimer": "Beispielausgabe – nicht aus deinen Daten generiert.",
-      "imagePending": "Vorlagenvorschau erscheint hier.",
-      "groups": {
-        "template": "Vorlage",
-        "style": "Stil",
-        "target": "Dokument",
-        "quality": "Detailgrad"
+    "wizard": {
+      "steps": {
+        "0": "Was erstellen",
+        "1": "Vorlage",
+        "2": "Feinabstimmung"
+      },
+      "back": "Zurück",
+      "next": "Weiter",
+      "generate": "Generieren",
+      "quality": {
+        "label": "Prompt-Qualität",
+        "full": "Vollständig",
+        "auto": "Automatisch",
+        "fast": "Schnell",
+        "compactWarning": "Schnellmodus — Umschreibungen und detaillierte Vorschläge werden für Geschwindigkeit reduziert.",
+        "fullWarning": "Vollständiger Modus auf einem kleinen Modell kann unvollständige oder fehlerhafte Ausgaben erzeugen."
       }
     },
     "coverLetterStrings": {
@@ -1006,7 +1013,6 @@
       "exportCoverLetter": "Anschreiben",
       "applied": "Beworben",
       "openPosting": "Anzeige öffnen",
-      "delete": "Löschen",
       "deleteTitle": "Dieses Dokument löschen?",
       "deleteDescription": "Dies entfernt den generierten Lebenslauf und das Anschreiben dauerhaft. Dies kann nicht rückgängig gemacht werden.",
       "companyResearch": "Unternehmensrecherche",

@@ -6,16 +6,15 @@ import { ErrorState } from '@ajh/ui';
 import { ContactPromptModal } from '@/components/contact/ContactPromptModal';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
+import { GenerateWizard } from '@/features/ai-generate/components/GenerateWizard';
 import { LeftPanel } from '@/features/ai-generate/components/LeftPanel';
 import { OutputPanelDone } from '@/features/ai-generate/components/OutputPanelDone';
 import { OutputPanelExtracting } from '@/features/ai-generate/components/OutputPanelExtracting';
 import { OutputPanelGenerating } from '@/features/ai-generate/components/OutputPanelGenerating';
 import { OutputPanelIdle } from '@/features/ai-generate/components/OutputPanelIdle';
-import { OutputPanelPreview } from '@/features/ai-generate/components/OutputPanelPreview';
 import { useFileUpload } from '@/features/ai-generate/hooks/useFileUpload';
 import { useGeneration } from '@/features/ai-generate/hooks/useGeneration';
 import { useStageRotation } from '@/features/ai-generate/hooks/useStageRotation';
-import type { PreviewFocus } from '@/features/ai-generate/samples';
 import {
   buildFilename,
   exportDOCX,
@@ -30,8 +29,6 @@ import { useExtractText } from '@/services';
 import { useSaveAiGeneration } from '@/services/use-ai-generations';
 import { useContactPromptSeen, usePreferencesStore } from '@/store/preferences-store';
 import { useSessionStore } from '@/store/session-store';
-
-type GenTarget = 'resume' | 'cover' | 'both';
 
 export function AIGeneratePage() {
   const { t } = useTranslation();
@@ -54,10 +51,11 @@ export function AIGeneratePage() {
 
   const setResume = (v: string) => setAIGenerate({ resume: v });
   const setJobAd = (v: string) => setAIGenerate({ jobAd: v });
-  const setStage = (v: typeof stage) => setAIGenerate({ stage: v });
+  const setStage = (v: typeof stage) =>
+    setAIGenerate(v === 'configuring' ? { stage: v, wizardStep: 0 } : { stage: v });
   const setMeta = (v: typeof meta) => setAIGenerate({ meta: v });
   const setMode = (v: GenerationMode) => setAIGenerate({ mode: v });
-  const setTarget = (v: GenTarget) => setAIGenerate({ target: v });
+  const setTarget = (v: 'resume' | 'cover' | 'both') => setAIGenerate({ target: v });
   const setTemplateId = (v: TemplateId) => setAIGenerate({ templateId: v });
   const setAtsMode = (v: boolean) => setAIGenerate({ atsMode: v });
   const setLocale = (v: string) => setAIGenerate({ locale: v });
@@ -82,13 +80,6 @@ export function AIGeneratePage() {
   );
   // Opt-in company research for the cover letter — default off (no extra web/LLM call).
   const [researchCompany, setResearchCompany] = useState(false);
-
-  // Which option's illustrative sample the result panel shows while configuring.
-  // Defaults to the selected template (most visual) and follows the last click.
-  const [previewFocus, setPreviewFocus] = useState<PreviewFocus>({
-    group: 'template',
-    id: templateId,
-  });
 
   const selectedModel = useSelectedModel();
   const { canUse: canUseAI, reason: aiReason } = useCanUseAI();
@@ -170,7 +161,6 @@ export function AIGeneratePage() {
     setError(null);
     setStreamBuffer('');
     setThinkingBuffer('');
-    setPreviewFocus({ group: 'template', id: templateId });
     resetAIGenerate();
   };
 
@@ -236,11 +226,7 @@ export function AIGeneratePage() {
           jobAd={jobAd}
           stage={stage}
           meta={meta}
-          mode={mode}
-          target={target}
           templateId={templateId}
-          atsMode={atsMode}
-          locale={locale}
           uploading={uploading}
           uploadError={uploadError}
           canGenerate={canGenerate}
@@ -249,26 +235,39 @@ export function AIGeneratePage() {
           canProceed={canProceed}
           setResume={setResume}
           setJobAd={setJobAd}
-          setMode={setMode}
-          setTarget={setTarget}
           setTemplateId={setTemplateId}
           setAtsMode={setAtsMode}
           setLocale={setLocale}
-          researchCompany={researchCompany}
-          onResearchCompanyChange={setResearchCompany}
           onUpload={handleUpload}
           onReset={reset}
           onAnalyze={handleAnalyze}
-          onGenerate={requestGenerate}
-          isGenerating={isGenerating}
-          onPreviewFocus={setPreviewFocus}
         />
 
         <div className="flex flex-1 flex-col overflow-hidden">
           <AnimatePresence mode="wait">
             {stage === 'idle' && <OutputPanelIdle />}
 
-            {stage === 'configuring' && <OutputPanelPreview key="preview" focus={previewFocus} />}
+            {stage === 'configuring' && (
+              <GenerateWizard
+                key="wizard"
+                mode={mode}
+                target={target}
+                templateId={templateId}
+                atsMode={atsMode}
+                locale={locale}
+                researchCompany={researchCompany}
+                isGenerating={isGenerating}
+                onModeChange={setMode}
+                onTargetChange={setTarget}
+                onTemplateChange={(id) => {
+                  setTemplateId(id);
+                }}
+                onAtsModeChange={setAtsMode}
+                onLocaleChange={setLocale}
+                onResearchCompanyChange={setResearchCompany}
+                onGenerate={requestGenerate}
+              />
+            )}
 
             {stage === 'extracting' && <OutputPanelExtracting stageLabel={stageLabel} />}
 
