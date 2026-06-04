@@ -33,6 +33,7 @@ mod platform;
 mod postings;
 mod profile_import;
 mod recommend;
+mod referrals;
 mod scraping;
 mod theme;
 mod tray;
@@ -225,6 +226,12 @@ fn main() {
                     log::warn!("[setup] contact profile store failed to open (non-fatal): {e}")
                 }
             }
+            match referrals::ReferralStore::open(&data_dir) {
+                Ok(store) => manage_resettable(app, &mut reset_registry, "referrals", store),
+                Err(e) => {
+                    log::warn!("[setup] referrals store failed to open (non-fatal): {e}")
+                }
+            }
             manage_resettable(
                 app,
                 &mut reset_registry,
@@ -406,6 +413,10 @@ fn main() {
             commands::ai_generations::ai_generations_save,
             commands::ai_generations::ai_generations_update,
             commands::ai_generations::ai_generations_remove,
+            // referrals (manual referral helper)
+            commands::referrals::referrals_list,
+            commands::referrals::referrals_upsert,
+            commands::referrals::referrals_remove,
             // profile import
             commands::profile_import::profile_import_from_url,
             // export

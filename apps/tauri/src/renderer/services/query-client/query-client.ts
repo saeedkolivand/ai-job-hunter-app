@@ -61,5 +61,9 @@ export const keys = {
   autopilot: { all: ['autopilot'] as const, detail: (id: string) => ['autopilot', id] as const },
   conversations: { detail: (id: string) => ['conversations', id] as const },
   aiGenerations: { all: ['aiGenerations'] as const },
+  referrals: {
+    all: ['referrals'] as const,
+    list: (jobUrl?: string) => ['referrals', jobUrl ?? null] as const,
+  },
   updater: { changelog: ['updater', 'changelog'] as const },
 } as const;

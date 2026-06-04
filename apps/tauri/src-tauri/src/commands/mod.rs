@@ -18,6 +18,7 @@ pub mod match_resume;
 pub mod pipeline;
 pub mod privacy;
 pub mod profile_import;
+pub mod referrals;
 pub mod resume;
 pub mod scrape;
 pub mod search;

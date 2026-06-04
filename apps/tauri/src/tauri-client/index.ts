@@ -30,6 +30,7 @@ import { jobs } from './namespaces/jobs/index.js';
 import { linkedin } from './namespaces/linkedin/index.js';
 import { match } from './namespaces/match/index.js';
 import { privacy } from './namespaces/privacy/index.js';
+import { referrals } from './namespaces/referrals/index.js';
 import { resume } from './namespaces/resume/index.js';
 import { scrape } from './namespaces/scrape/index.js';
 import { search } from './namespaces/search/index.js';
@@ -55,6 +56,7 @@ export function createTauriInvokeClient(): AppClient {
     linkedin: linkedin as AppClient['linkedin'],
     boards: boards as AppClient['boards'],
     privacy: privacy as AppClient['privacy'],
+    referrals: referrals as AppClient['referrals'],
     updater: updater as AppClient['updater'],
     shortcuts: shortcuts as AppClient['shortcuts'],
     resume: resume as AppClient['resume'],

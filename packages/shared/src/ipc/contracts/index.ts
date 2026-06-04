@@ -32,6 +32,7 @@ import { JOBS_CHANNELS, type JobsContract } from './jobs.js';
 import { LINKEDIN_CHANNELS, type LinkedinContract } from './linkedin.js';
 import { MATCH_CHANNELS, type MatchContract } from './match.js';
 import { PRIVACY_CHANNELS, type PrivacyContract } from './privacy.js';
+import { REFERRALS_CHANNELS, type ReferralsContract } from './referrals.js';
 import { RESUME_CHANNELS, type ResumeContract } from './resume.js';
 import { SCRAPE_CHANNELS, type ScrapeContract } from './scrape.js';
 import { SEARCH_CHANNELS, type SearchContract } from './search.js';
@@ -58,6 +59,7 @@ export interface IpcContract {
   linkedin: LinkedinContract;
   boards: BoardsContract;
   privacy: PrivacyContract;
+  referrals: ReferralsContract;
   resume: ResumeContract;
   support: SupportContract;
   conversations: ConversationsContract;
@@ -86,6 +88,7 @@ export const IPC_CHANNELS = {
   linkedin: LINKEDIN_CHANNELS,
   boards: BOARDS_CHANNELS,
   privacy: PRIVACY_CHANNELS,
+  referrals: REFERRALS_CHANNELS,
   resume: RESUME_CHANNELS,
   support: SUPPORT_CHANNELS,
   conversations: CONVERSATIONS_CHANNELS,
@@ -161,6 +164,14 @@ export { JOBS_CHANNELS, type JobsContract } from './jobs.js';
 export { LINKEDIN_CHANNELS, type LinkedinContract } from './linkedin.js';
 export { MATCH_CHANNELS, type MatchContract } from './match.js';
 export { PRIVACY_CHANNELS, type PrivacyContract } from './privacy.js';
+export {
+  type ReferralChannel,
+  type ReferralContact,
+  REFERRALS_CHANNELS,
+  type ReferralsContract,
+  type ReferralStatus,
+  type ReferralUpsertRequest,
+} from './referrals.js';
 export { RESUME_CHANNELS, type ResumeContract } from './resume.js';
 export { SCRAPE_CHANNELS, type ScrapeContract } from './scrape.js';
 export { SEARCH_CHANNELS, type SearchContract } from './search.js';

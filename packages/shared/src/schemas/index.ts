@@ -194,6 +194,31 @@ export const AiGenerationUpdateSchema = z.object({
 // Note: the `AiGenerationUpdateRequest` type is declared in the aiGenerations IPC
 // contract (single source for that name); this schema validates the same shape.
 
+// Manual referral helper — a locally-stored "referral contact" the user wants to
+// ask for a referral at a target company. Create OR update in one call: an absent
+// `id` inserts a fresh row, a present `id` overwrites that row. Every person
+// detail is entered MANUALLY by the user — there is no LinkedIn scraping or
+// profile fetch; `linkedinUrl` is just an optional free-text field.
+export const ReferralUpsertSchema = z.object({
+  // Absent → insert a new contact; present → overwrite the row with this id.
+  id: z.string().optional(),
+  // The job this referral targets (links to the autopilot found job; indexed).
+  jobUrl: z.string().default(''),
+  companyName: z.string().default(''),
+  personName: z.string().default(''),
+  personRole: z.string().optional(),
+  // Manual free text — NOT fetched/scraped.
+  linkedinUrl: z.string().optional(),
+  emailDraft: z.string().optional(),
+  messageDraft: z.string().optional(),
+  inviteNoteDraft: z.string().optional(),
+  channel: z.enum(['email', 'linkedin_message', 'connection_note']).default('email'),
+  status: z.enum(['draft', 'sent', 'replied']).default('draft'),
+  notes: z.string().optional(),
+});
+// Note: the `ReferralUpsertRequest` type is declared in the referrals IPC
+// contract (single source for that name); this schema validates the same shape.
+
 export const ConversationSaveMessageSchema = z.object({
   conversationId: z.string().default('default'),
   role: z.string().default('user'),

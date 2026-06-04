@@ -704,6 +704,42 @@
         "both": "Both"
       }
     },
+    "referral": {
+      "open": "Ask for a referral",
+      "title": "Ask for a referral",
+      "close": "Close",
+      "privacy": "Stored locally on your device only. You're entering this person's details yourself — nothing is fetched from LinkedIn. Remove anytime. Drafting a message sends this person's name, role, and company to your selected AI provider.",
+      "personName": "Person's name",
+      "personNamePlaceholder": "e.g. Jordan Lee",
+      "personRole": "Their role (optional)",
+      "personRolePlaceholder": "e.g. Engineering Manager",
+      "linkedinUrl": "LinkedIn URL (optional)",
+      "linkedinUrlPlaceholder": "Paste a profile link if you have one",
+      "notes": "Notes (optional)",
+      "notesPlaceholder": "e.g. met at a meetup, mutual contact…",
+      "channel": {
+        "label": "How will you reach out?",
+        "email": "Email",
+        "linkedin_message": "LinkedIn message",
+        "connection_note": "Connection note"
+      },
+      "generate": "Draft message",
+      "generating": "Drafting…",
+      "cancel": "Cancel",
+      "copy": "Copy",
+      "copied": "Copied",
+      "save": "Save",
+      "saved": "Saved",
+      "overLimit": "Over the 300-character limit — trim before saving",
+      "delete": "Delete contact",
+      "status": {
+        "label": "Status",
+        "draft": "Draft",
+        "sent": "Sent",
+        "replied": "Replied"
+      },
+      "savedTitle": "Saved contacts"
+    },
     "loading": "Loading…",
     "empty": {
       "title": "No autopilots yet",

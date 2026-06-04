@@ -22,7 +22,8 @@ L2  Application        pipeline, cover_letter, autopilot, autopilot_scheduler,
                        autopilot_helpers, recommend
 L1  Domain             scraping, extraction, export, documents, jobs, postings,
                        conversations, credentials, job_preferences, ai_generations,
-                       profile_import, model, layout, measure, validate, locale, theme
+                       referrals, profile_import, model, layout, measure, validate,
+                       locale, theme
 L0  Shared infra       error, observability, db, data_store, net, platform, browser
 ```
 
@@ -119,7 +120,7 @@ Extends `docs/PATTERNS.md` §13. No other module may reconstruct these:
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **R1**  | `#[tauri::command]` only under `commands/**`, `export/commands/**`, `updater/mod.rs`                                                        | arch test                              | none after W-2 fix (extraction’s command relocated)                                                                                                                |
 | **R2**  | No Tauri (`tauri::`/`tauri_plugin_*`/`AppHandle`/`.emit(`) in L0/L1/L2 (shell-role files such as `export/commands/**` are exempt, not debt) | arch test                              | `platform/config`, `pipeline`, `cover_letter/{mod,leakage,research}`, `documents`, `conversations`, `autopilot_helpers`, `autopilot_scheduler` — each `TODO(arch)` |
-| **R3**  | `rusqlite::` only in `db.rs`, `error.rs`, and per-domain store `mod.rs`                                                                     | arch test                              | the 8 genuine owners (documents, conversations, jobs, job_preferences, ai_generations, pipeline/cache, db, error)                                                  |
+| **R3**  | `rusqlite::` only in `db.rs`, `error.rs`, and per-domain store `mod.rs`                                                                     | arch test                              | the 9 genuine owners (documents, conversations, jobs, job_preferences, ai_generations, referrals, pipeline/cache, db, error)                                       |
 | **R4**  | `std::env::var` / `AJH_DATA_DIR` only in `platform/**`                                                                                      | arch test                              | `commands/ai_provider/{cli_agent,ollama}` (provider env: `OLLAMA_HOST`, `<AGENT>_BIN`) — `TODO(arch)`                                                              |
 | **R5**  | `reqwest::Client::new/builder` only in `net/http.rs`                                                                                        | arch test                              | none (clean)                                                                                                                                                       |
 | **R6**  | `Result<_, String>` forbidden outside `error.rs` (non-test)                                                                                 | arch test                              | none (clean)                                                                                                                                                       |

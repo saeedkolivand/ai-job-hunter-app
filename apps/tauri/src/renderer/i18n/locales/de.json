@@ -689,6 +689,42 @@
         "both": "Beides"
       }
     },
+    "referral": {
+      "open": "Um eine Empfehlung bitten",
+      "title": "Um eine Empfehlung bitten",
+      "close": "Schließen",
+      "privacy": "Wird nur lokal auf Ihrem Gerät gespeichert. Sie geben die Daten dieser Person selbst ein — nichts wird von LinkedIn abgerufen. Jederzeit entfernbar. Beim Entwerfen einer Nachricht werden Name, Rolle und Unternehmen dieser Person an Ihren ausgewählten KI-Anbieter gesendet.",
+      "personName": "Name der Person",
+      "personNamePlaceholder": "z. B. Jordan Lee",
+      "personRole": "Ihre Rolle (optional)",
+      "personRolePlaceholder": "z. B. Engineering Manager",
+      "linkedinUrl": "LinkedIn-URL (optional)",
+      "linkedinUrlPlaceholder": "Profil-Link einfügen, falls vorhanden",
+      "notes": "Notizen (optional)",
+      "notesPlaceholder": "z. B. bei einem Meetup getroffen, gemeinsamer Kontakt…",
+      "channel": {
+        "label": "Wie nehmen Sie Kontakt auf?",
+        "email": "E-Mail",
+        "linkedin_message": "LinkedIn-Nachricht",
+        "connection_note": "Kontaktanfrage-Notiz"
+      },
+      "generate": "Nachricht entwerfen",
+      "generating": "Wird entworfen…",
+      "cancel": "Abbrechen",
+      "copy": "Kopieren",
+      "copied": "Kopiert",
+      "save": "Speichern",
+      "saved": "Gespeichert",
+      "overLimit": "Über dem 300-Zeichen-Limit — vor dem Speichern kürzen",
+      "delete": "Kontakt löschen",
+      "status": {
+        "label": "Status",
+        "draft": "Entwurf",
+        "sent": "Gesendet",
+        "replied": "Beantwortet"
+      },
+      "savedTitle": "Gespeicherte Kontakte"
+    },
     "loading": "Laden…",
     "empty": {
       "title": "Noch keine Autopilots",
