@@ -1,0 +1,56 @@
+name: 🔦 Lighthouse (advisory)
+
+# ──────────────────────────────────────────────────────────────────────
+# Perf / a11y / best-practices budgets on the renderer, served via the e2e
+# mock entry (pnpm dev:frontend → e2e.html). Self-contained: reports go to a
+# CI artifact (upload target = filesystem), not an external dashboard.
+# Advisory — assertions are "warn" and the run is non-blocking.
+# ──────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lighthouse-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lighthouse:
+    name: 🔦 Lighthouse CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: 🔨 Build Shared Packages
+        run: pnpm build:packages
+
+      - name: 🔦 Run Lighthouse CI (advisory)
+        continue-on-error: true
+        run: pnpm dlx @lhci/cli@latest autorun
+
+      - name: 📊 Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-${{ github.run_id }}
+          path: .lighthouseci/
+          retention-days: 7
+          if-no-files-found: ignore
