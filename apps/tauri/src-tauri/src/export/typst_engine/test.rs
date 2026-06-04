@@ -669,7 +669,7 @@ fn atelier_ats_render_produces_valid_pdf() {
 // in the extracted text — this is the regression guard for F1/F4 (dense
 // sidebar overflow).  A clipped sidebar would cause these assertions to fail.
 #[test]
-fn atelier_multipage_sidebar_repeats() {
+fn atelier_multipage_sidebar_renders_once() {
     let model = model_from_resume_text(ATELIER_MULTIPAGE);
     let bytes = render_pdf(&model, TypstTemplate::Atelier, &opts_atelier(false), None)
         .expect("render_pdf(atelier, multipage) should succeed");
@@ -733,12 +733,41 @@ fn atelier_multipage_sidebar_repeats() {
         );
     }
 
-    // The known skill "Rust" must also appear ≥2 times (sidebar repeats per page).
-    let rust_count = lower.matches("rust").count();
-    assert!(
-        rust_count >= 2,
-        "sidebar skill 'Rust' should appear ≥2 times across pages (sidebar repeats); \
-         found {rust_count} time(s)\n---\n{lower}"
+    // The sidebar now renders ONCE (page 1 only), no longer repeated per page.
+    // A sidebar-only skill ("Grafana" — never appears in a main-column bullet)
+    // must therefore appear exactly once across the whole multi-page document.
+    let grafana_count = lower.matches("grafana").count();
+    assert_eq!(
+        grafana_count, 1,
+        "sidebar skill 'Grafana' must appear exactly once (sidebar renders once, \
+         not repeated per page); found {grafana_count}\n---\n{lower}"
+    );
+}
+
+#[test]
+fn portrait_multipage_sidebar_renders_once() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+
+    // Same multi-page fixture through Portrait (no photo). Portrait uses the same
+    // page(background:) sidebar technique, so the page-1-only gate must hold here too.
+    let model = model_from_resume_text(ATELIER_MULTIPAGE);
+    let t = template_style(TemplateId::Portrait);
+    let bytes = render_pdf_with_photo(&model, TypstTemplate::Portrait, &opts_photo(false), Some(&t), None)
+        .expect("render_pdf_with_photo(portrait, multipage) should succeed");
+    assert!(bytes.starts_with(b"%PDF"));
+
+    let page_count = count_pdf_pages(&bytes);
+    assert!(page_count >= 2, "multi-page fixture must produce ≥2 pages; got {page_count}");
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes).expect("pdf-extract");
+    let lower = extracted.to_lowercase();
+    // Sidebar content present (on page 1) …
+    assert!(lower.contains("grafana"), "sidebar skill missing\n---\n{lower}");
+    // … and rendered exactly once, not repeated per page.
+    assert_eq!(
+        lower.matches("grafana").count(),
+        1,
+        "Portrait sidebar must render once across pages\n---\n{lower}"
     );
 }
 

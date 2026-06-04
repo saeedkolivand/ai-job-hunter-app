@@ -83,6 +83,32 @@ fn test_parse_resume() {
 }
 
 #[test]
+fn thematic_breaks_are_dropped_as_blank() {
+    // Each form the model emits as a section separator must be dropped so it
+    // never renders as stray "---" text doubling the template's own rule.
+    for sep in ["---", "***", "___", "----------", "- - -"] {
+        let line = parse_line(sep, 3, &[]);
+        assert!(
+            matches!(line.kind, LineKind::Blank),
+            "expected Blank for separator {sep:?}, got {:?}",
+            line.kind
+        );
+    }
+}
+
+#[test]
+fn em_dash_and_short_runs_are_not_thematic_breaks() {
+    // A real em-dash (single glyph) and a 2-char run are content, not breaks.
+    assert!(!matches!(parse_line("\u{2014}", 3, &[]).kind, LineKind::Blank));
+    assert!(!matches!(parse_line("--", 3, &[]).kind, LineKind::Blank));
+    // A dashed bullet keeps its text — only pure marker runs are breaks.
+    assert!(!matches!(
+        parse_line("- real bullet", 3, &[]).kind,
+        LineKind::Blank
+    ));
+}
+
+#[test]
 fn sanitize_markdown_strips_stray_emphasis_but_keeps_bold() {
     // The observed symptom: lone asterisks leaked by the model.
     assert_eq!(sanitize_markdown("*React and AWS*"), "React and AWS");
