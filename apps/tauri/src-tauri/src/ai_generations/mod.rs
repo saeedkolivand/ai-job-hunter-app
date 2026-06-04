@@ -292,10 +292,7 @@ impl AiGenerationStore {
         let sql = format!("DELETE FROM ai_generations WHERE id IN ({placeholders})");
         let conn = self.conn.lock();
         let deleted = conn
-            .execute(
-                &sql,
-                rusqlite::params_from_iter(ids.iter()),
-            )
+            .execute(&sql, rusqlite::params_from_iter(ids.iter()))
             .map_err(|e| e.to_string())?;
         Ok(deleted)
     }

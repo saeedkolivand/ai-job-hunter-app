@@ -176,9 +176,7 @@ fn remove_many_deletes_subset_and_returns_count() {
     store.insert(&record("g2", "")).unwrap();
     store.insert(&record("g3", "")).unwrap();
 
-    let deleted = store
-        .remove_many(&["g1".into(), "g3".into()])
-        .unwrap();
+    let deleted = store.remove_many(&["g1".into(), "g3".into()]).unwrap();
 
     assert_eq!(deleted, 2, "should report 2 deleted rows");
     let remaining: Vec<_> = store.list().iter().map(|r| r.id.clone()).collect();
