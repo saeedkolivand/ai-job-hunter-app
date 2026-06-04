@@ -23,6 +23,8 @@ interface SelectDropdownProps {
   placeholder?: string;
   disabled?: boolean;
   icon?: React.ReactNode;
+  /** Forwarded to the trigger button so an external `<label htmlFor>` can name the control. */
+  id?: string;
 }
 
 export function SelectDropdown({
@@ -32,8 +34,10 @@ export function SelectDropdown({
   placeholder = 'Select…',
   disabled,
   icon,
+  id: idProp,
 }: SelectDropdownProps) {
-  const id = useId();
+  const generatedId = useId();
+  const id = idProp ?? generatedId;
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [highlighted, setHighlighted] = useState<number>(-1);
