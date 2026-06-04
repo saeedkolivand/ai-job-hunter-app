@@ -23,6 +23,8 @@ interface AIGenerateSlice {
   resumeOut: string;
   coverOut: string;
   activeOut: 'resume' | 'cover';
+  /** Current step index in the GenerateWizard (0-based). Reset to 0 on resetAIGenerate. */
+  wizardStep: number;
 }
 
 type AnalyzeStage = 'idle' | 'running' | 'done';
@@ -87,6 +89,7 @@ const AI_GENERATE_DEFAULTS: AIGenerateSlice = {
   resumeOut: '',
   coverOut: '',
   activeOut: 'resume',
+  wizardStep: 0,
 };
 
 const ANALYZE_DEFAULTS: AnalyzeSlice = {

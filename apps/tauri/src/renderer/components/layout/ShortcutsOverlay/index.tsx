@@ -21,7 +21,7 @@ const NAVIGATE: Row[] = [
   { keys: ['g', 'g'], labelKey: 'nav.generate' },
   { keys: ['g', 'j'], labelKey: 'nav.jobs' },
   { keys: ['g', 'p'], labelKey: 'nav.autopilot' },
-  { keys: ['g', 'r'], labelKey: 'nav.resumes' },
+  { keys: ['g', 'r'], labelKey: 'nav.documents' },
   { keys: ['g', 'm'], labelKey: 'nav.monitoring' },
   { keys: ['g', 'i'], labelKey: 'nav.ai' },
   { keys: ['g', 's'], labelKey: 'nav.settings' },

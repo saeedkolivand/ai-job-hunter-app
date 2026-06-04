@@ -7,4 +7,5 @@ export const aiGenerations = {
   save: (req: AiGenerationSaveRequest) => invoke('ai_generations_save', { req }),
   update: (req: AiGenerationUpdateRequest) => invoke('ai_generations_update', { req }),
   remove: (id: string) => invoke('ai_generations_remove', { id }),
+  removeBulk: (ids: string[]) => invoke('ai_generations_remove_bulk', { ids }),
 };

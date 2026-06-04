@@ -80,3 +80,25 @@ export const useRemoveAiGeneration = () => {
     onSettled: () => qc.invalidateQueries({ queryKey: keys.aiGenerations.all }),
   });
 };
+
+export const useRemoveAiGenerationsBulk = () => {
+  const api = useAppClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: string[]) => api.aiGenerations.removeBulk(ids),
+    // Optimistic bulk delete: drop all selected cards immediately, restore on failure.
+    onMutate: async (ids) => {
+      await qc.cancelQueries({ queryKey: keys.aiGenerations.all });
+      const previous = qc.getQueryData<AiGenerationRecord[]>(keys.aiGenerations.all);
+      const idSet = new Set(ids);
+      qc.setQueryData<AiGenerationRecord[]>(keys.aiGenerations.all, (old) =>
+        (old ?? []).filter((g) => !idSet.has(g.id))
+      );
+      return { previous };
+    },
+    onError: (_err, _ids, ctx) => {
+      if (ctx?.previous) qc.setQueryData(keys.aiGenerations.all, ctx.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.aiGenerations.all }),
+  });
+};

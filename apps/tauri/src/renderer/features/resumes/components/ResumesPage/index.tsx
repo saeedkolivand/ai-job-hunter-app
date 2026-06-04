@@ -1,8 +1,17 @@
-import { Activity, Mail, RefreshCw, Search, Wand2 } from 'lucide-react';
+import { Activity, Mail, RefreshCw, Search, Trash2, Wand2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
-import { Button, CardSkeleton, cn, EmptyState, Input, stagger, transition } from '@ajh/ui';
+import {
+  Button,
+  CardSkeleton,
+  cn,
+  ConfirmModal,
+  EmptyState,
+  Input,
+  stagger,
+  transition,
+} from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -10,7 +19,7 @@ import { GenerationCard } from '@/features/resumes/components/GenerationCard';
 import { InteractionRow } from '@/features/resumes/components/InteractionRow';
 import { DOC_TABS, type DocTab, type Interaction } from '@/features/resumes/constants';
 import { useTranslation } from '@/lib/i18n';
-import { useAiGenerations } from '@/services/use-ai-generations';
+import { useAiGenerations, useRemoveAiGenerationsBulk } from '@/services/use-ai-generations';
 import { useInteractions } from '@/services/use-postings';
 import { useSessionStore } from '@/store/session-store';
 
@@ -18,8 +27,38 @@ function ResumesPage() {
   const { t } = useTranslation();
   const { resumes, setResumes } = useSessionStore();
   const { tab, filter } = resumes;
-  const setTab = (v: DocTab) => setResumes({ tab: v });
+  const setTab = (v: DocTab) => {
+    setResumes({ tab: v });
+    setSelection(new Set());
+  };
   const setFilter = (v: string) => setResumes({ filter: v });
+
+  const [selection, setSelection] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const removeBulk = useRemoveAiGenerationsBulk();
+
+  const toggleSelect = (id: string) => {
+    setSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = (ids: string[]) => {
+    const allSelected = ids.every((id) => selection.has(id));
+    setSelection(allSelected ? new Set() : new Set(ids));
+  };
+
+  const handleBulkDelete = () => {
+    removeBulk.mutate([...selection], {
+      // Clear regardless of outcome: on error the optimistic cache rolls back,
+      // so the selection must reset too or the count desyncs from the list.
+      onSettled: () => setSelection(new Set()),
+    });
+    setConfirmBulkDelete(false);
+  };
 
   const isActivity = tab === 'activity';
 
@@ -91,6 +130,20 @@ function ResumesPage() {
                   <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} />
                 </Button>
               )}
+              {!isActivity && generationDocs.length > 0 && (
+                <label className="flex cursor-pointer items-center gap-1.5 text-xs text-foreground/50 select-none">
+                  <input
+                    type="checkbox"
+                    checked={
+                      generationDocs.length > 0 && generationDocs.every((g) => selection.has(g.id))
+                    }
+                    onChange={() => toggleSelectAll(generationDocs.map((g) => g.id))}
+                    aria-label={t('resumes.select.selectAll')}
+                    className="h-4 w-4 cursor-pointer accent-[color:var(--color-brand)] rounded border border-white/20"
+                  />
+                  {t('resumes.select.selectAll')}
+                </label>
+              )}
             </div>
           }
         />
@@ -121,6 +174,39 @@ function ResumesPage() {
             </Button>
           ))}
         </div>
+
+        {/* Bulk-action bar — appears when ≥1 generation is selected on a doc tab */}
+        <AnimatePresence initial={false}>
+          {!isActivity && selection.size > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={transition.fast}
+              className="mb-4 flex items-center justify-between rounded-xl border border-red-400/20 bg-red-400/[0.06] px-4 py-2.5"
+            >
+              <span className="text-xs text-foreground/60">
+                {t('resumes.select.count', { count: selection.size })}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={() => setSelection(new Set())}
+                  className="h-auto rounded-lg border-transparent bg-transparent px-3 py-1.5 text-xs text-foreground/50 hover:text-foreground"
+                >
+                  {t('resumes.select.clear')}
+                </Button>
+                <Button
+                  onClick={() => setConfirmBulkDelete(true)}
+                  disabled={removeBulk.isPending}
+                  className="flex h-auto items-center gap-1.5 rounded-lg border-red-400/20 bg-red-400/10 px-3 py-1.5 text-xs text-red-300 hover:bg-red-400/20"
+                >
+                  <Trash2 size={11} />
+                  {t('resumes.select.deleteSelected')}
+                </Button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Activity tab — the job-interaction log */}
         {isActivity ? (
@@ -189,13 +275,28 @@ function ResumesPage() {
                   transition={transition.normal}
                   exit={{ opacity: 0, y: -6 }}
                 >
-                  <GenerationCard gen={gen} />
+                  <GenerationCard
+                    gen={gen}
+                    selected={selection.has(gen.id)}
+                    onToggleSelect={toggleSelect}
+                  />
                 </motion.div>
               ))}
             </AnimatePresence>
           </motion.div>
         )}
       </div>
+
+      <ConfirmModal
+        open={confirmBulkDelete}
+        onClose={() => setConfirmBulkDelete(false)}
+        onConfirm={handleBulkDelete}
+        title={t('resumes.select.confirmTitle')}
+        description={t('resumes.select.confirmBody', { count: selection.size })}
+        confirmText={t('resumes.select.deleteSelected')}
+        variant="danger"
+        isConfirming={removeBulk.isPending}
+      />
     </PageTransition>
   );
 }
