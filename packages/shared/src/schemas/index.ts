@@ -258,6 +258,12 @@ export const AutopilotCreateSchema = z.object({
   target: AutopilotTargetSchema,
   filter: AutopilotFilterSchema,
   schedule: z.enum(['manual', 'hourly', 'daily', 'twice_daily']),
+  // Local clock time a recurring schedule fires at. `scheduleHour` drives
+  // daily/twice_daily (ignored by hourly); `scheduleMinute` drives both those
+  // and the "minute past the hour" for hourly. Defaults applied in Rust when
+  // absent (09:00 for daily/twice_daily, minute 0 for hourly).
+  scheduleHour: z.number().int().min(0).max(23).optional(),
+  scheduleMinute: z.number().int().min(0).max(59).optional(),
   resumeText: z.string().optional(),
   // Optional base cover letter — reused as the starting point when tailoring a
   // found job in the apply assistant. (Auto-apply was removed; this field is a
