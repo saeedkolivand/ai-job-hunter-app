@@ -1037,7 +1037,16 @@
     "filterPlaceholder": "Nach Titel oder Unternehmen suchen...",
     "noResults": "Keine Ergebnisse gefunden",
     "unknownPosition": "Unbekannte Position",
-    "open": "Öffnen"
+    "open": "Öffnen",
+    "select": {
+      "selectAll": "Alle auswählen",
+      "selectItem": "Element auswählen",
+      "clear": "Auswahl aufheben",
+      "count": "{{count}} ausgewählt",
+      "deleteSelected": "Auswahl löschen",
+      "confirmTitle": "Ausgewählte Dokumente löschen?",
+      "confirmBody": "Dadurch werden {{count}} generierte(s) Dokument(e) dauerhaft entfernt. Dies kann nicht rückgängig gemacht werden."
+    }
   },
   "ai": {
     "title": "KI-Arbeitsbereich",

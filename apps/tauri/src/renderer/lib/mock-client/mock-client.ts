@@ -89,6 +89,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       save: noop,
       update: noop,
       remove: noop,
+      removeBulk: noop,
     },
 
     documents: {

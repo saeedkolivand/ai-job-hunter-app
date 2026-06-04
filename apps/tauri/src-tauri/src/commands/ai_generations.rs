@@ -70,3 +70,12 @@ pub async fn ai_generations_remove(app: AppHandle, id: String) -> Value {
         Err(e) => json!({ "error": e }),
     }
 }
+
+#[tauri::command]
+pub async fn ai_generations_remove_bulk(app: AppHandle, ids: Vec<String>) -> Value {
+    let store = app.state::<crate::ai_generations::AiGenerationStore>();
+    match store.remove_many(&ids) {
+        Ok(count) => json!({ "success": true, "count": count }),
+        Err(e) => json!({ "error": e }),
+    }
+}

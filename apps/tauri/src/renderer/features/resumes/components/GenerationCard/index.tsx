@@ -63,9 +63,11 @@ function referralDraft(contact: ReferralContact): string {
 
 interface GenerationCardProps {
   gen: AiGenerationRecord;
+  selected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
-export function GenerationCard({ gen }: GenerationCardProps) {
+export function GenerationCard({ gen, selected = false, onToggleSelect }: GenerationCardProps) {
   const { t } = useTranslation();
   const notify = useNotification();
   const removeAiGeneration = useRemoveAiGeneration();
@@ -222,6 +224,17 @@ export function GenerationCard({ gen }: GenerationCardProps) {
       <GlassCard tone="graphite" className="rounded-xl overflow-hidden p-0">
         {/* Header — title / company on top, then meta + badges with room to breathe. */}
         <div className="flex items-start gap-4 p-5">
+          {onToggleSelect && (
+            <div className="flex shrink-0 items-center self-center">
+              <input
+                type="checkbox"
+                checked={selected}
+                onChange={() => onToggleSelect(gen.id)}
+                aria-label={t('resumes.select.selectItem')}
+                className="h-4 w-4 cursor-pointer accent-[color:var(--color-brand)] rounded border border-white/20"
+              />
+            </div>
+          )}
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand/10">
             <Wand2 size={16} className="text-brand-soft" />
           </div>

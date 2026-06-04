@@ -1052,7 +1052,16 @@
     "filterPlaceholder": "Search by title or company...",
     "noResults": "No results found",
     "unknownPosition": "Unknown position",
-    "open": "Open"
+    "open": "Open",
+    "select": {
+      "selectAll": "Select all",
+      "selectItem": "Select item",
+      "clear": "Clear selection",
+      "count": "{{count}} selected",
+      "deleteSelected": "Delete selected",
+      "confirmTitle": "Delete selected documents?",
+      "confirmBody": "This will permanently remove {{count}} generated document(s). This can't be undone."
+    }
   },
   "ai": {
     "title": "AI Workspace",
