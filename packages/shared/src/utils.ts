@@ -97,3 +97,25 @@ export function calculateTimeRemaining(
   }
   return remainingBytes / bytesPerSecond;
 }
+
+/**
+ * Compare two semantic version strings (`MAJOR.MINOR.PATCH`).
+ *
+ * Tolerant of a leading `v` and of a `-prerelease`/`+build` suffix (ignored for
+ * ordering — release lines only ever surface stable tags). Missing or malformed
+ * numeric segments are treated as `0`. Returns a negative number when `a < b`,
+ * `0` when equal, and a positive number when `a > b`, so it slots straight into
+ * `Array.prototype.sort`.
+ */
+export function compareSemver(a: string, b: string): number {
+  const parse = (v: string): [number, number, number] => {
+    const core = v.trim().replace(/^v/i, '').split(/[-+]/, 1)[0] ?? '';
+    const [major = 0, minor = 0, patch = 0] = core
+      .split('.')
+      .map((n) => Number.parseInt(n, 10) || 0);
+    return [major, minor, patch];
+  };
+  const [aMajor, aMinor, aPatch] = parse(a);
+  const [bMajor, bMinor, bPatch] = parse(b);
+  return aMajor - bMajor || aMinor - bMinor || aPatch - bPatch;
+}

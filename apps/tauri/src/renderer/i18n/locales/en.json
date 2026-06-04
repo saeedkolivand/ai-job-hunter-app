@@ -498,6 +498,7 @@
       "install": "Restart & install",
       "error": "Check failed",
       "whatsNew": "What's new in",
+      "changesSince": "Changes since v{{version}}",
       "downloadFromGitHub": "Download from GitHub",
       "viewChangelog": "View changelog",
       "hideChangelog": "Hide changelog",
