@@ -110,6 +110,16 @@ pub struct Autopilot {
     pub target: AutopilotTarget,
     pub filter: AutopilotFilter,
     pub schedule: String,
+    /// Local clock hour (0–23) a recurring schedule fires at. Used by
+    /// daily/twice_daily; ignored by hourly. `None` falls back to 09:00 in the
+    /// scheduler. Defaulted so older persisted records load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule_hour: Option<u32>,
+    /// Local clock minute (0–59) a recurring schedule fires at. Used by
+    /// daily/twice_daily and as the "minute past the hour" for hourly. `None`
+    /// falls back to minute 0 in the scheduler. Defaulted so older records load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule_minute: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resume_text: Option<String>,
     /// Optional base cover letter reused as the starting point when tailoring a
@@ -185,6 +195,8 @@ impl AutopilotStore {
                 }
             }),
             schedule: str_field(&input, "schedule"),
+            schedule_hour: u32_field_in_range(&input, "scheduleHour", 23),
+            schedule_minute: u32_field_in_range(&input, "scheduleMinute", 59),
             resume_text: input["resumeText"].as_str().map(String::from),
             cover_letter: input["coverLetter"].as_str().map(String::from),
             total_found: 0,
@@ -223,6 +235,12 @@ impl AutopilotStore {
         }
         if let Some(v) = patch.get("schedule").and_then(|v| v.as_str()) {
             ap.schedule = v.to_string();
+        }
+        if patch.get("scheduleHour").is_some() {
+            ap.schedule_hour = u32_field_in_range(&patch, "scheduleHour", 23);
+        }
+        if patch.get("scheduleMinute").is_some() {
+            ap.schedule_minute = u32_field_in_range(&patch, "scheduleMinute", 59);
         }
         if let Some(v) = patch.get("resumeText").and_then(|v| v.as_str()) {
             ap.resume_text = Some(v.to_string());
@@ -383,6 +401,19 @@ fn str_field(v: &serde_json::Value, key: &str) -> String {
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string()
+}
+
+/// Read an optional non-negative integer field as `u32`, accepting it only when
+/// it is in `0..=max`. Absent, non-numeric, or out-of-range → `None`, so a
+/// missing or poisoned schedule time falls back to the scheduler defaults
+/// rather than persisting a value that makes the occurrence permanently `None`
+/// (silently dead autopilot). Guards the storage boundary against a client that
+/// bypassed the Zod range check (e.g. `scheduleHour: 25`).
+fn u32_field_in_range(v: &serde_json::Value, key: &str, max: u32) -> Option<u32> {
+    v.get(key)
+        .and_then(|v| v.as_u64())
+        .map(|n| n as u32)
+        .filter(|&n| n <= max)
 }
 
 /// Merge a fresh run's postings into the cumulative found-jobs list, idempotently:

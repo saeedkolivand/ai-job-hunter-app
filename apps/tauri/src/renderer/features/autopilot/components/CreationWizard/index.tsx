@@ -95,6 +95,9 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
       resumeText: form.resumeText || undefined,
       coverLetter: form.coverLetter || undefined,
       schedule: form.schedule,
+      // Time-of-day only applies to recurring schedules; manual runs have no time.
+      scheduleHour: form.schedule === 'manual' ? undefined : form.scheduleHour,
+      scheduleMinute: form.schedule === 'manual' ? undefined : form.scheduleMinute,
     };
     try {
       const ap =

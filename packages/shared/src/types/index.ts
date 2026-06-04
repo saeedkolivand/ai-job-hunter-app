@@ -209,6 +209,13 @@ export interface Autopilot {
     excludeKeywords?: string[];
   };
   schedule: 'manual' | 'hourly' | 'daily' | 'twice_daily';
+  /** Local clock hour (0–23) a recurring schedule fires at. Used by
+   *  daily/twice_daily; ignored by hourly. Defaults to 9 (09:00) when absent. */
+  scheduleHour?: number;
+  /** Local clock minute (0–59) a recurring schedule fires at. Used by
+   *  daily/twice_daily and as the "minute past the hour" for hourly. Defaults
+   *  to 0 when absent. */
+  scheduleMinute?: number;
   resumeText?: string;
   /** Optional base cover letter — the reusable starting point the apply
    *  assistant tailors per found job. */

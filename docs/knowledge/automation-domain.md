@@ -1,6 +1,6 @@
 # Automation domain (scraping + apply assistant + AI provider)
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 Merged knowledge for `scraping-applier-expert` and `ai-provider-expert`. Source is authoritative for board/provider counts.
 
@@ -15,6 +15,7 @@ Merged knowledge for `scraping-applier-expert` and `ai-provider-expert`. Source 
 
 - **Decision (2026-06, PR #7 of the UX backlog):** the browser-automation apply engine (`applying/` — board appliers, `captcha_handler`, `form_filler`, the `APPLIERS` registry — plus `commands/apply`, `apply_helpers/`, and the apply IPC contract) was **removed**. The app is an **apply assistant**, not an auto-applier: selector drift, captcha, and per-board form logic made an auto-submit engine too costly to maintain, and it was never user-facing ("Coming Soon"). `chromiumoxide` stays — scraping uses it.
 - **What the assistant does** — from a found or scraped job the user tailors a résumé + cover letter (`renderer/features/autopilot/.../ApplyJobModal`, `renderer/store/generation-store/`), gets résumé-grounded application answers, opens the posting in the browser, and submits it themselves. Autopilot (`autopilot/`, `autopilot_scheduler`) **finds → ranks → notifies**; it never submits. Found-jobs PostingRow "Tailor" seeds the AI Generate workspace for any board.
+- **Autopilot scheduling** — **clock-anchored** (PR #266; was interval-based). `autopilot_scheduler.rs` computes the most-recent scheduled occurrence in local time (`chrono::Local`) via `last_occurrence_ms` / `is_due`; on launch it catches up to any missed run (single catch-up, no double-fire). Frequency modes: `daily` = HH:MM; `twice_daily` = HH:MM + 12 h; `hourly` = :MM; `manual` = no scheduling. Fields `scheduleHour` (0–23) and `scheduleMinute` (0–59) on the autopilot model — Zod-validated client-side, range-guarded in the store. Legacy records default to 09:00.
 - **"Applied" tracking** — derived, never auto-set: a found job is "applied" when a saved generation's `jobUrl` matches it (`commands/autopilot.rs: enrich_applied`). Each autopilot keeps an optional **base cover letter** (`coverLetter`) the assistant tailors per job.
 - **Security** — never log credentials/cookies; board session handling for **scraping** is co-reviewed by `tauri-security-reviewer`.
 

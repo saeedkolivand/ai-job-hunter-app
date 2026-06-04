@@ -11,6 +11,8 @@ pub struct AutopilotCreateRequest {
     pub target: AutopilotCreateRequestTarget,
     pub filter: AutopilotCreateRequestFilter,
     pub schedule: String,
+    pub schedule_hour: Option<u32>,
+    pub schedule_minute: Option<u32>,
     pub resume_text: Option<String>,
     pub cover_letter: Option<String>,
 }
@@ -46,6 +48,8 @@ pub struct AutopilotUpdateRequest {
     pub target: Option<AutopilotUpdateRequestTarget>,
     pub filter: Option<AutopilotUpdateRequestFilter>,
     pub schedule: Option<String>,
+    pub schedule_hour: Option<u32>,
+    pub schedule_minute: Option<u32>,
     pub resume_text: Option<String>,
     pub cover_letter: Option<String>,
     pub status: Option<String>,

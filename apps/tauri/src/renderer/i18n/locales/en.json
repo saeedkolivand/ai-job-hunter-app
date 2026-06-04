@@ -823,7 +823,12 @@
         "summaryBoard": "Board",
         "summaryQuery": "Query",
         "summarySchedule": "Schedule",
-        "summaryMinScore": "Min score"
+        "summaryMinScore": "Min score",
+        "runAt": "Run at",
+        "hourLabel": "Hour",
+        "minuteLabel": "Minute",
+        "minutesPastHour": "Minutes past the hour",
+        "alsoRunsAt": "Runs at {{first}} and {{second}}"
       },
       "runFailed": "Run failed",
       "createFailed": "Failed to create autopilot",

@@ -808,7 +808,12 @@
         "summaryBoard": "Board",
         "summaryQuery": "Abfrage",
         "summarySchedule": "Zeitplan",
-        "summaryMinScore": "Min. Bewertung"
+        "summaryMinScore": "Min. Bewertung",
+        "runAt": "Ausführen um",
+        "hourLabel": "Stunde",
+        "minuteLabel": "Minute",
+        "minutesPastHour": "Minuten nach der vollen Stunde",
+        "alsoRunsAt": "Läuft um {{first}} und {{second}}"
       },
       "runFailed": "Ausführung fehlgeschlagen",
       "createFailed": "Autopilot konnte nicht erstellt werden",
