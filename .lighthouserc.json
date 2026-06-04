@@ -1,0 +1,19 @@
+{
+  "ci": {
+    "collect": {
+      "startServerCommand": "pnpm --filter @ajh/tauri dev:frontend",
+      "url": ["http://localhost:5174/e2e.html"],
+      "startServerReadyPattern": "Local:",
+      "numberOfRuns": 1,
+      "settings": { "preset": "desktop" }
+    },
+    "assert": {
+      "assertions": {
+        "categories:accessibility": ["warn", { "minScore": 0.9 }],
+        "categories:performance": ["warn", { "minScore": 0.7 }],
+        "categories:best-practices": ["warn", { "minScore": 0.9 }]
+      }
+    },
+    "upload": { "target": "filesystem", "outputDir": "./.lighthouseci" }
+  }
+}
