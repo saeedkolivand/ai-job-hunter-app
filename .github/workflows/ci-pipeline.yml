@@ -63,6 +63,51 @@ jobs:
         with:
           fail-on-severity: high
 
+  # ──────────────────────────────────────────────────────────────────────
+  # Detect which areas changed so the heavy jobs can skip on unrelated PRs.
+  # Any change under .github/** forces BOTH filters true (full CI on CI edits).
+  # ──────────────────────────────────────────────────────────────────────
+  changes:
+    name: 🧭 Detect Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      rust: ${{ steps.filter.outputs.rust }}
+
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: 🧭 Path filter
+        id: filter
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          filters: |
+            frontend:
+              - 'apps/tauri/src/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'tsconfig*.json'
+              - 'eslint.config.mjs'
+              - 'vitest.config.ts'
+              - 'turbo.json'
+              - '.github/**'
+            rust:
+              - 'apps/tauri/src-tauri/**'
+              - '.github/**'
+
   dependencies:
     name: 📦 Dependencies
     runs-on: ubuntu-latest
@@ -230,7 +275,8 @@ jobs:
     name: 🔍 Type Check
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    needs: dependencies
+    needs: [changes, dependencies]
+    if: needs.changes.outputs.frontend == 'true'
 
     steps:
       - name: 🛡️ Harden Runner
@@ -321,7 +367,8 @@ jobs:
     name: 🧪 Tests
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    needs: dependencies
+    needs: [changes, dependencies]
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.rust == 'true'
 
     steps:
       - name: 🛡️ Harden Runner
@@ -539,7 +586,8 @@ jobs:
     name: 🏗️ Build Verification
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    needs: dependencies
+    needs: [changes, dependencies]
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.rust == 'true'
 
     steps:
       - name: 🛡️ Harden Runner
@@ -661,6 +709,8 @@ jobs:
     name: 🔬 Quality Checks
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
 
     steps:
       - name: 🛡️ Harden Runner
@@ -753,3 +803,32 @@ jobs:
           echo "Rust Version: $(rustc --version)"
           echo "Runner OS: ${{ runner.os }}"
           echo "::endgroup::"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Umbrella gate — the single required status check for branch protection.
+  # Passes if every gated job SUCCEEDED or was SKIPPED (path-filtered out), and
+  # fails if any failed/cancelled. Make THIS ("✅ CI OK") the only required
+  # check in the ruleset so path-skipped jobs never leave a required check
+  # stuck "pending".
+  # ──────────────────────────────────────────────────────────────────────
+  ci-ok:
+    name: ✅ CI OK
+    if: always()
+    needs: [lint-format, type-check, tests, build-verification, quality-checks]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: ✅ Verify required jobs
+        run: |
+          results="${{ needs.lint-format.result }} ${{ needs.type-check.result }} ${{ needs.tests.result }} ${{ needs.build-verification.result }} ${{ needs.quality-checks.result }}"
+          echo "Job results: $results"
+          for r in $results; do
+            case "$r" in
+              success | skipped) ;;
+              *)
+                echo "::error::A required job did not pass (result: $r)"
+                exit 1
+                ;;
+            esac
+          done
+          echo "All required jobs passed or were skipped."
