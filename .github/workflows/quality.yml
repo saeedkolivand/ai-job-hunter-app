@@ -1,0 +1,86 @@
+name: 🔎 Quality (advisory)
+
+# ──────────────────────────────────────────────────────────────────────
+# Self-contained, ADVISORY quality checks (none block merge):
+#   - typos  : repo-wide spell check (crate-ci/typos, config: typos.toml)
+#   - links  : dead-link check for docs (lychee, config: lychee.toml)
+#   - knip   : JS/TS dead-code / unused deps/exports (config: knip.json)
+# All run on Linux with Harden-Runner egress audit. They surface findings in
+# the job log; tune the configs, then flip individual checks to blocking.
+# ──────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typos:
+    name: 🔤 Typos
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: 🔤 Spell check (advisory)
+        continue-on-error: true
+        uses: crate-ci/typos@37bb98842b0d8c4ffebdb75301a13db0267cef89 # v1.47.2
+
+  links:
+    name: 🔗 Link Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: 🔗 Lychee link check (advisory)
+        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
+        with:
+          args: "--no-progress 'README.md' 'docs/**/*.md'"
+          fail: false
+
+  knip:
+    name: 🧹 Knip (dead code)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: 🧹 Run knip (advisory)
+        continue-on-error: true
+        run: pnpm exec knip

@@ -1,0 +1,14 @@
+# typos spell-checker config — https://github.com/crate-ci/typos
+# Advisory in CI (see .github/workflows/quality.yml). Add project-specific
+# words under [default.extend-words] as false positives surface, then the
+# check can be flipped to blocking.
+
+[files]
+extend-exclude = [
+  "pnpm-lock.yaml",
+  "**/Cargo.lock",
+  "**/*.gen.ts",
+  "graphify-out/**",
+  "**/dist/**",
+  "**/out/**",
+]
