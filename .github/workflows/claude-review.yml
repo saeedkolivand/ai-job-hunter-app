@@ -1,0 +1,77 @@
+name: 🤖 Claude Review (on demand)
+
+# ──────────────────────────────────────────────────────────────────────
+# Lane A1 — AI review, ON-DEMAND ONLY.
+# ──────────────────────────────────────────────────────────────────────
+# Runs ONLY when the repository owner comments "@claude review" on a PR.
+# Nothing automatic — not on open, not on push. This keeps AI quota spend
+# fully under your control.
+#
+# Auth: a CLAUDE_CODE_OAUTH_TOKEN secret generated locally with
+#   `claude setup-token` (uses your Claude Pro/Max subscription quota — no
+#   per-token API bill). Until that secret is added, this workflow is inert.
+#   ⚠️ Do NOT also add ANTHROPIC_API_KEY — if both exist, the API key wins
+#      and usage is billed per-token instead of drawing on the subscription.
+#
+# Security (public repo): the `if:` gate restricts triggering to the repo
+# owner with an exact phrase, so strangers cannot drain quota or prompt-inject.
+# Permissions are least-privilege (no contents write).
+# ──────────────────────────────────────────────────────────────────────
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: claude-review-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  claude-review:
+    name: 🤖 Claude Review
+    # Trigger only when: (a) it's a PR comment, (b) the body contains the exact
+    # phrase, and (c) the commenter IS the repo owner (saeedkolivand →
+    # github.repository_owner). All three must hold.
+    if: >
+      ((github.event_name == 'issue_comment' && github.event.issue.pull_request != null) ||
+      github.event_name == 'pull_request_review_comment') &&
+      contains(github.event.comment.body, '@claude review') &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: 🤖 Run Claude review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Token levers: cap the agent loop + use Sonnet for routine reviews.
+          claude_args: --max-turns 6 --model claude-sonnet-4-6
+          prompt: |
+            Review the changes in this pull request. Work efficiently and stay
+            scoped — this runs on a metered subscription quota.
+
+            1. Follow the .claude/skills/token-efficiency contract: read the
+               minimum, stop at ~90% confidence, keep output terse.
+            2. Map the changed files to ONE primary owner using
+               .claude/review-routes.json (first matching primary glob wins) and
+               review ONLY the changed files against that agent's checklist in
+               .claude/agents/.
+            3. Apply the project severity rubric: only HIGH/CRITICAL are blocking
+               (architecture-rule violations; untested error/security paths on
+               changed code; credential/IPC/updater exploits; data loss). Treat
+               LOW/MEDIUM as advisory.
+            4. Post findings as inline review comments on the changed lines. Be
+               advisory only — do NOT approve or block the PR.
