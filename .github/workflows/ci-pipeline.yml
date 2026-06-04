@@ -474,26 +474,31 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # cargo-llvm-cov is the test runner AND the coverage collector, so the
-      # suite compiles + runs ONCE (instrumented) instead of twice — a plain
-      # `cargo test` followed by a separate instrumented `cargo llvm-cov` run.
-      # It must be installed before the test step below.
-      - name: 🦀 Install cargo-llvm-cov
+      # cargo-llvm-cov collects coverage; cargo-nextest is the test runner
+      # (parallel, flaky-retry, faster, clearer output). `cargo llvm-cov nextest`
+      # runs the suite ONCE instrumented; `report` formats it afterward. This
+      # binary crate has no doctests, so nextest not running doctests loses
+      # nothing. Both must be installed before the test step below.
+      - name: 🦀 Install cargo-llvm-cov + nextest
         if: always()
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-llvm-cov
+          tool: cargo-llvm-cov,nextest
 
-      - name: 🦀 Cargo Test
+      - name: 🦀 Cargo Test (nextest)
         id: rust-tests
         continue-on-error: true
         working-directory: apps/tauri/src-tauri
+        env:
+          # Select the nextest [profile.ci] (flaky retries) via env — passing
+          # --profile would collide with cargo's build-profile flag via llvm-cov.
+          NEXTEST_PROFILE: ci
         run: |
-          echo "::group::Running cargo tests (instrumented for coverage)"
+          echo "::group::Running tests via nextest (instrumented for coverage)"
           set -o pipefail
-          # --no-report runs every test binary (this is the pass/fail gate) and
-          # records raw coverage data without formatting a report yet.
-          cargo llvm-cov --no-report --all-features 2>&1 | tee rust-test-output.txt
+          # --no-report runs the suite via nextest (the pass/fail gate) and records
+          # raw coverage data without formatting a report yet.
+          cargo llvm-cov nextest --no-report --all-features 2>&1 | tee rust-test-output.txt
           echo "::endgroup::"
 
       # Coverage reporting only — never gates the build (test pass/fail is owned
@@ -545,9 +550,9 @@ jobs:
           covpct() { grep -aiE "^[[:space:]]*$1[[:space:]]*:" coverage-output.txt 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)?%' | head -1; }
           js_pass=$(grep -aoE 'Tests[[:space:]]+[0-9]+ passed' coverage-output.txt 2>/dev/null | grep -oE '[0-9]+' | tail -1)
           js_lines=$(covpct Lines); js_branches=$(covpct Branches); js_funcs=$(covpct Functions)
-          # --- Rust (cargo test + cargo-llvm-cov) ---
-          # Sum "N passed" across every test binary (unit + architecture + eval).
-          rust_pass=$(grep -aoE 'test result: (ok|FAILED)\. [0-9]+ passed' apps/tauri/src-tauri/rust-test-output.txt 2>/dev/null | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' | awk '{s+=$1} END{if (NR) print s}')
+          # --- Rust (cargo-nextest + cargo-llvm-cov) ---
+          # nextest prints one Summary line: "N tests run: N passed, ...".
+          rust_pass=$(grep -aoE '[0-9]+ passed' apps/tauri/src-tauri/rust-test-output.txt 2>/dev/null | grep -oE '[0-9]+' | tail -1)
           # llvm-cov TOTAL row on stable reports three percentages in order: Regions, Functions, Lines.
           rust_pcts=$(grep -aE '^TOTAL' apps/tauri/src-tauri/rust-coverage.txt 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)?%')
           rust_funcs=$(echo "$rust_pcts" | sed -n 2p); rust_lines=$(echo "$rust_pcts" | sed -n 3p)
@@ -562,9 +567,9 @@ jobs:
             echo "| Suite | Status | Tests passed | Lines | Branches | Functions |"
             echo "| --- | :---: | ---: | ---: | ---: | ---: |"
             echo "| 🟢 Frontend (Vitest) | ${js_status} | ${js_pass} | ${js_lines} | ${js_branches} | ${js_funcs} |"
-            echo "| 🦀 Rust (cargo test) | ${rust_status} | ${rust_pass} | ${rust_lines} | ${rust_branches} | ${rust_funcs} |"
+            echo "| 🦀 Rust (nextest) | ${rust_status} | ${rust_pass} | ${rust_lines} | ${rust_branches} | ${rust_funcs} |"
             echo ""
-            echo "<sub>Rust counts summed across all test binaries; coverage via cargo-llvm-cov (regions/functions/lines — branch coverage needs nightly, shown as —). Frontend coverage from the v8 reporter. Per-file breakdowns are in the coverage sections above.</sub>"
+            echo "<sub>Rust tests run via cargo-nextest; coverage via cargo-llvm-cov (regions/functions/lines — branch coverage needs nightly, shown as —). Frontend coverage from the v8 reporter. Per-file breakdowns are in the coverage sections above.</sub>"
             echo ""
             echo "**Environment** — Node $(node --version) · Rust $(rustc --version) · pnpm $(pnpm --version)"
           } >> "$GITHUB_STEP_SUMMARY"
