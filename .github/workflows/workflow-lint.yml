@@ -36,7 +36,7 @@ jobs:
           fetch-depth: 1
 
       - name: 🔍 actionlint (reviewdog)
-        uses: reviewdog/action-actionlint@v1
+        uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d # v1
         with:
           reporter: github-pr-review
           filter_mode: added
@@ -54,7 +54,7 @@ jobs:
           fetch-depth: 1
 
       - name: 🐍 Setup uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
 
       # Advisory: prints findings (incl. unpinned actions, injection risks) but
       # never fails the build yet. SHA-pinning lands in a follow-up PR.
