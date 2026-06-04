@@ -2,18 +2,19 @@
  * ReferralList — unit tests (F3a).
  *
  * Covers:
- *  - Status SegmentedControl change calls upsert with { id, status }.
+ *  - Status change upserts the FULL contact + new status (a partial { id, status }
+ *    would blank the row — the backend overwrites every column by id).
  *  - Delete button calls remove with the contact's id.
  *  - Nothing renders when the contacts array is empty.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
-import type { ReferralContact } from '@ajh/shared/ipc';
+import type { ReferralContact, ReferralUpsertRequest } from '@ajh/shared/ipc';
 
 // ── service mocks ─────────────────────────────────────────────────────────────
 
-const mockUpsertMutate = vi.fn<(req: { id: string; status: string }) => void>();
+const mockUpsertMutate = vi.fn<(req: ReferralUpsertRequest) => void>();
 const mockRemoveMutate = vi.fn<(id: string) => void>();
 
 vi.mock('@/services', () => ({
@@ -64,7 +65,7 @@ describe('ReferralList — contact display', () => {
 });
 
 describe('ReferralList — status change', () => {
-  it('clicking "sent" calls upsert.mutate with { id, status: "sent" }', () => {
+  it('clicking "sent" upserts the full contact with status sent', () => {
     render(<ReferralList contacts={[makeContact({ id: 'ref-42', status: 'draft' })]} />);
 
     // SegmentedControl renders each option as a radio button whose accessible
@@ -75,15 +76,28 @@ describe('ReferralList — status change', () => {
     fireEvent.click(sentRadio);
 
     expect(mockUpsertMutate).toHaveBeenCalledTimes(1);
-    expect(mockUpsertMutate).toHaveBeenCalledWith({ id: 'ref-42', status: 'sent' });
+    // The whole contact is re-sent (not just { id, status }) so the full-row
+    // overwrite preserves personName/company/role/channel/drafts.
+    expect(mockUpsertMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'ref-42',
+        personName: 'Jane Smith',
+        companyName: 'Acme',
+        personRole: 'EM',
+        channel: 'linkedin_message',
+        status: 'sent',
+      })
+    );
   });
 
-  it('clicking "replied" calls upsert.mutate with { id, status: "replied" }', () => {
+  it('clicking "replied" upserts the full contact with status replied', () => {
     render(<ReferralList contacts={[makeContact({ id: 'ref-7', status: 'sent' })]} />);
 
     fireEvent.click(screen.getByRole('radio', { name: 'autopilot.referral.status.replied' }));
 
-    expect(mockUpsertMutate).toHaveBeenCalledWith({ id: 'ref-7', status: 'replied' });
+    expect(mockUpsertMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'ref-7', personName: 'Jane Smith', status: 'replied' })
+    );
   });
 });
 

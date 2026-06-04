@@ -67,7 +67,25 @@ export function ReferralList({ contacts }: Props) {
             tone="brand"
             ariaLabel={t('autopilot.referral.status.label')}
             value={c.status}
-            onChange={(status) => upsert.mutate({ id: c.id, status })}
+            onChange={(status) =>
+              // Full-row upsert: the backend overwrites every column by id (only
+              // createdAt is preserved), so a partial { id, status } would blank
+              // personName/company/drafts/notes. Re-send the whole contact.
+              upsert.mutate({
+                id: c.id,
+                jobUrl: c.jobUrl,
+                companyName: c.companyName,
+                personName: c.personName,
+                personRole: c.personRole,
+                linkedinUrl: c.linkedinUrl,
+                emailDraft: c.emailDraft,
+                messageDraft: c.messageDraft,
+                inviteNoteDraft: c.inviteNoteDraft,
+                channel: c.channel,
+                status,
+                notes: c.notes,
+              })
+            }
             options={STATUSES.map((s) => ({
               value: s,
               label: t(`autopilot.referral.status.${s}`),

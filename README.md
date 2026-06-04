@@ -365,6 +365,8 @@ IPC request shapes have a single source of truth: **[Zod][zod] schemas in `packa
 
 This repo ships a knowledge base under [docs/knowledge/](docs/knowledge/) — domain notes plus **architecture decision records** ([ADRs](docs/knowledge/decision-records/)) — and a Claude Code agent system under `.claude/` (specialized reviewers + commands). When in doubt about _why_ something is built a certain way, the ADRs are the fastest answer.
 
+A [graphify](https://pypi.org/project/graphifyy/) knowledge graph (`graphify-out/`) can also be queried directly or wired as an **optional, opt-in** local MCP server — see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#optional-knowledge-graph-mcp-graphify).
+
 </details>
 
 ---
