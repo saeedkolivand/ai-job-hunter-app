@@ -29,9 +29,15 @@ permissions:
   pull-requests: write
   id-token: write
 
+# cancel-in-progress MUST stay false: while a review runs, claude[bot] posts a
+# "working…" comment, which is itself an issue_comment event that starts a second
+# run in this same group. With cancel-in-progress: true that second run cancels
+# the real review mid-flight (the owner-gate skips it only AFTER concurrency is
+# evaluated). false lets the real review finish; the bot-comment run just queues
+# and is then skipped by the gate.
 concurrency:
   group: claude-review-${{ github.event.issue.number || github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   claude-review:
