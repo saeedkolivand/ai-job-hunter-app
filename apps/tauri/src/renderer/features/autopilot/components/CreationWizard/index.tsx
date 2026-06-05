@@ -194,8 +194,13 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
             <Button
               variant="glass"
               size="sm"
-              disabled={!canNext()}
-              onClick={() => setStep(step + 1)}
+              onClick={() => {
+                if (!canNext()) {
+                  setError(t('autopilot.wizard.validation.missingFields'));
+                  return;
+                }
+                setStep(step + 1);
+              }}
               className="transition-all duration-150 ease-out"
             >
               {t('autopilot.wizard.next')} <ChevronRight size={13} />
