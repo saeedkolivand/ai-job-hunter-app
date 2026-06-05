@@ -36,9 +36,10 @@ function escapeAlt(s) {
   return s.replace(/[[\]]/g, '');
 }
 
-/** Escape a cell for a Markdown table (pipes + collapse newlines). */
+/** Escape a cell for a Markdown table (backslashes, pipes + collapse newlines). */
 function cell(s) {
   return s
+    .replace(/\\/g, '\\\\')
     .replace(/\|/g, '\\|')
     .replace(/\s*\n\s*/g, ' ')
     .trim();
