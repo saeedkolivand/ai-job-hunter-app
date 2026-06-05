@@ -95,6 +95,9 @@ importers:
       vitest:
         specifier: ^4.1.6
         version: 4.1.7(@types/node@25.9.1)(@vitest/coverage-v8@4.1.8(@vitest/browser@4.1.8)(vitest@4.1.7))(jsdom@26.1.0)(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
 
   apps/tauri:
     dependencies:
