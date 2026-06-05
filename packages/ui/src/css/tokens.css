@@ -32,6 +32,7 @@
   --color-border: oklch(29% 1% 285);
   --color-input: oklch(29% 1% 285);
   --color-ring: oklch(65% 50% 270);
+  --color-spotlight-overlay: rgba(0, 0, 0, 0.76);
 
   /* Brand aliases — use text-brand, bg-brand in Tailwind classes */
   --color-brand: #a855f7;
@@ -131,6 +132,9 @@
   --aurora-cyan: #22d3ee;
   --nebula-violet: #c084fc;
   --nebula-indigo: #818cf8;
+  /* ── RGB aliases for brand colors (used in gradients) */
+  --rgb-brand: 168 85 247;
+  --rgb-aurora-indigo: 99 102 241;
 
   /* ── Animation duration scale ─────────────────────────────────────────── */
   --dur-instant: 80ms;
@@ -272,6 +276,7 @@
   --shadow-xl: 0 8px 16px oklch(45% 8% 270 / 0.08), 0 20px 48px oklch(45% 8% 270 / 0.16);
   --shadow-2xl: 0 24px 60px -30px oklch(40% 8% 270 / 0.28);
   --shadow-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --color-spotlight-overlay: rgba(0, 0, 0, 0.4);
 
   /* Softer glows on a bright canvas. */
   --glow-brand-sm: 0 0 20px rgba(124, 58, 237, 0.08);
