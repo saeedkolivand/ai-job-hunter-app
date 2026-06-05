@@ -11,6 +11,7 @@
         --bg: #0d1117;
         --panel: #161b22;
         --panel-2: #1c2330;
+        --panel-3: #21262d;
         --border: #30363d;
         --text: #e6edf3;
         --muted: #8b949e;
@@ -20,6 +21,7 @@
         --run: #d29922;
         --neutral: #6e7681;
         --none: #373e47;
+        --glow: rgba(210, 153, 34, 0.2);
       }
       * {
         box-sizing: border-box;
@@ -52,7 +54,7 @@
         top: 0;
         background: rgba(13, 17, 23, 0.92);
         backdrop-filter: blur(6px);
-        z-index: 5;
+        z-index: 10;
       }
       header h1 {
         font-size: 17px;
@@ -131,6 +133,29 @@
         max-width: 1100px;
         margin: 0 auto;
       }
+      .health-banner {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px 20px;
+        margin-bottom: 32px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        transition: border-color 0.3s;
+      }
+      .health-banner.ok { border-color: var(--ok); }
+      .health-banner.fail { border-color: var(--fail); }
+      .health-banner .status-icon {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+      }
+      .health-banner .status-icon.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+      .health-banner .status-icon.fail { background: var(--fail); box-shadow: 0 0 8px var(--fail); }
+      .health-banner .msg { font-weight: 500; font-size: 14px; }
+      .health-banner .msg .muted { color: var(--muted); font-weight: normal; font-size: 13px; margin-left: 8px; }
+
       .group {
         margin: 26px 0 10px;
         display: flex;
@@ -150,7 +175,7 @@
       }
       .grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
         gap: 12px;
       }
       .card {
@@ -161,11 +186,19 @@
         padding: 14px 15px;
         transition:
           border-color 0.15s,
-          transform 0.08s;
+          transform 0.08s,
+          box-shadow 0.2s;
+        cursor: pointer;
+        position: relative;
       }
       .card:hover {
         border-color: #475061;
         transform: translateY(-1px);
+        background: var(--panel-2);
+      }
+      .card.running {
+        box-shadow: 0 0 12px var(--glow);
+        border-color: var(--run);
       }
       .card .top {
         display: flex;
@@ -183,27 +216,17 @@
         font-weight: 700;
         color: #0d1117;
       }
-      .badge.ok {
-        background: var(--ok);
-      }
-      .badge.fail {
-        background: var(--fail);
-      }
+      .badge.ok { background: var(--ok); }
+      .badge.fail { background: var(--fail); }
       .badge.run {
         background: var(--run);
         animation: pulse 1.3s ease-in-out infinite;
       }
-      .badge.neutral {
-        background: var(--neutral);
-      }
-      .badge.none {
-        background: var(--none);
-        color: var(--muted);
-      }
+      .badge.neutral { background: var(--neutral); }
+      .badge.none { background: var(--none); color: var(--muted); }
+
       @keyframes pulse {
-        50% {
-          opacity: 0.45;
-        }
+        50% { opacity: 0.45; }
       }
       .name {
         font-weight: 600;
@@ -218,37 +241,49 @@
         color: var(--muted);
         text-transform: capitalize;
       }
-      .sub {
+      .card-body {
+        margin-top: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .commit {
+        font-size: 12px;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-family: monospace;
+      }
+      .branch {
+        font-size: 11px;
+        color: var(--muted);
         display: flex;
         align-items: center;
-        gap: 8px;
-        margin-top: 11px;
+        gap: 4px;
+      }
+      .branch::before {
+        content: "";
+        font-family: "Segoe UI Symbol", "Apple Color Emoji", sans-serif;
+      }
+      .card-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
         color: var(--muted);
         font-size: 12px;
         font-variant-numeric: tabular-nums;
       }
-      .history {
-        display: flex;
-        gap: 3px;
-        margin-left: auto;
-      }
-      .sq {
-        width: 9px;
-        height: 16px;
-        border-radius: 2px;
-        background: var(--none);
-      }
-      .sq.ok {
-        background: var(--ok);
-      }
-      .sq.fail {
-        background: var(--fail);
-      }
-      .sq.run {
-        background: var(--run);
-      }
-      .sq.neutral {
-        background: var(--neutral);
+      .sparkline {
+        width: 60px;
+        height: 20px;
+        stroke-width: 2;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
       }
       .notice {
         background: var(--panel);
@@ -272,6 +307,73 @@
         color: var(--muted);
         border-bottom: 1px dotted var(--neutral);
       }
+
+      /* Details Overlay */
+      #overlay {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.7);
+        backdrop-filter: blur(4px);
+        z-index: 100;
+        display: none;
+        place-items: center;
+        padding: 20px;
+      }
+      .modal {
+        background: var(--panel);
+        border: 1px la
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        width: 100%;
+        max-width: 500px;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+      }
+      .modal-header {
+        padding: 20px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .modal-header h3 { margin: 0; font-size: 16px; }
+      .modal-close {
+        cursor: pointer;
+        background: none;
+        border: 0;
+        color: var(--muted);
+        font-size: 20px;
+      }
+      .modal-body {
+        padding: 20px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .job-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px;
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-size: 13px;
+      }
+      .job-item .status {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+      }
+      .job-item .status.ok { background: var(--ok); }
+      .job-item .status.fail { background: var(--fail); }
+      .job-item .status.run { background: var(--run); }
+      .job-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .job-item .link { color: var(--accent); font-size: 11px; }
     </style>
   </head>
   <body>
@@ -293,23 +395,33 @@
       <div class="notice">Loading workflow status…</div>
     </main>
 
+    <div id="overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="modal-title">Run Details</h3>
+          <button class="modal-close" id="close-modal">&times;</button>
+        </div>
+        <div class="modal-body" id="modal-body">
+          <div class="notice">Fetching jobs…</div>
+        </div>
+      </div>
+    </div>
+
     <footer>
       Live from the GitHub Actions API · selectable auto-refresh ·
       <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions">Actions tab</a>
       ·
       <a
         href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/blob/main/.github/workflows/README.md"
-        >workflow catalog</a
-      >
+        >workflow catalog</a>
     </footer>
 
     <script>
       const OWNER = "saeedkolivand";
       const REPO = "ai-job-hunter-assistant-app";
       const API = `https://api.github.com/repos/${OWNER}/${REPO}`;
-      const HISTORY = 8;
+      const HISTORY = 20;
 
-      // Auto-refresh interval toggle (persisted). 0 = off.
       const INTERVALS = [
         { label: "Off", ms: 0 },
         { label: "1m", ms: 60000 },
@@ -323,7 +435,6 @@
       }
       let autoMs = loadInterval();
 
-      // Mirrors scripts/gen-workflow-catalog.mjs: only the gating workflow blocks merge.
       const ROLE = {
         "ci-pipeline.yml": "gating",
         "codeql.yml": "security",
@@ -381,6 +492,22 @@
         return { cls: "neutral", icon: "–", text: c || "—" };
       }
 
+      function generateSparkline(runs) {
+        if (!runs || runs.length === 0) return "";
+        const data = runs.slice(0, HISTORY).reverse().map(r => {
+          if (r.status !== "completed") return 0.5;
+          return r.conclusion === "success" ? 1 : 0;
+        });
+        const width = 60, height = 20;
+        const step = width / (data.length - 1 || 1);
+        let path = `M 0 ${height * (1 - data[0])}`;
+        for (let i = 1; i < data.length; i++) {
+          path += ` L ${i * step} ${height * (1 - data[i])}`;
+        }
+        const color = data[data.length - 1] === 1 ? "var(--ok)" : "var(--fail)";
+        return `<svg class="sparkline" viewBox="0 0 ${width} ${height}"><path d="${path}" stroke="${color}" /></svg>`;
+      }
+
       async function ghGet(path) {
         const res = await fetch(API + path, {
           headers: { Accept: "application/vnd.github+json" },
@@ -408,24 +535,80 @@
           })
           .join("");
         const d = dur(latest);
-        return `<a class="card" href="${esc(link)}" target="_blank" rel="noopener">
+
+        const commitMsg = latest?.head_commit?.message || "No commit message";
+        const branchName = latest?.head_branch || "unknown";
+
+        return `<a class="card ${st.cls === 'run' ? 'running' : ''}"
+                  href="${esc(link)}" target="_blank" rel="noopener"
+                  onclick="openRunDetails(event, ${latest?.id || 0}, '${esc(wf.name)}')">
           <div class="top">
             <span class="badge ${st.cls}">${st.icon}</span>
             <span class="name">${esc(wf.name)}</span>
             <span class="state">${esc(st.text)}</span>
           </div>
-          <div class="sub">
-            <span>${latest ? esc(rel(latest.created_at)) : "—"}</span>
-            ${d ? `<span>· ${d}</span>` : ""}
-            <span class="history">${squares}</span>
+          <div class="card-body">
+            <div class="commit">${esc(commitMsg)}</div>
+            <div class="branch">${esc(branchName)}</div>
+          </div>
+          <div class="card-footer">
+            <div class="sub">
+              <span>${latest ? esc(rel(latest.created_at)) : "—"}</span>
+              ${d ? `<span>· ${d}</span>` : ""}
+            </div>
+            ${generateSparkline(runs)}
           </div>
         </a>`;
+      }
+
+      async function openRunDetails(e, runId, wfName) {
+        if (!runId) return;
+        e.preventDefault();
+        el("overlay").style.display = "grid";
+        el("modal-title").textContent = wfName;
+        el("modal-body").innerHTML = `<div class="notice">Fetching jobs…</div>`;
+
+        try {
+          const data = await ghGet(`/actions/runs/${runId}/jobs`);
+          const jobs = data.jobs || [];
+          if (jobs.length === 0) {
+            el("modal-body").innerHTML = `<div class="notice">No jobs found for this run.</div>`;
+            return;
+          }
+
+          el("modal-body").innerHTML = jobs.map(j => {
+            const s = statusOf({ status: j.conclusion === 'success' ? 'completed' : 'completed', conclusion: j.conclusion });
+            return `<div class="job-item">
+              <span class="status ${s.cls}"></span>
+              <span class="name">${esc(j.name)}</span>
+              <a class="link" href="${esc(j.html_url)}" target="_blank">View →</a>
+            </div>`;
+          }).join("");
+        } catch (err) {
+          el("modal-body").innerHTML = `<div class="notice error">${esc(err.message)}</div>`;
+        }
       }
 
       function render(workflows, byWf) {
         const groups = {};
         for (const wf of workflows) (groups[roleOf(wf.path)] ||= []).push(wf);
-        let html = "";
+
+        const gatingWf = groups["gating"] || [];
+        const allGatingPassing = gatingWf.length > 0 && gatingWf.every(wf => {
+          const latest = byWf[wf.id]?.[0];
+          return latest && latest.conclusion === "success";
+        });
+
+        let html = `
+          <div class="health-banner ${allGatingPassing ? 'ok' : 'fail'}">
+            <span class="status-icon ${allGatingPassing ? 'ok' : 'fail'}"></span>
+            <span class="msg">
+              ${allGatingPassing ? "All gating workflows are passing" : "Gating workflows have failures"}
+              <span class="muted">· Check details below</span>
+            </span>
+          </div>
+        `;
+
         for (const role of ROLE_ORDER) {
           const list = (groups[role] || []).sort((a, b) => a.name.localeCompare(b.name));
           if (!list.length) continue;
@@ -517,10 +700,16 @@
       }
 
       el("refresh").addEventListener("click", refresh);
-      // While the tab is hidden the countdown keeps ticking; on return, refresh if due.
       document.addEventListener("visibilitychange", () => {
         if (!document.hidden && autoMs && Date.now() >= nextAt) refresh();
       });
+      el("close-modal").addEventListener("click", () => {
+        el("overlay").style.display = "none";
+      });
+      el("overlay").addEventListener("click", (e) => {
+        if (e.target === el("overlay")) el("overlay").style.display = "none";
+      });
+
       buildIntervals();
       refresh();
     </script>
