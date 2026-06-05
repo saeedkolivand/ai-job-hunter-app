@@ -97,6 +97,35 @@
         opacity: 0.6;
         cursor: default;
       }
+      .seg {
+        display: inline-flex;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .seg button {
+        appearance: none;
+        border: 0;
+        border-left: 1px solid var(--border);
+        background: var(--panel-2);
+        color: var(--muted);
+        padding: 7px 10px;
+        cursor: pointer;
+        font-size: 12.5px;
+        font-weight: 550;
+        font-variant-numeric: tabular-nums;
+      }
+      .seg button:first-child {
+        border-left: 0;
+      }
+      .seg button:hover {
+        color: var(--text);
+        background: #232a36;
+      }
+      .seg button.active {
+        background: var(--accent);
+        color: #0d1117;
+      }
       main {
         padding: 22px 24px 60px;
         max-width: 1100px;
@@ -251,6 +280,12 @@
       <div class="spacer"></div>
       <span class="meta" id="updated">Loading…</span>
       <span class="meta" id="countdown"></span>
+      <span class="meta">auto</span>
+      <span
+        class="seg"
+        id="intervals"
+        title="Auto-refresh interval. The anonymous GitHub API allows ~60 requests/hour per visitor (2 per refresh)."
+      ></span>
       <button id="refresh" type="button">↻ Refresh now</button>
     </header>
 
@@ -259,7 +294,7 @@
     </main>
 
     <footer>
-      Live from the GitHub Actions API · auto-refreshes every 5 minutes ·
+      Live from the GitHub Actions API · selectable auto-refresh ·
       <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions">Actions tab</a>
       ·
       <a
@@ -272,8 +307,21 @@
       const OWNER = "saeedkolivand";
       const REPO = "ai-job-hunter-assistant-app";
       const API = `https://api.github.com/repos/${OWNER}/${REPO}`;
-      const AUTO_MS = 5 * 60 * 1000;
       const HISTORY = 8;
+
+      // Auto-refresh interval toggle (persisted). 0 = off.
+      const INTERVALS = [
+        { label: "Off", ms: 0 },
+        { label: "1m", ms: 60000 },
+        { label: "5m", ms: 5 * 60000 },
+        { label: "15m", ms: 15 * 60000 },
+      ];
+      const STORE_KEY = "ajh-ci-dash-interval";
+      function loadInterval() {
+        const v = Number(localStorage.getItem(STORE_KEY));
+        return INTERVALS.some((i) => i.ms === v) ? v : 5 * 60000;
+      }
+      let autoMs = loadInterval();
 
       // Mirrors scripts/gen-workflow-catalog.mjs: only the gating workflow blocks merge.
       const ROLE = {
@@ -407,9 +455,35 @@
 
       let countdownTimer = null;
       let nextAt = 0;
+
+      function buildIntervals() {
+        const box = el("intervals");
+        box.innerHTML = INTERVALS.map(
+          (i) =>
+            `<button type="button" data-ms="${i.ms}"${i.ms === autoMs ? ' class="active"' : ""}>${i.label}</button>`,
+        ).join("");
+        box.querySelectorAll("button").forEach((b) =>
+          b.addEventListener("click", () => {
+            autoMs = Number(b.dataset.ms);
+            try {
+              localStorage.setItem(STORE_KEY, String(autoMs));
+            } catch {}
+            box
+              .querySelectorAll("button")
+              .forEach((x) => x.classList.toggle("active", Number(x.dataset.ms) === autoMs));
+            scheduleAuto();
+          }),
+        );
+      }
+
       function scheduleAuto() {
-        nextAt = Date.now() + AUTO_MS;
         clearInterval(countdownTimer);
+        if (!autoMs) {
+          nextAt = 0;
+          el("countdown").textContent = "· auto-refresh off";
+          return;
+        }
+        nextAt = Date.now() + autoMs;
         countdownTimer = setInterval(tick, 1000);
         tick();
       }
@@ -443,10 +517,11 @@
       }
 
       el("refresh").addEventListener("click", refresh);
-      // Pause the countdown while the tab is hidden; refresh on return if it's due.
+      // While the tab is hidden the countdown keeps ticking; on return, refresh if due.
       document.addEventListener("visibilitychange", () => {
-        if (!document.hidden && Date.now() >= nextAt) refresh();
+        if (!document.hidden && autoMs && Date.now() >= nextAt) refresh();
       });
+      buildIntervals();
       refresh();
     </script>
   </body>

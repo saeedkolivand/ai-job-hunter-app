@@ -424,7 +424,7 @@ Both are generated from the workflow files by `pnpm gen:workflows`.
 
 **[📊 Live CI dashboard](https://saeedkolivand.github.io/ai-job-hunter-assistant-app/ci-dashboard.html)** —
 at-a-glance status of every workflow, grouped by role, fetched live from the Actions API
-(auto-refreshes every 5 min, plus a **Refresh now** button).
+(selectable auto-refresh — off/1/5/15 min — plus a **Refresh now** button).
 
 <!-- workflows:badges:start -->
 
