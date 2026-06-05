@@ -25,6 +25,16 @@ layout_pdf = []
 # falls back to it.
 model_docx = []
 
+# Application library — the whole app lives in `src/lib.rs` so it is reachable as
+# `ajh_tauri::…` from integration tests and `benches/`. `src/main.rs` is a thin
+# launcher. This is the canonical Tauri 2 lib + bin split.
+[lib]
+name = "ajh_tauri"
+
+[[bin]]
+name = "ajh-tauri"
+path = "src/main.rs"
+
 [profile.dev]
 incremental = true
 
@@ -127,3 +137,10 @@ proptest = "1.5"
 wiremock = "0.6.5"
 # Rasteriser for the generate_templates_showcase_banner test — dev-only, NOT in the shipped binary.
 typst-render = "=0.14.2"
+criterion = "0.8.2"
+
+# Export hot-path benchmarks (request → PDF/DOCX bytes). Tracked over time by the
+# advisory `.github/workflows/benchmark.yml`. `harness = false` → criterion owns main.
+[[bench]]
+name = "export_render"
+harness = false

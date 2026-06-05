@@ -17,7 +17,7 @@ lower layer; a lower layer may never use a higher one). Layer = the first path s
 a module under `src/`.
 
 ```
-L3  Shell / IPC        commands, ipc_contracts, main, updater, tray, deeplink
+L3  Shell / IPC        commands, ipc_contracts, lib, main, updater, tray, deeplink
 L2  Application        pipeline, cover_letter, autopilot, autopilot_scheduler,
                        autopilot_helpers, recommend
 L1  Domain             scraping, extraction, export, documents, jobs, postings,
@@ -81,18 +81,19 @@ L0  Shared infra       error, observability, db, data_store, net, platform, brow
   `crate::commands::ai_provider` for embeddings/provider routing. All allowlisted with
   `TODO(arch)` (target: inject an emitter port + relocate `ai_provider`).
 
-### L3 — Shell / IPC (`commands`, `ipc_contracts`, `main`, `updater`, `tray`, `deeplink`)
+### L3 — Shell / IPC (`commands`, `ipc_contracts`, `lib`, `main`, `updater`, `tray`, `deeplink`)
 
 - **Allowed deps:** anything below (L0/L1/L2).
 - **Forbidden deps:** none structurally — but L3 must stay **thin**: command handlers
   route to domain/application code and own no business logic.
-- **Public API:** `#[tauri::command]` functions registered in `main.rs`'s
+- **Public API:** `#[tauri::command]` functions registered in `lib.rs`'s
   `invoke_handler!`. `ipc_contracts` holds the serde DTOs.
 - **Sole authority for Tauri:** **only L3 may define `#[tauri::command]`** and freely use
   `AppHandle`/`State`/`Manager`/`emit`. Command-defining locations are limited to
   `commands/**`, `export/commands/**`, and `updater/mod.rs` (cohesive command surfaces).
-- **Ownership:** `commands/data.rs` owns the backup/restore bundle; `main.rs` owns the
-  builder, menu, tray, and store registration.
+- **Ownership:** `commands/data.rs` owns the backup/restore bundle; `lib.rs` owns the
+  builder, menu, tray, and store registration (`main.rs` is a thin launcher that calls
+  `ajh_tauri::run()`, kept separate so the app is reachable from benches/integration tests).
 
 ---
 
