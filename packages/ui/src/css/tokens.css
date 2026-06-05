@@ -132,6 +132,9 @@
   --aurora-cyan: #22d3ee;
   --nebula-violet: #c084fc;
   --nebula-indigo: #818cf8;
+  /* ── RGB aliases for brand colors (used in gradients) */
+  --rgb-brand: 168 85 247;
+  --rgb-aurora-indigo: 99 102 241;
 
   /* ── Animation duration scale ─────────────────────────────────────────── */
   --dur-instant: 80ms;

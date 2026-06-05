@@ -154,9 +154,9 @@ export function CinematicBackground() {
           left: 0,
           background: [
             'radial-gradient(circle,',
-            '  rgba(168,85,247,0.30)  0%,',
-            '  rgba(168,85,247,0.14) 30%,',
-            '  rgba(99,102,241,0.06) 55%,',
+            '  rgba(var(--rgb-brand), 0.3)  0%,',
+            '  rgba(var(--rgb-brand), 0.14) 30%,',
+            '  rgba(var(--rgb-aurora-indigo), 0.06) 55%,',
             '  transparent           72%)',
           ].join(' '),
           filter: 'blur(55px)',
@@ -172,7 +172,7 @@ export function CinematicBackground() {
           transform:
             'translate3d(calc(var(--parallax-x, 0) * 30px), calc(var(--parallax-y, 0) * 20px), 0)',
           background:
-            'radial-gradient(circle, rgba(168,85,247,0.35) 0%, rgba(168,85,247,0.12) 50%, transparent 75%)',
+            'radial-gradient(circle, rgba(var(--rgb-brand), 0.35) 0%, rgba(var(--rgb-brand), 0.12) 50%, transparent 75%)',
           filter: 'blur(12px)',
         }}
       />
@@ -182,7 +182,7 @@ export function CinematicBackground() {
           transform:
             'translate3d(calc(var(--parallax-x, 0) * -25px), calc(var(--parallax-y, 0) * 15px), 0)',
           background:
-            'radial-gradient(circle, rgba(99,102,241,0.35) 0%, rgba(99,102,241,0.12) 50%, transparent 75%)',
+            'radial-gradient(circle, rgba(var(--rgb-aurora-indigo), 0.35) 0%, rgba(var(--rgb-aurora-indigo), 0.12) 50%, transparent 75%)',
           filter: 'blur(10px)',
         }}
       />
@@ -193,7 +193,7 @@ export function CinematicBackground() {
             transform:
               'translate3d(calc(var(--parallax-x, 0) * 15px), calc(var(--parallax-y, 0) * -10px), 0)',
             background:
-              'radial-gradient(circle, rgba(168,85,247,0.2) 0%, rgba(99,102,241,0.08) 50%, transparent 75%)',
+              'radial-gradient(circle, rgba(var(--rgb-brand), 0.2) 0%, rgba(var(--rgb-aurora-indigo), 0.08) 50%, transparent 75%)',
             filter: 'blur(8px)',
           }}
         />

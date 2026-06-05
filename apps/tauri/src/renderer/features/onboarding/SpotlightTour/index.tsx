@@ -145,7 +145,7 @@ export function SpotlightTour({ onFinish }: Props) {
           transition={transition.spring}
           style={{
             boxShadow: `0 0 0 9999px var(--color-spotlight-overlay)`,
-            border: '1.5px solid rgba(168,85,247,0.7)',
+            border: '1.5px solid rgba(var(--rgb-brand), 0.7)',
           }}
         />
       )}
@@ -163,7 +163,7 @@ export function SpotlightTour({ onFinish }: Props) {
           transition={transition.spring}
           style={{
             background:
-              'radial-gradient(ellipse at center, rgba(168,85,247,0.15) 0%, transparent 70%)',
+              'radial-gradient(ellipse at center, rgba(var(--rgb-brand), 0.15) 0%, transparent 70%)',
           }}
         />
       )}
@@ -196,8 +196,8 @@ export function SpotlightTour({ onFinish }: Props) {
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
                   style={{
                     background:
-                      'linear-gradient(135deg, rgba(168,85,247,0.22) 0%, rgba(99,102,241,0.12) 100%)',
-                    border: '1px solid rgba(168,85,247,0.28)',
+                      'linear-gradient(135deg, rgba(var(--rgb-brand), 0.22) 0%, rgba(var(--rgb-aurora-indigo), 0.12) 100%)',
+                    border: '1px solid rgba(var(--rgb-brand), 0.28)',
                   }}
                 >
                   <Icon size={16} className="text-brand-soft" />
