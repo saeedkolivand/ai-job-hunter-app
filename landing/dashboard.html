@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flickering Turtle | GitHub Operations Center</title>
+    <!-- External Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+
+    <style>
+        :root {
+            --color-background: oklch(20.5% 1% 285);
+            --color-foreground: oklch(97% 0.4% 285);
+            --color-card: oklch(24% 1% 285);
+            --color-primary: #a855f7;
+            --color-primary-soft: rgba(168, 85, 247, 0.15);
+            --color-accent: #3b82f6;
+            --color-success: #22c55e;
+            --color-warning: #eab308;
+            --color-error: #ef4444;
+            --color-border: rgba(255, 255, 255, 0.1);
+            --glass-blur: blur(16px);
+            --glass-bg: rgba(42, 4ps, 50, 0.7);
+            --glass-border: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            --font-main: 'Inter', sans-serif;
+            --transition-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+            --transition-speed: 180ms;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background-color: var(--color-background); color: var(--color-foreground); font-family: var(--font-main); min-height: 100vh; }
+
+        .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+        .header-bar { display: flex; justify-content: space-between; align-items: center; padding: 1rem 2rem; background: rgba(0,0,0,0.2); backdrop-filter: blur(8px); border-bottom: 1px solid var(--color-border); position: sticky; top: 0; z-index: 100; }
+
+        .grid { display: grid; gap: 1.5rem; }
+        .grid-4 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+        .grid-2 { grid-template-columns: 2fr 1fr; }
+        @media (max-width: 1024px) { .grid-2 { grid-template-columns: 1fr; } }
+
+        .glass-card { background: var(--glass-bg); backdrop-filter: var(--glass-blur); border: 1px solid var(--color-border); border-radius: 12px; padding: 1.5rem; box-shadow: var(--glass-border); transition: transform var(--transition-speed) var(--transition-smooth), border-color var(--transition-speed); }
+        .glass-card:hover { border-color: rgba(168, 85, 247, 0.3); transform: translateY(-2px); }
+
+        .text-headline { font-size: 1.875rem; font-weight: 700; letter-spacing: -0.03em; }
+        .text-subhead { font-size: 1.5rem; font-weight: 600; }
+        .text-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.6; }
+        .text-primary { color: var(--color-primary); }
+
+        .kpi-value { font-size: 2rem; font-weight: 700; margin: 0.5rem 0; }
+        .trend-indicator { display: flex; align-items: center; font-scale: 0.875rem; font-weight: 500; }
+        .trend-up { color: var(--color-success); }
+        .trend-down { color: var(--color-error); }
+
+        .alert-item { display: flex; align-items: center; padding: 0.75rem; border-left: 4px solid transparent; margin-bottom: 0.75rem; background: rgba(255,255,255,0.03); cursor: pointer; }
+        .alert-critical { border-left-color: var(--color-error); }
+        .alert-high { border-left-color: var(--color-warning); }
+
+        .skeleton { animation: pulse 1.5s infinite ease-in-out; background: rgba(255,255,255,0.1); height: 1rem; border-radius: 4px; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+
+        .gauge-container { position: relative; width: 100%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; }
+        .gauge-svg { transform: rotate(-90deg); }
+        .gauge-bg { fill: none; stroke: rgba(255,255,255,0.05); stroke-width: 3; }
+        .gauge-progress { fill: none; stroke: var(--color-primary); stroke-width: 3; stroke-linecap: round; transition: stroke-dasharray 1s ease-out; }
+
+        .search-input { background: rgba(0,0,0,0.2); border: 1px solid var(--color-border); padding: 0.5rem 1rem; border-radius: 8px; color: white; width: 300px; }
+        #modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px); }
+    </style>
+</head>
+<body class="dark">
+
+    <header class="header-bar">
+        <div style="display: flex; align-items: center; gap: 1rem;">
+            <span class="text-headline" style="font-size: 1.25rem;">🐢 Flickering Turtle</span>
+            <div id="api-status" class="text-label">Checking GitHub API...</div>
+        </div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <input type="text" id="repo-search" class="search-input" placeholder="owner/repository">
+            <button onclick="app.loadRepo()" class="glass-card" style="padding: 0.5rem 1rem; cursor: pointer; font-weight: 600;">Load</button>
+        </div>
+    </header>
+
+    <main class="container">
+        <section style="margin-bottom: 3rem;">
+            <div class="text-subhead" style="margin-bottom: 1.5rem;">Executive Health Score</div>
+            <div class="grid grid-4" id="kpi-grid">
+                <div class="glass-card skeleton" style="height: 120px;"></div>
+                <div class="glass-card skeleton" style="height: 120px;"></div>
+                <div class="glass-card skeleton" style="height: 120px;"></div>
+                <div class="glass-card skeleton" style="height: 120ps;"></div>
+            </div>
+        </section>
+
+        <div class="grid grid-2">
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                <div class="glass-card">
+                    <div class="text-label">Workflow Success Trends</div>
+                    <div style="height: 300px; margin-top: 1rem;"><canvas id="chart-workflows"></canvas></div>
+                </div>
+                <div class="glass-card">
+                    <div class="text-label">Repository Activity (PRs vs Issues)</div>
+                    <div style="height: 300px; margin-top: 1rem;"><canvas id="chart-activity"></canvas></div>
+                </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                <div class="glass-card">
+                    <div class="text-subhead">Attention Required</div>
+                    <div id="alert-center" style="margin-top: 1rem;"><p class="text-label">No active alerts detected.</p></div>
+                </div>
+                <div class="glass-card">
+                    <div class="text-label">Security Risk Score</div>
+                    <div class="gauge-container" style="margin-top: 1rem;">
+                        <svg class="gauge-svg" width="160" height="1</div>
+                    <svg class="gauge-svg" width="160" height="160">
+                            <circle class="gauge-bg" cx="80" cy="80" r="70"></circle>
+                            <circle id="gauge-security" class="gauge-progress" cx="80" cy="80" r="70" stroke-dasharray="440 440"></circle>
+                        </svg>
+                        <div id="gauge-val" style="position: absolute; font-size: 1.5rem; font-weight: 700;">--</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="modal-overlay" onclick="app.closeModal()">
+        <div class="glass-card" style="width: 80%; max-width: 800px; height: 70vh; overflow-y: auto;" onclick="event.stopPropagation()">
+            <h2 id="modal-title" class="text-subhead">Details</h2>
+            <div id="modal-content" style="margin-top: 1rem;"></div>
+        </div>
+    </div>
+
+    <script>
+        const CONFIG = {
+            DEFAULT_REPO: 'facebook/react',
+            ENDPOINTS: {
+                WORKFLOWS: (o, r) => `https://api.github.com/repos/${o}/${r}/actions/runs`,
+                PRs: (o, r) => `https://api.github.com/repos/${o}/${r}/pulls`,
+                ISSUES: (o, r) => `https://api.github.com/repos/${
+                    o
+                }/${r}/issues`
+            }
+        };
+
+        const state = {
+            currentRepo: null,
+            data: { workflows: [], prs: [], issues: [] }
+        };
+
+        const api = {
+            async fetch(url) {
+                try {
+                    const response = await fetch(url);
+                    const remaining = response.headers.get('X-RateLimit-Remaining');
+                    const resetTime = response.headers.get('X-RateLimit-Reset');
+                    app.updateApiStatus(remaining, resetTime);
+
+                    if (!response.ok) throw new Error(`GitHub API error: ${response.statusText}`);
+                    return await response.json();
+                } catch (err) {
+                    app.notifyError(err.message);
+                    throw err;
+                }
+            }
+        };
+
+        const analytics = {
+            calculateHealthScore(data) {
+                if (!data.workflows || data.workflows.length === 0) return 50;
+                return Math.round((data.workflows.filter(w => w.conclusion === 'success').length / data.workflows.length) * 100);
+            },
+            getDORAMetrics(workflows) {
+                if (!workflows || workflows.length === 0) return { deploymentFrequency: 0, changeFailureRate: 0 };
+                const failure = workflows.filter(w => w.conclusion === 'failure' || w.conclusion === 'timed_out').length;
+                return { deploymentFrequency: workflows.length, changeFailureRate: (failure / workflows.length) * 100 };
+            }
+        };
+
+        const app = {
+            async init() {
+                this.loadRepo(CONFIG.DEFAULT_REPO);
+                this.setupListeners();
+            },
+            setupListeners() {
+                document.getElementById('repo-search').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.loadRepo();
+                });
+            },
+            async loadRepo(target) {
+                const path = target || document.getElementById('repo-search').value;
+                if (!path) return;
+                const [owner, repo] = path.split('/');
+                state.currentRepo = { owner, repo };
+                this.renderSkeletons();
+
+                try {
+                    const [workflows, prs, issues] = await Promise.all([
+                        api.fetch(CONFIG.ENDPOINTS.WORKFLOWS(owner, repo)),
+                        api.fetch(CONFIG.ENDPOINTS.PRs(owner, repo)),
+                        api.fetch(CONFIG.ENDPOINTS.ISSUES(owner, repo))
+                    ]);
+                    state.data = { workflows, prs, issues };
+                    this.renderDashboard();
+                } catch (e) { console.error(e); }
+            },
+            updateApiStatus(remaining, resetTime) {
+                const statusEl = document.getElementById('api-status');
+                if (remaining === null) return;
+                const resetDate = new Date(resetTime * 1000);
+                statusEl.innerHTML = `API: ${remaining} left | Reset: ${resetDate.toLocaleTimeString()}`;
+            },
+            renderSkeletons() {
+                document.getElementById('kpi-grid').innerHTML = Array(4).fill('<div class="glass-card skeleton" style="height: 120px;"></div>').join('');
+            },
+            renderDashboard() {
+                this.renderKPIs();
+                this.renderCharts();
+                this.renderAlerts();
+                this.renderGauge();
+            },
+            renderKPIs() {
+                const container = document.getElementById('kpi-grid');
+                const health = analytics.calculateHealthScore(state.data);
+                const doras = analytics.getDORAMetrics(state.data.workflows);
+                container.innerHTML = `
+                    <div class="glass-card"><div class="text-label">Health Score</div><div class="kpi-value">${health}%</div></div>
+                    <div class="glass-card"><div class="text-label">Active PRs</div><div class="kpi-value">${state.data.prs.length}</div></div>
+                    <div class="glass-card"><div class="text-label">Open Issues</div><div class="kpi-value">${state.data.issues.length}</div></div>
+                    <div class="glass-card"><div class="text-label">Workflows</div><div class="kpi-value">${state.data.workflows.length}</div></div>
+                `;
+            },
+            renderCharts() {
+                const ctx1 = document.getElementById('chart-workflows').getContext('2d');
+                if (this.charts?.workflows) this.charts.workflows.destroy();
+                this.charts.workflows = new Chart(ctx1, {
+                    type: 'line',
+                    data: {
+                        labels: ['W1', 'W2', 'W3', 'W4'],
+                        datasets: [{ label: 'Successes', data: [5, 8, 6, 9], borderColor: '#a855f7', tension: 0.4 }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+
+                const ctx2 = document.getElementById('chart-activity').getContext('2d');
+                if (this.charts?.activity) this.charts.activity.destroy();
+                this.charts.activity = new Chart(ctx2, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Jan', 'Feb', 'Mar'],
+                        datasets: [{ label: 'PRs', data: [10, 20, 15], backgroundColor: '#3b82f6' }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            },
+            renderAlerts() {
+                const container = document.getElementById('alert-center');
+                const fails = state.data.workflows.filter(w => w.conclusion === 'failure').slice(0, 3);
+                if (!fails.length) { container.innerHTML = '<p class="text-label">No active alerts.</p>'; return; }
+                container.innerHTML = fails.map(f => `<div class="alert-item alert-critical">${f.name}</div>`).join('');
+            },
+            renderGauge() {
+                const progress = document.getElementById('gauge-security');
+                const valEl = document.getElementById('gauge-val');
+                const score = 84;
+                const circumference = 2 * Math.round(Math.PI * 70);
+                const offset = circumference - (score / 100) * circumference;
+                progress.style.strokeDasharray = `${circumference} ${circumference}`;
+                progress.style.strokeDashoffset = offset;
+                valEl.innerText = score + '%';
+            },
+            closeModal() { document.getElementById('modal-overlay').style.display = 'none'; },
+            notifyError(msg) { alert(`[ERROR] ${msg}`); }
+        };
+
+        app.init();
+    </script>
+</body>
+</html>
