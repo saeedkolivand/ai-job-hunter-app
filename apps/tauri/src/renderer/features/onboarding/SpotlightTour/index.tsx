@@ -144,7 +144,7 @@ export function SpotlightTour({ onFinish }: Props) {
           }}
           transition={transition.spring}
           style={{
-            boxShadow: '0 0 0 9999px rgba(0,0,0,0.76)',
+            boxShadow: `0 0 0 9999px var(--color-spotlight-overlay)`,
             border: '1.5px solid rgba(168,85,247,0.7)',
           }}
         />
@@ -175,16 +175,9 @@ export function SpotlightTour({ onFinish }: Props) {
         animate={{ top: cardTop }}
         transition={transition.spring}
       >
-        <div
-          className="rounded-2xl border border-white/[0.08] p-6"
-          style={{
-            background: 'linear-gradient(145deg, rgba(20,14,36,0.98) 0%, rgba(12,10,24,0.98) 100%)',
-            boxShadow:
-              '0 24px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(168,85,247,0.1), inset 0 1px 0 rgba(255,255,255,0.04)',
-          }}
-        >
+        <div className="glass-modal rounded-2xl p-6">
           {/* Header */}
-          <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-widest text-foreground/55">
+          <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-foreground/55">
             {t('onboarding.tour.title')}
           </div>
 

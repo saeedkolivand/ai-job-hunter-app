@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useState } from 'react';
 
 import type { Autopilot } from '@ajh/shared';
-import { Button, cn, transition } from '@ajh/ui';
+import { Button, cn, ModalShell, transition } from '@ajh/ui';
 
 import { StepAction } from '@/features/autopilot/components/wizard-steps/StepAction';
 import { StepFilter } from '@/features/autopilot/components/wizard-steps/StepFilter';
@@ -14,8 +14,6 @@ import type { SetFn, WizardState } from '@/features/autopilot/types';
 import { useTranslation } from '@/lib/i18n';
 import { useCreateAutopilot, useJobPreferences, useUpdateAutopilot } from '@/services';
 import { useSessionStore } from '@/store/session-store';
-
-import { WizardBackdrop } from './WizardBackdrop';
 
 interface CreationWizardProps {
   onDone(ap: Autopilot): void;
@@ -115,41 +113,8 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={transition.fast}
-      className="absolute inset-0 z-[var(--z-modal)] flex items-center justify-center"
-    >
-      <WizardBackdrop />
-
-      {/* Modal glass panel */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 14 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 14 }}
-        transition={transition.relaxed}
-        style={{
-          /* Denser, milkier glass — not transparent tinted window */
-          background: 'rgba(14, 14, 26, 0.88)',
-          backdropFilter: 'blur(32px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(32px) saturate(180%)',
-          border: '1px solid rgba(255,255,255,0.13)',
-          boxShadow: [
-            /* purple accent ring */
-            '0 0 0 1px rgba(168,85,247,0.15)',
-            /* deep lift shadow */
-            '0 40px 100px rgba(0,0,0,0.75)',
-            '0 12px 40px rgba(0,0,0,0.5)',
-            /* top edge highlight — the classic Apple glass line */
-            'inset 0 1px 0 rgba(255,255,255,0.13)',
-            /* bottom edge dim */
-            'inset 0 -1px 0 rgba(0,0,0,0.3)',
-          ].join(', '),
-        }}
-        className="relative w-full max-w-xl rounded-2xl overflow-hidden"
-      >
+    <ModalShell open onClose={onCancel} maxWidth="max-w-xl">
+      <div className="relative w-full overflow-hidden">
         {/* Wizard header */}
         <div className="flex items-center justify-between border-white/[0.1] px-6 py-4">
           <div className="flex items-center gap-2">
@@ -248,7 +213,7 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
             </Button>
           )}
         </div>
-      </motion.div>
-    </motion.div>
+      </div>
+    </ModalShell>
   );
 }

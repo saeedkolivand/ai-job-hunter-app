@@ -141,16 +141,6 @@ export function CinematicBackground() {
         />
       )}
 
-      {/* Soft streaks */}
-      <div className="light-streak absolute top-[20%] left-1/4 h-px w-[40vw] bg-white/10 animate-streak-1" />
-      <div className="light-streak absolute top-[55%] left-1/3 h-px w-[35vw] bg-white/10 animate-streak-2" />
-      {full && (
-        <>
-          <div className="light-streak absolute top-[75%] left-1/4 h-px w-[30vw] bg-white/5  animate-streak-3" />
-          <div className="light-streak absolute top-[35%] left-1/2 h-px w-[25vw] bg-white/5  animate-streak-4" />
-        </>
-      )}
-
       {/* Cursor blob — 900px lerp-smoothed glow.
           Position is updated every RAF tick via ref mutation (no React renders).
           Gradient has three stops for a soft centre → hard falloff shape. */}
