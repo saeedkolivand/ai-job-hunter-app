@@ -422,6 +422,10 @@ Live status of every GitHub Actions workflow. See
 what each one does, its triggers, and whether it gates merges (only **✅ CI OK** does).
 Both are generated from the workflow files by `pnpm gen:workflows`.
 
+**[📊 Live CI dashboard](https://saeedkolivand.github.io/ai-job-hunter-assistant-app/ci-dashboard.html)** —
+at-a-glance status of every workflow, grouped by role, fetched live from the Actions API
+(auto-refreshes every 5 min, plus a **Refresh now** button).
+
 <!-- workflows:badges:start -->
 
 [![📈 Benchmarks (advisory)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/benchmark.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/benchmark.yml)

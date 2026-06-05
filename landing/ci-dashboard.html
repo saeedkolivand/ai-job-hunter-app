@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Internal status page on the marketing domain — keep it out of search. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <title>AI Job Hunter — CI Status</title>
+    <style>
+      :root {
+        --bg: #0d1117;
+        --panel: #161b22;
+        --panel-2: #1c2330;
+        --border: #30363d;
+        --text: #e6edf3;
+        --muted: #8b949e;
+        --accent: #e24b4a;
+        --ok: #3fb950;
+        --fail: #f85149;
+        --run: #d29922;
+        --neutral: #6e7681;
+        --none: #373e47;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.5 -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px 18px;
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        background: rgba(13, 17, 23, 0.92);
+        backdrop-filter: blur(6px);
+        z-index: 5;
+      }
+      header h1 {
+        font-size: 17px;
+        margin: 0;
+        font-weight: 650;
+        letter-spacing: 0.2px;
+      }
+      header h1 .dot {
+        color: var(--accent);
+      }
+      .spacer {
+        flex: 1;
+      }
+      .meta {
+        color: var(--muted);
+        font-size: 12.5px;
+        font-variant-numeric: tabular-nums;
+      }
+      button#refresh {
+        appearance: none;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        color: var(--text);
+        padding: 7px 14px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 550;
+        transition:
+          border-color 0.15s,
+          background 0.15s,
+          transform 0.05s;
+      }
+      button#refresh:hover {
+        border-color: var(--accent);
+        background: #232a36;
+      }
+      button#refresh:active {
+        transform: translateY(1px);
+      }
+      button#refresh:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      main {
+        padding: 22px 24px 60px;
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+      .group {
+        margin: 26px 0 10px;
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+      }
+      .group h2 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1.3px;
+        color: var(--muted);
+        margin: 0;
+      }
+      .group .hint {
+        font-size: 11.5px;
+        color: var(--neutral);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+        gap: 12px;
+      }
+      .card {
+        display: block;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px 15px;
+        transition:
+          border-color 0.15s,
+          transform 0.08s;
+      }
+      .card:hover {
+        border-color: #475061;
+        transform: translateY(-1px);
+      }
+      .card .top {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .badge {
+        flex: none;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: #0d1117;
+      }
+      .badge.ok {
+        background: var(--ok);
+      }
+      .badge.fail {
+        background: var(--fail);
+      }
+      .badge.run {
+        background: var(--run);
+        animation: pulse 1.3s ease-in-out infinite;
+      }
+      .badge.neutral {
+        background: var(--neutral);
+      }
+      .badge.none {
+        background: var(--none);
+        color: var(--muted);
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.45;
+        }
+      }
+      .name {
+        font-weight: 600;
+        font-size: 14px;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .state {
+        font-size: 12px;
+        color: var(--muted);
+        text-transform: capitalize;
+      }
+      .sub {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 11px;
+        color: var(--muted);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .history {
+        display: flex;
+        gap: 3px;
+        margin-left: auto;
+      }
+      .sq {
+        width: 9px;
+        height: 16px;
+        border-radius: 2px;
+        background: var(--none);
+      }
+      .sq.ok {
+        background: var(--ok);
+      }
+      .sq.fail {
+        background: var(--fail);
+      }
+      .sq.run {
+        background: var(--run);
+      }
+      .sq.neutral {
+        background: var(--neutral);
+      }
+      .notice {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 18px 20px;
+        color: var(--muted);
+      }
+      .notice.error {
+        border-color: var(--fail);
+        color: #ffb3ae;
+      }
+      footer {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 0 24px 40px;
+        color: var(--neutral);
+        font-size: 12px;
+      }
+      footer a {
+        color: var(--muted);
+        border-bottom: 1px dotted var(--neutral);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>AI Job Hunter <span class="dot">●</span> CI status</h1>
+      <div class="spacer"></div>
+      <span class="meta" id="updated">Loading…</span>
+      <span class="meta" id="countdown"></span>
+      <button id="refresh" type="button">↻ Refresh now</button>
+    </header>
+
+    <main id="content">
+      <div class="notice">Loading workflow status…</div>
+    </main>
+
+    <footer>
+      Live from the GitHub Actions API · auto-refreshes every 5 minutes ·
+      <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions">Actions tab</a>
+      ·
+      <a
+        href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/blob/main/.github/workflows/README.md"
+        >workflow catalog</a
+      >
+    </footer>
+
+    <script>
+      const OWNER = "saeedkolivand";
+      const REPO = "ai-job-hunter-assistant-app";
+      const API = `https://api.github.com/repos/${OWNER}/${REPO}`;
+      const AUTO_MS = 5 * 60 * 1000;
+      const HISTORY = 8;
+
+      // Mirrors scripts/gen-workflow-catalog.mjs: only the gating workflow blocks merge.
+      const ROLE = {
+        "ci-pipeline.yml": "gating",
+        "codeql.yml": "security",
+        "semgrep.yml": "security",
+        "scorecard.yml": "security",
+        "security.yml": "security",
+        "release.yml": "deploy",
+        "pages.yml": "deploy",
+      };
+      const ROLE_ORDER = ["gating", "advisory", "security", "deploy"];
+      const ROLE_LABEL = {
+        gating: "Gating · blocks merge",
+        advisory: "Advisory · never blocks",
+        security: "Security · reports to the Security tab",
+        deploy: "Deploy · on push to main",
+      };
+      const roleOf = (path) => ROLE[path.split("/").pop()] || "advisory";
+
+      const el = (id) => document.getElementById(id);
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
+        );
+
+      function rel(iso) {
+        if (!iso) return "—";
+        const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+        if (s < 60) return "just now";
+        const m = s / 60;
+        if (m < 60) return `${Math.floor(m)}m ago`;
+        const h = m / 60;
+        if (h < 24) return `${Math.floor(h)}h ago`;
+        return `${Math.floor(h / 24)}d ago`;
+      }
+
+      function dur(run) {
+        if (!run || run.status !== "completed") return "";
+        const a = new Date(run.run_started_at || run.created_at);
+        const b = new Date(run.updated_at);
+        let s = Math.max(0, Math.round((b - a) / 1000));
+        const m = Math.floor(s / 60);
+        s = s % 60;
+        return m ? `${m}m ${s}s` : `${s}s`;
+      }
+
+      function statusOf(run) {
+        if (!run) return { cls: "none", icon: "•", text: "no recent runs" };
+        if (run.status !== "completed")
+          return { cls: "run", icon: "◴", text: (run.status || "running").replace(/_/g, " ") };
+        const c = run.conclusion;
+        if (c === "success") return { cls: "ok", icon: "✓", text: "passing" };
+        if (c === "failure" || c === "timed_out") return { cls: "fail", icon: "✕", text: c };
+        return { cls: "neutral", icon: "–", text: c || "—" };
+      }
+
+      async function ghGet(path) {
+        const res = await fetch(API + path, {
+          headers: { Accept: "application/vnd.github+json" },
+        });
+        if (res.status === 403 && res.headers.get("X-RateLimit-Remaining") === "0") {
+          const reset = Number(res.headers.get("X-RateLimit-Reset")) * 1000;
+          throw new Error(
+            `GitHub API rate limit reached (60/hr for anonymous requests). Resets at ${new Date(reset).toLocaleTimeString()}.`,
+          );
+        }
+        if (!res.ok) throw new Error(`GitHub API error ${res.status}`);
+        return res.json();
+      }
+
+      function card(wf, runs) {
+        const latest = runs[0];
+        const st = statusOf(latest);
+        const link = (latest && latest.html_url) || wf.html_url;
+        const squares = runs
+          .slice(0, HISTORY)
+          .reverse()
+          .map((r) => {
+            const s = statusOf(r);
+            return `<a class="sq ${s.cls}" href="${esc(r.html_url)}" target="_blank" rel="noopener" title="${esc(s.text)} · ${esc(rel(r.created_at))}"></a>`;
+          })
+          .join("");
+        const d = dur(latest);
+        return `<a class="card" href="${esc(link)}" target="_blank" rel="noopener">
+          <div class="top">
+            <span class="badge ${st.cls}">${st.icon}</span>
+            <span class="name">${esc(wf.name)}</span>
+            <span class="state">${esc(st.text)}</span>
+          </div>
+          <div class="sub">
+            <span>${latest ? esc(rel(latest.created_at)) : "—"}</span>
+            ${d ? `<span>· ${d}</span>` : ""}
+            <span class="history">${squares}</span>
+          </div>
+        </a>`;
+      }
+
+      function render(workflows, byWf) {
+        const groups = {};
+        for (const wf of workflows) (groups[roleOf(wf.path)] ||= []).push(wf);
+        let html = "";
+        for (const role of ROLE_ORDER) {
+          const list = (groups[role] || []).sort((a, b) => a.name.localeCompare(b.name));
+          if (!list.length) continue;
+          html += `<div class="group"><h2>${esc(role)}</h2><span class="hint">${esc(ROLE_LABEL[role])}</span></div>`;
+          html += `<div class="grid">${list
+            .map((wf) => card(wf, byWf[wf.id] || []))
+            .join("")}</div>`;
+        }
+        el("content").innerHTML = html || `<div class="notice">No workflows found.</div>`;
+      }
+
+      async function load() {
+        const [wf, runs] = await Promise.all([
+          ghGet("/actions/workflows?per_page=100"),
+          ghGet("/actions/runs?per_page=100"),
+        ]);
+        const workflows = (wf.workflows || []).filter((w) =>
+          w.path.startsWith(".github/workflows/"),
+        );
+        const byWf = {};
+        for (const r of runs.workflow_runs || []) (byWf[r.workflow_id] ||= []).push(r);
+        for (const id in byWf)
+          byWf[id].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        render(workflows, byWf);
+        el("updated").textContent = "updated " + new Date().toLocaleTimeString();
+      }
+
+      let countdownTimer = null;
+      let nextAt = 0;
+      function scheduleAuto() {
+        nextAt = Date.now() + AUTO_MS;
+        clearInterval(countdownTimer);
+        countdownTimer = setInterval(tick, 1000);
+        tick();
+      }
+      function tick() {
+        const left = Math.max(0, nextAt - Date.now());
+        const m = Math.floor(left / 60000);
+        const s = Math.floor((left % 60000) / 1000);
+        el("countdown").textContent = `· auto-refresh in ${m}:${String(s).padStart(2, "0")}`;
+        if (left <= 0) refresh();
+      }
+
+      let busy = false;
+      async function refresh() {
+        if (busy) return;
+        busy = true;
+        const btn = el("refresh");
+        btn.disabled = true;
+        const label = btn.textContent;
+        btn.textContent = "↻ Refreshing…";
+        try {
+          await load();
+        } catch (e) {
+          el("content").innerHTML = `<div class="notice error">${esc(e.message)}</div>`;
+          el("updated").textContent = "update failed";
+        } finally {
+          btn.textContent = label;
+          btn.disabled = false;
+          busy = false;
+          scheduleAuto();
+        }
+      }
+
+      el("refresh").addEventListener("click", refresh);
+      // Pause the countdown while the tab is hidden; refresh on return if it's due.
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && Date.now() >= nextAt) refresh();
+      });
+      refresh();
+    </script>
+  </body>
+</html>
