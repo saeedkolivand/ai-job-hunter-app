@@ -46,7 +46,7 @@ jobs:
       pull-requests: write
     steps:
       - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
 
@@ -62,8 +62,29 @@ jobs:
         working-directory: apps/tauri/src-tauri
         run: cargo bench --bench export_render -- --output-format bencher | tee output.txt
 
+      # github-action-benchmark fetches the data branch to read the baseline; on the
+      # first-ever run that branch does not exist yet and the fetch hard-errors
+      # (exit 128). Create an empty orphan branch once, in a throwaway clone so the
+      # main checkout is untouched. Idempotent — a no-op once the branch exists.
+      - name: 🌱 Ensure the benchmarks data branch exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          if git ls-remote --exit-code --heads origin benchmarks >/dev/null 2>&1; then
+            echo 'benchmarks branch already exists.'
+            exit 0
+          fi
+          echo 'Bootstrapping an empty orphan benchmarks branch...'
+          tmp="$(mktemp -d)"
+          git -C "$tmp" init -q -b benchmarks
+          git -C "$tmp" -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -q --allow-empty -m 'chore: bootstrap benchmarks data branch'
+          git -C "$tmp" push -q "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" benchmarks
+
       - name: 📊 Store result & alert on regression (advisory)
         uses: benchmark-action/github-action-benchmark@52576c92bccf6ac60c8223ec7eb2565637cae9ba # v1.22.1
+        # Advisory infra: never let a benchmark hiccup show red on a PR.
+        continue-on-error: true
         with:
           name: Export render
           tool: cargo
