@@ -768,6 +768,9 @@
       "next": "Next",
       "create": "Create Autopilot",
       "save": "Save Changes",
+      "validation": {
+        "missingFields": "Please fill in all required fields (Name, Board, and Search Query)."
+      },
       "target": {
         "title": "Where should we look?",
         "subtitle": "Pick a job board and enter your search.",

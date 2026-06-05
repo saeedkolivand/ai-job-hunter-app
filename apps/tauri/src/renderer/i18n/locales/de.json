@@ -753,6 +753,9 @@
       "next": "Weiter",
       "create": "Autopilot erstellen",
       "save": "Änderungen speichern",
+      "validation": {
+        "missingFields": "Bitte fülle alle erforderlichen Felder aus (Name, Board und Suchanfrage)."
+      },
       "target": {
         "title": "Wo sollen wir suchen?",
         "subtitle": "Wählen Sie ein Job-Board und geben Sie Ihre Suche ein.",
