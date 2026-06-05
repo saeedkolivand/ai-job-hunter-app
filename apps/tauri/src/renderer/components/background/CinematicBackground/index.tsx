@@ -141,16 +141,6 @@ export function CinematicBackground() {
         />
       )}
 
-      {/* Soft streaks */}
-      <div className="light-streak absolute top-[20%] left-1/4 h-px w-[40vw] bg-white/10 animate-streak-1" />
-      <div className="light-streak absolute top-[55%] left-1/3 h-px w-[35vw] bg-white/10 animate-streak-2" />
-      {full && (
-        <>
-          <div className="light-streak absolute top-[75%] left-1/4 h-px w-[30vw] bg-white/5  animate-streak-3" />
-          <div className="light-streak absolute top-[35%] left-1/2 h-px w-[25vw] bg-white/5  animate-streak-4" />
-        </>
-      )}
-
       {/* Cursor blob — 900px lerp-smoothed glow.
           Position is updated every RAF tick via ref mutation (no React renders).
           Gradient has three stops for a soft centre → hard falloff shape. */}
@@ -164,9 +154,9 @@ export function CinematicBackground() {
           left: 0,
           background: [
             'radial-gradient(circle,',
-            '  rgba(168,85,247,0.30)  0%,',
-            '  rgba(168,85,247,0.14) 30%,',
-            '  rgba(99,102,241,0.06) 55%,',
+            '  rgba(var(--rgb-brand), 0.3)  0%,',
+            '  rgba(var(--rgb-brand), 0.14) 30%,',
+            '  rgba(var(--rgb-aurora-indigo), 0.06) 55%,',
             '  transparent           72%)',
           ].join(' '),
           filter: 'blur(55px)',
@@ -182,7 +172,7 @@ export function CinematicBackground() {
           transform:
             'translate3d(calc(var(--parallax-x, 0) * 30px), calc(var(--parallax-y, 0) * 20px), 0)',
           background:
-            'radial-gradient(circle, rgba(168,85,247,0.35) 0%, rgba(168,85,247,0.12) 50%, transparent 75%)',
+            'radial-gradient(circle, rgba(var(--rgb-brand), 0.35) 0%, rgba(var(--rgb-brand), 0.12) 50%, transparent 75%)',
           filter: 'blur(12px)',
         }}
       />
@@ -192,7 +182,7 @@ export function CinematicBackground() {
           transform:
             'translate3d(calc(var(--parallax-x, 0) * -25px), calc(var(--parallax-y, 0) * 15px), 0)',
           background:
-            'radial-gradient(circle, rgba(99,102,241,0.35) 0%, rgba(99,102,241,0.12) 50%, transparent 75%)',
+            'radial-gradient(circle, rgba(var(--rgb-aurora-indigo), 0.35) 0%, rgba(var(--rgb-aurora-indigo), 0.12) 50%, transparent 75%)',
           filter: 'blur(10px)',
         }}
       />
@@ -203,7 +193,7 @@ export function CinematicBackground() {
             transform:
               'translate3d(calc(var(--parallax-x, 0) * 15px), calc(var(--parallax-y, 0) * -10px), 0)',
             background:
-              'radial-gradient(circle, rgba(168,85,247,0.2) 0%, rgba(99,102,241,0.08) 50%, transparent 75%)',
+              'radial-gradient(circle, rgba(var(--rgb-brand), 0.2) 0%, rgba(var(--rgb-aurora-indigo), 0.08) 50%, transparent 75%)',
             filter: 'blur(8px)',
           }}
         />

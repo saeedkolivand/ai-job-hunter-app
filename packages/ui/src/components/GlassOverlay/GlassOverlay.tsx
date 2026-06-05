@@ -15,7 +15,7 @@ interface GlassOverlayProps {
 export function GlassOverlay({ onClick, zIndex = 500 }: GlassOverlayProps) {
   return (
     <motion.div
-      className="fixed inset-0 bg-black/40 backdrop-blur-md"
+      className="fixed inset-0 bg-white/40 dark:bg-black/40 backdrop-blur-md"
       style={{ zIndex }}
       {...variants.overlay}
       transition={transition.overlay}
