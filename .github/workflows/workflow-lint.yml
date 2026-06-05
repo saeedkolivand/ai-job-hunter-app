@@ -1,10 +1,13 @@
 name: 🧹 Workflow Lint
 
 # ──────────────────────────────────────────────────────────────────────
-# Lints + security-audits the GitHub Actions workflows & composite actions.
-# Runs only when CI config changes. Advisory (never blocks) until tuned —
-# actionlint posts inline; zizmor's findings (e.g. unpinned actions) print
-# to the log and are addressed in the SHA-pinning PR.
+# Lints + security-audits the GitHub Actions workflows & composite actions,
+# and keeps the workflow catalog honest. Runs only when CI config changes.
+# actionlint + zizmor are advisory (never block) — actionlint posts inline,
+# zizmor prints findings to the log. The catalog job DOES fail on drift: if
+# .github/workflows/README.md or the root README badges are stale, regenerate
+# with `pnpm gen:workflows`. (workflow-lint is not a required check, so a
+# failure here still never blocks merge — it is a visible nudge.)
 # ──────────────────────────────────────────────────────────────────────
 
 on:
@@ -14,6 +17,7 @@ on:
     paths:
       - '.github/workflows/**'
       - '.github/actions/**'
+      - 'scripts/gen-workflow-catalog.mjs'
   workflow_dispatch:
 
 permissions:
@@ -31,7 +35,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
 
@@ -41,7 +45,7 @@ jobs:
           fetch-depth: 1
 
       - name: 🔍 actionlint (reviewdog)
-        uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d # v1
+        uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d # v1.72.0
         with:
           reporter: github-pr-review
           filter_mode: added
@@ -54,7 +58,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
 
@@ -64,9 +68,32 @@ jobs:
           fetch-depth: 1
 
       - name: 🐍 Setup uv
-        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
 
       # Advisory: prints findings (incl. unpinned actions, injection risks) but
       # never fails the build yet. SHA-pinning lands in a follow-up PR.
       - name: 🛡️ Run zizmor
         run: uvx zizmor .github/workflows .github/actions || true
+
+  catalog:
+    name: 📚 Workflow Catalog
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      # Regenerates the catalog + README badges from the workflow files and fails
+      # if the committed copies are stale → run `pnpm gen:workflows` and commit.
+      - name: 📚 Verify the workflow catalog is current
+        run: pnpm gen:workflows:check
