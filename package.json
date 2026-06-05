@@ -26,6 +26,8 @@
     "test:coverage": "vitest run --coverage",
     "gen:ipc": "pnpm --filter @ajh/shared gen:ipc",
     "gen:ipc:check": "pnpm --filter @ajh/shared gen:ipc:check",
+    "gen:workflows": "node scripts/gen-workflow-catalog.mjs && prettier --write .github/workflows/README.md README.md",
+    "gen:workflows:check": "node scripts/gen-workflow-catalog.mjs && prettier --write .github/workflows/README.md README.md && git diff --exit-code -- .github/workflows/README.md README.md",
     "clean": "pnpm -r exec rimraf dist out .turbo node_modules/.cache",
     "prepare": "husky"
   },
@@ -58,6 +60,7 @@
     "turbo": "^2.9.15",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.60.0",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.6",
+    "yaml": "^2.9.0"
   }
 }
