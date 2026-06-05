@@ -109,6 +109,10 @@ impl<C> Pipeline<C> {
         }
     }
 
+    // Fluent builder verb (`Pipeline::new(..).add(stage).add(stage)`), not
+    // arithmetic. Surfaced by clippy only once this became a library crate (a
+    // bin crate has no public API for the lint to inspect). See `benches/`.
+    #[allow(clippy::should_implement_trait)]
     pub fn add<S: Stage<C> + 'static>(mut self, stage: S) -> Self {
         self.stages.push(Box::new(stage));
         self

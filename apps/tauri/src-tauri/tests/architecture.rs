@@ -2,9 +2,10 @@
 //!
 //! Derived from `docs/architecture-analysis.md` (discovery) and codified in
 //! `docs/architecture-rules.md` (the layer model + rule IDs R1–R8). This is a
-//! **standalone integration test**: `ajh-tauri` is a binary crate, so it uses only
-//! `std` and scans the source tree under `CARGO_MANIFEST_DIR/src` — it does not link
-//! the crate's internals (same pattern as `tests/eval.rs`).
+//! **standalone integration test**: it uses only `std` and scans the source tree
+//! under `CARGO_MANIFEST_DIR/src` as text — it does not link the crate's internals
+//! (same pattern as `tests/eval.rs`). The crate is a thin binary (`main.rs`) over a
+//! library (`lib.rs`, which holds the app + the Tauri builder); both are L3 shell.
 //!
 //! Each rule has an explicit allowlist of *current* exceptions so the suite is green
 //! today while blocking **new** violations (drift prevention). Allowlists are debt,
@@ -61,7 +62,8 @@ const L2: &[&str] = &[
 const L3: &[&str] = &[
     "commands",
     "ipc_contracts",
-    "main",
+    "main", // thin binary launcher
+    "lib",  // shell entry point: holds the Tauri builder (`run()`); `main` just calls it
     "updater",
     "tray",
     "deeplink",
