@@ -124,6 +124,7 @@ export default tseslint.config(
       '**/src-tauri/target/**',
       // Local, untracked agent/editor tooling — not part of the codebase.
       '.claude/**',
+      'landing/**',
     ],
   },
 
