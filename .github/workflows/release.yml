@@ -245,11 +245,19 @@ jobs:
           # Passed via env (not inline) to avoid script injection from the input.
           INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ -n "$INPUT_VERSION" ]; then
+          set -euo pipefail
+
+          if [ -n "${INPUT_VERSION:-}" ]; then
             VERSION="$INPUT_VERSION"
           else
             VERSION="$(git tag --sort=-version:refname | head -n1)"
           fi
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::No release tags found. Create a release first or provide a version manually."
+            exit 1
+          fi
+
           VERSION="$(echo "$VERSION" | sed 's/^v*//')"
           if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
             echo "::error::Could not resolve a valid version (got '$VERSION'). Pass one via the workflow input."
