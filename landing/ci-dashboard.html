@@ -130,8 +130,88 @@
       }
       main {
         padding: 22px 24px 60px;
-        max-width: 1100px;
+        max-width: 1280px;
         margin: 0 auto;
+      }
+      .dashboard-shell {
+        display: grid;
+        grid-template-columns: 230px minmax(0, 1fr);
+        gap: 18px;
+        align-items: start;
+      }
+      .sidebar {
+        position: sticky;
+        top: 92px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .sidebar-card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px;
+      }
+      .sidebar-title {
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        padding: 4px 6px 8px;
+      }
+      .side-nav {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .side-nav button {
+        appearance: none;
+        width: 100%;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        display: grid;
+        grid-template-columns: 22px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 9px;
+        text-align: left;
+        font: inherit;
+        font-size: 12.5px;
+      }
+      .side-nav button:hover {
+        color: var(--text);
+        background: var(--panel-2);
+      }
+      .side-nav button.active {
+        color: var(--text);
+        background: var(--panel-2);
+        border-color: var(--accent);
+      }
+      .nav-icon {
+        color: var(--accent);
+        font-size: 13px;
+      }
+      .nav-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .nav-count {
+        color: var(--neutral);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+      .sidebar-summary {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+        padding: 4px 6px 2px;
+      }
+      .panel-stack {
+        min-width: 0;
       }
       .health-banner {
         background: var(--panel);
@@ -296,6 +376,310 @@
         border-color: var(--fail);
         color: #ffb3ae;
       }
+      .header-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+      .control {
+        appearance: none;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        color: var(--text);
+        padding: 7px 10px;
+        border-radius: 8px;
+        font: inherit;
+        font-size: 12.5px;
+        min-height: 34px;
+      }
+      .control::placeholder {
+        color: var(--neutral);
+      }
+      .control:focus {
+        outline: 1px solid var(--accent);
+        border-color: var(--accent);
+      }
+      select.control {
+        cursor: pointer;
+      }
+      .rate {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .rate-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--neutral);
+      }
+      .rate-dot.ok { background: var(--ok); }
+      .rate-dot.warn { background: var(--run); }
+      .rate-dot.fail { background: var(--fail); }
+      .section {
+        margin: 0 0 28px;
+      }
+      .section[hidden] {
+        display: none;
+      }
+      .section-header {
+        margin: 0 0 12px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .section-header h2 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1.3px;
+        color: var(--muted);
+        margin: 0;
+      }
+      .section-header .hint {
+        font-size: 11.5px;
+        color: var(--neutral);
+      }
+      .collapse-toggle {
+        margin-left: auto;
+        appearance: none;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        color: var(--muted);
+        border-radius: 7px;
+        padding: 4px 8px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .collapse-toggle:hover {
+        color: var(--text);
+        border-color: #475061;
+      }
+      .section.collapsed .section-body {
+        display: none;
+      }
+      .kpi-grid,
+      .panel-grid,
+      .chart-grid {
+        display: grid;
+        gap: 12px;
+      }
+      .kpi-grid {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+      .panel-grid {
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      }
+      .chart-grid {
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      }
+      .kpi-card,
+      .panel,
+      .chart-card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px 15px;
+      }
+      .kpi-card:hover,
+      .panel:hover,
+      .chart-card:hover {
+        border-color: #475061;
+      }
+      .kpi-label,
+      .panel-title,
+      .chart-title {
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.2px;
+      }
+      .kpi-value {
+        font-size: 27px;
+        font-weight: 700;
+        line-height: 1.15;
+        margin-top: 6px;
+        font-variant-numeric: tabular-nums;
+      }
+      .kpi-sub {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .trend {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 11.5px;
+      }
+      .trend.up { color: var(--ok); }
+      .trend.down { color: var(--fail); }
+      .trend.flat { color: var(--neutral); }
+      .gauge {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .gauge svg {
+        width: 68px;
+        height: 68px;
+        flex: none;
+        transform: rotate(-90deg);
+      }
+      .gauge .track {
+        stroke: var(--panel-3);
+      }
+      .gauge .fill {
+        stroke-linecap: round;
+        transition: stroke-dashoffset 0.25s;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 2px 8px;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.02);
+        font-size: 11.5px;
+        font-variant-numeric: tabular-nums;
+      }
+      .pill.ok { border-color: rgba(63, 185, 80, 0.45); color: #9be9a8; }
+      .pill.fail { border-color: rgba(248, 81, 73, 0.5); color: #ffb3ae; }
+      .pill.run { border-color: rgba(210, 153, 34, 0.55); color: #f0d28d; }
+      .pill.neutral { border-color: var(--border); color: var(--muted); }
+      .list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .list-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        padding: 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--panel-2);
+      }
+      .list-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 550;
+      }
+      .list-meta {
+        color: var(--muted);
+        font-size: 11.5px;
+        margin-top: 2px;
+      }
+      .mini-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+        font-size: 12.5px;
+      }
+      .mini-table th,
+      .mini-table td {
+        border-top: 1px solid var(--border);
+        padding: 8px 6px;
+        text-align: left;
+        vertical-align: top;
+      }
+      .mini-table th {
+        color: var(--muted);
+        font-weight: 550;
+      }
+      .mini-table td:last-child,
+      .mini-table th:last-child {
+        text-align: right;
+      }
+      .chart-card {
+        min-height: 280px;
+        cursor: pointer;
+      }
+      .chart-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .chart-wrap {
+        position: relative;
+        height: 220px;
+      }
+      .timeline {
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+        margin-top: 12px;
+      }
+      .timeline-item {
+        display: grid;
+        grid-template-columns: 84px minmax(0, 1fr);
+        gap: 12px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .timeline-item strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .heatmap {
+        display: grid;
+        grid-template-columns: repeat(26, minmax(8px, 1fr));
+        gap: 3px;
+        margin-top: 12px;
+      }
+      .heat-cell {
+        aspect-ratio: 1;
+        border-radius: 2px;
+        background: var(--panel-3);
+        border: 1px solid rgba(255, 255, 255, 0.02);
+      }
+      .heat-cell.l1 { background: rgba(63, 185, 80, 0.28); }
+      .heat-cell.l2 { background: rgba(63, 185, 80, 0.48); }
+      .heat-cell.l3 { background: rgba(63, 185, 80, 0.72); }
+      .heat-cell.l4 { background: var(--ok); }
+      .skeleton-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 12px;
+      }
+      .skeleton {
+        position: relative;
+        overflow: hidden;
+        min-height: 120px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+      }
+      .skeleton::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        transform: translateX(-100%);
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+        animation: shimmer 1.4s infinite;
+      }
+      @keyframes shimmer {
+        100% { transform: translateX(100%); }
+      }
+      .empty {
+        color: var(--muted);
+        border: 1px dashed var(--border);
+        border-radius: 10px;
+        padding: 14px;
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .anomaly {
+        box-shadow: inset 3px 0 0 var(--run);
+      }
       footer {
         max-width: 1100px;
         margin: 0 auto;
@@ -321,7 +705,6 @@
       }
       .modal {
         background: var(--panel);
-        border: 1px la
         border: 1px solid var(--border);
         border-radius: 16px;
         width: 100%;
@@ -374,6 +757,72 @@
       .job-item .status.run { background: var(--run); }
       .job-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .job-item .link { color: var(--accent); font-size: 11px; }
+
+      @media (max-width: 760px) {
+        header {
+          position: static;
+          padding: 16px;
+        }
+        .spacer {
+          display: none;
+        }
+        .header-controls,
+        .control,
+        button#refresh,
+        .seg {
+          width: 100%;
+        }
+        .seg button {
+          flex: 1;
+        }
+        main {
+          padding: 16px 14px 42px;
+        }
+        .dashboard-shell {
+          display: flex;
+          flex-direction: column;
+        }
+        .sidebar {
+          position: static;
+          width: 100%;
+        }
+        .side-nav {
+          display: grid;
+          grid-auto-flow: column;
+          grid-auto-columns: minmax(140px, 1fr);
+          overflow-x: auto;
+          padding-bottom: 4px;
+        }
+        .side-nav button {
+          grid-template-columns: 18px minmax(0, 1fr);
+        }
+        .nav-count {
+          display: none;
+        }
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .kpi-grid,
+        .panel-grid,
+        .chart-grid {
+          grid-template-columns: 1fr;
+        }
+        .health-banner {
+          align-items: flex-start;
+          margin-bottom: 22px;
+        }
+        .list-item,
+        .timeline-item {
+          grid-template-columns: 1fr;
+        }
+        .mini-table {
+          display: block;
+          overflow-x: auto;
+        }
+        .heatmap {
+          grid-template-columns: repeat(13, minmax(10px, 1fr));
+        }
+      }
     </style>
   </head>
   <body>
@@ -382,6 +831,23 @@
       <div class="spacer"></div>
       <span class="meta" id="updated">Loading…</span>
       <span class="meta" id="countdown"></span>
+      <span class="meta rate" id="rate-limit"><span class="rate-dot"></span><span>rate limit unknown</span></span>
+      <div class="header-controls" aria-label="Dashboard filters">
+        <input class="control" id="global-search" type="search" placeholder="Search workflows, PRs, issues…" />
+        <select class="control" id="status-filter" aria-label="Filter by workflow status">
+          <option value="all">All statuses</option>
+          <option value="passing">Passing</option>
+          <option value="failing">Failing</option>
+          <option value="running">Running</option>
+        </select>
+        <select class="control" id="role-filter" aria-label="Filter by workflow group">
+          <option value="all">All groups</option>
+          <option value="gating">Gating</option>
+          <option value="advisory">Advisory</option>
+          <option value="security">Security</option>
+          <option value="deploy">Deploy</option>
+        </select>
+      </div>
       <span class="meta">auto</span>
       <span
         class="seg"
@@ -392,7 +858,12 @@
     </header>
 
     <main id="content">
-      <div class="notice">Loading workflow status…</div>
+      <div class="skeleton-grid">
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+      </div>
     </main>
 
     <div id="overlay">
@@ -414,13 +885,27 @@
       <a
         href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/blob/main/.github/workflows/README.md"
         >workflow catalog</a>
+      ·
+      <a href="./benchmarks/">benchmarks</a>
     </footer>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-      const OWNER = "saeedkolivand";
-      const REPO = "ai-job-hunter-assistant-app";
-      const API = `https://api.github.com/repos/${OWNER}/${REPO}`;
-      const HISTORY = 20;
+      // Configuration
+      const CONFIG = {
+        owner: "saeedkolivand",
+        repo: "ai-job-hunter-assistant-app",
+        history: 20,
+        cachePrefix: "ajh-ops-cache:",
+        intervalKey: "ajh-ci-dash-interval",
+        collapsedKey: "ajh-ops-collapsed",
+        activeSectionKey: "ajh-ops-active-section",
+        cacheTtl: 4 * 60000,
+        analyticsTtl: 20 * 60000,
+        staleDays: 14,
+        staleBranchDays: 30,
+      };
+      CONFIG.api = `https://api.github.com/repos/${CONFIG.owner}/${CONFIG.repo}`;
 
       const INTERVALS = [
         { label: "Off", ms: 0 },
@@ -428,13 +913,6 @@
         { label: "5m", ms: 5 * 60000 },
         { label: "15m", ms: 15 * 60000 },
       ];
-      const STORE_KEY = "ajh-ci-dash-interval";
-      function loadInterval() {
-        const v = Number(localStorage.getItem(STORE_KEY));
-        return INTERVALS.some((i) => i.ms === v) ? v : 5 * 60000;
-      }
-      let autoMs = loadInterval();
-
       const ROLE = {
         "ci-pipeline.yml": "gating",
         "codeql.yml": "security",
@@ -451,266 +929,1500 @@
         security: "Security · reports to the Security tab",
         deploy: "Deploy · on push to main",
       };
-      const roleOf = (path) => ROLE[path.split("/").pop()] || "advisory";
+      const SECTIONS = [
+        { id: "executive", label: "Executive", icon: "◆", hint: "scores" },
+        { id: "repo-health", label: "Repository Health", icon: "●", hint: "status" },
+        { id: "attention", label: "Attention", icon: "!", hint: "triage" },
+        { id: "prs", label: "Pull Requests", icon: "↗", hint: "review" },
+        { id: "issues", label: "Issues", icon: "#", hint: "backlog" },
+        { id: "operations", label: "Operations", icon: "◴", hint: "live" },
+        { id: "workflow-analytics", label: "Workflow Analytics", icon: "⌁", hint: "charts" },
+        { id: "releases", label: "Releases", icon: "↑", hint: "deploy" },
+        { id: "branches", label: "Branches", icon: "⑂", hint: "git" },
+        { id: "contributors", label: "Contributors", icon: "◎", hint: "people" },
+        { id: "insights", label: "Insights", icon: "▦", hint: "growth" },
+        { id: "workflows", label: "Workflow Monitor", icon: "✓", hint: "runs" },
+      ];
+      const CRITICAL_LABELS = ["critical", "p0", "priority: critical", "severity: critical"];
+      const CHART_COLORS = {
+        ok: "#3fb950",
+        fail: "#f85149",
+        run: "#d29922",
+        accent: "#e24b4a",
+        muted: "#8b949e",
+        panel: "#161b22",
+        grid: "rgba(139, 148, 158, 0.16)",
+      };
 
+      // State Management
+      const state = {
+        autoMs: loadInterval(),
+        busy: false,
+        nextAt: 0,
+        countdownTimer: null,
+        model: null,
+        raw: null,
+        search: "",
+        filters: { status: "all", role: "all" },
+        activeSection: localStorage.getItem(CONFIG.activeSectionKey) || "executive",
+        rateLimit: null,
+        cacheHits: 0,
+        cacheStale: 0,
+        charts: {},
+        chartDetails: {},
+        collapsed: loadJson(CONFIG.collapsedKey, {}),
+      };
+
+      // Utilities
       const el = (id) => document.getElementById(id);
+      const roleOf = (path) => ROLE[path.split("/").pop()] || "advisory";
+      const clamp = (value, min = 0, max = 100) => Math.max(min, Math.min(max, value));
+      const avg = (values) =>
+        values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
       const esc = (s) =>
-        String(s).replace(
+        String(s ?? "").replace(
           /[&<>"']/g,
           (c) =>
             ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
         );
+      const pct = (n) => `${Math.round(n)}%`;
+      const fmt = (n) => new Intl.NumberFormat().format(Math.round(n || 0));
+      const shortSha = (sha) => (sha ? sha.slice(0, 7) : "unknown");
+      const dateKey = (date) => new Date(date).toISOString().slice(0, 10);
+      const dayMs = 24 * 60 * 60 * 1000;
+
+      function loadJson(key, fallback) {
+        try {
+          return JSON.parse(localStorage.getItem(key)) ?? fallback;
+        } catch {
+          return fallback;
+        }
+      }
+
+      function saveJson(key, value) {
+        try {
+          localStorage.setItem(key, JSON.stringify(value));
+        } catch {}
+      }
+
+      function loadInterval() {
+        const value = Number(localStorage.getItem(CONFIG.intervalKey));
+        return INTERVALS.some((item) => item.ms === value) ? value : 5 * 60000;
+      }
 
       function rel(iso) {
         if (!iso) return "—";
-        const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
-        if (s < 60) return "just now";
-        const m = s / 60;
-        if (m < 60) return `${Math.floor(m)}m ago`;
-        const h = m / 60;
-        if (h < 24) return `${Math.floor(h)}h ago`;
-        return `${Math.floor(h / 24)}d ago`;
+        const seconds = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+        if (seconds < 60) return "just now";
+        const minutes = seconds / 60;
+        if (minutes < 60) return `${Math.floor(minutes)}m ago`;
+        const hours = minutes / 60;
+        if (hours < 24) return `${Math.floor(hours)}h ago`;
+        return `${Math.floor(hours / 24)}d ago`;
+      }
+
+      function ageDays(iso) {
+        if (!iso) return 0;
+        return Math.floor((Date.now() - new Date(iso)) / dayMs);
+      }
+
+      function durationSeconds(start, end) {
+        if (!start || !end) return 0;
+        return Math.max(0, Math.round((new Date(end) - new Date(start)) / 1000));
       }
 
       function dur(run) {
         if (!run || run.status !== "completed") return "";
-        const a = new Date(run.run_started_at || run.created_at);
-        const b = new Date(run.updated_at);
-        let s = Math.max(0, Math.round((b - a) / 1000));
-        const m = Math.floor(s / 60);
-        s = s % 60;
-        return m ? `${m}m ${s}s` : `${s}s`;
+        return formatDuration(durationSeconds(run.run_started_at || run.created_at, run.updated_at));
+      }
+
+      function formatDuration(totalSeconds) {
+        let seconds = Math.max(0, Math.round(totalSeconds || 0));
+        const hours = Math.floor(seconds / 3600);
+        seconds -= hours * 3600;
+        const minutes = Math.floor(seconds / 60);
+        seconds %= 60;
+        if (hours) return `${hours}h ${minutes}m`;
+        return minutes ? `${minutes}m ${seconds}s` : `${seconds}s`;
+      }
+
+      function lastDays(count) {
+        const today = new Date();
+        return Array.from({ length: count }, (_, index) => {
+          const day = new Date(today);
+          day.setDate(today.getDate() - (count - 1 - index));
+          return dateKey(day);
+        });
       }
 
       function statusOf(run) {
-        if (!run) return { cls: "none", icon: "•", text: "no recent runs" };
-        if (run.status !== "completed")
-          return { cls: "run", icon: "◴", text: (run.status || "running").replace(/_/g, " ") };
-        const c = run.conclusion;
-        if (c === "success") return { cls: "ok", icon: "✓", text: "passing" };
-        if (c === "failure" || c === "timed_out") return { cls: "fail", icon: "✕", text: c };
-        return { cls: "neutral", icon: "–", text: c || "—" };
+        if (!run) return { cls: "none", icon: "•", text: "no recent runs", key: "none" };
+        if (run.status !== "completed") {
+          return {
+            cls: "run",
+            icon: "◴",
+            text: (run.status || "running").replace(/_/g, " "),
+            key: "running",
+          };
+        }
+        const conclusion = run.conclusion;
+        if (conclusion === "success") return { cls: "ok", icon: "✓", text: "passing", key: "passing" };
+        if (conclusion === "failure" || conclusion === "timed_out") {
+          return { cls: "fail", icon: "✕", text: conclusion, key: "failing" };
+        }
+        return { cls: "neutral", icon: "–", text: conclusion || "—", key: "neutral" };
+      }
+
+      function matchesQuery(fields) {
+        const query = state.search.trim().toLowerCase();
+        if (!query) return true;
+        return fields.some((field) => String(field || "").toLowerCase().includes(query));
+      }
+
+      function trendClass(value, inverse = false) {
+        if (Math.abs(value) < 1) return "flat";
+        const positive = inverse ? value < 0 : value > 0;
+        return positive ? "up" : "down";
+      }
+
+      function trendText(label, value, inverse = false) {
+        const icon = Math.abs(value) < 1 ? "→" : value > 0 ? "↑" : "↓";
+        return `<span class="trend ${trendClass(value, inverse)}">${icon} ${esc(label)} ${Math.abs(Math.round(value))}</span>`;
+      }
+
+      // GitHub API Layer
+      function updateRateLimit(headers) {
+        const limit = Number(headers.get("X-RateLimit-Limit"));
+        const remaining = Number(headers.get("X-RateLimit-Remaining"));
+        const reset = Number(headers.get("X-RateLimit-Reset")) * 1000;
+        if (Number.isFinite(limit) && Number.isFinite(remaining)) {
+          state.rateLimit = { limit, remaining, reset };
+          renderRateLimit();
+        }
+      }
+
+      async function ghGet(path, options = {}) {
+        const ttl = options.ttl ?? CONFIG.cacheTtl;
+        const cached = readCache(path);
+        if (!options.force && cached && !cached.expired(ttl)) {
+          state.cacheHits += 1;
+          return cached.data;
+        }
+
+        try {
+          const response = await fetch(CONFIG.api + path, {
+            headers: { Accept: "application/vnd.github+json" },
+          });
+          updateRateLimit(response.headers);
+
+          if (response.status === 202) {
+            if (cached) {
+              state.cacheStale += 1;
+              return cached.data;
+            }
+            return { pending: true };
+          }
+
+          if (response.status === 403 && response.headers.get("X-RateLimit-Remaining") === "0") {
+            const resetAt = Number(response.headers.get("X-RateLimit-Reset")) * 1000;
+            throw new Error(
+              `GitHub API rate limit reached. Resets at ${new Date(resetAt).toLocaleTimeString()}.`,
+            );
+          }
+          if (!response.ok) throw new Error(`GitHub API error ${response.status} for ${path}`);
+
+          const data = await response.json();
+          writeCache(path, data);
+          return data;
+        } catch (error) {
+          if (cached) {
+            state.cacheStale += 1;
+            return cached.data;
+          }
+          throw error;
+        }
+      }
+
+      // Cache Layer
+      function cacheKey(path) {
+        return CONFIG.cachePrefix + encodeURIComponent(path);
+      }
+
+      function readCache(path) {
+        try {
+          const entry = JSON.parse(localStorage.getItem(cacheKey(path)));
+          if (!entry || !entry.ts) return null;
+          return {
+            data: entry.data,
+            ts: entry.ts,
+            expired(ttl) {
+              return Date.now() - entry.ts > ttl;
+            },
+          };
+        } catch {
+          return null;
+        }
+      }
+
+      function writeCache(path, data) {
+        try {
+          localStorage.setItem(cacheKey(path), JSON.stringify({ ts: Date.now(), data }));
+        } catch {}
+      }
+
+      // Data Processing
+      async function fetchDashboardData(force = false) {
+        state.cacheHits = 0;
+        state.cacheStale = 0;
+
+        const [
+          workflows,
+          runs,
+          openIssues,
+          closedIssues,
+          openPrs,
+          closedPrs,
+          releases,
+          contributors,
+          branches,
+          events,
+          commitActivity,
+          contributorStats,
+        ] = await Promise.all([
+          ghGet("/actions/workflows?per_page=100", { force, ttl: CONFIG.analyticsTtl }),
+          ghGet("/actions/runs?per_page=100", { force }),
+          ghGet("/issues?state=open&per_page=100", { force }),
+          ghGet("/issues?state=closed&sort=updated&direction=desc&per_page=60", { force }),
+          ghGet("/pulls?state=open&per_page=100", { force }),
+          ghGet("/pulls?state=closed&sort=updated&direction=desc&per_page=60", { force }),
+          ghGet("/releases?per_page=40", { force, ttl: CONFIG.analyticsTtl }),
+          ghGet("/contributors?per_page=40", { force, ttl: CONFIG.analyticsTtl }),
+          ghGet("/branches?per_page=100", { force, ttl: CONFIG.analyticsTtl }),
+          ghGet("/events?per_page=60", { force }),
+          ghGet("/stats/commit_activity", { force, ttl: CONFIG.analyticsTtl }),
+          ghGet("/stats/contributors", { force, ttl: CONFIG.analyticsTtl }),
+        ]);
+
+        const branchDetails = await fetchBranchDetails(branches.branches || branches || [], force);
+        return {
+          workflows,
+          runs,
+          openIssues,
+          closedIssues,
+          openPrs,
+          closedPrs,
+          releases,
+          contributors,
+          branches,
+          branchDetails,
+          events,
+          commitActivity,
+          contributorStats,
+        };
+      }
+
+      async function fetchBranchDetails(branches, force) {
+        const visible = branches.slice(0, 14);
+        const details = await Promise.allSettled(
+          visible.map((branch) =>
+            ghGet(`/commits/${branch.commit.sha}`, { force, ttl: CONFIG.analyticsTtl }),
+          ),
+        );
+        const bySha = {};
+        details.forEach((result, index) => {
+          if (result.status === "fulfilled") bySha[visible[index].commit.sha] = result.value;
+        });
+        return branches.map((branch) => {
+          const detail = bySha[branch.commit.sha];
+          return {
+            name: branch.name,
+            sha: branch.commit.sha,
+            protected: branch.protected,
+            updatedAt: detail?.commit?.committer?.date || detail?.commit?.author?.date,
+            author: detail?.commit?.author?.name || "unknown",
+            url: `https://github.com/${CONFIG.owner}/${CONFIG.repo}/tree/${encodeURIComponent(branch.name)}`,
+          };
+        });
+      }
+
+      function buildModel(raw) {
+        const workflows = (raw.workflows.workflows || []).filter((workflow) =>
+          workflow.path.startsWith(".github/workflows/"),
+        );
+        const runs = (raw.runs.workflow_runs || []).sort(
+          (a, b) => new Date(b.created_at) - new Date(a.created_at),
+        );
+        const byWf = {};
+        for (const run of runs) (byWf[run.workflow_id] ||= []).push(run);
+
+        const workflowMetrics = workflows.map((workflow) =>
+          buildWorkflowMetric(workflow, byWf[workflow.id] || []),
+        );
+        const openIssueList = (raw.openIssues || []).filter((item) => !item.pull_request);
+        const closedIssueList = (raw.closedIssues || []).filter((item) => !item.pull_request);
+        const openPrList = raw.openPrs || [];
+        const closedPrList = raw.closedPrs || [];
+        const mergedPrList = closedPrList.filter((pr) => pr.merged_at);
+        const stalePrs = openPrList.filter((pr) => ageDays(pr.updated_at) >= CONFIG.staleDays);
+        const staleIssues = openIssueList.filter((issue) => ageDays(issue.updated_at) >= CONFIG.staleDays);
+        const criticalIssues = openIssueList.filter(hasCriticalLabel);
+        const failedWorkflows = workflowMetrics.filter((metric) => metric.latestStatus.cls === "fail");
+        const consecutiveFailures = workflowMetrics.filter((metric) => metric.consecutiveFailures >= 2);
+        const runningRuns = runs.filter((run) => run.status !== "completed");
+        const deployFailures = workflowMetrics.filter(
+          (metric) => metric.role === "deploy" && metric.latestStatus.cls === "fail",
+        );
+        const securityMetrics = workflowMetrics.filter((metric) => metric.role === "security");
+        const allCompletedRuns = runs.filter((run) => run.status === "completed");
+        const successRate = ratio(
+          allCompletedRuns.filter((run) => run.conclusion === "success").length,
+          allCompletedRuns.length,
+        );
+
+        const releaseList = raw.releases || [];
+        const contributorList = raw.contributors || [];
+        const branchDetails = raw.branchDetails || [];
+        const mainBranch = branchDetails.find((branch) => branch.name === "main") || branchDetails[0];
+        const staleBranches = branchDetails.filter((branch) => branch.updatedAt && ageDays(branch.updatedAt) > CONFIG.staleBranchDays);
+        const activeBranches = branchDetails.filter((branch) => !branch.updatedAt || ageDays(branch.updatedAt) <= CONFIG.staleBranchDays);
+        const trend = buildTrendData(runs, releaseList, raw.commitActivity, raw.events || []);
+        const contributorAnalytics = buildContributorAnalytics(
+          contributorList,
+          raw.contributorStats,
+          openPrList,
+          closedPrList,
+          openIssueList,
+          closedIssueList,
+        );
+
+        const weeklyComparison = trend.runVolume.weekCurrent - trend.runVolume.weekPrevious;
+        const monthlyComparison = trend.runVolume.monthCurrent - trend.runVolume.monthPrevious;
+        const healthScore = clamp(
+          100 -
+            failedWorkflows.length * 11 -
+            consecutiveFailures.length * 8 -
+            stalePrs.length * 4 -
+            staleIssues.length * 2 -
+            criticalIssues.length * 9,
+        );
+        const riskScore = clamp(
+          failedWorkflows.length * 12 +
+            consecutiveFailures.length * 10 +
+            stalePrs.length * 4 +
+            staleIssues.length * 2 +
+            criticalIssues.length * 12 +
+            deployFailures.length * 12,
+        );
+        const velocityScore = clamp(45 + mergedPrList.filter(withinDays(30, "merged_at")).length * 7 + trend.commitsLastMonth * 2);
+        const reliabilityScore = clamp(successRate - consecutiveFailures.length * 3);
+        const securityPostureScore = clamp(
+          (securityMetrics.length ? avg(securityMetrics.map((metric) => metric.successRate)) : 75) -
+            criticalIssues.length * 10,
+        );
+
+        return {
+          workflows,
+          runs,
+          byWf,
+          workflowMetrics,
+          openIssues: openIssueList,
+          closedIssues: closedIssueList,
+          criticalIssues,
+          staleIssues,
+          openPrs: openPrList,
+          draftPrs: openPrList.filter((pr) => pr.draft),
+          readyPrs: openPrList.filter((pr) => !pr.draft),
+          stalePrs,
+          mergedPrs: mergedPrList,
+          failedWorkflows,
+          consecutiveFailures,
+          runningRuns,
+          queuedRuns: runningRuns.filter((run) => run.status === "queued"),
+          waitingRuns: runningRuns.filter((run) => run.status === "waiting"),
+          releases: releaseList,
+          deployFailures,
+          contributors: contributorList,
+          contributorAnalytics,
+          branches: branchDetails,
+          mainBranch,
+          activeBranches,
+          staleBranches,
+          events: raw.events || [],
+          trend,
+          scores: {
+            health: Math.round(healthScore),
+            risk: Math.round(riskScore),
+            velocity: Math.round(velocityScore),
+            reliability: Math.round(reliabilityScore),
+            security: Math.round(securityPostureScore),
+          },
+          comparisons: { weekly: weeklyComparison, monthly: monthlyComparison },
+          allGatingPassing: workflowMetrics
+            .filter((metric) => metric.role === "gating")
+            .every((metric) => metric.latestStatus.cls === "ok"),
+        };
+      }
+
+      function buildWorkflowMetric(workflow, runs) {
+        const sortedRuns = runs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        const completed = sortedRuns.filter((run) => run.status === "completed");
+        const success = completed.filter((run) => run.conclusion === "success");
+        const failures = completed.filter((run) => run.conclusion === "failure" || run.conclusion === "timed_out");
+        const durations = completed
+          .map((run) => durationSeconds(run.run_started_at || run.created_at, run.updated_at))
+          .filter(Boolean);
+        let consecutiveFailures = 0;
+        for (const run of completed) {
+          if (run.conclusion === "failure" || run.conclusion === "timed_out") consecutiveFailures += 1;
+          else break;
+        }
+
+        return {
+          workflow,
+          role: roleOf(workflow.path),
+          runs: sortedRuns,
+          latest: sortedRuns[0],
+          latestCompleted: completed[0],
+          latestStatus: statusOf(sortedRuns[0]),
+          successRate: ratio(success.length, completed.length),
+          failureRate: ratio(failures.length, completed.length),
+          avgDurationSec: avg(durations),
+          lastSuccess: success[0],
+          lastFailure: failures[0],
+          consecutiveFailures,
+          executionFrequency: sortedRuns.filter(withinDays(7, "created_at")).length,
+          isFlaky: success.length > 0 && failures.length > 0 && ratio(failures.length, completed.length) >= 15,
+          isSlow: avg(durations) >= 8 * 60,
+        };
+      }
+
+      function buildTrendData(runs, releases, commitActivity, events) {
+        const labels14 = lastDays(14);
+        const labels30 = lastDays(30);
+        const byDay = Object.fromEntries(labels14.map((label) => [label, { total: 0, success: 0, fail: 0, duration: [] }]));
+        runs.forEach((run) => {
+          const key = dateKey(run.created_at);
+          if (!byDay[key]) return;
+          byDay[key].total += 1;
+          if (run.conclusion === "success") byDay[key].success += 1;
+          if (run.conclusion === "failure" || run.conclusion === "timed_out") byDay[key].fail += 1;
+          if (run.status === "completed") {
+            byDay[key].duration.push(durationSeconds(run.run_started_at || run.created_at, run.updated_at) / 60);
+          }
+        });
+        const weekCurrent = runs.filter(withinDays(7, "created_at")).length;
+        const weekPrevious = runs.filter((run) => {
+          const age = ageDays(run.created_at);
+          return age > 7 && age <= 14;
+        }).length;
+        const monthCurrent = runs.filter(withinDays(30, "created_at")).length;
+        const monthPrevious = runs.filter((run) => {
+          const age = ageDays(run.created_at);
+          return age > 30 && age <= 60;
+        }).length;
+
+        const releaseBuckets = {};
+        releases.forEach((release) => {
+          const month = (release.published_at || release.created_at || "").slice(0, 7);
+          if (month) releaseBuckets[month] = (releaseBuckets[month] || 0) + 1;
+        });
+        const releaseLabels = Object.keys(releaseBuckets).sort().slice(-8);
+        const activityWeeks = Array.isArray(commitActivity) ? commitActivity.slice(-26) : [];
+        const commitsLastMonth = activityWeeks.slice(-5).reduce((sum, week) => sum + (week.total || 0), 0);
+
+        return {
+          labels14,
+          successRate: labels14.map((label) => ratio(byDay[label].success, byDay[label].total)),
+          duration: labels14.map((label) => avg(byDay[label].duration)),
+          volume: labels14.map((label) => byDay[label].total),
+          failures: labels14.map((label) => byDay[label].fail),
+          runVolume: { weekCurrent, weekPrevious, monthCurrent, monthPrevious },
+          labels30,
+          eventVolume: labels30.map((label) => events.filter((event) => dateKey(event.created_at) === label).length),
+          releaseLabels,
+          releaseCounts: releaseLabels.map((label) => releaseBuckets[label] || 0),
+          activityWeeks,
+          commitsLastMonth,
+        };
+      }
+
+      function buildContributorAnalytics(contributors, contributorStats, openPrs, closedPrs, openIssues, closedIssues) {
+        const byLogin = {};
+        contributors.forEach((contributor) => {
+          byLogin[contributor.login] = {
+            login: contributor.login,
+            avatar: contributor.avatar_url,
+            commits: contributor.contributions || 0,
+            prs: 0,
+            issues: 0,
+            url: contributor.html_url,
+          };
+        });
+        [...openPrs, ...closedPrs].forEach((pr) => addActivity(byLogin, pr.user, "prs"));
+        [...openIssues, ...closedIssues].forEach((issue) => addActivity(byLogin, issue.user, "issues"));
+        const stats = Array.isArray(contributorStats) ? contributorStats : [];
+        return {
+          leaderboard: Object.values(byLogin)
+            .sort((a, b) => b.commits + b.prs + b.issues - (a.commits + a.prs + a.issues))
+            .slice(0, 10),
+          commitWeeks: stats.slice(0, 8).map((item) => ({
+            login: item.author?.login || "unknown",
+            total: item.total || 0,
+          })),
+        };
+      }
+
+      function addActivity(byLogin, user, field) {
+        if (!user?.login) return;
+        byLogin[user.login] ||= { login: user.login, commits: 0, prs: 0, issues: 0, url: user.html_url };
+        byLogin[user.login][field] += 1;
+      }
+
+      function ratio(part, total) {
+        return total ? (part / total) * 100 : 0;
+      }
+
+      function withinDays(days, field) {
+        return (item) => item?.[field] && ageDays(item[field]) <= days;
+      }
+
+      function hasCriticalLabel(issue) {
+        return (issue.labels || []).some((label) =>
+          CRITICAL_LABELS.includes(String(label.name || label).toLowerCase()),
+        );
+      }
+
+      function filteredWorkflowMetrics(model) {
+        return model.workflowMetrics.filter((metric) => {
+          if (state.filters.role !== "all" && metric.role !== state.filters.role) return false;
+          if (state.filters.status !== "all" && metric.latestStatus.key !== state.filters.status) return false;
+          return matchesQuery([
+            metric.workflow.name,
+            metric.workflow.path,
+            metric.latest?.head_branch,
+            metric.latest?.head_commit?.message,
+          ]);
+        });
+      }
+
+      function filteredItems(items, fields) {
+        return items.filter((item) => matchesQuery(fields(item)));
+      }
+
+      // UI Components
+      function section(id, title, hint, body) {
+        const collapsed = !!state.collapsed[id];
+        const active = state.activeSection === id;
+        return `<section class="section ${collapsed ? "collapsed" : ""}" id="${esc(id)}" ${active ? "" : "hidden"} aria-hidden="${active ? "false" : "true"}">
+          <div class="section-header">
+            <h2>${esc(title)}</h2>
+            ${hint ? `<span class="hint">${esc(hint)}</span>` : ""}
+            <button class="collapse-toggle" type="button" onclick="toggleSection('${esc(id)}')">
+              ${collapsed ? "Show" : "Hide"}
+            </button>
+          </div>
+          <div class="section-body">${body}</div>
+        </section>`;
+      }
+
+      function sidebar(model) {
+        const counts = sectionCounts(model);
+        return `<aside class="sidebar" aria-label="Dashboard sections">
+          <div class="sidebar-card">
+            <div class="sidebar-title">Operations Center</div>
+            <nav class="side-nav">
+              ${SECTIONS.map((item) => {
+                const active = state.activeSection === item.id;
+                return `<button type="button" class="${active ? "active" : ""}" data-section-target="${esc(item.id)}" title="${esc(item.label)}">
+                  <span class="nav-icon">${esc(item.icon)}</span>
+                  <span class="nav-label">${esc(item.label)}</span>
+                  <span class="nav-count">${esc(counts[item.id] ?? item.hint)}</span>
+                </button>`;
+              }).join("")}
+            </nav>
+          </div>
+          <div class="sidebar-card">
+            <div class="sidebar-title">Current View</div>
+            <div class="sidebar-summary">${esc(activeSectionSummary(model))}</div>
+          </div>
+        </aside>`;
+      }
+
+      function sectionCounts(model) {
+        return {
+          executive: model.scores.health,
+          "repo-health": model.failedWorkflows.length ? `${model.failedWorkflows.length} fail` : "ok",
+          attention: model.failedWorkflows.length + model.stalePrs.length + model.staleIssues.length,
+          prs: model.openPrs.length,
+          issues: model.openIssues.length,
+          operations: model.runningRuns.length,
+          "workflow-analytics": `${Math.round(avg(model.workflowMetrics.map((metric) => metric.successRate)))}%`,
+          releases: model.releases.length,
+          branches: model.branches.length,
+          contributors: model.contributors.length,
+          insights: model.trend.commitsLastMonth,
+          workflows: model.workflowMetrics.length,
+        };
+      }
+
+      function activeSectionSummary(model) {
+        const summaries = {
+          executive: `Health ${model.scores.health}, risk ${model.scores.risk}, reliability ${model.scores.reliability}.`,
+          "repo-health": `${model.openIssues.length} issues, ${model.openPrs.length} PRs, ${model.failedWorkflows.length} failed workflows.`,
+          attention: `${model.failedWorkflows.length} failed workflows and ${model.stalePrs.length + model.staleIssues.length} stale items need review.`,
+          prs: `${model.readyPrs.length} ready PRs and ${model.draftPrs.length} drafts.`,
+          issues: `${model.criticalIssues.length} critical issues and ${model.staleIssues.length} stale issues.`,
+          operations: `${model.runningRuns.length} active workflow runs right now.`,
+          "workflow-analytics": `${pct(avg(model.workflowMetrics.map((metric) => metric.successRate)))} average workflow success rate.`,
+          releases: model.releases[0] ? `Latest release is ${model.releases[0].tag_name}.` : "No public releases found.",
+          branches: `${model.activeBranches.length} active branches and ${model.staleBranches.length} stale branches.`,
+          contributors: `${model.contributors.length} public contributors in the leaderboard data.`,
+          insights: `${model.trend.commitsLastMonth} commits in the latest reported activity window.`,
+          workflows: `${model.workflowMetrics.length} workflow files grouped by role.`,
+        };
+        return summaries[state.activeSection] || "Select a section to focus the dashboard.";
+      }
+
+      function kpiCard(label, value, sub, trend) {
+        return `<div class="kpi-card">
+          <div class="kpi-label">${esc(label)}</div>
+          <div class="kpi-value">${value}</div>
+          ${sub ? `<div class="kpi-sub">${sub}</div>` : ""}
+          ${trend || ""}
+        </div>`;
+      }
+
+      function gaugeCard(label, score, sub, options = {}) {
+        const radius = 30;
+        const circumference = 2 * Math.PI * radius;
+        const fill = clamp(score) / 100;
+        const color = options.inverse
+          ? score <= 33 ? "var(--ok)" : score <= 66 ? "var(--run)" : "var(--fail)"
+          : score >= 80 ? "var(--ok)" : score >= 55 ? "var(--run)" : "var(--fail)";
+        return `<div class="kpi-card gauge">
+          <svg viewBox="0 0 72 72" role="img" aria-label="${esc(label)} ${Math.round(score)}">
+            <circle class="track" cx="36" cy="36" r="${radius}" fill="none" stroke-width="8"></circle>
+            <circle class="fill" cx="36" cy="36" r="${radius}" fill="none" stroke="${color}" stroke-width="8"
+              stroke-dasharray="${circumference}" stroke-dashoffset="${circumference * (1 - fill)}"></circle>
+          </svg>
+          <div>
+            <div class="kpi-label">${esc(label)}</div>
+            <div class="kpi-value">${Math.round(score)}</div>
+            <div class="kpi-sub">${esc(sub)}</div>
+          </div>
+        </div>`;
+      }
+
+      function pill(text, cls = "neutral") {
+        return `<span class="pill ${cls}">${esc(text)}</span>`;
+      }
+
+      function empty(text) {
+        return `<div class="empty">${esc(text)}</div>`;
+      }
+
+      function list(items, options = {}) {
+        const visible = items.slice(0, options.limit || 5);
+        if (!visible.length) return empty(options.empty || "Nothing to show.");
+        return `<div class="list">${visible
+          .map((item) => {
+            const url = item.url || item.html_url || "#";
+            const badge = item.badge ? `<span class="pill ${item.badge.cls || "neutral"}">${esc(item.badge.text)}</span>` : "";
+            return `<a class="list-item ${item.anomaly ? "anomaly" : ""}" href="${esc(url)}" target="_blank" rel="noopener">
+              <div>
+                <div class="list-title">${esc(item.title || item.name || item.login || "Untitled")}</div>
+                <div class="list-meta">${esc(item.meta || "")}</div>
+              </div>
+              ${badge}
+            </a>`;
+          })
+          .join("")}</div>`;
+      }
+
+      function chartCard(chartId, title, hint) {
+        return `<div class="chart-card" data-chart-id="${esc(chartId)}" onclick="inspectChart('${esc(chartId)}')">
+          <div class="chart-head">
+            <div>
+              <div class="chart-title">${esc(title)}</div>
+              <div class="kpi-sub">${esc(hint || "Click to inspect")}</div>
+            </div>
+            ${pill("drill-down", "neutral")}
+          </div>
+          <div class="chart-wrap"><canvas id="chart-${esc(chartId)}" data-chart="${esc(chartId)}"></canvas></div>
+        </div>`;
       }
 
       function generateSparkline(runs) {
         if (!runs || runs.length === 0) return "";
-        const data = runs.slice(0, HISTORY).reverse().map(r => {
-          if (r.status !== "completed") return 0.5;
-          return r.conclusion === "success" ? 1 : 0;
-        });
-        const width = 60, height = 20;
+        const data = runs
+          .slice(0, CONFIG.history)
+          .reverse()
+          .map((run) => {
+            if (run.status !== "completed") return 0.5;
+            return run.conclusion === "success" ? 1 : 0;
+          });
+        const width = 60;
+        const height = 20;
         const step = width / (data.length - 1 || 1);
         let path = `M 0 ${height * (1 - data[0])}`;
-        for (let i = 1; i < data.length; i++) {
-          path += ` L ${i * step} ${height * (1 - data[i])}`;
+        for (let index = 1; index < data.length; index += 1) {
+          path += ` L ${index * step} ${height * (1 - data[index])}`;
         }
         const color = data[data.length - 1] === 1 ? "var(--ok)" : "var(--fail)";
         return `<svg class="sparkline" viewBox="0 0 ${width} ${height}"><path d="${path}" stroke="${color}" /></svg>`;
       }
 
-      async function ghGet(path) {
-        const res = await fetch(API + path, {
-          headers: { Accept: "application/vnd.github+json" },
-        });
-        if (res.status === 403 && res.headers.get("X-RateLimit-Remaining") === "0") {
-          const reset = Number(res.headers.get("X-RateLimit-Reset")) * 1000;
-          throw new Error(
-            `GitHub API rate limit reached (60/hr for anonymous requests). Resets at ${new Date(reset).toLocaleTimeString()}.`,
-          );
-        }
-        if (!res.ok) throw new Error(`GitHub API error ${res.status}`);
-        return res.json();
-      }
-
-      function card(wf, runs) {
-        const latest = runs[0];
-        const st = statusOf(latest);
-        const link = (latest && latest.html_url) || wf.html_url;
-        const squares = runs
-          .slice(0, HISTORY)
-          .reverse()
-          .map((r) => {
-            const s = statusOf(r);
-            return `<a class="sq ${s.cls}" href="${esc(r.html_url)}" target="_blank" rel="noopener" title="${esc(s.text)} · ${esc(rel(r.created_at))}"></a>`;
-          })
-          .join("");
-        const d = dur(latest);
-
-        const commitMsg = latest?.head_commit?.message || "No commit message";
-        const branchName = latest?.head_branch || "unknown";
-
-        return `<a class="card ${st.cls === 'run' ? 'running' : ''}"
+      function workflowCard(metric) {
+        const workflow = metric.workflow;
+        const latest = metric.latest;
+        const status = metric.latestStatus;
+        const link = (latest && latest.html_url) || workflow.html_url;
+        const duration = dur(latest);
+        return `<a class="card run-card ${status.cls === "run" ? "running" : ""}"
                   href="${esc(link)}" target="_blank" rel="noopener"
-                  onclick="openRunDetails(event, ${latest?.id || 0}, '${esc(wf.name)}')">
+                  data-run-id="${latest?.id || ""}" data-title="${esc(workflow.name)}">
           <div class="top">
-            <span class="badge ${st.cls}">${st.icon}</span>
-            <span class="name">${esc(wf.name)}</span>
-            <span class="state">${esc(st.text)}</span>
+            <span class="badge ${status.cls}">${status.icon}</span>
+            <span class="name">${esc(workflow.name)}</span>
+            <span class="state">${esc(status.text)}</span>
           </div>
           <div class="card-body">
-            <div class="commit">${esc(commitMsg)}</div>
-            <div class="branch">${esc(branchName)}</div>
+            <div class="commit">${esc(latest?.head_commit?.message || "No commit message")}</div>
+            <div class="branch">${esc(latest?.head_branch || "unknown")}</div>
           </div>
           <div class="card-footer">
             <div class="sub">
               <span>${latest ? esc(rel(latest.created_at)) : "—"}</span>
-              ${d ? `<span>· ${d}</span>` : ""}
+              ${duration ? `<span>· ${duration}</span>` : ""}
             </div>
-            ${generateSparkline(runs)}
+            ${generateSparkline(metric.runs)}
           </div>
         </a>`;
       }
 
-      async function openRunDetails(e, runId, wfName) {
-        if (!runId) return;
-        e.preventDefault();
+      // Dashboard Modules
+      function render(model) {
+        if (!SECTIONS.some((item) => item.id === state.activeSection)) {
+          state.activeSection = "executive";
+        }
+        const panels = [
+          renderExecutiveDashboard(model),
+          renderRepositoryHealth(model),
+          renderAttentionCenter(model),
+          renderPrCenter(model),
+          renderIssueCenter(model),
+          renderOperationsCenter(model),
+          renderWorkflowAnalytics(model),
+          renderReleaseMonitoring(model),
+          renderBranchMonitoring(model),
+          renderContributorAnalytics(model),
+          renderRepositoryInsights(model),
+          renderWorkflowMonitoring(model),
+        ].join("");
+        el("content").innerHTML = panels
+          ? `${renderHealthBanner(model)}<div class="dashboard-shell">${sidebar(model)}<div class="panel-stack">${panels}</div></div>`
+          : `<div class="notice">No repository data found.</div>`;
+        attachDashboardHandlers();
+        requestAnimationFrame(() => renderCharts(model));
+      }
+
+      function renderHealthBanner(model) {
+        const ok = model.allGatingPassing && model.failedWorkflows.length === 0;
+        return `<div class="health-banner ${ok ? "ok" : "fail"}">
+          <span class="status-icon ${ok ? "ok" : "fail"}"></span>
+          <span class="msg">
+            ${ok ? "Repository operations are healthy" : "Attention required in repository operations"}
+            <span class="muted">· ${fmt(model.runs.length)} recent workflow runs · ${fmt(state.cacheHits)} cached responses</span>
+          </span>
+        </div>`;
+      }
+
+      function renderExecutiveDashboard(model) {
+        const body = `<div class="kpi-grid">
+          ${gaugeCard("Repository Health Score", model.scores.health, "higher is healthier")}
+          ${gaugeCard("Repository Risk Score", model.scores.risk, "lower is safer", { inverse: true })}
+          ${gaugeCard("Development Velocity Score", model.scores.velocity, "merged PRs and commits")}
+          ${gaugeCard("Deployment Reliability Score", model.scores.reliability, "recent workflow success")}
+          ${gaugeCard("Security Posture Score", model.scores.security, "security workflows and critical issues")}
+          ${kpiCard(
+            "Trend Comparison",
+            `${model.comparisons.weekly >= 0 ? "+" : ""}${model.comparisons.weekly}`,
+            "workflow runs vs previous week",
+            trendText("monthly", model.comparisons.monthly),
+          )}
+        </div>`;
+        return section("executive", "Executive Dashboard", "operations scores and trend signals", body);
+      }
+
+      function renderRepositoryHealth(model) {
+        const latestRelease = model.releases[0];
+        const recentActivity = (model.events || []).slice(0, 5).map((event) => ({
+          title: event.type.replace(/Event$/, ""),
+          meta: `${event.actor?.login || "unknown"} · ${rel(event.created_at)}`,
+          url: event.repo?.url ? `https://github.com/${CONFIG.owner}/${CONFIG.repo}` : `https://github.com/${CONFIG.owner}/${CONFIG.repo}`,
+          badge: { text: event.payload?.ref || "activity", cls: "neutral" },
+        }));
+        const body = `<div class="kpi-grid">
+          ${kpiCard("Open Issues", fmt(model.openIssues.length), "excluding pull requests")}
+          ${kpiCard("Open Pull Requests", fmt(model.openPrs.length), `${model.draftPrs.length} draft · ${model.readyPrs.length} ready`)}
+          ${kpiCard("Running Workflows", fmt(model.runningRuns.length), "running, queued, or waiting")}
+          ${kpiCard("Failed Workflows", fmt(model.failedWorkflows.length), "latest run failed")}
+          ${kpiCard("Latest Release", latestRelease ? esc(latestRelease.tag_name) : "—", latestRelease ? rel(latestRelease.published_at || latestRelease.created_at) : "no public releases")}
+          ${kpiCard("Contributors", fmt(model.contributors.length), "public contributor list")}
+        </div>
+        <div class="panel-grid" style="margin-top: 12px;">
+          <div class="panel">
+            <div class="panel-title">Recent Activity</div>
+            ${list(recentActivity, { empty: "No recent public repository activity.", limit: 6 })}
+          </div>
+          <div class="panel">
+            <div class="panel-title">Health Signals</div>
+            <div class="list">
+              <div class="list-item"><div><div class="list-title">Gating workflows</div><div class="list-meta">${model.allGatingPassing ? "All current gating checks are passing." : "One or more gating checks need attention."}</div></div>${pill(model.allGatingPassing ? "passing" : "attention", model.allGatingPassing ? "ok" : "fail")}</div>
+              <div class="list-item"><div><div class="list-title">Staleness</div><div class="list-meta">${model.stalePrs.length} stale PRs · ${model.staleIssues.length} stale issues · ${model.staleBranches.length} stale branches</div></div>${pill(model.stalePrs.length || model.staleIssues.length ? "review" : "clear", model.stalePrs.length || model.staleIssues.length ? "run" : "ok")}</div>
+            </div>
+          </div>
+        </div>`;
+        return section("repo-health", "Repository Health Overview", "public GitHub signals for this repository", body);
+      }
+
+      function renderAttentionCenter(model) {
+        const failed = model.failedWorkflows.map((metric) => ({
+          title: metric.workflow.name,
+          meta: `${metric.failureRate.toFixed(0)}% failure rate · last run ${rel(metric.latest?.created_at)}`,
+          url: metric.latest?.html_url || metric.workflow.html_url,
+          badge: { text: "failed", cls: "fail" },
+        }));
+        const consecutive = model.consecutiveFailures.map((metric) => ({
+          title: metric.workflow.name,
+          meta: `${metric.consecutiveFailures} consecutive failures · last success ${rel(metric.lastSuccess?.created_at)}`,
+          url: metric.latest?.html_url || metric.workflow.html_url,
+          badge: { text: `${metric.consecutiveFailures}x`, cls: "fail" },
+        }));
+        const stalePrs = filteredItems(model.stalePrs, (pr) => [pr.title, pr.user?.login]).map((pr) => ({
+          title: pr.title,
+          meta: `#${pr.number} · ${pr.user?.login || "unknown"} · updated ${rel(pr.updated_at)}`,
+          url: pr.html_url,
+          badge: { text: `${ageDays(pr.updated_at)}d`, cls: "run" },
+        }));
+        const staleIssues = filteredItems(model.staleIssues, (issue) => [issue.title, issue.user?.login]).map((issue) => ({
+          title: issue.title,
+          meta: `#${issue.number} · ${issue.user?.login || "unknown"} · updated ${rel(issue.updated_at)}`,
+          url: issue.html_url,
+          badge: { text: `${ageDays(issue.updated_at)}d`, cls: "run" },
+        }));
+        const failedReleases = model.deployFailures.map((metric) => ({
+          title: metric.workflow.name,
+          meta: `deploy workflow failed ${rel(metric.lastFailure?.created_at)}`,
+          url: metric.lastFailure?.html_url || metric.workflow.html_url,
+          badge: { text: "release risk", cls: "fail" },
+        }));
+        const body = `<div class="panel-grid">
+          <div class="panel"><div class="panel-title">Failed Workflows</div>${list(failed, { empty: "No failed workflows.", limit: 6 })}</div>
+          <div class="panel"><div class="panel-title">Consecutive Failures</div>${list(consecutive, { empty: "No consecutive workflow failures.", limit: 6 })}</div>
+          <div class="panel"><div class="panel-title">Stale Pull Requests</div>${list(stalePrs, { empty: "No stale pull requests.", limit: 6 })}</div>
+          <div class="panel"><div class="panel-title">Stale Issues</div>${list(staleIssues, { empty: "No stale issues.", limit: 6 })}</div>
+          <div class="panel"><div class="panel-title">Failed Releases</div>${list(failedReleases, { empty: "No failed release workflows.", limit: 6 })}</div>
+        </div>`;
+        return section("attention", "Attention Required Center", "failures, stale work, and release risks", body);
+      }
+
+      function renderPrCenter(model) {
+        const open = filteredItems(model.openPrs, (pr) => [pr.title, pr.user?.login]);
+        const recentlyMerged = filteredItems(model.mergedPrs, (pr) => [pr.title, pr.user?.login]).slice(0, 8);
+        const body = `<div class="kpi-grid">
+          ${kpiCard("Open PRs", fmt(model.openPrs.length), "all public open pull requests")}
+          ${kpiCard("Draft PRs", fmt(model.draftPrs.length), "not ready for review")}
+          ${kpiCard("Ready for Review", fmt(model.readyPrs.length), "open and non-draft")}
+          ${kpiCard("Recently Merged", fmt(recentlyMerged.length), "latest closed merged PRs")}
+        </div>
+        <div class="panel-grid" style="margin-top: 12px;">
+          <div class="panel"><div class="panel-title">Open Pull Requests</div>${list(open.map(prListItem), { empty: "No open pull requests.", limit: 8 })}</div>
+          <div class="panel"><div class="panel-title">Recently Merged</div>${list(recentlyMerged.map(prListItem), { empty: "No recently merged pull requests.", limit: 8 })}</div>
+        </div>`;
+        return section("prs", "Pull Request Center", "review queue and merge activity", body);
+      }
+
+      function renderIssueCenter(model) {
+        const open = filteredItems(model.openIssues, (issue) => [issue.title, issue.user?.login, labelsText(issue)]);
+        const closed = filteredItems(model.closedIssues, (issue) => [issue.title, issue.user?.login, labelsText(issue)]).slice(0, 8);
+        const body = `<div class="kpi-grid">
+          ${kpiCard("Open Issues", fmt(model.openIssues.length), "public issue backlog")}
+          ${kpiCard("Critical Issues", fmt(model.criticalIssues.length), "critical labels")}
+          ${kpiCard("Stale Issues", fmt(model.staleIssues.length), `${CONFIG.staleDays}+ days without updates`)}
+          ${kpiCard("Recently Closed", fmt(closed.length), "latest closed issues")}
+        </div>
+        <div class="panel-grid" style="margin-top: 12px;">
+          <div class="panel"><div class="panel-title">Open Issues</div>${list(open.map(issueListItem), { empty: "No open issues.", limit: 8 })}</div>
+          <div class="panel"><div class="panel-title">Critical Issues</div>${list(model.criticalIssues.map(issueListItem), { empty: "No critical issues.", limit: 8 })}</div>
+          <div class="panel"><div class="panel-title">Recently Closed</div>${list(closed.map(issueListItem), { empty: "No recently closed issues.", limit: 8 })}</div>
+        </div>`;
+        return section("issues", "Issue Center", "issue backlog and closure signals", body);
+      }
+
+      function renderOperationsCenter(model) {
+        const active = model.runningRuns.map((run) => {
+          const metric = model.workflowMetrics.find((item) => item.workflow.id === run.workflow_id);
+          const duration = durationSeconds(run.run_started_at || run.created_at, new Date().toISOString());
+          const queue = run.run_started_at ? durationSeconds(run.created_at, run.run_started_at) : durationSeconds(run.created_at, new Date().toISOString());
+          return {
+            title: run.name || metric?.workflow.name || "Workflow run",
+            meta: `${run.head_branch || "unknown"} · ${shortSha(run.head_sha)} · duration ${formatDuration(duration)} · queue ${formatDuration(queue)}`,
+            url: run.html_url,
+            anomaly: duration > Math.max(900, (metric?.avgDurationSec || 0) * 2) || queue > 600,
+            badge: { text: run.status.replace(/_/g, " "), cls: run.status === "queued" ? "run" : "neutral" },
+          };
+        });
+        const body = `<div class="kpi-grid">
+          ${kpiCard("Running", fmt(model.runningRuns.filter((run) => run.status === "in_progress").length), "in-progress workflow runs")}
+          ${kpiCard("Queued", fmt(model.queuedRuns.length), "waiting for runner capacity")}
+          ${kpiCard("Waiting", fmt(model.waitingRuns.length), "waiting workflow runs")}
+          ${kpiCard("Anomalies", fmt(active.filter((item) => item.anomaly).length), "long duration or queue time")}
+        </div>
+        <div class="panel" style="margin-top: 12px;">
+          <div class="panel-title">Live Operations Panel</div>
+          ${list(active, { empty: "No running, queued, or waiting workflows.", limit: 10 })}
+        </div>`;
+        return section("operations", "Operations Center", "live workflow execution state", body);
+      }
+
+      function renderWorkflowAnalytics(model) {
+        const flaky = model.workflowMetrics.filter((metric) => metric.isFlaky);
+        const slow = [...model.workflowMetrics].sort((a, b) => b.avgDurationSec - a.avgDurationSec).slice(0, 5);
+        const mostFailed = [...model.workflowMetrics].sort((a, b) => b.failureRate - a.failureRate).slice(0, 5);
+        const mostActive = [...model.workflowMetrics].sort((a, b) => b.executionFrequency - a.executionFrequency).slice(0, 5);
+        const latestSuccess = [...model.workflowMetrics]
+          .map((metric) => metric.lastSuccess)
+          .filter(Boolean)
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+        const latestFailure = [...model.workflowMetrics]
+          .map((metric) => metric.lastFailure)
+          .filter(Boolean)
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+        const body = `<div class="kpi-grid">
+          ${kpiCard("Success Rate", pct(avg(model.workflowMetrics.map((metric) => metric.successRate))), "average across workflows")}
+          ${kpiCard("Failure Rate", pct(avg(model.workflowMetrics.map((metric) => metric.failureRate))), "average across workflows")}
+          ${kpiCard("Average Duration", formatDuration(avg(model.workflowMetrics.map((metric) => metric.avgDurationSec))), "completed workflow runs")}
+          ${kpiCard("Last Success", latestSuccess ? rel(latestSuccess.created_at) : "—", latestSuccess?.name || "no successful run found")}
+          ${kpiCard("Last Failure", latestFailure ? rel(latestFailure.created_at) : "—", latestFailure?.name || "no failed run found")}
+          ${kpiCard("Execution Frequency", fmt(model.workflowMetrics.reduce((sum, metric) => sum + metric.executionFrequency, 0)), "runs in the last 7 days")}
+          ${kpiCard("Consecutive Failures", fmt(model.consecutiveFailures.length), "workflows with 2+ failures")}
+        </div>
+        <div class="chart-grid" style="margin-top: 12px;">
+          ${chartCard("workflowSuccess", "Workflow Success Trends", "daily success rate")}
+          ${chartCard("workflowDuration", "Workflow Duration Trends", "average minutes per run")}
+          ${chartCard("workflowVolume", "Workflow Volume Trends", "daily run count")}
+          ${chartCard("workflowFailures", "Failure Trends", "daily failed runs")}
+          ${chartCard("workflowStatusMix", "Workflow Status Mix", "success and failure distribution")}
+        </div>
+        <div class="panel-grid" style="margin-top: 12px;">
+          <div class="panel"><div class="panel-title">Flaky Workflows</div>${list(flaky.map(workflowMetricItem), { empty: "No flaky workflow pattern detected.", limit: 5 })}</div>
+          <div class="panel"><div class="panel-title">Slow Workflows</div>${list(slow.map(workflowMetricItem), { empty: "No slow workflows found.", limit: 5 })}</div>
+          <div class="panel"><div class="panel-title">Most Active Workflows</div>${list(mostActive.map(workflowMetricItem), { empty: "No workflow activity found.", limit: 5 })}</div>
+          <div class="panel"><div class="panel-title">Most Failed Workflows</div>${list(mostFailed.map(workflowMetricItem), { empty: "No failed workflow data.", limit: 5 })}</div>
+        </div>`;
+        return section("workflow-analytics", "Workflow Analytics", "success, duration, volume, and failure trends", body);
+      }
+
+      function renderReleaseMonitoring(model) {
+        const latest = model.releases[0];
+        const releaseItems = model.releases.slice(0, 8).map((release) => ({
+          title: release.name || release.tag_name,
+          meta: `${release.tag_name} · ${rel(release.published_at || release.created_at)}`,
+          url: release.html_url,
+          badge: { text: release.draft ? "draft" : release.prerelease ? "pre" : "release", cls: "neutral" },
+        }));
+        const body = `<div class="kpi-grid">
+          ${kpiCard("Latest Release", latest ? esc(latest.tag_name) : "—", latest ? rel(latest.published_at || latest.created_at) : "no releases")}
+          ${kpiCard("Release Count", fmt(model.releases.length), "latest public releases")}
+          ${kpiCard("Release Frequency", `${model.trend.releaseCounts.reduce((a, b) => a + b, 0)}`, "releases in visible timeline")}
+          ${kpiCard("Failed Release Workflows", fmt(model.deployFailures.length), "deploy workflow failures")}
+        </div>
+        <div class="chart-grid" style="margin-top: 12px;">
+          ${chartCard("releaseTrend", "Release Trend Chart", "monthly release count")}
+          <div class="chart-card" onclick="openDrilldown('releases', 'Release Timeline')">
+            <div class="chart-head"><div><div class="chart-title">Release Timeline</div><div class="kpi-sub">latest public releases</div></div>${pill("timeline", "neutral")}</div>
+            <div class="timeline">${releaseItems.length ? releaseItems.map((item) => `<a class="timeline-item" href="${esc(item.url)}" target="_blank" rel="noopener"><span>${esc(item.meta.split(" · ").pop())}</span><strong>${esc(item.title)}</strong></a>`).join("") : empty("No release timeline available.")}</div>
+          </div>
+        </div>`;
+        return section("releases", "Release Monitoring", "release cadence and deploy health", body);
+      }
+
+      function renderBranchMonitoring(model) {
+        const branchItems = model.branches.slice(0, 8).map((branch) => ({
+          title: branch.name,
+          meta: `${branch.protected ? "protected" : "unprotected"} · ${branch.updatedAt ? `updated ${rel(branch.updatedAt)}` : "activity date unavailable"}`,
+          url: branch.url,
+          badge: { text: branch.updatedAt && ageDays(branch.updatedAt) > CONFIG.staleBranchDays ? "stale" : "active", cls: branch.updatedAt && ageDays(branch.updatedAt) > CONFIG.staleBranchDays ? "run" : "ok" },
+        }));
+        const body = `<div class="kpi-grid">
+          ${kpiCard("Main Branch Health", model.mainBranch ? (model.mainBranch.updatedAt ? rel(model.mainBranch.updatedAt) : "available") : "—", "latest public main branch signal")}
+          ${kpiCard("Active Branches", fmt(model.activeBranches.length), `within ${CONFIG.staleBranchDays} days or unknown`)}
+          ${kpiCard("Stale Branches", fmt(model.staleBranches.length), `${CONFIG.staleBranchDays}+ days without commits`)}
+          ${kpiCard("Protected Branches", fmt(model.branches.filter((branch) => branch.protected).length), "public branch protection flag")}
+        </div>
+        <div class="chart-grid" style="margin-top: 12px;">
+          ${chartCard("branchActivity", "Branch Activity Chart", "recent branch freshness")}
+          <div class="panel"><div class="panel-title">Branch Health Indicators</div>${list(branchItems, { empty: "No branch data available.", limit: 8 })}</div>
+        </div>`;
+        return section("branches", "Branch Monitoring", "main branch, active branches, and stale branches", body);
+      }
+
+      function renderContributorAnalytics(model) {
+        const leaderboard = model.contributorAnalytics.leaderboard.map((person) => ({
+          title: person.login,
+          meta: `${person.commits} commits · ${person.prs} PRs · ${person.issues} issues`,
+          url: person.url || `https://github.com/${person.login}`,
+          badge: { text: fmt(person.commits + person.prs + person.issues), cls: "neutral" },
+        }));
+        const body = `<div class="chart-grid">
+          ${chartCard("contributors", "Contributor Leaderboard", "commits, PRs, and issues")}
+          ${chartCard("contributionTrend", "Contribution Trends", "weekly commit activity")}
+        </div>
+        <div class="panel-grid" style="margin-top: 12px;">
+          <div class="panel"><div class="panel-title">Top Contributors</div>${list(leaderboard, { empty: "No contributor activity available.", limit: 10 })}</div>
+          <div class="panel"><div class="panel-title">Activity Timeline</div>${renderActivityTimeline(model.events)}</div>
+        </div>`;
+        return section("contributors", "Contributor Analytics", "commit, pull request, and issue activity", body);
+      }
+
+      function renderRepositoryInsights(model) {
+        const body = `<div class="kpi-grid">
+          ${kpiCard("Commit Activity", fmt(model.trend.commitsLastMonth), "last five reported weeks")}
+          ${kpiCard("Weekly Activity", fmt(model.trend.runVolume.weekCurrent), "workflow runs this week", trendText("vs last week", model.comparisons.weekly))}
+          ${kpiCard("Monthly Activity", fmt(model.trend.runVolume.monthCurrent), "workflow runs this month", trendText("vs prior month", model.comparisons.monthly))}
+          ${kpiCard("Development Velocity", model.scores.velocity, "score from merges and commits")}
+        </div>
+        <div class="chart-grid" style="margin-top: 12px;">
+          ${chartCard("repoGrowth", "Repository Growth", "public event activity")}
+          <div class="chart-card" onclick="inspectChart('commitHeatmap')">
+            <div class="chart-head"><div><div class="chart-title">Commit Heat Map</div><div class="kpi-sub">weekly commit density</div></div>${pill("heat map", "neutral")}</div>
+            ${renderHeatmap(model.trend.activityWeeks)}
+          </div>
+        </div>`;
+        return section("insights", "Repository Insights", "commit activity, growth, and velocity", body);
+      }
+
+      function renderWorkflowMonitoring(model) {
+        const metrics = filteredWorkflowMetrics(model);
+        const groups = {};
+        for (const metric of metrics) (groups[metric.role] ||= []).push(metric);
+        let body = "";
+        for (const role of ROLE_ORDER) {
+          const list = (groups[role] || []).sort((a, b) => a.workflow.name.localeCompare(b.workflow.name));
+          if (!list.length) continue;
+          body += `<div class="group"><h2>${esc(role)}</h2><span class="hint">${esc(ROLE_LABEL[role])}</span></div>`;
+          body += `<div class="grid">${list.map(workflowCard).join("")}</div>`;
+        }
+        if (!body) body = `<div class="notice">No workflows match the current search and filters.</div>`;
+        return section("workflows", "Workflow Monitoring", "existing workflow grouping, cards, sparklines, and run details", body);
+      }
+
+      function renderActivityTimeline(events) {
+        const items = (events || []).slice(0, 8);
+        if (!items.length) return empty("No public activity events available.");
+        return `<div class="timeline">${items
+          .map(
+            (event) =>
+              `<div class="timeline-item"><span>${esc(rel(event.created_at))}</span><strong>${esc(event.actor?.login || "unknown")} · ${esc(event.type.replace(/Event$/, ""))}</strong></div>`,
+          )
+          .join("")}</div>`;
+      }
+
+      function renderHeatmap(weeks) {
+        const totals = Array.isArray(weeks) ? weeks.flatMap((week) => week.days || []) : [];
+        if (!totals.length) return empty("Commit heat map is warming up on GitHub's stats API.");
+        const max = Math.max(...totals, 1);
+        return `<div class="heatmap">${totals
+          .slice(-182)
+          .map((value) => {
+            const level = value === 0 ? 0 : Math.ceil((value / max) * 4);
+            return `<span class="heat-cell l${level}" title="${value} commits"></span>`;
+          })
+          .join("")}</div>`;
+      }
+
+      function prListItem(pr) {
+        return {
+          title: pr.title,
+          meta: `#${pr.number} · ${pr.user?.login || "unknown"} · updated ${rel(pr.updated_at)}`,
+          url: pr.html_url,
+          badge: { text: pr.draft ? "draft" : pr.merged_at ? "merged" : "ready", cls: pr.draft ? "run" : "ok" },
+        };
+      }
+
+      function issueListItem(issue) {
+        return {
+          title: issue.title,
+          meta: `#${issue.number} · ${issue.user?.login || "unknown"} · ${labelsText(issue) || "no labels"}`,
+          url: issue.html_url,
+          badge: { text: hasCriticalLabel(issue) ? "critical" : `${ageDays(issue.updated_at)}d`, cls: hasCriticalLabel(issue) ? "fail" : "neutral" },
+        };
+      }
+
+      function labelsText(issue) {
+        return (issue.labels || []).map((label) => label.name || label).join(", ");
+      }
+
+      function workflowMetricItem(metric) {
+        return {
+          title: metric.workflow.name,
+          meta: `${pct(metric.successRate)} success · avg ${formatDuration(metric.avgDurationSec)} · ${metric.executionFrequency}/week`,
+          url: metric.latest?.html_url || metric.workflow.html_url,
+          badge: { text: metric.latestStatus.text, cls: metric.latestStatus.cls },
+        };
+      }
+
+      // Charting
+      function renderCharts(model) {
+        state.chartDetails = buildChartDetails(model);
+        Object.values(state.charts).forEach((chart) => chart.destroy());
+        state.charts = {};
+        const activePanel = document.querySelector(`.section#${state.activeSection}`);
+        const canvases = Array.from((activePanel || document).querySelectorAll("canvas[data-chart]"));
+        if (!window.Chart) {
+          canvases.forEach((canvas) => {
+            canvas.closest(".chart-wrap").innerHTML = `<div class="empty">Chart.js could not be loaded.</div>`;
+          });
+          return;
+        }
+
+        Chart.defaults.color = CHART_COLORS.muted;
+        Chart.defaults.borderColor = CHART_COLORS.grid;
+
+        const renderOne = (canvas) => {
+          const id = canvas.dataset.chart;
+          const detail = state.chartDetails[id];
+          if (!detail || state.charts[id]) return;
+          state.charts[id] = new Chart(canvas, detail.config);
+        };
+
+        if ("IntersectionObserver" in window) {
+          const observer = new IntersectionObserver(
+            (entries) => {
+              entries.forEach((entry) => {
+                if (entry.isIntersecting) {
+                  renderOne(entry.target.querySelector("canvas"));
+                  observer.unobserve(entry.target);
+                }
+              });
+            },
+            { rootMargin: "120px" },
+          );
+          canvases.forEach((canvas) => observer.observe(canvas.closest(".chart-card")));
+        } else {
+          canvases.forEach(renderOne);
+        }
+      }
+
+      function buildChartDetails(model) {
+        const labels = model.trend.labels14.map((label) => label.slice(5));
+        const workflowNames = model.workflowMetrics.map((metric) => metric.workflow.name);
+        const successValues = model.workflowMetrics.map((metric) => Math.round(metric.successRate));
+        const failureValues = model.workflowMetrics.map((metric) => Math.round(metric.failureRate));
+        const durations = model.workflowMetrics.map((metric) => Number((metric.avgDurationSec / 60).toFixed(1)));
+        const branchLabels = model.branches.slice(0, 10).map((branch) => branch.name);
+        const branchFreshness = model.branches
+          .slice(0, 10)
+          .map((branch) => (branch.updatedAt ? clamp(CONFIG.staleBranchDays - ageDays(branch.updatedAt), 0, CONFIG.staleBranchDays) : 0));
+        const contributorLabels = model.contributorAnalytics.leaderboard.slice(0, 8).map((person) => person.login);
+        const contributorValues = model.contributorAnalytics.leaderboard
+          .slice(0, 8)
+          .map((person) => person.commits + person.prs + person.issues);
+        const weekLabels = model.trend.activityWeeks.slice(-12).map((week) =>
+          new Date((week.week || 0) * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        );
+        const weekTotals = model.trend.activityWeeks.slice(-12).map((week) => week.total || 0);
+
+        return {
+          workflowSuccess: chartDetail("Workflow Success Trends", labels, model.trend.successRate, lineConfig(labels, model.trend.successRate, "Success rate", CHART_COLORS.ok, true)),
+          workflowDuration: chartDetail("Workflow Duration Trends", labels, model.trend.duration, lineConfig(labels, model.trend.duration, "Average minutes", CHART_COLORS.run, true)),
+          workflowVolume: chartDetail("Workflow Volume Trends", labels, model.trend.volume, barConfig(labels, model.trend.volume, "Runs", CHART_COLORS.accent)),
+          workflowFailures: chartDetail("Failure Trends", labels, model.trend.failures, lineConfig(labels, model.trend.failures, "Failures", CHART_COLORS.fail, true)),
+          releaseTrend: chartDetail("Release Trend Chart", model.trend.releaseLabels, model.trend.releaseCounts, barConfig(model.trend.releaseLabels, model.trend.releaseCounts, "Releases", CHART_COLORS.ok)),
+          branchActivity: chartDetail("Branch Activity Chart", branchLabels, branchFreshness, barConfig(branchLabels, branchFreshness, "Freshness", CHART_COLORS.run)),
+          contributors: chartDetail("Contributor Leaderboard", contributorLabels, contributorValues, barConfig(contributorLabels, contributorValues, "Activity", CHART_COLORS.accent)),
+          contributionTrend: chartDetail("Contribution Trends", weekLabels, weekTotals, lineConfig(weekLabels, weekTotals, "Commits", CHART_COLORS.ok, true)),
+          repoGrowth: chartDetail("Repository Growth", model.trend.labels30.map((label) => label.slice(5)), model.trend.eventVolume, lineConfig(model.trend.labels30.map((label) => label.slice(5)), model.trend.eventVolume, "Public events", CHART_COLORS.accent, true)),
+          commitHeatmap: chartDetail("Commit Heat Map", model.trend.activityWeeks.map((_, index) => `week ${index + 1}`), model.trend.activityWeeks.map((week) => week.total || 0), null),
+          workflowStatusMix: chartDetail("Workflow Status Mix", workflowNames, successValues, doughnutConfig(["Success", "Failure"], [avg(successValues), avg(failureValues)])),
+          workflowDurations: chartDetail("Workflow Durations", workflowNames, durations, barConfig(workflowNames, durations, "Minutes", CHART_COLORS.run)),
+        };
+      }
+
+      function chartDetail(title, labels, values, config) {
+        return { title, labels, values, config };
+      }
+
+      function baseOptions() {
+        return {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { mode: "index", intersect: false } },
+          scales: {
+            x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true } },
+            y: { beginAtZero: true, grid: { color: CHART_COLORS.grid } },
+          },
+        };
+      }
+
+      function lineConfig(labels, values, label, color, fill = false) {
+        return {
+          type: "line",
+          data: {
+            labels,
+            datasets: [
+              {
+                label,
+                data: values,
+                borderColor: color,
+                backgroundColor: fill ? `${color}22` : color,
+                tension: 0.35,
+                fill,
+                pointRadius: 2,
+              },
+            ],
+          },
+          options: baseOptions(),
+        };
+      }
+
+      function barConfig(labels, values, label, color) {
+        return {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [{ label, data: values, backgroundColor: `${color}cc`, borderRadius: 5 }],
+          },
+          options: baseOptions(),
+        };
+      }
+
+      function doughnutConfig(labels, values) {
+        return {
+          type: "doughnut",
+          data: {
+            labels,
+            datasets: [{ data: values, backgroundColor: [CHART_COLORS.ok, CHART_COLORS.fail, CHART_COLORS.run] }],
+          },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
+        };
+      }
+
+      // Event Handling
+      function attachDashboardHandlers() {
+        document.querySelectorAll("[data-section-target]").forEach((button) => {
+          button.addEventListener("click", () => {
+            state.activeSection = button.dataset.sectionTarget;
+            try {
+              localStorage.setItem(CONFIG.activeSectionKey, state.activeSection);
+            } catch {}
+            if (state.model) render(state.model);
+          });
+        });
+        document.querySelectorAll(".run-card").forEach((card) => {
+          card.addEventListener("click", (event) => {
+            const runId = Number(card.dataset.runId);
+            if (!runId) return;
+            event.preventDefault();
+            openRunDetails(runId, card.dataset.title || "Run Details");
+          });
+        });
+      }
+
+      async function openRunDetails(runId, title) {
         el("overlay").style.display = "grid";
-        el("modal-title").textContent = wfName;
+        el("modal-title").textContent = title;
         el("modal-body").innerHTML = `<div class="notice">Fetching jobs…</div>`;
 
         try {
-          const data = await ghGet(`/actions/runs/${runId}/jobs`);
+          const data = await ghGet(`/actions/runs/${runId}/jobs`, { ttl: 60 * 1000 });
           const jobs = data.jobs || [];
           if (jobs.length === 0) {
             el("modal-body").innerHTML = `<div class="notice">No jobs found for this run.</div>`;
             return;
           }
 
-          el("modal-body").innerHTML = jobs.map(j => {
-            const s = statusOf({ status: j.conclusion === 'success' ? 'completed' : 'completed', conclusion: j.conclusion });
-            return `<div class="job-item">
-              <span class="status ${s.cls}"></span>
-              <span class="name">${esc(j.name)}</span>
-              <a class="link" href="${esc(j.html_url)}" target="_blank">View →</a>
-            </div>`;
-          }).join("");
-        } catch (err) {
-          el("modal-body").innerHTML = `<div class="notice error">${esc(err.message)}</div>`;
+          el("modal-body").innerHTML = jobs
+            .map((job) => {
+              const status = statusOf({ status: job.status, conclusion: job.conclusion });
+              return `<div class="job-item">
+                <span class="status ${status.cls}"></span>
+                <span class="name">${esc(job.name)}</span>
+                <span class="meta">${esc(formatDuration(durationSeconds(job.started_at, job.completed_at)))}</span>
+                <a class="link" href="${esc(job.html_url)}" target="_blank" rel="noopener">View →</a>
+              </div>`;
+            })
+            .join("");
+        } catch (error) {
+          el("modal-body").innerHTML = `<div class="notice error">${esc(error.message)}</div>`;
         }
       }
 
-      function render(workflows, byWf) {
-        const groups = {};
-        for (const wf of workflows) (groups[roleOf(wf.path)] ||= []).push(wf);
+      function openDrilldown(kind, title) {
+        const model = state.model;
+        if (!model) return;
+        const map = {
+          releases: model.releases.map((release) => ({
+            title: release.name || release.tag_name,
+            meta: `${release.tag_name} · ${rel(release.published_at || release.created_at)}`,
+            url: release.html_url,
+            badge: { text: release.prerelease ? "pre-release" : "release", cls: "neutral" },
+          })),
+        };
+        el("overlay").style.display = "grid";
+        el("modal-title").textContent = title;
+        el("modal-body").innerHTML = list(map[kind] || [], { empty: "No drill-down data available.", limit: 30 });
+      }
 
-        const gatingWf = groups["gating"] || [];
-        const allGatingPassing = gatingWf.length > 0 && gatingWf.every(wf => {
-          const latest = byWf[wf.id]?.[0];
-          return latest && latest.conclusion === "success";
-        });
+      function inspectChart(chartId) {
+        const detail = state.chartDetails[chartId];
+        if (!detail) return;
+        el("overlay").style.display = "grid";
+        el("modal-title").textContent = detail.title;
+        const rows = detail.labels
+          .map((label, index) => `<tr><td>${esc(label)}</td><td>${esc(detail.values[index] ?? 0)}</td></tr>`)
+          .join("");
+        el("modal-body").innerHTML = rows
+          ? `<table class="mini-table"><thead><tr><th>Label</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table>`
+          : `<div class="notice">No chart data available yet.</div>`;
+      }
 
-        let html = `
-          <div class="health-banner ${allGatingPassing ? 'ok' : 'fail'}">
-            <span class="status-icon ${allGatingPassing ? 'ok' : 'fail'}"></span>
-            <span class="msg">
-              ${allGatingPassing ? "All gating workflows are passing" : "Gating workflows have failures"}
-              <span class="muted">· Check details below</span>
-            </span>
-          </div>
-        `;
+      function toggleSection(id) {
+        state.collapsed[id] = !state.collapsed[id];
+        saveJson(CONFIG.collapsedKey, state.collapsed);
+        if (state.model) render(state.model);
+      }
 
-        for (const role of ROLE_ORDER) {
-          const list = (groups[role] || []).sort((a, b) => a.name.localeCompare(b.name));
-          if (!list.length) continue;
-          html += `<div class="group"><h2>${esc(role)}</h2><span class="hint">${esc(ROLE_LABEL[role])}</span></div>`;
-          html += `<div class="grid">${list
-            .map((wf) => card(wf, byWf[wf.id] || []))
-            .join("")}</div>`;
+      function renderRateLimit() {
+        const box = el("rate-limit");
+        if (!box) return;
+        if (!state.rateLimit) {
+          box.innerHTML = `<span class="rate-dot"></span><span>rate limit unknown</span>`;
+          return;
         }
-        el("content").innerHTML = html || `<div class="notice">No workflows found.</div>`;
+        const { limit, remaining, reset } = state.rateLimit;
+        const ratio = remaining / limit;
+        const cls = ratio < 0.12 ? "fail" : ratio < 0.35 ? "warn" : "ok";
+        box.innerHTML = `<span class="rate-dot ${cls}"></span><span>${remaining}/${limit} api · reset ${new Date(reset).toLocaleTimeString()}</span>`;
       }
 
-      async function load() {
-        const [wf, runs] = await Promise.all([
-          ghGet("/actions/workflows?per_page=100"),
-          ghGet("/actions/runs?per_page=100"),
-        ]);
-        const workflows = (wf.workflows || []).filter((w) =>
-          w.path.startsWith(".github/workflows/"),
-        );
-        const byWf = {};
-        for (const r of runs.workflow_runs || []) (byWf[r.workflow_id] ||= []).push(r);
-        for (const id in byWf)
-          byWf[id].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-        render(workflows, byWf);
-        el("updated").textContent = "updated " + new Date().toLocaleTimeString();
+      function renderLoading() {
+        el("content").innerHTML = `<div class="skeleton-grid">
+          <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+          <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+        </div>`;
       }
 
-      let countdownTimer = null;
-      let nextAt = 0;
+      async function load(force = false) {
+        if (!state.model) renderLoading();
+        const raw = await fetchDashboardData(force);
+        state.raw = raw;
+        state.model = buildModel(raw);
+        render(state.model);
+        const stale = state.cacheStale ? ` · ${state.cacheStale} stale fallback${state.cacheStale === 1 ? "" : "s"}` : "";
+        el("updated").textContent = `updated ${new Date().toLocaleTimeString()} · ${state.cacheHits} cached${stale}`;
+      }
 
       function buildIntervals() {
         const box = el("intervals");
         box.innerHTML = INTERVALS.map(
-          (i) =>
-            `<button type="button" data-ms="${i.ms}"${i.ms === autoMs ? ' class="active"' : ""}>${i.label}</button>`,
+          (item) =>
+            `<button type="button" data-ms="${item.ms}"${item.ms === state.autoMs ? ' class="active"' : ""}>${item.label}</button>`,
         ).join("");
-        box.querySelectorAll("button").forEach((b) =>
-          b.addEventListener("click", () => {
-            autoMs = Number(b.dataset.ms);
+        box.querySelectorAll("button").forEach((button) =>
+          button.addEventListener("click", () => {
+            state.autoMs = Number(button.dataset.ms);
             try {
-              localStorage.setItem(STORE_KEY, String(autoMs));
+              localStorage.setItem(CONFIG.intervalKey, String(state.autoMs));
             } catch {}
             box
               .querySelectorAll("button")
-              .forEach((x) => x.classList.toggle("active", Number(x.dataset.ms) === autoMs));
+              .forEach((item) => item.classList.toggle("active", Number(item.dataset.ms) === state.autoMs));
             scheduleAuto();
           }),
         );
       }
 
       function scheduleAuto() {
-        clearInterval(countdownTimer);
-        if (!autoMs) {
-          nextAt = 0;
+        clearInterval(state.countdownTimer);
+        if (!state.autoMs) {
+          state.nextAt = 0;
           el("countdown").textContent = "· auto-refresh off";
           return;
         }
-        nextAt = Date.now() + autoMs;
-        countdownTimer = setInterval(tick, 1000);
+        state.nextAt = Date.now() + state.autoMs;
+        state.countdownTimer = setInterval(tick, 1000);
         tick();
       }
+
       function tick() {
-        const left = Math.max(0, nextAt - Date.now());
-        const m = Math.floor(left / 60000);
-        const s = Math.floor((left % 60000) / 1000);
-        el("countdown").textContent = `· auto-refresh in ${m}:${String(s).padStart(2, "0")}`;
+        const left = Math.max(0, state.nextAt - Date.now());
+        const minutes = Math.floor(left / 60000);
+        const seconds = Math.floor((left % 60000) / 1000);
+        el("countdown").textContent = `· auto-refresh in ${minutes}:${String(seconds).padStart(2, "0")}`;
         if (left <= 0) refresh();
       }
 
-      let busy = false;
-      async function refresh() {
-        if (busy) return;
-        busy = true;
-        const btn = el("refresh");
-        btn.disabled = true;
-        const label = btn.textContent;
-        btn.textContent = "↻ Refreshing…";
+      async function refresh(force = false) {
+        if (state.busy) return;
+        state.busy = true;
+        const button = el("refresh");
+        const label = button.textContent;
+        button.disabled = true;
+        button.textContent = "↻ Refreshing…";
         try {
-          await load();
-        } catch (e) {
-          el("content").innerHTML = `<div class="notice error">${esc(e.message)}</div>`;
+          await load(force);
+        } catch (error) {
+          el("content").innerHTML = `<div class="notice error">
+            <strong>Unable to load repository operations.</strong><br>
+            ${esc(error.message)}
+            <div class="kpi-sub">Cached data will be used automatically when available.</div>
+          </div>`;
           el("updated").textContent = "update failed";
         } finally {
-          btn.textContent = label;
-          btn.disabled = false;
-          busy = false;
+          button.textContent = label;
+          button.disabled = false;
+          state.busy = false;
           scheduleAuto();
         }
       }
 
-      el("refresh").addEventListener("click", refresh);
-      document.addEventListener("visibilitychange", () => {
-        if (!document.hidden && autoMs && Date.now() >= nextAt) refresh();
-      });
-      el("close-modal").addEventListener("click", () => {
-        el("overlay").style.display = "none";
-      });
-      el("overlay").addEventListener("click", (e) => {
-        if (e.target === el("overlay")) el("overlay").style.display = "none";
-      });
+      function wireEvents() {
+        el("refresh").addEventListener("click", () => refresh(true));
+        el("global-search").addEventListener("input", (event) => {
+          state.search = event.target.value;
+          if (state.model) render(state.model);
+        });
+        el("status-filter").addEventListener("change", (event) => {
+          state.filters.status = event.target.value;
+          if (state.model) render(state.model);
+        });
+        el("role-filter").addEventListener("change", (event) => {
+          state.filters.role = event.target.value;
+          if (state.model) render(state.model);
+        });
+        document.addEventListener("visibilitychange", () => {
+          if (!document.hidden && state.autoMs && Date.now() >= state.nextAt) refresh();
+        });
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") el("overlay").style.display = "none";
+        });
+        el("close-modal").addEventListener("click", () => {
+          el("overlay").style.display = "none";
+        });
+        el("overlay").addEventListener("click", (event) => {
+          if (event.target === el("overlay")) el("overlay").style.display = "none";
+        });
+      }
+
+      window.openRunDetails = openRunDetails;
+      window.openDrilldown = openDrilldown;
+      window.inspectChart = inspectChart;
+      window.toggleSection = toggleSection;
 
       buildIntervals();
+      wireEvents();
       refresh();
     </script>
   </body>
