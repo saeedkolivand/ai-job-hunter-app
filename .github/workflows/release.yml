@@ -157,7 +157,7 @@ jobs:
       - name: 🔖 Sync + Commit Version Files
         run: |
           echo "::group::Resolving latest release tag"
-          VERSION="$(git describe --tags --abbrev=0 --match 'v*' | sed 's/^v//')"
+          VERSION="$(git describe --tags --abbrev=0 --match 'v*' | sed 's/^v*//')"
           if [ -z "$VERSION" ]; then
             echo "No release tag found — nothing to sync."
             exit 0
@@ -250,7 +250,7 @@ jobs:
           else
             VERSION="$(git tag --sort=-version:refname | head -n1)"
           fi
-          VERSION="${VERSION#v}"
+          VERSION="$(echo "$VERSION" | sed 's/^v*//')"
           if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
             echo "::error::Could not resolve a valid version (got '$VERSION'). Pass one via the workflow input."
             exit 1
@@ -417,7 +417,7 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
-          tag_name: v${{ steps.resolve.outputs.version }}
+          tag_name: ${{ steps.resolve.outputs.version }}
           # Tauri only emits .sig files for NSIS, AppImage, and macOS .app.tar.gz
           # bundles (the targets the auto-updater consumes). MSI/DEB/RPM never
           # produce .sig artifacts so they're not listed.
@@ -462,7 +462,7 @@ jobs:
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Platform | \`${{ matrix.platform }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Status | ${{ steps.tauri-build.outcome == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Version | \`v${{ steps.resolve.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`${{ steps.resolve.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
           echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
@@ -671,5 +671,5 @@ jobs:
             exit 0
           fi
           git add Casks/ai-job-hunter.rb
-          git commit -m "chore: sync homebrew cask to v${VERSION} [skip ci]"
+          git commit -m "chore: sync homebrew cask to ${VERSION} [skip ci]"
           git push git@github.com:saeedkolivand/ai-job-hunter-assistant-app.git HEAD:main
