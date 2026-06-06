@@ -206,7 +206,6 @@ jobs:
     # needs nothing from the push-only release / sync-version-files jobs.
     if: github.event_name == 'workflow_dispatch'
 
-    # Exposed so generate-update-manifest targets the same release.
     outputs:
       version: ${{ steps.resolve.outputs.version }}
 
@@ -253,13 +252,15 @@ jobs:
             echo "::error::Could not resolve a valid version (got '$VERSION'). Pass one via the workflow input."
             exit 1
           fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # Using a non-secret prefix to prevent false positive secret masking
+          # that would otherwise blank the output and break the manifest generator.
+          echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Building installers for v$VERSION"
 
       - name: 📥 Checkout Release Tag
         uses: actions/checkout@v6
         with:
-          ref: v${{ steps.resolve.outputs.version }}
+          ref: ${{ steps.resolve.outputs.version }}
           fetch-depth: 1
 
       - name: 📦 Setup pnpm
@@ -309,7 +310,8 @@ jobs:
       - name: 🔖 Sync Release Version
         run: |
           echo "::group::Syncing Tauri release metadata"
-          node scripts/sync-tauri-version.cjs ${{ steps.resolve.outputs.version }}
+          VERSION="${{ steps.resolve.outputs.version }}"
+          node scripts/sync-tauri-version.cjs "${VERSION#v}"
           echo "::endgroup::"
 
       - name: 🔨 Build Workspace
@@ -500,7 +502,7 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v6
         with:
-          ref: v${{ needs.build.outputs.version }}
+          ref: ${{ needs.build.outputs.version }}
           fetch-depth: 1
 
       - name: 📦 Setup pnpm
@@ -518,19 +520,21 @@ jobs:
         run: |
           echo "::group::Generating latest.json"
           VERSION="${{ needs.build.outputs.version }}"
+          # Raw version for JSON (e.g., 0.70.0)
+          RAW_VERSION="${VERSION#v}"
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
           # Start JSON structure
           cat > latest.json << EOF
           {
-            "version": "$VERSION",
-            "notes": "See https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/tag/v$VERSION for details",
+            "version": "$RAW_VERSION",
+            "notes": "See https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/tag/$VERSION for details",
             "pub_date": "$PUB_DATE",
             "platforms": {
           EOF
 
           # Download all release assets to inspect
-          gh release download "v$VERSION" --dir temp/ || true
+          gh release download "$VERSION" --dir temp/ || true
 
           # Debug: list all downloaded files
           echo "::group::All downloaded release files"
@@ -539,27 +543,27 @@ jobs:
 
           # Filenames below match the normalized names produced by the
           # "Normalize Artifact Names" step in the build job (spaces -> dashes).
-          BASE_URL="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v$VERSION"
+          BASE_URL="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/$VERSION"
 
           # Windows (NSIS is the primary updater target)
-          NSIS_SIG="temp/AI-Job-Hunter-Assistant_${VERSION}_x64-setup.exe.sig"
+          NSIS_SIG="temp/AI-Job-Hunter-Assistant_${RAW_VERSION}_x64-setup.exe.sig"
           if [ -f "$NSIS_SIG" ]; then
             SIG=$(tr -d '\n' < "$NSIS_SIG")
             echo '    "windows-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"${BASE_URL}/AI-Job-Hunter-Assistant_${VERSION}_x64-setup.exe\"" >> latest.json
+            echo "      \"url\": \"${BASE_URL}/AI-Job-Hunter-Assistant_${RAW_VERSION}_x64-setup.exe\"" >> latest.json
             echo '    },' >> latest.json
           else
             echo "::warning::Windows NSIS signature not found at $NSIS_SIG"
           fi
 
           # Linux (AppImage is the primary updater target)
-          APPIMAGE_SIG="temp/AI-Job-Hunter-Assistant_${VERSION}_amd64.AppImage.sig"
+          APPIMAGE_SIG="temp/AI-Job-Hunter-Assistant_${RAW_VERSION}_amd64.AppImage.sig"
           if [ -f "$APPIMAGE_SIG" ]; then
             SIG=$(tr -d '\n' < "$APPIMAGE_SIG")
             echo '    "linux-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"${BASE_URL}/AI-Job-Hunter-Assistant_${VERSION}_amd64.AppImage\"" >> latest.json
+            echo "      \"url\": \"${BASE_URL}/AI-Job-Hunter-Assistant_${RAW_VERSION}_amd64.AppImage\"" >> latest.json
             echo '    },' >> latest.json
           else
             echo "::warning::Linux AppImage signature not found at $APPIMAGE_SIG"
@@ -604,7 +608,7 @@ jobs:
       - name: 📤 Upload latest.json to Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
-          tag_name: v${{ needs.build.outputs.version }}
+          tag_name: ${{ needs.build.outputs.version }}
           files: latest.json
           fail_on_unmatched_files: true
         env:
@@ -646,16 +650,16 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
-          echo "::group::Reading dmg sha256 digests for v$VERSION"
-          arm="$(gh release view "v$VERSION" --json assets \
+          echo "::group::Reading dmg sha256 digests for $VERSION"
+          arm="$(gh release view "$VERSION" --json assets \
             -q '.assets[] | select(.name | endswith("aarch64-apple-silicon.dmg")) | .digest' | sed 's/^sha256://')"
-          intel="$(gh release view "v$VERSION" --json assets \
+          intel="$(gh release view "$VERSION" --json assets \
             -q '.assets[] | select(.name | endswith("x64-intel.dmg")) | .digest' | sed 's/^sha256://')"
           if [ -z "$arm" ] || [ -z "$intel" ]; then
-            echo "::warning::dmg digests not found for v$VERSION — skipping cask update"
+            echo "::warning::dmg digests not found for $VERSION — skipping cask update"
             exit 0
           fi
-          node scripts/sync-cask.cjs "$VERSION" "$arm" "$intel"
+          node scripts/sync-cask.cjs "${VERSION#v}" "$arm" "$intel"
           echo "::endgroup::"
 
       - name: 📤 Commit cask
