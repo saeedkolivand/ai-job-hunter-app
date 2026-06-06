@@ -206,6 +206,10 @@ jobs:
     # needs nothing from the push-only release / sync-version-files jobs.
     if: github.event_name == 'workflow_dispatch'
 
+    defaults:
+      run:
+        shell: bash
+
     outputs:
       version: ${{ steps.resolve.outputs.version }}
 
@@ -237,7 +241,6 @@ jobs:
 
       - name: 🏷️ Resolve Version
         id: resolve
-        shell: bash
         env:
           # Passed via env (not inline) to avoid script injection from the input.
           INPUT_VERSION: ${{ inputs.version }}
@@ -330,7 +333,6 @@ jobs:
       - name: 🏗️ Build Tauri Application
         id: tauri-build
         continue-on-error: true
-        shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -353,7 +355,6 @@ jobs:
 
       - name: 🔐 Verify Updater Signing Key
         if: steps.tauri-build.outcome == 'success'
-        shell: bash
         run: |
           echo "::group::Verifying updater signature key matches committed pubkey"
           # Fails the build if artifacts were signed with a key that does not
@@ -364,7 +365,6 @@ jobs:
 
       - name: 🏷️ Normalize Artifact Names
         if: success()
-        shell: bash
         run: |
           echo "::group::Normalizing artifact names (replacing spaces with dashes)"
           # Tauri keeps spaces from productName in artifact filenames. Replace spaces
@@ -386,7 +386,6 @@ jobs:
 
       - name: 🏷️ Disambiguate macOS Artifact Architecture
         if: runner.os == 'macOS' && success()
-        shell: bash
         run: |
           echo "::group::Tagging macOS artifacts with architecture suffix"
           shopt -s nullglob
@@ -456,7 +455,6 @@ jobs:
 
       - name: 📝 Job Summary
         if: always()
-        shell: bash
         run: |
           echo "## 🏗️ Tauri Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
