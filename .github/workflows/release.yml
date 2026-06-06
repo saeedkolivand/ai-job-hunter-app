@@ -210,9 +210,6 @@ jobs:
       run:
         shell: bash
 
-    outputs:
-      version: ${{ steps.resolve.outputs.version }}
-
     strategy:
       fail-fast: false
       matrix:
@@ -508,8 +505,19 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.build.outputs.version }}
-          fetch-depth: 1
+          ref: main
+          fetch-depth: 0
+
+      - name: 🏷️ Resolve Release Version
+        id: version
+        run: |
+          set -euo pipefail
+          VERSION="$(git tag --sort=-version:refname | head -n1)"
+          if [ -z "$VERSION" ]; then
+            echo "::error::No release tags found"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: 📦 Setup pnpm
         uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
@@ -525,7 +533,7 @@ jobs:
       - name: 🏷️ Generate latest.json
         run: |
           echo "::group::Generating latest.json"
-          VERSION="${{ needs.build.outputs.version }}"
+          VERSION="${{ steps.version.outputs.version }}"
           # Raw version for JSON (e.g., 0.70.0)
           RAW_VERSION="${VERSION#v}"
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -614,7 +622,7 @@ jobs:
       - name: 📤 Upload latest.json to Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
-          tag_name: ${{ needs.build.outputs.version }}
+          tag_name: ${{ steps.version.outputs.version }}
           files: latest.json
           fail_on_unmatched_files: true
         env:
@@ -645,15 +653,23 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 22
-          # This job has no pnpm/action-setup step (it only runs a dependency-free
-          # node script), so disable setup-node@v6's default package-manager cache,
-          # which would otherwise try to invoke pnpm and fail to locate it.
           package-manager-cache: false
+
+      - name: 🏷️ Resolve Release Version
+        id: version
+        run: |
+          set -euo pipefail
+          VERSION="$(git tag --sort=-version:refname | head -n1)"
+          if [ -z "$VERSION" ]; then
+            echo "::error::No release tags found"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: 🍺 Sync cask to the built dmgs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.build.outputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           echo "::group::Reading dmg sha256 digests for $VERSION"
@@ -670,7 +686,7 @@ jobs:
 
       - name: 📤 Commit cask
         env:
-          VERSION: ${{ needs.build.outputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
