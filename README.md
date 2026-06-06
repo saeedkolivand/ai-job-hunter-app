@@ -50,20 +50,20 @@
 <details>
 <summary><strong>📑 Table of contents</strong></summary>
 
-- [What It Does](#what-it-does)
-- [Quick Start](#quick-start)
-- [Features](#-features)
-- [AI Provider Flexibility](#ai-provider-flexibility)
-- [Installation](#-installation)
-- [Usage](#usage)
-- [Configuration](#configuration)
-- [Tech Stack](#tech-stack)
-- [For Developers](#for-developers)
-- [Project Structure](#project-structure)
-- [Scripts](#scripts)
-- [Documentation](#documentation)
-- [Security](#security)
-- [License](#license)
+- <a href="#what-it-does" target="_blank" rel="noopener noreferrer">What It Does</a>
+- <a href="#quick-start" target="_blank" rel="noopener noreferrer">Quick Start</a>
+- <a href="#-features" target="_blank" rel="noopener noreferrer">Features</a>
+- <a href="#ai-provider-flexibility" target="_blank" rel="noopener noreferrer">AI Provider Flexibility</a>
+- <a href="#-installation" target="_blank" rel="noopener noreferrer">Installation</a>
+- <a href="#usage" target="_blank" rel="noopener noreferrer">Usage</a>
+- <a href="#configuration" target="_blank" rel="noopener noreferrer">Configuration</a>
+- <a href="#tech-stack" target="_blank" rel="noopener noreferrer">Tech Stack</a>
+- <a href="#for-developers" target="_blank" rel="noopener noreferrer">For Developers</a>
+- <a href="#project-structure" target="_blank" rel="noopener noreferrer">Project Structure</a>
+- <a href="#scripts" target="_blank" rel="noopener noreferrer">Scripts</a>
+- <a href="#documentation" target="_blank" rel="noopener noreferrer">Documentation</a>
+- <a href="#security" target="_blank" rel="noopener noreferrer">Security</a>
+- <a href="#license" target="_blank" rel="noopener noreferrer">License</a>
 
 </details>
 
@@ -80,7 +80,7 @@ ollama pull mistral   # optional: a local model for the offline Ollama provider
 pnpm dev              # launches the Tauri app with hot reload
 ```
 
-No API key required to start — run fully offline with [Ollama][ollama], or add a cloud key later in **Settings → AI**. New here? See **[Installation](#-installation)** for prerequisites and per-OS notes.
+No API key required to start — run fully offline with [Ollama][ollama], or add a cloud key later in **Settings → AI**. New here? See **<a href="#-installation" target="_blank" rel="noopener noreferrer">Installation</a>** for prerequisites and per-OS notes.
 
 ## What It Does
 
@@ -171,7 +171,7 @@ API keys are stored encrypted in the OS keychain. CLI agents run as a headless s
 <details open>
 <summary><strong>Download a released build</strong> (recommended)</summary>
 
-Grab the latest installer for your OS from the **[Releases](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases)** page.
+Grab the latest installer for your OS from the **<a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases" target="_blank" rel="noopener noreferrer">Releases</a>** page.
 
 **macOS** — open the `.dmg` and drag the app into Applications. Because the app isn't notarized by Apple, Gatekeeper may refuse to open it the first time ("app is damaged and can't be opened"). Clear the quarantine attribute once:
 
@@ -186,14 +186,14 @@ xattr -cr "/Applications/AI Job Hunter Assistant.app"
 <details>
 <summary><strong>Homebrew (macOS)</strong></summary>
 
-Releases ship signed macOS `.dmg`s, and the repo doubles as its own Homebrew tap (the [`Casks/ai-job-hunter.rb`](Casks/ai-job-hunter.rb) cask). Install with:
+Releases ship signed macOS `.dmg`s, and the repo doubles as its own Homebrew tap (the <a href="Casks/ai-job-hunter.rb" target="_blank" rel="noopener noreferrer">`Casks/ai-job-hunter.rb`</a> cask). Install with:
 
 ```bash
 brew tap saeedkolivand/ai-job-hunter-assistant-app https://github.com/saeedkolivand/ai-job-hunter-assistant-app
 brew install --cask ai-job-hunter
 ```
 
-The cask clears the Gatekeeper quarantine flag for you (the app isn't notarized). Prefer a one-off download? Grab the `.dmg` straight from the [Releases](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases) page.
+The cask clears the Gatekeeper quarantine flag for you (the app isn't notarized). Prefer a one-off download? Grab the `.dmg` straight from the <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases" target="_blank" rel="noopener noreferrer">Releases</a> page.
 
 > The cask pins per-arch `sha256` checksums for a verified install, tracking the latest release that ships macOS `.dmg`s. Since the installer build is manual, bump the cask `version` + both checksums when a newer build publishes dmgs (`brew bump-cask-pr`).
 
@@ -204,12 +204,12 @@ The cask clears the Gatekeeper quarantine flag for you (the app isn't notarized)
 
 **Prerequisites**
 
-| Requirement    | Version | Notes                                           |
-| -------------- | ------- | ----------------------------------------------- |
-| Node.js        | 20+     | LTS recommended                                 |
-| pnpm           | 11+     | `npm install -g pnpm`                           |
-| Rust toolchain | stable  | `rustup install stable`                         |
-| Ollama         | latest  | [ollama.com](https://ollama.com) — for local AI |
+| Requirement    | Version | Notes                                                                                                |
+| -------------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| Node.js        | 20+     | LTS recommended                                                                                      |
+| pnpm           | 11+     | `npm install -g pnpm`                                                                                |
+| Rust toolchain | stable  | `rustup install stable`                                                                              |
+| Ollama         | latest  | <a href="https://ollama.com" target="_blank" rel="noopener noreferrer">ollama.com</a> — for local AI |
 
 ```bash
 git clone https://github.com/saeedkolivand/ai-job-hunter-assistant-app.git
@@ -356,16 +356,16 @@ IPC request shapes have a single source of truth: **[Zod][zod] schemas in `packa
 - **PRs only** — never push to `main`; [Conventional Commits][conventional-commits]; [ESLint][eslint] + [commitlint][commitlint] + architecture tests gate every change.
 - **Ports &amp; adapters** — UI imports `@ajh/ui` primitives and service hooks, never `window.api` directly; design-system tokens (`text-brand`, motion tokens) over hardcoded values.
 - **Backend owns business logic** — Rust-first; the renderer is a thin client.
-- See **[CLAUDE.md](CLAUDE.md)** for the enforced rules and **[docs/PATTERNS.md](docs/PATTERNS.md)** for the patterns.
+- See **<a href="CLAUDE.md" target="_blank" rel="noopener noreferrer">CLAUDE.md</a>** for the enforced rules and **<a href="docs/PATTERNS.md" target="_blank" rel="noopener noreferrer">docs/PATTERNS.md</a>** for the patterns.
 
 </details>
 
 <details>
 <summary><strong>Knowledge base &amp; AI agent system</strong></summary>
 
-This repo ships a knowledge base under [docs/knowledge/](docs/knowledge/) — domain notes plus **architecture decision records** ([ADRs](docs/knowledge/decision-records/)) — and a Claude Code agent system under `.claude/` (specialized reviewers + commands). When in doubt about _why_ something is built a certain way, the ADRs are the fastest answer.
+This repo ships a knowledge base under <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a> — domain notes plus **architecture decision records** (<a href="docs/knowledge/decision-records/" target="_blank" rel="noopener noreferrer">ADRs</a>) — and a Claude Code agent system under `.claude/` (specialized reviewers + commands). When in doubt about _why_ something is built a certain way, the ADRs are the fastest answer.
 
-A [graphify](https://pypi.org/project/graphifyy/) knowledge graph (`graphify-out/`) can also be queried directly or wired as an **optional, opt-in** local MCP server — see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#optional-knowledge-graph-mcp-graphify).
+A <a href="https://pypi.org/project/graphifyy/" target="_blank" rel="noopener noreferrer">graphify</a> knowledge graph (`graphify-out/`) can also be queried directly or wired as an **optional, opt-in** local MCP server — see <a href="docs/DEVELOPMENT.md#optional-knowledge-graph-mcp-graphify" target="_blank" rel="noopener noreferrer">docs/DEVELOPMENT.md</a>.
 
 </details>
 
@@ -418,7 +418,7 @@ pnpm format           # Prettier format
 ## 🔧 CI & Workflows
 
 Live status of every GitHub Actions workflow. See
-[`.github/workflows/README.md`](.github/workflows/README.md) for the full catalog —
+<a href=".github/workflows/README.md" target="_blank" rel="noopener noreferrer">`.github/workflows/README.md`</a> for the full catalog —
 what each one does, its triggers, and whether it gates merges (only **✅ CI OK** does).
 Both are generated from the workflow files by `pnpm gen:workflows`.
 
@@ -451,7 +451,7 @@ at-a-glance status of every workflow, grouped by role, fetched live from the Act
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for branching, commit conventions, code style, and PR guidelines. Quick rules:
+See <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a> for branching, commit conventions, code style, and PR guidelines. Quick rules:
 
 - All changes go through PRs — never push directly to `main`.
 - Use [Conventional Commits][conventional-commits] (`feat:`, `fix:`, `chore:`, …).
@@ -461,31 +461,33 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for branching, commit conventions, code s
 
 ## Documentation
 
-| Document                                                   | Description                                           |
-| ---------------------------------------------------------- | ----------------------------------------------------- |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)               | System design, data flow, diagrams                    |
-| [docs/PATTERNS.md](docs/PATTERNS.md)                       | IPC, state machines, AI streaming, search patterns    |
-| [docs/API.md](docs/API.md)                                 | IPC namespaces + commands                             |
-| [docs/EXPORT_TEMPLATES.md](docs/EXPORT_TEMPLATES.md)       | Templates, theming, PDF/DOCX export                   |
-| [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)             | Tokens, components, motion, theming                   |
-| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)                 | Local dev environment setup                           |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)                   | Building and releasing installers                     |
-| [docs/ARCHITECTURE_STATUS.md](docs/ARCHITECTURE_STATUS.md) | Implementation status tracker                         |
-| [docs/knowledge/](docs/knowledge/)                         | Knowledge base + architecture decision records (ADRs) |
-| [SECURITY.md](SECURITY.md)                                 | Security policy &amp; vulnerability reporting         |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                         | Code style, branching, PR process                     |
+| Document                                                                                                                      | Description                                                      |
+| ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| <a href="docs/ARCHITECTURE.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE.md</a>                             | System design, data flow, diagrams                               |
+| <a href="docs/PATTERNS.md" target="_blank" rel="noopener noreferrer">docs/PATTERNS.md</a>                                     | IPC, state machines, AI streaming, search patterns               |
+| <a href="docs/API.md" target="_blank" rel="noopener noreferrer">docs/API.md</a>                                               | IPC namespaces + commands                                        |
+| <a href="docs/EXPORT_TEMPLATES.md" target="_blank" rel="noopener noreferrer">docs/EXPORT_TEMPLATES.md</a>                     | Templates, theming, PDF/DOCX export                              |
+| <a href="docs/DESIGN_SYSTEM.md" target="_blank" rel="noopener noreferrer">docs/DESIGN_SYSTEM.md</a>                           | Tokens, components, motion, theming                              |
+| <a href="docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer">docs/DEVELOPMENT.md</a>                               | Local dev environment setup                                      |
+| <a href="docs/DEPLOYMENT.md" target="_blank" rel="noopener noreferrer">docs/DEPLOYMENT.md</a>                                 | Building and releasing installers                                |
+| <a href="docs/ARCHITECTURE_STATUS.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE_STATUS.md</a>               | Implementation status tracker                                    |
+| <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a>                                       | Knowledge base + architecture decision records (ADRs)            |
+| <a href="SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>                                               | Security policy &amp; vulnerability reporting                    |
+| <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a>                                       | Code style, branching, PR process                                |
+| <a href="docs/landing/how-it-works.html" target="_blank" rel="noopener noreferrer">docs/landing/how-it-works.html</a>         | How the AI Job Hunter works end-to-end (interactive walkthrough) |
+| <a href="docs/landing/architecture-map.html" target="_blank" rel="noopener noreferrer">docs/landing/architecture-map.html</a> | Interactive architecture map of the AI Job Hunter                |
 
 ---
 
 ## Security
 
-Found a vulnerability? Please report it privately — see **[SECURITY.md](SECURITY.md)**. Don't open a public issue for security reports.
+Found a vulnerability? Please report it privately — see **<a href="SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>**. Don't open a public issue for security reports.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see <a href="LICENSE" target="_blank" rel="noopener noreferrer">LICENSE</a>.
 
 ---
 
