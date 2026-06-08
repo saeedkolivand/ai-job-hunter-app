@@ -5,6 +5,47 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
     <title>AI Job Hunter (Tauri)</title>
+    <!--
+      Pre-paint theme boot (fixes light-theme flicker / FOUC, #5).
+      Mirrors lib/theme.ts: reads the persisted prefs and applies the resolved
+      color-scheme + text-scale + a11y modifiers to <html> BEFORE the body paints,
+      so the bundle's restoreTheme() later sets identical values with no flip.
+      Kept dependency-free + try/caught; the static class="dark" is the JS-off fallback.
+    -->
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('ajh-theme');
+          var prefs = { scheme: 'system', textScale: 'default', reduceTransparency: false, contrast: 'normal' };
+          if (raw === 'default') prefs.scheme = 'dark';
+          else if (raw === 'reduced-glass') { prefs.scheme = 'dark'; prefs.reduceTransparency = true; }
+          else if (raw === 'high-contrast') { prefs.scheme = 'dark'; prefs.contrast = 'more'; }
+          else if (raw) {
+            var p = JSON.parse(raw);
+            if (p && typeof p === 'object') {
+              if (p.scheme) prefs.scheme = p.scheme;
+              if (p.textScale) prefs.textScale = p.textScale;
+              if (p.reduceTransparency) prefs.reduceTransparency = true;
+              if (p.contrast) prefs.contrast = p.contrast;
+            }
+          }
+          var mq = function (q) { return !!(window.matchMedia && window.matchMedia(q).matches); };
+          var resolved = prefs.scheme === 'light' || prefs.scheme === 'dark'
+            ? prefs.scheme
+            : (mq('(prefers-color-scheme: dark)') ? 'dark' : 'light');
+          var root = document.documentElement;
+          root.dataset.colorScheme = resolved;
+          root.classList.toggle('dark', resolved === 'dark');
+          root.classList.toggle('light', resolved === 'light');
+          root.dataset.textScale = prefs.textScale;
+          if (prefs.reduceTransparency || mq('(prefers-reduced-transparency: reduce)'))
+            root.setAttribute('data-reduce-transparency', '');
+          root.dataset.contrast = (prefs.contrast === 'more' || mq('(prefers-contrast: more)')) ? 'more' : 'normal';
+          var meta = document.querySelector('meta[name="color-scheme"]');
+          if (meta) meta.setAttribute('content', resolved);
+        } catch (e) { /* keep the static class="dark" fallback */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

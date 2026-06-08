@@ -221,7 +221,7 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
 
   return (
     <>
-      <GlassCard tone="graphite" className="rounded-xl overflow-hidden p-0">
+      <GlassCard className="rounded-xl overflow-hidden p-0">
         {/* Header — title / company on top, then meta + badges with room to breathe. */}
         <div className="flex items-start gap-4 p-5">
           {onToggleSelect && (

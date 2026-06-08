@@ -34,10 +34,7 @@ export function InteractionRow({ row }: InteractionRowProps) {
   const label = cfg ? t(cfg.labelKey) : row.interactionType;
 
   return (
-    <GlassCard
-      tone="graphite"
-      className="flex items-center gap-4 rounded-xl p-4 transition-colors hover:bg-white/[0.02]"
-    >
+    <GlassCard className="flex items-center gap-4 rounded-xl p-4 transition-colors hover:bg-white/[0.02]">
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/5 text-[10px] uppercase tracking-wider text-brand-soft">
         {row.source.slice(0, 2)}
       </div>

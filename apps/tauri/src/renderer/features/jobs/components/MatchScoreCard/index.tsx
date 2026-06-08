@@ -38,7 +38,7 @@ export function MatchScoreCard({ jobId }: { jobId: string }) {
   const result: (MatchScore & { error?: string }) | undefined = match.data;
 
   return (
-    <GlassCard tone="violet" className="mb-4">
+    <GlassCard className="mb-4">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2 text-xs font-medium text-foreground/90">
           <Gauge size={14} className="text-brand" />

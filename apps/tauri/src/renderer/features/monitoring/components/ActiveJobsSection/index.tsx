@@ -14,7 +14,7 @@ interface Props {
 
 export function ActiveJobsSection({ activeJobs, kindLabel, t }: Props) {
   return (
-    <GlassCard tone="graphite" highlight className="col-span-2">
+    <GlassCard className="col-span-2">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Activity size={12} className="text-brand-soft" />

@@ -220,7 +220,7 @@ export function JobsPage() {
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-10 pb-10">
         {filtered.length === 0 ? (
-          <GlassCard tone="graphite" highlight>
+          <GlassCard>
             <EmptyState
               icon={Search}
               title={t('jobs.empty')}
