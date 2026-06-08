@@ -1,8 +1,4 @@
 <!doctype html>
-<!-- NOTICE (2026-06-03): This diagram predates the apply→assist pivot (v0.58.0).
-     The embedded graph still depicts the removed auto-apply engine (applying/,
-     APPLIERS registry, apply IPC contract). Source code is authoritative.
-     See docs/ARCHITECTURE.md for the current architecture. -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -748,7 +744,7 @@
         <p class="lede">
           AI Job Hunter is a <b>Tauri</b> desktop app: a React UI runs in a webview, talks to a
           <b>Rust</b> core over Tauri's IPC, and the Rust core does the real work — calling AI
-          models, scraping job boards, driving a browser to apply, and storing everything
+          models, scraping job boards, ranking and tailoring matches, and storing everything
           <b>on your machine</b>. Click any box to see what it does and where it lives.
         </p>
 
@@ -812,7 +808,7 @@
               <div class="node" data-node="commands">#[tauri::command] handlers</div>
               <div class="node" data-node="provider">AI provider layer</div>
               <div class="node" data-node="scraper">Scraper engine + boards</div>
-              <div class="node" data-node="applier">Applier registry</div>
+              <div class="node" data-node="autopilot">Autopilot engine</div>
               <div class="node" data-node="jobtracker">JobTracker</div>
               <div class="node" data-node="pipeline">Pipeline (cover letter)</div>
               <div class="node" data-node="stores-rs">Stores (SQLite/JSON/keyring)</div>
@@ -912,7 +908,7 @@
         <h2 class="title">Subsystem deep‑dives</h2>
         <p class="lede">
           The Rust core is built around a few registry‑driven subsystems. Each one is designed so a
-          new provider / board / applier is <b>one new module + one registry line</b> — no edits
+          new provider or board is <b>one new module + one registry line</b> — no edits
           anywhere else.
         </p>
         <div id="subs"></div>
@@ -934,8 +930,8 @@
             “It's a <b>local‑first Tauri desktop app</b> that automates job hunting. A
             React/TanStack renderer talks to a Rust core over Tauri IPC. The Rust side has a
             strictly‑typed AI‑provider layer (Ollama, the cloud APIs, and headless CLI agents like
-            Claude Code), a scraping engine driven by a board registry, and an applier registry that
-            drives Chromium to fill and submit applications. Long jobs return a
+            Claude Code), a scraping engine driven by a board registry, and an autopilot engine that
+            scrapes, ranks and notifies you about new matches. Long jobs return a
             <code>jobId</code> immediately and stream progress back as Tauri events, so the UI stays
             live. Data — resumes, embeddings, history — lives in local SQLite/JSON, and secrets go
             in the OS keyring. Adding a new model provider or job board is a single module plus one
@@ -1027,7 +1023,7 @@
         listen: {
           t: "listen('channel') — event streams",
           layer: 'ipc',
-          d: 'For progress/streaming the renderer subscribes to Tauri events: <span class="chan">ai:stream</span> (tokens), <span class="chan">jobs:event</span> (scrape stream + completion), <span class="chan">apply.step</span>/<span class="chan">apply.progress</span>, <span class="chan">autopilot.step</span>, <span class="chan">updater:status</span>. <code>asyncUnsub()</code> turns Tauri\'s async <code>listen()</code> into a synchronous cleanup fn.',
+          d: 'For progress/streaming the renderer subscribes to Tauri events: <span class="chan">ai:stream</span> (tokens), <span class="chan">jobs:event</span> (scrape stream + completion), <span class="chan">autopilot.step</span>, <span class="chan">updater:status</span>. <code>asyncUnsub()</code> turns Tauri\'s async <code>listen()</code> into a synchronous cleanup fn.',
           f: ['apps/tauri/src/tauri-client/utils.ts'],
         },
         contracts: {
@@ -1060,13 +1056,13 @@
             'apps/tauri/src-tauri/src/scraping/boards/mod.rs',
           ],
         },
-        applier: {
-          t: 'Applier registry',
+        autopilot: {
+          t: 'Autopilot engine',
           layer: 'rust',
-          d: 'A static <code>APPLIERS</code> registry (LinkedIn, Indeed, Greenhouse, Workday, Xing, Glassdoor) maps an id to a <code>&dyn Applier</code>. <code>apply()</code> opens a persistent Chromium profile, fills the form, optionally submits, and reports each stage via callbacks.',
+          d: 'A saved hunt runs on a schedule: it scrapes the configured boards, embeds &amp; cosine‑ranks new postings against your résumé, registers a <code>JobTracker</code> job and emits <span class="chan">autopilot.step</span> per stage. New matches raise an OS notification + the tray “New jobs: N”. <b>Nothing is auto‑submitted</b> — the user tailors &amp; applies.',
           f: [
-            'apps/tauri/src-tauri/src/applying/registry/mod.rs',
-            'apps/tauri/src-tauri/src/applying/runtime.rs',
+            'apps/tauri/src-tauri/src/autopilot/mod.rs',
+            'apps/tauri/src-tauri/src/tray/mod.rs',
           ],
         },
         jobtracker: {
@@ -1119,10 +1115,7 @@
           t: 'Job boards (via Chromium)',
           layer: 'ext',
           d: 'Aggregators (LinkedIn, Indeed, Xing, Glassdoor) need a real browser; the app drives Chromium through <code>chromiumoxide</code> using a per‑board persistent profile so your login survives. ATS boards (Greenhouse, Lever, Workday…) are scraped over plain HTTP.',
-          f: [
-            'apps/tauri/src-tauri/src/scraping/boards/',
-            'apps/tauri/src-tauri/src/applying/boards/',
-          ],
+          f: ['apps/tauri/src-tauri/src/scraping/boards/'],
         },
         disk: {
           t: 'Disk & OS keyring',
@@ -1461,67 +1454,57 @@
             {
               layer: 'ui',
               title: 'Watchdog fallback',
-              body: "In case an event is ever dropped, a <code>useEffect</code> polls <code>invoke('jobs_get', jobId)</code> every 2.5s and reconciles the UI once a terminal status is known. From here the user can open the Apply drawer (next flow).",
+              body: "In case an event is ever dropped, a <code>useEffect</code> polls <code>invoke('jobs_get', jobId)</code> every 2.5s and reconciles the UI once a terminal status is known. From here the user can queue matches into an Autopilot (next flow).",
               code: 'invoke(<span class="s">\'jobs_get\'</span>, { jobId }) <span class="c">// every 2.5s while running</span>',
               files: ['apps/tauri/src/tauri-client/namespaces/jobs/jobs.ts'],
             },
           ],
         },
-        apply: {
-          label: '④ Apply to a job (browser automation)',
+        autopilot: {
+          label: '④ Autopilot (find → rank → notify)',
           steps: [
             {
               layer: 'ui',
-              title: 'User opens the Apply drawer',
-              body: 'From a posting the user opens <code>ApplyDrawer</code>, picks a cover letter and résumé file, and toggles “auto‑submit”, then clicks Apply.',
-              files: ['apps/tauri/src/renderer/features/jobs/'],
+              title: 'User saves an autopilot',
+              body: 'On <code>/autopilot</code> the user defines a saved hunt — boards, filters and a schedule — in the workflow builder. It runs unattended and surfaces matches for the user to tailor &amp; apply.',
+              files: ['apps/tauri/src/renderer/features/autopilot/'],
             },
             {
               layer: 'ipc',
-              title: 'invoke apply_start',
-              body: "<code>useApplyJob().mutateAsync(req)</code> → <code>invoke('apply_start', { req })</code> with board, url, coverLetter, resumePath and autoSubmit.",
-              code: 'start: (req) =&gt; invoke(<span class="s">\'apply_start\'</span>, { req })',
-              files: ['apps/tauri/src/tauri-client/namespaces/apply/apply.ts'],
+              title: 'invoke autopilot_run',
+              body: "<code>useAutopilot().run(id)</code> → <code>invoke('autopilot_run', { autopilotId })</code>. List/create/update/pause/resume share the same namespace.",
+              code: 'run: (autopilotId) =&gt; invoke(<span class="s">\'autopilot_run\'</span>, { autopilotId })',
+              files: ['apps/tauri/src/tauri-client/namespaces/autopilot/autopilot.ts'],
             },
             {
               layer: 'rust',
-              title: 'Resolve the applier',
-              body: 'The handler looks up the board in the applier registry, decodes the résumé to a temp file, creates a job + cancellation token, and wires <code>on_step</code>/<code>on_progress</code> callbacks. A tracing <code>Span</code> opens.',
-              code: '<span class="k">static</span> APPLIERS: &[&<span class="k">dyn</span> Applier] = &[ LinkedIn, Indeed, Greenhouse, … ];\\nApplierRegistry::get(board)? <span class="c">// &dyn Applier</span>',
+              title: 'Engine runs the hunt',
+              body: 'The handler scrapes the configured boards, embeds &amp; cosine‑ranks postings against the résumé, keeps the top matches, registers a <code>JobTracker</code> job and emits <span class="chan">autopilot.step</span> per stage (scrape → rank → notify).',
+              code: 'app.emit(<span class="s">"autopilot.step"</span>, json!({\\n  <span class="s">"autopilotId"</span>:id, <span class="s">"step"</span>:step, <span class="s">"detail"</span>:detail\\n}));',
               files: [
-                'apps/tauri/src-tauri/src/commands/apply.rs',
-                'apps/tauri/src-tauri/src/applying/registry/mod.rs',
+                'apps/tauri/src-tauri/src/commands/autopilot.rs',
+                'apps/tauri/src-tauri/src/autopilot/mod.rs',
               ],
+            },
+            {
+              layer: 'rust',
+              title: 'Notify on new matches',
+              body: 'New postings raise a permission‑gated OS notification and update the system tray (“New jobs: N” + “Pause all autopilots”). <b>Nothing is auto‑submitted</b> — the app finds &amp; notifies, the user decides.',
+              files: ['apps/tauri/src-tauri/src/tray/mod.rs'],
             },
             {
               layer: 'ext',
-              title: 'Chromium opens with your profile',
-              body: "<code>ApplySession::open()</code> loads the <b>persistent</b> Chromium profile for that board (so you're still logged in), launches the browser via <code>chromiumoxide</code>, and navigates to the posting URL.",
-              code: '<span class="path">~/&lt;dataDir&gt;/board_profiles/&lt;board&gt;/</span>',
-              files: ['apps/tauri/src-tauri/src/applying/runtime.rs'],
-            },
-            {
-              layer: 'rust',
-              title: 'Fill the form, step by step',
-              body: 'The applier finds and fills fields (résumé upload, cover letter, contact details). Each stage fires <code>on_step</code> → <span class="chan">apply.step</span> and progress → <span class="chan">apply.progress</span>, so the UI narrates “navigate → fill → submit”.',
-              code: 'app.emit(<span class="s">"apply.step"</span>, json!({\\n  <span class="s">"jobId"</span>:id, <span class="s">"stage"</span>:stage, <span class="s">"ok"</span>:ok, <span class="s">"note"</span>:note\\n}));',
-              files: ['apps/tauri/src-tauri/src/applying/boards/'],
-            },
-            {
-              layer: 'rust',
-              title: 'Submit (if allowed) & clean up',
-              body: 'If auto‑submit is on, the submit button is clicked. The applier returns <code>ApplyResult { ok, stage, submitted, url, note }</code>, the browser closes, the temp résumé is deleted, and the Span logs <code>duration / ok</code>.',
-              files: [
-                'apps/tauri/src-tauri/src/applying/types/mod.rs',
-                'apps/tauri/src-tauri/src/observability.rs',
-              ],
+              title: 'Deep‑link focus',
+              body: "Clicking the notification opens <code>ajh://autopilot/&lt;id&gt;</code>, validated against a strict allowlist, which focuses the app on that autopilot's results.",
+              code: '<span class="chan">autopilot:focus</span> <span class="c">// ajh://autopilot/&lt;id&gt;</span>',
+              files: ['apps/tauri/src-tauri/src/deeplink/mod.rs'],
             },
             {
               layer: 'ui',
-              title: 'Result lands in the UI',
-              body: 'The UI shows progress from the step events, then a success/failure toast. The interaction is recorded (<span class="path">interactions.json</span>), the postings/interactions query is invalidated, and the “Applied” tab on <code>/resumes</code> updates.',
+              title: 'User tailors & applies',
+              body: 'The user reviews the ranked matches, generates a tailored résumé/cover letter (the Generate flow), and applies on the board themselves. The run is recorded for the Autopilot history.',
               files: [
-                'apps/tauri/src/renderer/features/resumes/',
+                'apps/tauri/src/renderer/features/autopilot/',
                 'apps/tauri/src-tauri/src/postings/mod.rs',
               ],
             },
@@ -1567,8 +1550,6 @@
         ['aiGenerations', 'list', 'inv', 'ai_generations_list'],
         ['aiGenerations', 'save', 'inv', 'ai_generations_save'],
         ['aiGenerations', 'remove', 'inv', 'ai_generations_remove'],
-        ['apply', 'start', 'inv', 'apply_start'],
-        ['apply', 'catalog', 'inv', 'apply_catalog'],
         ['autopilot', 'list', 'inv', 'autopilot_list'],
         ['autopilot', 'get', 'inv', 'autopilot_get'],
         ['autopilot', 'create', 'inv', 'autopilot_create'],
@@ -1737,23 +1718,23 @@
           ],
         },
         {
-          h: 'Applying — Chromium automation (6 boards)',
+          h: 'Autopilot — find → rank → notify',
           b: `
-    <p>The <code>APPLIERS</code> registry maps a board id to an <code>Applier</code>. <code>apply()</code> drives a
-    real browser through a per‑board <b>persistent profile</b> so logins survive between runs.</p>
+    <p>A saved <b>autopilot</b> runs on a schedule. The engine scrapes the configured boards, embeds and
+    cosine‑ranks new postings against your résumé, and keeps the top matches — then <b>notifies</b> you.
+    <b>Nothing is auto‑submitted</b>; you tailor &amp; apply.</p>
     <ul>
-      <li><b>Runtime:</b> <code>ApplySession::open()</code> launches Chromium (<code>chromiumoxide</code>) with the
-        board profile and navigates to the posting.</li>
-      <li><b>Steps:</b> navigate → fill (résumé upload, cover letter, fields) → optional submit. Each stage emits
-        <span class="chan">apply.step</span> / <span class="chan">apply.progress</span>.</li>
-      <li><b>Result:</b> <code>ApplyResult { ok, stage, submitted, url, note }</code>; temp résumé is deleted and a
-        tracing span records duration + outcome.</li>
-    </ul>
-    <div class="pillrow"><span>linkedin</span><span>indeed</span><span>greenhouse</span><span>workday</span><span>xing</span><span>glassdoor</span></div>`,
+      <li><b>Run:</b> the scheduler ticks and runs any due autopilot end‑to‑end, emitting
+        <span class="chan">autopilot.step</span> per stage.</li>
+      <li><b>Notify:</b> new matches raise an OS notification and update the tray (“New jobs: N” /
+        “Pause all autopilots”).</li>
+      <li><b>Focus:</b> clicking the notification opens <code>ajh://autopilot/&lt;id&gt;</code> (allow‑listed
+        deep link) and focuses that autopilot's results.</li>
+    </ul>`,
           f: [
-            'apps/tauri/src-tauri/src/applying/registry/mod.rs',
-            'apps/tauri/src-tauri/src/applying/runtime.rs',
-            'apps/tauri/src-tauri/src/applying/types/mod.rs',
+            'apps/tauri/src-tauri/src/autopilot/mod.rs',
+            'apps/tauri/src-tauri/src/tray/mod.rs',
+            'apps/tauri/src-tauri/src/deeplink/mod.rs',
           ],
         },
         {
@@ -1834,10 +1815,10 @@
         },
         {
           q: 'How is streaming implemented, and why return a jobId?',
-          a: `Long operations (AI generation, scraping, applying)
+          a: `Long operations (AI generation, scraping, autopilot runs)
     can\'t block a single request/response. So the command registers the work in the <code>JobTracker</code> and
     returns <code>{ jobId }</code> <b>immediately</b>. Progress then flows back as Tauri <b>events</b> —
-    <span class="chan">ai:stream</span>, <span class="chan">jobs:event</span>, <span class="chan">apply.step</span> —
+    <span class="chan">ai:stream</span>, <span class="chan">jobs:event</span>, <span class="chan">autopilot.step</span> —
     which the renderer subscribes to with <code>listen()</code> and filters by <code>jobId</code>. That\'s how the
     résumé text and live postings appear incrementally.`,
         },
@@ -1850,12 +1831,11 @@
     macro deserializes the JSON payload straight into the typed struct via serde.`,
         },
         {
-          q: 'How do you add a new AI provider / job board / applier?',
+          q: 'How do you add a new AI provider / job board?',
           a: `Each is a registry. A new provider = a client
     module + one <code>ProviderId</code> arm + one <code>resolve()</code> arm (CLI agents don\'t even touch
     <code>resolve</code> — just the <code>cli_agent</code> registry). A new board = implement <code>Scraper</code>
-    and add one line to <code>SCRAPERS</code>. A new applier = implement <code>Applier</code> and add one line to
-    <code>APPLIERS</code>. This “zero‑edit‑elsewhere” extensibility is a deliberate design value of the project.`,
+    and add one line to <code>SCRAPERS</code>. This “zero‑edit‑elsewhere” extensibility is a deliberate design value of the project.`,
         },
         {
           q: 'How are secrets and personal data handled (local‑first)?',
@@ -1878,7 +1858,7 @@
           a: `A scheduler ticks every 60s and runs any due autopilot end‑to‑end:
     scrape the configured board → embed and cosine‑rank postings against your résumé → keep the top N → generate a
     validated cover letter through the <code>Stage</code> pipeline (research → draft → leakage check → retry) →
-    apply via the Chromium applier → record the run. It\'s the four flows in this doc, chained.`,
+    notify you (OS notification + tray) so you can tailor &amp; apply. It chains the other flows in this doc.`,
         },
         {
           q: 'Why a state machine for AI generation?',

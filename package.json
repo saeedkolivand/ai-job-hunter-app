@@ -28,6 +28,7 @@
     "gen:ipc:check": "pnpm --filter @ajh/shared gen:ipc:check",
     "gen:workflows": "node scripts/gen-workflow-catalog.mjs && prettier --write .github/workflows/README.md README.md",
     "gen:workflows:check": "node scripts/gen-workflow-catalog.mjs && prettier --write .github/workflows/README.md README.md && git diff --exit-code -- .github/workflows/README.md README.md",
+    "check:landing-drift": "node scripts/check-landing-drift.mjs",
     "clean": "pnpm -r exec rimraf dist out .turbo node_modules/.cache",
     "prepare": "husky"
   },
