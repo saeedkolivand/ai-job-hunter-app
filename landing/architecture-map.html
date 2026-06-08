@@ -157,6 +157,13 @@
       .node.crit rect.box {
         stroke-width: 2.4;
       }
+      .node:focus {
+        outline: none;
+      }
+      .node:focus-visible rect.box {
+        stroke: var(--accent);
+        stroke-width: 3.2;
+      }
       .node text.lbl {
         fill: var(--text);
         font-size: 12px;
@@ -210,6 +217,48 @@
       }
       .hide {
         display: none;
+      }
+      #kbd-help {
+        position: absolute;
+        right: 14px;
+        bottom: 56px;
+        z-index: 30;
+        max-width: 240px;
+        padding: 12px 14px;
+        font-size: 11.5px;
+        color: var(--muted);
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+      }
+      #kbd-help[hidden] {
+        display: none;
+      }
+      #kbd-help .kbd-title {
+        margin-bottom: 8px;
+        color: var(--text);
+        font-weight: 600;
+      }
+      #kbd-help ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 6px;
+      }
+      #kbd-help kbd {
+        display: inline-block;
+        min-width: 12px;
+        padding: 1px 5px;
+        margin-right: 2px;
+        font: inherit;
+        font-size: 10.5px;
+        text-align: center;
+        color: var(--text);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 4px;
       }
       /* sidebar */
       #side {
@@ -427,8 +476,21 @@
             <button id="zin" title="Zoom in">+</button>
             <button id="zout" title="Zoom out">−</button>
             <button id="fit" title="Fit" style="font-size: 11px">Fit</button>
+            <button id="help-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
+              ?
+            </button>
           </div>
           <div class="legend" id="legend"></div>
+          <div id="kbd-help" hidden role="dialog" aria-label="Keyboard shortcuts">
+            <div class="kbd-title">Navigate</div>
+            <ul>
+              <li><kbd>drag</kbd> · <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> pan</li>
+              <li><kbd>wheel</kbd> · <kbd>+</kbd><kbd>−</kbd> zoom</li>
+              <li><kbd>Tab</kbd> focus next node</li>
+              <li><kbd>Enter</kbd> pin · <kbd>Esc</kbd> clear</li>
+              <li><kbd>0</kbd> / <kbd>F</kbd> fit · <kbd>?</kbd> toggle help</li>
+            </ul>
+          </div>
         </div>
         <aside id="side"></aside>
       </main>
@@ -3615,7 +3677,17 @@
       const nodeEls = {};
       nodes.forEach((n) => {
         const col = COLORS[n.color] || '#888';
-        const g = el('g', { class: 'node' + (n.critical ? ' crit' : ''), 'data-id': n.id }, gNodes);
+        const g = el(
+          'g',
+          {
+            class: 'node' + (n.critical ? ' crit' : ''),
+            'data-id': n.id,
+            tabindex: '0',
+            role: 'button',
+            'aria-label': `${n.label}${n.sub ? ' — ' + n.sub : ''}${n.role ? '. ' + n.role : ''}`,
+          },
+          gNodes
+        );
         el(
           'rect',
           { x: n.x, y: n.y, width: n.w, height: n.h, rx: 8, class: 'box', stroke: col },
@@ -3698,6 +3770,27 @@
           hover = null;
           applyView();
           renderSidebar(pinned);
+        });
+        // Keyboard focus mirrors hover; Tab walks nodes in reading order and
+        // pans each one into view, Enter/Space pins it.
+        g.addEventListener('focus', () => {
+          hover = n.id;
+          applyView();
+          renderSidebar(focusId());
+          ensureVisible(n);
+        });
+        g.addEventListener('blur', () => {
+          hover = null;
+          applyView();
+          renderSidebar(focusId());
+        });
+        g.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') {
+            ev.preventDefault();
+            pinned = pinned === n.id ? null : n.id;
+            applyView();
+            renderSidebar(pinned);
+          }
         });
         nodeEls[n.id] = g;
       });
@@ -3875,33 +3968,62 @@
         const r = stage.getBoundingClientRect();
         return { x: px - r.left, y: py - r.top };
       }
+      function stageCenter() {
+        const r = stage.getBoundingClientRect();
+        return [r.width / 2, r.height / 2];
+      }
+      // Zoom by factor f, keeping the point (cx, cy) in stage space fixed.
+      function zoomAt(cx, cy, f) {
+        const next = Math.max(0.15, Math.min(4, scale * f));
+        const k = next / scale;
+        tx = cx - (cx - tx) * k;
+        ty = cy - (cy - ty) * k;
+        scale = next;
+        applyTransform();
+      }
+      // Pan the given node into view (used by keyboard Tab navigation).
+      function ensureVisible(n) {
+        const r = stage.getBoundingClientRect();
+        const m = 90;
+        const cx = (n.x + n.w / 2) * scale + tx;
+        const cy = (n.y + n.h / 2) * scale + ty;
+        let dx = 0,
+          dy = 0;
+        if (cx < m) dx = m - cx;
+        else if (cx > r.width - m) dx = r.width - m - cx;
+        if (cy < m) dy = m - cy;
+        else if (cy > r.height - m) dy = r.height - m - cy;
+        if (dx || dy) {
+          tx += dx;
+          ty += dy;
+          applyTransform();
+        }
+      }
       stage.addEventListener(
         'wheel',
         (ev) => {
           ev.preventDefault();
           const f = ev.deltaY < 0 ? 1.12 : 1 / 1.12;
           const p = screenToVB(ev.clientX, ev.clientY);
-          // zoom anchored at cursor
-          tx = p.x - (p.x - tx) * f;
-          ty = p.y - (p.y - ty) * f;
-          scale *= f;
-          scale = Math.max(0.15, Math.min(4, scale));
-          applyTransform();
+          zoomAt(p.x, p.y, f); // zoom anchored at cursor
         },
         { passive: false }
       );
       let dragging = false,
+        moved = false,
         lx = 0,
         ly = 0;
       stage.addEventListener('mousedown', (ev) => {
         if (ev.button !== 0) return;
         dragging = true;
+        moved = false;
         lx = ev.clientX;
         ly = ev.clientY;
         stage.classList.add('panning');
       });
       window.addEventListener('mousemove', (ev) => {
         if (!dragging) return;
+        if (Math.abs(ev.clientX - lx) + Math.abs(ev.clientY - ly) > 3) moved = true;
         tx += ev.clientX - lx;
         ty += ev.clientY - ly;
         lx = ev.clientX;
@@ -3913,6 +4035,11 @@
         stage.classList.remove('panning');
       });
       stage.addEventListener('click', (ev) => {
+        // A pan that ends on the background must not clear the selection.
+        if (moved) {
+          moved = false;
+          return;
+        }
         if (ev.target === stage || ev.target === svg || ev.target.id === 'vp') {
           pinned = null;
           hover = null;
@@ -3920,15 +4047,76 @@
           applyView();
         }
       });
-      document.getElementById('zin').onclick = () => {
-        scale = Math.min(4, scale * 1.2);
-        applyTransform();
-      };
-      document.getElementById('zout').onclick = () => {
-        scale = Math.max(0.15, scale / 1.2);
-        applyTransform();
-      };
+      document.getElementById('zin').onclick = () => zoomAt(...stageCenter(), 1.2);
+      document.getElementById('zout').onclick = () => zoomAt(...stageCenter(), 1 / 1.2);
       document.getElementById('fit').onclick = fit;
+
+      /* ---- keyboard shortcuts + help overlay ---- */
+      const helpEl = document.getElementById('kbd-help');
+      const toggleHelp = () => helpEl.toggleAttribute('hidden');
+      const closeHelp = () => helpEl.setAttribute('hidden', '');
+      document.getElementById('help-btn').onclick = toggleHelp;
+      window.addEventListener('keydown', (ev) => {
+        const t = ev.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+        if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+        const [cx, cy] = stageCenter();
+        const step = ev.shiftKey ? 160 : 64;
+        switch (ev.key) {
+          case 'ArrowLeft':
+            tx += step;
+            applyTransform();
+            ev.preventDefault();
+            break;
+          case 'ArrowRight':
+            tx -= step;
+            applyTransform();
+            ev.preventDefault();
+            break;
+          case 'ArrowUp':
+            ty += step;
+            applyTransform();
+            ev.preventDefault();
+            break;
+          case 'ArrowDown':
+            ty -= step;
+            applyTransform();
+            ev.preventDefault();
+            break;
+          case '+':
+          case '=':
+            zoomAt(cx, cy, 1.2);
+            ev.preventDefault();
+            break;
+          case '-':
+          case '_':
+            zoomAt(cx, cy, 1 / 1.2);
+            ev.preventDefault();
+            break;
+          case '0':
+          case 'f':
+          case 'F':
+            fit();
+            ev.preventDefault();
+            break;
+          case '?':
+            toggleHelp();
+            ev.preventDefault();
+            break;
+          case 'Escape':
+            if (!helpEl.hasAttribute('hidden')) {
+              closeHelp();
+            } else {
+              pinned = null;
+              hover = null;
+              if (document.activeElement && document.activeElement.blur)
+                document.activeElement.blur();
+              renderSidebar(null);
+              applyView();
+            }
+            break;
+        }
+      });
 
       /* ---- boot ---- */
       renderSidebar(null);
