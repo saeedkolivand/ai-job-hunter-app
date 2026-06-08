@@ -1,8 +1,9 @@
 import { Gauge } from 'lucide-react';
 
 import type { MatchScore } from '@ajh/shared';
-import { Button, cn, GlassCard } from '@ajh/ui';
+import { Button, GlassCard } from '@ajh/ui';
 
+import { MatchBand } from '@/features/jobs/lib/score';
 import { useDocuments, useMatchResume } from '@/services';
 
 interface RawDoc {
@@ -16,32 +17,6 @@ function useDefaultResumeId(): string | null {
   const docs = data as unknown as RawDoc[];
   const def = docs.find((d) => d.isDefault) ?? docs[0];
   return def?._id ?? null;
-}
-
-type Band = { label: string; cls: string };
-
-/** Map a 0–100 score to a Low / Medium / High band (#52 — replaces % progress). */
-function scoreBand(value: number): Band {
-  if (value >= 75)
-    return { label: 'High', cls: 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300' };
-  if (value >= 50)
-    return { label: 'Medium', cls: 'border-amber-400/25 bg-amber-400/10 text-amber-300' };
-  return { label: 'Low', cls: 'border-red-400/25 bg-red-400/10 text-red-300' };
-}
-
-function MatchBand({ value, large }: { value: number; large?: boolean }) {
-  const band = scoreBand(value);
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full border font-semibold uppercase tracking-wider',
-        band.cls,
-        large ? 'px-2.5 py-1 text-xs' : 'px-2 py-0.5 text-[10px]'
-      )}
-    >
-      {band.label}
-    </span>
-  );
 }
 
 function BandRow({ label, value }: { label: string; value: number }) {

@@ -88,13 +88,13 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
             />
           </div>
           <div>
-            <label className={LABEL}>{t('jobs.pages')}</label>
+            <label className={LABEL}>{t('jobs.amount')}</label>
             <NumberField
               min={1}
-              max={20}
-              fallback={1}
-              value={form.pages}
-              onChange={(n) => onFormChange({ pages: n })}
+              max={500}
+              fallback={25}
+              value={form.amount}
+              onChange={(n) => onFormChange({ amount: n })}
               disabled={scraping}
               className="w-full bg-white/[0.03] text-xs text-foreground disabled:opacity-50"
             />

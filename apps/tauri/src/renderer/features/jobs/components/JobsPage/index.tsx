@@ -39,7 +39,7 @@ export function JobsPage() {
     query: '',
     location: '',
     radiusKm: 0,
-    pages: 1,
+    amount: 25,
     dateFilter: '' as '' | (typeof DATE_FILTER_OPTIONS)[number],
     locale: 'us',
   });
@@ -101,6 +101,15 @@ export function JobsPage() {
   const handleClearPostings = async () => {
     await clearPostings.mutateAsync();
     setLivePostings([]);
+  };
+
+  // "Show more" (#36): fetch the next batch by raising the requested job count
+  // and re-scraping. The search signature is unchanged, so scraped postings are
+  // kept and the extra results append (deduped by id).
+  const handleShowMore = () => {
+    const next = scrapeForm.amount + 25;
+    setScrapeForm({ ...scrapeForm, amount: next });
+    void startScrape(next);
   };
 
   const filtered = useMemo(() => {
@@ -260,6 +269,15 @@ export function JobsPage() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {allPostings.length > 0 && (
+          <div className="flex justify-center pt-4">
+            <Button variant="ghost" size="sm" onClick={handleShowMore} loading={scraping}>
+              {!scraping && <Plus size={12} />}
+              {t('jobs.showMore')}
+            </Button>
           </div>
         )}
       </div>
