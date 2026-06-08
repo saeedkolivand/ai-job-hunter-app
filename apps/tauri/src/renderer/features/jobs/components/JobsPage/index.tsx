@@ -1,4 +1,4 @@
-import { Plus, Search, Trash2 } from 'lucide-react';
+import { ListFilter, Plus, Search, Trash2 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
@@ -174,7 +174,7 @@ export function JobsPage() {
                 </Button>
               )}
               <div className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-1.5 transition-colors focus-within:border-brand/35">
-                <Search size={12} className="shrink-0 text-foreground/40" />
+                <ListFilter size={12} className="shrink-0 text-foreground/40" />
                 <Input
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}

@@ -1,7 +1,7 @@
 import { Gauge } from 'lucide-react';
 
 import type { MatchScore } from '@ajh/shared';
-import { Button, GlassCard } from '@ajh/ui';
+import { Button, cn, GlassCard } from '@ajh/ui';
 
 import { useDocuments, useMatchResume } from '@/services';
 
@@ -18,16 +18,37 @@ function useDefaultResumeId(): string | null {
   return def?._id ?? null;
 }
 
-function ScoreBar({ label, value }: { label: string; value: number }) {
+type Band = { label: string; cls: string };
+
+/** Map a 0–100 score to a Low / Medium / High band (#52 — replaces % progress). */
+function scoreBand(value: number): Band {
+  if (value >= 75)
+    return { label: 'High', cls: 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300' };
+  if (value >= 50)
+    return { label: 'Medium', cls: 'border-amber-400/25 bg-amber-400/10 text-amber-300' };
+  return { label: 'Low', cls: 'border-red-400/25 bg-red-400/10 text-red-300' };
+}
+
+function MatchBand({ value, large }: { value: number; large?: boolean }) {
+  const band = scoreBand(value);
   return (
-    <div>
-      <div className="mb-1 flex items-center justify-between text-[11px]">
-        <span className="text-foreground/60">{label}</span>
-        <span className="text-foreground/80">{Math.round(value)}%</span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-foreground/10">
-        <div className="h-full rounded-full bg-brand" style={{ width: `${Math.round(value)}%` }} />
-      </div>
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full border font-semibold uppercase tracking-wider',
+        band.cls,
+        large ? 'px-2.5 py-1 text-xs' : 'px-2 py-0.5 text-[10px]'
+      )}
+    >
+      {band.label}
+    </span>
+  );
+}
+
+function BandRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between text-[11px]">
+      <span className="text-foreground/60">{label}</span>
+      <MatchBand value={value} />
     </div>
   );
 }
@@ -71,14 +92,14 @@ export function MatchScoreCard({ jobId }: { jobId: string }) {
 
       {result && !result.error && (
         <div className="space-y-3">
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-bold tabular-nums text-foreground">
-              {Math.round(result.combined)}%
+          <div className="flex items-center gap-2">
+            <MatchBand value={result.combined} large />
+            <span className="text-[11px] text-foreground/45">
+              overall match · {Math.round(result.combined)}%
             </span>
-            <span className="text-[11px] text-foreground/45">overall match</span>
           </div>
-          <ScoreBar label="Semantic" value={result.semantic} />
-          <ScoreBar label="Keyword coverage (ATS)" value={result.ats} />
+          <BandRow label="Semantic" value={result.semantic} />
+          <BandRow label="Keyword coverage (ATS)" value={result.ats} />
 
           {result.gaps.length > 0 && (
             <div>

@@ -11,7 +11,7 @@ import {
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
-import { Button, SourceBadge, useNotification } from '@ajh/ui';
+import { ActionMenu, Button, SourceBadge, useNotification } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { useOpenExternal, usePersistJob } from '@/services';
@@ -96,95 +96,97 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
     void navigate({ to: '/ai-generate' });
   };
 
+  // The whole row opens the posting (#3). It's a role="button" region (not a
+  // <button>) so the inline SourceBadge / action cluster can keep their own
+  // click handlers — those stop propagation so they don't also open the row.
+  const onRowKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleOpen();
+    }
+  };
+
   return (
-    // No entry animation: rows are windowed (mount/unmount on scroll), so a
-    // per-mount fade would re-fire every time a row scrolls into view.
-    <div className="relative group">
-      {/* `no-backdrop-filter` drops glass-graphite's per-row backdrop blur —
-          compositing a blur for every row is the dominant paint cost on a long
-          list, and the gradient is opaque enough to read fine without it. */}
-      <div className="glass-graphite glass-highlight no-backdrop-filter relative flex items-center gap-5 rounded-xl p-4 pl-5 transition-all duration-300 hover:bg-white/[0.03] hover:shadow-lg hover:shadow-brand/5 overflow-hidden">
-        {/* Subtle ambient glow for whole card */}
-        <div
-          className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ease-out"
-          style={{
-            background:
-              'linear-gradient(135deg, rgba(168,85,247,0.12) 0%, rgba(99,102,241,0.08) 50%, rgba(168,85,247,0.12) 100%)',
-            filter: 'blur-xl',
-          }}
-        />
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-white/10 to-white/5 text-[11px] uppercase tracking-wider text-brand-soft font-semibold shadow-inner">
-          {posting.source.slice(0, 2)}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-sm font-semibold text-foreground/95 tracking-tight">
-            <span className="truncate">{posting.title}</span>
-            {posting.remote && (
-              <span className="rounded-full border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-emerald-200/85">
-                {t('jobs.remote')}
-              </span>
-            )}
-            {/* Interaction indicators */}
-            {interactionTypes.has('applied') && (
-              <span className="rounded-full border border-purple-400/20 bg-purple-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-purple-200/85 flex items-center gap-1">
-                <CircleCheck size={8} /> {t('jobs.applied')}
-              </span>
-            )}
-            {interactionTypes.has('opened') && (
-              <span className="rounded-full border border-blue-400/20 bg-blue-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-blue-200/85 flex items-center gap-1">
-                <Eye size={8} /> {t('jobs.viewed')}
-              </span>
-            )}
-            {interactionTypes.has('bookmarked') && (
-              <span className="rounded-full border border-amber-400/20 bg-amber-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-amber-200/85 flex items-center gap-1">
-                <Bookmark size={8} /> {t('jobs.saved')}
-              </span>
-            )}
-          </div>
-          <div className="mt-1 flex items-center gap-4 text-[11px]">
-            <span className="flex items-center gap-1.5 text-foreground/85">
-              <Building2 size={10} /> {posting.company}
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={handleOpen}
+      onKeyDown={onRowKey}
+      title={t('jobs.open')}
+      className="surface-card group flex items-center gap-5 rounded-xl p-4 pl-5 transition-colors hover:bg-foreground/[0.03]"
+    >
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-[11px] font-semibold uppercase tracking-wider text-brand-soft">
+        {posting.source.slice(0, 2)}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 text-sm font-semibold tracking-tight text-foreground/95">
+          <span className="truncate">{posting.title}</span>
+          {posting.remote && (
+            <span className="rounded-full border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-emerald-200/85">
+              {t('jobs.remote')}
             </span>
-            {posting.location && (
-              <span className="flex items-center gap-1.5 text-foreground/60">
-                <MapPin size={10} /> {posting.location}
-              </span>
-            )}
+          )}
+          {interactionTypes.has('applied') && (
+            <span className="flex items-center gap-1 rounded-full border border-purple-400/20 bg-purple-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-purple-200/85">
+              <CircleCheck size={8} /> {t('jobs.applied')}
+            </span>
+          )}
+          {interactionTypes.has('opened') && (
+            <span className="flex items-center gap-1 rounded-full border border-blue-400/20 bg-blue-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-blue-200/85">
+              <Eye size={8} /> {t('jobs.viewed')}
+            </span>
+          )}
+          {interactionTypes.has('bookmarked') && (
+            <span className="flex items-center gap-1 rounded-full border border-amber-400/20 bg-amber-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-amber-200/85">
+              <Bookmark size={8} /> {t('jobs.saved')}
+            </span>
+          )}
+        </div>
+        <div className="mt-1 flex items-center gap-4 text-[11px]">
+          <span className="flex items-center gap-1.5 text-foreground/85">
+            <Building2 size={10} /> {posting.company}
+          </span>
+          {posting.location && (
+            <span className="flex items-center gap-1.5 text-foreground/60">
+              <MapPin size={10} /> {posting.location}
+            </span>
+          )}
+          {/* Badge keeps its own click (open source); stop it bubbling to the row. */}
+          <span onClick={(e) => e.stopPropagation()}>
             <SourceBadge source={posting.source} url={posting.url} />
-            {posting.postedAt && (
-              <span className="text-foreground/40">· {formatRelativeTime(posting.postedAt)}</span>
-            )}
-          </div>
+          </span>
+          {posting.postedAt && (
+            <span className="text-foreground/40">· {formatRelativeTime(posting.postedAt)}</span>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <a
-            href={posting.url}
-            onClick={(e) => {
-              e.preventDefault();
-              void handleOpen();
-            }}
-            className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] text-foreground/70 hover:text-foreground hover:bg-white/10 transition-all duration-200"
-          >
-            <ExternalLink size={10} /> {t('jobs.open')}
-          </a>
-          <Button
-            variant="unstyled"
-            onClick={handleCopyLink}
-            className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] text-foreground/70 hover:text-foreground hover:bg-white/10 transition-all duration-200"
-            title={t('jobs.copyLink')}
-          >
-            <Copy size={10} />
-          </Button>
-          <Button
-            size="sm"
-            variant="glass"
-            onClick={handleTailor}
-            title={t('jobs.tailorHint')}
-            className="transition-all duration-150 ease-out"
-          >
-            <Wand2 size={11} /> {t('jobs.tailor')}
-          </Button>
-        </div>
+      </div>
+      {/* Action cluster — stops propagation so its buttons don't open the row. */}
+      <div
+        className="flex shrink-0 items-center gap-2"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+        role="presentation"
+      >
+        <Button
+          size="sm"
+          variant="glass"
+          onClick={handleTailor}
+          title={t('jobs.tailorHint')}
+          className="transition-all duration-150 ease-out"
+        >
+          <Wand2 size={11} /> {t('jobs.tailor')}
+        </Button>
+        <ActionMenu
+          label={t('jobs.actions')}
+          items={[
+            { label: t('jobs.open'), icon: <ExternalLink size={14} />, onSelect: handleOpen },
+            {
+              label: t('jobs.copyLink'),
+              icon: <Copy size={14} />,
+              onSelect: () => void handleCopyLink(),
+            },
+          ]}
+        />
       </div>
     </div>
   );
