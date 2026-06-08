@@ -10,7 +10,19 @@ const meta = {
   argTypes: {
     variant: {
       control: 'select',
-      options: ['default', 'glass', 'ghost', 'danger', 'warning', 'info', 'success'],
+      options: [
+        'primary',
+        'default',
+        'glass',
+        'ghost',
+        'run',
+        'edit',
+        'delete',
+        'danger',
+        'warning',
+        'info',
+        'success',
+      ],
     },
     size: { control: 'select', options: ['sm', 'md', 'lg'] },
     loading: { control: 'boolean' },
@@ -35,7 +47,21 @@ export const Ghost: Story = {
 export const AllVariants: Story = {
   render: () => (
     <div className="flex flex-wrap gap-3">
-      {(['default', 'glass', 'ghost', 'danger', 'warning', 'info', 'success'] as const).map((v) => (
+      {(
+        [
+          'primary',
+          'default',
+          'glass',
+          'ghost',
+          'run',
+          'edit',
+          'delete',
+          'danger',
+          'warning',
+          'info',
+          'success',
+        ] as const
+      ).map((v) => (
         <Button key={v} variant={v}>
           {v}
         </Button>
@@ -79,12 +105,12 @@ export const Disabled: Story = {
 };
 
 // Proof that the shared preview actually loaded Tailwind + the @ajh/ui design
-// system. `toBeVisible` passes even on an unstyled button, so we assert concrete
-// computed values from base classes the Button always applies: `inline-flex`
-// (display) and `font-medium` (font-weight 500). If the CSS layer fails to load
-// — the exact failure mode this preview guards against — the button falls back
-// to the UA defaults `inline-block` / 400 and this story fails. Runs live in the
-// Interactions panel (and any future Storybook/vitest browser runner).
+// system. `toBeVisible` passes even on an unstyled button, so we assert a
+// concrete computed value from a base class the Button always applies:
+// `inline-flex` (display). If the CSS layer fails to load — the exact failure
+// mode this preview guards against — the button falls back to the UA default
+// `inline-block` and this story fails. Runs live in the Interactions panel (and
+// any future Storybook/vitest browser runner).
 export const CssCheck: Story = {
   tags: ['ai-generated'],
   args: { children: 'Submit', variant: 'default', size: 'md' },
@@ -92,6 +118,8 @@ export const CssCheck: Story = {
     const button = canvas.getByRole('button', { name: /submit/i });
     const styles = getComputedStyle(button);
     await expect(styles.display).toBe('inline-flex');
-    await expect(styles.fontWeight).toBe('500');
+    // Apple type grammar: buttons are weight 400 (no 500). Still a non-UA value
+    // that only holds when the design-system CSS is loaded.
+    await expect(styles.fontWeight).toBe('400');
   },
 };

@@ -600,9 +600,12 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
       <ModalShell
         open={showExportModal}
         onClose={() => setShowExportModal(false)}
-        title={t('resumes.generated.export')}
+        ariaLabel={t('resumes.generated.export')}
       >
-        <div className="space-y-4">
+        <div className="space-y-4 p-5">
+          <h3 className="text-sm font-semibold text-foreground/90">
+            {t('resumes.generated.export')}
+          </h3>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <SegmentedControl<ExportFormat>
               ariaLabel={t('resumes.generated.format')}
