@@ -232,10 +232,20 @@ jobs:
           pnpm gen:ipc:check
           echo "::endgroup::"
 
-      - name: ❌ Check for Failures
-        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure'
+      # Not path-filtered: drift is triggered by SOURCE moving (e.g. a removed
+      # module), not by edits to landing/, so this must run on every code PR.
+      - name: 🗺️ Check Landing Diagram Drift
+        id: landing_drift
+        continue-on-error: true
         run: |
-          echo "::error file=package.json::Lint, format, or IPC codegen check failed. Run 'pnpm lint:fix', 'pnpm format', and 'pnpm gen:ipc' locally to fix."
+          echo "::group::Checking landing diagram drift"
+          pnpm check:landing-drift
+          echo "::endgroup::"
+
+      - name: ❌ Check for Failures
+        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure' || steps.landing_drift.outcome == 'failure'
+        run: |
+          echo "::error file=package.json::Lint, format, IPC codegen, or landing-diagram drift check failed. Run 'pnpm lint:fix', 'pnpm format', 'pnpm gen:ipc', and 'pnpm check:landing-drift' locally to fix."
           echo "::error::Please fix the issues above before merging."
           exit 1
 
