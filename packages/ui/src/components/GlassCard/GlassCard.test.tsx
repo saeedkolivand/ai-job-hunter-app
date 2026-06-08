@@ -4,9 +4,17 @@ import { render, screen } from '@testing-library/react';
 import { GlassCard } from './GlassCard';
 
 describe('GlassCard', () => {
-  it('renders children with the neutral tone by default', () => {
+  it('renders children with the flat surface tone by default', () => {
     render(<GlassCard>content</GlassCard>);
     const card = screen.getByText('content');
+    expect(card.className).toContain('surface-card');
+    // The flat default is not glass, so it carries no frosted highlight.
+    expect(card.className).not.toContain('glass-highlight');
+  });
+
+  it('opts into frosted glass with tone="glass"', () => {
+    render(<GlassCard tone="glass">g</GlassCard>);
+    const card = screen.getByText('g');
     expect(card.className).toContain('glass-card');
     expect(card.className).toContain('glass-highlight');
   });
