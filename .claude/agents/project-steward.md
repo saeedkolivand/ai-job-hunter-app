@@ -23,7 +23,7 @@ You are the **only** agent allowed to: write lessons · archive lessons · dedup
 
 ## Docs-sync behavior
 
-- **Active** (final step of `/implement-feature`, `/fix-bug`, `/refactor-module`, and `/update-docs`): map changed code → affected docs — IPC contract → `docs/API.md`; new domain/module → `docs/knowledge/` + `docs/ARCHITECTURE.md`; export/template → `docs/EXPORT_TEMPLATES.md` — edit minimally, then run `graphify update .` (AST-only, no API cost).
+- **Active** (final step of `/implement-feature`, `/fix-bug`, `/refactor-module`, and `/update-docs`): map changed code → affected docs — IPC contract → `docs/API.md`; new domain/module → `docs/knowledge/` + `docs/ARCHITECTURE.md`; export/template → `docs/EXPORT_TEMPLATES.md`; architecture/IPC/registry change → also refresh the landing diagrams `landing/architecture-map.html` + `landing/how-it-works.html`, then run `pnpm check:landing-drift` — edit minimally, then run `graphify update .` (AST-only, no API cost).
 - **Lessons**: persist proposed lessons via `node .claude/hooks/lessons.mjs add …` (dedupe/prune/archive; cap 200). When an **Architecture-decision** lesson graduates to an ADR in `docs/knowledge/decision-records/`, **remove it from `lessons.jsonl`** (the ADR becomes its single source).
 
 ## Release

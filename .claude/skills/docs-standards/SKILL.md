@@ -7,16 +7,17 @@ description: Documentation maintenance rules — which docs map to which code ar
 
 ## Code → docs map
 
-- IPC contract change (`packages/shared/src/ipc/contracts.ts`) → `docs/API.md`.
+- IPC contract change (`packages/shared/src/ipc/contracts/`) → `docs/API.md`.
 - New domain/module or boundary change → `docs/knowledge/` + `docs/ARCHITECTURE.md`.
 - Export/template change → `docs/EXPORT_TEMPLATES.md` + `docs/knowledge/resume-domain.md`.
 - Scraping/provider change → `docs/knowledge/automation-domain.md`.
 - Design-system change → `docs/DESIGN_SYSTEM.md`.
+- Architecture / module / IPC-contract / registry change → also refresh the landing diagrams `landing/architecture-map.html` + `landing/how-it-works.html`, then run `pnpm check:landing-drift` (CI enforces it via the Lint & Format job).
 - A durable architecture decision → an ADR in `docs/knowledge/decision-records/`.
 
 ## No-drift rule (thin pointers)
 
-Describe **shape and contracts**; **never copy drift-prone literals** (scoring weights, template/board/applier counts). Point at the owning source symbol instead (weights → `commands/match_resume.rs`; templates → `export/templates/mod.rs`; registries → `scraping/boards/mod.rs`, `applying/registry/mod.rs`). Knowledge files capped ~150 lines.
+Describe **shape and contracts**; **never copy drift-prone literals** (scoring weights, template/board/applier counts). Point at the owning source symbol instead (weights → `commands/match_resume.rs`; templates → `export/templates/mod.rs`; registries → `scraping/boards/mod.rs` (SCRAPERS)). Knowledge files capped ~150 lines.
 
 ## After editing code or docs
 

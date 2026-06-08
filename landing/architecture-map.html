@@ -1,8 +1,4 @@
 <!doctype html>
-<!-- NOTICE (2026-06-03): This diagram predates the apply→assist pivot (v0.58.0).
-     The embedded graph still depicts the removed auto-apply engine (applying/,
-     APPLIERS registry, apply IPC contract). Source code is authoritative.
-     See docs/ARCHITECTURE.md for the current architecture. -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -496,7 +492,7 @@
         },
         {
           id: 'provapp',
-          label: 'AI Providers · Appliers',
+          label: 'AI Providers',
           x: 2220,
           y: 20,
           w: 250,
@@ -701,7 +697,7 @@
           {
             role: 'Zustand store: active AI provider/model config, prompt quality, UI prefs.',
             plain: 'Remembers your choices — which AI to use, how detailed the prompts should be.',
-            path: 'apps/tauri/src/renderer/store/preferences-store.ts',
+            path: 'apps/tauri/src/renderer/store/preferences-store/preferences-store.ts',
             notes: ['aiProviderConfig drives generation routing'],
             tag: ['settings', 'aigenerate', 'all'],
           }
@@ -1199,17 +1195,17 @@
         N(
           'ct-barrel',
           'contract',
-          'contracts.ts',
-          '21-namespace barrel',
+          'index.ts',
+          'namespace barrel',
           869,
           96,
           232,
           46,
           'contract',
           {
-            role: 'Re-exports all 21 typed IPC namespace contracts — the single source of truth.',
+            role: 'Re-exports every typed IPC namespace contract — the single source of truth.',
             plain: 'The master list of every request the interface can make to the engine.',
-            path: 'packages/shared/src/ipc/contracts.ts',
+            path: 'packages/shared/src/ipc/contracts/index.ts',
             notes: ['IpcContract = the whole surface'],
             tag: ['overview', 'all'],
           }
@@ -1288,13 +1284,6 @@
           path: 'packages/shared/src/ipc/contracts/jobs.ts',
           notes: ['jobs.cancel/get used by streaming'],
           tag: ['scrape', 'autopilot', 'all'],
-        }),
-        N('ct-apply', 'contract', 'apply.ts', 'ApplyContract', 869, 608, 232, 46, 'contract', {
-          role: 'Apply namespace: auto-apply to a posting via the board applier.',
-          plain: 'The contract for submitting an application for you.',
-          path: 'packages/shared/src/ipc/contracts/apply.ts',
-          notes: [],
-          tag: ['autopilot', 'all'],
         }),
         N('ct-boards', 'contract', 'boards.ts', 'BoardsContract', 869, 672, 232, 46, 'contract', {
           role: 'Boards namespace: catalog of supported boards + login state.',
@@ -1491,7 +1480,7 @@
           {
             role: 'Cover-letter commands incl. research/enrichment + leakage validation.',
             plain: 'Backend door for cover letters, with checks against leaking made-up facts.',
-            path: 'apps/tauri/src-tauri/src/commands/cover_letter.rs',
+            path: 'apps/tauri/src-tauri/src/cover_letter/mod.rs',
             notes: [],
             tag: ['aigenerate', 'all'],
           }
@@ -1671,7 +1660,7 @@
           {
             role: 'Retry/regeneration stage.',
             plain: 'Tries again if a generation step fails.',
-            path: 'apps/tauri/src-tauri/src/pipeline/retry',
+            path: 'apps/tauri/src-tauri/src/pipeline/mod.rs',
             notes: [],
             tag: ['aigenerate', 'all'],
           }
@@ -1689,7 +1678,7 @@
           {
             role: 'Validates generated output.',
             plain: 'Checks the AI’s output before continuing.',
-            path: 'apps/tauri/src-tauri/src/pipeline/validation.rs',
+            path: 'apps/tauri/src-tauri/src/validate/mod.rs',
             notes: [],
             tag: ['aigenerate', 'all'],
           }
@@ -1756,20 +1745,20 @@
           }
         ),
         N(
-          'd-applying',
+          'd-tray',
           'domain',
-          'applying::form_filler',
-          'auto-apply',
+          'tray + deeplink',
+          'notify + focus',
           1429,
           608,
           232,
           46,
           'domain',
           {
-            role: 'Form-filling logic for auto-apply + captcha/error handling.',
-            plain: 'Fills in and submits application forms for you.',
-            path: 'apps/tauri/src-tauri/src/applying/form_filler/mod.rs',
-            notes: ['captcha_handler + error_handler alongside'],
+            role: 'System-tray “New jobs: N” + deep-link focus. Autopilot notifies; the user opens, tailors & applies — there is no auto-submit.',
+            plain: 'Pops up when new matching jobs are found, and opens the right one when you click.',
+            path: 'apps/tauri/src-tauri/src/tray/mod.rs',
+            notes: ['deeplink/ guards ajh://autopilot/<id>'],
             tag: ['autopilot', 'all'],
           }
         ),
@@ -1784,10 +1773,10 @@
           46,
           'domain',
           {
-            role: 'Autopilot workflow engine + cron-like step scheduler.',
-            plain: 'Runs your saved hunt on a schedule, step by step.',
+            role: 'Autopilot engine + step scheduler: finds & ranks matches, then notifies — the user tailors & applies.',
+            plain: 'Runs your saved hunt on a schedule, step by step, and tells you about good matches.',
             path: 'apps/tauri/src-tauri/src/autopilot/mod.rs',
-            notes: ['Emits autopilot:step events'],
+            notes: ['Emits autopilot.step events'],
             tag: ['autopilot', 'all'],
           }
         ),
@@ -1837,7 +1826,7 @@
         N(
           'd-export-pdf',
           'domain',
-          'export/pdf_renderer',
+          'export/pdf',
           'canonical layout',
           1429,
           928,
@@ -1847,7 +1836,7 @@
           {
             role: 'PDF export via the canonical layout engine (two-column + ATS linearization).',
             plain: 'Turns a resume into a polished PDF.',
-            path: 'apps/tauri/src-tauri/src/export/pdf_renderer/mod.rs',
+            path: 'apps/tauri/src-tauri/src/export/pdf/mod.rs',
             notes: ['Legacy fallback path retained'],
             tag: ['documents', 'all'],
           }
@@ -2137,7 +2126,7 @@
           }
         ),
 
-        // ── AI Providers + Appliers (x 2229) ────────────────────────────────────────
+        // ── AI Providers (x 2229) ────────────────────────────────────────
         N('pv-ollama', 'provapp', 'ollama.rs', 'local server', 2229, 96, 232, 46, 'provider', {
           role: 'Ollama client: chat + embeddings; all /api/* assumptions isolated here.',
           plain: 'Talks to Ollama, the AI engine running on your own machine.',
@@ -2259,99 +2248,6 @@
             path: 'apps/tauri/src-tauri/src/commands/ai_provider/openai.rs',
             notes: ['One ProviderId arm; accepts any model family'],
             tag: ['aigenerate', 'all'],
-          }
-        ),
-        N(
-          'ap-registry',
-          'provapp',
-          'APPLIERS',
-          'applier registry · 6',
-          2229,
-          608,
-          232,
-          46,
-          'provider',
-          {
-            role: 'Static list of every Applier; dispatch + catalog derive from it via the Applier trait.',
-            plain: 'The master list of job sites the app can auto-apply on.',
-            path: 'apps/tauri/src-tauri/src/applying/registry/mod.rs:14',
-            notes: ['get(board_id):31'],
-            tag: ['autopilot', 'all'],
-          }
-        ),
-        N(
-          'ap-linkedin',
-          'provapp',
-          'LinkedInApplier',
-          'auto-apply',
-          2229,
-          672,
-          232,
-          46,
-          'provider',
-          {
-            role: 'LinkedIn auto-apply (Easy Apply).',
-            plain: 'Submits LinkedIn applications for you.',
-            path: 'apps/tauri/src-tauri/src/applying/boards/linkedin.rs',
-            notes: [],
-            tag: ['autopilot', 'all'],
-          }
-        ),
-        N('ap-indeed', 'provapp', 'IndeedApplier', 'auto-apply', 2229, 736, 232, 46, 'provider', {
-          role: 'Indeed auto-apply.',
-          plain: 'Submits Indeed applications for you.',
-          path: 'apps/tauri/src-tauri/src/applying/boards/indeed.rs',
-          notes: [],
-          tag: ['autopilot', 'all'],
-        }),
-        N(
-          'ap-greenhouse',
-          'provapp',
-          'GreenhouseApplier',
-          'auto-apply',
-          2229,
-          800,
-          232,
-          46,
-          'provider',
-          {
-            role: 'Greenhouse auto-apply.',
-            plain: 'Submits Greenhouse applications for you.',
-            path: 'apps/tauri/src-tauri/src/applying/boards/greenhouse.rs',
-            notes: [],
-            tag: ['autopilot', 'all'],
-          }
-        ),
-        N('ap-workday', 'provapp', 'WorkdayApplier', 'auto-apply', 2229, 864, 232, 46, 'provider', {
-          role: 'Workday auto-apply.',
-          plain: 'Submits Workday applications for you.',
-          path: 'apps/tauri/src-tauri/src/applying/boards/workday.rs',
-          notes: [],
-          tag: ['autopilot', 'all'],
-        }),
-        N('ap-xing', 'provapp', 'XingApplier', 'auto-apply', 2229, 928, 232, 46, 'provider', {
-          role: 'Xing auto-apply.',
-          plain: 'Submits Xing applications for you.',
-          path: 'apps/tauri/src-tauri/src/applying/boards/xing.rs',
-          notes: [],
-          tag: ['autopilot', 'all'],
-        }),
-        N(
-          'ap-glassdoor',
-          'provapp',
-          'GlassdoorApplier',
-          'auto-apply',
-          2229,
-          992,
-          232,
-          46,
-          'provider',
-          {
-            role: 'Glassdoor auto-apply.',
-            plain: 'Submits Glassdoor applications for you.',
-            path: 'apps/tauri/src-tauri/src/applying/boards/glassdoor.rs',
-            notes: [],
-            tag: ['autopilot', 'all'],
           }
         ),
 
@@ -2588,10 +2484,10 @@
           }
         ),
         N('ex-chromium', 'external', 'Chromium', 'chromiumoxide', 2789, 608, 236, 46, 'external', {
-          role: 'Headless/headful Chromium driven for browser boards + auto-apply.',
+          role: 'Headless/headful Chromium driven for browser-based job boards (login + scraping).',
           plain: 'A real web browser the app controls to read sites and submit forms.',
           path: '(system Chromium)',
-          notes: ['Browser boards + appliers'],
+          notes: ['Browser-based job boards'],
           tag: ['scrape', 'autopilot', 'all'],
         }),
         N(
@@ -3103,16 +2999,9 @@
         },
         {
           from: 'd-autopilot',
-          to: 'd-applying',
-          kind: 'critical',
-          label: 'auto-apply',
-          tag: ['autopilot', 'all'],
-        },
-        {
-          from: 'd-applying',
-          to: 'ap-registry',
-          kind: 'critical',
-          label: 'APPLIERS.get(id)',
+          to: 'd-tray',
+          kind: 'normal',
+          label: 'notify',
           tag: ['autopilot', 'all'],
         },
         {
@@ -3126,63 +3015,7 @@
           from: 'd-autopilot',
           to: 'c-machine-autorun',
           kind: 'normal',
-          label: 'autopilot:step',
-          tag: ['autopilot', 'all'],
-        },
-        {
-          from: 'ap-registry',
-          to: 'ap-linkedin',
-          kind: 'normal',
-          label: 'dispatch',
-          tag: ['autopilot', 'all'],
-        },
-        {
-          from: 'ap-registry',
-          to: 'ap-indeed',
-          kind: 'normal',
-          label: 'dispatch',
-          tag: ['autopilot', 'all'],
-        },
-        {
-          from: 'ap-registry',
-          to: 'ap-greenhouse',
-          kind: 'normal',
-          label: 'dispatch',
-          tag: ['autopilot', 'all'],
-        },
-        {
-          from: 'ap-registry',
-          to: 'ap-workday',
-          kind: 'normal',
-          label: 'dispatch',
-          tag: ['autopilot', 'all'],
-        },
-        {
-          from: 'ap-registry',
-          to: 'ap-xing',
-          kind: 'normal',
-          label: 'dispatch',
-          tag: ['autopilot', 'all'],
-        },
-        {
-          from: 'ap-registry',
-          to: 'ap-glassdoor',
-          kind: 'normal',
-          label: 'dispatch',
-          tag: ['autopilot', 'all'],
-        },
-        {
-          from: 'ap-linkedin',
-          to: 'ex-chromium',
-          kind: 'api',
-          label: 'fill + submit',
-          tag: ['autopilot', 'all'],
-        },
-        {
-          from: 'ct-apply',
-          to: 'cmd-autopilot',
-          kind: 'normal',
-          label: 'apply()',
+          label: 'autopilot.step',
           tag: ['autopilot', 'all'],
         },
 
@@ -3637,17 +3470,11 @@
         'ct-search': [
           { sev: 'high', ref: 'ARCH_STATUS:47', t: 'Search contract handler is a stub' },
         ],
-        'd-applying': [
-          { sev: 'med', ref: 'ARCH_STATUS:122', t: 'Auto-apply success rate varies by board (🚧)' },
-        ],
         'd-autopilot': [
-          { sev: 'med', ref: 'ARCH_STATUS:123', t: 'Batch application throttling is partial (🚧)' },
-        ],
-        'ap-registry': [
           {
             sev: 'med',
-            ref: 'ARCH_STATUS:122',
-            t: 'Applier coverage/quality varies by board (🚧)',
+            ref: 'ARCH_STATUS:123',
+            t: 'Autopilot find→rank→notify cadence varies by schedule (🚧)',
           },
         ],
       };
@@ -3656,7 +3483,7 @@
       const FINDINGS = [
         'Code↔doc mismatch: the resume-job <b>matcher</b> and <b>hybrid search</b> are Rust stubs, though they were ✅ in the old TypeScript and the status doc still lists features as done (ARCHITECTURE_STATUS.md:47-50). Flagged red on cmd-match / cmd-search.',
         'Heaviest hot path: <b>AI generation</b> fans through packages/prompts (resume/cover builders + context-manager truncation + ProviderProfile + validators) before a single token streams — the red spine.',
-        'Strong seam: a single-owner <b>platform band</b> (platform::config, net::http, error::AppError, observability::Span) plus three registries — SCRAPERS (20), APPLIERS (6), ProviderId (8). Adding a board/provider is one module + one line; CI arch tests enforce ownership.',
+        'Strong seam: a single-owner <b>platform band</b> (platform::config, net::http, error::AppError, observability::Span) plus two registries — SCRAPERS (20), ProviderId (8). Adding a board/provider is one module + one line; CI arch tests enforce ownership.',
         'No silent fallback: ai_provider::resolve() routes strictly by ProviderId — an unknown/mismatched provider is a hard error, never a quiet switch to Ollama.',
         'God nodes (edges intentionally not all drawn): cn() ~191, useAppClient() ~167, Button ~97. They touch nearly everything in their layer.',
         'tauri-client is a folder module (apps/tauri/src/tauri-client/index.ts); CLAUDE.md still cites the old single-file path.',
@@ -3984,7 +3811,7 @@
    <div class="plain">Click any box for its plain-English role, real file path, and what wires into and out of it. Use the chips up top to highlight a feature or a user-flow path. Drag to pan, scroll to zoom.</div>
    <div class="k">Notable findings from this map</div><ul class="findings">`;
         FINDINGS.forEach((f) => (h += `<li>${f}</li>`));
-        h += `</ul><div class="k">Counts</div><div style="color:#cfcfcf">${nodes.length} nodes · ${edges.length} edges · ${clusters.length} clusters · 20 boards · 8 AI providers · 6 appliers</div>`;
+        h += `</ul><div class="k">Counts</div><div style="color:#cfcfcf">${nodes.length} nodes · ${edges.length} edges · ${clusters.length} clusters · 20 boards · 8 AI providers</div>`;
         h += `<div class="k">Critical paths</div><div style="color:#cfcfcf">Red = <b>AI Generate</b> (default). Click <b>Autopilot</b> or <b>Scrape → Match</b> to light up the other two flows.</div>`;
         return h;
       }
