@@ -31,6 +31,7 @@
     { "glob": "packages/ui/**", "owner": "frontend-reviewer" },
     { "glob": "apps/tauri/src-tauri/src/**", "owner": "rust-backend-architect" },
     { "glob": "packages/shared/**", "owner": "rust-backend-architect" },
+    { "glob": "landing/**", "owner": "project-steward" },
     { "glob": "docs/**", "owner": "project-steward" }
   ],
   "secondary": [
@@ -74,7 +75,9 @@
     "docs_stale": [
       "packages/shared/src/ipc/**",
       "apps/tauri/src-tauri/src/ipc_contracts/**",
-      "apps/tauri/src-tauri/src/commands/mod.rs"
+      "apps/tauri/src-tauri/src/commands/mod.rs",
+      "apps/tauri/src-tauri/src/autopilot/**",
+      "apps/tauri/src-tauri/src/scraping/boards/**"
     ],
     "release": [".releaserc.json", "commitlint.config.mjs", ".github/workflows/**"]
   },

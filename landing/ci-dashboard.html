@@ -191,8 +191,13 @@
         border-color: var(--accent);
       }
       .nav-icon {
-        color: var(--accent);
+        color: var(--muted);
         font-size: 13px;
+        transition: color 0.15s;
+      }
+      .side-nav button:hover .nav-icon,
+      .side-nav button.active .nav-icon {
+        color: var(--text);
       }
       .nav-label {
         overflow: hidden;
@@ -823,6 +828,44 @@
           grid-template-columns: repeat(13, minmax(10px, 1fr));
         }
       }
+      .auth-panel {
+        position: fixed;
+        top: 50px;
+        right: 12px;
+        z-index: 60;
+        display: grid;
+        gap: 8px;
+        width: 290px;
+        padding: 14px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+      }
+      .auth-panel[hidden] {
+        display: none;
+      }
+      .auth-panel label {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .auth-panel .auth-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .auth-panel .auth-note {
+        margin: 0;
+        font-size: 11px;
+        line-height: 1.5;
+        color: var(--muted);
+      }
+      .auth-panel .auth-note a {
+        color: var(--accent);
+      }
+      #auth-btn.authed {
+        color: var(--ok);
+        border-color: var(--ok);
+      }
     </style>
   </head>
   <body>
@@ -855,6 +898,38 @@
         title="Auto-refresh interval. The anonymous GitHub API allows ~60 requests/hour per visitor (2 per refresh)."
       ></span>
       <button id="refresh" type="button">↻ Refresh now</button>
+      <button
+        id="auth-btn"
+        type="button"
+        title="Optional: use a read-only GitHub token to raise the API rate limit (60 → 5000/hour). Stored only in this browser."
+      >
+        🔑 Sign in
+      </button>
+      <div id="auth-panel" class="auth-panel" hidden>
+        <label for="token-input">GitHub token — lifts the rate limit to 5000/hour</label>
+        <input
+          id="token-input"
+          class="control"
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="paste a read-only token"
+        />
+        <div class="auth-actions">
+          <button id="token-save" type="button">Save</button>
+          <button id="token-clear" type="button">Sign out</button>
+        </div>
+        <p class="auth-note">
+          Stored only in this browser; sent only to api.github.com. Use a
+          <a
+            href="https://github.com/settings/personal-access-tokens/new"
+            target="_blank"
+            rel="noopener noreferrer"
+            >fine-grained, read-only token</a
+          >
+          (Contents + Metadata: read).
+        </p>
+      </div>
     </header>
 
     <main id="content">
@@ -900,6 +975,7 @@
         intervalKey: "ajh-ci-dash-interval",
         collapsedKey: "ajh-ops-collapsed",
         activeSectionKey: "ajh-ops-active-section",
+        tokenKey: "ajh-ops-gh-token",
         cacheTtl: 4 * 60000,
         analyticsTtl: 20 * 60000,
         staleDays: 14,
@@ -971,6 +1047,10 @@
         charts: {},
         chartDetails: {},
         collapsed: loadJson(CONFIG.collapsedKey, {}),
+        // Optional GitHub token (read-only PAT). Stored only in this browser's
+        // localStorage and sent only to api.github.com. Lifts the rate limit
+        // from 60 → 5000 req/hour. Empty string = anonymous (the default).
+        token: localStorage.getItem(CONFIG.tokenKey) || "",
       };
 
       // Utilities
@@ -1110,9 +1190,9 @@
         }
 
         try {
-          const response = await fetch(CONFIG.api + path, {
-            headers: { Accept: "application/vnd.github+json" },
-          });
+          const headers = { Accept: "application/vnd.github+json" };
+          if (state.token) headers.Authorization = `Bearer ${state.token}`;
+          const response = await fetch(CONFIG.api + path, { headers });
           updateRateLimit(response.headers);
 
           if (response.status === 202) {
@@ -2388,8 +2468,48 @@
         }
       }
 
+      function renderAuth() {
+        const authed = !!state.token;
+        const btn = el("auth-btn");
+        btn.textContent = authed ? "🔑 Signed in" : "🔑 Sign in";
+        btn.classList.toggle("authed", authed);
+      }
+
       function wireEvents() {
         el("refresh").addEventListener("click", () => refresh(true));
+
+        // Optional GitHub token — raises the API rate limit. Token never leaves
+        // localStorage except as a Bearer header to api.github.com.
+        const authBtn = el("auth-btn");
+        const authPanel = el("auth-panel");
+        const tokenInput = el("token-input");
+        authBtn.addEventListener("click", () => {
+          if (authPanel.hasAttribute("hidden")) {
+            tokenInput.value = state.token;
+            authPanel.removeAttribute("hidden");
+            tokenInput.focus();
+          } else {
+            authPanel.setAttribute("hidden", "");
+          }
+        });
+        el("token-save").addEventListener("click", () => {
+          const value = tokenInput.value.trim();
+          state.token = value;
+          if (value) localStorage.setItem(CONFIG.tokenKey, value);
+          else localStorage.removeItem(CONFIG.tokenKey);
+          authPanel.setAttribute("hidden", "");
+          renderAuth();
+          refresh(true);
+        });
+        el("token-clear").addEventListener("click", () => {
+          state.token = "";
+          localStorage.removeItem(CONFIG.tokenKey);
+          tokenInput.value = "";
+          authPanel.setAttribute("hidden", "");
+          renderAuth();
+          refresh(true);
+        });
+        renderAuth();
         el("global-search").addEventListener("input", (event) => {
           state.search = event.target.value;
           if (state.model) render(state.model);
