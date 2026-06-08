@@ -1031,6 +1031,8 @@
       "exportCoverLetter": "Cover Letter",
       "applied": "Applied",
       "openPosting": "Open posting",
+      "keywords": "Keywords",
+      "actions": "Actions",
       "deleteTitle": "Delete this document?",
       "deleteDescription": "This permanently removes the generated resume and cover letter. This can't be undone.",
       "companyResearch": "Company research",

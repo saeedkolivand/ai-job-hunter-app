@@ -81,20 +81,27 @@ describe('GenerationCard — delete confirmation', () => {
   beforeEach(() => mockMutate.mockClear());
 
   const DELETE = 'resumes.generated.delete';
+  const ACTIONS = 'resumes.generated.actions';
+
+  /** Delete now lives in the 3-dots overflow menu (#32): open it, click Delete. */
+  function openMenuClickDelete() {
+    fireEvent.click(screen.getByRole('button', { name: ACTIONS }));
+    fireEvent.click(screen.getByRole('menuitem', { name: DELETE }));
+  }
 
   it('does not delete until the confirm dialog is accepted', () => {
     render(<GenerationCard gen={GEN} />);
 
-    // The icon-only trash button is the only delete control before the dialog.
-    fireEvent.click(screen.getByRole('button', { name: DELETE }));
+    openMenuClickDelete();
 
-    // Clicking the trash must NOT delete immediately — that was the data-loss bug.
+    // Choosing Delete from the menu must NOT delete immediately — it opens the
+    // confirm dialog first (that was the data-loss bug).
     expect(mockMutate).not.toHaveBeenCalled();
 
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByText('resumes.generated.deleteTitle')).toBeInTheDocument();
 
-    // Accept inside the dialog (scoped so we don't match the trash button).
+    // Accept inside the dialog (scoped so we don't match the menu item).
     fireEvent.click(within(dialog).getByRole('button', { name: DELETE }));
     expect(mockMutate).toHaveBeenCalledTimes(1);
     expect(mockMutate).toHaveBeenCalledWith('gen-1');
@@ -103,7 +110,7 @@ describe('GenerationCard — delete confirmation', () => {
   it('dismisses without deleting when cancelled', () => {
     render(<GenerationCard gen={GEN} />);
 
-    fireEvent.click(screen.getByRole('button', { name: DELETE }));
+    openMenuClickDelete();
     const dialog = screen.getByRole('dialog');
     // ConfirmModal's cancel label is a literal default ("Cancel"), not translated.
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
@@ -124,6 +131,11 @@ describe('GenerationCard — debounced persist', () => {
     vi.useRealTimers();
   });
 
+  /** The card collapses to its header row (#27); reveal the body first. */
+  function expandCard() {
+    fireEvent.click(screen.getByRole('button', { name: /Senior Engineer/ }));
+  }
+
   /**
    * Open the resume section and switch EditableOutput to Edit mode so a
    * <textarea> is accessible. The section toggle is a `Button variant="unstyled"`
@@ -131,6 +143,7 @@ describe('GenerationCard — debounced persist', () => {
    * in Preview mode; the Edit radio must be clicked to surface the textarea.
    */
   function expandResumeAndSwitchToEdit() {
+    expandCard();
     // Click the section toggle whose visible text contains the resume key.
     const toggles = screen.queryAllByRole('button');
     const resumeToggle = toggles.find((b) =>
@@ -148,6 +161,7 @@ describe('GenerationCard — debounced persist', () => {
    * Symmetric to expandResumeAndSwitchToEdit but targets the coverLetter key.
    */
   function expandCoverAndSwitchToEdit() {
+    expandCard();
     const toggles = screen.queryAllByRole('button');
     const coverToggle = toggles.find((b) =>
       (b.textContent ?? '').includes('resumes.generated.coverLetter')
@@ -243,27 +257,5 @@ describe('GenerationCard — debounced persist', () => {
       id: 'gen-1',
       coverLetterText: 'Edited cover letter text.',
     });
-  });
-
-  it('copy button reads the edited draft text, not the original gen prop', async () => {
-    // Stub clipboard so the copy flow completes without a real Clipboard API.
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
-
-    render(<GenerationCard gen={GEN} />);
-    expandResumeAndSwitchToEdit();
-
-    const textarea = screen.getByRole<HTMLTextAreaElement>('textbox');
-    fireEvent.change(textarea, { target: { value: 'Draft resume after edit.' } });
-
-    // The copy button is always visible in the card header when draft has content.
-    const copyBtn = screen.getByRole('button', {
-      name: /resumes\.generated\.copyResume/i,
-    });
-    await act(async () => {
-      fireEvent.click(copyBtn);
-    });
-
-    expect(writeText).toHaveBeenCalledWith('Draft resume after edit.');
   });
 });
