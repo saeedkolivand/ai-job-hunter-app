@@ -225,6 +225,7 @@ CHANGELOG.md
 target/llvm-cov/
 .mcp.json
 graphify-out/
+.codegraph/
 
 post-checkout
 post-commit

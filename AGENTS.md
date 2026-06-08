@@ -4,6 +4,15 @@ Rules enforced by ESLint, TypeScript, and CI. Violations fail the build.
 
 ---
 
+## Auto-Invoked Skills (on by default — no slash command)
+
+Active automatically every session; invoke via the Skill tool without waiting for the slash command.
+
+- **caveman** — ultra-terse output, every response. Keep all technical substance, code blocks, and exact error text; drop filler/articles/pleasantries. Honor the auto-clarity exception (security warnings, irreversible-action confirmations, multi-step sequences), then resume. Off only on `stop caveman` / `normal mode`. Source: `~/.claude/skills/caveman`.
+- **grill-with-docs** — before presenting any non-trivial plan/design (incl. before `ExitPlanMode`), first stress-test it against the repo domain model + ADRs, one question at a time. Skip for trivial / one-line / docs changes. Source: `~/.claude/skills/grill-with-docs`.
+
+---
+
 ## Path Privacy
 
 - Never expose real local file system paths
@@ -98,6 +107,16 @@ If branch is gone: `rtk git checkout main && rtk git pull origin main`.
 `feat:` → minor, `fix:`/`perf:` → patch, `BREAKING CHANGE` footer → major.
 Never manually tag releases or edit CHANGELOG.md.
 Commit subject must be **lowercase** (commitlint `subject-case`) — lowercase acronyms too (`url`, `api`, `docx`). Subject ≤ 100 chars; body lines ≤ 200.
+
+---
+
+## Code graphs (codegraph + graphify)
+
+Two complementary indexes for codebase questions — prefer them over raw `rg`/`fd`.
+
+- **codegraph** — deterministic, zero-token structural index (SQLite at `.codegraph/`, auto-synced via watcher). Use for structural facts: `codegraph callers/callees/impact <symbol>`, `codegraph query <search>`. Wired as an MCP server in `.mcp.json`; via MCP prefer the `codegraph_explore` tool first.
+- **graphify** — semantic / cross-document graph (`graphify-out/`). Use for meaning, rationale, architecture narrative: `graphify query/explain/path`. After code changes: `graphify update .`.
+- Routing: structural (symbols / calls / imports / impact) → **codegraph**; meaning / rationale / cross-doc synthesis → **graphify**; raw `rg`/`fd` only when neither has the answer.
 
 ---
 
