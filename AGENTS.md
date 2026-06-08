@@ -132,5 +132,7 @@ You cannot invoke those Claude Code sub-agents directly, but **follow the same c
 - Per-change flow: implement → review pass (HIGH/CRITICAL findings block; ≤ 3 reviewers) →
   tests if logic changed → docs sync last.
 - Only HIGH/CRITICAL findings block; style/naming issues are advisory.
+- Model tiering (agent `model:` frontmatter): **Opus** for correctness-critical (`rust-backend-architect`, `tauri-security-reviewer`, `ai-provider-expert`, `job-match-expert`, `resume-export-expert`); **Sonnet** for balanced implement/review (`frontend-reviewer`, `scraping-applier-expert`, `pdf-docx-generator`, `test-author`, `testing-reviewer`, `performance-profiler`); **Haiku** for mechanical docs (`project-steward`).
+- Effort: extended thinking for architecture / security / concurrency / data-loss; normal for routine UI / docs / config.
 
 Full operating contract: `CLAUDE.md`.

@@ -287,4 +287,14 @@ This repo ships a Claude Code agent system under `.claude/` (tracked) plus a kno
 - **Stop review-gate** (`.claude/hooks/review-gate.mjs`, routed by `.claude/review-routes.json`) — on finish, reviews the diff with the owning agent's checklist: deterministic arch-guards + one batched LLM pass; **only HIGH/CRITICAL block** (architecture-rule violation; untested error/security path on changed code; credential/IPC/updater exploit; data loss/corruption — LOW/MEDIUM are advisory); **≤3 reviewers per task** (Primary Owner → optional risk Secondary), with a separate conditional `test-author → testing-reviewer` stage. It **blocks once per finish-chain**, then lets the next finish through — run a `/review-*` command for a second enforced pass — and is **inert in plan mode** (empty diff). It never edits tracked files; a stale-docs finding is advisory → `/update-docs`.
 - **Lessons** (`.claude/hooks/lessons.mjs` → `.claude/memory/lessons.jsonl`, local) — distilled experiential memory; **only `project-steward` writes** (others propose via `LESSON · category · Context/Decision/Outcome`).
 
+### Model & effort tiering
+
+Agents are model-tiered by task difficulty (each agent's `model:` frontmatter):
+
+- **Opus** — correctness / reasoning-critical: `rust-backend-architect`, `tauri-security-reviewer`, `ai-provider-expert`, `job-match-expert`, `resume-export-expert`.
+- **Sonnet** — balanced implement/review: `frontend-reviewer`, `scraping-applier-expert`, `pdf-docx-generator`, `test-author`, `testing-reviewer`, `performance-profiler`.
+- **Haiku** — mechanical: `project-steward` (docs / lessons sync).
+
+Effort (thinking budget) tracks the same axis: extended thinking ("think hard" / "ultrathink") for architecture, security, concurrency, data-loss, and cross-module work; normal effort for routine UI, docs, config, and renames. Override per spawn with the Agent tool's `model` parameter when a task is unusually hard or trivial.
+
 **Context-source priority for codebase questions: codegraph (structural) / graphify (semantic) → source (authoritative) → `docs/knowledge/` → lessons.** Read the minimum; stop at ~90% confidence. `docs/knowledge/` is thin pointers into source/docs — keep it that way (no copied literals; point at the owning symbol). `project-steward` keeps it in sync.
