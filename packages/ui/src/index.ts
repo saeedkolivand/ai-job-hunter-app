@@ -16,6 +16,11 @@ export {
 
 // ── Primitives ────────────────────────────────────────────────────────────
 export { Accordion, type AccordionProps } from './components/Accordion/index';
+export {
+  ActionMenu,
+  type ActionMenuItem,
+  type ActionMenuProps,
+} from './components/ActionMenu/index';
 export { ActionTile } from './components/ActionTile/index';
 export { Button, type ButtonProps } from './components/Button/index';
 export {
