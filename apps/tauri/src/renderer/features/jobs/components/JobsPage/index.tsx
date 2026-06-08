@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { PostingRow } from '@/features/jobs/components/PostingRow';
 import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
+import type { ScrapeFormState } from '@/features/jobs/components/ScrapeForm/constants';
 import { useFormatRelativeTime } from '@/features/jobs/hooks/useFormatRelativeTime';
 import { useScraping } from '@/features/jobs/hooks/useScraping';
 import type { JobEvent, Posting } from '@/features/jobs/types';
@@ -33,10 +34,11 @@ export function JobsPage() {
   const setFilter = (v: string) => setJobs({ filter: v });
   const setSortBy = (v: 'newest' | 'oldest' | 'company') => setJobs({ sortBy: v });
   const [showScrapeForm, setShowScrapeForm] = useState(false);
-  const [scrapeForm, setScrapeForm] = useState({
+  const [scrapeForm, setScrapeForm] = useState<ScrapeFormState>({
     board: 'linkedin',
     query: '',
     location: '',
+    radiusKm: 0,
     pages: 1,
     dateFilter: '' as '' | (typeof DATE_FILTER_OPTIONS)[number],
     locale: 'us',

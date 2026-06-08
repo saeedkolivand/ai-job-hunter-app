@@ -24,6 +24,10 @@ interface ScrapeForm {
   board: string;
   query: string;
   location: string;
+  countryCode?: string;
+  latitude?: number;
+  longitude?: number;
+  radiusKm: number;
   pages: number;
   dateFilter: '' | (typeof DATE_FILTER_OPTIONS)[number];
   locale: string;
@@ -94,6 +98,10 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
       board: scrapeForm.board,
       query: scrapeForm.query,
       ...(scrapeForm.location ? { location: scrapeForm.location } : {}),
+      ...(scrapeForm.countryCode ? { countryCode: scrapeForm.countryCode } : {}),
+      ...(scrapeForm.latitude != null ? { latitude: scrapeForm.latitude } : {}),
+      ...(scrapeForm.longitude != null ? { longitude: scrapeForm.longitude } : {}),
+      ...(scrapeForm.radiusKm > 0 ? { radiusKm: scrapeForm.radiusKm } : {}),
       pages: scrapeForm.pages,
       ...(scrapeForm.dateFilter ? { dateFilter: scrapeForm.dateFilter } : {}),
       ...(scrapeForm.board === 'indeed' ? { locale: scrapeForm.locale } : {}),

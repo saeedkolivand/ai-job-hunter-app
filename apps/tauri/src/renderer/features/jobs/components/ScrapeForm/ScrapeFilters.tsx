@@ -33,6 +33,14 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
         <LocationInput
           value={form.location}
           onChange={(v) => onFormChange({ location: v })}
+          onSelectSuggestion={(s) =>
+            onFormChange({
+              location: s.display,
+              countryCode: s.countryCode ?? undefined,
+              latitude: s.lat ?? undefined,
+              longitude: s.lon ?? undefined,
+            })
+          }
           placeholder={t('jobs.locationPlaceholder')}
           disabled={scraping}
           onFetchSuggestions={onGeocode}
@@ -87,6 +95,18 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
               fallback={1}
               value={form.pages}
               onChange={(n) => onFormChange({ pages: n })}
+              disabled={scraping}
+              className="w-full bg-white/[0.03] text-xs text-foreground disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <label className={LABEL}>{t('jobs.radius')}</label>
+            <NumberField
+              min={0}
+              max={200}
+              fallback={0}
+              value={form.radiusKm}
+              onChange={(n) => onFormChange({ radiusKm: n })}
               disabled={scraping}
               className="w-full bg-white/[0.03] text-xs text-foreground disabled:opacity-50"
             />

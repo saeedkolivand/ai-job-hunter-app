@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 
 interface Suggestion {
   display: string;
+  lat?: number | null;
+  lon?: number | null;
+  countryCode?: string | null;
 }
 
 async function defaultFetch(query: string): Promise<Suggestion[]> {
