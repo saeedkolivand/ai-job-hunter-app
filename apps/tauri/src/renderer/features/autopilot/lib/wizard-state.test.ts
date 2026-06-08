@@ -101,7 +101,6 @@ describe('autopilotToWizardState()', () => {
     expect(state.schedule).toBe('daily');
     expect(state.minMatchScore).toBe(60);
     expect(state.resumeText).toBe('My resume text');
-    expect(state.coverLetter).toBe('My cover letter');
   });
 
   it('joins keywords array to a comma-separated string', () => {

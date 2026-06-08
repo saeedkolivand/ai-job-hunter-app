@@ -104,7 +104,7 @@ export function ReferralModal({ job, resume, onClose }: Props) {
       open
       onClose={onClose}
       maxWidth="max-w-lg"
-      // Second-layer modal opened from ApplyJobModal — sit above the default
+      // Second-layer modal opened from the ApplyPage — sit above the default
       // modal layer (600) so it never renders under its parent.
       zIndex={650}
       ariaLabelledby="referral-modal-title"

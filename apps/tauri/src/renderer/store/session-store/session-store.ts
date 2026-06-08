@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+import type { AutopilotFoundJob } from '@ajh/shared';
+
 import type { WizardState } from '@/features/autopilot/types';
 import type { GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate';
 import type { AnalysisResult } from '@/lib/resume-ai';
@@ -63,6 +65,15 @@ interface SettingsSlice {
   activeSection: SettingsSection;
 }
 
+/** The found job + its autopilot context, opened on the dedicated apply page (#51). */
+export interface AutopilotApplyTarget {
+  job: AutopilotFoundJob;
+  /** The autopilot's base resume, pre-filled on the apply page. */
+  resumeText?: string;
+  /** The board the job came from — stored on the saved application record. */
+  board: string;
+}
+
 interface AutopilotSlice {
   creating: boolean;
   // Set when the wizard is editing an existing autopilot; null when creating.
@@ -72,6 +83,9 @@ interface AutopilotSlice {
   // Set by a tray "New jobs" click / deep link to auto-expand & scroll to a
   // card's found-jobs; the card clears it once handled.
   focusedId: string | null;
+  // Set when the user opens the dedicated apply page for a found job (#51);
+  // cleared on Back. Null shows the autopilot list.
+  apply: AutopilotApplyTarget | null;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -131,7 +145,14 @@ export const useSessionStore = create<SessionState>((set) => ({
   jobs: { filter: '', sortBy: 'newest' },
   resumes: { tab: 'resumes', filter: '' },
   settings: { activeSection: 'general' },
-  autopilot: { creating: false, editingId: null, wizardStep: 0, wizardForm: null, focusedId: null },
+  autopilot: {
+    creating: false,
+    editingId: null,
+    wizardStep: 0,
+    wizardForm: null,
+    focusedId: null,
+    apply: null,
+  },
 
   setAIGenerate: (patch) => set((s) => ({ aiGenerate: { ...s.aiGenerate, ...patch } })),
   resetAIGenerate: () => set({ aiGenerate: { ...AI_GENERATE_DEFAULTS } }),

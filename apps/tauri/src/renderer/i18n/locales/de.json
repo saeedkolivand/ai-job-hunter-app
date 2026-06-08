@@ -666,6 +666,7 @@
       "interrupted": "Unterbrochen"
     },
     "apply": {
+      "back": "Zurück zum Autopilot",
       "jobDescription": "Stellenbeschreibung",
       "noDescription": "Für diesen Job wurde keine Beschreibung erfasst.",
       "loadFailed": "Diese Anzeige konnte nicht geladen werden — sie ist möglicherweise geschlossen oder erfordert eine Anmeldung.",
@@ -799,11 +800,7 @@
         "subtitle": "Autopilot findet und bewertet passende Jobs und benachrichtigt Sie — Sie bewerben sich mit dem Anschreib-Assistenten.",
         "flowFind": "Findet und bewertet Jobs, die zu Ihrer Suche passen, im von Ihnen gewählten Zeitplan.",
         "flowNotify": "Zeigt neue Treffer in der Gefundene-Jobs-Liste an (und benachrichtigt Sie).",
-        "flowTailor": "Öffnen Sie einen Treffer und der Assistent passt Lebenslauf und Anschreiben dafür an — Sie senden die Bewerbung selbst. Autopilot bewirbt sich nie für Sie.",
-        "coverLetter": "Basis-Anschreiben",
-        "coverLetterOptional": "(optional)",
-        "coverLetterHint": "Wird als Ausgangspunkt verwendet, den der Assistent an jeden Job anpasst.",
-        "coverLetterPlaceholder": "Basis-Anschreiben hinzufügen, das der Assistent pro Job anpasst…"
+        "flowTailor": "Öffnen Sie einen Treffer und der Assistent passt Lebenslauf und Anschreiben dafür an — Sie senden die Bewerbung selbst. Autopilot bewirbt sich nie für Sie."
       },
       "schedule": {
         "title": "Wie oft soll dies laufen?",

@@ -14,8 +14,6 @@ export interface WizardState {
   keywords: string;
   excludeKeywords: string;
   resumeText: string;
-  // Step 3 — Apply assistant (optional base cover letter the assistant tailors)
-  coverLetter: string;
   // Step 4 — Schedule
   schedule: AutopilotSchedule;
   /** Local clock hour (0–23) recurring schedules fire at. Used by daily/twice_daily. */

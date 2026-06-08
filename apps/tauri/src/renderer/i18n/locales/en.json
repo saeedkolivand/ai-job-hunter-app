@@ -681,6 +681,7 @@
       "interrupted": "Interrupted"
     },
     "apply": {
+      "back": "Back to autopilot",
       "jobDescription": "Job description",
       "noDescription": "No description was captured for this job.",
       "loadFailed": "Couldn't load this posting — it may be closed or require sign-in.",
@@ -814,11 +815,7 @@
         "subtitle": "Autopilot finds and ranks matching jobs, then notifies you — you apply with the tailoring assistant.",
         "flowFind": "Finds and ranks jobs matching your search on the schedule you choose.",
         "flowNotify": "Surfaces new matches in the found-jobs list (and notifies you).",
-        "flowTailor": "Open a match and the assistant tailors your résumé and cover letter for it — you submit it yourself. Autopilot never applies for you.",
-        "coverLetter": "Base cover letter",
-        "coverLetterOptional": "(optional)",
-        "coverLetterHint": "Reused as the starting point the assistant tailors to each job.",
-        "coverLetterPlaceholder": "Add a base cover letter the assistant tailors per job…"
+        "flowTailor": "Open a match and the assistant tailors your résumé and cover letter for it — you submit it yourself. Autopilot never applies for you."
       },
       "schedule": {
         "title": "How often should this run?",

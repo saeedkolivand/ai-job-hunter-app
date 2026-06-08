@@ -29,8 +29,6 @@ import { type AutopilotRunState, RUN_STATE_LABEL } from '@/lib/machines/autopilo
 import { timeAgo } from '@/lib/time';
 import { useOpenExternal } from '@/services';
 
-import { ApplyJobModal } from '../ApplyJobModal';
-
 interface StepLog {
   step: string;
   detail: string;
@@ -49,6 +47,8 @@ interface AutopilotCardProps {
   onTogglePause(): void;
   onEdit(): void;
   onDelete(): void;
+  /** Open the dedicated apply page for a found job (#51). */
+  onApply(job: AutopilotFoundJob): void;
 }
 
 const STEP_ICON: Record<string, string> = {
@@ -69,13 +69,13 @@ export function AutopilotCard({
   onTogglePause,
   onEdit,
   onDelete,
+  onApply,
 }: AutopilotCardProps) {
   const paused = ap.status === 'paused';
   const running = runState === 'scraping' || runState === 'ranking';
   const { t, i18n } = useTranslation();
   const openExternal = useOpenExternal();
   const [showFound, setShowFound] = useState(false);
-  const [applyJob, setApplyJob] = useState<AutopilotFoundJob | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
   const foundJobs = ap.foundJobs ?? [];
@@ -298,7 +298,7 @@ export function AutopilotCard({
                       <ExternalLink size={11} className="shrink-0 text-foreground/25" />
                     </Button>
                     <Button
-                      onClick={() => setApplyJob(job)}
+                      onClick={() => onApply(job)}
                       title={t('autopilot.applyJob')}
                       className="flex shrink-0 items-center gap-1 rounded-lg border-transparent bg-brand/10 px-2 py-1 text-[10px] font-medium text-brand-soft transition-colors hover:bg-brand/20 h-auto"
                     >
@@ -311,16 +311,6 @@ export function AutopilotCard({
           </motion.div>
         )}
       </AnimatePresence>
-
-      {applyJob && (
-        <ApplyJobModal
-          job={applyJob}
-          resumeText={ap.resumeText}
-          baseCoverLetter={ap.coverLetter}
-          board={ap.target.board}
-          onClose={() => setApplyJob(null)}
-        />
-      )}
 
       <ConfirmModal
         open={confirmDelete}
