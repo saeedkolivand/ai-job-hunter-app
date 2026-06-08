@@ -14,10 +14,19 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { Autopilot, AutopilotFoundJob } from '@ajh/shared';
-import { Button, cn, ConfirmModal, GlassCard, transition } from '@ajh/ui';
+import {
+  ActionMenu,
+  type ActionMenuItem,
+  Button,
+  cn,
+  ConfirmModal,
+  GlassCard,
+  transition,
+} from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 import { type AutopilotRunState, RUN_STATE_LABEL } from '@/lib/machines/autopilot-run.machine';
+import { timeAgo } from '@/lib/time';
 import { useOpenExternal } from '@/services';
 
 import { ApplyJobModal } from '../ApplyJobModal';
@@ -63,7 +72,7 @@ export function AutopilotCard({
 }: AutopilotCardProps) {
   const paused = ap.status === 'paused';
   const running = runState === 'scraping' || runState === 'ranking';
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const openExternal = useOpenExternal();
   const [showFound, setShowFound] = useState(false);
   const [applyJob, setApplyJob] = useState<AutopilotFoundJob | null>(null);
@@ -80,9 +89,32 @@ export function AutopilotCard({
     onFocusHandled?.();
   }, [focused, onFocusHandled]);
 
+  // #45 — relative last-run ("3 min ago") instead of an absolute timestamp.
   const lastRun = ap.lastRunAt
-    ? new Date(ap.lastRunAt).toLocaleString()
+    ? timeAgo(ap.lastRunAt, Date.now(), i18n.language)
     : t('autopilot.wizard.never');
+
+  // #46 — secondary controls collapse into a 3-dots overflow menu; Run stays a
+  // primary button. Edit is locked while a run is in flight.
+  const actionItems: ActionMenuItem[] = [
+    {
+      label: paused ? t('autopilot.resume') : t('autopilot.pause'),
+      icon: paused ? <Play size={14} /> : <Pause size={14} />,
+      onSelect: onTogglePause,
+    },
+    {
+      label: t('autopilot.edit'),
+      icon: <Pencil size={14} />,
+      onSelect: onEdit,
+      disabled: running,
+    },
+    {
+      label: t('autopilot.delete'),
+      icon: <Trash2 size={14} />,
+      onSelect: () => setConfirmDelete(true),
+      destructive: true,
+    },
+  ];
 
   return (
     <GlassCard className="flex flex-col gap-3">
@@ -170,29 +202,7 @@ export function AutopilotCard({
               {foundJobs.length}
             </Button>
           )}
-          <Button
-            onClick={onTogglePause}
-            className="rounded-lg p-1.5 text-foreground/40 hover:bg-white/[0.06] hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
-          >
-            {paused ? <Play size={13} /> : <Pause size={13} />}
-          </Button>
-          <Button
-            onClick={onEdit}
-            disabled={running}
-            aria-label={t('autopilot.edit')}
-            title={t('autopilot.edit')}
-            className="rounded-lg p-1.5 text-foreground/40 hover:bg-white/[0.06] hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent disabled:opacity-40"
-          >
-            <Pencil size={13} />
-          </Button>
-          <Button
-            onClick={() => setConfirmDelete(true)}
-            aria-label={t('autopilot.delete')}
-            title={t('autopilot.delete')}
-            className="rounded-lg p-1.5 text-foreground/30 hover:bg-red-400/10 hover:text-red-400/70 transition-colors h-auto bg-transparent border-transparent"
-          >
-            <Trash2 size={13} />
-          </Button>
+          <ActionMenu label={t('autopilot.actions')} items={actionItems} />
         </div>
       </div>
 

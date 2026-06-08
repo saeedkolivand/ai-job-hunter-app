@@ -26,8 +26,13 @@ function AutopilotPage() {
   const { runStates, stepLogs, error, setError, handleRun, handleTogglePause, handleDelete } =
     useAutopilotRun();
 
-  const handleCreated = (_ap: Autopilot) => {
+  const handleCreated = (ap: Autopilot) => {
+    // #44 — kick off the first run immediately after *creating* a new autopilot
+    // (not when editing an existing one). Read editingId before resetWizard
+    // clears it. handleRun surfaces a friendly inline error if no browser.
+    const wasCreate = autopilot.editingId === null;
     resetWizard();
+    if (wasCreate) void handleRun(ap._id);
   };
 
   const handleEdit = (ap: Autopilot) => {
