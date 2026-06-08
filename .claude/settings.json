@@ -26,6 +26,17 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/style-policy.mjs",
+            "timeout": 5000
+          }
+        ]
+      }
     ]
   }
 }
