@@ -9,6 +9,9 @@ import { LocationDropdown } from '../LocationDropdown';
 
 interface Suggestion {
   display: string;
+  lat?: number | null;
+  lon?: number | null;
+  countryCode?: string | null;
 }
 
 export interface LocationInputProps {
@@ -18,6 +21,13 @@ export interface LocationInputProps {
   disabled?: boolean;
   className?: string;
   onFetchSuggestions?: (query: string) => Promise<Suggestion[]>;
+  /**
+   * Fires when a value is committed (suggestion picked, custom text, or cleared)
+   * with the full structured suggestion — lets callers capture country/coords
+   * for precise downstream filtering (#49/#40). A cleared/typed value carries
+   * only `display`.
+   */
+  onSelectSuggestion?: (suggestion: Suggestion) => void;
 }
 
 export function LocationInput({
@@ -27,6 +37,7 @@ export function LocationInput({
   disabled,
   className,
   onFetchSuggestions,
+  onSelectSuggestion,
 }: LocationInputProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -63,14 +74,16 @@ export function LocationInput({
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  const select = (display: string) => {
-    onChange(display);
+  const select = (suggestion: Suggestion) => {
+    onChange(suggestion.display);
+    onSelectSuggestion?.(suggestion);
     setOpen(false);
   };
 
   const clear = (e: React.MouseEvent) => {
     e.stopPropagation();
     onChange('');
+    onSelectSuggestion?.({ display: '' });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -84,9 +97,9 @@ export function LocationInput({
       const s = activeIndex >= 0 ? suggestions[activeIndex] : null;
       if (s) {
         e.preventDefault();
-        select(s.display);
+        select(s);
       } else if (query.trim()) {
-        select(query.trim());
+        select({ display: query.trim() });
       }
     } else if (e.key === 'Escape') {
       setOpen(false);

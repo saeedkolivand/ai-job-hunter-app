@@ -16,6 +16,11 @@ export {
 
 // ── Primitives ────────────────────────────────────────────────────────────
 export { Accordion, type AccordionProps } from './components/Accordion/index';
+export {
+  ActionMenu,
+  type ActionMenuItem,
+  type ActionMenuProps,
+} from './components/ActionMenu/index';
 export { ActionTile } from './components/ActionTile/index';
 export { Button, type ButtonProps } from './components/Button/index';
 export {
@@ -29,6 +34,7 @@ export { IconText } from './components/IconText/index';
 export { Input, type InputProps } from './components/Input/index';
 export { LocationInput, type LocationInputProps } from './components/LocationInput/index';
 export { NumberField, type NumberFieldProps } from './components/NumberField/index';
+export { OptionalHint, type OptionalHintProps } from './components/OptionalHint/index';
 export { ProgressBar, type ProgressBarProps } from './components/ProgressBar/index';
 export { RefreshButton } from './components/RefreshButton/index';
 export { SectionHeader } from './components/SectionHeader/index';

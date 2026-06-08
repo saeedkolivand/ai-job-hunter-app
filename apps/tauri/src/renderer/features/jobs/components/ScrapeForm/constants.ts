@@ -4,7 +4,14 @@ export interface ScrapeFormState {
   board: string;
   query: string;
   location: string;
-  pages: number;
+  /** Structured location captured from a picked geocode suggestion (#49/#40). */
+  countryCode?: string;
+  latitude?: number;
+  longitude?: number;
+  /** Search radius in km; 0 = exact location (no radius). */
+  radiusKm: number;
+  /** Target number of jobs to fetch (#41); mapped to scraper pages on submit. */
+  amount: number;
   dateFilter: '' | (typeof DATE_FILTER_OPTIONS)[number];
   locale: string;
 }

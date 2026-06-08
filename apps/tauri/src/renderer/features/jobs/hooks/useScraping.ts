@@ -24,7 +24,11 @@ interface ScrapeForm {
   board: string;
   query: string;
   location: string;
-  pages: number;
+  countryCode?: string;
+  latitude?: number;
+  longitude?: number;
+  radiusKm: number;
+  amount: number;
   dateFilter: '' | (typeof DATE_FILTER_OPTIONS)[number];
   locale: string;
 }
@@ -89,19 +93,30 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
     }
   };
 
-  const doScrape = async () => {
+  // The scrapers paginate in ~25-result pages; map the requested job count to a
+  // page budget (#41), clamped to the backend's allowed range.
+  const jobsToPages = (amount: number) => Math.min(Math.max(Math.ceil(amount / 25), 1), 20);
+
+  const doScrape = async (amount: number) => {
     const res = (await scrapeBoard.mutateAsync({
       board: scrapeForm.board,
       query: scrapeForm.query,
       ...(scrapeForm.location ? { location: scrapeForm.location } : {}),
-      pages: scrapeForm.pages,
+      ...(scrapeForm.countryCode ? { countryCode: scrapeForm.countryCode } : {}),
+      ...(scrapeForm.latitude != null ? { latitude: scrapeForm.latitude } : {}),
+      ...(scrapeForm.longitude != null ? { longitude: scrapeForm.longitude } : {}),
+      ...(scrapeForm.radiusKm > 0 ? { radiusKm: scrapeForm.radiusKm } : {}),
+      pages: jobsToPages(amount),
       ...(scrapeForm.dateFilter ? { dateFilter: scrapeForm.dateFilter } : {}),
       ...(scrapeForm.board === 'indeed' ? { locale: scrapeForm.locale } : {}),
     } as Parameters<typeof scrapeBoard.mutateAsync>[0])) as { jobId: string; error?: string };
     return res;
   };
 
-  const startScrape = async () => {
+  const startScrape = async (amountOverride?: number) => {
+    // "Show more" (#36) re-runs with a larger amount; the search signature is
+    // unchanged so scraped postings are NOT cleared and the extra pages append.
+    const amount = amountOverride ?? scrapeForm.amount;
     setScrapeOutcome(null);
     setScraping(true);
     setLivePostings([]);
@@ -136,7 +151,7 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
     }
 
     try {
-      const res = await doScrape();
+      const res = await doScrape(amount);
 
       if (res.error) {
         setScraping(false);

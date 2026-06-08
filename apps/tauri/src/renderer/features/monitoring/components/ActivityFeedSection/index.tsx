@@ -13,7 +13,7 @@ interface Props {
 
 export function ActivityFeedSection({ activity, t }: Props) {
   return (
-    <GlassCard tone="graphite" highlight className="col-span-3">
+    <GlassCard className="col-span-3">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">

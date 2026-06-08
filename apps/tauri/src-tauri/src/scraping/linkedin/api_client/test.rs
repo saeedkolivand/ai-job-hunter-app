@@ -56,6 +56,8 @@ fn test_jobs_search_params_default() {
         actively_hiring: None,
         verified: None,
         sort_by: None,
+        geo_id: None,
+        distance: None,
     };
     assert_eq!(params.keywords, "rust");
     assert_eq!(params.start, 0);
@@ -75,6 +77,8 @@ fn test_jobs_search_params_with_filters() {
         actively_hiring: Some(true),
         verified: Some(false),
         sort_by: Some("DD".to_string()),
+        geo_id: None,
+        distance: None,
     };
     assert_eq!(params.location, Some("remote".to_string()));
     assert_eq!(params.easy_apply, Some(true));
@@ -106,6 +110,8 @@ fn test_jobs_search_params_with_start() {
         actively_hiring: None,
         verified: None,
         sort_by: None,
+        geo_id: None,
+        distance: None,
     };
     assert_eq!(params.start, 25);
 }
@@ -124,6 +130,8 @@ fn test_jobs_search_params_all_filters_false() {
         actively_hiring: Some(false),
         verified: Some(false),
         sort_by: None,
+        geo_id: None,
+        distance: None,
     };
     assert_eq!(params.easy_apply, Some(false));
     assert_eq!(params.actively_hiring, Some(false));
@@ -143,6 +151,8 @@ fn test_jobs_search_params_clone() {
         actively_hiring: Some(true),
         verified: Some(false),
         sort_by: Some("DD".to_string()),
+        geo_id: None,
+        distance: None,
     };
     let cloned = params.clone();
     assert_eq!(params.keywords, cloned.keywords);
