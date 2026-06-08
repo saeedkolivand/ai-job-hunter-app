@@ -1,0 +1,64 @@
+name: 🎨 Format Guard
+
+# ──────────────────────────────────────────────────────────────────────
+# Format Guard (push to main only)
+# ──────────────────────────────────────────────────────────────────────
+# The main CI Pipeline runs on pull_request only — push to main is
+# intentionally excluded there. That leaves a gap: files edited directly
+# in the GitHub web UI land on main without passing the local pre-commit
+# Prettier hook OR the PR format check, so formatting drift can sneak in
+# (e.g. the README doc-table re-alignment fixed in PR #310).
+#
+# This lightweight guard re-checks Prettier on every push to main and
+# fails loudly if drift landed, so it can be corrected with `pnpm format`.
+# It deliberately does NOT run the heavy pipeline — just Prettier.
+# ──────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: format-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format-guard:
+    name: 🎨 Prettier on main
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Prettier has no plugins here (.prettierrc.json is core-only), so a
+      # pinned npx invocation matches `pnpm format:check` (prettier --check .)
+      # without a full monorepo install. It still reads .prettierrc.json and
+      # .prettierignore from the repo root.
+      - name: 🎨 Check Formatting
+        run: |
+          echo "::group::prettier --check . on main"
+          if ! npx --yes prettier@3.8.3 --check .; then
+            echo "::endgroup::"
+            echo "::error::Formatting drift on main — likely a file edited directly on GitHub (skips the pre-commit Prettier hook). Run 'pnpm format' locally and push the result, or open a quick PR."
+            exit 1
+          fi
+          echo "::endgroup::"
