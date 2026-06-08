@@ -4,6 +4,27 @@ Rules enforced by ESLint, TypeScript, and CI — violations block commits and fa
 
 ---
 
+## Auto-Invoked Skills (on by default — no slash command needed)
+
+These skills are active automatically every session. Invoke them through the **Skill tool** without waiting for the user to type the slash command.
+
+### `caveman` — default output style (always on)
+
+- At the **start of every session**, invoke `Skill(caveman)` and stay in caveman mode for all responses.
+- Ultra-terse: drop articles / filler / pleasantries; keep **all** technical substance, code blocks, and exact error text.
+- Honor the skill's **auto-clarity exception** — switch to normal prose for security warnings, irreversible-action confirmations, and multi-step sequences, then resume caveman.
+- Off-switch: revert to normal prose only when the user says `stop caveman` / `normal mode`.
+- Source: `~/.claude/skills/caveman/SKILL.md`.
+
+### `grill-with-docs` — automatic before any plan is finalized
+
+- Whenever you are about to present a plan, design, or multi-step approach (including before `ExitPlanMode`), first invoke `Skill(grill-with-docs)` to stress-test it against the repo's domain model and documented decisions — one question at a time, with a recommended answer each.
+- Cross-reference terms against the repo glossary / `docs/` + ADRs (`docs/knowledge/`, `docs/PATTERNS.md`, `docs/ARCHITECTURE.md`); sharpen fuzzy language; capture resolved terms inline.
+- Skip only for trivial / one-line / docs-config changes where there is no design decision to grill.
+- Source: `~/.claude/skills/grill-with-docs/SKILL.md`.
+
+---
+
 ## Path Privacy
 
 - Never expose real local file system paths
@@ -225,6 +246,17 @@ Rules:
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
 
+## codegraph (structural code graph)
+
+Deterministic, zero-token code index (SQLite at `.codegraph/`, 968 files indexed via tree-sitter). **Complements graphify** — codegraph answers _structural_ questions, graphify answers _semantic / cross-document_ ones. Installed globally (`@colbymchenry/codegraph`); the watcher auto-syncs the index, so no manual rebuild is normally needed.
+
+Rules:
+
+- "Who calls / what does this call / what breaks if I change X" → codegraph: `codegraph callers <symbol>`, `codegraph callees <symbol>`, `codegraph impact <symbol>`, `codegraph query <search>`. Faster and cheaper than grepping for symbol / call / import / impact lookups.
+- "What is X connected to semantically", concepts spanning code + docs, or architecture narrative → graphify (`graphify query / explain / path`).
+- Routing: structural facts (symbols, calls, imports, impact) → **codegraph**; meaning, rationale, cross-doc synthesis → **graphify**; raw `rg`/`fd` only when neither graph has the answer.
+- Exposed to agents as an MCP server via `.mcp.json` (`codegraph serve --mcp`). When connected, prefer the `codegraph_explore` tool first — the server injects full tool guidance at connect, so no need to duplicate it here. If the index looks stale, run `codegraph sync`.
+
 ## Knowledge base & agent system
 
 This repo ships a Claude Code agent system under `.claude/` (tracked) plus a knowledge base under `docs/knowledge/`.
@@ -255,4 +287,14 @@ This repo ships a Claude Code agent system under `.claude/` (tracked) plus a kno
 - **Stop review-gate** (`.claude/hooks/review-gate.mjs`, routed by `.claude/review-routes.json`) — on finish, reviews the diff with the owning agent's checklist: deterministic arch-guards + one batched LLM pass; **only HIGH/CRITICAL block** (architecture-rule violation; untested error/security path on changed code; credential/IPC/updater exploit; data loss/corruption — LOW/MEDIUM are advisory); **≤3 reviewers per task** (Primary Owner → optional risk Secondary), with a separate conditional `test-author → testing-reviewer` stage. It **blocks once per finish-chain**, then lets the next finish through — run a `/review-*` command for a second enforced pass — and is **inert in plan mode** (empty diff). It never edits tracked files; a stale-docs finding is advisory → `/update-docs`.
 - **Lessons** (`.claude/hooks/lessons.mjs` → `.claude/memory/lessons.jsonl`, local) — distilled experiential memory; **only `project-steward` writes** (others propose via `LESSON · category · Context/Decision/Outcome`).
 
-**Context-source priority for codebase questions: graphify → source (authoritative) → `docs/knowledge/` → lessons.** Read the minimum; stop at ~90% confidence. `docs/knowledge/` is thin pointers into source/docs — keep it that way (no copied literals; point at the owning symbol). `project-steward` keeps it in sync.
+### Model & effort tiering
+
+Agents are model-tiered by task difficulty (each agent's `model:` frontmatter):
+
+- **Opus** — correctness / reasoning-critical: `rust-backend-architect`, `tauri-security-reviewer`, `ai-provider-expert`, `job-match-expert`, `resume-export-expert`.
+- **Sonnet** — balanced implement/review: `frontend-reviewer`, `scraping-applier-expert`, `pdf-docx-generator`, `test-author`, `testing-reviewer`, `performance-profiler`.
+- **Haiku** — mechanical: `project-steward` (docs / lessons sync).
+
+Effort (thinking budget) tracks the same axis: extended thinking ("think hard" / "ultrathink") for architecture, security, concurrency, data-loss, and cross-module work; normal effort for routine UI, docs, config, and renames. Override per spawn with the Agent tool's `model` parameter when a task is unusually hard or trivial.
+
+**Context-source priority for codebase questions: codegraph (structural) / graphify (semantic) → source (authoritative) → `docs/knowledge/` → lessons.** Read the minimum; stop at ~90% confidence. `docs/knowledge/` is thin pointers into source/docs — keep it that way (no copied literals; point at the owning symbol). `project-steward` keeps it in sync.
