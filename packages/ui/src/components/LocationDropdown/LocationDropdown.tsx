@@ -6,6 +6,9 @@ import { transition } from '../../lib/motion';
 
 interface Suggestion {
   display: string;
+  lat?: number | null;
+  lon?: number | null;
+  countryCode?: string | null;
 }
 
 export function LocationDropdown({
@@ -28,7 +31,7 @@ export function LocationDropdown({
   suggestions: Suggestion[];
   activeIndex: number;
   setActiveIndex: (index: number) => void;
-  onSelect: (display: string) => void;
+  onSelect: (suggestion: Suggestion) => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
   dropdownRef: React.RefObject<HTMLDivElement | null>;
   onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
@@ -86,7 +89,7 @@ export function LocationDropdown({
                 type="button"
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  onSelect(trimmed);
+                  onSelect({ display: trimmed });
                 }}
                 onMouseEnter={() => setActiveIndex(-1)}
                 className={cn(
@@ -108,7 +111,7 @@ export function LocationDropdown({
                 type="button"
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  onSelect(s.display);
+                  onSelect(s);
                 }}
                 onMouseEnter={() => setActiveIndex(i)}
                 className={cn(

@@ -109,6 +109,12 @@ export const ScrapeBoardRequestSchema = z.object({
   pages: z.number().int().min(1).max(20).default(1),
   dateFilter: z.enum(DATE_FILTER_OPTIONS).optional(),
   locale: LocaleSchema.optional(),
+  // Structured location (from a picked geocode suggestion) — lets boards filter
+  // by precise place/country/radius instead of fuzzy free text (#49/#40).
+  countryCode: z.string().optional(),
+  latitude: z.number().optional(),
+  longitude: z.number().optional(),
+  radiusKm: z.number().int().min(0).max(200).optional(),
 });
 
 export const ScrapeUrlRequestSchema = z.object({

@@ -4,7 +4,28 @@ import { type ButtonHTMLAttributes, forwardRef } from 'react';
 import { cn } from '../../lib/cn';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'default' | 'glass' | 'ghost' | 'danger' | 'warning' | 'info' | 'success' | 'unstyled';
+  /**
+   * Apple-grammar variants:
+   * - `primary` — the signature solid violet pill CTA (action-primary token).
+   * - `run` / `edit` / `delete` — solid colorful action pills (semantic colour,
+   *   the deliberate divergence from Apple's single-accent rule; tokens only).
+   * - `default` / `glass` / `ghost` — neutral utility buttons (rounded, not pill).
+   * - `danger` / `warning` / `info` / `success` — translucent inline state chips.
+   * - `unstyled` — escape hatch; call site owns the look.
+   */
+  variant?:
+    | 'primary'
+    | 'default'
+    | 'glass'
+    | 'ghost'
+    | 'run'
+    | 'edit'
+    | 'delete'
+    | 'danger'
+    | 'warning'
+    | 'info'
+    | 'success'
+    | 'unstyled';
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
 }
@@ -16,19 +37,37 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     // their own appearance via className. It still routes through this primitive
     // for consistent focus-visible + disabled handling, but injects no chrome.
     const unstyled = variant === 'unstyled';
+    // Filled colorful actions take the signature Apple pill radius; neutral
+    // utility buttons stay on the rounded (≈8px) utility radius.
+    const isPill =
+      variant === 'primary' || variant === 'run' || variant === 'edit' || variant === 'delete';
     return (
       <button
         ref={ref}
         disabled={disabled || loading}
         className={cn(
-          // Base (skipped for `unstyled` — the call site owns layout/look)
+          // Base (skipped for `unstyled` — the call site owns layout/look).
+          // Apple: weight 400 (no 500), scale(0.95) press, pill for filled actions.
           !unstyled && [
-            'inline-flex items-center gap-2 rounded-lg font-medium transition-all duration-150',
-            'active:scale-[0.97]',
+            'inline-flex items-center justify-center gap-2 font-normal transition-all duration-150',
+            isPill ? 'rounded-full' : 'rounded-lg',
+            'active:scale-[0.95]',
           ],
           // Accessibility essentials apply to every variant
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
           'disabled:pointer-events-none disabled:opacity-45',
+
+          // Filled Apple actions — solid colour + white label (tokens only, no hex)
+          variant === 'primary' && [
+            'bg-action-primary text-action-foreground',
+            'hover:brightness-110',
+          ],
+          variant === 'run' && ['bg-action-run text-action-foreground', 'hover:brightness-110'],
+          variant === 'edit' && ['bg-action-edit text-action-foreground', 'hover:brightness-110'],
+          variant === 'delete' && [
+            'bg-action-delete text-action-foreground',
+            'hover:brightness-110',
+          ],
 
           // Variants
           variant === 'ghost' && [

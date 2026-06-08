@@ -13,11 +13,11 @@
      saturated violet/blue. The brand violet survives only in primary/accent/ring
      (the accent), keeping identity without colouring every surface. Surfaces use
      a single cool hue (~285) at very low chroma so the elevation ladder is clean. */
-  --color-background: oklch(20.5% 1% 285); /* #1B1B22 — charcoal, faint cool */
+  --color-background: oklch(21% 0.4% 285); /* #1d1d1f — Apple near-black canvas (neutral) */
   --color-foreground: oklch(97% 0.4% 285);
-  --color-card: oklch(24% 1% 285); /* elevated surfaces read LIGHTER than canvas */
+  --color-card: oklch(25.5% 0.4% 285); /* #272729 — Apple dark tile; elevated reads LIGHTER */
   --color-card-foreground: oklch(97% 0.4% 285);
-  --color-popover: oklch(25% 1% 285);
+  --color-popover: oklch(26.5% 0.4% 285);
   --color-popover-foreground: oklch(97% 0.4% 285);
   --color-primary: oklch(65% 50% 270);
   --color-primary-foreground: oklch(98% 1% 210);
@@ -40,11 +40,103 @@
   --color-brand-dim: oklch(65% 50% 270 / 0.15);
 
   /* Native macOS font (San Francisco) where it exists — it can't be bundled, so
-     it only appears on real macOS via the OS; everyone else gets bundled Inter. */
+     it only appears on real macOS via the OS; everyone else gets bundled Inter.
+     SF Pro is first, so the Apple letter-spacing encoded in the type scale below
+     lands natively; on the Inter fallback the same negative tracking + tight
+     body leading approximate the "Apple tight" cadence (DESIGN-apple.md). */
   --font-sans:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Inter', system-ui,
     'Segoe UI', sans-serif;
   --radius: 0.75rem;
+
+  /* ── Apple type scale (DESIGN-apple.md) ─────────────────────────────────────
+     Authored so body = 1rem; the rem root is 17px by default (see
+     utilities.css `data-text-scale`), so each token renders at Apple's exact px
+     at the default UI size AND grows with the small/large text-size setting.
+     Negative letter-spacing at ≥17px is the signature "Apple tight" cadence.
+     Weight ladder 300/400/600/700 — 500 (font-medium) is intentionally avoided
+     in new UI (see docs/DESIGN_SYSTEM.md). Use as `text-hero-display`,
+     `text-display-lg`, `text-body`, `text-caption`, … */
+  --text-hero-display: 3.294rem; /* 56px */
+  --text-hero-display--line-height: 1.07;
+  --text-hero-display--font-weight: 600;
+  --text-hero-display--letter-spacing: -0.0175em; /* ≈ -0.28px */
+  --text-display-lg: 2.353rem; /* 40px */
+  --text-display-lg--line-height: 1.1;
+  --text-display-lg--font-weight: 600;
+  --text-display-lg--letter-spacing: 0;
+  --text-display-md: 2rem; /* 34px */
+  --text-display-md--line-height: 1.18;
+  --text-display-md--font-weight: 600;
+  --text-display-md--letter-spacing: -0.022em;
+  --text-lead: 1.647rem; /* 28px */
+  --text-lead--line-height: 1.14;
+  --text-lead--font-weight: 400;
+  --text-lead--letter-spacing: 0.007em;
+  --text-lead-airy: 1.412rem; /* 24px — the rare weight 300 */
+  --text-lead-airy--line-height: 1.5;
+  --text-lead-airy--font-weight: 300;
+  --text-lead-airy--letter-spacing: 0;
+  --text-tagline: 1.235rem; /* 21px */
+  --text-tagline--line-height: 1.19;
+  --text-tagline--font-weight: 600;
+  --text-tagline--letter-spacing: 0.011em;
+  --text-body-strong: 1rem; /* 17px */
+  --text-body-strong--line-height: 1.24;
+  --text-body-strong--font-weight: 600;
+  --text-body-strong--letter-spacing: -0.022em;
+  --text-body: 1rem; /* 17px — default paragraph */
+  --text-body--line-height: 1.47;
+  --text-body--font-weight: 400;
+  --text-body--letter-spacing: -0.022em;
+  --text-caption: 0.824rem; /* 14px */
+  --text-caption--line-height: 1.43;
+  --text-caption--font-weight: 400;
+  --text-caption--letter-spacing: -0.016em;
+  --text-caption-strong: 0.824rem; /* 14px */
+  --text-caption-strong--line-height: 1.29;
+  --text-caption-strong--font-weight: 600;
+  --text-caption-strong--letter-spacing: -0.016em;
+  --text-button-large: 1.059rem; /* 18px — the rare weight 300 */
+  --text-button-large--line-height: 1;
+  --text-button-large--font-weight: 300;
+  --text-button-large--letter-spacing: 0;
+  --text-fine-print: 0.706rem; /* 12px */
+  --text-fine-print--line-height: 1.3;
+  --text-fine-print--font-weight: 400;
+  --text-fine-print--letter-spacing: -0.007em;
+  --text-nav-link: 0.706rem; /* 12px */
+  --text-nav-link--line-height: 1;
+  --text-nav-link--font-weight: 400;
+  --text-nav-link--letter-spacing: -0.007em;
+
+  /* ── Apple radius grammar ({rounded.*} in DESIGN-apple.md) ──────────────────
+     Namespaced `--rounded-*` so it does NOT clobber Tailwind's own `--radius-*`
+     scale (the rounded-sm/md/lg utilities). @ajh/ui components map onto these in
+     phase A2 via `border-radius: var(--rounded-…)`. */
+  --rounded-none: 0px;
+  --rounded-xs: 5px;
+  --rounded-sm: 8px;
+  --rounded-md: 11px;
+  --rounded-lg: 18px;
+  --rounded-pill: 9999px;
+  --rounded-full: 9999px;
+
+  /* ── Section rhythm — full-bleed tile vertical padding (80px). Generates
+     p-section / px-section / py-section / gap-section. ─────────────────────── */
+  --spacing-section: 5rem;
+
+  /* ── Colorful action tokens ─────────────────────────────────────────────────
+     Deliberate divergence from Apple's single-accent rule (see plan): violet
+     stays the primary brand identity, but action buttons may carry SEMANTIC
+     color. Token-driven (bg-action-run, text-action-delete, …) so className
+     never needs a raw [#hex] (ESLint). Light overrides below keep them legible
+     on white. */
+  --color-action-primary: var(--color-brand); /* create / generate (violet) */
+  --color-action-run: oklch(64% 0.16 150); /* run / start (green) */
+  --color-action-edit: oklch(62% 0.16 250); /* edit (blue) */
+  --color-action-delete: var(--color-destructive); /* delete (red) */
+  --color-action-foreground: oklch(98% 0.01 270); /* label on a filled action */
 
   /* ── Z-index utilities — use z-overlay, z-modal, z-toast etc. ─────────── */
   --z-index-raised: 10;
@@ -84,7 +176,11 @@
   --sat-high: 170%;
   --sat-max: 200%;
 
-  /* ── Shadow scale ─────────────────────────────────────────────────────── */
+  /* ── Shadow scale ─────────────────────────────────────────────────────────
+     A1 NOTE: under the Apple "restraint" pass, content surfaces lose their
+     drop-shadow (elevation = surface-color change + hairline). These stay only
+     for retained hero glass (modals, dashboard hero, chrome). Do not add new
+     content-card box-shadow:var(--shadow-*) usages. */
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
@@ -92,7 +188,15 @@
   --shadow-2xl: 0 24px 60px -30px rgba(0, 0, 0, 0.8);
   --shadow-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 
-  /* ── Glow scale ───────────────────────────────────────────────────────── */
+  /* ── Single product shadow (Apple) ──────────────────────────────────────────
+     The ONLY drop-shadow allowed on non-chrome — reserved for product/preview
+     imagery resting on a surface (e.g. the résumé render in the export preview).
+     Never on cards, buttons, or text. Same on light and dark (photographic). */
+  --shadow-product: 3px 5px 30px 0 rgba(0, 0, 0, 0.22);
+
+  /* ── Glow scale ─────────────────────────────────────────────────────────────
+     A1 NOTE: glows are dropped from content under the Apple pass; retained only
+     where glass hero surfaces deliberately keep brand atmosphere. */
   --glow-brand-sm: 0 0 20px rgba(168, 85, 247, 0.15);
   --glow-brand-md: 0 0 40px rgba(168, 85, 247, 0.3);
   --glow-blue-md: 0 0 40px rgba(99, 102, 241, 0.3);
@@ -168,12 +272,14 @@
      so the near-opaque white cards float above it with real separation. White
      cards on a white canvas were the "flashbang" — a bright wall with nothing
      lifting off it. Primary text is near-black for crisp, native legibility. */
-  --color-background: oklch(90.5% 1.2% 264); /* #E4E7EF — present cool gray canvas */
-  --color-foreground: oklch(24% 0.8% 280); /* #1D1D20 — near-black label */
-  --color-card: oklch(98.5% 0.2% 270); /* soft off-white card (not stark pure white) */
-  --color-card-foreground: oklch(24% 0.8% 280);
-  --color-popover: oklch(99.5% 0.15% 270);
-  --color-popover-foreground: oklch(24% 0.8% 280);
+  --color-background: oklch(96.6% 0.3% 264); /* #f5f5f7 — Apple parchment canvas */
+  --color-foreground: oklch(21% 0.4% 280); /* #1d1d1f — Apple ink */
+  --color-card: oklch(
+    100% 0 0
+  ); /* #ffffff — Apple white card (separation = parchment + hairline) */
+  --color-card-foreground: oklch(21% 0.4% 280);
+  --color-popover: oklch(100% 0 0);
+  --color-popover-foreground: oklch(21% 0.4% 280);
   --color-secondary: oklch(94% 0.6% 264);
   --color-secondary-foreground: oklch(28% 0.8% 280);
   --color-muted: oklch(94% 0.6% 264);
@@ -192,6 +298,11 @@
   --color-accent: oklch(50% 58% 285);
   --color-accent-foreground: oklch(99% 0.15% 270);
   --color-ring: oklch(50% 58% 285);
+
+  /* Colorful action tokens deepened so filled action buttons read solid on the
+     white canvas (primary + delete inherit the brand/destructive light steps). */
+  --color-action-run: oklch(54% 0.15 150);
+  --color-action-edit: oklch(51% 0.16 250);
 
   /* Status colors retuned deeper so they read solid (not neon) on white. */
   --color-destructive: oklch(52% 48% 25);
