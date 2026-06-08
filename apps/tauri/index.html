@@ -16,11 +16,20 @@
       (function () {
         try {
           var raw = localStorage.getItem('ajh-theme');
-          var prefs = { scheme: 'system', textScale: 'default', reduceTransparency: false, contrast: 'normal' };
+          var prefs = {
+            scheme: 'system',
+            textScale: 'default',
+            reduceTransparency: false,
+            contrast: 'normal',
+          };
           if (raw === 'default') prefs.scheme = 'dark';
-          else if (raw === 'reduced-glass') { prefs.scheme = 'dark'; prefs.reduceTransparency = true; }
-          else if (raw === 'high-contrast') { prefs.scheme = 'dark'; prefs.contrast = 'more'; }
-          else if (raw) {
+          else if (raw === 'reduced-glass') {
+            prefs.scheme = 'dark';
+            prefs.reduceTransparency = true;
+          } else if (raw === 'high-contrast') {
+            prefs.scheme = 'dark';
+            prefs.contrast = 'more';
+          } else if (raw) {
             var p = JSON.parse(raw);
             if (p && typeof p === 'object') {
               if (p.scheme) prefs.scheme = p.scheme;
@@ -29,10 +38,15 @@
               if (p.contrast) prefs.contrast = p.contrast;
             }
           }
-          var mq = function (q) { return !!(window.matchMedia && window.matchMedia(q).matches); };
-          var resolved = prefs.scheme === 'light' || prefs.scheme === 'dark'
-            ? prefs.scheme
-            : (mq('(prefers-color-scheme: dark)') ? 'dark' : 'light');
+          var mq = function (q) {
+            return !!(window.matchMedia && window.matchMedia(q).matches);
+          };
+          var resolved =
+            prefs.scheme === 'light' || prefs.scheme === 'dark'
+              ? prefs.scheme
+              : mq('(prefers-color-scheme: dark)')
+                ? 'dark'
+                : 'light';
           var root = document.documentElement;
           root.dataset.colorScheme = resolved;
           root.classList.toggle('dark', resolved === 'dark');
@@ -40,10 +54,13 @@
           root.dataset.textScale = prefs.textScale;
           if (prefs.reduceTransparency || mq('(prefers-reduced-transparency: reduce)'))
             root.setAttribute('data-reduce-transparency', '');
-          root.dataset.contrast = (prefs.contrast === 'more' || mq('(prefers-contrast: more)')) ? 'more' : 'normal';
+          root.dataset.contrast =
+            prefs.contrast === 'more' || mq('(prefers-contrast: more)') ? 'more' : 'normal';
           var meta = document.querySelector('meta[name="color-scheme"]');
           if (meta) meta.setAttribute('content', resolved);
-        } catch (e) { /* keep the static class="dark" fallback */ }
+        } catch (e) {
+          /* keep the static class="dark" fallback */
+        }
       })();
     </script>
   </head>
