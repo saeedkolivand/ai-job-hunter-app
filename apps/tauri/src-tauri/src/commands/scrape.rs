@@ -71,6 +71,10 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
         verified: None,
         sort_by: None,
         locale: req.locale.clone(),
+        country_code: req.country_code.clone(),
+        latitude: req.latitude,
+        longitude: req.longitude,
+        radius_km: req.radius_km,
     };
     let board = req.board.clone();
 

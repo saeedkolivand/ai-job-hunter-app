@@ -76,6 +76,10 @@ fn test_board_search_input_creation() {
         verified: Some(true),
         sort_by: Some("DD".to_string()),
         locale: Some("de".to_string()),
+        country_code: Some("DE".to_string()),
+        latitude: Some(52.52),
+        longitude: Some(13.405),
+        radius_km: Some(25),
     };
     assert_eq!(input.query, "Software Engineer");
     assert_eq!(input.pages, 5);
@@ -96,6 +100,10 @@ fn test_board_search_input_defaults() {
         verified: None,
         sort_by: None,
         locale: None,
+        country_code: None,
+        latitude: None,
+        longitude: None,
+        radius_km: None,
     };
     assert!(input.location.is_none());
     assert_eq!(input.pages, 1);

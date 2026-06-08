@@ -41,6 +41,13 @@ pub struct BoardSearchInput {
     pub verified: Option<bool>,
     pub sort_by: Option<String>, // 'DD' (Date Descending), 'R' (Relevance)
     pub locale: Option<String>,
+    // Structured location from a picked geocode suggestion (#49/#40). Boards that
+    // support precise geo filtering (e.g. LinkedIn geoId + distance) use these;
+    // boards without geo filtering ignore them.
+    pub country_code: Option<String>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub radius_km: Option<u32>,
 }
 
 pub struct ScrapeContext {

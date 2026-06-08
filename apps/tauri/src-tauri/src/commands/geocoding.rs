@@ -27,11 +27,34 @@ pub async fn geocode_suggest(query: String) -> Value {
         Err(_) => return json!([]),
     };
 
+    // Surface the structured fields Nominatim already returns (addressdetails=1):
+    // ISO country code + coordinates. They let the scrape pass a precise location
+    // (country filter / radius) instead of a fuzzy free-text string, which is what
+    // caused results to leak across countries (#49). `display` stays primary so
+    // existing consumers that read only `.display` keep working.
     let suggestions: Vec<Value> = results
         .into_iter()
         .filter_map(|item| {
-            let display = item.get("display_name")?.as_str()?;
-            Some(json!({ "display": display }))
+            let display = item.get("display_name")?.as_str()?.to_string();
+            let lat = item
+                .get("lat")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<f64>().ok());
+            let lon = item
+                .get("lon")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<f64>().ok());
+            let country_code = item
+                .get("address")
+                .and_then(|a| a.get("country_code"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_uppercase());
+            Some(json!({
+                "display": display,
+                "lat": lat,
+                "lon": lon,
+                "countryCode": country_code,
+            }))
         })
         .collect();
 

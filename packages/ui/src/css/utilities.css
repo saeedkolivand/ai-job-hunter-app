@@ -107,6 +107,18 @@
   box-shadow: var(--shadow-xl), var(--shadow-inset-top);
 }
 
+/* ── Flat content surface (Apple "restraint" — A1) ────────────────────────────
+   The DEFAULT GlassCard tone (`tone="surface"`). Elevation comes from the
+   surface-color step (--color-card sits lighter than --color-background) plus a
+   1px hairline — no shadow, no blur. Replaces frosted glass on content cards;
+   glass is now opt-in for hero surfaces only. Themed via --color-card / border
+   so it adapts to light + dark automatically. */
+.surface-card {
+  background-color: var(--color-card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--rounded-lg);
+}
+
 /* ── Tonal glass variants ────────────────────────────────────────────────── */
 .glass-violet {
   background: linear-gradient(135deg, rgba(168, 139, 250, 0.08) 0%, rgba(99, 102, 241, 0.04) 100%);
@@ -507,6 +519,22 @@
   background-clip: padding-box;
 }
 
+/* ── Pointer cursor on interactive elements (#48) ─────────────────────────────
+   Browsers default <button> (and friends) to the arrow cursor, so much of the
+   app didn't signal clickability. Apply the pointer to every genuinely
+   interactive element; disabled controls keep the default arrow. Components that
+   need a different cursor (text inputs, grab handles) override locally. */
+button:not(:disabled),
+[role='button']:not([aria-disabled='true']),
+[role='tab']:not([aria-disabled='true']),
+[role='option'],
+a[href],
+summary,
+label[for],
+select:not(:disabled) {
+  cursor: pointer;
+}
+
 /* ── Focus rings ─────────────────────────────────────────────────────────── */
 /* Visible default focus ring for every keyboard-focusable element. Components
    that render their own ring pair `focus-visible:outline-none` with it (higher
@@ -529,12 +557,19 @@
 
 /* ── Text size (UI scale) ────────────────────────────────────────────────────
    applyTheme() sets data-text-scale on <html>; scaling the rem root grows every
-   rem-based size together. Default is the browser 16px (left unset). */
+   rem-based size together. The default rem root is 17px — the Apple body
+   baseline (DESIGN-apple.md) and the fix for "texts too small" (#7) — up from
+   the old browser-default 16px. small / large rescale around it. The Apple type
+   tokens (tokens.css) are authored with body = 1rem, so they hit Apple's exact
+   px at the default size and track this setting. */
+html {
+  font-size: 17px;
+}
 html[data-text-scale='small'] {
-  font-size: 15px;
+  font-size: 16px;
 }
 html[data-text-scale='large'] {
-  font-size: 18px;
+  font-size: 19px;
 }
 
 /* ── Minimum legible text floor ──────────────────────────────────────────────

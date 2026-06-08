@@ -7,6 +7,34 @@ use async_trait::async_trait;
 
 pub struct LinkedInScraper;
 
+/// Best-effort LinkedIn geoId lookup via the public jobs-guest typeahead.
+/// Returns `None` on any failure so callers fall back to the free-text location
+/// filter (no regression). The endpoint is unofficial — verify behaviour with a
+/// real scrape after changing this.
+async fn resolve_geo_id(location: &str) -> Option<String> {
+    let url = format!(
+        "https://www.linkedin.com/jobs-guest/api/typeaheadHits?typeaheadType=GEO&query={}",
+        urlencoding::encode(location)
+    );
+    let resp = crate::net::http::shared()
+        .get(&url)
+        .header(
+            reqwest::header::USER_AGENT,
+            "Mozilla/5.0 (compatible; ai-job-hunter/1.0)",
+        )
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+        .ok()?;
+    let hits: Vec<serde_json::Value> = resp.json().await.ok()?;
+    let geo = match hits.first()?.get("id")? {
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::String(s) => s.clone(),
+        _ => return None,
+    };
+    (!geo.is_empty()).then_some(geo)
+}
+
 #[async_trait]
 impl Scraper for LinkedInScraper {
     fn id(&self) -> &'static str {
@@ -36,9 +64,18 @@ impl Scraper for LinkedInScraper {
         let http_client = LinkedInHttpClient::new(session_data);
         let api_client = LinkedInJobsApiClient::new(http_client);
 
+        // Resolve a precise geoId for the location (best-effort). On failure we
+        // fall back to the free-text `location` filter below (no regression, #49).
+        let geo_id = match input.location.as_deref() {
+            Some(loc) if !loc.trim().is_empty() => resolve_geo_id(loc).await,
+            _ => None,
+        };
+
         let params = JobsSearchParams {
             keywords: input.query.clone(),
             location: input.location.clone(),
+            geo_id,
+            distance: input.radius_km,
             start: 0,
             date_filter: input.date_filter.clone(),
             job_type: input.job_type.clone(),

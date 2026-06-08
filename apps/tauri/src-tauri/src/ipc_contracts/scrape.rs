@@ -14,6 +14,10 @@ pub struct ScrapeBoardRequest {
     pub pages: u32,
     pub date_filter: Option<String>,
     pub locale: Option<String>,
+    pub country_code: Option<String>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub radius_km: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

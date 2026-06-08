@@ -65,6 +65,11 @@ pub struct JobsSearchParams {
     pub actively_hiring: Option<bool>,
     pub verified: Option<bool>,
     pub sort_by: Option<String>,
+    /// Precise LinkedIn geoId (resolved via typeahead) — far more reliable than
+    /// the free-text `location` filter, which leaks results across countries (#49).
+    pub geo_id: Option<String>,
+    /// Search radius in km around the location (`distance` param, #40).
+    pub distance: Option<u32>,
 }
 
 pub struct LinkedInJobsApiClient {
@@ -102,6 +107,16 @@ impl LinkedInJobsApiClient {
 
         if let Some(ref location) = params.location {
             url.push_str(&format!("&location={}", urlencoding::encode(location)));
+        }
+
+        // A resolved geoId pins the search to the exact place (country-correct);
+        // distance widens it to a radius. Both are best-effort — absent them, the
+        // free-text `location` filter above is used (current behavior).
+        if let Some(ref geo_id) = params.geo_id {
+            url.push_str(&format!("&geoId={}", urlencoding::encode(geo_id)));
+        }
+        if let Some(distance) = params.distance {
+            url.push_str(&format!("&distance={distance}"));
         }
 
         if let Some(ref job_type) = params.job_type {

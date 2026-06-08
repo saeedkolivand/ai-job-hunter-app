@@ -1,8 +1,15 @@
 # Design System — AI Job Hunter
 
-Last updated: 2026-06-03
+Last updated: 2026-06-08
 
 The design system lives in `packages/ui` and is published as the `@ajh/ui` internal package. It provides design tokens, a component library, motion primitives, and theming infrastructure.
+
+> **Design language: Apple (hybrid).** The system follows the Apple design language (`DESIGN-apple.md`) — typography-led, restrained chrome, flat surfaces with hairline elevation, the single product shadow, and the Apple type/radius grammar. **Two deliberate divergences from the Apple spec:**
+>
+> 1. **Accent stays violet** (`--color-brand`), not Apple's Action Blue.
+> 2. **Colorful action buttons** are allowed (Apple mandates a single accent). They are _semantic_ (run/edit/delete), token-driven (`--color-action-*`), and never decorative.
+>
+> "Hybrid" depth: content surfaces are flat (`.surface-card`); frosted **glass is reserved for hero surfaces only** — modals, the dashboard hero, and chrome (sidebar/titlebar/sticky bars). Decorative gradients, glows, and the aurora background were removed from content.
 
 ---
 
@@ -14,10 +21,20 @@ All tokens are CSS custom properties defined in `packages/ui/src/css/tokens.css`
 
 ```css
 /* Brand palette */
---color-brand          /* Primary interactive color */
+--color-brand          /* Primary interactive color (violet — the accent) */
 --color-brand-soft     /* Muted/secondary brand variant */
---color-brand-hover    /* Hover state */
---color-brand-active   /* Active/pressed state */
+
+/* Colorful action tokens (semantic; the deliberate divergence — tokens only,
+   never a raw [#hex]). Used by Button variants primary/run/edit/delete. */
+--color-action-primary    /* create / generate (violet, = brand) */
+--color-action-run        /* run / start (green) */
+--color-action-edit       /* edit (blue) */
+--color-action-delete     /* delete (red, = destructive) */
+--color-action-foreground /* label on a filled action */
+
+/* Elevation — the ONLY drop-shadow on non-chrome, reserved for product/preview
+   imagery resting on a surface. Cards/buttons get NO shadow. */
+--shadow-product
 
 /* Semantic text */
 --color-text-primary
@@ -58,49 +75,63 @@ Use these instead of raw hex values or arbitrary colors:
 
 **Never use** `[#RRGGBB]` in `className` strings — ESLint enforces this.
 
-### Typography Scale
+### Typography Scale (Apple)
 
-```css
---font-size-xs: 0.75rem /* 12px */ --font-size-sm: 0.875rem /* 14px */ --font-size-base: 1rem
-  /* 16px */ --font-size-lg: 1.125rem /* 18px */ --font-size-xl: 1.25rem /* 20px */
-  --font-size-2xl: 1.5rem /* 24px */ --font-size-3xl: 1.875rem /* 30px */;
-```
+The Apple type scale lives in `tokens.css` as Tailwind v4 `--text-*` tokens — each carries its line-height, weight, and letter-spacing. Authored so **body = `1rem`** with the rem root at **17px** (Apple's body baseline), so they hit Apple's exact px at the default UI size and scale with `TextScale`. Negative letter-spacing at ≥17px is the "Apple tight" cadence. **Weight ladder: 300 / 400 / 600 / 700 — `font-medium` (500) is intentionally avoided in new UI.**
+
+| Utility               | px  | Weight | Use                         |
+| --------------------- | --- | ------ | --------------------------- |
+| `text-hero-display`   | 56  | 600    | Hero headline               |
+| `text-display-lg`     | 40  | 600    | Tile/section headline       |
+| `text-display-md`     | 34  | 600    | Section head                |
+| `text-lead`           | 28  | 400    | Subcopy                     |
+| `text-lead-airy`      | 24  | 300    | Airy lead (rare weight 300) |
+| `text-tagline`        | 21  | 600    | Tagline / category          |
+| `text-body-strong`    | 17  | 600    | Inline strong               |
+| `text-body`           | 17  | 400    | Default paragraph           |
+| `text-caption`        | 14  | 400    | Caption / secondary         |
+| `text-caption-strong` | 14  | 600    | Emphasised caption          |
+| `text-button-large`   | 18  | 300    | Large CTA (rare weight 300) |
+| `text-fine-print`     | 12  | 400    | Fine print                  |
+| `text-nav-link`       | 12  | 400    | Nav items                   |
 
 ### Spacing Scale
 
-TailwindCSS default scale plus:
+TailwindCSS default scale (8px base rhythm) plus `--spacing-section` (`5rem` / 80px) for full-bleed tile padding → `p-section` / `py-section` / `gap-section`.
+
+### Radius (Apple grammar)
+
+The Apple `{rounded.*}` grammar is namespaced `--rounded-*` so it does **not** clobber Tailwind's own `--radius-*` (the `rounded-sm/md/lg` utilities). Reference via `var(--rounded-…)`:
 
 ```css
---spacing-18: 4.5rem --spacing-22: 5.5rem --spacing-88: 22rem --spacing-112: 28rem
-  --spacing-128: 32rem;
+--rounded-none: 0px --rounded-xs: 5px --rounded-sm: 8px --rounded-md: 11px --rounded-lg: 18px
+  --rounded-pill: 9999px --rounded-full: 9999px;
 ```
 
-### Radius
-
-```css
---radius-sm: 0.25rem --radius-md: 0.5rem --radius-lg: 0.75rem --radius-xl: 1rem --radius-2xl: 1.5rem
-  --radius-full: 9999px;
-```
+- **Pill** (`--rounded-pill`) — the signature primary/colorful CTA + search input.
+- **lg** (18px) — utility/grid cards (`.surface-card`).
+- **sm** (8px) — compact utility buttons.
 
 ---
 
 ## Theming
 
-The design target is **macOS-grade in both schemes** with the brand violet kept as the
-accent: light is a calm gray-canvas/white-card System-Settings model; dark is a neutral
-cool charcoal with cards that read _lighter_ than the canvas (macOS elevation). Theme is
-**orthogonal axes**, selectable in Settings → General → Appearance and persisted to
-`localStorage`:
+Both schemes follow the **Apple design language** with the brand violet kept as the accent:
+light is a **parchment `#f5f5f7` canvas with white `#ffffff` cards** and near-black ink
+`#1d1d1f` — separation comes from **hairlines**, not shadows; dark is **near-black
+`#1d1d1f` canvas with `#272729` tiles** that read _lighter_ than the canvas (Apple
+elevation). Content surfaces are flat; glass is hero-only. Theme is **orthogonal axes**,
+selectable in Settings → General → Appearance and persisted to `localStorage`:
 
 ```typescript
 // packages/ui — lib/theme.ts
 export type ColorScheme = 'light' | 'dark' | 'system'; // system follows the OS
-export type TextScale = 'small' | 'default' | 'large'; // scales the rem root (15/16/18px)
+export type TextScale = 'small' | 'default' | 'large'; // rem root: 16 / 17 / 19px
 export interface ThemePrefs {
   scheme: ColorScheme;
   reduceTransparency: boolean; // false = follow the OS preference
   contrast: 'normal' | 'more'; // 'normal' = follow the OS preference
-  textScale: TextScale; // sizes UI text; default 16px
+  textScale: TextScale; // sizes UI text; default 17px (Apple body baseline)
 }
 ```
 
@@ -113,15 +144,17 @@ data attributes on `<html>` that the token layer keys off:
 </html>
 ```
 
-- **Color scheme** — `dark` is the default token set (`tokens.css` `:root`). `[data-color-scheme='light']` overrides only the tokens that change, so flipping the tokens flips the whole UI. `system` resolves from `prefers-color-scheme` and tracks live OS changes. User-initiated scheme changes go through `applyThemeAnimated()`, which crossfades via the View Transition API (reduced-motion / unsupported-API guarded).
+- **Color scheme** — `dark` is the default token set (`tokens.css` `:root`). `[data-color-scheme='light']` overrides only the tokens that change, so flipping the tokens flips the whole UI. `system` resolves from `prefers-color-scheme` and tracks live OS changes. User-initiated scheme changes go through `applyThemeAnimated()`, which crossfades via the View Transition API (reduced-motion / unsupported-API guarded). A **pre-paint boot script in `index.html`** applies the persisted scheme/text-scale/a11y modifiers before first paint (mirrors `theme.ts`) so there is no light-theme flicker/FOUC.
 - **Light legibility** — light overrides only what changes, but two systemic remaps live in `utilities.css`: bright Tailwind palette text steps (`--color-emerald-400`, …) map to their deeper `600/700` so accent/status/gradient text stays legible on white, and faint `text-foreground/NN` steps are lifted to the macOS hierarchy (secondary `~#6E6E73`, muted `~#8E8E93`) — no per-site sweep.
-- **Text size** — `data-text-scale` sets the rem root (`small 15px` / `default 16px` / `large 18px`); a 12px floor in `utilities.css` lifts sub-12px arbitrary sizes. Both are rem-based, so they scale together.
+- **Text size** — `data-text-scale` sets the rem root (`small 16px` / `default 17px` / `large 19px` — default is the Apple body baseline, up from 16px to fix "texts too small"); a 12px floor in `utilities.css` lifts sub-12px arbitrary sizes. Both are rem-based, so they scale together.
 - **Accessibility modifiers** — `[data-reduce-transparency]` solidifies all glass (also wired to `@media (prefers-reduced-transparency)` as a JS-independent fallback); `[data-contrast='more']` strengthens borders. Each is either forced on or "auto" (follows the matching OS query).
 - **Fonts** — `--font-sans` prefers native San Francisco on macOS (`-apple-system`, `BlinkMacSystemFont`, `SF Pro`), falling back to bundled Inter on Windows/Linux.
 
-Glass surfaces read a single material token set (`--glass-rgb`, `--glass-alpha-*`,
-`--glass-sat`, `--glass-specular`) — see `utilities.css`. Never hard-code colors that
-don't exist in the token system.
+Content surfaces are **flat** (`.surface-card` — surface fill + 1px hairline, no shadow/blur;
+elevation = the `--color-card` step over `--color-background`). Frosted **glass is hero-only**
+and reads a single material token set (`--glass-rgb`, `--glass-alpha-*`, `--glass-sat`,
+`--glass-specular`) — see `utilities.css`. Never hard-code colors that don't exist in the
+token system.
 
 ---
 
@@ -138,17 +171,21 @@ import { Button, Input, GlassCard, Modal } from '@ajh/ui';
 #### `Button`
 
 ```typescript
-<Button variant="default" size="md" loading={false} disabled={false}>
-  Apply Now
+<Button variant="primary" size="md" loading={false} disabled={false}>
+  Generate
 </Button>
 ```
 
-| Prop       | Type    | Values                                                                   |
-| ---------- | ------- | ------------------------------------------------------------------------ |
-| `variant`  | string  | `default` `glass` `ghost` `danger` `warning` `info` `success` `unstyled` |
-| `size`     | string  | `sm` `md` `lg`                                                           |
-| `loading`  | boolean | Shows spinner, disables click                                            |
-| `disabled` | boolean | Greyed out, no interaction                                               |
+| Prop       | Type    | Values                                                                                                         |
+| ---------- | ------- | -------------------------------------------------------------------------------------------------------------- |
+| `variant`  | string  | `primary` `run` `edit` `delete` · `default` `glass` `ghost` · `danger` `warning` `info` `success` · `unstyled` |
+| `size`     | string  | `sm` `md` `lg`                                                                                                 |
+| `loading`  | boolean | Shows spinner, disables click                                                                                  |
+| `disabled` | boolean | Greyed out, no interaction                                                                                     |
+
+- **`primary`** — the signature solid **violet pill** CTA (`--color-action-primary`). **`run` / `edit` / `delete`** — solid colorful action pills (semantic colour; the deliberate divergence). All filled actions take the pill radius.
+- **`default` / `glass` / `ghost`** — neutral utility buttons (rounded `sm`, not pill). **`danger` / `warning` / `info` / `success`** — translucent inline state chips.
+- Apple micro-interaction baked in: weight **400** (no 500), `active:scale-[0.95]` press, 2px brand focus ring.
 
 > **`unstyled`** is an escape hatch for custom interactive surfaces — segmented controls,
 > icon toggles, inline text links, clickable cards — that supply their own appearance via
@@ -203,17 +240,30 @@ Controlled numeric input with string-buffer internals: suppresses `onChange` whi
 <NumberField value={count} onChange={setCount} min={1} max={100} step={1} />
 ```
 
+#### `OptionalHint`
+
+Inline "optional" marker (italic, muted, caption-sized) — placed next to or below the element it qualifies so optional fields read as optional at a glance. Defaults to the word "optional"; pass children to localise or extend.
+
+```typescript
+<label>Photo <OptionalHint /></label>
+<OptionalHint>optional — appears on your résumé header</OptionalHint>
+```
+
 ---
 
 ### Cards & Layout
 
 #### `GlassCard`
 
-The primary card surface. Applies a frosted-glass background with subtle border:
+The primary card surface. **Flat by default** (`tone="surface"` — Apple `.surface-card`: surface fill + hairline, no shadow/blur). Frosted glass is **opt-in** for hero surfaces via `tone="glass"` (or the tonal `violet` / `indigo` / `graphite`); `neutral` is a legacy alias of `glass`.
 
 ```typescript
-<GlassCard className="p-6">
+<GlassCard className="p-6">           {/* flat Apple content card */}
   <h2>Skill Match: 87%</h2>
+</GlassCard>
+
+<GlassCard tone="glass" className="p-6">  {/* hero surface — keeps frosted glass */}
+  …
 </GlassCard>
 ```
 

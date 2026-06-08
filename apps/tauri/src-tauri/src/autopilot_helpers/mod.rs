@@ -24,6 +24,10 @@ pub async fn autopilot_scrape(
         verified: None,
         sort_by: None,
         locale: None,
+        country_code: None,
+        latitude: None,
+        longitude: None,
+        radius_km: None,
     };
 
     let app_progress = app.clone();

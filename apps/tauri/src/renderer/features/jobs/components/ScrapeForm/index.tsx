@@ -58,7 +58,7 @@ export function ScrapeForm({
           transition={transition.normal}
           className="mb-4"
         >
-          <GlassCard tone="graphite" highlight className="p-5">
+          <GlassCard className="p-5">
             {/* Header */}
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2">

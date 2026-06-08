@@ -135,7 +135,7 @@ export function MonitoringPage() {
           <ActivityFeedSection activity={activity} t={t} />
         </div>
 
-        <GlassCard tone="graphite" highlight>
+        <GlassCard>
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <BarChart3 size={12} className="text-brand-soft" />

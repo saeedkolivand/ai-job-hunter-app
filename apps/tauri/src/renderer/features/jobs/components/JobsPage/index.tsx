@@ -1,4 +1,4 @@
-import { Plus, Search, Trash2 } from 'lucide-react';
+import { ListFilter, Plus, Search, Trash2 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { PostingRow } from '@/features/jobs/components/PostingRow';
 import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
+import type { ScrapeFormState } from '@/features/jobs/components/ScrapeForm/constants';
 import { useFormatRelativeTime } from '@/features/jobs/hooks/useFormatRelativeTime';
 import { useScraping } from '@/features/jobs/hooks/useScraping';
 import type { JobEvent, Posting } from '@/features/jobs/types';
@@ -33,11 +34,12 @@ export function JobsPage() {
   const setFilter = (v: string) => setJobs({ filter: v });
   const setSortBy = (v: 'newest' | 'oldest' | 'company') => setJobs({ sortBy: v });
   const [showScrapeForm, setShowScrapeForm] = useState(false);
-  const [scrapeForm, setScrapeForm] = useState({
+  const [scrapeForm, setScrapeForm] = useState<ScrapeFormState>({
     board: 'linkedin',
     query: '',
     location: '',
-    pages: 1,
+    radiusKm: 0,
+    amount: 25,
     dateFilter: '' as '' | (typeof DATE_FILTER_OPTIONS)[number],
     locale: 'us',
   });
@@ -99,6 +101,15 @@ export function JobsPage() {
   const handleClearPostings = async () => {
     await clearPostings.mutateAsync();
     setLivePostings([]);
+  };
+
+  // "Show more" (#36): fetch the next batch by raising the requested job count
+  // and re-scraping. The search signature is unchanged, so scraped postings are
+  // kept and the extra results append (deduped by id).
+  const handleShowMore = () => {
+    const next = scrapeForm.amount + 25;
+    setScrapeForm({ ...scrapeForm, amount: next });
+    void startScrape(next);
   };
 
   const filtered = useMemo(() => {
@@ -174,7 +185,7 @@ export function JobsPage() {
                 </Button>
               )}
               <div className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-1.5 transition-colors focus-within:border-brand/35">
-                <Search size={12} className="shrink-0 text-foreground/40" />
+                <ListFilter size={12} className="shrink-0 text-foreground/40" />
                 <Input
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
@@ -220,7 +231,7 @@ export function JobsPage() {
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-10 pb-10">
         {filtered.length === 0 ? (
-          <GlassCard tone="graphite" highlight>
+          <GlassCard>
             <EmptyState
               icon={Search}
               title={t('jobs.empty')}
@@ -258,6 +269,15 @@ export function JobsPage() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {allPostings.length > 0 && (
+          <div className="flex justify-center pt-4">
+            <Button variant="ghost" size="sm" onClick={handleShowMore} loading={scraping}>
+              {!scraping && <Plus size={12} />}
+              {t('jobs.showMore')}
+            </Button>
           </div>
         )}
       </div>

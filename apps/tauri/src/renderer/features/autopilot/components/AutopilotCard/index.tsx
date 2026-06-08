@@ -134,8 +134,12 @@ export function AutopilotCard({
             <span>
               · {t('autopilot.wizard.lastRun')} {lastRun}
             </span>
+            {/* Use the same source as the view-jobs button badge (the cumulative
+                merged found-jobs list) so the row count never contradicts it
+                (#47 — was ap.totalFound, the per-run kept count, which diverges
+                from the accumulated foundJobs list). */}
             <span>
-              · {t('autopilot.wizard.found')} {ap.totalFound}
+              · {t('autopilot.wizard.found')} {foundJobs.length}
             </span>
           </div>
         </div>
