@@ -6,7 +6,7 @@ Rules enforced by ESLint, TypeScript, and CI — violations block commits and fa
 
 ## Auto-Invoked Skills (on by default — no slash command needed)
 
-These skills are active automatically every session. Invoke them through the **Skill tool** without waiting for the user to type the slash command.
+These skills are active automatically every session. Invoke them through the **Skill tool** without waiting for the user to type the slash command. A `SessionStart` hook (`.claude/hooks/style-policy.mjs`, wired in `.claude/settings.json`) re-injects this policy at the start of every session for deterministic activation — independent of this file being read or summarized. It fires only at session start, so the `stop caveman` off-switch still applies within a session.
 
 ### `caveman` — default output style (always on)
 
