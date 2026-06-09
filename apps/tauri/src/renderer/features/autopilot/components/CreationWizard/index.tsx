@@ -91,7 +91,6 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
           : undefined,
       },
       resumeText: form.resumeText || undefined,
-      coverLetter: form.coverLetter || undefined,
       schedule: form.schedule,
       // Time-of-day only applies to recurring schedules; manual runs have no time.
       scheduleHour: form.schedule === 'manual' ? undefined : form.scheduleHour,
@@ -169,7 +168,7 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
             >
               {step === 0 && <StepTarget form={form} set={set} prefilled={prefilledFields} />}
               {step === 1 && <StepFilter form={form} set={set} prefilled={prefilledFields} />}
-              {step === 2 && <StepAction form={form} set={set} />}
+              {step === 2 && <StepAction />}
               {step === 3 && <StepSchedule form={form} set={set} />}
             </motion.div>
           </AnimatePresence>

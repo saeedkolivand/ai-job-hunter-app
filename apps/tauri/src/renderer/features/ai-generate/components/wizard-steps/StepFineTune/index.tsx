@@ -23,10 +23,30 @@ interface StepFineTuneProps {
   onResearchCompanyChange: (v: boolean) => void;
 }
 
-const QUALITY_OPTIONS: { id: PromptQuality; labelKey: string; icon: LucideIcon }[] = [
-  { id: 'full', labelKey: 'aiGenerate.wizard.quality.full', icon: SlidersHorizontal },
-  { id: 'auto', labelKey: 'aiGenerate.wizard.quality.auto', icon: Gauge },
-  { id: 'compact', labelKey: 'aiGenerate.wizard.quality.fast', icon: Zap },
+const QUALITY_OPTIONS: {
+  id: PromptQuality;
+  labelKey: string;
+  descKey: string;
+  icon: LucideIcon;
+}[] = [
+  {
+    id: 'full',
+    labelKey: 'aiGenerate.wizard.quality.full',
+    descKey: 'aiGenerate.wizard.quality.fullDesc',
+    icon: SlidersHorizontal,
+  },
+  {
+    id: 'auto',
+    labelKey: 'aiGenerate.wizard.quality.auto',
+    descKey: 'aiGenerate.wizard.quality.autoDesc',
+    icon: Gauge,
+  },
+  {
+    id: 'compact',
+    labelKey: 'aiGenerate.wizard.quality.fast',
+    descKey: 'aiGenerate.wizard.quality.fastDesc',
+    icon: Zap,
+  },
 ];
 
 export function StepFineTune({
@@ -60,10 +80,6 @@ export function StepFineTune({
 
   return (
     <div className="space-y-5">
-      <div>
-        <p className="text-sm font-semibold text-foreground/70">{t('aiGenerate.wizard.steps.2')}</p>
-      </div>
-
       {/* Style / tone */}
       <div>
         <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
@@ -84,7 +100,7 @@ export function StepFineTune({
               >
                 <div className="flex-1 min-w-0">
                   <div className="text-[11px] font-medium">{m.label}</div>
-                  <div className="text-[10px] text-foreground/35 truncate">{m.description}</div>
+                  <div className="text-[10px] text-foreground/35">{m.description}</div>
                 </div>
                 {mode === id && <div className="h-1.5 w-1.5 rounded-full bg-brand shrink-0" />}
               </Button>
@@ -98,20 +114,26 @@ export function StepFineTune({
         <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
           {t('aiGenerate.wizard.quality.label')}
         </div>
-        <div className="grid grid-cols-3 gap-1.5">
-          {QUALITY_OPTIONS.map(({ id, labelKey, icon: Icon }) => (
+        <div className="space-y-1.5">
+          {QUALITY_OPTIONS.map(({ id, labelKey, descKey, icon: Icon }) => (
             <Button
               key={id}
               onClick={() => setPromptQuality(id)}
               className={cn(
-                'flex flex-col items-center gap-1 rounded-xl border py-2.5 text-[11px] font-medium transition-all h-auto',
+                'w-full flex items-center gap-3 rounded-xl border px-3 py-2 text-left transition-all h-auto',
                 promptQuality === id
-                  ? 'border-brand/40 bg-brand/10 text-brand-soft'
-                  : 'border-white/[0.06] bg-white/[0.02] text-foreground/45 hover:border-white/10 hover:text-foreground/70'
+                  ? 'border-brand/35 bg-brand/8 text-foreground/90'
+                  : 'border-white/[0.05] bg-transparent text-foreground/50 hover:border-white/[0.08] hover:text-foreground/75'
               )}
             >
-              <Icon size={12} />
-              {t(labelKey)}
+              <Icon size={14} className="shrink-0 text-brand-soft" />
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] font-medium">{t(labelKey)}</div>
+                <div className="text-[10px] text-foreground/35">{t(descKey)}</div>
+              </div>
+              {promptQuality === id && (
+                <div className="h-1.5 w-1.5 rounded-full bg-brand shrink-0" />
+              )}
             </Button>
           ))}
         </div>

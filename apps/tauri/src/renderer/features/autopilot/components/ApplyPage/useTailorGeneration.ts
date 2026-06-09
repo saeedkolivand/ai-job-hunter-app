@@ -42,16 +42,13 @@ interface Params {
   board: string;
   /** Opt-in: research the company and fold a brief into the cover-letter prompt. */
   researchCompany: boolean;
-  /** Optional base cover letter — the autopilot's reusable template, folded into
-   *  the cover-letter prompt as the starting point to tailor for this job. */
-  baseCoverLetter?: string;
 }
 
 /**
- * Thin adapter over the app-wide [`useGenerationStore`] for ApplyJobModal: the
+ * Thin adapter over the app-wide [`useGenerationStore`] for the ApplyPage: the
  * analyze → resume → cover flow runs in the store (background-safe), so this hook
- * only selects the session and keeps modal-local UI state (copy/export). Closing
- * the modal no longer aborts — generation continues and reappears on reopen.
+ * only selects the session and keeps page-local UI state (copy/export). Leaving
+ * the page no longer aborts — generation continues and reappears on return.
  */
 export function useTailorGeneration({
   contextId,
@@ -62,7 +59,6 @@ export function useTailorGeneration({
   jobUrl,
   board,
   researchCompany,
-  baseCoverLetter,
 }: Params) {
   const { t } = useTranslation();
   const api = useAppClient();
@@ -162,7 +158,6 @@ export function useTailorGeneration({
       mode: MODE,
       target,
       researchCompany,
-      baseCoverLetter,
       t,
       onComplete: persist,
     });

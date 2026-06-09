@@ -1,8 +1,8 @@
-import { Loader2, Sparkles, UserPlus, Wand2, X } from 'lucide-react';
+import { ArrowLeft, Loader2, Sparkles, UserPlus, Wand2 } from 'lucide-react';
 import { useState } from 'react';
 
 import type { AutopilotFoundJob } from '@ajh/shared';
-import { Button, ModalShell, SegmentedControl } from '@ajh/ui';
+import { Button, SegmentedControl } from '@ajh/ui';
 
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
@@ -20,19 +20,20 @@ interface Props {
   job: AutopilotFoundJob;
   /** The resume the autopilot used — pre-fills the resume input. */
   resumeText?: string;
-  /** The autopilot's base cover letter — reused as the starting point the
-   *  cover-letter generation tailors to this job. */
-  baseCoverLetter?: string;
   /** The board this autopilot searches — stored on the saved application record. */
   board: string;
-  onClose: () => void;
+  /** Return to the autopilot list. */
+  onBack: () => void;
 }
 
 /**
- * Tailor a resume / cover letter for a single autopilot-found job, inline.
- * Reuses the AI Generate primitives so the user never leaves the Autopilot page.
+ * Tailor a resume / cover letter for a single autopilot-found job on a dedicated
+ * full-width page (#51) — replaces the old cramped ApplyJobModal. Reuses the AI
+ * Generate primitives so the user never leaves the Autopilot section. Generation
+ * lives in the store keyed by `autopilot:<jobUrl>`, so going Back and returning
+ * preserves the in-flight or finished result.
  */
-export function ApplyJobModal({ job, resumeText, baseCoverLetter, board, onClose }: Props) {
+export function ApplyPage({ job, resumeText, board, onBack }: Props) {
   const { t } = useTranslation();
   const model = useSelectedModel();
   const { canUse, reason } = useCanUseAI();
@@ -54,8 +55,8 @@ export function ApplyJobModal({ job, resumeText, baseCoverLetter, board, onClose
   const hasDesc = jobDesc.length > 0;
   const fetchingDesc = !initialDesc && resolved.isLoading;
 
-  // Per-job session key — generation lives in the store under this id, so closing
-  // and reopening the modal (or leaving the page) preserves the result.
+  // Per-job session key — generation lives in the store under this id, so leaving
+  // and returning to the page preserves the result.
   const gen = useTailorGeneration({
     contextId: `autopilot:${job.url}`,
     jobDesc,
@@ -65,12 +66,7 @@ export function ApplyJobModal({ job, resumeText, baseCoverLetter, board, onClose
     jobUrl: job.url,
     board,
     researchCompany,
-    baseCoverLetter,
   });
-
-  // Closing the modal no longer cancels — generation finishes in the background
-  // and is restored on reopen. Use the Cancel button to abort explicitly.
-  const close = () => onClose();
 
   const handleUpload = async (file: File) => {
     setUploading(true);
@@ -94,30 +90,32 @@ export function ApplyJobModal({ job, resumeText, baseCoverLetter, board, onClose
   ];
 
   return (
-    <ModalShell open onClose={close} maxWidth="max-w-2xl">
-      <div className="flex max-h-[85vh] flex-col">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] px-5 py-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Wand2 size={14} className="shrink-0 text-brand-soft" />
-              <span className="truncate text-sm font-semibold text-foreground/85">{job.title}</span>
-            </div>
-            <div className="mt-0.5 truncate text-[11px] text-foreground/40">
-              {job.company}
-              {job.location ? ` · ${job.location}` : ''}
-            </div>
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-8 py-4">
+        <Button
+          onClick={onBack}
+          variant="ghost"
+          size="sm"
+          className="shrink-0 gap-1.5 text-foreground/50 hover:text-foreground/80"
+        >
+          <ArrowLeft size={14} /> {t('autopilot.apply.back')}
+        </Button>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <Wand2 size={14} className="shrink-0 text-brand-soft" />
+            <span className="truncate text-base font-semibold text-foreground/90">{job.title}</span>
           </div>
-          <Button
-            onClick={close}
-            className="h-auto shrink-0 border-transparent bg-transparent p-0 text-foreground/30 hover:text-foreground/60"
-          >
-            <X size={16} />
-          </Button>
+          <div className="truncate text-[11px] text-foreground/40">
+            {job.company}
+            {job.location ? ` · ${job.location}` : ''}
+          </div>
         </div>
+      </div>
 
-        {/* Body */}
-        <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="mx-auto max-w-3xl space-y-3">
           <JobDescriptionPanel
             jobDesc={jobDesc}
             hasDesc={hasDesc}
@@ -261,6 +259,6 @@ export function ApplyJobModal({ job, resumeText, baseCoverLetter, board, onClose
       {referralOpen && (
         <ReferralModal job={job} resume={resume} onClose={() => setReferralOpen(false)} />
       )}
-    </ModalShell>
+    </div>
   );
 }

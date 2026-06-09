@@ -531,6 +531,7 @@
     "applyRecommendation": "Apply suggestion",
     "recommendationApplied": "Applied",
     "resumeLabel": "Resume",
+    "templateLabel": "Template",
     "jobAdLabel": "Job Advertisement",
     "detectedContext": "Detected Context",
     "candidate": "Candidate",
@@ -630,17 +631,26 @@
     "wizard": {
       "steps": {
         "0": "What to create",
-        "1": "Template",
-        "2": "Fine-tune"
+        "1": "Choose a template",
+        "2": "Fine-tune the result"
       },
+      "descriptions": {
+        "0": "Pick whether to generate a résumé, a cover letter, or both.",
+        "1": "Choose a layout — preview each before you generate.",
+        "2": "Adjust the tone, length, and target market before generating."
+      },
+      "stepCounter": "Step {{current}} of {{total}}",
       "back": "Back",
       "next": "Next",
       "generate": "Generate",
       "quality": {
         "label": "Prompt quality",
         "full": "Full",
+        "fullDesc": "Most thorough — full rewrites and detailed suggestions.",
         "auto": "Auto",
+        "autoDesc": "Balances quality and speed for your model.",
         "fast": "Fast",
+        "fastDesc": "Quickest — lighter rewrites and fewer suggestions.",
         "compactWarning": "Fast mode — rewrites and detailed suggestions are reduced for speed.",
         "fullWarning": "Full mode on a small model may produce incomplete or noisy output."
       }
@@ -664,6 +674,9 @@
     "subtitle": "Automated job search and application workflows",
     "newAutopilot": "New Autopilot",
     "edit": "Edit",
+    "pause": "Pause",
+    "resume": "Resume",
+    "actions": "Actions",
     "foundJobs": "Found jobs",
     "collapse": "Collapse",
     "viewJob": "Open posting",
@@ -678,6 +691,7 @@
       "interrupted": "Interrupted"
     },
     "apply": {
+      "back": "Back to autopilot",
       "jobDescription": "Job description",
       "noDescription": "No description was captured for this job.",
       "loadFailed": "Couldn't load this posting — it may be closed or require sign-in.",
@@ -774,8 +788,7 @@
       "target": {
         "title": "Where should we look?",
         "subtitle": "Pick a job board and enter your search.",
-        "name": "Autopilot name",
-        "namePlaceholder": "e.g. Senior Frontend Berlin",
+        "name": "Name this search",
         "board": "Job board",
         "query": "Search query",
         "queryPlaceholder": "e.g. React developer",
@@ -812,11 +825,7 @@
         "subtitle": "Autopilot finds and ranks matching jobs, then notifies you — you apply with the tailoring assistant.",
         "flowFind": "Finds and ranks jobs matching your search on the schedule you choose.",
         "flowNotify": "Surfaces new matches in the found-jobs list (and notifies you).",
-        "flowTailor": "Open a match and the assistant tailors your résumé and cover letter for it — you submit it yourself. Autopilot never applies for you.",
-        "coverLetter": "Base cover letter",
-        "coverLetterOptional": "(optional)",
-        "coverLetterHint": "Reused as the starting point the assistant tailors to each job.",
-        "coverLetterPlaceholder": "Add a base cover letter the assistant tailors per job…"
+        "flowTailor": "Open a match and the assistant tailors your résumé and cover letter for it — you submit it yourself. Autopilot never applies for you."
       },
       "schedule": {
         "title": "How often should this run?",
