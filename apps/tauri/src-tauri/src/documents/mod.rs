@@ -153,10 +153,7 @@ impl DocumentStore {
             name: "cache_document_keywords",
             up: |conn| {
                 if !column_exists(conn, "documents", "keywords_json") {
-                    conn.execute(
-                        "ALTER TABLE documents ADD COLUMN keywords_json TEXT",
-                        [],
-                    )?;
+                    conn.execute("ALTER TABLE documents ADD COLUMN keywords_json TEXT", [])?;
                 }
                 Ok(())
             },

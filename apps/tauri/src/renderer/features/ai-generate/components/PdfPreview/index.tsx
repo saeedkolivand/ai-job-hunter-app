@@ -20,8 +20,13 @@ interface PdfPreviewProps {
   className?: string;
 }
 
-/** How long after the last edit to re-render the preview (~500 ms). */
-const DEBOUNCE_MS = 500;
+/**
+ * Settle delay before re-rendering the preview. The incoming `text` now changes
+ * only on discrete events (initial generation, regeneration, explicit Save,
+ * doc/template/locale switch) — never per keystroke — so no throttling is needed;
+ * a fresh commit recompiles immediately.
+ */
+const DEBOUNCE_MS = 0;
 
 type Status = 'idle' | 'rendering' | 'ready' | 'error';
 
@@ -29,9 +34,11 @@ type Status = 'idle' | 'rendering' | 'ready' | 'error';
  * Live preview that renders the **real exported document** (not an approximation):
  * it calls the same Rust Typst renderer the export uses (`renderDocumentPreview`),
  * and shows the returned SVG pages as stacked `<img>` elements (one per page) in a
- * scrollable container. Re-renders ~{@link DEBOUNCE_MS}ms after edits settle, so
- * typing stays instant while the preview catches up. The last good pages stay on
- * screen during a re-render (corner spinner overlay) and after a transient failure.
+ * scrollable container. The `text` it receives is the COMMITTED document text,
+ * which the caller refreshes only on discrete events (initial generation,
+ * regeneration, explicit Save, doc/template/locale switch) — not on every
+ * keystroke — so each change triggers a single recompile. The last good pages stay
+ * on screen during a re-render (corner spinner overlay) and after a transient failure.
  *
  * This is the authoritative output before download — see ADR-012.
  * SVGs are rendered via Blob object URLs (`URL.createObjectURL`) — revoked on each

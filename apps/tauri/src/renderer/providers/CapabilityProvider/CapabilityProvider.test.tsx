@@ -9,7 +9,6 @@ import { CapabilityProvider, useCapabilities } from './CapabilityProvider';
 const health = {
   ai: { ready: true, model: 'llama3' },
   data: { ready: true, sqlite: true, vector: true },
-  workers: { active: 1, idle: 2 },
 };
 
 function renderCapabilities(client = createMockClient()) {
@@ -37,6 +36,5 @@ describe('CapabilityProvider', () => {
     await waitFor(() => expect(result.current.initialized).toBe(true));
     expect(result.current.ai).toEqual({ ready: true, model: 'llama3' });
     expect(result.current.data).toEqual({ ready: true, sqlite: true, vector: true });
-    expect(result.current.workers).toEqual({ active: 1, idle: 2 });
   });
 });

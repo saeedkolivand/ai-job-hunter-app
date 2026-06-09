@@ -1,4 +1,4 @@
-import { Eye, Pencil, Sparkles } from 'lucide-react';
+import { Eye, Pencil, Save, Sparkles } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 import { useCallback, useRef, useState } from 'react';
 
@@ -32,6 +32,15 @@ interface EditableOutputProps {
    * unchanged. Consumers that omit it keep the markdown preview.
    */
   previewSlot?: React.ReactNode;
+  /**
+   * Optional explicit-save handler. When provided, a **Save** button appears in the
+   * edit-view toolbar; clicking it commits the current edits (e.g. so a heavy
+   * `previewSlot` recompiles only on Save instead of on every keystroke). When
+   * omitted, behavior is unchanged — editing flows straight through `onChange`.
+   */
+  onSave?: () => void;
+  /** Enables the Save button — true when there are unsaved edits. */
+  canSave?: boolean;
 }
 
 /** The frozen selection range + text snapshot captured when a rewrite starts. */
@@ -71,6 +80,8 @@ export function EditableOutput({
   textAreaClassName,
   placeholder,
   previewSlot,
+  onSave,
+  canSave = false,
 }: EditableOutputProps) {
   const { t } = useTranslation();
   const selectedModel = useSelectedModel();
@@ -157,18 +168,34 @@ export function EditableOutput({
           )}
         </div>
 
-        <SegmentedControl<'preview' | 'edit'>
-          ariaLabel={t('aiGenerate.viewMode')}
-          size="sm"
-          tone="brand"
-          value={view}
-          onChange={setView}
-          options={[
-            { value: 'preview', label: t('aiGenerate.preview'), icon: Eye },
-            { value: 'edit', label: t('aiGenerate.edit'), icon: Pencil },
-          ]}
-          className="shrink-0"
-        />
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Save — only in edit mode when a save handler is supplied; commits the
+              current edits (e.g. so the preview recompiles on Save, not per keystroke). */}
+          {onSave && view === 'edit' && (
+            <Button
+              type="button"
+              onClick={onSave}
+              disabled={disabled || !canSave}
+              className="flex h-auto items-center gap-1.5 rounded-lg bg-brand/15 px-2.5 py-1 text-[11px] font-medium text-brand-soft transition-colors hover:bg-brand/20 disabled:pointer-events-none disabled:opacity-30"
+            >
+              <Save size={11} />
+              {t('aiGenerate.save')}
+            </Button>
+          )}
+
+          <SegmentedControl<'preview' | 'edit'>
+            ariaLabel={t('aiGenerate.viewMode')}
+            size="sm"
+            tone="brand"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: 'preview', label: t('aiGenerate.preview'), icon: Eye },
+              { value: 'edit', label: t('aiGenerate.edit'), icon: Pencil },
+            ]}
+            className="shrink-0"
+          />
+        </div>
       </div>
 
       {view === 'edit' ? (

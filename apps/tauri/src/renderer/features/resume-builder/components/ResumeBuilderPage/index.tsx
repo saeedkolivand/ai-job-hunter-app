@@ -33,7 +33,6 @@ export function ResumeBuilderPage() {
     output,
     setResumeBuilder,
     meta,
-    canGenerate,
     canUseAI,
     aiReason,
     isComplete,
@@ -51,8 +50,7 @@ export function ResumeBuilderPage() {
 
   const [copied, setCopied] = useState(false);
 
-  const onLanguageChange = (lng: string) =>
-    setResumeBuilder({ language: lng, locale: lng === 'de' ? 'de' : 'en' });
+  const onLanguageChange = (lng: string) => setResumeBuilder({ language: lng, locale: lng });
   const onTemplateChange = (id: TemplateId) =>
     setResumeBuilder(
       isTwoColumnTemplate(id) ? { templateId: id } : { templateId: id, atsMode: false }
@@ -98,7 +96,7 @@ export function ResumeBuilderPage() {
                 templateId={templateId}
                 atsMode={atsMode}
                 isComplete={isComplete}
-                canGenerate={canGenerate}
+                canUseAI={canUseAI}
                 isGenerating={isGenerating}
                 onLanguageChange={onLanguageChange}
                 onTemplateChange={onTemplateChange}

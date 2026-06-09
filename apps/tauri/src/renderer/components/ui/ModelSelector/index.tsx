@@ -27,10 +27,8 @@ interface ModelSelectorProps {
  */
 export function ModelSelector({ className }: ModelSelectorProps) {
   const { t } = useTranslation();
-  const { reason } = useCanUseAI();
-  const noModelSelected = reason === 'selectModel';
   const api = useAppClient();
-  const { data: modelList = [] } = useAIModels();
+  const { data: modelList = [], isLoading: ollamaLoading } = useAIModels();
   const ollamaModels = modelList as Model[];
   const aiModel = useAIModel();
   const setAIModel = usePreferencesStore((s) => s.setAIModel);
@@ -73,7 +71,9 @@ export function ModelSelector({ className }: ModelSelectorProps) {
   );
 
   // CLI-agent availability (binary detected) from the system health probe.
-  const { data: health } = useSystemHealth();
+  // `healthLoading` also drives the warning suppression for cli-agent providers
+  // (their option source is this probe), so we don't false-warn on first paint.
+  const { data: health, isLoading: healthLoading } = useSystemHealth();
   const cliDetected = (id: string) => health?.cliAgents?.[id]?.detected ?? false;
 
   // Grouped options, derived from the registry by provider kind (pure helper).
@@ -93,6 +93,33 @@ export function ModelSelector({ className }: ModelSelectorProps) {
       : activeProviderModel
         ? `${activeProvider}||${activeProviderModel}`
         : '';
+
+  // Warn whenever the dropdown can't show a real, selectable model for the current
+  // selection — i.e. the stored value isn't a visible option (no model picked,
+  // uninstalled Ollama model, stale/removed cloud model, CLI default) so the
+  // Dropdown falls back to its placeholder. A model must ALWAYS be visibly
+  // selected, so this fires for EVERY provider kind (Ollama, cloud, CLI agent).
+  // We only suppress it while the active provider's own option source is still
+  // loading, to avoid a false warning on first paint.
+  const selectedModelVisible = options.some((o) => o.value === selectedValue);
+  const activeCloudIndex = cloudProviders.indexOf(activeProvider);
+  const modelsLoading = (() => {
+    switch (PROVIDERS[activeProvider]?.kind) {
+      case 'local-server':
+        return ollamaLoading;
+      case 'cli-agent':
+        return healthLoading;
+      case 'cloud':
+        return activeCloudIndex >= 0
+          ? Boolean(keyQueries[activeCloudIndex]?.isLoading) ||
+              Boolean(modelQueries[activeCloudIndex]?.isLoading)
+          : false;
+      default:
+        return false;
+    }
+  })();
+  const showModelWarning = !modelsLoading && !selectedModelVisible;
+  const warningKey = selectedValue === '' ? 'models.noModelSelected' : 'models.modelUnavailable';
 
   // "Which model for what" hint (#6) for the current selection — derived from the
   // model name + provider kind, so new models are covered with no code change.
@@ -126,7 +153,7 @@ export function ModelSelector({ className }: ModelSelectorProps) {
     <div className={className}>
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0 w-full">
-          {noModelSelected ? (
+          {showModelWarning ? (
             <div className="border border-amber-400/30 bg-amber-400/5 rounded-lg p-2">
               {dropdown}
               <p
@@ -135,7 +162,7 @@ export function ModelSelector({ className }: ModelSelectorProps) {
                 className="mt-1.5 flex items-center gap-1 text-[10px] text-amber-400/80"
               >
                 <AlertTriangle size={12} className="shrink-0" />
-                {t('models.noModelSelected')}
+                {t(warningKey)}
               </p>
             </div>
           ) : (

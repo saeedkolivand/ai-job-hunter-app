@@ -4,8 +4,8 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-use crate::documents::{embed, DocumentStore};
 use crate::documents::keywords::{apply_stemmer, keywords, make_stemmer};
+use crate::documents::{embed, DocumentStore};
 use crate::ipc_contracts::matching::MatchResumeRequest;
 use crate::ipc_contracts::resume::ResumeExtractTextRequest;
 use crate::postings::PostingsCache;
@@ -33,8 +33,13 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
     // Always falls back to the original text on any failure. Cloud providers are
     // excluded, so this never incurs an unexpected API cost.
     let target_lang = resume.locale.as_deref().unwrap_or("en");
-    let translated =
-        crate::commands::translation::translate_if_needed(&app, &req.job_id, &job_text, target_lang).await;
+    let translated = crate::commands::translation::translate_if_needed(
+        &app,
+        &req.job_id,
+        &job_text,
+        target_lang,
+    )
+    .await;
     let job_text = translated; // shadow with the owned String; downstream code unchanged
 
     let skip_semantic = req.semantic_scoring_enabled == Some(false);
@@ -226,11 +231,11 @@ mod test {
         // Simulate the deserialization branch directly: malformed JSON that
         // would previously silent-default to Vec::new() / empty HashSet.
         let corrupt_json = "not valid json [[[";
-        let resume_words: HashSet<String> =
-            match serde_json::from_str::<Vec<String>>(corrupt_json) {
-                Ok(tokens) => apply_stemmer(tokens.into_iter().collect(), &stemmer),
-                Err(_) => keywords(resume_text, &stemmer),
-            };
+        let resume_words: HashSet<String> = match serde_json::from_str::<Vec<String>>(corrupt_json)
+        {
+            Ok(tokens) => apply_stemmer(tokens.into_iter().collect(), &stemmer),
+            Err(_) => keywords(resume_text, &stemmer),
+        };
 
         // The fallback must not be empty — the resume text has real content.
         assert!(

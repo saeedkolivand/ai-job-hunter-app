@@ -53,6 +53,7 @@ const defaultPreferences: Preferences = {
   performanceMode: 'balanced',
   promptQuality: 'auto',
   debugMode: false,
+  semanticScoring: false,
   onboardingCompleted: false,
   contactPromptSeen: false,
   lastUpdated: new Date().toISOString(),

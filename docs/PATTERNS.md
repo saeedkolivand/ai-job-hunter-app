@@ -240,6 +240,35 @@ When `chunk.thinking` is present, render it in a collapsible `ThinkingBubble` co
 
 All in-flight and completed generation sessions are held in a single [Zustand][zustand] store at `store/generation-store/`, keyed by a context id (e.g. autopilot job id). It survives navigation and panel close so the Apply modal can display an ongoing or finished generation without re-triggering it. This is the **sole** source of truth for generation state app-wide — do not duplicate this in local component state or React Query.
 
+### Activity indicator (live job queue)
+
+The dashboard footer and StatusBar render live-running and queued jobs via `useWorkerActivity()` (hook: `services/use-jobs/use-jobs.ts`). The hook derives activity state from two sources:
+
+1. **`useJobs()`** — React Query list subscription
+2. **`useJobsOnEvent()`** — real-time event listener (job started/completed)
+
+The hook combines both to compute `running` and `queued` counts, emitting a live `ActivityStatus`. This replaced the static `CapabilityProvider` + `health.workers` pattern:
+
+```typescript
+// services/use-jobs/use-jobs.ts
+export function useWorkerActivity() {
+  const jobs = useJobs(); // TanStack Query subscription
+  const events = useJobsOnEvent(); // live events from Tauri listener
+
+  const running = jobs.data?.filter((j) => j.status === 'running').length ?? 0;
+  const queued = jobs.data?.filter((j) => j.status === 'queued').length ?? 0;
+
+  return { running, queued };
+}
+```
+
+**Used in:**
+
+- `components/layout/StatusBar/` — inline activity badge (HoverPopover shows details)
+- `features/dashboard/components/AISystemStatus/` — activity panel
+
+The pattern keeps activity derived and reactive, eliminating stale `system_health` reads.
+
 ---
 
 ## 5. Document Import Pattern

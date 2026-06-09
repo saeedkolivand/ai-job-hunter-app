@@ -229,8 +229,9 @@ fn render_resume_svg_pages_returns_svg_page() {
 #[test]
 fn render_letter_svg_pages_returns_svg_page() {
     let t = Template::get(TemplateId::Modern);
-    let pages = render_letter_svg_pages(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
-        .expect("render_letter_svg_pages(us) should succeed");
+    let pages =
+        render_letter_svg_pages(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
+            .expect("render_letter_svg_pages(us) should succeed");
 
     assert!(
         !pages.is_empty(),
@@ -3014,7 +3015,10 @@ fn generate_cover_template_previews() {
         }
         let document = warned.output.unwrap_or_else(|diags| {
             let msg: Vec<_> = diags.iter().map(|d| d.message.as_str()).collect();
-            panic!("cover previews: typst compile error ({label}): {}", msg.join("; "));
+            panic!(
+                "cover previews: typst compile error ({label}): {}",
+                msg.join("; ")
+            );
         });
 
         assert!(
