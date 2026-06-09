@@ -20,6 +20,26 @@
     "support": "Help & Support",
     "settings": "Settings"
   },
+  "models": {
+    "tier": {
+      "large": "Large",
+      "medium": "Medium",
+      "small": "Small"
+    },
+    "guidance": {
+      "task": {
+        "strong": "Strongest reasoning — best for analysis and nuanced rewrites.",
+        "balanced": "Balanced — solid for generation; analysis is decent.",
+        "basic": "Lightweight — fine for quick drafts; pick a larger model for deep analysis.",
+        "light": "Fast & economical — great for generation and quick passes; deep analysis may miss nuance."
+      },
+      "kind": {
+        "cloud": "Cloud · fast, uses your API key.",
+        "local": "Local · private; speed depends on your hardware.",
+        "cli": "CLI · uses your existing login, no API key."
+      }
+    }
+  },
   "shortcuts": {
     "title": "Keyboard shortcuts",
     "navigate": "Navigate",
