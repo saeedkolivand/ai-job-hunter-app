@@ -1,6 +1,6 @@
 # Resume domain (resume + ATS + export)
 
-Last updated: 2026-06-02
+Last updated: 2026-06-09
 
 Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `job-match-expert` (ATS scoring). Canonical: [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md). Source is authoritative for literals (template count, scoring weights).
 
@@ -15,7 +15,10 @@ Nine templates. `TemplateId` in `export/types.rs`; registry/styling data in `exp
 ## ATS — two distinct concerns (don't conflate)
 
 1. **ATS-safe formatting** (owner: `resume-export-expert`) — the _output_ document parses cleanly: no multi-column traps for parsers, standard section headings, embedded/text fonts, no text-in-image. Linearization + the `validate/` gate enforce this.
-2. **ATS scoring / matching** (owner: `job-match-expert`) — `commands/match_resume.rs`: `keywords()` (tokenize + drop short/stopwords), `keyword_coverage()` (resume vs job keyword overlap), and a **weighted blend of semantic similarity + keyword coverage**. **Read `match_resume.rs` for the exact weights/algorithm — never trust a copied number.** Gaps → recommendations (`recommend/`). Cover letters: `cover_letter/`.
+2. **ATS scoring / matching** (owner: `job-match-expert`) — `documents/keywords.rs` (shared keyword module) + `commands/match_resume.rs`. Split pipeline:
+   - `keywords_normalized()` — tokenizes, lowercases, applies synonym-normalization (e.g., `js`→`javascript`, `k8s`→`kubernetes`, `c++`→`cpp`), filters: drops strings ≤3 chars unless in `SHORT_TECH_TERMS` allowlist (go, sql, aws, gcp, css, git, api, vue, ios, tdd, bdd, ci, cd, ml, ai, ui, ux, qa, rx, etl, sap, erp, crm, k8s, r, cpp), drops stopwords. **No stemming.** Synonym lookup runs on raw tokens (before trimming) so `c-plus-plus` → `cpp` survives. Cached per-document in `keywords_json` column (migration 4).
+   - `apply_stemmer()` — Snowball stemming per language detected at match time (German/French/Spanish/Italian/Portuguese/Dutch via whatlang; fallback English). Stemming skipped for `SHORT_TECH_TERMS` to prevent corruption (aws → aw).
+   - `keyword_coverage()` returns resume vs job keyword overlap %; a **weighted blend of semantic similarity + keyword coverage** (read source for exact ratio — never trust a copied number). Corrupt-cache fallback: `from_str().unwrap_or_default()` returns empty set (domain-visible ATS-score drop → zero). Auto-scoring gated by sequential FIFO scheduler (CONCURRENCY=1). Gaps → recommendations (`recommend/`). Cover letters: `cover_letter/`.
 
 ## Export contract & pipeline
 
@@ -27,7 +30,9 @@ Nine templates. `TemplateId` in `export/types.rs`; registry/styling data in `exp
 
 ## Cover-letter PDF
 
-`render_letter_pdf` in `typst_engine/engine.rs`. Market conventions (date placement, recipient block, sign-off) come from `locale/letter.rs` (`LetterMarketConventions`). `parse_cover_letter` in `typst_engine/letter.rs` produces a `LetterModel` serialised to JSON — no user content concatenated into Typst markup.
+`render_letter_pdf` in `typst_engine/engine.rs`. Market conventions (date placement, recipient block, sign-off) come from `locale/letter.rs` (`LetterMarketConventions`). **Cover letters inherit the resume template's visual style** (accent/fonts/sizes) via `letter_style_from_template` in `typst_engine/letter.rs`. `parse_cover_letter` produces a `LetterModel` serialised to JSON — no user content concatenated into Typst markup.
+
+**Template previews** (for the AI-Generate template picker): offline test `generate_cover_template_previews` in `typst_engine/test.rs` renders each of the 9 resume templates' cover-letter style to SVG (per-template; vector, no raster). Owned by: `export/typst_engine/`. Consumed by: `samples/cover-template-previews.ts` Vite glob → `COVER_TEMPLATE_PREVIEWS` → renderer UI. See [`docs/EXPORT_TEMPLATES.md` § Cover-letter template previews](../EXPORT_TEMPLATES.md#cover-letter-template-previews-ai-generate-ui).
 
 ## Candidate photo
 

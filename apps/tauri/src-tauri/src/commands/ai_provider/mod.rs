@@ -250,16 +250,6 @@ pub trait AiProvider: Send + Sync {
     async fn test_key(&self, app: &AppHandle) -> AppResult<()>;
 }
 
-/// A short-timeout HTTP client for the `list_models` / `test_key` probes. Built on
-/// the shared rustls/pool base via [`crate::net::http`].
-pub(crate) fn probe_client() -> AppResult<reqwest::Client> {
-    crate::net::http::build_client(crate::net::http::ClientConfig {
-        timeout: Some(std::time::Duration::from_secs(10)),
-        ..Default::default()
-    })
-    .map_err(|e| AppError::Network(format!("Failed to create HTTP client: {e}")))
-}
-
 /// Single routing point. `base_url` only applies to OpenAI-compatible servers.
 pub fn resolve(id: ProviderId, base_url: Option<String>) -> Box<dyn AiProvider> {
     // CLI agents are routed entirely by the registry — adding one never touches
@@ -287,6 +277,20 @@ pub fn resolve(id: ProviderId, base_url: Option<String>) -> Box<dyn AiProvider> 
 /// Parse + resolve in one step (used by the settings commands).
 pub fn resolve_by_name(name: &str, base_url: Option<String>) -> AppResult<Box<dyn AiProvider>> {
     Ok(resolve(ProviderId::parse(name)?, base_url))
+}
+
+/// Discover a reachable local chat model for `provider_id`.
+///
+/// Returns `Some(model_name)` only when the provider is reachable and has an
+/// available chat model. CLI agents and cloud providers always return `None`.
+pub async fn reachable_chat_model(provider_id: ProviderId) -> Option<String> {
+    match provider_id {
+        ProviderId::Ollama => {
+            let (reachable, model) = ollama::reachable_model().await;
+            if reachable { model } else { None }
+        }
+        _ => None,
+    }
 }
 
 // ── Embeddings ────────────────────────────────────────────────────────────────

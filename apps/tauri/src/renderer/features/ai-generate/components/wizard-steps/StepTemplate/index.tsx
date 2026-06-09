@@ -5,13 +5,14 @@ import { Button, cn } from '@ajh/ui';
 import { isTwoColumnTemplate, type TemplateId, TEMPLATES } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 
-import { TEMPLATE_CAPTIONS, TEMPLATE_PREVIEWS } from '../../../samples';
+import { COVER_TEMPLATE_PREVIEWS, TEMPLATE_CAPTIONS, TEMPLATE_PREVIEWS } from '../../../samples';
 
 interface StepTemplateProps {
   templateId: TemplateId;
   atsMode: boolean;
   onTemplateChange: (id: TemplateId) => void;
   onAtsModeChange: (enabled: boolean) => void;
+  target?: 'resume' | 'cover' | 'both';
 }
 
 export function StepTemplate({
@@ -19,13 +20,16 @@ export function StepTemplate({
   atsMode,
   onTemplateChange,
   onAtsModeChange,
+  target = 'resume',
 }: StepTemplateProps) {
+  const isCover = target === 'cover';
   const { t } = useTranslation();
 
   const handleTemplateSelect = (id: TemplateId) => {
     onTemplateChange(id);
     // Single-column templates must never have ATS mode on — reset it.
-    if (!isTwoColumnTemplate(id)) {
+    // Cover letters have no ATS toggle, so never touch atsMode there.
+    if (!isCover && !isTwoColumnTemplate(id)) {
       onAtsModeChange(false);
     }
   };
@@ -35,7 +39,9 @@ export function StepTemplate({
       {/* Template thumbnail gallery */}
       <div className="grid grid-cols-3 gap-3">
         {Object.values(TEMPLATES).map((tpl) => {
-          const image = TEMPLATE_PREVIEWS[tpl.id];
+          // 'both' (and 'resume') intentionally use the résumé thumbnails — the template is shared
+          // and the résumé is the primary document; only cover-only swaps to cover-letter style previews.
+          const image = isCover ? COVER_TEMPLATE_PREVIEWS[tpl.id] : TEMPLATE_PREVIEWS[tpl.id];
           const caption = TEMPLATE_CAPTIONS[tpl.id];
           const selected = templateId === tpl.id;
 
@@ -89,8 +95,8 @@ export function StepTemplate({
         })}
       </div>
 
-      {/* ATS safe mode toggle — only relevant for two-column templates */}
-      {isTwoColumnTemplate(templateId) && (
+      {/* ATS safe mode toggle — only relevant for two-column résumé templates */}
+      {!isCover && isTwoColumnTemplate(templateId) && (
         <Button
           variant="unstyled"
           type="button"

@@ -24,3 +24,4 @@ pub mod scrape;
 pub mod search;
 pub mod support;
 pub mod system;
+pub mod translation;

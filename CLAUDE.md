@@ -244,7 +244,7 @@ Rules:
 - For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost), then `codegraph sync` to refresh the structural index.
 
 ## codegraph (structural code graph)
 
@@ -255,6 +255,7 @@ Rules:
 - "Who calls / what does this call / what breaks if I change X" → codegraph: `codegraph callers <symbol>`, `codegraph callees <symbol>`, `codegraph impact <symbol>`, `codegraph query <search>`. Faster and cheaper than grepping for symbol / call / import / impact lookups.
 - "What is X connected to semantically", concepts spanning code + docs, or architecture narrative → graphify (`graphify query / explain / path`).
 - Routing: structural facts (symbols, calls, imports, impact) → **codegraph**; meaning, rationale, cross-doc synthesis → **graphify**; raw `rg`/`fd` only when neither graph has the answer.
+- **NEVER** use `rg`, `grep`, `fd`, or raw file browsing to answer "where is X", "what calls X", "what does X call", or "what breaks if I change X" — those are codegraph questions. **NEVER** browse raw source for architecture or cross-file questions — those are graphify questions. Reach for grep only after both graphs return no relevant result.
 - Exposed to agents as an MCP server via `.mcp.json` (`codegraph serve --mcp`). When connected, prefer the `codegraph_explore` tool first — the server injects full tool guidance at connect, so no need to duplicate it here. If the index looks stale, run `codegraph sync`.
 
 ## Knowledge base & agent system
@@ -277,7 +278,9 @@ This repo ships a Claude Code agent system under `.claude/` (tracked) plus a kno
 | Docs / knowledge base / ADRs / lessons / release                                       | `project-steward` (sole writer)                                          |
 | Tests (write) / test audit                                                             | `test-author` / `testing-reviewer`                                       |
 
-**Per-change sequence** (skip stages that don't apply): **Primary Owner implements → review pass (resolve HIGH/CRITICAL before continuing; LOW/MEDIUM advisory) → if the change touches testable logic, `test-author` writes tests then `testing-reviewer` audits the changed code → `project-steward` closes (docs/`docs/knowledge`/lessons sync + `graphify update .`)**. Stay within **≤3 reviewers** (Primary + risk-justified Secondaries; `tauri-security-reviewer` is the default Secondary on risk-bearing changes). **Orchestrate every sub-agent from the main session** — agents can't call agents, so sequence them yourself; never tell one agent to "hand off" to another.
+**Per-change sequence** (skip stages that don't apply): **Primary Owner implements → review pass (resolve HIGH/CRITICAL before continuing; LOW/MEDIUM advisory) → if the change touches testable logic, `test-author` writes tests then `testing-reviewer` audits the changed code → `project-steward` closes (docs/`docs/knowledge`/lessons sync + `graphify update .` + `codegraph sync`)**. Stay within **≤3 reviewers** (Primary + risk-justified Secondaries; `tauri-security-reviewer` is the default Secondary on risk-bearing changes). **Orchestrate every sub-agent from the main session** — agents can't call agents, so sequence them yourself; never tell one agent to "hand off" to another.
+
+**Code modification blocker (absolute):** The main Claude session **MUST NEVER** directly edit, write, or delete source files. ALL code changes must be delegated to the appropriate project agent via the `Agent` tool. Exceptions: `CLAUDE.md` (meta/config), plan files, and single-character typo fixes. If no agent clearly owns the area, spawn `general-purpose` to identify the right agent first.
 
 **Stay light.** Trivial diffs (docs / config / rename / one-liners) **skip the swarm** — just make the change; the Stop review-gate reviews the real diff regardless. This is a strong default for AI sessions; the only _hard_ enforcement is the Stop review-gate hook + CI (ESLint, commitlint, architecture tests).
 

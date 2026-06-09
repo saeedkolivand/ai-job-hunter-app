@@ -1,11 +1,11 @@
-import { Gauge } from 'lucide-react';
+import { useEffect } from 'react';
 
 import type { MatchScore } from '@ajh/shared';
-import { Button } from '@ajh/ui';
 
 import { MatchBand } from '@/features/jobs/lib/score';
 import { useTranslation } from '@/lib/i18n';
-import { useDocuments, useMatchResume } from '@/services';
+import { useScoringScheduler } from '@/providers/ScoringScheduler';
+import { useDocuments, useJobMatchScore } from '@/services';
 
 interface RawDoc {
   _id: string;
@@ -21,31 +21,49 @@ function useDefaultResumeId(): string | null {
 }
 
 /**
- * Per-row match score (#50). Scores this posting against the default résumé
- * ONLY when clicked — no mass auto-scoring, so it never blows up embedding
- * cost across a long list — then shows the Low/Medium/High band (#52).
+ * Per-row match score (#50). Enqueues this posting in the FIFO
+ * ScoringScheduler so only one embedding call is active at a time.
+ * Once results arrive the slot is released and the next queued row runs.
+ * Results are cached for 10 minutes so navigating the list never re-fires.
  */
 export function RowMatchScore({ jobId }: { jobId: string }) {
   const { t } = useTranslation();
   const resumeId = useDefaultResumeId();
-  const match = useMatchResume();
-  const result: (MatchScore & { error?: string }) | undefined = match.data;
 
-  if (result && !result.error) {
-    return <MatchBand value={result.combined} />;
+  const { activeSet, enqueue, release, remove } = useScoringScheduler();
+  const enabled = !!resumeId && !!jobId && activeSet.has(jobId);
+
+  useEffect(() => {
+    if (!resumeId || !jobId) return;
+    enqueue(jobId);
+    return () => {
+      remove(jobId);
+    };
+  }, [jobId, resumeId, enqueue, remove]);
+
+  const { data, isPending, isError } = useJobMatchScore(resumeId, jobId, enabled);
+
+  useEffect(() => {
+    if (enabled && !isPending) release(jobId);
+  }, [enabled, isPending, jobId, release]);
+
+  // No resume selected or scoring failed — render nothing to keep the row clean.
+  if (!resumeId || isError) return null;
+
+  if (isPending) {
+    return (
+      <span
+        className="text-[11px] text-foreground/30"
+        aria-label={t('jobs.scoreLoading')}
+        aria-busy="true"
+      >
+        …
+      </span>
+    );
   }
 
-  return (
-    <Button
-      size="sm"
-      variant="ghost"
-      disabled={!resumeId || match.isPending}
-      loading={match.isPending}
-      onClick={() => resumeId && match.mutate({ resumeId, jobId })}
-      title={resumeId ? t('jobs.scoreHint') : t('jobs.scoreNoResume')}
-    >
-      {!match.isPending && <Gauge size={11} />}
-      {t('jobs.score')}
-    </Button>
-  );
+  const result = data as MatchScore & { error?: string };
+  if (result.error) return null;
+
+  return <MatchBand value={result.combined} />;
 }

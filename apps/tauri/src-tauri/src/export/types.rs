@@ -149,6 +149,21 @@ pub struct ExportResult {
     pub report: Option<crate::validate::ExportReport>,
 }
 
+/// Live-preview result: per-page rendered images (no file bytes, no filename).
+///
+/// Returned by `documents_render_preview_images`. `pages` is one rendered page
+/// per element; `mime_type` is always `image/svg+xml` for the SVG render path.
+/// The renderer shows each page via `<img>` (CSP `img-src 'self' data: blob:`),
+/// avoiding the `frame-src blob:` dependency the PDF→iframe preview needed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewResult {
+    /// One rendered page per element (SVG document strings, in page order).
+    pub pages: Vec<String>,
+    /// MIME type of every page string (`image/svg+xml`).
+    pub mime_type: String,
+}
+
 /// Line kind in parsed document
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LineKind {

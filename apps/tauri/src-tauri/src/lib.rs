@@ -259,6 +259,7 @@ pub fn run() {
             );
             app.manage(Mutex::new(UpdaterState::default()));
             app.manage(std::sync::Arc::new(ScraperEngine::new()));
+            app.manage(commands::translation::TranslationCache::new());
             // The conversations (chat) feature was removed; best-effort delete the
             // now-orphaned conversations.db (+ WAL/SHM sidecars) it left in the app-data
             // dir so dead chat history isn't kept on disk. Idempotent (no-op once gone).
@@ -436,6 +437,7 @@ pub fn run() {
             // export
             export::commands::documents_export_document,
             export::commands::documents_export_and_save,
+            export::commands::documents_render_preview_images,
             // updater
             updater::updater_check,
             updater::updater_download,

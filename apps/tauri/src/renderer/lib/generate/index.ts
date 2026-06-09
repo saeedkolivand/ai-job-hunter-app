@@ -1,4 +1,4 @@
-export { buildFilename, exportDOCX, exportPDF, exportTXT, renderPdfPreview } from './export';
+export { buildFilename, exportDOCX, exportPDF, exportTXT, renderDocumentPreview } from './export';
 export {
   extractMetadata,
   generateApplicationAnswer,

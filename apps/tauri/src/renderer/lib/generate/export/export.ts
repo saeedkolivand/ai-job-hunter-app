@@ -62,6 +62,15 @@ function extractCoverLetterText(raw: string): string {
   return raw.trim();
 }
 
+// ─── SVG sanitisation ─────────────────────────────────────────────────────────
+
+/** Typst SVG export leaves raw `&` in link hrefs (e.g. URL query separators),
+ *  which is invalid XML and breaks SVG rendered via <img>. Escape stray `&`
+ *  (those not already a valid XML entity) to `&amp;` so the SVG parses. */
+function escapeSvgAmpersands(svg: string): string {
+  return svg.replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;');
+}
+
 // ─── Public export API ────────────────────────────────────────────────────────
 
 export async function exportDOCX(
@@ -175,29 +184,22 @@ export async function exportPDF(
   }
 }
 
-/** Raw export result over IPC: `Vec<u8>` serializes to a number[] (camelCase). */
-interface ExportPreviewResult {
-  data: number[];
-  mimeType: string;
-}
-
 /**
- * Render the document to its real PDF bytes WITHOUT saving (#24) — the same Rust
- * renderer the export uses (`documents.exportDocument`), so the in-app preview is
- * the authoritative output, not an approximation (see ADR-012). Returns the PDF
- * bytes for the caller to wrap in a `blob:` URL. Throws on empty text, unknown
- * template, or a backend validation block, exactly like {@link exportPDF}.
+ * Render the document to SVG page images WITHOUT saving — the same Rust Typst
+ * renderer the export uses (`documents.renderPreviewImages`), so the in-app
+ * preview is the authoritative output, not an approximation (see ADR-012).
+ * Returns one SVG string per page for the caller to display via `<img>` data
+ * URLs. Throws on empty text, unknown template, or a backend validation block,
+ * exactly like {@link exportPDF}.
  */
-export async function renderPdfPreview(
+export async function renderDocumentPreview(
   text: string,
   type: 'resume' | 'cover-letter' = 'resume',
   meta?: GenerationMeta,
   templateId: TemplateId = 'modern',
   atsMode = false,
   locale?: string
-  // ArrayBuffer-backed (not the default `Uint8Array<ArrayBufferLike>`) so the
-  // bytes are a valid `BlobPart` at the call site under TS's strict DOM lib.
-): Promise<Uint8Array<ArrayBuffer>> {
+): Promise<string[]> {
   if (!text || text.trim().length === 0) {
     throw new Error('Cannot preview an empty document.');
   }
@@ -209,8 +211,10 @@ export async function renderPdfPreview(
   const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
   // Same header source of truth as the real export (see exportPDF/exportDOCX).
   const contact = await api.contactProfile.get().catch(() => undefined);
-  const result = (await api.documents.exportDocument({
+  const result = await api.documents.renderPreviewImages({
     text: exportText,
+    // `format` is required by BaseExportRequest but ignored by the backend for
+    // SVG preview output — the preview always emits SVG regardless of format.
     format: 'pdf',
     documentType: type,
     templateId,
@@ -225,9 +229,9 @@ export async function renderPdfPreview(
           targetLanguage: meta.targetLanguage,
         }
       : undefined,
-  })) as ExportPreviewResult;
+  });
 
-  return new Uint8Array(result.data);
+  return result.pages.map(escapeSvgAmpersands);
 }
 
 export function exportTXT(text: string, filename: string): void {

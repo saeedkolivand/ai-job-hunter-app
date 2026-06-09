@@ -95,7 +95,10 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
 
   // The scrapers paginate in ~25-result pages; map the requested job count to a
   // page budget (#41), clamped to the backend's allowed range.
-  const jobsToPages = (amount: number) => Math.min(Math.max(Math.ceil(amount / 25), 1), 20);
+  const jobsToPages = (amount: number) => {
+    const n = Number.isFinite(amount) && amount > 0 ? amount : 25;
+    return Math.min(Math.max(Math.ceil(n / 25), 1), 20);
+  };
 
   const doScrape = async (amount: number) => {
     const res = (await scrapeBoard.mutateAsync({
@@ -119,11 +122,12 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
     const amount = amountOverride ?? scrapeForm.amount;
     setScrapeOutcome(null);
     setScraping(true);
-    setLivePostings([]);
     pendingFinishRef.current.clear();
 
     // When the search target changes, drop the previously scraped jobs so the
     // list reflects the new query rather than accumulating across searches.
+    // For "Show more" (same signature) keep existing results so the list
+    // doesn't jump to the top.
     const signature = [
       scrapeForm.board,
       scrapeForm.query.trim().toLowerCase(),
@@ -132,6 +136,7 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
     ].join('|');
     if (signature !== lastSearchRef.current) {
       lastSearchRef.current = signature;
+      setLivePostings([]);
       try {
         await clearPostings.mutateAsync();
       } catch {

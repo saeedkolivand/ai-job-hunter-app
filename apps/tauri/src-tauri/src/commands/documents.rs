@@ -2,6 +2,8 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use crate::documents::keywords::keywords_normalized;
+
 // DocumentsImportRequest is generated from DocumentImportRequestSchema by `pnpm gen:ipc`.
 pub use crate::ipc_contracts::documents::DocumentsImportRequest;
 
@@ -103,6 +105,12 @@ pub async fn documents_import(app: AppHandle, req: DocumentsImportRequest) -> Va
 
     let store = app.state::<crate::documents::DocumentStore>();
     let doc_id = crate::documents::make_doc_id();
+    // Cache the normalized (un-stemmed) keyword set so the match path skips
+    // re-tokenizing this résumé. Sorted for deterministic JSON; stemming is
+    // applied at match time so the cache stays language-agnostic.
+    let mut kw_vec: Vec<String> = keywords_normalized(&extraction.text).into_iter().collect();
+    kw_vec.sort();
+    let keywords_json = serde_json::to_string(&kw_vec).ok();
     let record = crate::documents::DocumentRecord {
         id: doc_id.clone(),
         title: req.name.clone(),
@@ -113,6 +121,7 @@ pub async fn documents_import(app: AppHandle, req: DocumentsImportRequest) -> Va
         created_at: crate::documents::now_ms(),
         indexed: false,
         is_default: false,
+        keywords_json,
     };
     match store.insert(&record) {
         Ok(()) => json!({

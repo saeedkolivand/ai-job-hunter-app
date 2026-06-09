@@ -181,6 +181,17 @@ export interface DocumentsContract {
   ): Promise<{ data: number[]; mimeType: string; filename: string; report?: ExportReport }>;
 
   exportAndSave(req: BaseExportRequest): Promise<string>;
+
+  /**
+   * Render the same document to per-page images for the live preview, shown via
+   * `<img>` (CSP `img-src 'self' data: blob:`) instead of the PDF→iframe path.
+   * Takes the same request fields as {@link exportDocument} (`format` is ignored
+   * — the preview always emits SVG) and renders the identical model + Typst
+   * world, so preview fidelity matches export. `pages` is one SVG document string
+   * per page; `mimeType` is always `image/svg+xml`. Called imperatively (no React
+   * Query key) — the preview is requested on demand, like an export.
+   */
+  renderPreviewImages(req: BaseExportRequest): Promise<{ pages: string[]; mimeType: string }>;
 }
 
 export const DOCUMENTS_CHANNELS = {
@@ -190,4 +201,5 @@ export const DOCUMENTS_CHANNELS = {
   remove: 'documents:remove',
   exportDocument: 'documents:export_document',
   exportAndSave: 'documents:export_and_save',
+  renderPreviewImages: 'documents:render_preview_images',
 } as const;

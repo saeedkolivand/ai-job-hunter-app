@@ -1,13 +1,20 @@
-//! Typst compilation and PDF rendering.
+//! Typst compilation and PDF / SVG rendering.
 //!
 //! **Isolation boundary**: this is the ONLY file (alongside `render.rs`) that
-//! imports the `typst` and `typst_pdf` crates directly. No `typst` or
-//! `typst_pdf` types may appear in any function signature that is `pub` outside
-//! this module — callers only see `AppResult<Vec<u8>>`.
+//! imports the `typst`, `typst_pdf`, and `typst_svg` crates directly. No `typst`,
+//! `typst_pdf`, or `typst_svg` types may appear in any function signature that is
+//! `pub` outside this module — callers only see `AppResult<Vec<u8>>` (PDF) or
+//! `AppResult<Vec<String>>` (one SVG string per page).
 //!
 //! Public API (Phase 1a / Phase 2):
 //! - [`render_pdf`] — compile a [`DocumentModel`] through a named template →
 //!   raw PDF bytes.  This is the real entry point; the model-based path.
+//! - [`render_resume_svg_pages`] — the live-preview sibling of [`render_pdf`]:
+//!   the SAME model + SAME world, emitting one SVG string per page instead of
+//!   a single PDF blob. Fidelity is identical to export; only the final emit
+//!   differs.
+//! - [`render_letter_svg_pages`] — the live-preview sibling of
+//!   [`render_letter_pdf`].
 //! - [`render_pdf_from_source`] — compile a raw Typst source string (retained
 //!   for the smoke test and low-level debugging; not wired into the live export
 //!   flow).
@@ -61,6 +68,15 @@ const LEBENSLAUF_TYP: &str = include_str!("templates/lebenslauf.typ");
 /// Parametric cover-letter template driven by `data.opts` + `data.style`.
 /// A4 or Letter; themed from the chosen resume template's accent + fonts.
 const LETTER_TYP: &str = include_str!("templates/letter.typ");
+
+/// Test-only accessor for the embedded `(SCALE_TYP, LETTER_TYP)` sources so the
+/// offline `generate_cover_template_previews` test can build the exact same
+/// cover-letter Typst world as [`render_letter_pdf`] without duplicating the
+/// `include_str!` paths (the two consts stay private to production code).
+#[cfg(test)]
+pub(super) const fn letter_template_sources() -> (&'static str, &'static str) {
+    (SCALE_TYP, LETTER_TYP)
+}
 
 // ── Template enum (Typst-side) ────────────────────────────────────────────────
 
@@ -135,9 +151,16 @@ impl TypstTemplate {
     }
 }
 
-// ── Internal compile helper ───────────────────────────────────────────────────
+// ── Internal compile helpers ──────────────────────────────────────────────────
 
-fn compile_and_export(world: &ResumeWorld) -> AppResult<Vec<u8>> {
+/// Compile a [`ResumeWorld`] to a paged document, surfacing warnings as debug
+/// logs and mapping compile diagnostics to [`AppError::Parse`].
+///
+/// Shared by the PDF emit ([`compile_and_export`]) and the SVG emit
+/// ([`compile_and_svg`]) so both paths compile the EXACT same world — preview
+/// fidelity is guaranteed identical to export because only the final emit step
+/// differs.
+fn compile_world(world: &ResumeWorld) -> AppResult<PagedDocument> {
     let warned = typst::compile::<PagedDocument>(world);
 
     // Surface any warnings as a debug log (non-fatal).
@@ -145,14 +168,18 @@ fn compile_and_export(world: &ResumeWorld) -> AppResult<Vec<u8>> {
         log::debug!("typst warning: {}", w.message);
     }
 
-    let document = warned.output.map_err(|diags| {
+    warned.output.map_err(|diags| {
         let msg = diags
             .iter()
             .map(|d| d.message.as_str())
             .collect::<Vec<_>>()
             .join("; ");
         AppError::Parse(format!("Typst compile error: {msg}"))
-    })?;
+    })
+}
+
+fn compile_and_export(world: &ResumeWorld) -> AppResult<Vec<u8>> {
+    let document = compile_world(world)?;
 
     let options = PdfOptions::default();
     let pdf_bytes = pdf(&document, &options).map_err(|diags| {
@@ -165,6 +192,23 @@ fn compile_and_export(world: &ResumeWorld) -> AppResult<Vec<u8>> {
     })?;
 
     Ok(pdf_bytes)
+}
+
+/// Compile a [`ResumeWorld`] and emit one SVG string per page (vector — no
+/// rasteriser, no `image` crate). Mirrors [`compile_and_export`] but for the
+/// live-preview path. Guards against a zero-page document so callers always get
+/// at least one renderable page.
+fn compile_and_svg(world: &ResumeWorld) -> AppResult<Vec<String>> {
+    let document = compile_world(world)?;
+
+    if document.pages.is_empty() {
+        return Err(AppError::Parse(
+            "Typst SVG export error: document produced zero pages".to_string(),
+        ));
+    }
+
+    let pages: Vec<String> = document.pages.iter().map(typst_svg::svg).collect();
+    Ok(pages)
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -190,11 +234,46 @@ pub fn render_pdf(
     opts: &RenderOpts,
     style: Option<&Template>,
 ) -> AppResult<Vec<u8>> {
+    let world = build_resume_world(model, template, opts, style)?;
+    compile_and_export(&world)
+}
+
+/// Build the [`ResumeWorld`] for a résumé render.
+///
+/// Single source of truth for résumé world construction — shared by the PDF
+/// emit ([`render_pdf`]) and the SVG live-preview emit
+/// ([`render_resume_svg_pages`]) so both compile byte-identical inputs. Behaviour
+/// is preserved exactly from the prior inline body of [`render_pdf`].
+fn build_resume_world(
+    model: &DocumentModel,
+    template: TypstTemplate,
+    opts: &RenderOpts,
+    style: Option<&Template>,
+) -> AppResult<ResumeWorld> {
     let source = template.source_with_scale();
     let PreparedRender { source, data_json } = prepare(model, &source, opts, style)?;
+    Ok(ResumeWorld::with_data(&source, Some(data_json)))
+}
 
-    let world = ResumeWorld::with_data(&source, Some(data_json));
-    compile_and_export(&world)
+/// Live-preview sibling of [`render_pdf`]: compile the SAME [`DocumentModel`]
+/// through the SAME Typst world, emitting one SVG string per page instead of a
+/// single PDF blob.
+///
+/// Fidelity is identical to the PDF export — same model, same template, same
+/// world — because only the final emit step differs (`typst_svg::svg` per page
+/// vs `typst_pdf::pdf`). Returns at least one page; an empty document is an
+/// error (guarded in [`compile_and_svg`]).
+///
+/// No `typst` / `typst_svg` types appear in the public signature (offline
+/// hard-wall preserved); callers only see `AppResult<Vec<String>>`.
+pub fn render_resume_svg_pages(
+    model: &DocumentModel,
+    template: TypstTemplate,
+    opts: &RenderOpts,
+    style: Option<&Template>,
+) -> AppResult<Vec<String>> {
+    let world = build_resume_world(model, template, opts, style)?;
+    compile_and_svg(&world)
 }
 
 /// Compile a [`DocumentModel`] through a photo-capable Typst template.
@@ -214,13 +293,47 @@ pub fn render_pdf_with_photo(
     style: Option<&Template>,
     photo_png: Option<Vec<u8>>,
 ) -> AppResult<Vec<u8>> {
+    let world = build_resume_world_with_photo(model, template, opts, style, photo_png)?;
+    compile_and_export(&world)
+}
+
+/// Build the photo-aware [`ResumeWorld`] for a résumé render.
+///
+/// Single source of truth shared by [`render_pdf_with_photo`] (PDF) and
+/// [`render_resume_svg_pages_with_photo`] (SVG live-preview). Behaviour is
+/// preserved exactly from the prior inline body of [`render_pdf_with_photo`].
+fn build_resume_world_with_photo(
+    model: &DocumentModel,
+    template: TypstTemplate,
+    opts: &RenderOpts,
+    style: Option<&Template>,
+    photo_png: Option<Vec<u8>>,
+) -> AppResult<ResumeWorld> {
     let has_photo = photo_png.is_some();
     let source = template.source_with_scale();
     let PreparedRender { source, data_json } =
         prepare_with_photo(model, &source, opts, style, has_photo)?;
+    Ok(ResumeWorld::with_data_and_photo(
+        &source,
+        Some(data_json),
+        photo_png,
+    ))
+}
 
-    let world = ResumeWorld::with_data_and_photo(&source, Some(data_json), photo_png);
-    compile_and_export(&world)
+/// Photo-aware live-preview sibling of [`render_resume_svg_pages`].
+///
+/// Mirrors [`render_pdf_with_photo`] but emits one SVG string per page. Same
+/// model, same photo bytes (`/photo.png` virtual file), same world — only the
+/// final emit differs. Returns at least one page.
+pub fn render_resume_svg_pages_with_photo(
+    model: &DocumentModel,
+    template: TypstTemplate,
+    opts: &RenderOpts,
+    style: Option<&Template>,
+    photo_png: Option<Vec<u8>>,
+) -> AppResult<Vec<String>> {
+    let world = build_resume_world_with_photo(model, template, opts, style, photo_png)?;
+    compile_and_svg(&world)
 }
 
 /// Compile a raw Typst source string to PDF bytes (no data injection).
@@ -260,6 +373,25 @@ pub fn render_letter_pdf(
     market: &str,
     lang: &str,
 ) -> AppResult<Vec<u8>> {
+    let world = build_letter_world(text, template, contact, meta_name, market, lang)?;
+    compile_and_export(&world)
+}
+
+/// Build the [`ResumeWorld`] for a cover-letter render.
+///
+/// Single source of truth for cover-letter world construction — shared by the
+/// PDF emit ([`render_letter_pdf`]) and the SVG live-preview emit
+/// ([`render_letter_svg_pages`]). Behaviour is preserved exactly from the prior
+/// inline body of [`render_letter_pdf`] (same `parse_cover_letter`, same source
+/// preamble, same `data.json` serialisation).
+fn build_letter_world(
+    text: &str,
+    template: &Template,
+    contact: Option<&ContactProfile>,
+    meta_name: Option<&str>,
+    market: &str,
+    lang: &str,
+) -> AppResult<ResumeWorld> {
     let style = letter_style_from_template(template);
     let model = parse_cover_letter(text, contact, meta_name, market, lang, style);
 
@@ -277,6 +409,26 @@ pub fn render_letter_pdf(
          {LETTER_TYP}"
     );
 
-    let world = ResumeWorld::with_data(&source, Some(data_json));
-    compile_and_export(&world)
+    Ok(ResumeWorld::with_data(&source, Some(data_json)))
+}
+
+/// Live-preview sibling of [`render_letter_pdf`]: compile the SAME finished
+/// cover-letter text through the SAME Typst world, emitting one SVG string per
+/// page instead of a single PDF blob.
+///
+/// Fidelity is identical to the PDF export — same `LetterModel`, same template
+/// style, same world — because only the final emit step differs. Returns at
+/// least one page; an empty document is an error (guarded in
+/// [`compile_and_svg`]). No `typst` / `typst_svg` types appear in the public
+/// signature.
+pub fn render_letter_svg_pages(
+    text: &str,
+    template: &Template,
+    contact: Option<&ContactProfile>,
+    meta_name: Option<&str>,
+    market: &str,
+    lang: &str,
+) -> AppResult<Vec<String>> {
+    let world = build_letter_world(text, template, contact, meta_name, market, lang)?;
+    compile_and_svg(&world)
 }

@@ -141,16 +141,75 @@ The header (name + contact) always spans the full width above the columns.
 ## Cover-letter PDF (`letter.typ`)
 
 `render_letter_pdf` in `typst_engine/engine.rs` compiles a finished cover-letter
-text through `letter.typ`. The letter is **not** template-specific — it uses a
-neutral style — but it is **market-aware**: `letter::conventions` (from
-`locale/letter.rs`) provides `LetterMarketConventions` (date placement, recipient
-block position, sign-off style) derived from the job ad's detected locale.
+text through `letter.typ`. The letter is **not** template-specific; instead it
+**inherits visual styling from the chosen resume template** via
+`letter_style_from_template` (in `typst_engine/letter.rs`), deriving accent
+color, body/name fonts, and font sizes from the resume `Template` registry entry.
+It is **market-aware**: `letter::conventions` (from `locale/letter.rs`) provides
+`LetterMarketConventions` (date placement, recipient block position, sign-off
+style) derived from the job ad's detected locale.
 
 `parse_cover_letter` in `typst_engine/letter.rs` splits the text into
 `LetterModel` fields (letterhead / date / recipient / subject / salutation / body /
 signoff / signature). The model is serialised to JSON and injected via the Typst
 virtual `data.json` — no user content is ever concatenated into Typst markup
 (injection-safe).
+
+### Cover-letter template previews (AI-Generate UI)
+
+The AI-Generate template picker surfaces visual preview thumbnails for the
+cover-letter rendering, one per resume template. These previews are generated
+offline by the `generate_cover_template_previews` test (ignored, run via
+`cargo test --lib -- --ignored generate_cover_template_previews`) in
+`typst_engine/test.rs`.
+
+Each preview:
+
+- Renders a sample cover letter (US locale, English, reusing `LETTER_FIXTURE_US`)
+  through the nine resume templates via the exact same `ResumeWorld` + Typst
+  compilation path as `render_letter_pdf` production code.
+- Applies the template's visual style (accent, fonts, name_pt/body_pt) via
+  `letter_style_from_template`.
+- Exports page 1 as **SVG** (vector, zero rasterisation) to
+  `apps/tauri/src/renderer/features/ai-generate/assets/cover-template-previews/<slug>.svg`.
+- Is consumed by the renderer's `COVER_TEMPLATE_PREVIEWS` Vite glob (in
+  `samples/cover-template-previews.ts`), which emits lazy-loaded hashed URLs.
+- Mirrors the existing resume `generate_templates_showcase_banner` test
+  (which generates PNG previews under `assets/template-previews/`).
+
+The test is a **hard-wall isolation**: `typst` and `typst_svg` crates stay
+confined to the test function; no typst types appear in production code paths.
+`typst-svg` is a dev-dependency, never shipped.
+
+---
+
+## Live preview (AI-Generate)
+
+The AI-Generate wizard displays a real-time preview of the resume/cover letter as the user
+edits the raw text. The preview renders the **exact same Typst document** as the final export
+— no approximation, no drift.
+
+**Backend:** `documents_render_preview_images` in `export/commands/mod.rs` parses the request,
+compiles the Typst template with the same `DocumentModel` + `ResumeWorld` as the export path,
+and emits per-page SVG strings (via `render_resume_svg_pages` / `render_letter_svg_pages` in
+`export/typst_engine/render.rs`). The validation gate is omitted for the preview (validation is
+redundant; the preview and export follow the same pipeline up to the final emit).
+
+**Frontend:** `renderDocumentPreview()` in `apps/tauri/src/renderer/lib/generate/export/export.ts`
+calls the backend, XML-escapes stray `&` characters in SVG link hrefs (Typst leaves them raw for
+performance; invalid XML unless escaped), wraps each SVG string in a `Blob` with type
+`image/svg+xml`, and returns per-page `blob:` URLs.
+
+**UI:** `PdfPreview` in `apps/tauri/src/renderer/features/ai-generate/components/PdfPreview/`
+renders a scrollable container of `<img src=blob:>` elements, one per page, with Blob URL
+lifecycle management (revoke on each render batch and on unmount). The preview debounces
+~500 ms after same-document edits and re-renders immediately on document switches (résumé ↔
+cover letter).
+
+**Rationale:** See ADR-012. SVG via `<img>` is no-script, no-fetch, safe for backend-produced
+vector, and requires no CSP `frame-src` (only the existing `img-src 'self' blob:`). The preview
+is the authoritative output before download — template changes in Typst automatically appear in
+the preview, and any future export changes are reflected immediately.
 
 ---
 

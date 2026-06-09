@@ -152,14 +152,7 @@ pub async fn ai_list_provider_models(
 /// section. Cloud models come from `ai_list_provider_models`.
 #[tauri::command]
 pub async fn ai_list_models() -> Value {
-    let client = match crate::net::http::build_client(crate::net::http::ClientConfig {
-        timeout: Some(std::time::Duration::from_secs(5)),
-        ..Default::default()
-    }) {
-        Ok(c) => c,
-        Err(_) => return json!([]),
-    };
-    json!(ollama::list_tag_models(&client).await)
+    json!(ollama::list_tag_models().await)
 }
 
 /// Inspect a local (Ollama) model's real context window + size via `/api/show`,

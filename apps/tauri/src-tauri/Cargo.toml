@@ -118,7 +118,16 @@ docx-rs = "0.4.20"
 lopdf = "0.40"
 typst = "=0.14.2"
 typst-pdf = "=0.14.2"
+# SVG emitter for the live-preview render path (render_*_svg_pages). Runtime dep:
+# the preview command returns per-page SVG strings shown via <img> in the UI.
+# Exact pin matches typst/typst-pdf. typst is already a runtime dep, so this is a
+# small surface add over the existing Typst stack.
+typst-svg = "=0.14.2"
 image = "=0.25.10"
+
+# ATS keyword matching: language-aware stemming + language detection (match_resume).
+rust-stemmers = "1.2"
+whatlang = "0.16"
 
 
 [target.'cfg(windows)'.dependencies]
@@ -138,6 +147,7 @@ proptest = "1.5"
 wiremock = "0.6.5"
 # Rasteriser for the generate_templates_showcase_banner test — dev-only, NOT in the shipped binary.
 typst-render = "=0.14.2"
+# (typst-svg moved to [dependencies] — it now backs the live-preview render path.)
 criterion = "0.8.2"
 
 # Export hot-path benchmarks (request → PDF/DOCX bytes). Tracked over time by the

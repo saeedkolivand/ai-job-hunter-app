@@ -6,7 +6,8 @@
 use crate::export::templates::Template;
 use crate::export::types::TemplateId;
 use crate::export::typst_engine::{
-    render_letter_pdf, render_pdf, render_pdf_from_source, RenderOpts, TypstTemplate,
+    render_letter_pdf, render_letter_svg_pages, render_pdf, render_pdf_from_source,
+    render_resume_svg_pages, RenderOpts, TypstTemplate,
 };
 use crate::locale::PageGeometry;
 use crate::model::adapter::model_from_resume_text;
@@ -198,6 +199,50 @@ fn classic_render_produces_valid_pdf() {
         bytes.starts_with(b"%PDF"),
         "output must start with %PDF header"
     );
+}
+
+// ── SVG live-preview emit ───────────────────────────────────────────────────────
+//
+// The live preview renders the SAME model + SAME Typst world as the PDF export,
+// emitting one SVG string per page instead of a PDF blob. These guard that the
+// SVG sibling fns return ≥1 non-empty page whose string is a real SVG document.
+
+#[test]
+fn render_resume_svg_pages_returns_svg_page() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let pages = render_resume_svg_pages(&model, TypstTemplate::Classic, &opts_a4(), None)
+        .expect("render_resume_svg_pages(classic) should succeed");
+
+    assert!(
+        !pages.is_empty(),
+        "résumé preview must produce at least one page"
+    );
+    for (i, page) in pages.iter().enumerate() {
+        assert!(
+            page.contains("<svg"),
+            "résumé preview page {i} must contain an <svg root element; got start: {:?}",
+            &page[..page.len().min(80)]
+        );
+    }
+}
+
+#[test]
+fn render_letter_svg_pages_returns_svg_page() {
+    let t = Template::get(TemplateId::Modern);
+    let pages = render_letter_svg_pages(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
+        .expect("render_letter_svg_pages(us) should succeed");
+
+    assert!(
+        !pages.is_empty(),
+        "cover-letter preview must produce at least one page"
+    );
+    for (i, page) in pages.iter().enumerate() {
+        assert!(
+            page.contains("<svg"),
+            "cover-letter preview page {i} must contain an <svg root element; got start: {:?}",
+            &page[..page.len().min(80)]
+        );
+    }
 }
 
 // ── Link-annotation round-trip (header contact links) ───────────────────────────
@@ -2870,6 +2915,149 @@ fn generate_templates_showcase_banner() {
     eprintln!(
         "template previews written: 9 × {} px wide → {}",
         PREVIEW_W,
+        preview_dir.display()
+    );
+}
+
+/// Offline generator: one **cover-letter** style preview per résumé template.
+///
+/// `#[ignore]`d — an asset generator, not an assertion of behaviour. Run with:
+///
+/// ```text
+/// cargo test --bin ajh-tauri -- --ignored generate_cover_template_previews
+/// ```
+///
+/// This is the cover-letter analog of `generate_templates_showcase_banner`'s
+/// per-template previews. For each of the same nine résumé templates it builds
+/// the exact cover-letter Typst world that [`super::engine::render_letter_pdf`]
+/// produces — `letter_style_from_template` derives the palette + fonts from the
+/// résumé [`Template`], so the rendered letter *inherits that template's visual
+/// style* — compiles page 1, and exports it to **SVG** (vector, no rasteriser,
+/// no `image` crate, no thumbnailing). The nine `.svg` files feed the
+/// AI-Generate cover-letter template picker (fetched lazily by the UI via a Vite
+/// glob, mirroring the résumé `template-previews/` PNGs).
+///
+/// Offline hard-wall is respected: all `typst` / `typst_svg` types stay confined
+/// to this test fn (same posture as the showcase test, which also imports typst
+/// directly) — they never appear in production signatures. `typst-svg` is a
+/// dev-dependency, never shipped in the binary.
+#[test]
+#[ignore]
+fn generate_cover_template_previews() {
+    use std::path::Path;
+    use typst::layout::PagedDocument;
+
+    use super::engine::letter_template_sources;
+    use super::letter::{parse_cover_letter, style_from_template as letter_style_from_template};
+    use super::world::ResumeWorld;
+
+    // Same nine templates as the showcase generator. Slugs MUST match the
+    // renderer's `TemplateId` wire ids so the preview files line up with the UI.
+    let templates: &[(TemplateId, &str, &str)] = &[
+        (TemplateId::Classic, "Classic", "classic"),
+        (TemplateId::Modern, "Modern", "modern"),
+        (TemplateId::SwissMinimal, "SwissMinimal", "swiss-minimal"),
+        (TemplateId::Academic, "Academic", "academic"),
+        (TemplateId::Atelier, "Atelier", "atelier"),
+        (TemplateId::Meridian, "Meridian", "meridian"),
+        (TemplateId::Throughline, "Throughline", "throughline"),
+        (TemplateId::Portrait, "Portrait", "portrait"),
+        (TemplateId::Lebenslauf, "Lebenslauf", "lebenslauf"),
+    ];
+    assert_eq!(
+        templates.len(),
+        9,
+        "cover previews must cover exactly nine templates"
+    );
+
+    // Embedded letter Typst sources (scale preamble + letter template), reused
+    // verbatim from production so the preview matches `render_letter_pdf`.
+    let (scale_typ, letter_typ) = letter_template_sources();
+
+    let preview_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../src/renderer/features/ai-generate/assets/cover-template-previews");
+    std::fs::create_dir_all(&preview_dir)
+        .unwrap_or_else(|e| panic!("cover previews: create_dir_all cover-template-previews: {e}"));
+
+    let mut written = 0usize;
+
+    for (id, label, slug) in templates {
+        eprintln!("cover previews: rendering {label}...");
+
+        // Build the letter world exactly like `render_letter_pdf`, inline.
+        let t = Template::get(*id);
+        let style = letter_style_from_template(&t);
+        let model = parse_cover_letter(
+            LETTER_FIXTURE_US,
+            None,
+            Some("Jane Smith"),
+            "intl",
+            "en",
+            style,
+        );
+        let data_json = serde_json::to_vec(&model)
+            .unwrap_or_else(|e| panic!("cover previews: JSON serialise ({label}) failed: {e}"));
+
+        let source = format!(
+            "// Auto-generated cover-letter entry — do not edit.\n\
+             #let data = json(\"data.json\")\n\
+             {scale_typ}\n\
+             {letter_typ}"
+        );
+
+        let world = ResumeWorld::with_data(&source, Some(data_json));
+
+        // Compile to a PagedDocument (same pattern as the showcase generator).
+        let warned = typst::compile::<PagedDocument>(&world);
+        for w in &warned.warnings {
+            eprintln!("cover previews typst warning [{w:?}]");
+        }
+        let document = warned.output.unwrap_or_else(|diags| {
+            let msg: Vec<_> = diags.iter().map(|d| d.message.as_str()).collect();
+            panic!("cover previews: typst compile error ({label}): {}", msg.join("; "));
+        });
+
+        assert!(
+            !document.pages.is_empty(),
+            "cover previews: {label} produced zero pages"
+        );
+
+        // Export page 1 to SVG (vector — no rasterisation, no thumbnail).
+        let svg: String = typst_svg::svg(&document.pages[0]);
+        assert!(
+            !svg.is_empty(),
+            "cover previews: {label} produced an empty SVG"
+        );
+        assert!(
+            svg.contains("<svg"),
+            "cover previews: {label} SVG missing <svg root element"
+        );
+
+        let preview_path = preview_dir.join(format!("{slug}.svg"));
+        std::fs::write(&preview_path, svg.as_bytes())
+            .unwrap_or_else(|e| panic!("cover previews: write {}: {e}", preview_path.display()));
+
+        written += 1;
+        eprintln!("  → {} ({} bytes)", preview_path.display(), svg.len());
+    }
+
+    assert_eq!(
+        written, 9,
+        "cover previews: expected exactly 9 SVG files written"
+    );
+
+    // Verify all nine exist and are non-trivial.
+    for (_, label, slug) in templates {
+        let p = preview_dir.join(format!("{slug}.svg"));
+        let meta = std::fs::metadata(&p)
+            .unwrap_or_else(|e| panic!("cover previews: {slug}.svg missing ({label}): {e}"));
+        assert!(
+            meta.len() > 0,
+            "cover previews: {slug}.svg is empty ({label})"
+        );
+    }
+    eprintln!(
+        "cover-letter template previews written: 9 → {}",
         preview_dir.display()
     );
 }
