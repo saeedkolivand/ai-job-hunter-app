@@ -172,16 +172,17 @@ former `packages/ai` and `packages/data` Node packages were removed.
 
 ## Planned / Backlog
 
-| Feature                                 | Priority | Notes                                                                                      |
-| --------------------------------------- | -------- | ------------------------------------------------------------------------------------------ |
-| URL-to-job-ad extraction in AI Generate | Medium   | `scrape.url` IPC contract exists; UI input not yet wired                                   |
-| LinkedIn official API integration       | Medium   | Currently Playwright-only                                                                  |
-| Browser extension (quick apply)         | Low      |                                                                                            |
-| Advanced skill taxonomy                 | Medium   | Structured ontology for matching                                                           |
-| Salary negotiation assistant            | Low      |                                                                                            |
-| Cloud sync                              | Low      | Deferred — needs a remote backend; the backup bundle + `DataStore` trait are the substrate |
-| Team/shared job tracking                | Low      | Would require cloud sync                                                                   |
-| Interview preparation AI                | Medium   | Mock interview Q&A                                                                         |
+| Feature                                 | Priority | Notes                                                                                                                                                             |
+| --------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CJK font support in PDF/preview         | Medium   | Bundle Noto Sans CJK into Typst engine (`export/typst_engine/`) so zh/ja/ko render in PDF and live preview (generation + DOCX already work; currently shows tofu) |
+| URL-to-job-ad extraction in AI Generate | Medium   | `scrape.url` IPC contract exists; UI input not yet wired                                                                                                          |
+| LinkedIn official API integration       | Medium   | Currently Playwright-only                                                                                                                                         |
+| Browser extension (quick apply)         | Low      |                                                                                                                                                                   |
+| Advanced skill taxonomy                 | Medium   | Structured ontology for matching                                                                                                                                  |
+| Salary negotiation assistant            | Low      |                                                                                                                                                                   |
+| Cloud sync                              | Low      | Deferred — needs a remote backend; the backup bundle + `DataStore` trait are the substrate                                                                        |
+| Team/shared job tracking                | Low      | Would require cloud sync                                                                                                                                          |
+| Interview preparation AI                | Medium   | Mock interview Q&A                                                                                                                                                |
 
 [tauri]: https://tauri.app
 [pnpm]: https://pnpm.io
