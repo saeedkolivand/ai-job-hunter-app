@@ -3,7 +3,9 @@ import { useQueries } from '@tanstack/react-query';
 
 import { Dropdown } from '@ajh/ui';
 
+import { getModelGuidance } from '@/lib/ai-providers/model-guidance';
 import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
+import { useTranslation } from '@/lib/i18n';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { useAIModels, useHasProviderKey, useSystemHealth } from '@/services';
 import { keys } from '@/services/query-client';
@@ -24,6 +26,7 @@ interface ModelSelectorProps {
  * curated aliases when their binary is detected.
  */
 export function ModelSelector({ className }: ModelSelectorProps) {
+  const { t } = useTranslation();
   const api = useAppClient();
   const { data: modelList = [] } = useAIModels();
   const ollamaModels = modelList as Model[];
@@ -89,6 +92,13 @@ export function ModelSelector({ className }: ModelSelectorProps) {
         ? `${activeProvider}||${activeProviderModel}`
         : '';
 
+  // "Which model for what" hint (#6) for the current selection — derived from the
+  // model name + provider kind, so new models are covered with no code change.
+  const selectedModelName = selectedValue ? (selectedValue.split('||')[1] ?? '') : '';
+  const guidance = selectedModelName
+    ? getModelGuidance(selectedModelName, PROVIDERS[activeProvider]?.kind ?? 'local-server')
+    : null;
+
   const handleModelChange = (value: string) => {
     const [provider, model] = value.split('||');
     if (!provider || !model) return;
@@ -113,6 +123,15 @@ export function ModelSelector({ className }: ModelSelectorProps) {
           />
         </div>
       </div>
+      {guidance && (
+        <p className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] leading-relaxed text-foreground/40">
+          <span className="rounded bg-white/[0.06] px-1.5 py-0.5 font-medium text-foreground/55">
+            {t(`models.tier.${guidance.tier}`)}
+          </span>
+          <span className="text-foreground/55">{t(`models.guidance.task.${guidance.task}`)}</span>
+          <span className="text-foreground/30">· {t(`models.guidance.kind.${guidance.kind}`)}</span>
+        </p>
+      )}
     </div>
   );
 }
