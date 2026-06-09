@@ -1,4 +1,13 @@
-import { AlertCircle, AlertTriangle, RefreshCw, ScanSearch, Sparkles, Zap } from 'lucide-react';
+import {
+  AlertCircle,
+  AlertTriangle,
+  Briefcase,
+  GraduationCap,
+  RefreshCw,
+  ScanSearch,
+  Sparkles,
+  Zap,
+} from 'lucide-react';
 
 import { Button, cn, SegmentedControl } from '@ajh/ui';
 
@@ -8,6 +17,7 @@ import { AiSetupHint } from '@/components/ui/AiSetupHint';
 import { ModelSelector } from '@/components/ui/ModelSelector';
 import type { Stage } from '@/features/analyze/constants';
 import { useTranslation } from '@/lib/i18n';
+import type { AnalysisMode } from '@/lib/resume-ai';
 import type { PromptQuality } from '@/store/preferences-schema';
 
 interface Props {
@@ -20,12 +30,14 @@ interface Props {
   canUseAI: boolean;
   aiReason: string;
   promptQuality: PromptQuality;
+  analysisMode: AnalysisMode;
   onUpload: (target: 'resume' | 'jobAd', file: File) => Promise<void>;
   onReset: () => void;
   onRun: () => void;
   setResume: (v: string) => void;
   setJobAd: (v: string) => void;
   setPromptQuality: (v: PromptQuality) => void;
+  setAnalysisMode: (v: AnalysisMode) => void;
 }
 
 export function AnalyzeLeftPanel({
@@ -38,12 +50,14 @@ export function AnalyzeLeftPanel({
   canUseAI,
   aiReason,
   promptQuality,
+  analysisMode,
   onUpload,
   onReset,
   onRun,
   setResume,
   setJobAd,
   setPromptQuality,
+  setAnalysisMode,
 }: Props) {
   const { t } = useTranslation();
 
@@ -84,6 +98,26 @@ export function AnalyzeLeftPanel({
       {/* One-click AI setup when no provider is ready */}
       <div className="px-6">
         <AiSetupHint show={!canUseAI} reason={aiReason} />
+      </div>
+
+      {/* Document type — academic CV vs work résumé (#54). Drives the ATS criteria. */}
+      <div className="px-6 pb-4">
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
+          {t('analyze.mode.label')}
+        </div>
+        <SegmentedControl<AnalysisMode>
+          variant="grid"
+          ariaLabel={t('analyze.mode.label')}
+          value={analysisMode}
+          onChange={setAnalysisMode}
+          options={[
+            { value: 'work', label: t('analyze.mode.work'), icon: Briefcase },
+            { value: 'academic', label: t('analyze.mode.academic'), icon: GraduationCap },
+          ]}
+        />
+        <p className="mt-1.5 text-[10px] leading-relaxed text-foreground/35">
+          {t(analysisMode === 'academic' ? 'analyze.mode.academicHint' : 'analyze.mode.workHint')}
+        </p>
       </div>
 
       {/* Prompt quality selector */}

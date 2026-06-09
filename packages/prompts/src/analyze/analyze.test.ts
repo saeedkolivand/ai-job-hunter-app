@@ -61,6 +61,27 @@ describe('buildAnalysisPrompt', () => {
     const small = buildAnalysisPrompt(resume, jobAd, { modelName: 'phi-3' });
     expect(large.length).toBeGreaterThan(small.length);
   });
+
+  it('injects the academic-CV criteria only when analysisMode is academic (#54)', () => {
+    const work = buildAnalysisPrompt(resume, jobAd, { analysisMode: 'work' }, 'large');
+    const academic = buildAnalysisPrompt(resume, jobAd, { analysisMode: 'academic' }, 'large');
+    expect(work).not.toContain('ACADEMIC CV');
+    expect(academic).toContain('ACADEMIC CV');
+    // The academic note must reverse the corporate length penalty and protect a
+    // Publications section.
+    expect(academic).toContain('do NOT penalize length');
+    expect(academic).toContain('Publications');
+  });
+
+  it('applies the academic note across tiers (compact + task prompts too)', () => {
+    const small = buildAnalysisPrompt(resume, jobAd, { analysisMode: 'academic' }, 'small');
+    expect(small).toContain('ACADEMIC CV');
+  });
+
+  it('defaults to work mode (no academic note) when analysisMode is omitted', () => {
+    const prompt = buildAnalysisPrompt(resume, jobAd, {}, 'large');
+    expect(prompt).not.toContain('ACADEMIC CV');
+  });
 });
 
 describe('validateAndRepair', () => {

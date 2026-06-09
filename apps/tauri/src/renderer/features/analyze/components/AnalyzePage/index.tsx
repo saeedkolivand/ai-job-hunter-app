@@ -22,8 +22,18 @@ import { usePreferencesStore, usePromptQuality } from '@/store/preferences-store
 function AnalyzePage() {
   const { t, i18n } = useTranslation();
 
-  const { resume, jobAd, stage, result, setResume, setJobAd, setStage, setResult } =
-    useAnalyzeState();
+  const {
+    resume,
+    jobAd,
+    stage,
+    result,
+    analysisMode,
+    setResume,
+    setJobAd,
+    setStage,
+    setResult,
+    setAnalysisMode,
+  } = useAnalyzeState();
 
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<'resume' | 'jobAd' | null>(null);
@@ -93,7 +103,17 @@ function AnalyzePage() {
     tokenStartRef,
     run,
     reset,
-  } = useAnalysisRun(resume, jobAd, selectedModel, canUseAI, i18n, setStage, setResult, t);
+  } = useAnalysisRun(
+    resume,
+    jobAd,
+    selectedModel,
+    canUseAI,
+    i18n,
+    setStage,
+    setResult,
+    t,
+    analysisMode
+  );
 
   const handleReset = async () => {
     await reset();
@@ -118,12 +138,14 @@ function AnalyzePage() {
           canUseAI={canUseAI}
           aiReason={aiReason ?? ''}
           promptQuality={promptQuality}
+          analysisMode={analysisMode}
           onUpload={handleUpload}
           onReset={handleReset}
           onRun={run}
           setResume={setResume}
           setJobAd={setJobAd}
           setPromptQuality={setPromptQuality}
+          setAnalysisMode={setAnalysisMode}
         />
 
         <div className="flex flex-1 flex-col overflow-hidden">

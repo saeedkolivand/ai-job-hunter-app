@@ -4,7 +4,7 @@ import type { AutopilotFoundJob } from '@ajh/shared';
 
 import type { WizardState } from '@/features/autopilot/types';
 import type { EmphasisId, GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate';
-import type { AnalysisResult } from '@/lib/resume-ai';
+import type { AnalysisMode, AnalysisResult } from '@/lib/resume-ai';
 
 // ─── Per-route state shapes ───────────────────────────────────────────────────
 
@@ -38,6 +38,8 @@ interface AnalyzeSlice {
   jobAd: string;
   stage: AnalyzeStage;
   result: AnalysisResult | null;
+  /** Evaluate as a corporate résumé (default) or an academic CV (#54). */
+  analysisMode: AnalysisMode;
 }
 
 interface JobsSlice {
@@ -114,6 +116,7 @@ const ANALYZE_DEFAULTS: AnalyzeSlice = {
   jobAd: '',
   stage: 'idle',
   result: null,
+  analysisMode: 'work',
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────

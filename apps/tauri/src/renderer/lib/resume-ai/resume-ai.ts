@@ -11,6 +11,7 @@
  */
 
 import {
+  type AnalysisMode,
   type AnalysisResult,
   buildAnalysisPrompt,
   buildSystemPrompt,
@@ -37,7 +38,7 @@ function effectiveTier(model: string): ModelTier {
   return getModelTier(model);
 }
 
-export type { AnalysisResult };
+export type { AnalysisMode, AnalysisResult };
 
 interface RunAnalysisOptions {
   resume: string;

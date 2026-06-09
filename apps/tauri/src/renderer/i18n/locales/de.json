@@ -112,6 +112,13 @@
     },
     "verdict": "Endurteil",
     "recruiterView": "Sichtweise des Personalers —",
+    "mode": {
+      "label": "Dokumenttyp",
+      "work": "Lebenslauf (Beruf)",
+      "academic": "Akademischer CV",
+      "workHint": "Bewertet nach ATS- und Recruiter-Konventionen für Unternehmen.",
+      "academicHint": "Bewertet nach Normen für akademische CVs — Publikationen, Forschung und Länge werden geschätzt, nicht abgewertet."
+    },
     "groups": {
       "strengthsSkills": "Stärken & Fähigkeiten",
       "recommendations": "Empfehlungen & Umformulierungen",
