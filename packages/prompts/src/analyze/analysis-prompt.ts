@@ -5,12 +5,36 @@ import { resumeConventions } from '../locale/index.js';
 import { type PromptTarget, resolveProfile } from '../provider/index.js';
 import { SCHEMA, SCHEMA_COMPACT } from './schema.js';
 
+/** Which hiring convention to evaluate the résumé against (#54). */
+export type AnalysisMode = 'work' | 'academic';
+
 export interface PromptMeta {
   resumeLanguage?: string;
   jobAdLanguage?: string;
   targetLocale?: string;
   outputTone?: string;
   modelName?: string; // For model-aware context management
+  /** Evaluate as a corporate résumé (default) or an academic CV (#54). */
+  analysisMode?: AnalysisMode;
+}
+
+/**
+ * Academic-CV evaluation note (#54). When the candidate selects "academic", the
+ * analyzer must judge the document against academic-hiring conventions instead of
+ * corporate-résumé rules — otherwise it wrongly penalizes the things that make an
+ * academic CV strong (length, a Publications section, scholarly detail). Empty for
+ * the default "work" mode, which the existing corporate-oriented prompt covers.
+ */
+function buildModeNote(mode?: AnalysisMode): string {
+  if (mode !== 'academic') return '';
+  return `
+### DOCUMENT TYPE: ACADEMIC CV (evaluate against academic-hiring norms, NOT a corporate résumé)
+- Length: multi-page is normal and expected — do NOT penalize length or recommend cutting to one page.
+- Core content: publications, citations, conference talks, research projects, grants/funding, teaching, advising, peer review, and academic service are CORE experience, not extras — weight them accordingly.
+- Sections: Publications, Research, Teaching, Grants, Presentations, and References are standard, ATS-appropriate academic sections — do NOT flag them as non-standard or as ATS risks.
+- Scoring: judge ATS, job match, and readability by academic conventions (research/teaching fit, publication record, methods rigor), NOT corporate keyword density or one-line CAR-bullet brevity.
+- Recommendations & rewrites: keep the scholarly register; never recommend deleting publications or compressing the CV into a corporate one-pager.
+Apply every honesty / no-fabrication rule exactly as in the base instructions.`;
 }
 
 export function buildAnalysisPrompt(
@@ -43,6 +67,8 @@ export function buildAnalysisPrompt(
 Use these pre-detected languages for your analysis. DO NOT perform your own language detection.`
       : '';
 
+  const modeNote = buildModeNote(meta.analysisMode);
+
   // Section headers + date conventions follow the JOB-AD locale, not a fixed market.
   const conv = resumeConventions(meta.jobAdLanguage ?? meta.targetLocale);
   const marketNote = `
@@ -65,6 +91,7 @@ ${j}
 </job_ad>
 ${langDetectionNote}
 ${marketNote}
+${modeNote}
 
 ${toneNote}
 ${langNote}
@@ -97,6 +124,7 @@ ${j}
 </job_ad>
 ${langDetectionNote}
 ${marketNote}
+${modeNote}
 
 ${toneNote}
 ${langNote}
@@ -116,6 +144,7 @@ ${r}
 ${j}
 ${langDetectionNote}
 ${marketNote}
+${modeNote}
 
 ### ANALYSIS STEPS ###
 
