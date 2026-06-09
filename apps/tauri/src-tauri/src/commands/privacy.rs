@@ -8,7 +8,6 @@ use tauri::{App, AppHandle, Manager};
 use crate::ai_generations::AiGenerationStore;
 use crate::autopilot::AutopilotStore;
 use crate::contact_profile::ContactProfileStore;
-use crate::conversations::ConversationDb;
 use crate::credentials::CredentialStore;
 use crate::data_store::Resettable;
 use crate::documents::DocumentStore;
@@ -59,11 +58,6 @@ impl Resettable for DocumentStore {
     }
 }
 impl Resettable for AiGenerationStore {
-    fn reset(&self) {
-        self.clear_all();
-    }
-}
-impl Resettable for ConversationDb {
     fn reset(&self) {
         self.clear_all();
     }

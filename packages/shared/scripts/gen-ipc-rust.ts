@@ -21,7 +21,6 @@ import {
   AiGenerationUpdateSchema,
   AutopilotCreateSchema,
   AutopilotUpdateSchema,
-  ConversationSaveMessageSchema,
   DocumentImportRequestSchema,
   EmbedRequestSchema,
   HybridSearchRequestSchema,
@@ -99,12 +98,6 @@ const MODULES: ModuleSpec[] = [
   {
     outFile: 'apps/tauri/src-tauri/src/ipc_contracts/search.rs',
     structs: [{ rustName: 'HybridSearchRequest', schema: HybridSearchRequestSchema }],
-  },
-  {
-    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/conversations.rs',
-    structs: [
-      { rustName: 'ConversationSaveMessageRequest', schema: ConversationSaveMessageSchema },
-    ],
   },
   {
     outFile: 'apps/tauri/src-tauri/src/ipc_contracts/referrals.rs',

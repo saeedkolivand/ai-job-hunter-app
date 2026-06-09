@@ -11,7 +11,6 @@ use tauri::{AppHandle, Manager};
 use crate::ai_generations::AiGenerationStore;
 use crate::autopilot::AutopilotStore;
 use crate::contact_profile::ContactProfileStore;
-use crate::conversations::ConversationDb;
 use crate::data_store::DataStore;
 use crate::documents::DocumentStore;
 use crate::job_preferences::JobPreferencesStore;
@@ -72,9 +71,6 @@ fn build_bundle(app: &AppHandle) -> Value {
     if let Some(s) = app.try_state::<std::sync::Arc<Mutex<AutopilotStore>>>() {
         let guard = s.lock();
         stores.insert(guard.key().to_string(), guard.export());
-    }
-    if let Some(s) = app.try_state::<ConversationDb>() {
-        stores.insert(s.key().to_string(), s.export());
     }
     if let Some(s) = app.try_state::<Mutex<InteractionStore>>() {
         let interactions = s.lock().export_all();
@@ -189,9 +185,6 @@ pub async fn data_import(app: AppHandle) -> Value {
     if let Some(s) = app.try_state::<std::sync::Arc<Mutex<AutopilotStore>>>() {
         let guard = s.lock();
         import_into("autopilots", &*guard);
-    }
-    if let Some(s) = app.try_state::<ConversationDb>() {
-        import_into("conversations", s.inner());
     }
     if let Some(s) = app.try_state::<Mutex<InteractionStore>>() {
         if let Some(data) = stores.get("interactions") {

@@ -234,13 +234,6 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       copySystemInfo: noop,
     },
 
-    conversations: {
-      getOrCreateConversation: async () => ({ id: 'mock', title: 'Mock' }),
-      loadMessages: emptyList,
-      saveMessage: noop,
-      saveAllMessages: noop,
-    },
-
     autopilot: {
       list: emptyList,
       get: noop,
