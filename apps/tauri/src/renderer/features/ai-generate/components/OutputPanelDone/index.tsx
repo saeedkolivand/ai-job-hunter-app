@@ -1,4 +1,4 @@
-import { Check, Copy, Download, FileText, LayoutTemplate, RotateCcw } from 'lucide-react';
+import { Check, Copy, Download, FileText, LayoutTemplate, Loader2, RotateCcw } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 
@@ -30,6 +30,8 @@ interface OutputPanelDoneProps {
   onRegenerate: () => void;
   copied: boolean;
   isGenerating?: boolean;
+  /** Which document is still streaming during progressive reveal (#23), or null. */
+  generatingDoc?: 'resume' | 'cover' | null;
 }
 
 export function OutputPanelDone({
@@ -46,6 +48,7 @@ export function OutputPanelDone({
   onRegenerate,
   copied,
   isGenerating = false,
+  generatingDoc = null,
 }: OutputPanelDoneProps) {
   const { t } = useTranslation();
   const [exportOpen, setExportOpen] = useState(false);
@@ -71,21 +74,29 @@ export function OutputPanelDone({
         <div className="flex items-center gap-1">
           {(
             [
-              ...(resumeOut ? [{ id: 'resume' as const, label: t('aiGenerate.resume') }] : []),
-              ...(coverOut ? [{ id: 'cover' as const, label: t('aiGenerate.coverLetter') }] : []),
+              ...(resumeOut || generatingDoc === 'resume'
+                ? [{ id: 'resume' as const, label: t('aiGenerate.resume') }]
+                : []),
+              ...(coverOut || generatingDoc === 'cover'
+                ? [{ id: 'cover' as const, label: t('aiGenerate.coverLetter') }]
+                : []),
             ] as { id: 'resume' | 'cover'; label: string }[]
           ).map(({ id, label }) => (
             <Button
               key={id}
               onClick={() => onActiveOutChange(id)}
               className={cn(
-                'rounded-lg px-3 py-1.5 text-xs font-medium transition-all h-auto',
+                'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all h-auto',
                 activeOut === id
                   ? 'bg-brand/15 text-brand-soft'
                   : 'text-foreground/45 hover:text-foreground/70'
               )}
             >
               {label}
+              {/* #23 — the document still streaming in the background gets a spinner. */}
+              {generatingDoc === id && (
+                <Loader2 size={10} className="animate-spin text-brand-soft" />
+              )}
             </Button>
           ))}
         </div>

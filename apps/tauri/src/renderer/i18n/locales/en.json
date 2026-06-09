@@ -546,6 +546,13 @@
     "coverLetter": "Cover Letter",
     "both": "Both",
     "generating": "Generating…",
+    "toast": {
+      "resumeReady": "Resume ready",
+      "coverReady": "Cover letter ready",
+      "bothReady": "Resume and cover letter ready",
+      "coverFailed": "Resume is ready — the cover letter failed",
+      "failed": "Generation failed"
+    },
     "selectModel": "Select a model first",
     "addApiKey": "Add API key in Settings",
     "installCli": "Install the CLI agent",
