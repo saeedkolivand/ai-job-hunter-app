@@ -1,7 +1,7 @@
 import { AnimatePresence } from 'motion/react';
 import { useRef, useState } from 'react';
 
-import { ErrorState } from '@ajh/ui';
+import { ErrorState, useToast } from '@ajh/ui';
 
 import { ContactPromptModal } from '@/components/contact/ContactPromptModal';
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -80,7 +80,11 @@ export function AIGeneratePage() {
   );
   // Opt-in company research for the cover letter — default off (no extra web/LLM call).
   const [researchCompany, setResearchCompany] = useState(false);
+  // In-flight flag, decoupled from `stage`: with progressive reveal (#23) the
+  // stage is already `done` (résumé shown) while the cover letter still streams.
+  const [isGenerating, setIsGenerating] = useState(false);
 
+  const notify = useToast();
   const selectedModel = useSelectedModel();
   const { canUse: canUseAI, reason: aiReason } = useCanUseAI();
   const extractTextMutation = useExtractText();
@@ -125,6 +129,8 @@ export function AIGeneratePage() {
     saveAiGeneration,
     t,
     setStageLabel,
+    setIsGenerating,
+    notify,
     researchCompany,
     locale
   );
@@ -216,7 +222,14 @@ export function AIGeneratePage() {
     }
   };
 
-  const isGenerating = stage === 'generating';
+  // Which document is still streaming (only meaningful in the progressive-reveal
+  // window: stage `done`, résumé shown, cover still generating). Drives the cover
+  // tab's "generating…" indicator in OutputPanelDone (#23).
+  const generatingDoc: 'resume' | 'cover' | null = isGenerating
+    ? genStep?.label === 'Cover Letter'
+      ? 'cover'
+      : 'resume'
+    : null;
 
   return (
     <PageTransition className="h-full overflow-hidden">
@@ -302,6 +315,7 @@ export function AIGeneratePage() {
                 onRegenerate={() => void handleGenerate()}
                 copied={copied}
                 isGenerating={isGenerating}
+                generatingDoc={generatingDoc}
               />
             )}
           </AnimatePresence>

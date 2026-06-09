@@ -9,6 +9,7 @@ import {
 } from '@/lib/generate';
 
 type AIGenerateStage = 'idle' | 'extracting' | 'configuring' | 'generating' | 'done';
+type NotifyVariant = 'success' | 'error' | 'info' | 'warning';
 
 export function useGeneration(
   resume: string,
@@ -35,6 +36,12 @@ export function useGeneration(
   saveAiGeneration: { mutate: (data: AiGenerationSaveRequest) => void },
   t: (key: string) => string,
   setStageLabel: (label: string) => void,
+  /** Tracks an in-flight generation independently of `stage` — once the résumé is
+   *  revealed (#23 progressive reveal) the stage is already `done` while the cover
+   *  is still streaming, so "is generating" can't be derived from the stage. */
+  setIsGenerating: (v: boolean) => void,
+  /** Toast sink for success/failure notices (#23). */
+  notify: (message: string, variant?: NotifyVariant) => void,
   /** Opt-in company research folded into the cover-letter prompt. */
   researchCompany = false,
   /**
@@ -70,6 +77,7 @@ export function useGeneration(
     tokenStartRef.current = null;
     const total = target === 'both' ? 2 : 1;
     setGenStep({ current: 1, total, label: target === 'cover' ? 'Cover Letter' : 'Resume' });
+    setIsGenerating(true);
     setStage('generating');
     startStageRotation();
 
@@ -78,6 +86,24 @@ export function useGeneration(
 
     let finalResume = '';
     let finalCover = '';
+
+    // Persist a finished generation (résumé and/or cover). Reused by the success
+    // path and the "cover failed but the résumé is done" salvage path (#23).
+    const persist = (resumeText: string, coverLetterText: string) =>
+      saveAiGeneration.mutate({
+        candidateName: meta.candidateName,
+        jobTitle: meta.jobTitle,
+        companyName: meta.companyName,
+        resumeLanguage: meta.resumeLanguage,
+        jobAdLanguage: meta.jobAdLanguage,
+        targetLanguage: meta.targetLanguage,
+        mismatch: meta.mismatch,
+        topRequirements: meta.topRequirements,
+        mode,
+        resumeText,
+        coverLetterText,
+        jobAd,
+      });
 
     const onTok =
       (setter: (fn: (p: string) => string) => void, accumulate: (t: string) => void) =>
@@ -113,16 +139,26 @@ export function useGeneration(
           onThink
         );
         setResumeOut(finalResume);
+        // #23 progressive reveal: in a "both" run, surface the finished résumé
+        // immediately and let the cover letter keep streaming in the background.
+        if (target === 'both') {
+          stopStageRotation();
+          setStreamBuffer('');
+          setActiveOut('resume');
+          setStage('done');
+        }
       }
 
       if (target === 'cover' || target === 'both') {
-        setActiveOut('cover');
+        // Cover-only keeps the streaming panel; in "both" the résumé is already
+        // revealed and the cover streams into its tab in the done view.
+        if (target === 'cover') setActiveOut('cover');
         setStreamBuffer('');
         setThinkingBuffer('');
         setModelLoading(true);
         tokenStartRef.current = null;
         setTokenCount(0);
-        setGenStep({ current: 2, total: 2, label: 'Cover Letter' });
+        setGenStep({ current: total, total, label: 'Cover Letter' });
         finalCover = await generateCoverLetter(
           resume,
           jobAd,
@@ -142,30 +178,40 @@ export function useGeneration(
 
       stopStageRotation();
       setStreamBuffer('');
+      setGenStep(null);
       setStage('done');
-      const doneActiveOut =
-        target === 'cover' ? 'cover' : finalResume ? 'resume' : finalCover ? 'cover' : 'resume';
-      setActiveOut(doneActiveOut);
+      setActiveOut(target === 'cover' ? 'cover' : finalResume ? 'resume' : 'cover');
 
-      void saveAiGeneration.mutate({
-        candidateName: meta.candidateName,
-        jobTitle: meta.jobTitle,
-        companyName: meta.companyName,
-        resumeLanguage: meta.resumeLanguage,
-        jobAdLanguage: meta.jobAdLanguage,
-        targetLanguage: meta.targetLanguage,
-        mismatch: meta.mismatch,
-        topRequirements: meta.topRequirements,
-        mode,
-        resumeText: finalResume,
-        coverLetterText: finalCover,
-        jobAd,
-      });
+      persist(finalResume, finalCover);
+      notify(
+        target === 'both'
+          ? t('aiGenerate.toast.bothReady')
+          : target === 'cover'
+            ? t('aiGenerate.toast.coverReady')
+            : t('aiGenerate.toast.resumeReady'),
+        'success'
+      );
     } catch (err) {
       stopStageRotation();
-      setError(err instanceof Error ? err.message : t('aiGenerate.errors.generationFailed'));
-      setStage('configuring');
+      setStreamBuffer('');
+      setGenStep(null);
+      if (controller.signal.aborted) {
+        // User cancelled — keep any finished document on screen, no error toast.
+        setStage(finalResume || finalCover ? 'done' : 'configuring');
+      } else if (target === 'both' && finalResume && !finalCover) {
+        // The résumé finished but the cover letter failed — keep the résumé
+        // visible (#23: never discard a finished document) and flag the cover.
+        setStage('done');
+        setActiveOut('resume');
+        persist(finalResume, '');
+        notify(t('aiGenerate.toast.coverFailed'), 'error');
+      } else {
+        setError(err instanceof Error ? err.message : t('aiGenerate.errors.generationFailed'));
+        setStage('configuring');
+        notify(t('aiGenerate.toast.failed'), 'error');
+      }
     } finally {
+      setIsGenerating(false);
       abortControllerRef.current = null;
     }
   };

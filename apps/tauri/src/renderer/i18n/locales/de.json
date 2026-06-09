@@ -531,6 +531,13 @@
     "coverLetter": "Anschreiben",
     "both": "Beides",
     "generating": "Generierung…",
+    "toast": {
+      "resumeReady": "Lebenslauf fertig",
+      "coverReady": "Anschreiben fertig",
+      "bothReady": "Lebenslauf und Anschreiben fertig",
+      "coverFailed": "Lebenslauf ist fertig — das Anschreiben ist fehlgeschlagen",
+      "failed": "Generierung fehlgeschlagen"
+    },
     "selectModel": "Wählen Sie zuerst ein Modell",
     "addApiKey": "API-Schlüssel in Einstellungen hinzufügen",
     "installCli": "CLI-Agent installieren",
