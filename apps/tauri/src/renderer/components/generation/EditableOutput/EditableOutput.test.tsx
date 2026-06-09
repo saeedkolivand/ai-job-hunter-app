@@ -328,3 +328,25 @@ describe('EditableOutput — F4 inline rewrite splice', () => {
     });
   });
 });
+
+describe('EditableOutput — preview surface (#24)', () => {
+  it('renders the prettified-markdown preview by default (no previewSlot)', () => {
+    render(<EditableOutput value="Led **payments** work." onChange={vi.fn()} docType="resume" />);
+    // **markers** render as bold — the markdown fallback is active.
+    expect(screen.getByText('payments').tagName).toBe('STRONG');
+  });
+
+  it('renders a custom previewSlot instead of markdown when provided', () => {
+    render(
+      <EditableOutput
+        value="Led **payments** work."
+        onChange={vi.fn()}
+        docType="resume"
+        previewSlot={<div data-testid="custom-preview">PDF</div>}
+      />
+    );
+    expect(screen.getByTestId('custom-preview')).toBeInTheDocument();
+    // The markdown fallback must NOT also render when a slot is supplied.
+    expect(screen.queryByText('payments')).toBeNull();
+  });
+});

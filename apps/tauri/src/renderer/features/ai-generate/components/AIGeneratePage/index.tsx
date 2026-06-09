@@ -311,6 +311,8 @@ export function AIGeneratePage() {
                 meta={meta}
                 mode={mode}
                 templateId={templateId}
+                atsMode={atsMode}
+                locale={locale}
                 onActiveOutChange={setActiveOut}
                 onCopy={() => void copyOutput()}
                 onExport={doExport}
