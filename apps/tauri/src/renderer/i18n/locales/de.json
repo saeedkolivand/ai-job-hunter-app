@@ -615,17 +615,26 @@
     "wizard": {
       "steps": {
         "0": "Was erstellen",
-        "1": "Vorlage",
-        "2": "Feinabstimmung"
+        "1": "Vorlage wählen",
+        "2": "Ergebnis feinabstimmen"
       },
+      "descriptions": {
+        "0": "Wählen Sie, ob ein Lebenslauf, ein Anschreiben oder beides erstellt wird.",
+        "1": "Wählen Sie ein Layout — Vorschau vor dem Generieren möglich.",
+        "2": "Passen Sie Ton, Länge und Zielmarkt vor dem Generieren an."
+      },
+      "stepCounter": "Schritt {{current}} von {{total}}",
       "back": "Zurück",
       "next": "Weiter",
       "generate": "Generieren",
       "quality": {
         "label": "Prompt-Qualität",
         "full": "Vollständig",
+        "fullDesc": "Am gründlichsten — vollständige Umschreibungen und detaillierte Vorschläge.",
         "auto": "Automatisch",
+        "autoDesc": "Wägt Qualität und Geschwindigkeit für Ihr Modell ab.",
         "fast": "Schnell",
+        "fastDesc": "Am schnellsten — leichtere Umschreibungen und weniger Vorschläge.",
         "compactWarning": "Schnellmodus — Umschreibungen und detaillierte Vorschläge werden für Geschwindigkeit reduziert.",
         "fullWarning": "Vollständiger Modus auf einem kleinen Modell kann unvollständige oder fehlerhafte Ausgaben erzeugen."
       }
