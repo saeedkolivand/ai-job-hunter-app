@@ -1,11 +1,15 @@
+import { cn } from '../../lib/cn';
+
 interface StepDotsProps {
   currentStep: number;
   totalSteps: number;
+  /** Wrapper classes — overrides the default centered row + vertical margin. */
+  className?: string;
 }
 
-export function StepDots({ currentStep, totalSteps }: StepDotsProps) {
+export function StepDots({ currentStep, totalSteps, className }: StepDotsProps) {
   return (
-    <div className="mb-6 mt-6 flex justify-center gap-1.5">
+    <div className={cn('mb-6 mt-6 flex justify-center gap-1.5', className)}>
       {Array.from({ length: totalSteps }).map((_, i) => (
         <div
           key={i}

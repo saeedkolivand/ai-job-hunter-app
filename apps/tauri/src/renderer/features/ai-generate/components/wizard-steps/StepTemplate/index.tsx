@@ -1,4 +1,4 @@
-import { FileText } from 'lucide-react';
+import { Check, FileText } from 'lucide-react';
 
 import { Button, cn } from '@ajh/ui';
 
@@ -32,10 +32,6 @@ export function StepTemplate({
 
   return (
     <div className="space-y-4">
-      <div>
-        <p className="text-sm font-semibold text-foreground/70">{t('aiGenerate.wizard.steps.1')}</p>
-      </div>
-
       {/* Template thumbnail gallery */}
       <div className="grid grid-cols-3 gap-3">
         {Object.values(TEMPLATES).map((tpl) => {
@@ -50,12 +46,12 @@ export function StepTemplate({
               className={cn(
                 'flex flex-col items-start gap-1.5 rounded-xl border p-2 text-left transition-all h-auto',
                 selected
-                  ? 'border-brand/40 bg-brand/8 ring-1 ring-brand/25'
+                  ? 'border-brand/50 bg-brand/10 ring-2 ring-brand/40'
                   : 'border-white/[0.06] bg-white/[0.02] hover:border-white/10'
               )}
             >
               {/* Thumbnail */}
-              <div className="w-full rounded-lg overflow-hidden bg-white/[0.03] aspect-[3/4] flex items-center justify-center">
+              <div className="relative w-full rounded-lg overflow-hidden bg-white/[0.03] aspect-[3/4] flex items-center justify-center">
                 {image ? (
                   <img
                     src={image}
@@ -64,6 +60,12 @@ export function StepTemplate({
                   />
                 ) : (
                   <FileText size={20} className="text-foreground/20" />
+                )}
+                {/* #13 — selected state reads clearly with a check badge. */}
+                {selected && (
+                  <span className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-brand text-white shadow-sm">
+                    <Check size={12} strokeWidth={3} />
+                  </span>
                 )}
               </div>
 

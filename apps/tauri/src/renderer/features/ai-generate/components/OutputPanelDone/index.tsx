@@ -1,11 +1,17 @@
-import { Check, Copy, Download, FileText, RotateCcw } from 'lucide-react';
+import { Check, Copy, Download, FileText, LayoutTemplate, RotateCcw } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 
 import { Button, cn } from '@ajh/ui';
 
 import { EditableOutput } from '@/components/generation/EditableOutput';
-import { buildFilename, type GenerationMeta, MODES, type TemplateId } from '@/lib/generate';
+import {
+  buildFilename,
+  type GenerationMeta,
+  MODES,
+  type TemplateId,
+  TEMPLATES,
+} from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 
 import { ExportModal } from '../ExportModal';
@@ -32,7 +38,7 @@ export function OutputPanelDone({
   activeOut,
   meta,
   mode,
-  templateId: _templateId,
+  templateId,
   onActiveOutChange,
   onCopy,
   onExport,
@@ -103,13 +109,28 @@ export function OutputPanelDone({
         </div>
       </div>
 
-      {/* Filename preview */}
-      {currentMeta && (
+      {/* Filename preview + active template (#12 — template info on top of the
+          resume box; templates apply to résumés, so it's hidden for cover letters). */}
+      {(currentMeta || activeOut === 'resume') && (
         <div className="shrink-0 border-b border-white/[0.05] px-6 py-2 flex items-center gap-2 text-[10px] text-foreground/30">
-          <FileText size={10} />
-          <span className="font-mono">
-            {buildFilename(currentMeta, activeOut === 'resume' ? 'resume' : 'cover-letter', 'pdf')}
-          </span>
+          {currentMeta && (
+            <>
+              <FileText size={10} />
+              <span className="font-mono">
+                {buildFilename(
+                  currentMeta,
+                  activeOut === 'resume' ? 'resume' : 'cover-letter',
+                  'pdf'
+                )}
+              </span>
+            </>
+          )}
+          {activeOut === 'resume' && (
+            <span className="ml-auto flex items-center gap-1 rounded bg-white/[0.04] px-1.5 py-0.5 text-foreground/45">
+              <LayoutTemplate size={10} />
+              {t('aiGenerate.templateLabel')}: {TEMPLATES[templateId].name}
+            </span>
+          )}
         </div>
       )}
 

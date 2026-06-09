@@ -33,7 +33,6 @@ export function StepTarget({ form, set, prefilled }: StepTargetProps) {
       <WizardField label={t('autopilot.wizard.target.name')}>
         <Input
           className={inputCls}
-          placeholder={t('autopilot.wizard.target.namePlaceholder')}
           value={form.name}
           onChange={(e) => set('name', e.target.value)}
         />

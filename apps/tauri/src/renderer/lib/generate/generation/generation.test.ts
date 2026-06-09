@@ -229,60 +229,6 @@ describe('generateCoverLetter', () => {
     registerWithResearch(vi.fn().mockRejectedValue(new Error('provider cannot search')));
     expect(await researchCompany('Job ad', 'llama3')).toBe('');
   });
-
-  it('folds a base cover letter into the prompt as fenced reference content', async () => {
-    const client = register();
-    const p = generateCoverLetter(
-      'My resume',
-      'Job ad',
-      COVER_META,
-      'recruiter',
-      'llama3',
-      vi.fn(),
-      'en',
-      undefined,
-      undefined,
-      { baseCoverLetter: 'REUSABLE TEMPLATE TEXT' }
-    );
-    await flushUntilStreaming();
-    emit('Dear Hiring Team.');
-    done();
-    await p;
-
-    expect(client.ai.generatePipeline).toHaveBeenCalledWith(
-      expect.objectContaining({
-        messages: expect.arrayContaining([
-          expect.objectContaining({
-            role: 'user',
-            content: expect.stringContaining('REUSABLE TEMPLATE TEXT'),
-          }),
-        ]),
-      })
-    );
-    const call = vi.mocked(client.ai.generatePipeline).mock.calls[0]?.[0];
-    const userMsg = call?.messages.find((m) => m.role === 'user')?.content ?? '';
-    expect(userMsg).toContain('BASE COVER LETTER');
-  });
-
-  it('omits the base-letter section when none is supplied', async () => {
-    const client = register();
-    const p = generateCoverLetter(
-      'My resume',
-      'Job ad',
-      COVER_META,
-      'recruiter',
-      'llama3',
-      vi.fn()
-    );
-    await flushUntilStreaming();
-    emit('Dear Hiring Team.');
-    done();
-    await p;
-
-    const call = vi.mocked(client.ai.generatePipeline).mock.calls[0]?.[0];
-    const userMsg = call?.messages.find((m) => m.role === 'user')?.content ?? '';
-    expect(userMsg).not.toContain('BASE COVER LETTER');
-  });
 });
 
 describe('generateApplicationAnswer', () => {

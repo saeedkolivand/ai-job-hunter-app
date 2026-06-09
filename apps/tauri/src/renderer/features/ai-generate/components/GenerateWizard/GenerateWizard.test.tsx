@@ -90,12 +90,13 @@ describe('GenerateWizard — navigation', () => {
     mockSetAIGenerate.mockClear();
   });
 
-  it('renders the step indicators for all 3 steps', () => {
+  it('shows the current step title, description and step counter', () => {
     render(<GenerateWizard {...makeProps()} />);
-    // Each step key is shown via t() which returns the key verbatim
+    // Only the current step's descriptive title + purpose are shown (a procedure,
+    // not a clickable tab strip). t() returns keys verbatim in this mock.
     expect(screen.getByText('aiGenerate.wizard.steps.0')).toBeInTheDocument();
-    expect(screen.getByText('aiGenerate.wizard.steps.1')).toBeInTheDocument();
-    expect(screen.getByText('aiGenerate.wizard.steps.2')).toBeInTheDocument();
+    expect(screen.getByText('aiGenerate.wizard.descriptions.0')).toBeInTheDocument();
+    expect(screen.getByText('aiGenerate.wizard.stepCounter')).toBeInTheDocument();
   });
 
   it('shows step 0 content (StepTarget) on first render', () => {
@@ -103,10 +104,16 @@ describe('GenerateWizard — navigation', () => {
     expect(screen.getByText('StepTarget')).toBeInTheDocument();
   });
 
-  it('clicking Next on step 0 sets wizardStep to 1', async () => {
+  it('selecting a target on step 0 advances to step 1 (#10 — no separate Next)', async () => {
     const user = userEvent.setup();
-    render(<GenerateWizard {...makeProps()} />);
-    await user.click(screen.getByRole('button', { name: /aiGenerate\.wizard\.next/i }));
+    const onTargetChange = vi.fn();
+    render(<GenerateWizard {...makeProps({ onTargetChange })} />);
+    // Step 0 has no Next button — picking a target doubles as advancing.
+    expect(
+      screen.queryByRole('button', { name: /aiGenerate\.wizard\.next/i })
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'StepTarget' }));
+    expect(onTargetChange).toHaveBeenCalledWith('cover');
     expect(mockSetAIGenerate).toHaveBeenCalledWith(expect.objectContaining({ wizardStep: 1 }));
   });
 

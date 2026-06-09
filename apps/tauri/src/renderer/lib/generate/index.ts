@@ -15,7 +15,7 @@ export { isTwoColumnTemplate, TEMPLATE_IDS, type TemplateId, TEMPLATES } from '.
 
 /**
  * Debounce window (ms) for persisting an in-progress inline edit to a saved
- * generation. Shared so the two edit surfaces (GenerationCard, ApplyJobModal's
+ * generation. Shared so the two edit surfaces (GenerationCard, ApplyPage's
  * useTailorGeneration) stay in lockstep.
  */
 export const PERSIST_DEBOUNCE_MS = 800;

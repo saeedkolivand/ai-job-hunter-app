@@ -37,7 +37,6 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     keywords: '',
     excludeKeywords: '',
     resumeText: '',
-    coverLetter: '',
     schedule: 'daily',
     scheduleHour: 9,
     scheduleMinute: 0,
