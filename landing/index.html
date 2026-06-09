@@ -213,6 +213,13 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 .scrollhint{margin-top:34px; font-family:var(--scrawl); font-size:15px; color:#8e9bad}
 .scrollhint .arr{display:block; font-size:26px; animation:bob 1.6s ease-in-out infinite}
 @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+/* the lazy exit: same breakdown, zero scrolling */
+.filmhint{
+  display:inline-block; margin-top:16px; font-family:var(--scrawl); font-size:14px; color:#ffd27a;
+  text-decoration:none; border:2px dashed rgba(255,210,122,.45); border-radius:12px 9px 13px 8px;
+  padding:6px 14px; transition:transform .15s, background .2s, border-color .2s;
+}
+.filmhint:hover{transform:rotate(-1.5deg) translateY(-2px); background:rgba(255,210,122,.08); border-color:rgba(255,210,122,.8)}
 .dontclick{position:absolute; left:calc(100% - 6px); top:-6px; pointer-events:none; z-index:6}
 .dc-inner{display:flex; align-items:center; gap:2px; transform:rotate(6deg); transform-origin:left center; animation:dcwiggle 1.5s ease-in-out infinite}
 @keyframes dcwiggle{0%,100%{transform:rotate(6deg)}50%{transform:rotate(1deg) translateY(-3px)}}
@@ -486,6 +493,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
     <h1 class="reveal">Job hunting broke me.<br>So I built a <span class="ul">robot<svg class="draw" viewBox="0 0 120 14" aria-hidden="true"><path pathLength="1" d="M4 8 Q34 3 62 6 T116 6"/><path pathLength="1" d="M14 12 Q52 8 104 10"/></svg></span> to do it.</h1>
     <p class="sub reveal">AI Job Hunter scrapes 19 job boards, writes your cover letters, and drafts your applications while you dissociate — you just press send. Runs fully offline. <b>Built by a guy who is, himself, still unemployed.</b></p>
     <div class="scrollhint reveal">scroll to watch a man fall apart<span class="arr">↓</span></div>
+    <a class="filmhint reveal" href="film.html">▶ or don't scroll — watch the film. he falls apart automatically. (2:52)</a>
   </div>
 </section>
 
@@ -758,6 +766,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   <p class="honest">yes, this app is real. yes, it actually scrapes LinkedIn, Indeed, StepStone, Xing, and 15 others. yes, it's built with Tauri + Rust + React 19 + a vector database + a pure-Rust Typst engine that renders every PDF — because I had a lot of free time, on account of the unemployment. no, it does not auto-apply — it finds the jobs and writes the whole application; hitting submit is the one job left to you. no, I still don't have a job. the autopilot is doing its best.</p>
   <button class="cta" id="cta">ok fine, take the app →</button>
   <a class="src-link" href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app">view the source — it's MIT, like my prospects: open and freely available.</a>
+  <a class="src-link" href="film.html">▶ relive the breakdown as a short film — same despair, now with a soundtrack. your hands can rest.</a>
   <p class="footnote">macOS will say the app is "damaged." it's not damaged. it's just unsigned — like a contract I was never offered. run <code>xattr -cr</code> and we move on.</p>
   <p class="builtwith">Tauri · Rust · React 19 · TanStack · LanceDB · Typst · Ollama · pure spite</p>
   <p class="byline">made by Saeed, between rejections.</p>
