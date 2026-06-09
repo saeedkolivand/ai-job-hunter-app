@@ -23,6 +23,7 @@ import {
   extractPlainText,
   type GenerationMeta,
   type GenerationMode,
+  getBodyLinkMap,
   getLinkMap,
   injectLinksIntoGeneratedText,
   type ReferralFormat,
@@ -268,7 +269,13 @@ export async function generateResume(
   const system = buildResumeSystemPrompt(mode, tier);
   const user = buildResumePrompt(resume, jobAd, meta, mode, tier);
   const raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal, onThinking);
-  return injectLinksIntoGeneratedText(extractPlainText(raw), getLinkMap(resume));
+  // Contact links go on the header line; body links (projects/publications, #18)
+  // are re-attached to their own items anywhere in the body.
+  return injectLinksIntoGeneratedText(
+    extractPlainText(raw),
+    getLinkMap(resume),
+    getBodyLinkMap(resume)
+  );
 }
 
 /**
