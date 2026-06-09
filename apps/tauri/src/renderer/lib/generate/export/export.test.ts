@@ -4,7 +4,7 @@ import type { GenerationMeta } from '@ajh/prompts/generate';
 
 import { _registerClient } from '../../app-client';
 import { createMockClient } from '../../mock-client';
-import { buildFilename, exportDOCX, exportPDF, exportTXT, renderPdfPreview } from './export';
+import { buildFilename, exportDOCX, exportPDF, exportTXT, renderDocumentPreview } from './export';
 
 const meta: GenerationMeta = {
   resumeLanguage: 'en',
@@ -93,38 +93,61 @@ describe('exportDOCX / exportPDF', () => {
   });
 });
 
-describe('renderPdfPreview (#24)', () => {
+describe('renderDocumentPreview (#24)', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('renders via exportDocument (no save) and returns the PDF bytes', async () => {
-    const exportDocument = vi
+  it('renders via renderPreviewImages (no save) and returns SVG page strings', async () => {
+    const renderPreviewImages = vi
       .fn()
-      .mockResolvedValue({ data: [1, 2, 3], mimeType: 'application/pdf' });
-    _registerClient(createMockClient({ documents: { exportDocument } }));
+      .mockResolvedValue({ pages: ['<svg>p1</svg>', '<svg>p2</svg>'], mimeType: 'image/svg+xml' });
+    _registerClient(createMockClient({ documents: { renderPreviewImages } }));
 
-    const bytes = await renderPdfPreview('Resume body', 'resume', meta, 'modern');
-    expect(exportDocument).toHaveBeenCalledWith(
-      expect.objectContaining({ format: 'pdf', documentType: 'resume', templateId: 'modern' })
+    const pages = await renderDocumentPreview('Resume body', 'resume', meta, 'modern');
+    expect(renderPreviewImages).toHaveBeenCalledWith(
+      expect.objectContaining({ documentType: 'resume', templateId: 'modern' })
     );
-    expect(bytes).toBeInstanceOf(Uint8Array);
-    expect(Array.from(bytes)).toEqual([1, 2, 3]);
+    expect(pages).toEqual(['<svg>p1</svg>', '<svg>p2</svg>']);
   });
 
   it('extracts the cover-letter section before rendering', async () => {
-    const exportDocument = vi.fn().mockResolvedValue({ data: [], mimeType: 'application/pdf' });
-    _registerClient(createMockClient({ documents: { exportDocument } }));
+    const renderPreviewImages = vi.fn().mockResolvedValue({ pages: [], mimeType: 'image/svg+xml' });
+    _registerClient(createMockClient({ documents: { renderPreviewImages } }));
 
     const raw = 'Resume context\n### COMPLETE COVER LETTER ###\nDear Hiring Team, ...';
-    await renderPdfPreview(raw, 'cover-letter', meta, 'classic');
-    const arg = exportDocument.mock.calls[0]?.[0] as { text: string };
+    await renderDocumentPreview(raw, 'cover-letter', meta, 'classic');
+    const arg = renderPreviewImages.mock.calls[0]?.[0] as { text: string };
     expect(arg.text.startsWith('Dear Hiring Team')).toBe(true);
   });
 
   it('throws on empty text and on an unknown template', async () => {
     _registerClient(createMockClient());
-    await expect(renderPdfPreview('   ', 'resume', meta, 'modern')).rejects.toThrow(/empty/);
-    await expect(renderPdfPreview('Body', 'resume', meta, 'nope' as never)).rejects.toThrow(
+    await expect(renderDocumentPreview('   ', 'resume', meta, 'modern')).rejects.toThrow(/empty/);
+    await expect(renderDocumentPreview('Body', 'resume', meta, 'nope' as never)).rejects.toThrow(
       /Unknown export template/
     );
+  });
+
+  it('escapes raw & in SVG hrefs (Typst query-param bug) without double-escaping existing entities', async () => {
+    const rawSvg = '<svg><a href="https://x.com/u?a=1&lipi=2&licu=3"/></svg>';
+    const renderPreviewImages = vi
+      .fn()
+      .mockResolvedValue({ pages: [rawSvg], mimeType: 'image/svg+xml' });
+    _registerClient(createMockClient({ documents: { renderPreviewImages } }));
+
+    const pages = await renderDocumentPreview('Resume body', 'resume', meta, 'modern');
+    // raw & must be escaped
+    expect(pages[0]).not.toMatch(/&lipi=/);
+    expect(pages[0]).not.toMatch(/&licu=/);
+    expect(pages[0]).toContain('&amp;lipi=');
+    expect(pages[0]).toContain('&amp;licu=');
+    // pre-existing &amp; must NOT be double-escaped
+    const withEntity = '<svg><a href="https://x.com/u?q=a&amp;b=c"/></svg>';
+    const renderPreviewImages2 = vi
+      .fn()
+      .mockResolvedValue({ pages: [withEntity], mimeType: 'image/svg+xml' });
+    _registerClient(createMockClient({ documents: { renderPreviewImages: renderPreviewImages2 } }));
+    const pages2 = await renderDocumentPreview('Resume body', 'resume', meta, 'modern');
+    expect(pages2[0]).not.toContain('&amp;amp;');
+    expect(pages2[0]).toContain('&amp;b=c');
   });
 });

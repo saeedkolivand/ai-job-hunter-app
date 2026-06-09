@@ -167,7 +167,8 @@
         "local": "Lokal · privat; Geschwindigkeit hängt von Ihrer Hardware ab.",
         "cli": "CLI · nutzt Ihren bestehenden Login, kein API-Schlüssel."
       }
-    }
+    },
+    "noModelSelected": "Kein KI-Modell ausgewählt – wähle eines, um KI-Funktionen zu nutzen."
   },
   "shortcuts": {
     "title": "Tastenkürzel",
@@ -810,6 +811,10 @@
         "0": "Wählen Sie, ob ein Lebenslauf, ein Anschreiben oder beides erstellt wird.",
         "1": "Wählen Sie ein Layout — Vorschau vor dem Generieren möglich.",
         "2": "Passen Sie Ton, Länge und Zielmarkt vor dem Generieren an."
+      },
+      "coverStyle": {
+        "title": "Stil wählen",
+        "desc": "Das Anschreiben übernimmt die Farben und Schriften dieser Vorlage."
       },
       "stepCounter": "Schritt {{current}} von {{total}}",
       "back": "Zurück",

@@ -397,12 +397,10 @@ impl AiProvider for GeminiClient {
             Some(k) => k,
             None => return vec![],
         };
-        let client = match super::probe_client() {
-            Ok(c) => c,
-            Err(_) => return vec![],
-        };
+        let client = crate::net::http::shared();
         let resp = client
             .get(format!("{BASE}/v1/models?key={api_key}"))
+            .timeout(std::time::Duration::from_secs(10))
             .send()
             .await;
         if let Ok(r) = resp {
@@ -423,9 +421,10 @@ impl AiProvider for GeminiClient {
     async fn test_key(&self, app: &AppHandle) -> AppResult<()> {
         let api_key = get_provider_key(app, self.id().credential_key())
             .ok_or_else(|| AppError::Config("No API key found".to_string()))?;
-        let client = super::probe_client()?;
+        let client = crate::net::http::shared();
         let resp = client
             .get(format!("{BASE}/v1/models?key={api_key}"))
+            .timeout(std::time::Duration::from_secs(10))
             .send()
             .await
             .map_err(|e| format!("Request failed: {e}"))?;

@@ -1,4 +1,4 @@
-import { Cpu } from 'lucide-react';
+import { AlertTriangle, Cpu } from 'lucide-react';
 import { useQueries } from '@tanstack/react-query';
 
 import { Dropdown } from '@ajh/ui';
@@ -27,6 +27,8 @@ interface ModelSelectorProps {
  */
 export function ModelSelector({ className }: ModelSelectorProps) {
   const { t } = useTranslation();
+  const { reason } = useCanUseAI();
+  const noModelSelected = reason === 'selectModel';
   const api = useAppClient();
   const { data: modelList = [] } = useAIModels();
   const ollamaModels = modelList as Model[];
@@ -110,17 +112,35 @@ export function ModelSelector({ className }: ModelSelectorProps) {
     setActiveProvider(p);
   };
 
+  const dropdown = (
+    <Dropdown
+      options={options}
+      value={selectedValue}
+      onChange={handleModelChange}
+      placeholder="Select a model…"
+      icon={<Cpu size={13} />}
+    />
+  );
+
   return (
     <div className={className}>
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0 w-full">
-          <Dropdown
-            options={options}
-            value={selectedValue}
-            onChange={handleModelChange}
-            placeholder="Select a model…"
-            icon={<Cpu size={13} />}
-          />
+          {noModelSelected ? (
+            <div className="border border-amber-400/30 bg-amber-400/5 rounded-lg p-2">
+              {dropdown}
+              <p
+                role="status"
+                aria-live="polite"
+                className="mt-1.5 flex items-center gap-1 text-[10px] text-amber-400/80"
+              >
+                <AlertTriangle size={12} className="shrink-0" />
+                {t('models.noModelSelected')}
+              </p>
+            </div>
+          ) : (
+            dropdown
+          )}
         </div>
       </div>
       {guidance && (

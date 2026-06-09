@@ -1,4 +1,4 @@
-# ADR-012: AI-Generate live preview renders the real exported PDF; templates stay single-source
+# ADR-012: Live preview renders the real exported document via SVG; templates stay single-source
 
 Last updated: 2026-06-09
 
@@ -6,53 +6,63 @@ Last updated: 2026-06-09
 
 ## Context
 
-The AI-Generate wizard (`apps/tauri/src/renderer/features/ai-generate/`) currently
-shows the generated résumé/cover letter as prettified markdown text (`OutputPanelDone` →
-`EditableOutput`), NOT the actual exported layout.
+The AI-Generate wizard (`apps/tauri/src/renderer/features/ai-generate/`) initially showed
+generated résumés/cover letters as prettified markdown text only. UX #24 requested a real
+template preview so users could edit while seeing the actual layout.
 
-UX item #24 asks the preview to render the real template and let the user edit in that
-template. The 9 templates render in Rust: PDF via printpdf and DOCX via the model_docx
-backend. ADR-002 (dual PDF/DOCX backends, golden parity) keeps those two outputs
-byte-for-byte aligned via golden snapshots.
+The 9 templates render in Rust: PDF via Typst engine (Typst §2), DOCX via model_docx.
+ADR-002 (dual PDF/DOCX backends, golden parity) keeps those outputs byte-for-byte aligned.
 
-During implementation we discovered that the Rust export command `documents_export_document`
-(exposed in the renderer as `documents.exportDocument`) already returns the rendered PDF
-bytes (`ExportResult { data: Uint8Array, mimeType, ... }`) without saving to disk. This
-makes a **real-PDF live preview cheap and perfectly faithful** — zero drift, because it
-IS the export pipeline.
+During implementation we discovered that a **preview-only SVG render path** is cheaper and
+more faithful than a PDF-in-iframe (which adds CSP surface and bloats the live-edit loop).
 
 ## Decision
 
-The AI-Generate live preview renders the **real exported PDF** from the Rust renderer
-(the same pipeline as the final export), re-rendering ~500ms after edits settle
-(debounced). The raw textarea remains the edit surface; the preview pane shows a
-`<iframe>` with the live PDF.
+The AI-Generate live preview renders **SVG page images** from the Rust Typst engine's
+`render_resume_svg_pages` / `render_letter_svg_pages` paths. These emit the _exact same_
+document structure as the PDF export — same Typst world, same template compilation, same
+validation — but stop at vector SVG instead of PDF bytes.
 
-**This supersedes the original ADR-012 decision** (approximate HTML/CSS mirror). Reasoning:
+- **Backend command:** `documents_render_preview_images` in `apps/tauri/src-tauri/src/export/commands/mod.rs`
+  → parses request, compiles template, renders per-page SVG, returns `RenderPreviewImagesResult { pages: Vec<String> }`.
+- **Frontend:** `renderDocumentPreview()` in `apps/tauri/src/renderer/lib/generate/export/export.ts`
+  calls the backend, XML-escapes stray `&` in SVG hrefs (Typst leaves them raw), wraps each SVG
+  string in a `Blob([svg], { type: 'image/svg+xml' })`, and returns `<img src=blob:>` URLs.
+- **UI:** `PdfPreview` in `apps/tauri/src/renderer/features/ai-generate/components/PdfPreview/`
+  renders a scrollable stack of `<img>` elements, with 500ms debounce on same-doc edits and
+  zero-debounce on doc switches (résumé ↔ cover letter).
 
-- The real-PDF preview is perfectly faithful (zero drift — it IS the export).
-- No second render path or duplicated template specs.
-- Far less code than a 9-template HTML mirror + a text→sections parser.
-- ADR-002 (dual PDF/DOCX parity) is untouched; the preview reuses the existing renderer.
+**This supersedes the earlier PDF-in-iframe design.** Reasoning:
 
-**Rejected alternative (original):** Build an approximate HTML/CSS mirror of the 9 templates.
-Rejected during implementation because the real-PDF approach is cheaper, more faithful,
-and eliminates the drift risk entirely.
+- SVG `<img>` is no-script, no-fetch (safe from backend-produced vector).
+- Removes CSP `frame-src 'self' blob:` surface; `img-src 'self' blob:` is a tighter gate.
+- Simpler memory model: Blob URL revoke on each render batch and on unmount.
+- Typst SVG output is deterministic and pixel-faithful (same engine as export).
 
-**Rejected alternative (long-term escape hatch):** Make HTML the source of truth and
-generate PDF/DOCX from it (HTML→PDF). Out of scope; ADR-002 golden-parity guarantees
-are unchanged.
+**Rejected alternatives:**
+
+1. **PDF-in-iframe:** Requires CSP `frame-src 'self' blob:` + iframe sandboxing. SVG avoids both.
+2. **HTML/CSS mirror:** Would drift from Typst templates; this approach is zero-drift.
+3. **Skip validation for preview:** Preview reuses the export validate gate (validation is cheap;
+   auto-fix skipped for preview, but lint runs).
 
 ## Consequences
 
-- The live preview is the **actual export output**, debounced per keystroke. Cost:
-  each refresh is a Rust round-trip (acceptable for a preview; not per-keystroke).
-- No HTML render path to maintain → zero drift between preview and export.
-  Template changes update the Rust renderer once; the preview automatically reflects them.
-- **CSP allowance:** `frame-src 'self' blob:` added to `apps/tauri/src-tauri/tauri.conf.json`
-  so the PDF `blob:` URL can load in an `<iframe>`. Blob URLs are same-origin and app-generated
-  (low risk); `tauri-security-reviewer` owns the CSP surface.
-- Export renderers (printpdf / model_docx) are unchanged; ADR-002 golden snapshots untouched.
-- Implementation pointers: `renderPdfPreview()` in `apps/tauri/src/renderer/lib/generate/export/export.ts`;
-  `PdfPreview` component in `apps/tauri/src/renderer/features/ai-generate/components/PdfPreview/`;
-  `EditableOutput` gained optional `previewSlot`; `OutputPanelDone` supplies it.
+- **Preview is the authoritative output** — it IS the Typst render, not an approximation.
+- Each edit triggers a Rust round-trip (cost acceptable for ~500ms debounce; covers both resume and letter).
+- No HTML render path → zero drift. Template changes in Typst automatically appear in the preview.
+- **SVG sanitization:** Typst leaves raw `&` in link hrefs. Before wrapping as `<img>`, escape them
+  to `&amp;` so the XML parses. See `escapeSvgAmpersands()` in `export/export.ts`.
+- **No CSP frame-src needed.** Only `img-src 'self' blob:` (which already exists).
+- Cover-letter previews inherit the resume template's visual style via `letter_style_from_template`
+  (same as export).
+- Typst dependency remains ring-fenced: only `export/typst_engine/` imports `typst` and `typst_svg` crates;
+  SVG generation is isolated from IPC contracts.
+- ADR-002 (golden PDF/DOCX parity) is unchanged; export pipeline untouched.
+
+## Implementation pointers
+
+- `renderDocumentPreview()` – `apps/tauri/src/renderer/lib/generate/export/export.ts`
+- `PdfPreview` – `apps/tauri/src/renderer/features/ai-generate/components/PdfPreview/`
+- `documents_render_preview_images` – `apps/tauri/src-tauri/src/export/commands/mod.rs`
+- `render_resume_svg_pages` / `render_letter_svg_pages` – `apps/tauri/src-tauri/src/export/typst_engine/render.rs`

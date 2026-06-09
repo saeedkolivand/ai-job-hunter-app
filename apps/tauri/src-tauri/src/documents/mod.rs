@@ -19,6 +19,8 @@ use crate::data_store::DataStore;
 use crate::db::{column_exists, run_migrations, Migration};
 use crate::error::AppResult;
 
+pub mod keywords;
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 /// The active embedding configuration. Persisted next to the vectors it governs
@@ -56,6 +58,10 @@ pub struct DocumentRecord {
     pub indexed: bool,
     #[serde(rename = "isDefault")]
     pub is_default: bool,
+    /// Cached normalized (un-stemmed) résumé keywords as a sorted JSON array.
+    /// Populated at import; the match path stems these at query time.
+    #[serde(rename = "keywordsJson", skip_serializing_if = "Option::is_none")]
+    pub keywords_json: Option<String>,
 }
 
 // ── DocumentStore ─────────────────────────────────────────────────────────────
@@ -140,6 +146,21 @@ impl DocumentStore {
                 )
             },
         },
+        Migration {
+            // Cache normalized (un-stemmed) keywords per document so the match
+            // path skips re-tokenizing résumé text. Nullable: legacy rows fall
+            // back to live extraction in match_resume.
+            name: "cache_document_keywords",
+            up: |conn| {
+                if !column_exists(conn, "documents", "keywords_json") {
+                    conn.execute(
+                        "ALTER TABLE documents ADD COLUMN keywords_json TEXT",
+                        [],
+                    )?;
+                }
+                Ok(())
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -189,7 +210,7 @@ impl DocumentStore {
     pub fn list(&self) -> Vec<DocumentRecord> {
         let conn = self.conn.lock();
         conn.prepare(
-            "SELECT id, title, name, locale, text, pages, created_at, indexed, is_default
+            "SELECT id, title, name, locale, text, pages, created_at, indexed, is_default, keywords_json
              FROM documents ORDER BY created_at DESC",
         )
         .ok()
@@ -205,6 +226,7 @@ impl DocumentStore {
                     created_at: row.get::<_, i64>(6)? as u64,
                     indexed: row.get::<_, i64>(7)? != 0,
                     is_default: row.get::<_, i64>(8).unwrap_or(0) != 0,
+                    keywords_json: row.get::<_, Option<String>>(9).unwrap_or(None),
                 })
             })
             .ok()
@@ -217,7 +239,7 @@ impl DocumentStore {
     pub fn get(&self, id: &str) -> Option<DocumentRecord> {
         let conn = self.conn.lock();
         conn.query_row(
-            "SELECT id, title, name, locale, text, pages, created_at, indexed, is_default
+            "SELECT id, title, name, locale, text, pages, created_at, indexed, is_default, keywords_json
              FROM documents WHERE id = ?1",
             params![id],
             |row| {
@@ -231,6 +253,7 @@ impl DocumentStore {
                     created_at: row.get::<_, i64>(6)? as u64,
                     indexed: row.get::<_, i64>(7)? != 0,
                     is_default: row.get::<_, i64>(8).unwrap_or(0) != 0,
+                    keywords_json: row.get::<_, Option<String>>(9).unwrap_or(None),
                 })
             },
         )
@@ -246,8 +269,8 @@ impl DocumentStore {
         let is_default = if count == 0 { true } else { rec.is_default };
 
         conn.execute(
-            "INSERT INTO documents (id, title, name, locale, text, pages, created_at, indexed, is_default)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO documents (id, title, name, locale, text, pages, created_at, indexed, is_default, keywords_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 rec.id,
                 rec.title,
@@ -258,6 +281,7 @@ impl DocumentStore {
                 rec.created_at as i64,
                 rec.indexed as i64,
                 is_default as i64,
+                rec.keywords_json,
             ],
         )
         .map_err(|e| e.to_string())?;

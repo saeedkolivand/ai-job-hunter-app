@@ -3,29 +3,44 @@ use tauri_plugin_dialog::DialogExt;
 
 use super::{
     docx::generate_docx,
-    pdf::generate_pdf,
-    types::{ExportFormat, ExportRequest, ExportResult},
+    pdf::{generate_pdf, generate_preview_svg},
+    types::{ExportFormat, ExportRequest, ExportResult, PreviewResult},
 };
 use crate::error::{AppError, AppResult};
 use crate::validate::{validate_and_fix, ExportReport, Severity};
 
-/// Tauri command to export resume or cover letter
-#[command]
-pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<ExportResult> {
-    // Validate input
+/// MIME type for every page string returned by the SVG live-preview path.
+const SVG_MIME: &str = "image/svg+xml";
+
+/// Reject empty input and run the same text-normalization passes every export
+/// path uses (Unicode normalize → strip stray Markdown → dash typography), so
+/// unsupported glyphs never appear as replacement boxes and no `*` / backtick or
+/// mangled sentence-break dash reaches the page.
+///
+/// Shared by [`documents_export_document`] and
+/// [`documents_render_preview_images`] so the preview is rendered from the EXACT
+/// same validated + normalized request the export uses. The serde-tolerant
+/// `TemplateId` fallback (unknown id → Classic) is applied during deserialization
+/// of [`ExportRequest`] itself, so it covers both commands automatically.
+fn validate_and_normalize(request: &mut ExportRequest) -> AppResult<()> {
     if request.text.trim().is_empty() {
         return Err(AppError::Validation(
             "Cannot export empty document. Please generate content first.".to_string(),
         ));
     }
 
-    // Normalize Unicode, strip stray Markdown the model leaked, and run the dash
-    // typography pass — all before any rendering so unsupported glyphs never appear
-    // as replacement boxes and no `*` / backtick or mangled sentence-break dash
-    // reaches the page.
     request.text = super::parser::normalize_unicode(&request.text);
     request.text = super::parser::sanitize_markdown(&request.text);
     request.text = super::parser::typography(&request.text);
+    Ok(())
+}
+
+/// Tauri command to export resume or cover letter
+#[command]
+pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<ExportResult> {
+    // Validate + normalize input (empty-text guard + Unicode/Markdown/typography
+    // passes). Shared with the preview command so they stay in lock-step.
+    validate_and_normalize(&mut request)?;
 
     // Generate based on format. PDF/DOCX run through the validation gate, which
     // re-extracts the bytes, auto-fixes a two-column layout that doesn't survive
@@ -68,6 +83,47 @@ pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<
         mime_type,
         filename,
         report,
+    })
+}
+
+/// Tauri command: render a résumé / cover letter to per-page SVG strings for the
+/// live preview (shown via `<img>`), instead of producing downloadable bytes.
+///
+/// Accepts the SAME [`ExportRequest`] fields as [`documents_export_document`]
+/// (`text`, `documentType`, `templateId`, `atsMode`, `locale`, `contact`,
+/// `meta`; `format` is ignored — the preview always emits SVG) and reuses the
+/// EXACT same input validation + normalization ([`validate_and_normalize`]) and
+/// the serde-tolerant `TemplateId` fallback, so this new IPC surface is no looser
+/// than export. The render itself goes through [`generate_preview_svg`], which
+/// builds the identical model + Typst world as the PDF path — only the final emit
+/// differs (SVG per page vs one PDF blob), so preview fidelity matches export.
+///
+/// Unlike the export command this does NOT run the `validate/` round-trip gate:
+/// that gate re-extracts PDF *bytes* (it cannot read SVG) and exists to block a
+/// bad *download*. A preview must always show the user's chosen layout; the
+/// download path keeps the authoritative ATS/round-trip gate.
+#[command]
+pub async fn documents_render_preview_images(
+    mut request: ExportRequest,
+) -> AppResult<PreviewResult> {
+    // Same empty-text guard + normalization passes as export.
+    validate_and_normalize(&mut request)?;
+
+    let pages = generate_preview_svg(&request).map_err(|e| {
+        AppError::Message(format!("Preview rendering failed: {e}"))
+    })?;
+
+    // The engine guards against a zero-page document, but assert at the command
+    // boundary too so a future regression can't return an empty preview.
+    if pages.is_empty() {
+        return Err(AppError::Message(
+            "Preview rendering produced no pages.".to_string(),
+        ));
+    }
+
+    Ok(PreviewResult {
+        pages,
+        mime_type: SVG_MIME.to_string(),
     })
 }
 

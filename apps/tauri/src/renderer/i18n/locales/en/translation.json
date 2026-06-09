@@ -167,7 +167,8 @@
         "local": "Local · private; speed depends on your hardware.",
         "cli": "CLI · uses your existing login, no API key."
       }
-    }
+    },
+    "noModelSelected": "No AI model selected — choose one to use AI features."
   },
   "shortcuts": {
     "title": "Keyboard shortcuts",
@@ -825,6 +826,10 @@
         "0": "Pick whether to generate a résumé, a cover letter, or both.",
         "1": "Choose a layout — preview each before you generate.",
         "2": "Adjust the tone, length, and target market before generating."
+      },
+      "coverStyle": {
+        "title": "Choose a style",
+        "desc": "Your cover letter inherits this template's colours and fonts."
       },
       "stepCounter": "Step {{current}} of {{total}}",
       "back": "Back",

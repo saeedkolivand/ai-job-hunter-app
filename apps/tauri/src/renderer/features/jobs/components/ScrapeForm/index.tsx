@@ -177,7 +177,7 @@ export function ScrapeForm({
               <Button
                 size="sm"
                 variant="glass"
-                onClick={onStart}
+                onClick={() => onStart()}
                 disabled={scraping || !form.query.trim()}
                 loading={scraping}
                 className="transition-all duration-150 ease-out"

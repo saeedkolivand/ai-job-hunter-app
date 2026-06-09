@@ -165,6 +165,14 @@ export function OutputPanelDone({
         </div>
       )}
 
+      {/* Editing locked while cover letter is still streaming (#23 progressive reveal). */}
+      {generatingDoc === 'cover' && (
+        <div className="shrink-0 flex items-center gap-2 border-b border-amber-400/20 bg-amber-400/5 px-6 py-2 text-[11px] text-amber-400/80">
+          <Loader2 size={11} className="animate-spin shrink-0" />
+          Cover letter is still generating — editing locked until both documents are ready.
+        </div>
+      )}
+
       {/* Output — prettified Preview or raw Edit; the raw string stays canonical,
           so copy/export read exactly what's edited (incl. inline AI rewrites). */}
       <div className="flex flex-1 flex-col overflow-hidden px-6 py-4">
@@ -183,7 +191,7 @@ export function OutputPanelDone({
               templateId={templateId}
               atsMode={atsMode}
               locale={previewLocale}
-              paused={isGenerating}
+              paused={generatingDoc === activeOut}
               className="h-full w-full"
             />
           }

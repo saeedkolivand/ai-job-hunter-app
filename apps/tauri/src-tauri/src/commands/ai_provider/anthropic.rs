@@ -371,14 +371,12 @@ impl AiProvider for AnthropicClient {
             Some(k) => k,
             None => return vec![],
         };
-        let client = match super::probe_client() {
-            Ok(c) => c,
-            Err(_) => return vec![],
-        };
+        let client = crate::net::http::shared();
         let resp = client
             .get(format!("{BASE}/models"))
             .header("x-api-key", &api_key)
             .header("anthropic-version", VERSION)
+            .timeout(std::time::Duration::from_secs(10))
             .send()
             .await;
         if let Ok(r) = resp {
@@ -399,12 +397,13 @@ impl AiProvider for AnthropicClient {
     async fn test_key(&self, app: &AppHandle) -> AppResult<()> {
         let api_key = get_provider_key(app, self.id().credential_key())
             .ok_or_else(|| AppError::Config("No API key found".to_string()))?;
-        let client = super::probe_client()?;
+        let client = crate::net::http::shared();
         let resp = client
             .post(format!("{BASE}/messages"))
             .header("x-api-key", &api_key)
             .header("anthropic-version", VERSION)
             .header("content-type", "application/json")
+            .timeout(std::time::Duration::from_secs(10))
             .json(&json!({
                 "model": "claude-3-haiku-20240307",
                 "max_tokens": 1,

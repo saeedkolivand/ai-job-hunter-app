@@ -63,7 +63,8 @@ export function GenerateWizard({
 
   const handleTemplateChange = (id: TemplateId) => {
     onTemplateChange(id);
-    if (!isTwoColumnTemplate(id)) {
+    // Cover letters have no ATS toggle, so never touch atsMode there.
+    if (target !== 'cover' && !isTwoColumnTemplate(id)) {
       onAtsModeChange(false);
     }
   };
@@ -140,10 +141,14 @@ export function GenerateWizard({
             renders only its controls. */}
         <div className="mb-4">
           <h2 className="text-sm font-semibold text-foreground/85">
-            {t(`aiGenerate.wizard.steps.${step}`)}
+            {target === 'cover' && step === 1
+              ? t('aiGenerate.wizard.coverStyle.title')
+              : t(`aiGenerate.wizard.steps.${step}`)}
           </h2>
           <p className="mt-0.5 text-xs text-foreground/40">
-            {t(`aiGenerate.wizard.descriptions.${step}`)}
+            {target === 'cover' && step === 1
+              ? t('aiGenerate.wizard.coverStyle.desc')
+              : t(`aiGenerate.wizard.descriptions.${step}`)}
           </p>
         </div>
 
@@ -162,6 +167,7 @@ export function GenerateWizard({
                 atsMode={atsMode}
                 onTemplateChange={handleTemplateChange}
                 onAtsModeChange={onAtsModeChange}
+                target={target}
               />
             )}
             {step === 2 && (

@@ -19,7 +19,6 @@ use super::{
     AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace, TokenParam,
 };
 
-const DEFAULT_HOST: &str = "http://127.0.0.1:11434";
 const EMBED_MODEL: &str = "nomic-embed-text";
 /// Ollama's first-party Web Search API (cloud) — authenticated with the Ollama
 /// account key (`ai:ollama-cloud`), independent of the local daemon host.
@@ -30,7 +29,7 @@ pub const ACCOUNT_KEY: &str = "ollama-cloud";
 
 /// Resolve the Ollama host (env override or localhost default).
 pub fn host() -> String {
-    std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_HOST.to_string())
+    crate::platform::config::ollama_host()
 }
 
 // ── Provider impl ───────────────────────────────────────────────────────────────
@@ -141,16 +140,18 @@ impl AiProvider for OllamaClient {
     }
 
     async fn list_models(&self, _app: &AppHandle) -> Vec<Value> {
-        match super::probe_client() {
-            Ok(client) => list_tag_models(&client).await,
-            Err(_) => vec![],
-        }
+        list_tag_models().await
     }
 
     async fn test_key(&self, _app: &AppHandle) -> AppResult<()> {
         // Ollama needs no key — a reachable host counts as healthy.
-        let client = super::probe_client()?;
-        match client.get(format!("{}/api/tags", host())).send().await {
+        let client = crate::net::http::shared();
+        match client
+            .get(format!("{}/api/tags", host()))
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+        {
             Ok(r) if r.status().is_success() => Ok(()),
             Ok(r) => Err(AppError::Provider(format!(
                 "Ollama returned status: {}",
@@ -164,8 +165,13 @@ impl AiProvider for OllamaClient {
 // ── Shared Ollama helpers (used by the AI commands, health, embeddings) ─────────
 
 /// `{ name }` list from `/api/tags`.
-pub async fn list_tag_models(client: &reqwest::Client) -> Vec<Value> {
-    let resp = match client.get(format!("{}/api/tags", host())).send().await {
+pub async fn list_tag_models() -> Vec<Value> {
+    let resp = match crate::net::http::shared()
+        .get(format!("{}/api/tags", host()))
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+    {
         Ok(r) if r.status().is_success() => r,
         _ => return vec![],
     };

@@ -538,7 +538,7 @@ LinkedIn session management for scraping.
 
 ## `match`
 
-Resume-job semantic matching and ATS scoring.
+Resume-job semantic matching and ATS scoring. Renderer queries automatically gate through `ScoringScheduler` (sequential, CONCURRENCY=1) to prevent mass-concurrent IPC bursts.
 
 #### `match.resume(resumeId: string, jobId: string): Promise<MatchScore>`
 
@@ -550,7 +550,7 @@ interface MatchScore {
   resumeId: string;
   overallScore: number; // 0–100
   semanticScore: number; // vector similarity
-  keywordScore: number; // ATS keyword match
+  keywordScore: number; // ATS keyword match (cached resume keywords + live stemming per JD language)
   matchedSkills: string[];
   missingSkills: string[];
   languageMismatch: boolean;

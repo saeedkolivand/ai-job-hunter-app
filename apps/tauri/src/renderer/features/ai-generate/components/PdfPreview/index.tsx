@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { cn } from '@ajh/ui';
 
-import { type GenerationMeta, renderPdfPreview, type TemplateId } from '@/lib/generate';
+import { type GenerationMeta, renderDocumentPreview, type TemplateId } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 
 interface PdfPreviewProps {
@@ -20,21 +20,22 @@ interface PdfPreviewProps {
   className?: string;
 }
 
-/** How long after the last edit to re-render the real PDF (#24). */
+/** How long after the last edit to re-render the preview (~500 ms). */
 const DEBOUNCE_MS = 500;
 
 type Status = 'idle' | 'rendering' | 'ready' | 'error';
 
 /**
- * Live preview that renders the **real exported PDF** (not an approximation):
- * it calls the same Rust renderer the export uses (`renderPdfPreview`), wraps the
- * returned bytes in a `blob:` URL, and shows them in an `<iframe>` (the webview's
- * native PDF viewer). Re-renders ~{@link DEBOUNCE_MS}ms after edits settle, so
- * typing stays instant while the preview catches up. The last good PDF stays on
- * screen during a re-render (overlay spinner) and after a transient failure.
+ * Live preview that renders the **real exported document** (not an approximation):
+ * it calls the same Rust Typst renderer the export uses (`renderDocumentPreview`),
+ * and shows the returned SVG pages as stacked `<img>` elements (one per page) in a
+ * scrollable container. Re-renders ~{@link DEBOUNCE_MS}ms after edits settle, so
+ * typing stays instant while the preview catches up. The last good pages stay on
+ * screen during a re-render (corner spinner overlay) and after a transient failure.
  *
- * This is the authoritative output before download — see ADR-012. The `blob:`
- * frame source requires `frame-src blob:` in the CSP (tauri.conf.json).
+ * This is the authoritative output before download — see ADR-012.
+ * SVGs are rendered via Blob object URLs (`URL.createObjectURL`) — revoked on each
+ * new render batch and on unmount; CSP `img-src 'self' blob:` allows this.
  */
 export function PdfPreview({
   text,
@@ -47,31 +48,49 @@ export function PdfPreview({
   className,
 }: PdfPreviewProps) {
   const { t } = useTranslation();
-  const [url, setUrl] = useState<string | null>(null);
+  const [pageUrls, setPageUrls] = useState<string[]>([]);
   const [status, setStatus] = useState<Status>('idle');
   // Monotonic token so a slow render that resolves after a newer edit is ignored.
   const renderToken = useRef(0);
-  const urlRef = useRef<string | null>(null);
+  // Track current object URLs so we can revoke them when replaced or on unmount.
+  const urlsRef = useRef<string[]>([]);
+  // Track last rendered docType to detect doc-switch vs. same-doc edit.
+  const prevDocTypeRef = useRef<string | null>(null);
 
-  // Revoke the last object URL on unmount.
-  useEffect(
-    () => () => {
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-    },
-    []
-  );
+  // Revoke all object URLs on unmount.
+  useEffect(() => {
+    return () => {
+      urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
 
   useEffect(() => {
     if (paused || !text.trim()) {
       setStatus('idle');
       return;
     }
+
+    // Detect a doc switch (résumé ↔ cover letter). On first render prevDocTypeRef
+    // is null — treat that as a non-switch so we don't clear before the initial load.
+    const isDocSwitch = prevDocTypeRef.current !== null && prevDocTypeRef.current !== docType;
+    prevDocTypeRef.current = docType;
+
+    if (isDocSwitch) {
+      // Clear stale pages immediately so the centered loader shows instead of the
+      // previous doc's image. Revoke old blob URLs to avoid leaking memory.
+      urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      urlsRef.current = [];
+      setPageUrls([]);
+    }
+
     const token = ++renderToken.current;
     setStatus('rendering');
+    // Doc switch: render immediately (nothing to debounce). Same-doc edit: debounce.
+    const delay = isDocSwitch ? 0 : DEBOUNCE_MS;
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          const bytes = await renderPdfPreview(
+          const result = await renderDocumentPreview(
             text,
             docType,
             meta ?? undefined,
@@ -80,20 +99,25 @@ export function PdfPreview({
             locale
           );
           if (token !== renderToken.current) return; // superseded by a newer edit
-          // Swap the blob only when the new one is ready, revoking the previous.
-          const next = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-          if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-          urlRef.current = next;
-          setUrl(next);
+          // Revoke old batch before creating new URLs.
+          urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+          const newUrls = result.map((svg) =>
+            URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
+          );
+          urlsRef.current = newUrls;
+          setPageUrls(newUrls);
           setStatus('ready');
         } catch {
           if (token !== renderToken.current) return;
           setStatus('error');
         }
       })();
-    }, DEBOUNCE_MS);
+    }, delay);
     return () => clearTimeout(timer);
   }, [text, docType, meta, templateId, atsMode, locale, paused]);
+
+  const hasPages = pageUrls.length > 0;
+  const title = t('aiGenerate.pdfPreview.title');
 
   return (
     <div
@@ -102,12 +126,20 @@ export function PdfPreview({
         className
       )}
     >
-      {url ? (
-        <iframe
-          src={url}
-          title={t('aiGenerate.pdfPreview.title')}
-          className="h-full w-full border-0 bg-white"
-        />
+      {hasPages ? (
+        <div className="h-full w-full overflow-y-auto">
+          <div className="flex flex-col items-center gap-4 p-4">
+            {pageUrls.map((url, i) => (
+              <img
+                key={i}
+                src={url}
+                alt={`${title} — page ${i + 1}`}
+                className="w-full rounded bg-white shadow-sm"
+                draggable={false}
+              />
+            ))}
+          </div>
+        </div>
       ) : status === 'error' ? (
         <div className="flex h-full flex-col items-center justify-center gap-2 text-foreground/40">
           <FileWarning size={20} />
@@ -124,15 +156,15 @@ export function PdfPreview({
         </div>
       )}
 
-      {/* Keep the last good PDF visible during a re-render / after a transient
-          failure, with a corner indicator instead of blanking the pane. */}
-      {url && status === 'rendering' && (
+      {/* Keep last good pages visible during re-render / after transient failure,
+          with a corner indicator instead of blanking the pane. */}
+      {hasPages && status === 'rendering' && (
         <div className="absolute right-2 top-2 flex items-center gap-1.5 rounded-lg bg-black/55 px-2 py-1 text-[10px] text-white/85 backdrop-blur-sm">
           <Loader2 size={10} className="animate-spin" />
           {t('aiGenerate.pdfPreview.rendering')}
         </div>
       )}
-      {url && status === 'error' && (
+      {hasPages && status === 'error' && (
         <div className="absolute right-2 top-2 flex items-center gap-1.5 rounded-lg bg-red-500/70 px-2 py-1 text-[10px] text-white/90 backdrop-blur-sm">
           <FileWarning size={10} />
           {t('aiGenerate.pdfPreview.failed')}

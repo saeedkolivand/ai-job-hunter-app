@@ -112,6 +112,9 @@ export const PreferencesSchema = z.object({
   // Developer / debug
   debugMode: z.boolean().default(false),
 
+  // Scoring
+  semanticScoring: z.boolean().default(false),
+
   // Onboarding
   onboardingCompleted: z.boolean().default(false),
 

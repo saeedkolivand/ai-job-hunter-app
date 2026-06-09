@@ -5,6 +5,7 @@ import type { JobEvent } from '@ajh/shared';
 import { Button, Dropdown, GlassCard, Input, useNotification } from '@ajh/ui';
 
 import { useEmbeddingStatus, useJobEvents, useReembedAll, useSetEmbeddingConfig } from '@/services';
+import { usePreferencesStore, useSemanticScoring } from '@/store/preferences-store';
 
 // Providers that expose an embeddings API. Anthropic is intentionally excluded —
 // it has no embeddings endpoint.
@@ -88,6 +89,9 @@ export function EmbeddingsSettings() {
   const stale = docs?.stale ?? 0;
   const reindexing = reindexJobId !== null || reembed.isPending;
 
+  const semanticScoring = useSemanticScoring();
+  const setSemanticScoring = usePreferencesStore((s) => s.setSemanticScoring);
+
   return (
     <GlassCard>
       <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
@@ -109,6 +113,14 @@ export function EmbeddingsSettings() {
             onChange={onProviderChange}
           />
         </div>
+
+        {provider !== 'ollama' && (
+          <p className="text-[11px] text-amber-400/80">
+            Cloud embedding providers charge per token indexed and per score computed. For unlimited
+            free embeddings, run Ollama locally with{' '}
+            <code className="text-foreground/70">nomic-embed-text</code>.
+          </p>
+        )}
 
         <div className="space-y-1.5">
           <div className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
@@ -178,6 +190,21 @@ export function EmbeddingsSettings() {
             {reindexing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
             {reindexing ? 'Re-indexing…' : 'Re-index documents'}
           </Button>
+        </div>
+
+        <div className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
+          <div className="space-y-0.5">
+            <p className="text-xs font-semibold text-foreground/70">Semantic scoring</p>
+            <p className="text-[11px] text-foreground/40 leading-relaxed">
+              Uses embeddings for deeper match quality. Disable for faster keyword-only scoring.
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={semanticScoring}
+            onChange={(e) => setSemanticScoring(e.target.checked)}
+            className="h-4 w-4 accent-[var(--color-brand)] cursor-pointer"
+          />
         </div>
       </div>
     </GlassCard>
