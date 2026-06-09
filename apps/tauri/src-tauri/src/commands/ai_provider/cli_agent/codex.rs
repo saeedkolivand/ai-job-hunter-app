@@ -37,6 +37,14 @@ impl CliAgentBackend for CodexAgent {
         MODELS
     }
 
+    fn install_package(&self) -> &'static str {
+        "@openai/codex"
+    }
+
+    fn docs_url(&self) -> &'static str {
+        "https://developers.openai.com/codex/cli"
+    }
+
     fn inline_system(&self) -> bool {
         true
     }

@@ -40,6 +40,14 @@ impl CliAgentBackend for ClaudeCodeAgent {
         MODELS
     }
 
+    fn install_package(&self) -> &'static str {
+        "@anthropic-ai/claude-code"
+    }
+
+    fn docs_url(&self) -> &'static str {
+        "https://code.claude.com/docs/en/setup"
+    }
+
     // Claude Code has no headless reasoning-effort flag — `effort` is ignored.
     fn stream_invocation(&self, model: &str, system: &str, _effort: Option<&str>) -> CliInvocation {
         let mut args = vec![

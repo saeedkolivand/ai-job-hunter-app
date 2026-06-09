@@ -65,6 +65,9 @@ describe('tauri-client namespaces', () => {
     for (const namespace of Object.values(client)) {
       for (const [name, fn] of Object.entries(namespace)) {
         if (typeof fn !== 'function') continue;
+        // `cliAgents.install` runs through the shell plugin, not `invoke`, so it
+        // neither calls the transport nor counts toward the invoke total (#22).
+        if (name === 'install') continue;
         // Event subscriptions take a handler; everything else takes an args object.
         if (name.startsWith('on')) {
           (fn as (h: () => void) => unknown)(() => {});

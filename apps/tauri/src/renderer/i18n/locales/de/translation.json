@@ -521,6 +521,19 @@
       "loading": "Modelle werden geladen...",
       "noModels": "Keine Modelle verfügbar. Stellen Sie sicher, dass Ollama läuft."
     },
+    "cliInstall": {
+      "notDetected": "{{label}} CLI nicht erkannt. Installieren und einmal anmelden, dann erneut prüfen.",
+      "npmMissing": "npm nicht gefunden — zuerst Node.js installieren, dann erneut prüfen.",
+      "install": "{{label}} installieren",
+      "installing": "Wird installiert…",
+      "guide": "Installationsanleitung",
+      "recheck": "Erneut prüfen",
+      "confirmTitle": "{{label}} installieren?",
+      "confirmBody": "Führt „{{command}}“ aus — lädt die CLI herunter und installiert sie global über npm. Die Anmeldung erfolgt danach.",
+      "confirm": "Installieren",
+      "done": "{{label}} installiert — einmal im Terminal ausführen, um sich anzumelden.",
+      "failed": "{{label}} konnte nicht installiert werden. Nutzen Sie die Installationsanleitung."
+    },
     "companyResearch": {
       "title": "Unternehmensrecherche",
       "description": "Fügt Anschreiben und Bewerbungsantworten eine kurze, sachliche Unternehmens-Zusammenfassung hinzu — über die eigene Websuche Ihres aktiven KI-Anbieters. Cloud- und CLI-Anbieter suchen mit ihrem eigenen Schlüssel — nur Ollama benötigt den kostenlosen Ollama-Schlüssel unten.",

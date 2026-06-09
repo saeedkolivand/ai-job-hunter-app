@@ -1,11 +1,11 @@
-import { ExternalLink, Loader2 } from 'lucide-react';
-
 import { Button, Dropdown } from '@ajh/ui';
 
 import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useTranslation } from '@/lib/i18n';
 import type { AiProvider } from '@/store/preferences-schema';
 import { useAiProviderConfig, usePreferencesStore } from '@/store/preferences-store';
+
+import { CliAgentInstall } from '../CliAgentInstall';
 
 interface Props {
   provider: AiProvider;
@@ -55,19 +55,12 @@ export function CliAgentConfig({
   return (
     <>
       {!connected && (
-        <div className="space-y-2">
-          <p className="text-sm text-foreground/50">
-            {meta.label} CLI not detected. Install it and sign in once, then recheck.
-          </p>
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" className="text-foreground/50" onClick={onInstall}>
-              <ExternalLink size={11} /> Install {meta.label}
-            </Button>
-            <Button variant="ghost" size="sm" className="text-foreground/40" onClick={onRecheck}>
-              <Loader2 size={11} /> Recheck
-            </Button>
-          </div>
-        </div>
+        <CliAgentInstall
+          provider={provider}
+          label={meta.label}
+          onGuide={onInstall}
+          onRecheck={onRecheck}
+        />
       )}
 
       {connected && (

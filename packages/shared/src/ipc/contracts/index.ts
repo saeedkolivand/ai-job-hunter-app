@@ -20,6 +20,7 @@ import { AI_CHANNELS, type AiContract } from './ai.js';
 import { AI_GENERATIONS_CHANNELS, type AiGenerationsContract } from './aiGenerations.js';
 import { AUTOPILOT_CHANNELS, type AutopilotContract } from './autopilot.js';
 import { BOARDS_CHANNELS, type BoardsContract } from './boards.js';
+import { CLI_AGENTS_CHANNELS, type CliAgentsContract } from './cliAgents.js';
 import { CONTACT_PROFILE_CHANNELS, type ContactProfileContract } from './contactProfile.js';
 import { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js';
 import { DATA_CHANNELS, type DataContract } from './data.js';
@@ -57,6 +58,7 @@ export interface IpcContract {
   credentials: CredentialsContract;
   linkedin: LinkedinContract;
   boards: BoardsContract;
+  cliAgents: CliAgentsContract;
   privacy: PrivacyContract;
   referrals: ReferralsContract;
   resume: ResumeContract;
@@ -85,6 +87,7 @@ export const IPC_CHANNELS = {
   credentials: CREDENTIALS_CHANNELS,
   linkedin: LINKEDIN_CHANNELS,
   boards: BOARDS_CHANNELS,
+  cliAgents: CLI_AGENTS_CHANNELS,
   privacy: PRIVACY_CHANNELS,
   referrals: REFERRALS_CHANNELS,
   resume: RESUME_CHANNELS,
@@ -132,6 +135,13 @@ export {
   type AutopilotStepEvent,
 } from './autopilot.js';
 export { BOARDS_CHANNELS, type BoardsContract } from './boards.js';
+export {
+  CLI_AGENTS_CHANNELS,
+  type CliAgentInstallResult,
+  type CliAgentsContract,
+  type CliAgentsStatus,
+  type CliAgentStatus,
+} from './cliAgents.js';
 export {
   CONTACT_PROFILE_CHANNELS,
   type ContactLink,

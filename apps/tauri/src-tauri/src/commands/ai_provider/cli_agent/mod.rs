@@ -93,6 +93,15 @@ pub trait CliAgentBackend: Send + Sync {
     /// Model aliases offered in the UI (e.g. `["sonnet", "opus", "haiku"]`).
     fn models(&self) -> &'static [&'static str];
 
+    /// The npm package that provides this agent's binary, for the in-app install
+    /// (#22). The one-click install runs `npm install -g <this>` — and that exact
+    /// command MUST also be present in the shell capability allowlist
+    /// (`capabilities/default.json`); a test asserts the two agree.
+    fn install_package(&self) -> &'static str;
+
+    /// Official install / setup docs, opened by the "guide" path.
+    fn docs_url(&self) -> &'static str;
+
     /// Args for a streaming generation (model/system already resolved). `effort` is
     /// the optional reasoning effort for agents that support it (Codex); others ignore it.
     fn stream_invocation(&self, model: &str, system: &str, effort: Option<&str>) -> CliInvocation;
@@ -329,6 +338,13 @@ pub async fn detect_cached(binary: &str) -> (bool, Option<String>) {
         },
     );
     (ok, version)
+}
+
+/// Drop all cached detection results so the next [`detect_cached`] re-probes.
+/// Called right after an in-app install (#22) so freshly-installed agents show as
+/// available immediately instead of after the [`DETECT_TTL`].
+pub fn clear_detect_cache() {
+    detect_cache().lock().clear();
 }
 
 // ── Streaming engine ─────────────────────────────────────────────────────────────
