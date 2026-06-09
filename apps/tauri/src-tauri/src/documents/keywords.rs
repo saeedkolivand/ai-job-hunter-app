@@ -12,24 +12,103 @@ use rust_stemmers::{Algorithm, Stemmer};
 use whatlang::{detect, Lang};
 
 pub const STOPWORDS: &[&str] = &[
-    "the", "and", "for", "with", "you", "your", "are", "our", "will", "have", "this", "that",
-    "from", "they", "their", "them", "all", "but", "not", "who", "can", "out", "use", "any", "has",
-    "had", "was", "were", "what", "when", "which", "while", "into", "over", "than", "such", "able",
-    "work", "role", "team", "join", "must", "etc", "via", "per",
+    "the",
+    "and",
+    "for",
+    "with",
+    "you",
+    "your",
+    "are",
+    "our",
+    "will",
+    "have",
+    "this",
+    "that",
+    "from",
+    "they",
+    "their",
+    "them",
+    "all",
+    "but",
+    "not",
+    "who",
+    "can",
+    "out",
+    "use",
+    "any",
+    "has",
+    "had",
+    "was",
+    "were",
+    "what",
+    "when",
+    "which",
+    "while",
+    "into",
+    "over",
+    "than",
+    "such",
+    "able",
+    "work",
+    "role",
+    "team",
+    "join",
+    "must",
+    "etc",
+    "via",
+    "per",
     // Job-ad filler that otherwise leaks into keyword sets.
-    "looking", "experience", "strong", "good", "skills", "ability", "knowledge", "understanding",
-    "including", "working", "related", "ensure", "within", "across", "multiple", "various",
-    "required", "preferred", "plus", "bonus", "position", "candidate", "company", "responsibilities",
-    "requirements", "qualifications", "benefits", "about", "like", "using", "build", "help", "make",
-    "take", "great", "well", "also", "both", "each", "other", "need", "want", "year", "years",
+    "looking",
+    "experience",
+    "strong",
+    "good",
+    "skills",
+    "ability",
+    "knowledge",
+    "understanding",
+    "including",
+    "working",
+    "related",
+    "ensure",
+    "within",
+    "across",
+    "multiple",
+    "various",
+    "required",
+    "preferred",
+    "plus",
+    "bonus",
+    "position",
+    "candidate",
+    "company",
+    "responsibilities",
+    "requirements",
+    "qualifications",
+    "benefits",
+    "about",
+    "like",
+    "using",
+    "build",
+    "help",
+    "make",
+    "take",
+    "great",
+    "well",
+    "also",
+    "both",
+    "each",
+    "other",
+    "need",
+    "want",
+    "year",
+    "years",
 ];
 
 /// Short technical terms that are real keywords but fall under the len > 3
 /// filter - allowlisted so they survive tokenization.
 pub const SHORT_TECH_TERMS: &[&str] = &[
-    "go", "sql", "aws", "gcp", "css", "git", "api", "vue", "ios",
-    "tdd", "bdd", "ci", "cd", "ml", "ai", "ui", "ux", "qa", "rx",
-    "etl", "sap", "erp", "crm", "k8s", "r",
+    "go", "sql", "aws", "gcp", "css", "git", "api", "vue", "ios", "tdd", "bdd", "ci", "cd", "ml",
+    "ai", "ui", "ux", "qa", "rx", "etl", "sap", "erp", "crm", "k8s", "r",
     // cpp is 3 chars - produced by the c plus plus synonym - must be allowlisted
     // or the len > 3 filter silently drops it.
     "cpp",
@@ -38,30 +117,30 @@ pub const SHORT_TECH_TERMS: &[&str] = &[
 /// Alias to canonical form, applied before stemming so equivalent spellings of a
 /// skill (for example js or javascript) collapse to one keyword on both sides.
 pub const SYNONYMS: &[(&str, &str)] = &[
-    ("js",          "javascript"),
-    ("ts",          "typescript"),
-    ("py",          "python"),
-    ("golang",      "go"),
-    ("k8s",         "kubernetes"),
-    ("kube",        "kubernetes"),
-    ("node",        "nodejs"),
-    ("react.js",    "react"),
-    ("vue.js",      "vue"),
-    ("next.js",     "nextjs"),
-    ("nuxt.js",     "nuxtjs"),
-    ("psql",        "postgresql"),
-    ("postgres",    "postgresql"),
-    ("mongo",       "mongodb"),
-    ("tf",          "tensorflow"),
-    ("sklearn",     "scikit-learn"),
-    ("scikit",      "scikit-learn"),
-    ("ci/cd",       "cicd"),
-    ("c/c++",       "cpp"),
-    ("c++",         "cpp"),
+    ("js", "javascript"),
+    ("ts", "typescript"),
+    ("py", "python"),
+    ("golang", "go"),
+    ("k8s", "kubernetes"),
+    ("kube", "kubernetes"),
+    ("node", "nodejs"),
+    ("react.js", "react"),
+    ("vue.js", "vue"),
+    ("next.js", "nextjs"),
+    ("nuxt.js", "nuxtjs"),
+    ("psql", "postgresql"),
+    ("postgres", "postgresql"),
+    ("mongo", "mongodb"),
+    ("tf", "tensorflow"),
+    ("sklearn", "scikit-learn"),
+    ("scikit", "scikit-learn"),
+    ("ci/cd", "cicd"),
+    ("c/c++", "cpp"),
+    ("c++", "cpp"),
     ("objective-c", "objectivec"),
-    ("llms",        "llm"),
-    ("genai",       "generativeai"),
-    ("gen-ai",      "generativeai"),
+    ("llms", "llm"),
+    ("genai", "generativeai"),
+    ("gen-ai", "generativeai"),
 ];
 
 /// Build a Snowball stemmer for the language detected in text, falling back to
@@ -74,7 +153,7 @@ pub fn make_stemmer(text: &str) -> Stemmer {
         Some(Lang::Ita) => Algorithm::Italian,
         Some(Lang::Por) => Algorithm::Portuguese,
         Some(Lang::Nld) => Algorithm::Dutch,
-        _               => Algorithm::English,
+        _ => Algorithm::English,
     })
 }
 
@@ -157,7 +236,8 @@ mod test {
         assert!(
             jd_kw.intersection(&resume_kw).count() >= 1,
             "expected javascript stemmed in both jd and resume sets; jd={:?} resume={:?}",
-            jd_kw, resume_kw
+            jd_kw,
+            resume_kw
         );
     }
 
@@ -169,7 +249,8 @@ mod test {
         assert!(
             jd_kw.intersection(&resume_kw).count() >= 1,
             "expected kubernetes stemmed in both; jd={:?} resume={:?}",
-            jd_kw, resume_kw
+            jd_kw,
+            resume_kw
         );
     }
 
@@ -180,11 +261,13 @@ mod test {
         let kw_slash = keywords("C/C++ developer", &stemmer);
         assert!(
             kw_explicit.iter().any(|w| w == "cpp"),
-            "expected cpp from C++ developer; got {:?}", kw_explicit
+            "expected cpp from C++ developer; got {:?}",
+            kw_explicit
         );
         assert!(
             kw_slash.iter().any(|w| w == "cpp"),
-            "expected cpp from C/C++ developer; got {:?}", kw_slash
+            "expected cpp from C/C++ developer; got {:?}",
+            kw_slash
         );
     }
 
@@ -203,7 +286,8 @@ mod test {
         let kw = keywords("experience required skills knowledge", &stemmer);
         assert!(
             kw.is_empty(),
-            "expected all filler words filtered; remaining tokens: {:?}", kw
+            "expected all filler words filtered; remaining tokens: {:?}",
+            kw
         );
     }
 
@@ -229,7 +313,8 @@ mod test {
         // The un-stemmed token must be present.
         assert!(
             norm.contains("javascript"),
-            "keywords_normalized must preserve the unstemmed token; got {:?}", norm
+            "keywords_normalized must preserve the unstemmed token; got {:?}",
+            norm
         );
         // Apply stemming and confirm the stemmed set differs (proving normalization
         // returned pre-stemming tokens for at least one word in the input).
@@ -238,13 +323,17 @@ mod test {
         // "developer" → "develop"; the sets should differ on that token.
         assert!(
             norm != stemmed,
-            "apply_stemmer must change at least one token; norm={:?} stemmed={:?}", norm, stemmed
+            "apply_stemmer must change at least one token; norm={:?} stemmed={:?}",
+            norm,
+            stemmed
         );
         // "javascript" itself must NOT appear stemmed — Snowball English stems it
         // to "javascript" (no change), so the key check is that the raw token is
         // present in the normalized set BEFORE stemming.
-        assert!(!norm.contains("develop"),
-            "normalized set must not contain stemmed form 'develop'; got {:?}", norm
+        assert!(
+            !norm.contains("develop"),
+            "normalized set must not contain stemmed form 'develop'; got {:?}",
+            norm
         );
     }
 
@@ -256,11 +345,13 @@ mod test {
         let stemmed = apply_stemmer(tokens, &stemmer);
         assert!(
             stemmed.contains("develop"),
-            "expected 'developing' to be stemmed to 'develop'; got {:?}", stemmed
+            "expected 'developing' to be stemmed to 'develop'; got {:?}",
+            stemmed
         );
         assert!(
             !stemmed.contains("developing"),
-            "stemmed set must not contain the original form; got {:?}", stemmed
+            "stemmed set must not contain the original form; got {:?}",
+            stemmed
         );
     }
 
@@ -274,9 +365,21 @@ mod test {
             .map(|s| s.to_string())
             .collect();
         let stemmed = apply_stemmer(tokens, &stemmer);
-        assert!(stemmed.contains("aws"),  "aws must pass through unchanged; got {:?}", stemmed);
-        assert!(stemmed.contains("gcp"),  "gcp must pass through unchanged; got {:?}", stemmed);
-        assert!(stemmed.contains("cpp"),  "cpp must pass through unchanged; got {:?}", stemmed);
+        assert!(
+            stemmed.contains("aws"),
+            "aws must pass through unchanged; got {:?}",
+            stemmed
+        );
+        assert!(
+            stemmed.contains("gcp"),
+            "gcp must pass through unchanged; got {:?}",
+            stemmed
+        );
+        assert!(
+            stemmed.contains("cpp"),
+            "cpp must pass through unchanged; got {:?}",
+            stemmed
+        );
         assert_eq!(stemmed.len(), 3, "no extra tokens; got {:?}", stemmed);
     }
 
@@ -290,7 +393,8 @@ mod test {
         let direct = keywords(text, &stemmer);
         assert_eq!(
             round_trip, direct,
-            "round-trip must equal keywords(); round_trip={:?} direct={:?}", round_trip, direct
+            "round-trip must equal keywords(); round_trip={:?} direct={:?}",
+            round_trip, direct
         );
     }
 }

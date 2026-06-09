@@ -298,16 +298,16 @@ fn test_keywords_json_round_trip() {
     let docs = store.list();
     assert_eq!(docs.len(), 1);
     assert_eq!(
-        docs[0].keywords_json,
-        keywords_payload,
+        docs[0].keywords_json, keywords_payload,
         "keywords_json must survive list() unchanged"
     );
 
     // get() path
-    let fetched = store.get(&doc.id).expect("document must exist after insert");
+    let fetched = store
+        .get(&doc.id)
+        .expect("document must exist after insert");
     assert_eq!(
-        fetched.keywords_json,
-        keywords_payload,
+        fetched.keywords_json, keywords_payload,
         "keywords_json must survive get() unchanged"
     );
 }

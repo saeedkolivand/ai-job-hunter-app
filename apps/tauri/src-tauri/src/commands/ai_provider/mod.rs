@@ -287,7 +287,11 @@ pub async fn reachable_chat_model(provider_id: ProviderId) -> Option<String> {
     match provider_id {
         ProviderId::Ollama => {
             let (reachable, model) = ollama::reachable_model().await;
-            if reachable { model } else { None }
+            if reachable {
+                model
+            } else {
+                None
+            }
         }
         _ => None,
     }
