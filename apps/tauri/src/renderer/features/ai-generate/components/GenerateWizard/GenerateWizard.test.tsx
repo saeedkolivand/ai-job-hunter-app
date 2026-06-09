@@ -65,6 +65,7 @@ vi.mock('@/store/session-store', () => ({
 function makeProps(overrides: Partial<Parameters<typeof GenerateWizard>[0]> = {}) {
   return {
     mode: 'ats' as const,
+    emphasis: [],
     target: 'both' as const,
     templateId: 'modern' as const,
     atsMode: false,
@@ -72,6 +73,7 @@ function makeProps(overrides: Partial<Parameters<typeof GenerateWizard>[0]> = {}
     researchCompany: false,
     isGenerating: false,
     onModeChange: vi.fn(),
+    onEmphasisChange: vi.fn(),
     onTargetChange: vi.fn(),
     onTemplateChange: vi.fn(),
     onAtsModeChange: vi.fn(),

@@ -19,9 +19,10 @@ export { isTwoColumnTemplate, TEMPLATE_IDS, type TemplateId, TEMPLATES } from '.
  * useTailorGeneration) stay in lockstep.
  */
 export const PERSIST_DEBOUNCE_MS = 800;
-export type { RewriteDocType } from '@ajh/prompts/generate';
+export type { EmphasisId, RewriteDocType } from '@ajh/prompts/generate';
 export {
   CONNECTION_NOTE_LIMIT,
+  EMPHASIS_OPTIONS,
   LETTER_MARKET_IDS,
   letterConventions,
   resolveMarket,

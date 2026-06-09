@@ -9,10 +9,13 @@ import {
   buildBodyLinksBlock,
   buildCoverLetterPrompt,
   buildCoverLetterSystemPrompt,
+  buildEmphasisDirectivesBlock,
   buildGroundingBlock,
   buildMetadataPrompt,
   buildResumePrompt,
   buildResumeSystemPrompt,
+  EMPHASIS_OPTIONS,
+  type EmphasisId,
   extractPlainText,
   type GenerationMeta,
   getBodyLinkMap,
@@ -345,6 +348,36 @@ describe('buildResumeSystemPrompt', () => {
   });
 });
 
+describe('buildEmphasisDirectivesBlock (#15)', () => {
+  it('returns empty for no/empty selection', () => {
+    expect(buildEmphasisDirectivesBlock(undefined)).toBe('');
+    expect(buildEmphasisDirectivesBlock([])).toBe('');
+  });
+
+  it('emits one instruction per selected directive, in registry order, with a no-fabrication guard', () => {
+    const block = buildEmphasisDirectivesBlock(['technical', 'quantify']);
+    expect(block).toContain('WITHOUT inventing facts');
+    // Registry order (quantify before technical) regardless of input order.
+    expect(block.indexOf('Quantify impact')).toBeLessThan(block.indexOf('Technical depth'));
+    // Exactly two directive lines.
+    expect(block.split('\n').filter((l) => l.startsWith('- ')).length).toBe(2);
+  });
+
+  it('ignores unknown ids and de-dupes repeats', () => {
+    // Cast simulates a stale/unknown id leaking from persisted state.
+    const ids = ['quantify', 'quantify', 'bogus'] as EmphasisId[];
+    const block = buildEmphasisDirectivesBlock(ids);
+    expect(block.split('\n').filter((l) => l.startsWith('- ')).length).toBe(1);
+  });
+
+  it('every registry option carries a fact-safe instruction', () => {
+    expect(EMPHASIS_OPTIONS.length).toBeGreaterThanOrEqual(5);
+    for (const o of EMPHASIS_OPTIONS) {
+      expect(o.instruction.length).toBeGreaterThan(20);
+    }
+  });
+});
+
 describe('buildResumePrompt', () => {
   it('includes candidate context and a language note', () => {
     const prompt = buildResumePrompt(RESUME_WITH_LINKS, 'Job ad', META, 'ats');
@@ -371,6 +404,21 @@ describe('buildResumePrompt', () => {
     expect(prompt).not.toContain('remove bullets irrelevant');
     expect(prompt).not.toContain('experience to minimize');
     expect(prompt).not.toContain('experience items most relevant');
+  });
+
+  it('folds in emphasis directives only when selected (#15)', () => {
+    const base = buildResumePrompt(RESUME_WITH_LINKS, 'Job ad', META, 'ats');
+    expect(base).not.toContain('EMPHASIS — apply these user-selected biases');
+
+    const withEmphasis = buildResumePrompt(
+      RESUME_WITH_LINKS,
+      'Job ad',
+      { ...META, emphasis: ['quantify', 'concise'] },
+      'ats'
+    );
+    expect(withEmphasis).toContain('EMPHASIS — apply these user-selected biases');
+    expect(withEmphasis).toContain('Quantify impact');
+    expect(withEmphasis).toContain('More concise');
   });
 
   it('surfaces body project/publication links so they survive generation (#18)', () => {
@@ -515,6 +563,17 @@ describe('buildCoverLetterPrompt', () => {
   it('omits the company-research block when no brief is provided', () => {
     const prompt = buildCoverLetterPrompt(RESUME_WITH_LINKS, 'Job ad', META, 'recruiter');
     expect(prompt).not.toContain('<company_research>');
+  });
+
+  it('folds in emphasis directives when selected (#15)', () => {
+    const prompt = buildCoverLetterPrompt(
+      RESUME_WITH_LINKS,
+      'Job ad',
+      { ...META, emphasis: ['leadership'] },
+      'recruiter'
+    );
+    expect(prompt).toContain('EMPHASIS — apply these user-selected biases');
+    expect(prompt).toContain('Leadership focus');
   });
 
   it('injects German market conventions (Betreff + salary/start-date) while keeping the letter language', () => {

@@ -635,6 +635,29 @@
       "back": "Zurück",
       "next": "Weiter",
       "generate": "Generieren",
+      "emphasis": {
+        "label": "Schwerpunkt",
+        "quantify": {
+          "label": "Wirkung quantifizieren",
+          "desc": "Vorhandene Kennzahlen hervorheben."
+        },
+        "leadership": {
+          "label": "Führungsfokus",
+          "desc": "Verantwortung und Einfluss betonen."
+        },
+        "concise": {
+          "label": "Prägnanter",
+          "desc": "Knappere Punkte, keine Füllwörter."
+        },
+        "senior": {
+          "label": "Senior-Ton",
+          "desc": "Nach Umfang und Ergebnis rahmen."
+        },
+        "technical": {
+          "label": "Technische Tiefe",
+          "desc": "Konkrete Technik und Systeme nennen."
+        }
+      },
       "quality": {
         "label": "Prompt-Qualität",
         "full": "Vollständig",

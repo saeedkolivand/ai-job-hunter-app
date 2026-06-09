@@ -1,5 +1,7 @@
 /** Generation modes + metadata shape. */
 
+import type { EmphasisId } from './emphasis.js';
+
 export type GenerationMode =
   | 'ats' // Conservative ATS Optimization
   | 'recruiter' // Recruiter-Friendly Rewrite
@@ -31,6 +33,13 @@ export interface GenerationMeta {
    * when unknown — resolution then falls back to the research brief / language.
    */
   jobCountry?: string;
+  /**
+   * User-selected emphasis directives (#15) — fact-safe rewrite biases applied on
+   * top of the mode (e.g. quantify impact, more concise). Optional so existing
+   * `GenerationMeta` literals stay valid; the wizard merges the chosen set into
+   * meta just before generation.
+   */
+  emphasis?: EmphasisId[];
 }
 
 export const MODES: Record<
