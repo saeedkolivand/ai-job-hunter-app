@@ -29,7 +29,7 @@ export function useDropdownPosition(
     ? {
         position: 'fixed',
         left: rect.left,
-        width: rect.width,
+        width: Math.max(rect.width, 120),
         zIndex: 9999,
         ...(dropUp ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
       }
