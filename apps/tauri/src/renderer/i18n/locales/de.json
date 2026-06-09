@@ -112,6 +112,12 @@
     },
     "verdict": "Endurteil",
     "recruiterView": "Sichtweise des Personalers —",
+    "groups": {
+      "strengthsSkills": "Stärken & Fähigkeiten",
+      "recommendations": "Empfehlungen & Umformulierungen",
+      "ats": "ATS & Formatierung",
+      "language": "Sprache & Lokalisierung"
+    },
     "strengths": "Stärken",
     "noStrengths": "Keine bemerkenswerten Stärken identifiziert.",
     "weaknesses": "Schwächen",
