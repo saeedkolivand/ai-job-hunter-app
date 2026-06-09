@@ -4,7 +4,6 @@ import {
   Gauge,
   LayoutDashboard,
   type LucideIcon,
-  Sparkles,
   Wand2,
   Zap,
 } from 'lucide-react';
@@ -60,12 +59,6 @@ const TOUR_ITEMS: TourItem[] = [
     icon: Zap,
     titleKey: 'onboarding.tour.autopilot.title',
     descKey: 'onboarding.tour.autopilot.desc',
-  },
-  {
-    tourId: 'ai',
-    icon: Sparkles,
-    titleKey: 'onboarding.tour.ai.title',
-    descKey: 'onboarding.tour.ai.desc',
   },
 ];
 

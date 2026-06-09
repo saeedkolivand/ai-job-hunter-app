@@ -23,7 +23,6 @@ const NAVIGATE: Row[] = [
   { keys: ['g', 'p'], labelKey: 'nav.autopilot' },
   { keys: ['g', 'r'], labelKey: 'nav.documents' },
   { keys: ['g', 'm'], labelKey: 'nav.monitoring' },
-  { keys: ['g', 'i'], labelKey: 'nav.ai' },
   { keys: ['g', 's'], labelKey: 'nav.settings' },
 ];
 

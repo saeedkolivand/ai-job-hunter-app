@@ -8,7 +8,6 @@ import {
   LayoutDashboard,
   type LucideIcon,
   Settings,
-  Sparkles,
   User,
   Wand2,
   Zap,
@@ -59,7 +58,6 @@ const NAV_SECTIONS: { labelKey: string; items: readonly NavItem[] }[] = [
 
 // Pinned to the bottom of the nav, above the user/status footer.
 const PINNED_ITEMS: readonly NavItem[] = [
-  { to: ROUTES.AI, label: 'nav.ai', icon: Sparkles, tourId: 'ai' },
   { to: ROUTES.SUPPORT, label: 'nav.support', icon: HelpCircle, tourId: 'support' },
   { to: ROUTES.SETTINGS, label: 'nav.settings', icon: Settings, tourId: 'settings' },
 ];

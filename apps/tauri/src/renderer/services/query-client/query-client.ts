@@ -59,7 +59,6 @@ export const keys = {
   search: { results: (q: string) => ['search', q] as const },
   credentials: { all: ['credentials'] as const },
   autopilot: { all: ['autopilot'] as const, detail: (id: string) => ['autopilot', id] as const },
-  conversations: { detail: (id: string) => ['conversations', id] as const },
   aiGenerations: { all: ['aiGenerations'] as const },
   referrals: {
     all: ['referrals'] as const,
