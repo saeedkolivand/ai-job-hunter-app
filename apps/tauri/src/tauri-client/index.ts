@@ -18,6 +18,7 @@ import { ai } from './namespaces/ai/index.js';
 import { aiGenerations } from './namespaces/aiGenerations/index.js';
 import { autopilot } from './namespaces/autopilot/index.js';
 import { boards } from './namespaces/boards/index.js';
+import { cliAgents } from './namespaces/cliAgents/index.js';
 import { contactProfile } from './namespaces/contactProfile/index.js';
 import { credentials } from './namespaces/credentials/index.js';
 import { data } from './namespaces/data/index.js';
@@ -54,6 +55,7 @@ export function createTauriInvokeClient(): AppClient {
     credentials: credentials as AppClient['credentials'],
     linkedin: linkedin as AppClient['linkedin'],
     boards: boards as AppClient['boards'],
+    cliAgents: cliAgents as AppClient['cliAgents'],
     privacy: privacy as AppClient['privacy'],
     referrals: referrals as AppClient['referrals'],
     updater: updater as AppClient['updater'],

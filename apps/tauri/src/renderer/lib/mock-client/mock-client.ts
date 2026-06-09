@@ -160,6 +160,12 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       getStatus: async () => ({ connected: false }),
     },
 
+    cliAgents: {
+      status: async () => ({ agents: [], npmAvailable: false }),
+      redetect: async () => ({ agents: [], npmAvailable: false }),
+      install: async () => ({ code: 0, success: true }),
+    },
+
     privacy: {
       signOutAll: noop,
       clearInteractions: noop,

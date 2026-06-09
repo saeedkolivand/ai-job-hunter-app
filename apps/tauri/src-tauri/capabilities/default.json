@@ -20,6 +20,29 @@
     "notification:allow-check-permissions",
     "notification:allow-is-permission-granted",
     "notification:allow-permission-state",
-    "notification:allow-register-listener"
+    "notification:allow-register-listener",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "install-claude-code",
+          "cmd": "npm",
+          "args": ["install", "-g", "@anthropic-ai/claude-code"],
+          "sidecar": false
+        },
+        {
+          "name": "install-codex",
+          "cmd": "npm",
+          "args": ["install", "-g", "@openai/codex"],
+          "sidecar": false
+        },
+        {
+          "name": "install-gemini-cli",
+          "cmd": "npm",
+          "args": ["install", "-g", "@google/gemini-cli"],
+          "sidecar": false
+        }
+      ]
+    }
   ]
 }

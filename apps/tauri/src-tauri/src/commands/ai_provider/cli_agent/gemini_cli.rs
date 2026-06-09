@@ -35,6 +35,14 @@ impl CliAgentBackend for GeminiCliAgent {
         MODELS
     }
 
+    fn install_package(&self) -> &'static str {
+        "@google/gemini-cli"
+    }
+
+    fn docs_url(&self) -> &'static str {
+        "https://geminicli.com/docs/get-started/installation/"
+    }
+
     fn inline_system(&self) -> bool {
         true
     }
