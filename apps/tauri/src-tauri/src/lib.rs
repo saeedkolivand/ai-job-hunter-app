@@ -145,6 +145,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_shell::init())
         // Persist + restore window size/position/maximized across launches; the
         // width/height/center in tauri.conf.json become first-run defaults only.
         .plugin(tauri_plugin_window_state::Builder::default().build())
@@ -310,6 +311,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // cli agents (install status — #22)
+            commands::cli_agents::cli_agents_status,
+            commands::cli_agents::cli_agents_redetect,
             // system
             commands::system::system_health,
             commands::system::system_get_version,

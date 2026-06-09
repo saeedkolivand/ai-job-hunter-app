@@ -5,6 +5,7 @@ pub mod ai_generations;
 pub mod ai_provider;
 pub mod autopilot;
 pub mod boards;
+pub mod cli_agents;
 pub mod contact_profile;
 pub mod credentials;
 pub mod data;

@@ -536,6 +536,19 @@
       "loading": "Loading models...",
       "noModels": "No models available. Make sure Ollama is running."
     },
+    "cliInstall": {
+      "notDetected": "{{label}} CLI not detected. Install it and sign in once, then re-check.",
+      "npmMissing": "npm not found — install Node.js first, then re-check.",
+      "install": "Install {{label}}",
+      "installing": "Installing…",
+      "guide": "Install guide",
+      "recheck": "Re-check",
+      "confirmTitle": "Install {{label}}?",
+      "confirmBody": "Runs “{{command}}” — it downloads and installs the CLI globally via npm. You'll sign in afterwards.",
+      "confirm": "Install",
+      "done": "{{label}} installed — run it once in your terminal to sign in.",
+      "failed": "Couldn't install {{label}}. Try the install guide instead."
+    },
     "companyResearch": {
       "title": "Company Research",
       "description": "Adds a short, factual company brief to cover letters and application answers, using your active AI provider's own web search. Cloud and CLI providers search with their own key — only Ollama needs the free Ollama account key below.",
