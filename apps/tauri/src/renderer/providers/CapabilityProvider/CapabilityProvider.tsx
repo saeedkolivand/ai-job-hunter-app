@@ -18,11 +18,6 @@ export interface Capabilities {
     sqlite: boolean;
     vector: boolean;
   };
-  /** Worker thread pool */
-  workers: {
-    active: number;
-    idle: number;
-  };
   /** Whether the health check has completed at least once */
   initialized: boolean;
 }
@@ -30,7 +25,6 @@ export interface Capabilities {
 const DEFAULT: Capabilities = {
   ai: { ready: false, model: undefined },
   data: { ready: false, sqlite: false, vector: false },
-  workers: { active: 0, idle: 0 },
   initialized: false,
 };
 
@@ -49,10 +43,6 @@ function parseHealth(health: RuntimeHealth | undefined): Capabilities {
       ready: !!health.data?.ready,
       sqlite: !!(health.data as { ready: boolean; sqlite?: boolean } | undefined)?.sqlite,
       vector: !!(health.data as { ready: boolean; vector?: boolean } | undefined)?.vector,
-    },
-    workers: {
-      active: (health.workers as { active?: number } | undefined)?.active ?? 0,
-      idle: (health.workers as { idle?: number } | undefined)?.idle ?? 0,
     },
     initialized: true,
   };
@@ -88,4 +78,3 @@ export const useCapabilities = () => useContext(CapabilityContext);
 
 export const useAICapability = () => useContext(CapabilityContext).ai;
 export const useDataCapability = () => useContext(CapabilityContext).data;
-export const useWorkerCapability = () => useContext(CapabilityContext).workers;

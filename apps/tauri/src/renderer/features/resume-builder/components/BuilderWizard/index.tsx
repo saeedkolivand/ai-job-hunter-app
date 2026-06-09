@@ -1,5 +1,8 @@
 import { ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useEffect, useRef } from 'react';
+import { FormProvider, useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 
 import { Button, StepDots, transition } from '@ajh/ui';
 
@@ -7,6 +10,7 @@ import type { InterviewAnswers, TemplateId } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 import { useSessionStore } from '@/store/session-store';
 
+import { type BuilderForm, builderSchema } from '../../lib/schema';
 import { StepContact } from '../wizard-steps/StepContact';
 import { StepEducation } from '../wizard-steps/StepEducation';
 import { StepExperience } from '../wizard-steps/StepExperience';
@@ -17,6 +21,9 @@ import { StepSummary } from '../wizard-steps/StepSummary';
 import { WizardStep } from '../WizardStep';
 
 const TOTAL_STEPS = 7;
+
+/** How long RHF edits settle before they are pushed into the Zustand slice. */
+const SYNC_DEBOUNCE_MS = 350;
 
 /**
  * Per-step vertical alignment inside the reading column. Short steps (Summary,
@@ -33,12 +40,61 @@ const STEP_ALIGN: readonly ('center' | 'top')[] = [
   'top', // 6 Review
 ];
 
+/** Project the persisted answers onto the in-scope RHF form value (drops `fullName`). */
+function toFormValues(answers: InterviewAnswers): BuilderForm {
+  return {
+    headline: answers.headline ?? '',
+    summary: answers.summary ?? '',
+    experience: (answers.experience ?? []).map((e) => ({
+      title: e.title ?? '',
+      company: e.company ?? '',
+      location: e.location ?? '',
+      startDate: e.startDate ?? '',
+      endDate: e.endDate ?? '',
+      current: e.current ?? false,
+      bullets: e.bullets ?? [],
+    })),
+    education: (answers.education ?? []).map((e) => ({
+      degree: e.degree ?? '',
+      institution: e.institution ?? '',
+      location: e.location ?? '',
+      startDate: e.startDate ?? '',
+      endDate: e.endDate ?? '',
+      details: e.details ?? '',
+    })),
+    skills: answers.skills ?? [],
+    projects: (answers.projects ?? []).map((p) => ({
+      name: p.name ?? '',
+      description: p.description ?? '',
+      link: p.link ?? '',
+    })),
+    publications: (answers.publications ?? []).map((p) => ({
+      title: p.title ?? '',
+      venue: p.venue ?? '',
+      year: p.year ?? '',
+      link: p.link ?? '',
+    })),
+    awards: (answers.awards ?? []).map((e) => ({
+      title: e.title ?? '',
+      detail: e.detail ?? '',
+      year: e.year ?? '',
+    })),
+    volunteer: (answers.volunteer ?? []).map((e) => ({
+      title: e.title ?? '',
+      detail: e.detail ?? '',
+      year: e.year ?? '',
+    })),
+    languages: answers.languages ?? [],
+    certifications: answers.certifications ?? [],
+  };
+}
+
 interface BuilderWizardProps {
   language: string;
   templateId: TemplateId;
   atsMode: boolean;
   isComplete: boolean;
-  canGenerate: boolean;
+  canUseAI: boolean;
   isGenerating: boolean;
   onLanguageChange: (language: string) => void;
   onTemplateChange: (id: TemplateId) => void;
@@ -51,7 +107,7 @@ export function BuilderWizard({
   templateId,
   atsMode,
   isComplete,
-  canGenerate,
+  canUseAI,
   isGenerating,
   onLanguageChange,
   onTemplateChange,
@@ -59,16 +115,47 @@ export function BuilderWizard({
   onGenerate,
 }: BuilderWizardProps) {
   const { t } = useTranslation();
-  const resumeBuilder = useSessionStore((s) => s.resumeBuilder);
   const setResumeBuilder = useSessionStore((s) => s.setResumeBuilder);
+  const step = useSessionStore((s) => s.resumeBuilder.wizardStep);
 
-  const { answers, wizardStep: step } = resumeBuilder;
+  // Initialize the form ONCE from the current persisted answers. We deliberately
+  // do NOT reset the form from a Zustand subscription — RHF is the live editing
+  // layer; the slice is the persistence + generation boundary. The blank-default
+  // case (Start over) is covered by this component remounting with fresh answers.
+  const initialAnswers = useRef(useSessionStore.getState().resumeBuilder.answers);
+  const methods = useForm<BuilderForm>({
+    defaultValues: toFormValues(initialAnswers.current),
+    resolver: zodResolver(builderSchema),
+    mode: 'onChange',
+  });
+
   const setStep = (v: number) =>
     setResumeBuilder({ wizardStep: Math.max(0, Math.min(TOTAL_STEPS - 1, v)) });
-  const update = (patch: Partial<InterviewAnswers>) =>
-    setResumeBuilder({ answers: { ...answers, ...patch } });
+
+  // One-way, debounced RHF → Zustand sync so the slice (the synthesis input)
+  // stays fresh while the user edits, without per-keystroke store churn.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const sub = methods.watch(() => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        setResumeBuilder({ answers: { ...initialAnswers.current, ...methods.getValues() } });
+      }, SYNC_DEBOUNCE_MS);
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      sub.unsubscribe();
+    };
+  }, [methods, setResumeBuilder]);
+
+  // Flush the latest values synchronously, then run synthesis (#flush-before-build).
+  const onValid = () => {
+    setResumeBuilder({ answers: { ...initialAnswers.current, ...methods.getValues() } });
+    onGenerate();
+  };
 
   const isLast = step === TOTAL_STEPS - 1;
+  const buildDisabled = !isComplete || !canUseAI || !methods.formState.isValid || isGenerating;
 
   return (
     <motion.div
@@ -101,8 +188,8 @@ export function BuilderWizard({
 
         {isLast ? (
           <Button
-            onClick={onGenerate}
-            disabled={!canGenerate || isGenerating}
+            onClick={() => void methods.handleSubmit(onValid)()}
+            disabled={buildDisabled}
             loading={isGenerating}
             variant="glass"
             size="sm"
@@ -126,42 +213,44 @@ export function BuilderWizard({
 
       {/* Step content */}
       <div className="flex-1 overflow-y-auto px-8 pb-6 pt-2" aria-live="polite">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={step}
-            initial={{ opacity: 0, x: 16 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -16 }}
-            transition={transition.normal}
-            className="min-h-full"
-          >
-            <WizardStep
-              stepIndex={step}
-              totalSteps={TOTAL_STEPS}
-              title={t(`build.steps.${step}`)}
-              description={t(`build.descriptions.${step}`)}
-              align={STEP_ALIGN[step] ?? 'top'}
+        <FormProvider {...methods}>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={step}
+              initial={{ opacity: 0, x: 16 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -16 }}
+              transition={transition.normal}
+              className="min-h-full"
             >
-              {step === 0 && <StepContact answers={answers} update={update} />}
-              {step === 1 && <StepSummary answers={answers} update={update} />}
-              {step === 2 && <StepExperience answers={answers} update={update} />}
-              {step === 3 && <StepEducation answers={answers} update={update} />}
-              {step === 4 && <StepSkills answers={answers} update={update} />}
-              {step === 5 && <StepExtras answers={answers} update={update} />}
-              {step === 6 && (
-                <StepReview
-                  language={language}
-                  templateId={templateId}
-                  atsMode={atsMode}
-                  isComplete={isComplete}
-                  onLanguageChange={onLanguageChange}
-                  onTemplateChange={onTemplateChange}
-                  onAtsModeChange={onAtsModeChange}
-                />
-              )}
-            </WizardStep>
-          </motion.div>
-        </AnimatePresence>
+              <WizardStep
+                stepIndex={step}
+                totalSteps={TOTAL_STEPS}
+                title={t(`build.steps.${step}`)}
+                description={t(`build.descriptions.${step}`)}
+                align={STEP_ALIGN[step] ?? 'top'}
+              >
+                {step === 0 && <StepContact />}
+                {step === 1 && <StepSummary />}
+                {step === 2 && <StepExperience />}
+                {step === 3 && <StepEducation />}
+                {step === 4 && <StepSkills />}
+                {step === 5 && <StepExtras />}
+                {step === 6 && (
+                  <StepReview
+                    language={language}
+                    templateId={templateId}
+                    atsMode={atsMode}
+                    isComplete={isComplete}
+                    onLanguageChange={onLanguageChange}
+                    onTemplateChange={onTemplateChange}
+                    onAtsModeChange={onAtsModeChange}
+                  />
+                )}
+              </WizardStep>
+            </motion.div>
+          </AnimatePresence>
+        </FormProvider>
       </div>
     </motion.div>
   );

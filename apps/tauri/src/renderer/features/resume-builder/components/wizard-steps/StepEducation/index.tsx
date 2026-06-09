@@ -1,15 +1,17 @@
 import { GraduationCap } from 'lucide-react';
+import { Controller, useFieldArray, useFormContext } from 'react-hook-form';
 
-import { Input, TextArea } from '@ajh/ui';
+import { Input, LocationInput, TextArea } from '@ajh/ui';
 
-import type { InterviewEducation } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
+import { useAppClient } from '@/providers/AppClientProvider';
 
-import type { BuilderStepProps } from '../../../types';
-import { RepeatableList } from '../../RepeatableList';
+import type { BuilderFormValues } from '../../../types';
+import { FieldArrayList } from '../../FieldArrayList';
+import { MonthYearField } from '../../MonthYearField';
 import { WizardField } from '../../WizardField';
 
-const blank = (): InterviewEducation => ({
+const blank = () => ({
   degree: '',
   institution: '',
   location: '',
@@ -19,63 +21,118 @@ const blank = (): InterviewEducation => ({
 });
 
 /** Repeatable education entries (core section). */
-export function StepEducation({ answers, update }: BuilderStepProps) {
+export function StepEducation() {
   const { t } = useTranslation();
+  const api = useAppClient();
+  const { control, formState } = useFormContext<BuilderFormValues>();
+  const { fields, append, remove } = useFieldArray({ control, name: 'education' });
 
   return (
-    <RepeatableList<InterviewEducation>
-      items={answers.education ?? []}
-      onChange={(education) => update({ education })}
-      blank={blank}
+    <FieldArrayList
+      fields={fields}
+      onAppend={() => append(blank())}
+      onRemove={remove}
       addLabel={t('build.education.add')}
       removeLabel={t('build.remove')}
       emptyLabel={t('build.education.empty')}
       emptyDescription={t('build.education.emptyDescription')}
       icon={GraduationCap}
-      render={(item, set) => (
-        <div className="space-y-2.5">
-          <div className="grid grid-cols-2 gap-2.5">
-            <WizardField label={t('build.education.degree')}>
-              <Input value={item.degree} onChange={(e) => set({ degree: e.target.value })} />
-            </WizardField>
-            <WizardField label={t('build.education.institution')}>
-              <Input
-                value={item.institution}
-                onChange={(e) => set({ institution: e.target.value })}
+      render={(index) => {
+        const identityError = formState.errors.education?.[index]?.degree?.message;
+        return (
+          <div className="space-y-2.5">
+            <div className="grid grid-cols-2 gap-2.5">
+              <WizardField
+                label={t('build.education.degree')}
+                error={identityError ? t(identityError) : undefined}
+              >
+                <Controller
+                  control={control}
+                  name={`education.${index}.degree`}
+                  render={({ field }) => (
+                    <Input
+                      className="w-full"
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      placeholder={t('build.education.degreePlaceholder')}
+                    />
+                  )}
+                />
+              </WizardField>
+              <WizardField label={t('build.education.institution')}>
+                <Controller
+                  control={control}
+                  name={`education.${index}.institution`}
+                  render={({ field }) => (
+                    <Input
+                      className="w-full"
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      placeholder={t('build.education.institutionPlaceholder')}
+                    />
+                  )}
+                />
+              </WizardField>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2.5">
+              <WizardField label={t('build.education.location')}>
+                <Controller
+                  control={control}
+                  name={`education.${index}.location`}
+                  render={({ field }) => (
+                    <LocationInput
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      placeholder={t('build.education.locationPlaceholder')}
+                      onFetchSuggestions={(q) => api.geocode.suggest(q)}
+                    />
+                  )}
+                />
+              </WizardField>
+              <WizardField label={t('build.education.start')}>
+                <Controller
+                  control={control}
+                  name={`education.${index}.startDate`}
+                  render={({ field }) => (
+                    <MonthYearField value={field.value ?? ''} onChange={field.onChange} />
+                  )}
+                />
+              </WizardField>
+              <WizardField label={t('build.education.end')}>
+                <Controller
+                  control={control}
+                  name={`education.${index}.endDate`}
+                  render={({ field }) => (
+                    <MonthYearField value={field.value ?? ''} onChange={field.onChange} />
+                  )}
+                />
+              </WizardField>
+            </div>
+
+            <WizardField
+              label={t('build.education.details')}
+              hint={t('build.education.detailsHint')}
+            >
+              <Controller
+                control={control}
+                name={`education.${index}.details`}
+                render={({ field }) => (
+                  <TextArea
+                    variant="glass"
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    rows={2}
+                  />
+                )}
               />
             </WizardField>
           </div>
-
-          <div className="grid grid-cols-3 gap-2.5">
-            <WizardField label={t('build.education.location')}>
-              <Input
-                value={item.location ?? ''}
-                onChange={(e) => set({ location: e.target.value })}
-              />
-            </WizardField>
-            <WizardField label={t('build.education.start')}>
-              <Input
-                value={item.startDate ?? ''}
-                onChange={(e) => set({ startDate: e.target.value })}
-              />
-            </WizardField>
-            <WizardField label={t('build.education.end')}>
-              <Input
-                value={item.endDate ?? ''}
-                onChange={(e) => set({ endDate: e.target.value })}
-              />
-            </WizardField>
-          </div>
-
-          <WizardField label={t('build.education.details')} hint={t('build.education.detailsHint')}>
-            <TextArea
-              value={item.details ?? ''}
-              onChange={(e) => set({ details: e.target.value })}
-              rows={2}
-            />
-          </WizardField>
-        </div>
-      )}
+        );
+      }}
     />
   );
 }

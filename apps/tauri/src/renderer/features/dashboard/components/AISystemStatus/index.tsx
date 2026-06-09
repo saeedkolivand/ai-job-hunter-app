@@ -1,20 +1,27 @@
 import { Activity, CheckCircle, Cpu, Database, Loader2, RefreshCw, XCircle } from 'lucide-react';
+import { useState } from 'react';
+import { useRouter } from '@tanstack/react-router';
 
 import { Button, cn, GlassCard } from '@ajh/ui';
 
+import { ROUTES } from '@/constants/routes';
+import { useKindLabelMap } from '@/hooks/use-kind-label-map';
 import { useTranslation } from '@/lib/i18n';
-import { useSystemHealth, useSystemMetrics } from '@/services';
+import { useSystemHealth, useSystemMetrics, useWorkerActivity } from '@/services';
+import { keys, queryClient } from '@/services/query-client';
 import { invalidateHealth } from '@/services/use-system';
 
 export function AISystemStatus() {
   const { t } = useTranslation();
+  const router = useRouter();
   const { data: health, isFetching } = useSystemHealth();
   const { data: metricsRaw } = useSystemMetrics();
+  const activity = useWorkerActivity(useKindLabelMap());
+  const [refreshing, setRefreshing] = useState(false);
 
   type Health = {
     ai?: { ready: boolean; model?: string; memoryMB?: number };
     data?: { ready: boolean; sqlite: boolean; vector: boolean };
-    workers?: { active: number; idle: number; max: number };
   };
   type Metrics = { processes?: Array<{ type: string; memory?: { workingSetSize: number } }> };
 
@@ -23,6 +30,19 @@ export function AISystemStatus() {
 
   const rendererMem = metrics?.processes?.find((p) => p.type === 'renderer')?.memory
     ?.workingSetSize;
+
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        invalidateHealth(),
+        queryClient.invalidateQueries({ queryKey: keys.jobs.all }),
+        queryClient.invalidateQueries({ queryKey: keys.system.metrics }),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const rows = [
     {
@@ -34,6 +54,7 @@ export function AISystemStatus() {
         : h != null
           ? t('dashboard.status.notAvailable')
           : t('dashboard.status.checking'),
+      onClick: undefined as (() => void) | undefined,
     },
     {
       name: t('dashboard.status.database'),
@@ -44,6 +65,7 @@ export function AISystemStatus() {
         : h != null
           ? t('dashboard.status.notAvailable')
           : t('dashboard.status.checking'),
+      onClick: undefined,
     },
     {
       name: t('dashboard.status.vectorDb'),
@@ -54,21 +76,16 @@ export function AISystemStatus() {
         : h != null
           ? t('dashboard.status.notAvailable')
           : t('dashboard.status.checking'),
+      onClick: undefined,
     },
     {
-      name: t('dashboard.status.workers'),
+      name: t('dashboard.status.activity'),
       icon: Activity,
-      status:
-        h == null
-          ? 'loading'
-          : h.workers && h.workers.active + h.workers.idle > 0
-            ? 'ready'
-            : 'error',
-      detail: h?.workers
-        ? `${h.workers.active} active · ${h.workers.idle} idle`
-        : h != null
-          ? t('dashboard.status.notAvailable')
-          : t('dashboard.status.checking'),
+      status: activity.isActive ? 'ready' : 'idle',
+      detail: activity.isActive
+        ? `${activity.active} ${t('status.running')} · ${activity.queued} ${t('status.queued')}`
+        : t('status.idle'),
+      onClick: () => void router.navigate({ to: ROUTES.MONITORING }),
     },
   ] as const;
 
@@ -85,6 +102,12 @@ export function AISystemStatus() {
       bg: 'bg-amber-500/15',
       dot: 'bg-amber-400 animate-pulse',
     },
+    idle: {
+      icon: CheckCircle,
+      color: 'text-foreground/40',
+      bg: 'bg-white/[0.06]',
+      dot: 'bg-foreground/30',
+    },
     error: { icon: XCircle, color: 'text-red-400', bg: 'bg-red-500/15', dot: 'bg-red-400' },
   };
 
@@ -96,11 +119,11 @@ export function AISystemStatus() {
           {t('dashboard.aiSystemStatus')}
         </div>
         <Button
-          onClick={() => void invalidateHealth()}
-          disabled={isFetching}
+          onClick={() => void refresh()}
+          disabled={isFetching || refreshing}
           className="flex items-center gap-1 rounded-lg bg-white/5 px-2 py-1 text-[10px] text-foreground/40 hover:text-foreground/70 h-auto border-transparent"
         >
-          <RefreshCw size={10} className={isFetching ? 'animate-spin' : ''} />
+          <RefreshCw size={10} className={isFetching || refreshing ? 'animate-spin' : ''} />
           {t('dashboard.status.refresh')}
         </Button>
       </div>
@@ -110,15 +133,12 @@ export function AISystemStatus() {
           const cfg = statusConfig[row.status];
           const StatusIcon = cfg.icon;
           const RowIcon = row.icon;
-          return (
-            <div
-              key={row.name}
-              className="flex items-center gap-3 rounded-lg border border-white/[0.04] bg-white/[0.02] px-3 py-2.5"
-            >
+          const content = (
+            <>
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/[0.04]">
                 <RowIcon size={13} className="text-foreground/35" />
               </div>
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 text-left">
                 <div className="text-xs font-medium text-foreground/80">{row.name}</div>
                 <div className="text-[11px] text-foreground/40">{row.detail}</div>
               </div>
@@ -133,6 +153,25 @@ export function AISystemStatus() {
                   className={cn(cfg.color, row.status === 'loading' && 'animate-spin')}
                 />
               </div>
+            </>
+          );
+          const rowClass =
+            'flex w-full items-center gap-3 rounded-lg border border-white/[0.04] bg-white/[0.02] px-3 py-2.5';
+          return row.onClick ? (
+            <Button
+              key={row.name}
+              variant="unstyled"
+              onClick={row.onClick}
+              className={cn(
+                rowClass,
+                'transition-colors hover:border-white/10 hover:bg-white/[0.04]'
+              )}
+            >
+              {content}
+            </Button>
+          ) : (
+            <div key={row.name} className={rowClass}>
+              {content}
             </div>
           );
         })}

@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { JobEvent } from '@ajh/shared';
+import type { JobEvent, JobRecord } from '@ajh/shared';
 
 import { getClient, useAppClient } from '@/providers/AppClientProvider';
 
@@ -46,6 +46,65 @@ export const useRetryJob = () => {
     mutationFn: (jobId: string) => api.jobs.retry(jobId),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.jobs.all }),
   });
+};
+
+export interface WorkerActivityByKind {
+  kind: string;
+  label: string;
+  count: number;
+}
+
+export interface WorkerActivity {
+  /** Number of jobs currently running (or streaming). */
+  active: number;
+  /** Number of jobs waiting in the queue (pending). */
+  queued: number;
+  /** The running/streaming job records. */
+  running: JobRecord[];
+  /** The queued (pending) job records. */
+  queuedJobs: JobRecord[];
+  /** Active jobs grouped by kind, with localized labels. */
+  byKind: WorkerActivityByKind[];
+  /** Convenience flag — true when any job is running. */
+  isActive: boolean;
+}
+
+/**
+ * Live view of background-job activity (a "worker" = any active background job:
+ * AI generation, scraping, autopilot, embeddings, extraction).
+ *
+ * Reads the job queue and subscribes to job events (which already invalidate the
+ * queue on every event), so consumers update in real time. The kind→label map is
+ * passed in as a param so this service stays free of i18n/feature coupling — pass
+ * `useKindLabelMap()` from the caller.
+ */
+export const useWorkerActivity = (kindLabelMap: Record<string, string>): WorkerActivity => {
+  const { data } = useJobQueue();
+  // Subscribe to live job events; this also keeps `keys.jobs.all` fresh.
+  useJobEvents();
+
+  return useMemo(() => {
+    const jobs = data ?? [];
+    const running = jobs.filter((j) => j.status === 'running' || j.status === 'streaming');
+    const queuedJobs = jobs.filter((j) => j.status === 'queued');
+
+    const counts = new Map<string, number>();
+    for (const job of running) counts.set(job.kind, (counts.get(job.kind) ?? 0) + 1);
+    const byKind: WorkerActivityByKind[] = [...counts.entries()].map(([kind, count]) => ({
+      kind,
+      label: kindLabelMap[kind] ?? kind,
+      count,
+    }));
+
+    return {
+      active: running.length,
+      queued: queuedJobs.length,
+      running,
+      queuedJobs,
+      byKind,
+      isActive: running.length > 0,
+    };
+  }, [data, kindLabelMap]);
 };
 
 export const useJobEvents = (onEvent?: (event: JobEvent) => void) => {

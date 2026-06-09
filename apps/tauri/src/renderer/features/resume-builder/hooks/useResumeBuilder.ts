@@ -66,6 +66,10 @@ export function useResumeBuilder() {
     (answers.education?.some((e) => e.degree?.trim() || e.institution?.trim()) ?? false);
   const hasSkills = answers.skills?.some((s) => s.trim()) ?? false;
   const isComplete = hasName && hasHistory && hasSkills;
+
+  // The inline-validation gate (bad URLs/years, half-filled entries) now lives in
+  // the react-hook-form layer (`builderSchema` + the wizard's `formState.isValid`).
+  // This hook only owns the completeness + AI-availability portion of the gate.
   const canGenerate = isComplete && canUseAI;
 
   const synthesize = async () => {

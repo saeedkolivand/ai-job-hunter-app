@@ -65,8 +65,11 @@
       "empty": "Noch keine Positionen",
       "emptyDescription": "Füge deinen Werdegang hinzu — neueste zuerst.",
       "title": "Position",
+      "titlePlaceholder": "z. B. Senior Backend Engineer",
       "company": "Unternehmen",
+      "companyPlaceholder": "z. B. Acme GmbH",
       "location": "Ort",
+      "locationPlaceholder": "z. B. Berlin, Deutschland",
       "start": "Beginn",
       "end": "Ende",
       "present": "Heute",
@@ -80,8 +83,11 @@
       "empty": "Noch keine Ausbildung",
       "emptyDescription": "Füge Abschlüsse, Zertifikate oder relevante Kurse hinzu.",
       "degree": "Abschluss / Qualifikation",
+      "degreePlaceholder": "z. B. M.Sc. Informatik",
       "institution": "Einrichtung",
+      "institutionPlaceholder": "z. B. TU München",
       "location": "Ort",
+      "locationPlaceholder": "z. B. München, Deutschland",
       "start": "Beginn",
       "end": "Ende",
       "details": "Details",
@@ -95,6 +101,8 @@
     "extras": {
       "link": "Link",
       "linkHint": "optional",
+      "linkPlaceholder": "https://example.com",
+      "yearPlaceholder": "z. B. 2021",
       "entryTitle": "Titel",
       "entryDetail": "Detail",
       "entryYear": "Jahr",
@@ -103,25 +111,33 @@
         "add": "Projekt hinzufügen",
         "empty": "Noch keine Projekte.",
         "name": "Name",
-        "description": "Beschreibung"
+        "namePlaceholder": "z. B. Payment-Service",
+        "description": "Beschreibung",
+        "descriptionPlaceholder": "Was es leistet und deine Rolle."
       },
       "publications": {
         "title": "Publikationen",
         "add": "Publikation hinzufügen",
         "empty": "Noch keine Publikationen.",
         "titleField": "Titel",
+        "titlePlaceholder": "z. B. Skalierung verteilter Caches",
         "venue": "Medium",
+        "venuePlaceholder": "z. B. ACM SIGMOD",
         "year": "Jahr"
       },
       "awards": {
         "title": "Auszeichnungen",
         "add": "Auszeichnung hinzufügen",
-        "empty": "Noch keine Auszeichnungen."
+        "empty": "Noch keine Auszeichnungen.",
+        "titlePlaceholder": "z. B. Mitarbeiter des Jahres",
+        "detailPlaceholder": "z. B. Acme GmbH"
       },
       "volunteer": {
         "title": "Ehrenamt",
         "add": "Ehrenamt hinzufügen",
-        "empty": "Noch kein Ehrenamt."
+        "empty": "Noch kein Ehrenamt.",
+        "titlePlaceholder": "z. B. Mentor",
+        "detailPlaceholder": "z. B. Code.org"
       },
       "languages": {
         "title": "Sprachen",
@@ -139,7 +155,19 @@
     "review": {
       "language": "Ausgabesprache",
       "incomplete": "Füge deinen Namen, mindestens eine Position oder Ausbildung und einige Kenntnisse hinzu.",
+      "fixIssues": "Behebe {{count}} Problem, um zu erstellen.",
+      "fixIssues_other": "Behebe {{count}} Probleme, um zu erstellen.",
       "cjkHint": "PDF und Live-Vorschau können Chinesisch, Japanisch und Koreanisch noch nicht darstellen — dein Lebenslauf wird trotzdem erstellt und als DOCX exportiert. CJK-PDF-Unterstützung folgt."
+    },
+    "monthYear": {
+      "month": "Monat",
+      "year": "Jahr"
+    },
+    "validation": {
+      "url": "Gib eine gültige URL ein (https://…).",
+      "year": "Gib ein 4-stelliges Jahr ein.",
+      "experienceIdentity": "Gib eine Position oder ein Unternehmen an.",
+      "educationIdentity": "Gib einen Abschluss oder eine Einrichtung an."
     },
     "output": {
       "tailor": "An Stelle anpassen",
@@ -460,7 +488,9 @@
       "photoRemove": "Foto entfernen",
       "photoErrorType": "Bitte wählen Sie ein PNG-, JPEG-, WebP- oder GIF-Bild.",
       "photoErrorSize": "Dieses Bild ist zu groß. Wählen Sie eines unter 10 MB.",
-      "photoErrorDecode": "Dieses Bild konnte nicht gelesen werden. Versuchen Sie eine andere Datei."
+      "photoErrorDecode": "Dieses Bild konnte nicht gelesen werden. Versuchen Sie eine andere Datei.",
+      "emailInvalid": "Geben Sie eine gültige E-Mail-Adresse ein.",
+      "urlInvalid": "Geben Sie eine gültige URL ein (https://…)."
     },
     "contactConflict": {
       "title": "Kontaktdaten aktualisieren?",
@@ -745,6 +775,7 @@
     "regenerate": "Neu generieren",
     "preview": "Vorschau",
     "edit": "Bearbeiten",
+    "save": "Speichern",
     "viewMode": "Ansichtsmodus",
     "placeholder": "Generierte Ausgabe erscheint hier…",
     "pdfPreview": {
@@ -1091,7 +1122,7 @@
       "aiModel": "KI-Modell",
       "database": "Datenbank",
       "vectorDb": "Vektor-DB",
-      "workers": "Workers",
+      "activity": "Aktivität",
       "ready": "Bereit",
       "checking": "Prüfe…",
       "notAvailable": "Nicht verfügbar",
@@ -1315,7 +1346,13 @@
   },
   "status": {
     "ready": "Bereit",
-    "ollamaOffline": "Ollama offline"
+    "ollamaOffline": "Ollama offline",
+    "activity": "Aktivität",
+    "idle": "Inaktiv",
+    "activityIdle": "Keine Hintergrundaktivität.",
+    "running": "laufend",
+    "queued": "in Warteschlange",
+    "viewAll": "Alle anzeigen"
   },
   "command": {
     "placeholder": "Suchen, KI fragen, Befehl ausführen…",

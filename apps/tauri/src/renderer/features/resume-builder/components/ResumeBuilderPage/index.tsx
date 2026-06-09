@@ -33,7 +33,6 @@ export function ResumeBuilderPage() {
     output,
     setResumeBuilder,
     meta,
-    canGenerate,
     canUseAI,
     aiReason,
     isComplete,
@@ -97,7 +96,7 @@ export function ResumeBuilderPage() {
                 templateId={templateId}
                 atsMode={atsMode}
                 isComplete={isComplete}
-                canGenerate={canGenerate}
+                canUseAI={canUseAI}
                 isGenerating={isGenerating}
                 onLanguageChange={onLanguageChange}
                 onTemplateChange={onTemplateChange}

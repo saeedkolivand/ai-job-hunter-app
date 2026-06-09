@@ -20,6 +20,8 @@ export interface LocationInputProps {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  /** Forwarded to the trigger button so an external `<label htmlFor>` resolves. */
+  id?: string;
   onFetchSuggestions?: (query: string) => Promise<Suggestion[]>;
   /**
    * Fires when a value is committed (suggestion picked, custom text, or cleared)
@@ -36,6 +38,7 @@ export function LocationInput({
   placeholder = 'Any location',
   disabled,
   className,
+  id,
   onFetchSuggestions,
   onSelectSuggestion,
 }: LocationInputProps) {
@@ -109,6 +112,7 @@ export function LocationInput({
   return (
     <div ref={triggerRef} className={className}>
       <Button
+        id={id}
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setOpen((o) => !o)}

@@ -1,5 +1,6 @@
 import { AlertTriangle, Info } from 'lucide-react';
-import { useId } from 'react';
+import { useId, useMemo } from 'react';
+import { useFormContext } from 'react-hook-form';
 
 import { SelectDropdown } from '@ajh/ui';
 
@@ -7,6 +8,7 @@ import { StepTemplate } from '@/features/ai-generate/components/wizard-steps/Ste
 import { OUTPUT_LANGUAGES, type TemplateId } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 
+import type { BuilderFormValues } from '../../../types';
 import { WizardField } from '../../WizardField';
 
 // CJK languages (zh/ja/ko) generate + export to DOCX fine, but the bundled Typst
@@ -27,6 +29,16 @@ interface StepReviewProps {
   onAtsModeChange: (enabled: boolean) => void;
 }
 
+/** Recursively count leaf react-hook-form errors (those carrying a `message`). */
+function countErrors(node: unknown): number {
+  if (!node || typeof node !== 'object') return 0;
+  if ('message' in (node as Record<string, unknown>)) return 1;
+  return Object.values(node as Record<string, unknown>).reduce<number>(
+    (sum, child) => sum + countErrors(child),
+    0
+  );
+}
+
 /**
  * Final step: output language + template/ATS choice. The Generate button lives in
  * the wizard's top bar; this surfaces a hint when required sections are missing.
@@ -42,6 +54,10 @@ export function StepReview({
 }: StepReviewProps) {
   const { t } = useTranslation();
   const languageId = useId();
+  const {
+    formState: { errors },
+  } = useFormContext<BuilderFormValues>();
+  const errorCount = useMemo(() => countErrors(errors), [errors]);
 
   const isCjkLanguage = OUTPUT_LANGUAGES.some((l) => l.code === language && l.cjk);
 
@@ -51,6 +67,13 @@ export function StepReview({
         <div className="flex items-start gap-2 rounded-lg border border-amber-400/20 bg-amber-400/5 px-3.5 py-2.5 text-xs text-amber-200/80">
           <Info size={14} className="mt-0.5 shrink-0" />
           <span>{t('build.review.incomplete')}</span>
+        </div>
+      )}
+
+      {errorCount > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-400/20 bg-red-400/5 px-3.5 py-2.5 text-xs text-red-300/80">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>{t('build.review.fixIssues', { count: errorCount })}</span>
         </div>
       )}
 
