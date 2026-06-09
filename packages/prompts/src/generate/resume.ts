@@ -4,7 +4,7 @@ import { truncateResume } from '../context-manager/index.js';
 import { resumeConventions } from '../locale/index.js';
 import { type PromptTarget, resolveProfile } from '../provider/index.js';
 import { buildEmphasisBlock, buildGroundingBlock } from './emphasis.js';
-import { parseLinksFromResume, stripLinkBlock } from './links.js';
+import { buildBodyLinksBlock, parseLinksFromResume, stripLinkBlock } from './links.js';
 import { type GenerationMeta, type GenerationMode, MODES } from './modes.js';
 
 export function buildResumeSystemPrompt(
@@ -216,6 +216,9 @@ export function buildResumePrompt(
   const conventionsNote = `CONVENTIONS (target market: ${meta.targetLanguage}): use these section headers — ${conv.headers.summary} / ${conv.headers.experience} / ${conv.headers.education} / ${conv.headers.skills}; and one consistent date format like ${conv.dateExample}.`;
 
   const { block: linksBlock } = parseLinksFromResume(resume);
+  // Project / publication / portfolio links that belong on their own items (#18) —
+  // re-surfaced for the model since stripLinkBlock() removes the reference block.
+  const bodyLinksBlock = buildBodyLinksBlock(resume);
   // Section-aware truncation: keep the whole résumé when it fits the model's
   // token budget, otherwise preserve high-value sections (Experience, Skills)
   // instead of blindly cutting the tail.
@@ -224,7 +227,7 @@ export function buildResumePrompt(
   const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? []);
   const groundingBlock = buildGroundingBlock(resumeBody, meta.topRequirements ?? []);
 
-  return `${linksBlock ? `${linksBlock}\n\n` : ''}<candidate_resume>
+  return `${linksBlock ? `${linksBlock}\n\n` : ''}${bodyLinksBlock ? `${bodyLinksBlock}\n\n` : ''}<candidate_resume>
 ${resumeBody}
 </candidate_resume>
 
@@ -313,6 +316,10 @@ Repeat the block above for EVERY role in <candidate_resume>, most recent first �
 ${conv.headers.skills.toUpperCase()}
 Category: Skill1, **Skill2**, Skill3
 ...
+(blank line)
+(ONLY if CANDIDATE PROJECT / PUBLICATION LINKS were provided AND a link has no natural home in a role above — add a PROJECTS or PUBLICATIONS section here, one item per line as "Item title — Label", using the short labels. Otherwise omit this section entirely.)
+
+Preserve EVERY label from CANDIDATE PROJECT / PUBLICATION LINKS somewhere in the output — drop none. Keep any [label](url) markdown links already present in <candidate_resume> intact on their items.
 
 Start the resume now:`;
 }
