@@ -37,7 +37,6 @@ export function ScoringSchedulerProvider({ children }: { children: ReactNode }) 
 
   const release = useCallback(
     (jobId: string) => {
-      queueRef.current = queueRef.current.filter((id) => id !== jobId);
       setActiveSet((prev) => {
         const next = new Set(prev);
         next.delete(jobId);

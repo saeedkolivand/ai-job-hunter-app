@@ -79,7 +79,11 @@ describe('RowMatchScore — auto-fires on render', () => {
     renderScore(fn);
 
     await waitFor(() => expect(fn).toHaveBeenCalledTimes(1));
-    expect(fn).toHaveBeenCalledWith({ resumeId: RESUME_ID, jobId: JOB_ID });
+    expect(fn).toHaveBeenCalledWith({
+      resumeId: RESUME_ID,
+      jobId: JOB_ID,
+      semanticScoringEnabled: false,
+    });
   });
 });
 
