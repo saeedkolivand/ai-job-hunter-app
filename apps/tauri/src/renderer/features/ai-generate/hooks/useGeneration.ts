@@ -1,6 +1,7 @@
 import type { AiGenerationSaveRequest } from '@ajh/shared/ipc';
 
 import {
+  type EmphasisId,
   extractMetadata,
   generateCoverLetter,
   generateResume,
@@ -49,7 +50,9 @@ export function useGeneration(
    * to the cover-letter prompt so the generated text matches the export layout,
    * which resolves the same market from this value + the detected job country.
    */
-  marketOverride = ''
+  marketOverride = '',
+  /** User-selected emphasis directives (#15), merged into meta at generate-time. */
+  emphasis: EmphasisId[] = []
 ) {
   const handleAnalyze = async () => {
     setError(null);
@@ -67,6 +70,9 @@ export function useGeneration(
 
   const handleGenerate = async () => {
     if (!meta || !selectedModel) return;
+    // Fold the user's emphasis directives (#15) into the meta the prompt builders
+    // read. Kept separate from the stored `meta` (extracted) so the wizard owns it.
+    const genMeta: GenerationMeta = emphasis.length ? { ...meta, emphasis } : meta;
     setError(null);
     setResumeOut('');
     setCoverOut('');
@@ -128,7 +134,7 @@ export function useGeneration(
         finalResume = await generateResume(
           resume,
           jobAd,
-          meta,
+          genMeta,
           mode,
           selectedModel,
           onTok(setStreamBuffer, (t) => {
@@ -162,7 +168,7 @@ export function useGeneration(
         finalCover = await generateCoverLetter(
           resume,
           jobAd,
-          meta,
+          genMeta,
           mode,
           selectedModel,
           onTok(setStreamBuffer, (t) => {

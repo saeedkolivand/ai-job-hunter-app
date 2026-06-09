@@ -1,9 +1,16 @@
-import { AlertTriangle, Gauge, type LucideIcon, SlidersHorizontal, Zap } from 'lucide-react';
+import { AlertTriangle, Check, Gauge, type LucideIcon, SlidersHorizontal, Zap } from 'lucide-react';
 
 import { Button, cn, SelectDropdown } from '@ajh/ui';
 
 import { isOllamaFamily } from '@/lib/ai-providers/provider-meta';
-import { type GenerationMode, LETTER_MARKET_IDS, letterConventions, MODES } from '@/lib/generate';
+import {
+  EMPHASIS_OPTIONS,
+  type EmphasisId,
+  type GenerationMode,
+  LETTER_MARKET_IDS,
+  letterConventions,
+  MODES,
+} from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 import { useHasProviderKey } from '@/services';
 import type { PromptQuality } from '@/store/preferences-schema';
@@ -15,10 +22,12 @@ import {
 
 interface StepFineTuneProps {
   mode: GenerationMode;
+  emphasis: EmphasisId[];
   target: 'resume' | 'cover' | 'both';
   locale: string;
   researchCompany: boolean;
   onModeChange: (mode: GenerationMode) => void;
+  onEmphasisChange: (ids: EmphasisId[]) => void;
   onLocaleChange: (locale: string) => void;
   onResearchCompanyChange: (v: boolean) => void;
 }
@@ -51,14 +60,20 @@ const QUALITY_OPTIONS: {
 
 export function StepFineTune({
   mode,
+  emphasis,
   target,
   locale,
   researchCompany,
   onModeChange,
+  onEmphasisChange,
   onLocaleChange,
   onResearchCompanyChange,
 }: StepFineTuneProps) {
   const { t } = useTranslation();
+
+  // #15 — emphasis directives are multi-select (toggle in/out of the set).
+  const toggleEmphasis = (id: EmphasisId) =>
+    onEmphasisChange(emphasis.includes(id) ? emphasis.filter((e) => e !== id) : [...emphasis, id]);
   const promptQuality = usePromptQuality();
   const setPromptQuality = usePreferencesStore((s) => s.setPromptQuality);
 
@@ -106,6 +121,48 @@ export function StepFineTune({
               </Button>
             )
           )}
+        </div>
+      </div>
+
+      {/* Emphasis directives (#15) — multi-select, fact-safe rewrite biases */}
+      <div>
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
+          {t('aiGenerate.wizard.emphasis.label')}
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {EMPHASIS_OPTIONS.map(({ id }) => {
+            const active = emphasis.includes(id);
+            return (
+              <Button
+                key={id}
+                onClick={() => toggleEmphasis(id)}
+                aria-pressed={active}
+                className={cn(
+                  'flex items-center gap-2 rounded-xl border px-3 py-2 text-left transition-all h-auto',
+                  active
+                    ? 'border-brand/35 bg-brand/8 text-foreground/90'
+                    : 'border-white/[0.05] bg-transparent text-foreground/50 hover:border-white/[0.08] hover:text-foreground/75'
+                )}
+              >
+                <span
+                  className={cn(
+                    'flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border',
+                    active ? 'border-brand bg-brand text-white' : 'border-white/15'
+                  )}
+                >
+                  {active && <Check size={10} />}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[11px] font-medium">
+                    {t(`aiGenerate.wizard.emphasis.${id}.label`)}
+                  </span>
+                  <span className="block text-[10px] text-foreground/35">
+                    {t(`aiGenerate.wizard.emphasis.${id}.desc`)}
+                  </span>
+                </span>
+              </Button>
+            );
+          })}
         </div>
       </div>
 

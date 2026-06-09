@@ -3,7 +3,11 @@
 import { truncateResume } from '../context-manager/index.js';
 import { resumeConventions } from '../locale/index.js';
 import { type PromptTarget, resolveProfile } from '../provider/index.js';
-import { buildEmphasisBlock, buildGroundingBlock } from './emphasis.js';
+import {
+  buildEmphasisBlock,
+  buildEmphasisDirectivesBlock,
+  buildGroundingBlock,
+} from './emphasis.js';
 import { buildBodyLinksBlock, parseLinksFromResume, stripLinkBlock } from './links.js';
 import { type GenerationMeta, type GenerationMode, MODES } from './modes.js';
 
@@ -225,6 +229,7 @@ export function buildResumePrompt(
   const resumeBody = truncateResume(stripLinkBlock(resume), truncation);
 
   const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? []);
+  const directivesBlock = buildEmphasisDirectivesBlock(meta.emphasis);
   const groundingBlock = buildGroundingBlock(resumeBody, meta.topRequirements ?? []);
 
   return `${linksBlock ? `${linksBlock}\n\n` : ''}${bodyLinksBlock ? `${bodyLinksBlock}\n\n` : ''}<candidate_resume>
@@ -243,7 +248,7 @@ Target Role: ${meta.jobTitle || 'Unknown'}
 Company: ${meta.companyName || 'Unknown'}
 ${langNote}
 ${conventionsNote}
-${emphasisBlock}
+${directivesBlock ? `${directivesBlock}\n` : ''}${emphasisBlock}
 ${groundingBlock ? `\n${groundingBlock}\n` : ''}
 EXAMPLE — MISSING SKILLS (follow this exactly):
 

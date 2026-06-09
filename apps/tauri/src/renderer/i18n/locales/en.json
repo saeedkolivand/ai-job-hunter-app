@@ -650,6 +650,29 @@
       "back": "Back",
       "next": "Next",
       "generate": "Generate",
+      "emphasis": {
+        "label": "Emphasis",
+        "quantify": {
+          "label": "Quantify impact",
+          "desc": "Surface metrics already in your résumé."
+        },
+        "leadership": {
+          "label": "Leadership focus",
+          "desc": "Foreground ownership and influence."
+        },
+        "concise": {
+          "label": "More concise",
+          "desc": "Tighter bullets, no filler."
+        },
+        "senior": {
+          "label": "Senior tone",
+          "desc": "Frame by scope and outcome."
+        },
+        "technical": {
+          "label": "Technical depth",
+          "desc": "Name specific tech and systems."
+        }
+      },
       "quality": {
         "label": "Prompt quality",
         "full": "Full",

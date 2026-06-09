@@ -17,6 +17,7 @@ import { useGeneration } from '@/features/ai-generate/hooks/useGeneration';
 import { useStageRotation } from '@/features/ai-generate/hooks/useStageRotation';
 import {
   buildFilename,
+  type EmphasisId,
   exportDOCX,
   exportPDF,
   exportTXT,
@@ -40,6 +41,7 @@ export function AIGeneratePage() {
     stage,
     meta,
     mode,
+    emphasis,
     target,
     templateId,
     atsMode,
@@ -55,6 +57,7 @@ export function AIGeneratePage() {
     setAIGenerate(v === 'configuring' ? { stage: v, wizardStep: 0 } : { stage: v });
   const setMeta = (v: typeof meta) => setAIGenerate({ meta: v });
   const setMode = (v: GenerationMode) => setAIGenerate({ mode: v });
+  const setEmphasis = (v: EmphasisId[]) => setAIGenerate({ emphasis: v });
   const setTarget = (v: 'resume' | 'cover' | 'both') => setAIGenerate({ target: v });
   const setTemplateId = (v: TemplateId) => setAIGenerate({ templateId: v });
   const setAtsMode = (v: boolean) => setAIGenerate({ atsMode: v });
@@ -132,7 +135,8 @@ export function AIGeneratePage() {
     setIsGenerating,
     notify,
     researchCompany,
-    locale
+    locale,
+    emphasis
   );
 
   const canProceed = resume.trim().length > 50 && jobAd.trim().length > 50;
@@ -264,6 +268,7 @@ export function AIGeneratePage() {
               <GenerateWizard
                 key="wizard"
                 mode={mode}
+                emphasis={emphasis}
                 target={target}
                 templateId={templateId}
                 atsMode={atsMode}
@@ -271,6 +276,7 @@ export function AIGeneratePage() {
                 researchCompany={researchCompany}
                 isGenerating={isGenerating}
                 onModeChange={setMode}
+                onEmphasisChange={setEmphasis}
                 onTargetChange={setTarget}
                 onTemplateChange={(id) => {
                   setTemplateId(id);

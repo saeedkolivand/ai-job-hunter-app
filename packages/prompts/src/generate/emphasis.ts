@@ -132,6 +132,62 @@ These are the applicant's OWN stated preferences. State them only where the ques
 }
 
 /**
+ * User-selectable emphasis directives (#15) — multi-select rewrite biases applied
+ * on top of the chosen mode. Every directive is **fact-safe**: it changes framing
+ * or focus only and must never invent facts the résumé doesn't contain.
+ */
+export type EmphasisId = 'quantify' | 'leadership' | 'concise' | 'senior' | 'technical';
+
+/**
+ * Single source of truth for the emphasis directives — id + the exact instruction
+ * folded into the prompt. The wizard renders localized labels keyed by `id`; the
+ * prompt layer consumes the instruction. Adding a directive here surfaces it in
+ * both places (add the matching i18n label keys). Order here is the render +
+ * prompt order.
+ */
+export const EMPHASIS_OPTIONS: { id: EmphasisId; instruction: string }[] = [
+  {
+    id: 'quantify',
+    instruction:
+      'Quantify impact: surface the numbers, scale, and measurable outcomes already in the résumé (metrics, %, volume, team size). NEVER invent or estimate figures that are not present.',
+  },
+  {
+    id: 'leadership',
+    instruction:
+      'Leadership focus: foreground ownership, mentoring, and cross-functional influence the résumé already demonstrates. Do NOT claim leadership the résumé does not show.',
+  },
+  {
+    id: 'concise',
+    instruction:
+      'More concise: tighter bullets, fewer words, no filler. Preserve every role, fact, and metric — cut only redundancy, never content.',
+  },
+  {
+    id: 'senior',
+    instruction:
+      'Senior tone: frame contributions in terms of scope, judgment, and outcome rather than tasks. Do NOT inflate the candidate’s actual level, title, or responsibilities.',
+  },
+  {
+    id: 'technical',
+    instruction:
+      'Technical depth: name the specific technologies, systems, and engineering decisions the résumé already contains. Do NOT add technologies the candidate never used.',
+  },
+];
+
+/**
+ * Build the emphasis-directives block from the user's multi-selected toggles (#15).
+ * Filters to known ids (in registry order), de-dupes, and prefixes a hard
+ * no-fabrication reminder so the biases can never license invented facts. Returns
+ * '' when nothing is selected, so prompts that don't use it pay nothing.
+ */
+export function buildEmphasisDirectivesBlock(ids: EmphasisId[] | undefined): string {
+  if (!ids?.length) return '';
+  const selected = new Set(ids);
+  const lines = EMPHASIS_OPTIONS.filter((o) => selected.has(o.id)).map((o) => `- ${o.instruction}`);
+  if (!lines.length) return '';
+  return `EMPHASIS — apply these user-selected biases WITHOUT inventing facts (every statement must still be traceable to the résumé):\n${lines.join('\n')}`;
+}
+
+/**
  * Build the bold emphasis instruction block for prompts.
  * The AI uses **keyword** notation; the renderer converts to real bold.
  */

@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import type { AutopilotFoundJob } from '@ajh/shared';
 
 import type { WizardState } from '@/features/autopilot/types';
-import type { GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate';
+import type { EmphasisId, GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate';
 import type { AnalysisResult } from '@/lib/resume-ai';
 
 // ─── Per-route state shapes ───────────────────────────────────────────────────
@@ -17,6 +17,8 @@ interface AIGenerateSlice {
   stage: AIGenerateStage;
   meta: GenerationMeta | null;
   mode: GenerationMode;
+  /** User-selected emphasis directives (#15) — fact-safe rewrite biases. */
+  emphasis: EmphasisId[];
   target: AIGenerateTarget;
   templateId: TemplateId;
   atsMode: boolean;
@@ -96,6 +98,7 @@ const AI_GENERATE_DEFAULTS: AIGenerateSlice = {
   stage: 'idle',
   meta: null,
   mode: 'ats',
+  emphasis: [],
   target: 'both',
   templateId: 'modern',
   atsMode: false,
