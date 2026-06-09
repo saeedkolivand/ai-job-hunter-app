@@ -78,6 +78,7 @@ export function MonthYearField({ value, onChange, disabled, present, id }: Month
         onChange={(m) => emit(m, year)}
         placeholder={t('build.monthYear.month')}
         disabled={disabled}
+        searchable={false}
       />
       <SelectDropdown
         options={yearOptions}
@@ -85,6 +86,8 @@ export function MonthYearField({ value, onChange, disabled, present, id }: Month
         onChange={(y) => emit(month, y)}
         placeholder={t('build.monthYear.year')}
         disabled={disabled}
+        searchable={false}
+        listClassName="max-h-40"
       />
     </div>
   );

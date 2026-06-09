@@ -60,7 +60,7 @@ export function LocationDropdown({
         >
           {/* Search input */}
           <div className="border-b border-white/[0.06] px-2 py-2">
-            <div className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-2.5 py-1.5">
+            <div className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-2.5 py-1.5 ring-inset focus-within:ring-2 focus-within:ring-brand/50">
               <Search size={11} className="shrink-0 text-foreground/30" />
               <input
                 ref={inputRef}
@@ -68,7 +68,7 @@ export function LocationDropdown({
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={onKeyDown}
                 placeholder="Search city or postcode…"
-                className="flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-foreground/25"
+                className="flex-1 bg-transparent text-xs text-foreground focus-visible:outline-none placeholder:text-foreground/25"
               />
               {query && (
                 <button
