@@ -10,8 +10,17 @@ export {
   MODES,
   researchCompany,
   rewriteSelection,
+  synthesizeResume,
 } from './generation';
 export { isTwoColumnTemplate, TEMPLATE_IDS, type TemplateId, TEMPLATES } from './templates';
+export type {
+  InterviewAnswers,
+  InterviewEducation,
+  InterviewEntry,
+  InterviewExperience,
+  InterviewProject,
+  InterviewPublication,
+} from '@ajh/prompts/builder';
 
 /**
  * Debounce window (ms) for persisting an in-progress inline edit to a saved

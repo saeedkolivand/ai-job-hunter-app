@@ -33,6 +33,7 @@ export default defineConfig({
       { find: '@ajh/shared', replacement: resolve(sharedSrc, 'index.ts') },
       { find: '@ajh/prompts/generate', replacement: resolve(promptsSrc, 'generate/index.ts') },
       { find: '@ajh/prompts/analyze', replacement: resolve(promptsSrc, 'analyze/index.ts') },
+      { find: '@ajh/prompts/builder', replacement: resolve(promptsSrc, 'builder/index.ts') },
       {
         find: '@ajh/prompts/context-manager',
         replacement: resolve(promptsSrc, 'context-manager/index.ts'),
