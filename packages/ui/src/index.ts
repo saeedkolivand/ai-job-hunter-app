@@ -52,6 +52,7 @@ export { TextArea, type TextAreaProps } from './components/TextArea/index';
 // ── Overlays & Modals ─────────────────────────────────────────────────────
 export { ConfirmModal } from './components/ConfirmModal/index';
 export { GlassOverlay } from './components/GlassOverlay/index';
+export { HoverPopover, type HoverPopoverProps } from './components/HoverPopover/index';
 export { ModalShell, type ModalShellProps } from './components/ModalShell/index';
 export {
   type NotificationItem,
