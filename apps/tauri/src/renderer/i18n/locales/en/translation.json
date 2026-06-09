@@ -62,7 +62,8 @@
     },
     "experience": {
       "add": "Add a role",
-      "empty": "No roles yet — add your work history.",
+      "empty": "No roles yet",
+      "emptyDescription": "Add your work history — most recent first.",
       "title": "Job title",
       "company": "Company",
       "location": "Location",
@@ -76,7 +77,8 @@
     },
     "education": {
       "add": "Add education",
-      "empty": "No education yet.",
+      "empty": "No education yet",
+      "emptyDescription": "Add degrees, certifications, or relevant coursework.",
       "degree": "Degree / qualification",
       "institution": "Institution",
       "location": "Location",
@@ -136,9 +138,8 @@
     },
     "review": {
       "language": "Output language",
-      "languageEn": "English",
-      "languageDe": "German",
-      "incomplete": "Add your name, at least one role or education entry, and some skills to build."
+      "incomplete": "Add your name, at least one role or education entry, and some skills to build.",
+      "cjkHint": "PDF and live preview can't render Chinese, Japanese, or Korean yet — your résumé still generates and exports to DOCX. CJK PDF support is coming."
     },
     "output": {
       "tailor": "Tailor to a job",
@@ -168,7 +169,8 @@
         "cli": "CLI · uses your existing login, no API key."
       }
     },
-    "noModelSelected": "No AI model selected — choose one to use AI features."
+    "noModelSelected": "No AI model selected — choose one to use AI features.",
+    "modelUnavailable": "Your selected model isn't available — pick one from the list below."
   },
   "shortcuts": {
     "title": "Keyboard shortcuts",
@@ -1879,6 +1881,10 @@
       "generate": {
         "title": "AI Generate",
         "desc": "Generate tailored resumes and cover letters in seconds, optimized for any job description."
+      },
+      "build": {
+        "title": "Build a résumé",
+        "desc": "No résumé yet? Answer a few guided questions and AI drafts one from scratch — in any of 11 languages."
       },
       "jobs": {
         "title": "Jobs",

@@ -1,3 +1,4 @@
+import { Briefcase } from 'lucide-react';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -20,6 +21,7 @@ function setup(items: Item[]) {
       addLabel="Add item"
       removeLabel="Remove item"
       emptyLabel="Nothing yet"
+      icon={Briefcase}
       render={(item, set) => (
         <Input
           aria-label="value"

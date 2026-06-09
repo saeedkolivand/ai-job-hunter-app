@@ -62,7 +62,8 @@
     },
     "experience": {
       "add": "Position hinzufügen",
-      "empty": "Noch keine Positionen — füge deinen Werdegang hinzu.",
+      "empty": "Noch keine Positionen",
+      "emptyDescription": "Füge deinen Werdegang hinzu — neueste zuerst.",
       "title": "Position",
       "company": "Unternehmen",
       "location": "Ort",
@@ -76,7 +77,8 @@
     },
     "education": {
       "add": "Ausbildung hinzufügen",
-      "empty": "Noch keine Ausbildung.",
+      "empty": "Noch keine Ausbildung",
+      "emptyDescription": "Füge Abschlüsse, Zertifikate oder relevante Kurse hinzu.",
       "degree": "Abschluss / Qualifikation",
       "institution": "Einrichtung",
       "location": "Ort",
@@ -136,9 +138,8 @@
     },
     "review": {
       "language": "Ausgabesprache",
-      "languageEn": "Englisch",
-      "languageDe": "Deutsch",
-      "incomplete": "Füge deinen Namen, mindestens eine Position oder Ausbildung und einige Kenntnisse hinzu."
+      "incomplete": "Füge deinen Namen, mindestens eine Position oder Ausbildung und einige Kenntnisse hinzu.",
+      "cjkHint": "PDF und Live-Vorschau können Chinesisch, Japanisch und Koreanisch noch nicht darstellen — dein Lebenslauf wird trotzdem erstellt und als DOCX exportiert. CJK-PDF-Unterstützung folgt."
     },
     "output": {
       "tailor": "An Stelle anpassen",
@@ -168,7 +169,8 @@
         "cli": "CLI · nutzt Ihren bestehenden Login, kein API-Schlüssel."
       }
     },
-    "noModelSelected": "Kein KI-Modell ausgewählt – wähle eines, um KI-Funktionen zu nutzen."
+    "noModelSelected": "Kein KI-Modell ausgewählt – wähle eines, um KI-Funktionen zu nutzen.",
+    "modelUnavailable": "Dein ausgewähltes Modell ist nicht verfügbar – wähle eines aus der Liste unten."
   },
   "shortcuts": {
     "title": "Tastenkürzel",
@@ -1864,6 +1866,10 @@
       "generate": {
         "title": "KI-Generierung",
         "desc": "Generieren Sie maßgeschneiderte Lebensläufe und Anschreiben in Sekunden, optimiert für jede Stellenbeschreibung."
+      },
+      "build": {
+        "title": "Lebenslauf erstellen",
+        "desc": "Noch kein Lebenslauf? Beantworten Sie ein paar geführte Fragen und die KI entwirft einen von Grund auf — in einer von 11 Sprachen."
       },
       "jobs": {
         "title": "Jobs",

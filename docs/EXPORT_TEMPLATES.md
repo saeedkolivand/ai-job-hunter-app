@@ -21,6 +21,7 @@ Source of truth in code:
 | Cover-letter market conventions   | `apps/tauri/src-tauri/src/locale/letter.rs`                     |
 | Validation + ATS gate             | `apps/tauri/src-tauri/src/validate/mod.rs`                      |
 | IPC contract                      | `packages/shared/src/ipc/contracts/documents.ts`                |
+| Output languages (renderer SSOT)  | `apps/tauri/src/renderer/lib/generate/locales.ts`               |
 | CJK detection (UI notice gate)    | `packages/shared/src/language-detection.ts` (`isCjkLanguage`)   |
 
 ---
@@ -235,13 +236,18 @@ Upload UI lives in `ContactProfileForm`.
 
 ---
 
-## CJK deferred
+## Output languages (11 supported)
 
-CJK languages (zh/ja/ko) are not yet supported. The Typst engine has no CJK font
-bundle — text renders as tofu. When `meta.targetLanguage` is a CJK locale
-(detected via `isCjkLanguage` in `packages/shared/src/language-detection.ts`) the
-renderer surfaces a `aiGenerate.cjkUnsupported` notice (en + de i18n keys) rather
-than silently producing a broken PDF.
+**Single source of truth:** `apps/tauri/src/renderer/lib/generate/locales.ts`
+(`OUTPUT_LANGUAGES`, `VALID_LOCALES`, `SupportedLocale`, `safeLocale`).
+
+Supported locales: en, de, fr, es, it, tr, pt, ru, zh, ja, ko.
+
+Generation and DOCX export work for all 11. **CJK limitation:** The bundled Typst
+fonts (Carlito + Noto Sans) support Latin + Cyrillic only; Chinese, Japanese, and
+Korean resumes render with character tofu in PDF and live preview. The Resume
+Builder flags CJK languages with an amber warning and a font icon. Follow-up: bundle
+`Noto Sans CJK` to unblock zh/ja/ko PDF/preview rendering.
 
 ---
 
@@ -271,8 +277,8 @@ world (`typst_engine/world.rs`):
 Carlito provides Calibri-metric compatibility so exported PDFs measure identically
 to the DOCX Calibri fallback. Noto Sans covers Latin/Cyrillic scripts.
 
-**CJK (zh/ja/ko)** is deferred — the world has no CJK font bundle; see
-[CJK deferred](#cjk-deferred) above.
+**CJK (zh/ja/ko) limitation:** the bundled fonts do not include CJK glyphs; see
+[Output languages](#output-languages-11-supported) above.
 
 The DOCX backend references widely-available system fallbacks (not embedded); OOXML
 true embedding is a tracked follow-up.

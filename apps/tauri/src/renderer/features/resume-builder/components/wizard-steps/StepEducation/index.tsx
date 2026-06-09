@@ -1,3 +1,5 @@
+import { GraduationCap } from 'lucide-react';
+
 import { Input, TextArea } from '@ajh/ui';
 
 import type { InterviewEducation } from '@/lib/generate';
@@ -28,6 +30,8 @@ export function StepEducation({ answers, update }: BuilderStepProps) {
       addLabel={t('build.education.add')}
       removeLabel={t('build.remove')}
       emptyLabel={t('build.education.empty')}
+      emptyDescription={t('build.education.emptyDescription')}
+      icon={GraduationCap}
       render={(item, set) => (
         <div className="space-y-2.5">
           <div className="grid grid-cols-2 gap-2.5">

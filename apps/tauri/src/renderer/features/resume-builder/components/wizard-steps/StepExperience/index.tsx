@@ -1,3 +1,5 @@
+import { Briefcase } from 'lucide-react';
+
 import { Input, TextArea } from '@ajh/ui';
 
 import type { InterviewExperience } from '@/lib/generate';
@@ -29,6 +31,8 @@ export function StepExperience({ answers, update }: BuilderStepProps) {
       addLabel={t('build.experience.add')}
       removeLabel={t('build.remove')}
       emptyLabel={t('build.experience.empty')}
+      emptyDescription={t('build.experience.emptyDescription')}
+      icon={Briefcase}
       render={(item, set) => (
         <div className="space-y-2.5">
           <div className="grid grid-cols-2 gap-2.5">

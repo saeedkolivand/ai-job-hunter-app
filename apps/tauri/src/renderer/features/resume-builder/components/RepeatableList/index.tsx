@@ -1,7 +1,7 @@
-import { Plus, Trash2 } from 'lucide-react';
+import { type LucideIcon, Plus, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { Button, GlassCard } from '@ajh/ui';
+import { Button, EmptyState, GlassCard } from '@ajh/ui';
 
 interface RepeatableListProps<T> {
   items: T[];
@@ -10,8 +10,12 @@ interface RepeatableListProps<T> {
   blank: () => T;
   addLabel: string;
   removeLabel: string;
-  /** Shown when there are no entries yet. */
+  /** Shown as the empty-state title when there are no entries yet. */
   emptyLabel: string;
+  /** Optional empty-state supporting copy. */
+  emptyDescription?: string;
+  /** Icon for the empty state. */
+  icon: LucideIcon;
   /** Render one entry's fields. `update` patches just this entry; `remove` drops it. */
   render: (item: T, update: (patch: Partial<T>) => void, index: number) => ReactNode;
 }
@@ -28,6 +32,8 @@ export function RepeatableList<T>({
   addLabel,
   removeLabel,
   emptyLabel,
+  emptyDescription,
+  icon,
   render,
 }: RepeatableListProps<T>) {
   const add = () => onChange([...items, blank()]);
@@ -35,14 +41,27 @@ export function RepeatableList<T>({
     onChange(items.map((item, i) => (i === index ? { ...item, ...patch } : item)));
   const remove = (index: number) => onChange(items.filter((_, i) => i !== index));
 
+  const addButton = (
+    <Button type="button" onClick={add} variant="ghost" size="sm" className="gap-1.5">
+      <Plus size={14} />
+      {addLabel}
+    </Button>
+  );
+
+  if (items.length === 0) {
+    return (
+      <EmptyState
+        icon={icon}
+        title={emptyLabel}
+        description={emptyDescription}
+        action={addButton}
+        className="py-10"
+      />
+    );
+  }
+
   return (
     <div className="space-y-3">
-      {items.length === 0 && (
-        <p className="rounded-lg border border-dashed border-white/10 px-4 py-6 text-center text-xs text-foreground/35">
-          {emptyLabel}
-        </p>
-      )}
-
       {items.map((item, index) => (
         // Index key is stable enough here: entries are only ever appended or
         // removed wholesale, never reordered.
@@ -61,10 +80,7 @@ export function RepeatableList<T>({
         </GlassCard>
       ))}
 
-      <Button type="button" onClick={add} variant="ghost" size="sm" className="gap-1.5">
-        <Plus size={14} />
-        {addLabel}
-      </Button>
+      {addButton}
     </div>
   );
 }

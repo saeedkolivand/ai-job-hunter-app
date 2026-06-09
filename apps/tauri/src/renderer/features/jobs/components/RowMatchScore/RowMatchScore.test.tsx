@@ -50,7 +50,15 @@ const JOB_ID = 'job-abc';
 const RESUME_ID = 'resume-xyz';
 const ONE_DOC = [{ _id: RESUME_ID, isDefault: true }];
 
-const BASE_SCORE: MatchScore = { combined: 82, semantic: 80, keyword: 84 };
+const BASE_SCORE: MatchScore = {
+  resumeId: RESUME_ID,
+  jobId: JOB_ID,
+  ats: 84,
+  semantic: 80,
+  combined: 82,
+  gaps: [],
+  recommendations: [],
+};
 
 // ── helper — always set stubbedDocs BEFORE calling render ─────────────────────
 
@@ -130,7 +138,7 @@ describe('RowMatchScore — score state', () => {
   it('renders nothing when the resolved data carries an error field', async () => {
     const fn = vi
       .fn()
-      .mockResolvedValue({ combined: 0, semantic: 0, keyword: 0, error: 'no embeddings' });
+      .mockResolvedValue({ combined: 0, semantic: 0, ats: 0, error: 'no embeddings' });
     const { container } = renderScore(fn);
 
     // Wait for the loading placeholder to disappear — that confirms the query

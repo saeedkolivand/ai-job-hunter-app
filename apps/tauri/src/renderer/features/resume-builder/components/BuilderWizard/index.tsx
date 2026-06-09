@@ -14,8 +14,24 @@ import { StepExtras } from '../wizard-steps/StepExtras';
 import { StepReview } from '../wizard-steps/StepReview';
 import { StepSkills } from '../wizard-steps/StepSkills';
 import { StepSummary } from '../wizard-steps/StepSummary';
+import { WizardStep } from '../WizardStep';
 
 const TOTAL_STEPS = 7;
+
+/**
+ * Per-step vertical alignment inside the reading column. Short steps (Summary,
+ * Skills) center against the viewport; growing steps (Contact, Experience,
+ * Education, Extras, Review) flow from the top.
+ */
+const STEP_ALIGN: readonly ('center' | 'top')[] = [
+  'top', // 0 Contact
+  'center', // 1 Summary
+  'top', // 2 Experience
+  'top', // 3 Education
+  'center', // 4 Skills
+  'top', // 5 Extras
+  'top', // 6 Review
+];
 
 interface BuilderWizardProps {
   language: string;
@@ -110,11 +126,6 @@ export function BuilderWizard({
 
       {/* Step content */}
       <div className="flex-1 overflow-y-auto px-8 pb-6 pt-2" aria-live="polite">
-        <div className="mb-4">
-          <h2 className="text-sm font-semibold text-foreground/85">{t(`build.steps.${step}`)}</h2>
-          <p className="mt-0.5 text-xs text-foreground/40">{t(`build.descriptions.${step}`)}</p>
-        </div>
-
         <AnimatePresence mode="wait">
           <motion.div
             key={step}
@@ -122,24 +133,33 @@ export function BuilderWizard({
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -16 }}
             transition={transition.normal}
+            className="min-h-full"
           >
-            {step === 0 && <StepContact answers={answers} update={update} />}
-            {step === 1 && <StepSummary answers={answers} update={update} />}
-            {step === 2 && <StepExperience answers={answers} update={update} />}
-            {step === 3 && <StepEducation answers={answers} update={update} />}
-            {step === 4 && <StepSkills answers={answers} update={update} />}
-            {step === 5 && <StepExtras answers={answers} update={update} />}
-            {step === 6 && (
-              <StepReview
-                language={language}
-                templateId={templateId}
-                atsMode={atsMode}
-                isComplete={isComplete}
-                onLanguageChange={onLanguageChange}
-                onTemplateChange={onTemplateChange}
-                onAtsModeChange={onAtsModeChange}
-              />
-            )}
+            <WizardStep
+              stepIndex={step}
+              totalSteps={TOTAL_STEPS}
+              title={t(`build.steps.${step}`)}
+              description={t(`build.descriptions.${step}`)}
+              align={STEP_ALIGN[step] ?? 'top'}
+            >
+              {step === 0 && <StepContact answers={answers} update={update} />}
+              {step === 1 && <StepSummary answers={answers} update={update} />}
+              {step === 2 && <StepExperience answers={answers} update={update} />}
+              {step === 3 && <StepEducation answers={answers} update={update} />}
+              {step === 4 && <StepSkills answers={answers} update={update} />}
+              {step === 5 && <StepExtras answers={answers} update={update} />}
+              {step === 6 && (
+                <StepReview
+                  language={language}
+                  templateId={templateId}
+                  atsMode={atsMode}
+                  isComplete={isComplete}
+                  onLanguageChange={onLanguageChange}
+                  onTemplateChange={onTemplateChange}
+                  onAtsModeChange={onAtsModeChange}
+                />
+              )}
+            </WizardStep>
           </motion.div>
         </AnimatePresence>
       </div>
