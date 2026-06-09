@@ -59,6 +59,45 @@ body::after{
 .bubble::after{content:""; position:absolute; left:50%; bottom:-12px; transform:translateX(-50%); border:8px solid transparent; border-top-color:#1c1812}
 .bubble.show{opacity:1; transform:translate(-50%,-100%) scale(1)}
 
+/* ---------- decorative ink scribbles (scene-matched svg paths) ---------- */
+svg.deco{position:absolute; z-index:1; pointer-events:none; overflow:visible; height:auto}
+svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible; height:auto}
+.deco path,.inkline path{fill:none; stroke:var(--line,#e7ecf3); stroke-width:3; stroke-linecap:round; stroke-linejoin:round}
+/* scroll-scrubbed draw-on: every path carries pathLength="1", so dasharray:1 =
+   exactly one full length. Offset is driven by the section's --p (set by the
+   scene engine), so strokes draw as the section enters (--p≈.12), finish near
+   centre (--p≈.55), and UNDRAW when you scroll back up. --d staggers later
+   paths. Dashed trails (.dashed) keep their own dasharray and skip the effect.
+   Reduced-motion (no --p engine) falls back to var(--p,1) → fully drawn. */
+@media (prefers-reduced-motion: no-preference){
+  .draw path:not(.dashed){
+    stroke-dasharray:1;
+    stroke-dashoffset:clamp(0, calc(1 - (var(--p,1) - .12 - var(--d,0)) / .43), 1);
+  }
+  .draw path:nth-of-type(2){--d:.06}
+  .draw path:nth-of-type(3){--d:.12}
+}
+/* scrawled underline inside the hero h1 */
+.ul{position:relative; display:inline-block}
+.ul svg{position:absolute; left:-3%; bottom:-.16em; width:106%; height:auto; overflow:visible; pointer-events:none}
+.ul path{fill:none; stroke:var(--red); stroke-width:4.2; stroke-linecap:round}
+@media (max-width:700px){ .sm-hide{display:none} }
+/* decos that sit beside full-bleed content (e.g. the testimonial wall) only fit
+   when the viewport leaves real side margin — hide them below 1200px */
+@media (max-width:1199px){ .xl-only{display:none} }
+
+/* ---------- the journey line ----------
+   One red path spanning the whole document, built by JS from real section
+   positions: it snakes down alternating side gutters AROUND each section's
+   content column, and its drawing tip is an arrowhead that finally lands
+   pointing at the CTA. Scrubbed by overall scroll progress, both directions. */
+#journey{position:absolute; top:0; left:0; width:100%; z-index:40; pointer-events:none}
+#journey svg{display:block; width:100%; height:100%; overflow:visible}
+#journey path{fill:none; stroke:var(--red); stroke-width:3.4; stroke-linecap:round; stroke-linejoin:round}
+#journey #journey-path{opacity:.85; filter:drop-shadow(0 1px 0 rgba(0,0,0,.25))}
+/* needs real side gutters to route through — hide when the viewport is narrow */
+@media (max-width:1099px), (prefers-reduced-motion: reduce){ #journey{display:none} }
+
 /* ---------- fixed chrome ---------- */
 #progress-wrap{position:fixed; top:0; left:0; right:0; z-index:50; pointer-events:none}
 #progress{height:7px; width:0%; background:repeating-linear-gradient(45deg,var(--red) 0 8px,#b73a39 8px 16px); transition:width .12s linear}
@@ -377,6 +416,13 @@ body::after{
 </head>
 <body>
 
+<div id="journey" aria-hidden="true">
+  <svg>
+    <path id="journey-path" d="M0 0"/>
+    <g id="journey-tip"><path d="M-14 -8 L2 0 L-14 8"/></g>
+  </svg>
+</div>
+
 <div id="loader"><div class="lt" id="loader-text">summoning a sad little man…</div></div>
 
 <div id="progress-wrap"><div id="progress"></div><div id="progress-label">job search: 0% complete · est. time remaining: ∞</div></div>
@@ -407,6 +453,18 @@ body::after{
   <div class="photo"></div><div class="grade"></div>
   <div class="inner">
     <div class="kicker reveal">a real desktop app · also a cry for help</div>
+    <svg class="deco draw sm-hide" style="right:0; top:-6px; width:clamp(90px,11vw,140px)" viewBox="0 0 140 90" aria-hidden="true">
+      <path pathLength="1" class="dashed" stroke-dasharray=".045 .04" d="M6 86 Q34 72 46 50 Q56 32 82 26" style="stroke-width:2.4; opacity:.7"/>
+      <path pathLength="1" d="M84 30 L126 14 L102 44 L96 34 Z"/>
+      <path pathLength="1" d="M96 34 L98 48 L106 39"/>
+    </svg>
+    <svg class="deco draw sm-hide" style="left:2%; top:0; width:80px" viewBox="0 0 90 44" aria-hidden="true">
+      <path pathLength="1" class="dashed" stroke-dasharray=".05 .05" d="M88 4 Q52 12 18 30" style="stroke-width:2.2; opacity:.65"/>
+      <path pathLength="1" d="M12 26 v12 M6 32 h12 M8 28 l8 8 M16 28 l-8 8" style="stroke-width:2.2"/>
+    </svg>
+    <svg class="deco draw sm-hide" style="left:-14px; top:42%; width:30px" viewBox="0 0 30 30" aria-hidden="true"><path pathLength="1" d="M15 3 v9 M15 18 v9 M3 15 h9 M18 15 h9" style="stroke-width:2.4"/></svg>
+    <svg class="deco draw sm-hide" style="right:-12px; top:56%; width:22px" viewBox="0 0 24 24" aria-hidden="true"><path pathLength="1" d="M12 2 v8 M12 14 v8 M2 12 h8 M14 12 h8" style="stroke-width:2.2"/></svg>
+    <svg class="deco draw sm-hide" style="left:5%; bottom:6px; width:46px" viewBox="0 0 50 50" aria-hidden="true"><path pathLength="1" d="M22 5 l9 3 7 -1 3 8 7 5 -5 6 1 8 -8 3 -3 7 -9 -1 -7 4 -5 -7 -8 -3 3 -8 -3 -7 7 -5 1 -7 Z"/><path pathLength="1" d="M17 16 l8 6 -3 8 9 4" style="stroke-width:2"/></svg>
     <div class="doodle hero-dood reveal tap" id="hero-dood">
       <div class="bubble"></div>
       <div class="dontclick" aria-hidden="true">
@@ -425,7 +483,7 @@ body::after{
         <path class="dood" d="M100 138 L82 172"/><path class="dood" d="M100 138 L118 172"/>
       </svg>
     </div>
-    <h1 class="reveal">Job hunting broke me.<br>So I built a robot to do it.</h1>
+    <h1 class="reveal">Job hunting broke me.<br>So I built a <span class="ul">robot<svg class="draw" viewBox="0 0 120 14" aria-hidden="true"><path pathLength="1" d="M4 8 Q34 3 62 6 T116 6"/><path pathLength="1" d="M14 12 Q52 8 104 10"/></svg></span> to do it.</h1>
     <p class="sub reveal">AI Job Hunter scrapes 19 job boards, writes your cover letters, and drafts your applications while you dissociate — you just press send. Runs fully offline. <b>Built by a guy who is, himself, still unemployed.</b></p>
     <div class="scrollhint reveal">scroll to watch a man fall apart<span class="arr">↓</span></div>
   </div>
@@ -436,6 +494,22 @@ body::after{
   <div class="photo"></div><div class="grade"></div>
   <div class="inner">
     <div class="section-label reveal">2:47 AM</div>
+    <svg class="deco draw sm-hide" style="right:4%; top:-18px; width:64px" viewBox="0 0 70 70" aria-hidden="true">
+      <path pathLength="1" d="M46 6 A21 21 0 1 0 60 42 A17 17 0 0 1 46 6"/>
+      <path pathLength="1" d="M14 46 v12 M8 52 h12" style="stroke-width:2.4"/>
+      <path pathLength="1" d="M24 14 v8 M20 18 h8" style="stroke-width:2.2"/>
+    </svg>
+    <svg class="deco draw sm-hide" style="left:3%; top:-12px; width:56px" viewBox="0 0 60 60" aria-hidden="true">
+      <path pathLength="1" d="M8 30 a22 22 0 1 0 44 0 a22 22 0 1 0 -44 0"/>
+      <path pathLength="1" d="M30 30 l9 -8 M30 30 l-13 3" style="stroke-width:2.6"/>
+      <path pathLength="1" d="M30 10 v4 M30 46 v4 M10 30 h4 M46 30 h4" style="stroke-width:2"/>
+    </svg>
+    <svg class="deco draw sm-hide" style="right:-6px; top:44%; width:48px" viewBox="0 0 52 52" aria-hidden="true">
+      <path pathLength="1" d="M10 22 h26 l-3 22 h-20 Z"/>
+      <path pathLength="1" d="M36 26 q10 0 8 8 q-2 7 -10 6" style="stroke-width:2.6"/>
+      <path pathLength="1" d="M17 16 q-3 -5 0 -10 M25 15 q-3 -5 0 -10" style="stroke-width:2.2; opacity:.8"/>
+    </svg>
+    <svg class="deco draw sm-hide" style="left:-6px; top:44%; width:34px" viewBox="0 0 36 36" aria-hidden="true"><path pathLength="1" d="M16 4 l7 2 5 -1 2 6 5 4 -4 4 1 6 -6 2 -2 5 -7 -1 -5 3 -4 -5 -6 -2 2 -6 -2 -5 5 -4 1 -5 Z" style="stroke-width:2.4"/><path pathLength="1" d="M12 12 l6 4 -2 6 7 3" style="stroke-width:1.8"/></svg>
     <div class="doodle beat1-dood reveal tap" data-scream data-voice="sad" data-lines="...hi.|please hire me|i haven't slept|anyone? hello?">
       <div class="bubble"></div>
       <svg viewBox="0 0 320 240">
@@ -471,6 +545,9 @@ body::after{
     <h2 class="reveal">the descent</h2>
     <div class="doodle beat2-dood reveal tap" data-scream data-flail data-voice="frazzled" data-lines="WHY won't they reply|i can't keep up|so many tabs|make it STOP|aaaaaa">
       <div class="bubble"></div>
+      <svg class="deco draw sm-hide" style="left:-54px; top:4px; width:44px" viewBox="0 0 48 48" aria-hidden="true"><path pathLength="1" d="M42 10 C18 0 4 18 14 28 C22 36 36 30 31 19 C27 11 16 14 19 22"/></svg>
+      <svg class="deco draw sm-hide" style="right:-50px; top:24px; width:40px" viewBox="0 0 44 44" aria-hidden="true"><path pathLength="1" d="M8 34 q4 -16 12 -6 q3 -14 11 -4 q7 -9 9 3" style="stroke-width:2.6"/><path pathLength="1" d="M22 40 h.1 M30 41 h.1" style="stroke-width:4"/></svg>
+      <svg class="deco draw" style="right:-24px; top:-26px; width:34px" viewBox="0 0 40 40" aria-hidden="true"><path pathLength="1" d="M8 6 l4 16 M13 30 h.1" style="stroke-width:3.4"/><path pathLength="1" d="M22 12 q-1 -8 7 -8 q8 0 7 8 q-1 6 -7 8 v4 M29 32 h.1" style="stroke-width:3"/></svg>
       <svg viewBox="0 0 240 220">
         <circle class="dood" cx="120" cy="80" r="24"/>
         <path class="dood" d="M112 60 L108 48"/><path class="dood" d="M120 58 L120 46"/><path class="dood" d="M128 60 L132 48"/><path class="dood" d="M104 66 L92 60"/><path class="dood" d="M136 66 L148 60"/>
@@ -491,6 +568,8 @@ body::after{
     </div>
     <p class="tag reveal" style="margin:6px auto 26px; max-width:42ch; color:#d1c6e6">entry level: 5 yrs experience required · easy apply (47 fields) · create a Workday account <i>(for the 9th time)</i></p>
 
+    <svg class="deco draw sm-hide" style="left:3%; top:14%; width:46px; transform:rotate(-14deg)" viewBox="0 0 44 56" aria-hidden="true"><path pathLength="1" d="M6 6 h30 v44 h-30 Z"/><path pathLength="1" d="M12 16 h18 M12 24 h18 M12 32 h12" style="stroke-width:2"/><path pathLength="1" d="M26 38 l8 8 M34 38 l-8 8" style="stroke:#e24b4a; stroke-width:2.6"/></svg>
+    <svg class="deco draw sm-hide" style="right:3%; top:19%; width:42px; transform:rotate(12deg)" viewBox="0 0 44 56" aria-hidden="true"><path pathLength="1" d="M6 6 h30 v44 h-30 Z"/><path pathLength="1" d="M12 16 h18 M12 24 h16 M12 32 h18 M12 40 h10" style="stroke-width:2"/></svg>
     <div class="collage">
       <div class="card tilt-l reveal">
         <div class="blackhole">
@@ -529,6 +608,7 @@ body::after{
       </div>
     </div>
 
+    <svg class="deco draw sm-hide" style="left:8%; bottom:24px; width:36px" viewBox="0 0 44 60" aria-hidden="true"><path pathLength="1" d="M22 4 q-9 10 0 18 q9 8 0 18 v10"/><path pathLength="1" d="M22 50 l-7 -8 M22 50 l7 -8"/></svg>
     <p class="counter reveal">applications: <span data-to="1000">0</span> · responses: 0 · dignity: offline</p>
   </div>
 </section>
@@ -553,6 +633,12 @@ body::after{
         <path class="dood" d="M130 196 L108 232 M130 196 L152 232" style="stroke-width:4"/>
       </svg>
     </div>
+    <svg class="deco draw sm-hide" style="left:-2%; top:30%; width:50px; transform:rotate(-10deg); filter:drop-shadow(2px 2px 0 #ff00d4)" viewBox="0 0 50 84" aria-hidden="true"><path pathLength="1" d="M32 4 L12 40 H24 L8 80 L42 34 H28 L44 4 Z" style="stroke-width:3.4"/></svg>
+    <svg class="deco draw sm-hide" style="right:-2%; top:22%; width:62px; transform:rotate(8deg); filter:drop-shadow(-2px 2px 0 #00fff0)" viewBox="0 0 64 64" aria-hidden="true"><path pathLength="1" d="M32 4 L37 24 L56 12 L43 30 L62 36 L41 38 L48 58 L32 44 L16 58 L23 38 L2 36 L21 30 L8 12 L27 24 Z" style="stroke-width:3"/></svg>
+    <svg class="deco draw sm-hide" style="left:8%; top:64%; width:40px; filter:drop-shadow(1px 2px 0 #00fff0)" viewBox="0 0 40 56" aria-hidden="true"><path pathLength="1" d="M20 52 q-14 -4 -12 -18 q1 -8 8 -12 q-2 8 4 10 q-2 -12 8 -20 q-1 10 6 14 q5 4 4 12 q-2 12 -18 14 Z" style="stroke-width:3"/></svg>
+    <svg class="deco draw sm-hide" style="right:10%; top:66%; width:30px; transform:rotate(14deg); filter:drop-shadow(1px 2px 0 #ff00d4)" viewBox="0 0 30 50" aria-hidden="true"><path pathLength="1" d="M19 2 L8 24 H15 L6 48 L26 20 H17 L25 2 Z" style="stroke-width:2.8"/></svg>
+    <svg class="deco draw" style="left:16%; top:10%; width:26px" viewBox="0 0 26 26" aria-hidden="true"><path pathLength="1" d="M13 2 v9 M13 15 v9 M2 13 h9 M15 13 h9" style="stroke-width:2.6"/></svg>
+    <svg class="deco draw" style="right:16%; top:8%; width:20px" viewBox="0 0 22 22" aria-hidden="true"><path pathLength="1" d="M11 2 v7 M11 13 v7 M2 11 h7 M13 11 h7" style="stroke-width:2.4"/></svg>
     <div class="fried huge reveal">WAIT.<br>IT DOES<br>EVERYTHING ELSE.</div>
     <div class="fried mid reveal">it finds them. it writes them. you press send.</div>
     <p class="fried-line reveal">it <b>scrapes 19 boards</b> while you do NOTHING. it <b>writes the cover letter</b> — the one you CRIED over. GONE. it <b>scores your résumé</b> so the regex blob can't hurt you anymore. <b>semantic matching????</b> it KNOWS which jobs want you. it knows things you don't. the one thing it <b>won't</b> do? press submit. that terror stays yours.</p>
@@ -567,6 +653,12 @@ body::after{
 <section class="stage beat4">
   <div class="photo"></div><div class="grade"></div>
   <div class="sun"></div>
+  <svg class="deco draw sm-hide" style="left:14%; top:13%; width:90px" viewBox="0 0 90 40" aria-hidden="true"><path pathLength="1" d="M6 24 q9 -12 18 0 q9 -12 18 0" style="stroke:#5a3610"/><path pathLength="1" d="M52 10 q7 -9 14 0 q7 -9 14 0" style="stroke:#5a3610; stroke-width:2.4"/></svg>
+  <svg class="deco draw sm-hide" style="left:5%; top:30%; width:120px" viewBox="0 0 120 54" aria-hidden="true"><path pathLength="1" d="M16 42 q-12 -2 -8 -12 q-2 -12 12 -12 q4 -12 18 -8 q10 -8 20 0 q14 -4 16 8 q12 2 8 14 q2 10 -12 10 H24" style="stroke:#7a4a14; stroke-width:2.8"/></svg>
+  <svg class="deco draw sm-hide" style="right:calc(8% - 30px); top:calc(10% - 30px); width:150px" viewBox="0 0 150 150" aria-hidden="true"><path pathLength="1" d="M75 6 v14 M75 130 v14 M6 75 h14 M130 75 h14 M26 26 l10 10 M114 114 l10 10 M124 26 l-10 10 M36 114 l-10 10" style="stroke:#b8770e; stroke-width:3"/></svg>
+  <svg class="deco draw sm-hide" style="right:14%; top:38%; width:90px" viewBox="0 0 110 50" aria-hidden="true"><path pathLength="1" d="M16 38 q-10 -2 -6 -10 q-2 -10 10 -10 q4 -10 16 -6 q10 -6 18 0 q12 -2 12 8 q10 2 6 12 q2 8 -10 8 H22" style="stroke:#7a4a14; stroke-width:2.4"/></svg>
+  <svg class="deco draw sm-hide" style="left:10%; bottom:8%; width:44px" viewBox="0 0 44 64" aria-hidden="true"><path pathLength="1" d="M22 60 q2 -14 0 -26" style="stroke:#2a6d2a; stroke-width:2.6"/><path pathLength="1" d="M22 40 q-10 6 -12 -2 M22 44 q10 4 12 -4" style="stroke:#2a6d2a; stroke-width:2.2"/><path pathLength="1" d="M22 30 q-8 -2 -6 -8 q2 -6 8 -4 q2 -6 8 -2 q6 2 2 8 q4 6 -4 8 q-6 2 -8 -2 Z" style="stroke:#a3541c; stroke-width:2.4"/></svg>
+  <svg class="deco draw sm-hide" style="left:34%; top:8%; width:54px" viewBox="0 0 60 26" aria-hidden="true"><path pathLength="1" d="M4 16 q5 -7 10 0 q5 -7 10 0" style="stroke:#5a3610; stroke-width:2"/><path pathLength="1" d="M36 8 q4 -6 8 0 q4 -6 8 0" style="stroke:#5a3610; stroke-width:1.8"/></svg>
   <svg class="stonks" viewBox="0 0 100 70"><path d="M6 64 L34 40 L52 50 L92 8" fill="none" stroke="#2a7d2a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M74 8 L92 8 L92 26" fill="none" stroke="#2a7d2a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
   <div class="inner">
     <div class="doodle beat4-dood reveal tap" data-scream data-voice="smug" data-lines="effortless.|told you.|still got it.|too easy.|yawn.">
@@ -593,6 +685,18 @@ body::after{
 <!-- ============ FEATURES ============ -->
 <section class="stage features">
   <div class="inner">
+    <svg class="deco draw sm-hide" style="left:-10px; top:-6px; width:46px" viewBox="0 0 46 46" aria-hidden="true"><path pathLength="1" d="M23 3 v12 M23 31 v12 M3 23 h12 M31 23 h12" style="stroke-width:2.6"/><path pathLength="1" d="M9 9 l8 8 M29 29 l8 8 M37 9 l-8 8 M17 29 l-8 8" style="stroke-width:2.2"/></svg>
+    <svg class="deco draw sm-hide" style="right:-8px; top:4px; width:44px; transform:rotate(8deg)" viewBox="0 0 46 60" aria-hidden="true"><path pathLength="1" d="M23 4 a14 14 0 0 1 8 25 q-3 3 -3 7 H18 q0 -4 -3 -7 a14 14 0 0 0 8 -25 Z" style="stroke-width:2.6"/><path pathLength="1" d="M18 42 h10 M19 47 h8 M21 52 h4" style="stroke-width:2.2"/></svg>
+    <svg class="deco draw sm-hide" style="left:10%; top:172px; width:50px" viewBox="0 0 52 52" aria-hidden="true">
+      <path pathLength="1" d="M14 26 a12 12 0 1 0 24 0 a12 12 0 1 0 -24 0"/>
+      <path pathLength="1" d="M26 4 v7 M26 41 v7 M4 26 h7 M41 26 h7 M10 10 l5 5 M37 37 l5 5 M42 10 l-5 5 M15 37 l-5 5" style="stroke-width:2.6"/>
+      <path pathLength="1" d="M21 26 a5 5 0 1 0 10 0 a5 5 0 1 0 -10 0" style="stroke-width:2.2"/>
+    </svg>
+    <svg class="deco draw sm-hide" style="right:10%; top:160px; width:46px" viewBox="0 0 48 52" aria-hidden="true">
+      <path pathLength="1" d="M4 8 h16 v16 H4 Z M6 16 l5 5 9 -11" style="stroke-width:2.4"/>
+      <path pathLength="1" d="M4 32 h16 v16 H4 Z M6 40 l5 5 9 -11" style="stroke-width:2.4"/>
+      <path pathLength="1" d="M28 14 h16 M28 22 h12 M28 38 h16 M28 46 h12" style="stroke-width:2.2"/>
+    </svg>
     <h2 class="reveal">what it actually does</h2>
     <p class="lede reveal">(in between the breakdowns, real software happened)</p>
     <svg class="crayon-arrow" viewBox="0 0 120 60"><path d="M8 12 q40 36 90 30" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/><path d="M84 48 l14 -6 m-14 6 l8 -13" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/></svg>
@@ -613,6 +717,11 @@ body::after{
 
 <!-- ============ TESTIMONIALS ============ -->
 <section class="testi">
+  <svg class="deco draw sm-hide" style="left:6%; top:34px; width:54px" viewBox="0 0 60 44" aria-hidden="true"><path pathLength="1" d="M24 6 Q10 10 10 24 q0 12 10 12 q8 0 8 -8 q0 -8 -8 -8 q1 -7 7 -10"/><path pathLength="1" d="M52 6 Q38 10 38 24 q0 12 10 12 q8 0 8 -8 q0 -8 -8 -8 q1 -7 7 -10"/></svg>
+  <svg class="deco draw sm-hide" style="right:6%; top:34px; width:54px; transform:rotate(180deg)" viewBox="0 0 60 44" aria-hidden="true"><path pathLength="1" d="M24 6 Q10 10 10 24 q0 12 10 12 q8 0 8 -8 q0 -8 -8 -8 q1 -7 7 -10"/><path pathLength="1" d="M52 6 Q38 10 38 24 q0 12 10 12 q8 0 8 -8 q0 -8 -8 -8 q1 -7 7 -10"/></svg>
+  <svg class="deco draw xl-only" style="left:2%; top:42%; width:36px" viewBox="0 0 40 40" aria-hidden="true"><path pathLength="1" d="M20 3 l4.5 11 12 1 -9 8 3 12 -10.5 -7 -10.5 7 3 -12 -9 -8 12 -1 Z" style="stroke-width:2.4"/></svg>
+  <svg class="deco draw xl-only" style="right:2%; top:60%; width:28px; transform:rotate(-12deg)" viewBox="0 0 40 40" aria-hidden="true"><path pathLength="1" d="M20 3 l4.5 11 12 1 -9 8 3 12 -10.5 -7 -10.5 7 3 -12 -9 -8 12 -1 Z" style="stroke-width:2.2"/></svg>
+  <svg class="deco draw xl-only" style="left:3%; bottom:70px; width:46px" viewBox="0 0 50 50" aria-hidden="true"><path pathLength="1" d="M8 26 h8 v18 H8 Z" style="stroke-width:2.4"/><path pathLength="1" d="M16 30 q1 -12 5 -17 q4 -5 6 1 q1 4 -2 9 h10 q5 0 4 5 l-3 12 q-1 4 -6 4 H16" style="stroke-width:2.4"/></svg>
   <h2>what the people are saying<br><span class="small">(the people are not real)</span></h2>
   <div class="wall">
     <div class="quote"><p>"I applied to 0 jobs and got 0 rejections. 10/10."</p><span class="who">— a guy</span></div>
@@ -630,6 +739,11 @@ body::after{
 
 <!-- ============ FINALE ============ -->
 <section class="finale">
+  <svg class="inkline draw" style="width:min(220px,60vw); margin-bottom:26px" viewBox="0 0 220 24" aria-hidden="true"><path pathLength="1" d="M6 12 q13 -11 27 0 t27 0 t27 0 t27 0 t27 0 t27 0 t27 0" style="stroke-width:2.8"/></svg>
+  <svg class="deco draw sm-hide" style="left:9%; top:16%; width:60px" viewBox="0 0 64 64" aria-hidden="true"><path pathLength="1" d="M8 16 l8 6 M30 6 v8 M52 12 l-7 6 M14 38 l7 -4 M50 36 l-8 -3" style="stroke-width:2.6"/><path pathLength="1" d="M22 22 q4 4 0 8 M42 22 q-4 5 1 9" style="stroke-width:2.2"/></svg>
+  <svg class="deco draw sm-hide" style="right:9%; top:20%; width:56px; transform:scale(-1,1)" viewBox="0 0 64 64" aria-hidden="true"><path pathLength="1" d="M8 16 l8 6 M30 6 v8 M52 12 l-7 6 M14 38 l7 -4 M50 36 l-8 -3" style="stroke-width:2.6"/><path pathLength="1" d="M22 22 q4 4 0 8 M42 22 q-4 5 1 9" style="stroke-width:2.2"/></svg>
+  <svg class="deco draw sm-hide" style="left:6%; top:44%; width:44px" viewBox="0 0 48 80" aria-hidden="true"><path pathLength="1" d="M24 4 q16 0 16 18 q0 16 -16 18 q-16 -2 -16 -18 q0 -18 16 -18 Z" style="stroke-width:2.6"/><path pathLength="1" d="M21 40 h6 l-3 6 Z" style="stroke-width:2"/><path pathLength="1" class="dashed" stroke-dasharray=".06 .05" d="M24 46 q-8 10 0 18 q8 8 0 14" style="stroke-width:2"/></svg>
+  <svg class="deco draw sm-hide" style="right:6%; top:48%; width:46px; transform:rotate(-20deg)" viewBox="0 0 52 60" aria-hidden="true"><path pathLength="1" d="M10 50 L24 22 L40 38 Z" style="stroke-width:2.6"/><path pathLength="1" d="M28 14 l2 -10 M36 18 l8 -8 M42 28 l10 -2" style="stroke-width:2.4"/><path pathLength="1" d="M33 6 h.1 M48 14 h.1 M50 34 h.1" style="stroke-width:3.6"/></svg>
   <div class="doodle finale-dood tap" id="finale-dood" data-scream data-voice="smug" data-lines="we're still here?|ok, last one|…just go apply">
     <div class="bubble"></div>
     <svg viewBox="0 0 200 175">
@@ -647,6 +761,7 @@ body::after{
   <p class="footnote">macOS will say the app is "damaged." it's not damaged. it's just unsigned — like a contract I was never offered. run <code>xattr -cr</code> and we move on.</p>
   <p class="builtwith">Tauri · Rust · React 19 · TanStack · LanceDB · Typst · Ollama · pure spite</p>
   <p class="byline">made by Saeed, between rejections.</p>
+  <svg class="inkline draw" style="width:24px; margin-top:10px" viewBox="0 0 30 28" aria-hidden="true"><path pathLength="1" d="M15 24 C5 16 2 9 8 5 q5 -3 7 4 q2 -7 7 -4 c6 4 3 11 -7 19 Z" style="stroke-width:2.4"/></svg>
 </section>
 
 </main>
@@ -767,7 +882,8 @@ body::after{
   var io = new IntersectionObserver(function(entries){
     entries.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); runCounters(e.target); } });
   }, {threshold:0.3});
-  document.querySelectorAll('.stage').forEach(function(s){ io.observe(s); });
+  /* .testi/.finale aren't .stage but carry draw-on scribbles — observe them too */
+  document.querySelectorAll('.stage, .testi, .finale').forEach(function(s){ io.observe(s); });
 
   /* ---- progress bar + odometer ---- */
   var bar=document.getElementById('progress'), plabel=document.getElementById('progress-label'), odo=document.getElementById('odometer');
@@ -801,6 +917,98 @@ body::after{
     addEventListener('resize', scheduleScenes);
     paintScenes();
   }
+
+  /* ---- the journey line: built from real section positions, snaking down
+         alternating side gutters around each content column, ending beside the
+         CTA. Dashoffset is scrubbed by total scroll progress (reversible) and
+         the drawing tip is an arrowhead riding the path tangent. ---- */
+  (function(){
+    var wrap=document.getElementById('journey');
+    if(!wrap || reduce) return;
+    var svg=wrap.querySelector('svg'), line=document.getElementById('journey-path'), tip=document.getElementById('journey-tip');
+    var len=0, built=false, tblL=[], tblY=[];
+
+    /* Catmull-Rom through waypoints → smooth cubic path */
+    function pts2path(P){
+      var d='M'+P[0][0].toFixed(1)+' '+P[0][1].toFixed(1);
+      for(var i=0;i<P.length-1;i++){
+        var p0=P[Math.max(0,i-1)], p1=P[i], p2=P[i+1], p3=P[Math.min(P.length-1,i+2)];
+        d+=' C '+(p1[0]+(p2[0]-p0[0])/6).toFixed(1)+' '+(p1[1]+(p2[1]-p0[1])/6).toFixed(1)
+          +' '+(p2[0]-(p3[0]-p1[0])/6).toFixed(1)+' '+(p2[1]-(p3[1]-p1[1])/6).toFixed(1)
+          +' '+p2[0].toFixed(1)+' '+p2[1].toFixed(1);
+      }
+      return d;
+    }
+
+    function build(){
+      if(getComputedStyle(wrap).display==='none'){ built=false; return; }
+      var docH=document.documentElement.scrollHeight, vw=document.documentElement.clientWidth;
+      wrap.style.height=docH+'px';
+      svg.setAttribute('width',vw); svg.setAttribute('height',docH);
+      svg.setAttribute('viewBox','0 0 '+vw+' '+docH);
+      var g=Math.max(22,(vw-1100)/2), Lx=g, Rx=vw-g;
+      var P=[[vw/2,0]], side=0;
+      var secs=document.querySelectorAll('main > section');
+      for(var i=0;i<secs.length;i++){
+        var s=secs[i]; if(s.classList.contains('finale')) break;
+        var r=s.getBoundingClientRect(), top=r.top+scrollY, h=r.height;
+        var x=(side%2===0)?Lx:Rx, inw=(side%2===0)?28:-28;
+        P.push([x, top+h*0.18]);
+        P.push([x+inw, top+h*0.5]);
+        P.push([x, top+h*0.85]);
+        side++;
+      }
+      var cr=document.getElementById('cta').getBoundingClientRect();
+      var ctaY=cr.top+scrollY+cr.height/2, endX=cr.left-38;
+      P.push([Lx+44, ctaY-170]);
+      P.push([endX-90, ctaY-14]);
+      P.push([endX, ctaY]);
+      line.setAttribute('d', pts2path(P));
+      len=line.getTotalLength();
+      line.setAttribute('stroke-dasharray', len);
+      /* length-by-document-Y lookup so the tip can track the viewport instead
+         of lagging where path length outpaces page height (forced monotonic) */
+      tblL=[]; tblY=[];
+      var steps=Math.max(40, Math.round(len/24)), prevY=0;
+      for(var k=0;k<=steps;k++){
+        var l=len*k/steps, y=line.getPointAtLength(l).y;
+        if(y<prevY) y=prevY; prevY=y;
+        tblL.push(l); tblY.push(y);
+      }
+      built=true;
+      paintJourney();
+    }
+
+    function lengthAtY(y){
+      var hi=tblY.length-1, lo=0;
+      if(y<=tblY[0]) return tblL[0];
+      if(y>=tblY[hi]) return tblL[hi];
+      while(hi-lo>1){ var mid=(hi+lo)>>1; if(tblY[mid]<y) lo=mid; else hi=mid; }
+      var f=(y-tblY[lo])/((tblY[hi]-tblY[lo])||1);
+      return tblL[lo]+(tblL[hi]-tblL[lo])*f;
+    }
+
+    function paintJourney(){
+      if(!built) return;
+      var max=document.documentElement.scrollHeight-innerHeight;
+      var p=max>0?Math.min(1,Math.max(0,scrollY/max)):0;
+      /* tip rides ~60% down the current viewport; near the end blend to the
+         full path so the arrow finishes exactly on the CTA */
+      var at=lengthAtY(scrollY+innerHeight*0.6);
+      if(p>0.85){ var t=(p-0.85)/0.15; at=at+(len-at)*t; }
+      line.style.strokeDashoffset=Math.max(0,len-at);
+      var pt=line.getPointAtLength(at), pb=line.getPointAtLength(Math.max(0,at-2));
+      var ang=Math.atan2(pt.y-pb.y, pt.x-pb.x)*180/Math.PI;
+      tip.setAttribute('transform','translate('+pt.x.toFixed(1)+' '+pt.y.toFixed(1)+') rotate('+ang.toFixed(1)+')');
+    }
+
+    var jt=false;
+    addEventListener('scroll', function(){ if(!jt){ jt=true; requestAnimationFrame(function(){ jt=false; paintJourney(); }); } }, {passive:true});
+    var rt; addEventListener('resize', function(){ clearTimeout(rt); rt=setTimeout(build, 180); });
+    addEventListener('load', build);
+    setTimeout(build, 1800);   /* re-measure after webfonts settle layout */
+    build();
+  })();
 
   /* ---- poke a doodle: it mumbles in-character (voice per mood) ---- */
   var screams=["AAAAAAA","STOP TOUCHING ME","i'm trying my BEST","do you have any openings??","please"];
