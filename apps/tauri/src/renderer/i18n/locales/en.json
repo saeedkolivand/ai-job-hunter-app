@@ -112,6 +112,12 @@
     },
     "verdict": "Final Verdict",
     "recruiterView": "Recruiter's view —",
+    "groups": {
+      "strengthsSkills": "Strengths & skills",
+      "recommendations": "Recommendations & rewrites",
+      "ats": "ATS & formatting",
+      "language": "Language & localization"
+    },
     "strengths": "Strengths",
     "noStrengths": "No notable strengths identified.",
     "weaknesses": "Weaknesses",

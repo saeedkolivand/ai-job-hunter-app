@@ -7,25 +7,14 @@ import { ErrorState } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
 import { useCanUseAI, useSelectedModel, useSelectedProvider } from '@/components/ui/ModelSelector';
-import { AnalysisATSRisks } from '@/features/analyze/components/AnalysisATSRisks';
-import { AnalysisLanguageMismatch } from '@/features/analyze/components/AnalysisLanguageMismatch';
-import { AnalysisLanguageRecommendations } from '@/features/analyze/components/AnalysisLanguageRecommendations';
-import { AnalysisMissingSkills } from '@/features/analyze/components/AnalysisMissingSkills';
 import { AnalysisProgress } from '@/features/analyze/components/AnalysisProgress';
-import { AnalysisRecommendations } from '@/features/analyze/components/AnalysisRecommendations';
-import { AnalysisRewrites } from '@/features/analyze/components/AnalysisRewrites';
-import { AnalysisScores } from '@/features/analyze/components/AnalysisScores';
-import { AnalysisSectionAnalysis } from '@/features/analyze/components/AnalysisSectionAnalysis';
-import { AnalysisSkills } from '@/features/analyze/components/AnalysisSkills';
-import { AnalysisStrengths } from '@/features/analyze/components/AnalysisStrengths';
-import { AnalysisVerdict } from '@/features/analyze/components/AnalysisVerdict';
+import { AnalysisResults } from '@/features/analyze/components/AnalysisResults';
 import { AnalyzeLeftPanel } from '@/features/analyze/components/AnalyzeLeftPanel';
 import { ACCEPTED_EXTS, MAX_BYTES } from '@/features/analyze/constants';
 import { useAnalysisRun } from '@/features/analyze/hooks/useAnalysisRun';
 import { useAnalyzeState } from '@/features/analyze/hooks/useAnalyzeState';
 import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useTranslation } from '@/lib/i18n';
-import type { AnalysisResult } from '@/lib/resume-ai';
 import { useDocuments, useExtractText } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
 import { usePreferencesStore, usePromptQuality } from '@/store/preferences-store';
@@ -222,24 +211,6 @@ function AnalyzePage() {
         </div>
       </div>
     </PageTransition>
-  );
-}
-
-function AnalysisResults({ result, t }: { result: AnalysisResult; t: (key: string) => string }) {
-  return (
-    <>
-      <AnalysisLanguageMismatch result={result} t={t} />
-      <AnalysisScores result={result} t={t} />
-      <AnalysisVerdict result={result} t={t} />
-      <AnalysisStrengths result={result} t={t} />
-      <AnalysisSkills result={result} t={t} />
-      <AnalysisRecommendations result={result} t={t} />
-      <AnalysisATSRisks result={result} t={t} />
-      <AnalysisSectionAnalysis result={result} t={t} />
-      <AnalysisRewrites result={result} />
-      <AnalysisLanguageRecommendations result={result} t={t} />
-      <AnalysisMissingSkills result={result} />
-    </>
   );
 }
 
