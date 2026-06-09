@@ -18,6 +18,10 @@
       "types": "./src/analyze/index.ts",
       "default": "./dist/analyze/index.js"
     },
+    "./builder": {
+      "types": "./src/builder/index.ts",
+      "default": "./dist/builder/index.js"
+    },
     "./context-manager": {
       "types": "./src/context-manager/index.ts",
       "default": "./dist/context-manager/index.js"

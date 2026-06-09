@@ -226,6 +226,7 @@ target/llvm-cov/
 .mcp.json
 graphify-out/
 .codegraph/
+.obsidian/
 
 post-checkout
 post-commit
