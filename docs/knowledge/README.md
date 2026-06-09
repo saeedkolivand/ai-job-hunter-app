@@ -42,6 +42,8 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-008](decision-records/adr-008-pdf-glyph-subsetting.md)                  | PDF glyph subsetting at export time via `parse_font`                        |
 | [ADR-009](decision-records/adr-009-resettable-reset-registry.md)             | Full factory reset via a `Resettable` registry                              |
 | [ADR-010](decision-records/adr-010-untrusted-input-fencing.md)               | Untrusted-input fencing for web-sourced company research                    |
+| [ADR-011](decision-records/adr-011-referral-helper-manual-only.md)           | Referral helper is manual-only; no LinkedIn profile scraping                |
+| [ADR-012](decision-records/adr-012-html-preview-approximate.md)              | AI-Generate live preview is an approximate HTML mirror                      |
 
 ## Canonical docs (do not duplicate — link)
 
