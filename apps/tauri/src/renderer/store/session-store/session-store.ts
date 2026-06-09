@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import type { InterviewAnswers } from '@ajh/prompts/builder';
 import type { AutopilotFoundJob } from '@ajh/shared';
 
 import type { WizardState } from '@/features/autopilot/types';
@@ -40,6 +41,25 @@ interface AnalyzeSlice {
   result: AnalysisResult | null;
   /** Evaluate as a corporate résumé (default) or an academic CV (#54). */
   analysisMode: AnalysisMode;
+}
+
+/** Resume Builder (#1 / B9) — interview answers + wizard/synthesis state. */
+type ResumeBuilderStage = 'interview' | 'generating' | 'done';
+
+export interface ResumeBuilderSlice {
+  /** Structured interview answers — the grounding source for synthesis. */
+  answers: InterviewAnswers;
+  /** Current wizard step index (0-based). */
+  wizardStep: number;
+  stage: ResumeBuilderStage;
+  /** Synthesized résumé markdown (populated when stage === 'done'). */
+  output: string;
+  /** Output language for synthesis (e.g. `en`, `de`) — drives section headers. */
+  language: string;
+  /** Export market id (`us`, `de`, …) — drives page size; defaults from language. */
+  locale: string;
+  templateId: TemplateId;
+  atsMode: boolean;
 }
 
 interface JobsSlice {
@@ -119,11 +139,36 @@ const ANALYZE_DEFAULTS: AnalyzeSlice = {
   analysisMode: 'work',
 };
 
+const RESUME_BUILDER_DEFAULTS: ResumeBuilderSlice = {
+  answers: {
+    fullName: '',
+    headline: '',
+    summary: '',
+    experience: [],
+    education: [],
+    skills: [],
+    projects: [],
+    publications: [],
+    awards: [],
+    volunteer: [],
+    languages: [],
+    certifications: [],
+  },
+  wizardStep: 0,
+  stage: 'interview',
+  output: '',
+  language: 'en',
+  locale: 'en',
+  templateId: 'modern',
+  atsMode: false,
+};
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 interface SessionState {
   aiGenerate: AIGenerateSlice;
   analyze: AnalyzeSlice;
+  resumeBuilder: ResumeBuilderSlice;
   jobs: JobsSlice;
   resumes: ResumesSlice;
   settings: SettingsSlice;
@@ -134,6 +179,9 @@ interface SessionState {
 
   setAnalyze: (patch: Partial<AnalyzeSlice>) => void;
   resetAnalyze: () => void;
+
+  setResumeBuilder: (patch: Partial<ResumeBuilderSlice>) => void;
+  resetResumeBuilder: () => void;
 
   setJobs: (patch: Partial<JobsSlice>) => void;
 
@@ -148,6 +196,7 @@ interface SessionState {
 export const useSessionStore = create<SessionState>((set) => ({
   aiGenerate: { ...AI_GENERATE_DEFAULTS },
   analyze: { ...ANALYZE_DEFAULTS },
+  resumeBuilder: { ...RESUME_BUILDER_DEFAULTS },
   jobs: { filter: '', sortBy: 'newest' },
   resumes: { tab: 'resumes', filter: '' },
   settings: { activeSection: 'general' },
@@ -165,6 +214,9 @@ export const useSessionStore = create<SessionState>((set) => ({
 
   setAnalyze: (patch) => set((s) => ({ analyze: { ...s.analyze, ...patch } })),
   resetAnalyze: () => set({ analyze: { ...ANALYZE_DEFAULTS } }),
+
+  setResumeBuilder: (patch) => set((s) => ({ resumeBuilder: { ...s.resumeBuilder, ...patch } })),
+  resetResumeBuilder: () => set({ resumeBuilder: { ...RESUME_BUILDER_DEFAULTS } }),
 
   setJobs: (patch) => set((s) => ({ jobs: { ...s.jobs, ...patch } })),
 

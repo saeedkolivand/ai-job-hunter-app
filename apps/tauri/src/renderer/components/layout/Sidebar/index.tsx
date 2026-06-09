@@ -2,6 +2,7 @@ import {
   Activity,
   Briefcase,
   Cpu,
+  FilePlus2,
   FileText,
   Gauge,
   HelpCircle,
@@ -42,6 +43,7 @@ const NAV_SECTIONS: { labelKey: string; items: readonly NavItem[] }[] = [
       { to: ROUTES.JOBS, label: 'nav.jobs', icon: Briefcase, tourId: 'jobs' },
       { to: ROUTES.ANALYZE, label: 'nav.analyze', icon: Gauge, tourId: 'analyze' },
       { to: ROUTES.GENERATE, label: 'nav.generate', icon: Wand2, tourId: 'generate' },
+      { to: ROUTES.BUILD, label: 'nav.build', icon: FilePlus2, tourId: 'build' },
       // Labelled "Documents" (résumés + cover letters + activity); the route
       // stays /resumes and the tour anchor is 'documents'.
       { to: ROUTES.RESUMES, label: 'nav.documents', icon: FileText, tourId: 'documents' },

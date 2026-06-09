@@ -2,6 +2,7 @@ export const ROUTES = {
   DASHBOARD: '/',
   ANALYZE: '/analyze',
   GENERATE: '/ai-generate',
+  BUILD: '/build',
   JOBS: '/jobs',
   AUTOPILOT: '/autopilot',
   RESUMES: '/resumes',

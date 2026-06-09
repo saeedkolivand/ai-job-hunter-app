@@ -11,6 +11,7 @@
     "dashboard": "Übersicht",
     "analyze": "Lebenslauf-Analyse",
     "generate": "KI-Generator",
+    "build": "Lebenslauf-Builder",
     "jobs": "Jobs",
     "autopilot": "Autopilot",
     "documents": "Dokumente",
@@ -19,6 +20,134 @@
     "monitoring": "Monitoring",
     "support": "Hilfe & Support",
     "settings": "Einstellungen"
+  },
+  "build": {
+    "title": "Lebenslauf-Builder",
+    "subtitle": "Beantworte ein paar Fragen und wir erstellen daraus einen Lebenslauf.",
+    "remove": "Entfernen",
+    "wizard": {
+      "back": "Zurück",
+      "next": "Weiter",
+      "generate": "Lebenslauf erstellen",
+      "generating": "Dein Lebenslauf wird erstellt…",
+      "stepCounter": "Schritt {{current}} von {{total}}"
+    },
+    "steps": {
+      "0": "Deine Angaben",
+      "1": "Profil-Zusammenfassung",
+      "2": "Berufserfahrung",
+      "3": "Ausbildung",
+      "4": "Kenntnisse",
+      "5": "Weitere Abschnitte",
+      "6": "Prüfen & erstellen"
+    },
+    "descriptions": {
+      "0": "Deine Kontaktdaten werden zum Lebenslauf-Kopf. Optional eine Zielrolle ergänzen.",
+      "1": "Optional — leer lassen, dann schreiben wir sie aus deinen Angaben.",
+      "2": "Jede Position hinzufügen, neueste zuerst. Echte Erfolge als Stichpunkte.",
+      "3": "Füge deine Abschlüsse und Qualifikationen hinzu.",
+      "4": "Liste deine Kenntnisse auf — eine pro Zeile. Wir gruppieren sie.",
+      "5": "Optionale Extras: Projekte, Publikationen, Auszeichnungen, Ehrenamt, Sprachen, Zertifikate.",
+      "6": "Ausgabesprache und Vorlage wählen, dann erstellen."
+    },
+    "contact": {
+      "headlineLabel": "Zielrolle / Schlagzeile",
+      "headlinePlaceholder": "z. B. Senior Backend Engineer",
+      "headlineHint": "optional"
+    },
+    "summary": {
+      "label": "Profil-Zusammenfassung",
+      "placeholder": "Ein kurzer Absatz darüber, wer du bist und was du machst. Leer lassen zum automatischen Erstellen.",
+      "hint": "optional"
+    },
+    "experience": {
+      "add": "Position hinzufügen",
+      "empty": "Noch keine Positionen — füge deinen Werdegang hinzu.",
+      "title": "Position",
+      "company": "Unternehmen",
+      "location": "Ort",
+      "start": "Beginn",
+      "end": "Ende",
+      "present": "Heute",
+      "current": "Ich arbeite aktuell hier",
+      "bullets": "Erfolge",
+      "bulletsHint": "eine pro Zeile",
+      "bulletsPlaceholder": "X aufgebaut, das Y bewirkte und Z um 40 % verbesserte"
+    },
+    "education": {
+      "add": "Ausbildung hinzufügen",
+      "empty": "Noch keine Ausbildung.",
+      "degree": "Abschluss / Qualifikation",
+      "institution": "Einrichtung",
+      "location": "Ort",
+      "start": "Beginn",
+      "end": "Ende",
+      "details": "Details",
+      "detailsHint": "Auszeichnungen, Thesis, Schwerpunkte"
+    },
+    "skills": {
+      "label": "Kenntnisse",
+      "hint": "eine pro Zeile",
+      "placeholder": "Python\nPostgreSQL\nAWS"
+    },
+    "extras": {
+      "link": "Link",
+      "linkHint": "optional",
+      "entryTitle": "Titel",
+      "entryDetail": "Detail",
+      "entryYear": "Jahr",
+      "projects": {
+        "title": "Projekte",
+        "add": "Projekt hinzufügen",
+        "empty": "Noch keine Projekte.",
+        "name": "Name",
+        "description": "Beschreibung"
+      },
+      "publications": {
+        "title": "Publikationen",
+        "add": "Publikation hinzufügen",
+        "empty": "Noch keine Publikationen.",
+        "titleField": "Titel",
+        "venue": "Medium",
+        "year": "Jahr"
+      },
+      "awards": {
+        "title": "Auszeichnungen",
+        "add": "Auszeichnung hinzufügen",
+        "empty": "Noch keine Auszeichnungen."
+      },
+      "volunteer": {
+        "title": "Ehrenamt",
+        "add": "Ehrenamt hinzufügen",
+        "empty": "Noch kein Ehrenamt."
+      },
+      "languages": {
+        "title": "Sprachen",
+        "label": "Sprachen",
+        "hint": "eine pro Zeile",
+        "placeholder": "Englisch (Muttersprache)\nDeutsch (B2)"
+      },
+      "certifications": {
+        "title": "Zertifikate",
+        "label": "Zertifikate",
+        "hint": "eine pro Zeile",
+        "placeholder": "AWS Solutions Architect"
+      }
+    },
+    "review": {
+      "language": "Ausgabesprache",
+      "languageEn": "Englisch",
+      "languageDe": "Deutsch",
+      "incomplete": "Füge deinen Namen, mindestens eine Position oder Ausbildung und einige Kenntnisse hinzu."
+    },
+    "output": {
+      "tailor": "An Stelle anpassen",
+      "startOver": "Neu beginnen"
+    },
+    "toast": {
+      "done": "Lebenslauf erstellt — in Dokumenten gespeichert.",
+      "failed": "Lebenslauf konnte nicht erstellt werden. Bitte erneut versuchen."
+    }
   },
   "models": {
     "tier": {
