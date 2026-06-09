@@ -37,7 +37,6 @@ const L1: &[&str] = &[
     "documents",
     "jobs",
     "postings",
-    "conversations",
     "credentials",
     "job_preferences",
     "contact_profile",
@@ -244,7 +243,6 @@ fn r1_tauri_command_only_in_command_surfaces() {
 const R2_ALLOW: &[&str] = &[
     "autopilot_helpers/mod.rs",
     "autopilot_scheduler.rs",
-    "conversations/mod.rs",
     "cover_letter/research/mod.rs",
     "documents/mod.rs",
     "pipeline/mod.rs",
@@ -298,7 +296,6 @@ const R3_ALLOW: &[&str] = &[
     "db.rs",    // sole owner of the SQLite handle
     "error.rs", // From<rusqlite::Error> conversion
     "ai_generations/mod.rs",
-    "conversations/mod.rs",
     "documents/mod.rs",
     "job_preferences/mod.rs",
     "contact_profile/mod.rs",

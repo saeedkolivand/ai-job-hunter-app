@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   AutopilotTargetSchema,
   AutopilotUpdateSchema,
-  ConversationSaveMessageSchema,
   CredentialSetSchema,
   DocumentImportRequestSchema,
   EmbedRequestSchema,
@@ -93,15 +92,6 @@ describe('EmbedRequestSchema', () => {
   it('rejects empty and oversized text', () => {
     expect(() => EmbedRequestSchema.parse({ text: '' })).toThrow();
     expect(() => EmbedRequestSchema.parse({ text: 'a'.repeat(200_001) })).toThrow();
-  });
-});
-
-describe('ConversationSaveMessageSchema', () => {
-  it('fills defaults for every field', () => {
-    const parsed = ConversationSaveMessageSchema.parse({});
-    expect(parsed.conversationId).toBe('default');
-    expect(parsed.role).toBe('user');
-    expect(parsed.content).toBe('');
   });
 });
 

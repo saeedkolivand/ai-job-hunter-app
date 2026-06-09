@@ -6,7 +6,6 @@ pub mod ai_provider;
 pub mod autopilot;
 pub mod boards;
 pub mod contact_profile;
-pub mod conversations;
 pub mod credentials;
 pub mod data;
 pub mod dialog;

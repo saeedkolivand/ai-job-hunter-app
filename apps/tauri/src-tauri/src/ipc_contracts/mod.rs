@@ -6,7 +6,6 @@
 
 pub mod ai;
 pub mod autopilot;
-pub mod conversations;
 pub mod documents;
 pub mod matching;
 pub mod referrals;

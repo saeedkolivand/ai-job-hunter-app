@@ -17,7 +17,6 @@ pub mod autopilot_scheduler;
 pub mod browser;
 pub mod commands;
 pub mod contact_profile;
-pub mod conversations;
 pub mod cover_letter;
 pub mod credentials;
 pub mod data_store;
@@ -259,10 +258,17 @@ pub fn run() {
             );
             app.manage(Mutex::new(UpdaterState::default()));
             app.manage(std::sync::Arc::new(ScraperEngine::new()));
-            if let Ok(db) = conversations::ConversationDb::open(handle) {
-                manage_resettable(app, &mut reset_registry, "conversations", db);
-            } else {
-                log::warn!("[setup] conversation db failed to open (non-fatal)");
+            // The conversations (chat) feature was removed; best-effort delete the
+            // now-orphaned conversations.db (+ WAL/SHM sidecars) it left in the app-data
+            // dir so dead chat history isn't kept on disk. Idempotent (no-op once gone).
+            if let Ok(app_data) = handle.path().app_data_dir() {
+                for f in [
+                    "conversations.db",
+                    "conversations.db-wal",
+                    "conversations.db-shm",
+                ] {
+                    let _ = std::fs::remove_file(app_data.join(f));
+                }
             }
             match pipeline::cache::KvCache::open(&data_dir) {
                 Ok(cache) => manage_resettable(app, &mut reset_registry, "cache", cache),
@@ -398,10 +404,6 @@ pub fn run() {
             // support
             commands::support::support_export_logs,
             commands::support::support_get_system_info,
-            // conversations
-            commands::conversations::conversations_get_or_create,
-            commands::conversations::conversations_load_messages,
-            commands::conversations::conversations_save_message,
             // dialog
             commands::dialog::dialog_open_files,
             // geocoding

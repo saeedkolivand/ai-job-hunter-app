@@ -225,13 +225,6 @@ export const ReferralUpsertSchema = z.object({
 // Note: the `ReferralUpsertRequest` type is declared in the referrals IPC
 // contract (single source for that name); this schema validates the same shape.
 
-export const ConversationSaveMessageSchema = z.object({
-  conversationId: z.string().default('default'),
-  role: z.string().default('user'),
-  content: z.string().default(''),
-});
-export type ConversationSaveMessageRequest = z.infer<typeof ConversationSaveMessageSchema>;
-
 export const ResumeExtractTextSchema = z.object({
   name: z.string().min(1).max(512),
   bytes: z
