@@ -9,4 +9,5 @@ use serde::{Deserialize, Serialize};
 pub struct MatchResumeRequest {
     pub resume_id: String,
     pub job_id: String,
+    pub semantic_scoring_enabled: Option<bool>,
 }

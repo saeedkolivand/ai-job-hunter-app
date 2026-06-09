@@ -73,6 +73,7 @@ interface PreferencesActions {
   setPerformanceMode: (performanceMode: Preferences['performanceMode']) => void;
   setPromptQuality: (promptQuality: PromptQuality) => void;
   setDebugMode: (enabled: boolean) => void;
+  setSemanticScoring: (enabled: boolean) => void;
   setOnboardingComplete: () => void;
   setContactPromptSeen: () => void;
   resetPreferences: () => void;
@@ -206,6 +207,13 @@ export const usePreferencesStore = create<PreferencesStore>()(
           lastUpdated: new Date().toISOString(),
         })),
 
+      setSemanticScoring: (semanticScoring: boolean) =>
+        set((state) => ({
+          ...state,
+          semanticScoring,
+          lastUpdated: new Date().toISOString(),
+        })),
+
       setOnboardingComplete: () =>
         set((state) => ({
           ...state,
@@ -248,3 +256,5 @@ export const useApplicant = () => usePreferencesStore((state) => state.applicant
 export const usePerformanceMode = () => usePreferencesStore((state) => state.performanceMode);
 export const usePromptQuality = () => usePreferencesStore((state) => state.promptQuality ?? 'auto');
 export const useDebugMode = () => usePreferencesStore((state) => state.debugMode ?? false);
+export const useSemanticScoring = () =>
+  usePreferencesStore((state) => state.semanticScoring ?? false);

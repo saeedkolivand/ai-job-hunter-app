@@ -47,6 +47,13 @@ pub fn resolve_and_export_data_dir(app: &tauri::AppHandle) -> PathBuf {
     dir
 }
 
+const OLLAMA_HOST_ENV: &str = "OLLAMA_HOST";
+const DEFAULT_OLLAMA_HOST: &str = "http://127.0.0.1:11434";
+
+pub fn ollama_host() -> String {
+    std::env::var(OLLAMA_HOST_ENV).unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

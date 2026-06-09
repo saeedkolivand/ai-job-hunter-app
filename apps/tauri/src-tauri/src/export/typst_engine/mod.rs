@@ -8,6 +8,10 @@
 //!   + optional `&Template` styling → raw PDF bytes.
 //! - [`render_pdf_with_photo`] — photo-aware variant of [`render_pdf`].
 //! - [`render_letter_pdf`] — compile a finished cover-letter text → PDF bytes.
+//! - [`render_resume_svg_pages`] / [`render_resume_svg_pages_with_photo`] /
+//!   [`render_letter_svg_pages`] — live-preview siblings of the PDF render fns,
+//!   emitting one SVG string per page (same model + same world; only the emit
+//!   differs).
 //! - [`render_pdf_from_source`] — compile a raw Typst source string (smoke test /
 //!   debugging only).
 //! - [`RenderOpts`] — page geometry, accent colour, language, ATS flag.
@@ -22,7 +26,10 @@ mod world;
 #[cfg(test)]
 mod test;
 
-pub use engine::{render_letter_pdf, render_pdf, render_pdf_with_photo, TypstTemplate};
+pub use engine::{
+    render_letter_pdf, render_letter_svg_pages, render_pdf, render_pdf_with_photo,
+    render_resume_svg_pages, render_resume_svg_pages_with_photo, TypstTemplate,
+};
 // `render_pdf_from_source` is only used in tests (smoke tests and debugging).
 #[cfg(test)]
 pub use engine::render_pdf_from_source;

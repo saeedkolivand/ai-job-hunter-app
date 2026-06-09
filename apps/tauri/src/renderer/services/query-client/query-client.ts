@@ -65,5 +65,6 @@ export const keys = {
     all: ['referrals'] as const,
     list: (jobUrl?: string) => ['referrals', jobUrl ?? null] as const,
   },
+  match: { score: (resumeId: string | null, jobId: string) => ['match', resumeId, jobId] as const },
   updater: { changelog: ['updater', 'changelog'] as const },
 } as const;

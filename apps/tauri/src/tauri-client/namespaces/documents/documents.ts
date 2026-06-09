@@ -10,4 +10,5 @@ export const documents = {
   setDefault: (id: string) => invoke('documents_set_default', { id }),
   exportDocument: (request: unknown) => invoke('documents_export_document', { request }),
   exportAndSave: (request: unknown) => invoke('documents_export_and_save', { request }),
+  renderPreviewImages: (request: unknown) => invoke('documents_render_preview_images', { request }),
 };

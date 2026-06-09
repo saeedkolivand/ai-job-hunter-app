@@ -37,6 +37,7 @@ fn test_insert_document() {
         created_at: now_ms(),
         indexed: false,
         is_default: false,
+        keywords_json: None,
     };
 
     store.insert(&doc).unwrap();
@@ -62,6 +63,7 @@ fn test_list_documents() {
         created_at: now_ms(),
         indexed: false,
         is_default: false,
+        keywords_json: None,
     };
 
     let doc2 = DocumentRecord {
@@ -74,6 +76,7 @@ fn test_list_documents() {
         created_at: now_ms() + 1000,
         indexed: false,
         is_default: false,
+        keywords_json: None,
     };
 
     store.insert(&doc1).unwrap();
@@ -101,6 +104,7 @@ fn test_set_indexed() {
         created_at: now_ms(),
         indexed: false,
         is_default: false,
+        keywords_json: None,
     };
 
     store.insert(&doc).unwrap();
@@ -125,6 +129,7 @@ fn test_remove_document() {
         created_at: now_ms(),
         indexed: false,
         is_default: false,
+        keywords_json: None,
     };
 
     store.insert(&doc).unwrap();
@@ -149,6 +154,7 @@ fn test_set_default() {
         created_at: now_ms(),
         indexed: false,
         is_default: false,
+        keywords_json: None,
     };
 
     let doc2 = DocumentRecord {
@@ -161,6 +167,7 @@ fn test_set_default() {
         created_at: now_ms() + 1000,
         indexed: false,
         is_default: false,
+        keywords_json: None,
     };
 
     store.insert(&doc1).unwrap();
@@ -264,6 +271,47 @@ fn test_cosine_similarity_edge_cases() {
     assert_eq!(cosine_similarity(&[0.0, 0.0], &[1.0, 1.0]), 0.0);
 }
 
+// Verify that keywords_json survives an insert → list → get round-trip without
+// any column-position corruption from future migrations.
+#[test]
+fn test_keywords_json_round_trip() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    let keywords_payload = Some("[\"rust\",\"typescript\"]".to_string());
+    let doc = DocumentRecord {
+        id: make_doc_id(),
+        title: "Resume".to_string(),
+        name: "resume.pdf".to_string(),
+        locale: None,
+        text: "Rust and TypeScript developer".to_string(),
+        pages: None,
+        created_at: now_ms(),
+        indexed: false,
+        is_default: false,
+        keywords_json: keywords_payload.clone(),
+    };
+
+    store.insert(&doc).unwrap();
+
+    // list() path
+    let docs = store.list();
+    assert_eq!(docs.len(), 1);
+    assert_eq!(
+        docs[0].keywords_json,
+        keywords_payload,
+        "keywords_json must survive list() unchanged"
+    );
+
+    // get() path
+    let fetched = store.get(&doc.id).expect("document must exist after insert");
+    assert_eq!(
+        fetched.keywords_json,
+        keywords_payload,
+        "keywords_json must survive get() unchanged"
+    );
+}
+
 #[test]
 fn test_data_store_export_import_round_trip() {
     use crate::data_store::DataStore;
@@ -281,6 +329,7 @@ fn test_data_store_export_import_round_trip() {
         created_at: now_ms(),
         indexed: false,
         is_default: false,
+        keywords_json: None,
     };
     let b = DocumentRecord {
         id: "doc-b".to_string(),
@@ -292,6 +341,7 @@ fn test_data_store_export_import_round_trip() {
         created_at: now_ms() + 1,
         indexed: false,
         is_default: true,
+        keywords_json: None,
     };
     store.insert(&a).unwrap();
     store.insert(&b).unwrap();
