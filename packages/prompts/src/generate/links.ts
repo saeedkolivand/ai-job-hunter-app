@@ -108,37 +108,131 @@ function parseLinkBlock(resume: string): LinkBlockEntry[] {
   return entries;
 }
 
+/** Decoded, empties-removed path segments of a URL; [] on parse failure. */
+function pathSegments(url: string): string[] {
+  try {
+    return new URL(url).pathname
+      .split('/')
+      .map((s) => {
+        try {
+          return decodeURIComponent(s);
+        } catch {
+          return s;
+        }
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/** A bare-root URL — host only, no meaningful path. The shape of a homepage. */
+function isBareRoot(url: string): boolean {
+  return pathSegments(url).length === 0;
+}
+
 /**
- * Resolve the reference block into ordered contact links for the header line.
- *
- * Every known platform link keeps its brand label. In addition, the FIRST
- * non-platform http(s) URL is admitted ONCE under a generic "Website" label —
- * this is the website/portfolio fix: previously such URLs were dropped wholesale
- * by the PROFILE_DOMAINS allowlist. Subsequent non-platform URLs are still
- * dropped, so a single header-scoped site is surfaced without letting arbitrary
- * inline body URLs leak in. `mailto:` is excluded here (handled separately as the
- * clean email).
- *
- * Both getLinkMap() (post-generation injection) and parseLinksFromResume()
- * (prompt instruction) build on this, so the label the AI is told to write and
- * the label injection later looks for can never drift.
+ * Is this platform URL a *profile* (belongs on the contact line) rather than a
+ * deep link to a specific repo/article (which belongs on its own body item)?
+ * `github.com/<user>` is a profile; `github.com/<user>/<repo>` is a project →
+ * body. Other platforms (LinkedIn, Twitter, Medium, …) are treated as profiles
+ * since people rarely deep-link them as résumé project references.
  */
-function resolveContactLinks(resume: string): { label: string; url: string }[] {
-  const out: { label: string; url: string }[] = [];
+function isProfileShaped(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return false;
+  }
+  if (host === 'github.com' || host === 'gitlab.com') {
+    return pathSegments(url).length <= 1;
+  }
+  return true;
+}
+
+/** A readable, visible label for a body link, preferring the human anchor. */
+function bodyLabel(anchor: string, url: string): string {
+  const a = anchor.trim();
+  if (a && !/^https?:\/\//i.test(a) && !a.startsWith('mailto:')) return a;
+  // Anchor is a raw URL (common in PDFs) — derive a name from the URL: a repo /
+  // article slug (last meaningful path segment) reads better than the bare host.
+  const segs = pathSegments(url);
+  const last = segs[segs.length - 1];
+  if (last && !/^\d+$/.test(last)) {
+    const humanised = last
+      .replace(/\.[a-z0-9]+$/i, '')
+      .replace(/[-_]+/g, ' ')
+      .trim();
+    if (humanised) return humanised;
+  }
+  return urlToFriendlyLabel(url);
+}
+
+/** De-duplicate a body label so each injects to exactly one URL. */
+function uniqueBodyLabel(label: string, used: Set<string>): string {
+  let candidate = label;
+  let n = 2;
+  while (used.has(candidate.toLowerCase())) candidate = `${label} (${n++})`;
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
+interface ClassifiedLinks {
+  /** Profile / homepage links that belong on the header contact line. */
+  contact: { label: string; url: string }[];
+  /** Project / publication / portfolio links that belong on their own item (#18). */
+  body: { label: string; url: string }[];
+}
+
+/**
+ * Split the reference block into contact-line links vs body links (#18).
+ *
+ * - **Contact**: known platform *profiles* (LinkedIn, GitHub user, …) keep their
+ *   brand label; the FIRST non-platform *bare-root* URL is admitted once under a
+ *   generic "Website" label (the homepage/portfolio fix).
+ * - **Body**: everything else — project repos (`github.com/u/repo`), article /
+ *   DOI / publication links, and any additional personal sites. Previously these
+ *   were dropped twice (by the PROFILE_DOMAINS allowlist + the "first non-platform
+ *   only" Website rule, then stripped from the body), so academic project /
+ *   publication URLs silently vanished. They are now preserved on their own items.
+ *
+ * `mailto:` is excluded here (handled separately as the clean email). Both the
+ * prompt instructions and the post-generation injectors build on this, so the
+ * label the AI is told to write and the label injection later looks for can never
+ * drift.
+ */
+function classifyLinks(resume: string): ClassifiedLinks {
+  const contact: { label: string; url: string }[] = [];
+  const body: { label: string; url: string }[] = [];
   let websiteAdmitted = false;
+  const usedBodyLabels = new Set<string>();
+
   for (const { anchor, url } of parseLinkBlock(resume)) {
     if (url.startsWith('mailto:')) continue;
-    if (isProfileUrl(url)) {
+    if (!/^https?:\/\//i.test(url)) continue;
+
+    if (isProfileUrl(url) && isProfileShaped(url)) {
       // PDFs often store the raw URL as the anchor; derive the friendly label
       // (e.g. "LinkedIn") so injection matches what the AI writes.
       const label = /^https?:\/\//i.test(anchor) ? urlToFriendlyLabel(anchor) : anchor;
-      out.push({ label, url });
-    } else if (!websiteAdmitted && /^https?:\/\//i.test(url)) {
-      out.push({ label: WEBSITE_LABEL, url });
+      contact.push({ label, url });
+    } else if (!isProfileUrl(url) && isBareRoot(url) && !websiteAdmitted) {
+      contact.push({ label: WEBSITE_LABEL, url });
       websiteAdmitted = true;
+    } else {
+      body.push({ label: uniqueBodyLabel(bodyLabel(anchor, url), usedBodyLabels), url });
     }
   }
-  return out;
+  return { contact, body };
+}
+
+function resolveContactLinks(resume: string): { label: string; url: string }[] {
+  return classifyLinks(resume).contact;
+}
+
+function resolveBodyLinks(resume: string): { label: string; url: string }[] {
+  return classifyLinks(resume).body;
 }
 
 /**
@@ -148,6 +242,19 @@ function resolveContactLinks(resume: string): { label: string; url: string }[] {
 export function getLinkMap(resume: string): Record<string, string> {
   const map: Record<string, string> = {};
   for (const { label, url } of resolveContactLinks(resume)) {
+    map[label] = url;
+  }
+  return map;
+}
+
+/**
+ * Build a label→url map for the BODY links (projects, publications, portfolio)
+ * extracted from the reference block (#18). Consumed only by the résumé injection
+ * path — cover letters never carry body links.
+ */
+export function getBodyLinkMap(resume: string): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const { label, url } of resolveBodyLinks(resume)) {
     map[label] = url;
   }
   return map;
@@ -179,20 +286,28 @@ const MD_LINK_SPAN_RE = /\[[^\]]+\]\([^)]+\)/g;
  * body prose that merely mentions a platform untouched. Falls back to the first
  * pipe line bearing a known label when no email line is present. Idempotent: the
  * `(?<!\[)` lookbehind skips labels already inside a `[…]` link.
+ *
+ * `bodyMap` (#18) carries project / publication / portfolio links that belong to
+ * specific résumé items, not the contact line — so they are injected ANYWHERE in
+ * the body (every line), not gated to the contact line. Pass `{}` (the default)
+ * for documents that carry no body links, e.g. cover letters.
  */
 export function injectLinksIntoGeneratedText(
   text: string,
-  linkMap: Record<string, string>
+  linkMap: Record<string, string>,
+  bodyMap: Record<string, string> = {}
 ): string {
-  const labels = Object.keys(linkMap);
-  if (!labels.length) return text;
+  const contactLabels = Object.keys(linkMap);
+  // Guard against over-matching short/common words against arbitrary prose.
+  const bodyLabels = Object.keys(bodyMap).filter((l) => l.trim().length >= 3);
+  if (!contactLabels.length && !bodyLabels.length) return text;
 
-  const injectPlain = (segment: string): string => {
+  const injectPlain = (segment: string, labels: string[], map: Record<string, string>): string => {
     let out = segment;
     for (const label of labels) {
       out = out.replace(
         new RegExp(`\\b${escapeRegExp(label)}\\b`, 'gi'),
-        `[${label}](${linkMap[label]})`
+        `[${label}](${map[label]})`
       );
     }
     return out;
@@ -200,34 +315,47 @@ export function injectLinksIntoGeneratedText(
   // Inject into the plain text only, stepping over any pre-existing `[label](url)`
   // spans — so a label that recurs inside an already-injected URL (linkedin.com)
   // is never re-wrapped and the pass is idempotent.
-  const inject = (line: string): string => {
+  const inject = (line: string, labels: string[], map: Record<string, string>): string => {
     let out = '';
     let last = 0;
     for (const m of line.matchAll(MD_LINK_SPAN_RE)) {
       const idx = m.index ?? 0;
-      out += injectPlain(line.slice(last, idx)) + m[0];
+      out += injectPlain(line.slice(last, idx), labels, map) + m[0];
       last = idx + m[0].length;
     }
-    return out + injectPlain(line.slice(last));
+    return out + injectPlain(line.slice(last), labels, map);
   };
   const hasLabel = (line: string): boolean =>
-    labels.some((l) => new RegExp(`(?<!\\[)\\b${escapeRegExp(l)}\\b`, 'i').test(line));
+    contactLabels.some((l) => new RegExp(`(?<!\\[)\\b${escapeRegExp(l)}\\b`, 'i').test(line));
   const isContactCandidate = (line: string): boolean =>
     line.includes('|') && !SECTION_HEADER_RE.test(line.trim());
 
   const lines = text.split('\n');
-  let injected = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
-    if (isContactCandidate(line) && CONTACT_EMAIL_RE.test(line)) {
-      lines[i] = inject(line);
-      injected = true;
+
+  // 1) Contact links — only the contact line (pipe-delimited, carries the email).
+  if (contactLabels.length) {
+    let injected = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? '';
+      if (isContactCandidate(line) && CONTACT_EMAIL_RE.test(line)) {
+        lines[i] = inject(line, contactLabels, linkMap);
+        injected = true;
+      }
+    }
+    if (!injected) {
+      const i = lines.findIndex((l) => isContactCandidate(l) && hasLabel(l));
+      if (i !== -1) lines[i] = inject(lines[i] ?? '', contactLabels, linkMap);
     }
   }
-  if (!injected) {
-    const i = lines.findIndex((l) => isContactCandidate(l) && hasLabel(l));
-    if (i !== -1) lines[i] = inject(lines[i] ?? '');
+
+  // 2) Body links (#18) — kept on their own items, so inject them anywhere in the
+  // body (idempotent; stepping over already-linked spans).
+  if (bodyLabels.length) {
+    for (let i = 0; i < lines.length; i++) {
+      lines[i] = inject(lines[i] ?? '', bodyLabels, bodyMap);
+    }
   }
+
   return lines.join('\n');
 }
 
@@ -263,6 +391,31 @@ export function parseLinksFromResume(resume: string): ParsedResumeLinks {
   }
 
   return { block: parts.join('\n\n'), cleanEmail };
+}
+
+/**
+ * Build a prompt instruction for the candidate's BODY links — project, article,
+ * publication and portfolio URLs that belong to specific résumé items rather than
+ * the contact line (#18). The block regime (PDF/RTF) strips these before the
+ * model ever sees them, so without re-surfacing them here they are silently
+ * dropped (the original academic-link bug). The model is told to keep each label
+ * on its matching item — adding a PROJECTS / PUBLICATIONS section if an item has
+ * no natural home — and to write ONLY the short label; the real hyperlink is
+ * injected post-generation by injectLinksIntoGeneratedText() via getBodyLinkMap().
+ * Returns '' when there are no body links.
+ */
+export function buildBodyLinksBlock(resume: string): string {
+  const body = resolveBodyLinks(resume);
+  if (!body.length) return '';
+  const labels = body.map((b) => `- ${b.label}`).join('\n');
+  return (
+    `CANDIDATE PROJECT / PUBLICATION LINKS — each of these belongs to a specific item in the ` +
+    `résumé (a project, publication, or portfolio piece), NOT the contact line. Keep every one ` +
+    `of these labels as visible text on its matching item; write ONLY the short label, never the ` +
+    `full URL (the link is attached automatically). If an item has no natural home in Experience ` +
+    `or Skills, add a PROJECTS or PUBLICATIONS section and list it there. Drop none of them:\n` +
+    labels
+  );
 }
 
 /**

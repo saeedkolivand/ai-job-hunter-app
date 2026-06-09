@@ -6,6 +6,7 @@ import {
   buildApplicantDetailsBlock,
   buildApplicationAnswerPrompt,
   buildApplicationAnswerSystemPrompt,
+  buildBodyLinksBlock,
   buildCoverLetterPrompt,
   buildCoverLetterSystemPrompt,
   buildGroundingBlock,
@@ -14,6 +15,7 @@ import {
   buildResumeSystemPrompt,
   extractPlainText,
   type GenerationMeta,
+  getBodyLinkMap,
   getLinkMap,
   injectLinksIntoGeneratedText,
   MODES,
@@ -68,7 +70,7 @@ describe('getLinkMap', () => {
     expect(map.Personal).toBeUndefined();
   });
 
-  it('admits exactly one Website link and drops later non-platform URLs', () => {
+  it('admits exactly one Website link; later non-platform URLs become body links (#18)', () => {
     const resume = [
       'Body',
       '---',
@@ -79,9 +81,11 @@ describe('getLinkMap', () => {
     ].join('\n');
     const map = getLinkMap(resume);
     expect(map.LinkedIn).toBe('https://linkedin.com/in/jane');
-    expect(map.Website).toBe('https://janedoe.dev'); // first non-platform wins
-    expect(Object.values(map)).not.toContain('https://janeblog.example'); // 2nd dropped
+    expect(map.Website).toBe('https://janedoe.dev'); // first bare-root non-platform wins
+    expect(Object.values(map)).not.toContain('https://janeblog.example'); // 2nd → body, not contact
     expect(Object.values(map)).not.toContain('mailto:jane@example.com'); // mailto dropped
+    // The second personal site is no longer dropped — it is preserved as a body link.
+    expect(getBodyLinkMap(resume).Blog).toBe('https://janeblog.example');
   });
 
   it('returns an empty map when there is no reference block', () => {
@@ -92,6 +96,49 @@ describe('getLinkMap', () => {
     const resume = `Body\n---\n- [https://github.com/jane](https://github.com/jane)`;
     const map = getLinkMap(resume);
     expect(map.GitHub).toBe('https://github.com/jane');
+  });
+
+  it('keeps a GitHub profile (one path segment) on the contact line', () => {
+    const map = getLinkMap('Body\n---\n- [GitHub](https://github.com/jane)');
+    expect(map.GitHub).toBe('https://github.com/jane');
+    expect(getBodyLinkMap('Body\n---\n- [GitHub](https://github.com/jane)')).toEqual({});
+  });
+});
+
+describe('getBodyLinkMap (#18 — body links)', () => {
+  it('classifies project / publication / repo links as body, not contact', () => {
+    const resume = [
+      'Body',
+      '---',
+      '- [LinkedIn](https://linkedin.com/in/jane)', // contact profile
+      '- [GitHub](https://github.com/jane)', // contact profile (1 segment)
+      '- [orbit-sim](https://github.com/jane/orbit-sim)', // deep repo → body
+      '- [Spin glasses in 2D](https://doi.org/10.1103/PhysRevB.1.234)', // publication → body
+      '- [Email](mailto:jane@example.com)',
+    ].join('\n');
+
+    const contact = getLinkMap(resume);
+    expect(contact.LinkedIn).toBe('https://linkedin.com/in/jane');
+    expect(contact.GitHub).toBe('https://github.com/jane');
+
+    const body = getBodyLinkMap(resume);
+    expect(body['orbit-sim']).toBe('https://github.com/jane/orbit-sim');
+    expect(body['Spin glasses in 2D']).toBe('https://doi.org/10.1103/PhysRevB.1.234');
+    // The repo did NOT pollute the contact map, and the profile is not a body link.
+    expect(contact['orbit-sim']).toBeUndefined();
+    expect(body.GitHub).toBeUndefined();
+  });
+
+  it('humanises a slug when a body link anchor is a raw URL (PDF case)', () => {
+    const resume =
+      'Body\n---\n- [https://example.org/my-research-paper](https://example.org/my-research-paper)';
+    expect(getBodyLinkMap(resume)['my research paper']).toBe(
+      'https://example.org/my-research-paper'
+    );
+  });
+
+  it('returns an empty map when there are no body links', () => {
+    expect(getBodyLinkMap(RESUME_WITH_LINKS)).toEqual({});
   });
 });
 
@@ -175,6 +222,45 @@ describe('injectLinksIntoGeneratedText', () => {
     const twice = injectLinksIntoGeneratedText(once, { LinkedIn: 'https://linkedin.com/in/n' });
     expect(twice).toBe(once);
   });
+
+  it('injects body links onto their items anywhere in the body, not just the contact line (#18)', () => {
+    const text = [
+      'Jane Dev',
+      'Researcher',
+      'Berlin | jane@example.com | GitHub',
+      '',
+      'PROJECTS',
+      '• orbit-sim — a relativistic orbit simulator',
+      '',
+      'PUBLICATIONS',
+      '• Spin glasses in 2D, Phys Rev B (2021)',
+    ].join('\n');
+    const out = injectLinksIntoGeneratedText(
+      text,
+      { GitHub: 'https://github.com/janedev' },
+      {
+        'orbit-sim': 'https://github.com/janedev/orbit-sim',
+        'Spin glasses in 2D': 'https://doi.org/10.1/x',
+      }
+    );
+    expect(out).toContain('[GitHub](https://github.com/janedev)'); // contact line
+    expect(out).toContain('[orbit-sim](https://github.com/janedev/orbit-sim)'); // project bullet
+    expect(out).toContain('[Spin glasses in 2D](https://doi.org/10.1/x)'); // publication bullet
+  });
+
+  it('body-link injection is idempotent and skips already-linked spans', () => {
+    const text = '• orbit-sim — a simulator';
+    const map = { 'orbit-sim': 'https://github.com/janedev/orbit-sim' };
+    const once = injectLinksIntoGeneratedText(text, {}, map);
+    const twice = injectLinksIntoGeneratedText(once, {}, map);
+    expect(once).toContain('[orbit-sim](https://github.com/janedev/orbit-sim)');
+    expect(twice).toBe(once);
+  });
+
+  it('does not inject body links when no bodyMap is passed (cover-letter path)', () => {
+    const text = '• orbit-sim — a simulator';
+    expect(injectLinksIntoGeneratedText(text, { GitHub: 'https://github.com/x' })).toBe(text);
+  });
 });
 
 describe('parseLinksFromResume', () => {
@@ -188,6 +274,28 @@ describe('parseLinksFromResume', () => {
 
   it('returns empty result when there is no reference block', () => {
     expect(parseLinksFromResume('No block here')).toEqual({ block: '', cleanEmail: '' });
+  });
+});
+
+describe('buildBodyLinksBlock (#18)', () => {
+  it('lists body link labels and instructs the model to keep them on their items', () => {
+    const resume = [
+      'Body',
+      '---',
+      '- [LinkedIn](https://linkedin.com/in/jane)',
+      '- [orbit-sim](https://github.com/jane/orbit-sim)',
+      '- [My thesis](https://doi.org/10.1/x)',
+    ].join('\n');
+    const block = buildBodyLinksBlock(resume);
+    expect(block).toContain('orbit-sim');
+    expect(block).toContain('My thesis');
+    expect(block).toContain('PROJECTS');
+    // Contact-line links must NOT appear in the body block.
+    expect(block).not.toContain('LinkedIn');
+  });
+
+  it('returns an empty string when there are no body links', () => {
+    expect(buildBodyLinksBlock(RESUME_WITH_LINKS)).toBe('');
   });
 });
 
@@ -263,6 +371,27 @@ describe('buildResumePrompt', () => {
     expect(prompt).not.toContain('remove bullets irrelevant');
     expect(prompt).not.toContain('experience to minimize');
     expect(prompt).not.toContain('experience items most relevant');
+  });
+
+  it('surfaces body project/publication links so they survive generation (#18)', () => {
+    const resume = [
+      'Jane Dev',
+      'Researcher',
+      'Berlin | jane@example.com',
+      '',
+      'PROJECTS',
+      'Built orbit-sim',
+      '',
+      '---',
+      '- [orbit-sim](https://github.com/jane/orbit-sim)',
+      '- [My thesis](https://doi.org/10.1/x)',
+    ].join('\n');
+    const prompt = buildResumePrompt(resume, 'Job ad', META, 'ats');
+    expect(prompt).toContain('CANDIDATE PROJECT / PUBLICATION LINKS');
+    expect(prompt).toContain('orbit-sim');
+    expect(prompt).toContain('My thesis');
+    // The raw reference block itself is still stripped from <candidate_resume>.
+    expect(prompt).not.toContain('](https://doi.org/10.1/x)');
   });
 });
 
