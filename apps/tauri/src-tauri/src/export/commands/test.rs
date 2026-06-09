@@ -1,5 +1,5 @@
-use super::*;
 use super::super::types::{DocumentType, ExportFormat, TemplateId};
+use super::*;
 
 // ── Fixtures (mirrors typst_engine/test.rs — minimal but complete) ────────────
 
@@ -206,11 +206,15 @@ async fn export_empty_text_error_matches_preview_error() {
 
     // Both must carry the same human-readable fragment.
     assert!(
-        export_err.to_string().contains("Cannot export empty document"),
+        export_err
+            .to_string()
+            .contains("Cannot export empty document"),
         "export error: {export_err}"
     );
     assert!(
-        preview_err.to_string().contains("Cannot export empty document"),
+        preview_err
+            .to_string()
+            .contains("Cannot export empty document"),
         "preview error: {preview_err}"
     );
 }

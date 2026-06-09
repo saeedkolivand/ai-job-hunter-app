@@ -21,6 +21,7 @@ import {
 import { getModelTier } from '@ajh/prompts/context-manager';
 import { detectLanguages } from '@ajh/shared/language-detection';
 
+import { safeLocale } from '@/lib/generate';
 import { usePreferencesStore } from '@/store/preferences-store';
 
 import { getClient } from '../app-client';
@@ -86,11 +87,6 @@ export async function runAnalysis({
   );
 
   // Enqueue the generation job
-  const validLocales = ['en', 'de', 'fr', 'es', 'it', 'tr', 'pt', 'ru', 'zh', 'ja', 'ko'] as const;
-  const safeLocale = (
-    validLocales.includes(locale as (typeof validLocales)[number]) ? locale : 'en'
-  ) as (typeof validLocales)[number];
-
   const api = getClient();
   // Route to the active provider's endpoint — without this the backend defaults
   // to Ollama, so cloud analysis would wrongly hit the local Ollama host.
@@ -103,7 +99,7 @@ export async function runAnalysis({
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
-    locale: safeLocale,
+    locale: safeLocale(locale),
     temperature: 0.1,
     // Always route through the active provider (no silent Ollama fallback).
     provider: activeProvider,

@@ -62,10 +62,14 @@
     },
     "experience": {
       "add": "Add a role",
-      "empty": "No roles yet — add your work history.",
+      "empty": "No roles yet",
+      "emptyDescription": "Add your work history — most recent first.",
       "title": "Job title",
+      "titlePlaceholder": "e.g. Senior Backend Engineer",
       "company": "Company",
+      "companyPlaceholder": "e.g. Acme Corp",
       "location": "Location",
+      "locationPlaceholder": "e.g. Berlin, Germany",
       "start": "Start",
       "end": "End",
       "present": "Present",
@@ -76,10 +80,14 @@
     },
     "education": {
       "add": "Add education",
-      "empty": "No education yet.",
+      "empty": "No education yet",
+      "emptyDescription": "Add degrees, certifications, or relevant coursework.",
       "degree": "Degree / qualification",
+      "degreePlaceholder": "e.g. MSc Computer Science",
       "institution": "Institution",
+      "institutionPlaceholder": "e.g. TU Munich",
       "location": "Location",
+      "locationPlaceholder": "e.g. Munich, Germany",
       "start": "Start",
       "end": "End",
       "details": "Details",
@@ -93,6 +101,8 @@
     "extras": {
       "link": "Link",
       "linkHint": "optional",
+      "linkPlaceholder": "https://example.com",
+      "yearPlaceholder": "e.g. 2021",
       "entryTitle": "Title",
       "entryDetail": "Detail",
       "entryYear": "Year",
@@ -101,25 +111,33 @@
         "add": "Add a project",
         "empty": "No projects yet.",
         "name": "Name",
-        "description": "Description"
+        "namePlaceholder": "e.g. Payments service",
+        "description": "Description",
+        "descriptionPlaceholder": "What it does and your role."
       },
       "publications": {
         "title": "Publications",
         "add": "Add a publication",
         "empty": "No publications yet.",
         "titleField": "Title",
+        "titlePlaceholder": "e.g. Scaling Distributed Caches",
         "venue": "Venue",
+        "venuePlaceholder": "e.g. ACM SIGMOD",
         "year": "Year"
       },
       "awards": {
         "title": "Awards",
         "add": "Add an award",
-        "empty": "No awards yet."
+        "empty": "No awards yet.",
+        "titlePlaceholder": "e.g. Employee of the Year",
+        "detailPlaceholder": "e.g. Acme Corp"
       },
       "volunteer": {
         "title": "Volunteering",
         "add": "Add volunteering",
-        "empty": "No volunteering yet."
+        "empty": "No volunteering yet.",
+        "titlePlaceholder": "e.g. Mentor",
+        "detailPlaceholder": "e.g. Code.org"
       },
       "languages": {
         "title": "Languages",
@@ -136,9 +154,20 @@
     },
     "review": {
       "language": "Output language",
-      "languageEn": "English",
-      "languageDe": "German",
-      "incomplete": "Add your name, at least one role or education entry, and some skills to build."
+      "incomplete": "Add your name, at least one role or education entry, and some skills to build.",
+      "fixIssues": "Fix {{count}} issue to build.",
+      "fixIssues_other": "Fix {{count}} issues to build.",
+      "cjkHint": "PDF and live preview can't render Chinese, Japanese, or Korean yet — your résumé still generates and exports to DOCX. CJK PDF support is coming."
+    },
+    "monthYear": {
+      "month": "Month",
+      "year": "Year"
+    },
+    "validation": {
+      "url": "Enter a valid URL (https://…).",
+      "year": "Enter a 4-digit year.",
+      "experienceIdentity": "Add a job title or company.",
+      "educationIdentity": "Add a degree or institution."
     },
     "output": {
       "tailor": "Tailor to a job",
@@ -168,7 +197,8 @@
         "cli": "CLI · uses your existing login, no API key."
       }
     },
-    "noModelSelected": "No AI model selected — choose one to use AI features."
+    "noModelSelected": "No AI model selected — choose one to use AI features.",
+    "modelUnavailable": "Your selected model isn't available — pick one from the list below."
   },
   "shortcuts": {
     "title": "Keyboard shortcuts",
@@ -458,7 +488,9 @@
       "photoRemove": "Remove photo",
       "photoErrorType": "Please choose a PNG, JPEG, WebP, or GIF image.",
       "photoErrorSize": "That image is too large. Choose one under 10 MB.",
-      "photoErrorDecode": "That image couldn't be read. Try a different file."
+      "photoErrorDecode": "That image couldn't be read. Try a different file.",
+      "emailInvalid": "Enter a valid email address.",
+      "urlInvalid": "Enter a valid URL (https://…)."
     },
     "contactConflict": {
       "title": "Update your contact details?",
@@ -758,6 +790,7 @@
     "regenerate": "Regenerate",
     "preview": "Preview",
     "edit": "Edit",
+    "save": "Save",
     "viewMode": "View mode",
     "placeholder": "Generated output will appear here…",
     "pdfPreview": {
@@ -1104,7 +1137,7 @@
       "aiModel": "AI Model",
       "database": "Database",
       "vectorDb": "Vector DB",
-      "workers": "Workers",
+      "activity": "Activity",
       "ready": "Ready",
       "checking": "Checking…",
       "notAvailable": "Not available",
@@ -1328,7 +1361,13 @@
   },
   "status": {
     "ready": "Ready",
-    "ollamaOffline": "Ollama offline"
+    "ollamaOffline": "Ollama offline",
+    "activity": "Activity",
+    "idle": "Idle",
+    "activityIdle": "No background activity.",
+    "running": "running",
+    "queued": "queued",
+    "viewAll": "View all"
   },
   "command": {
     "placeholder": "Search, ask AI, run a command…",
@@ -1879,6 +1918,10 @@
       "generate": {
         "title": "AI Generate",
         "desc": "Generate tailored resumes and cover letters in seconds, optimized for any job description."
+      },
+      "build": {
+        "title": "Build a résumé",
+        "desc": "No résumé yet? Answer a few guided questions and AI drafts one from scratch — in any of 11 languages."
       },
       "jobs": {
         "title": "Jobs",

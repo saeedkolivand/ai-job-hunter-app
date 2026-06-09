@@ -1,5 +1,6 @@
 import {
   Briefcase,
+  FilePlus2,
   FileText,
   Gauge,
   LayoutDashboard,
@@ -47,6 +48,12 @@ const TOUR_ITEMS: TourItem[] = [
     icon: Wand2,
     titleKey: 'onboarding.tour.generate.title',
     descKey: 'onboarding.tour.generate.desc',
+  },
+  {
+    tourId: 'build',
+    icon: FilePlus2,
+    titleKey: 'onboarding.tour.build.title',
+    descKey: 'onboarding.tour.build.desc',
   },
   {
     tourId: 'documents',

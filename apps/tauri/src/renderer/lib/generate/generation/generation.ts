@@ -41,6 +41,7 @@ import { detectLanguages } from '@ajh/shared/language-detection';
 import { usePreferencesStore } from '@/store/preferences-store';
 
 import { getClient } from '../../app-client';
+import { safeLocale } from '../locales';
 import { createThinkSplitter } from '../think-split';
 
 type ModelTier = 'large' | 'medium' | 'small';
@@ -58,13 +59,6 @@ export type { GenerationMeta, GenerationMode };
 export { MODES } from '@ajh/prompts/generate';
 
 // ─── LLM helpers ─────────────────────────────────────────────────────────────
-
-const VALID_LOCALES = ['en', 'de', 'fr', 'es', 'it', 'tr', 'pt', 'ru', 'zh', 'ja', 'ko'] as const;
-type SupportedLocale = (typeof VALID_LOCALES)[number];
-
-function safeLocale(lng: string): SupportedLocale {
-  return VALID_LOCALES.includes(lng as SupportedLocale) ? (lng as SupportedLocale) : 'en';
-}
 
 async function streamGenerate(
   model: string,

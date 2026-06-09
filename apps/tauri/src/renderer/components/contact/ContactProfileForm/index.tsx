@@ -1,5 +1,8 @@
 import { Camera, Plus, Trash2, UserRound } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { Controller, useFieldArray, useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
 
 import type { ContactProfile } from '@ajh/shared';
 import { Button, Input, LocationInput } from '@ajh/ui';
@@ -12,17 +15,78 @@ import { useContactProfile, useSaveContactProfile } from '@/services';
 const FIELD_CLASS = 'flex flex-col gap-1.5';
 const LABEL_CLASS = 'text-xs font-medium text-foreground/70';
 
-/** A locally-keyed extra-link row, so React keeps input focus across edits. */
-interface LinkRow {
-  id: number;
-  label: string;
-  url: string;
+const isBlank = (v: string | undefined): boolean => !v || !v.trim();
+
+/** Accepts http(s) URLs only; non-pedantic. Blank passes. */
+function isValidUrl(value: string): boolean {
+  if (isBlank(value)) return true;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/** A blank string or a valid http(s) URL. Messages are i18n keys. */
+const urlField = z.string().refine(isValidUrl, { message: 'settings.contactProfile.urlInvalid' });
+
+/**
+ * Light, NON-blocking schema for the contact form. The form auto-saves on blur
+ * (no submit), so these refinements only surface inline hints — they never gate
+ * persistence. Every field is a plain string; empty strings are the "unset"
+ * value and are treated as blank.
+ */
+const contactSchema = z.object({
+  fullName: z.string(),
+  email: z.string().refine((v) => isBlank(v) || z.string().email().safeParse(v.trim()).success, {
+    message: 'settings.contactProfile.emailInvalid',
+  }),
+  phone: z.string(),
+  location: z.string(),
+  linkedin: urlField,
+  github: urlField,
+  website: urlField,
+  extraLinks: z.array(z.object({ label: z.string(), url: urlField })),
+});
+
+type ContactFormValues = z.infer<typeof contactSchema>;
+
+const EMPTY_VALUES: ContactFormValues = {
+  fullName: '',
+  email: '',
+  phone: '',
+  location: '',
+  linkedin: '',
+  github: '',
+  website: '',
+  extraLinks: [],
+};
+
+/** Map a stored profile into the flat form value shape. */
+function toFormValues(profile: ContactProfile): ContactFormValues {
+  return {
+    fullName: profile.fullName ?? '',
+    email: profile.email ?? '',
+    phone: profile.phone ?? '',
+    location: profile.location?.default ?? '',
+    linkedin: profile.linkedin ?? '',
+    github: profile.github ?? '',
+    website: profile.website ?? '',
+    extraLinks: (profile.extraLinks ?? []).map((l) => ({ label: l.label, url: l.url })),
+  };
 }
 
 /**
  * The editable contact-profile form — the single source of truth for the document
  * header contact line (name fields → clickable links). Shared between the Settings
  * tab and the first-run pre-generation prompt, so both edit the exact same fields.
+ *
+ * Uses its OWN isolated react-hook-form instance (never the surrounding builder's
+ * `FormProvider`): it is rendered inside the Résumé Builder's form in StepContact,
+ * yet it persists to the contact profile — a separate store from the builder form —
+ * so it must not share that context. The saved profile is the source of truth, so
+ * `reset()`-on-load is correct here (unlike the builder's draft-preserving form).
  *
  * "Other links" are the free-form extras beyond the named platforms (Dribbble,
  * Behance, a portfolio); they are autofilled from an imported résumé and editable
@@ -38,72 +102,81 @@ export function ContactProfileForm() {
   const { data: profile } = useContactProfile();
   const { mutate: save } = useSaveContactProfile();
 
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [location, setLocation] = useState('');
-  const [linkedin, setLinkedin] = useState('');
-  const [github, setGithub] = useState('');
-  const [website, setWebsite] = useState('');
-  const [extraLinks, setExtraLinks] = useState<LinkRow[]>([]);
+  const {
+    control,
+    reset,
+    getValues,
+    formState: { errors },
+  } = useForm<ContactFormValues>({
+    defaultValues: EMPTY_VALUES,
+    resolver: zodResolver(contactSchema),
+    // Auto-save form: validate on blur for inline hints, never to gate persist.
+    mode: 'onBlur',
+  });
+
+  const { fields, append, remove } = useFieldArray({ control, name: 'extraLinks' });
+
   // The candidate photo as a bounded `data:` URL (used by the photo templates).
+  // Not an RHF field — it isn't a text input and persists immediately on its own.
   const [photo, setPhoto] = useState('');
   const [photoError, setPhotoError] = useState<string | null>(null);
-  const rowId = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Hydrate the form once the stored profile loads (or changes).
+  // Hydrate the form when the stored profile's IDENTITY changes. `useContactProfile`
+  // re-emits a fresh object reference on background/window-focus refetches even when
+  // the data is identical — resetting on every emit would clobber unsaved in-progress
+  // edits. Track the last-applied signature and reset only when the content differs.
+  const lastAppliedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!profile) return;
-    setFullName(profile.fullName ?? '');
-    setEmail(profile.email ?? '');
-    setPhone(profile.phone ?? '');
-    setLocation(profile.location?.default ?? '');
-    setLinkedin(profile.linkedin ?? '');
-    setGithub(profile.github ?? '');
-    setWebsite(profile.website ?? '');
+    const signature = JSON.stringify(profile);
+    if (lastAppliedRef.current === signature) return;
+    lastAppliedRef.current = signature;
+    reset(toFormValues(profile));
     setPhoto(profile.photo ?? '');
-    setExtraLinks(
-      (profile.extraLinks ?? []).map((l) => ({ id: rowId.current++, label: l.label, url: l.url }))
-    );
-  }, [profile]);
+  }, [profile, reset]);
 
-  // Build the whole profile from current field state. Extra links keep only rows
-  // with a URL (an empty draft row is dropped) and are trimmed.
-  const buildProfile = (rows: LinkRow[]): ContactProfile => {
+  // Build the whole profile from the current form values. Extra links keep only
+  // rows with a URL (an empty draft row is dropped) and are trimmed. `photo` is
+  // read from local state. Callers may override individual keys for async/just-
+  // mutated values that RHF hasn't flushed yet — `extraLinks` is honored here
+  // (it's the field array, not a plain key) so a removal persists the next set.
+  const buildProfile = (
+    overrides: Partial<ContactProfile> & { extraLinks?: { label: string; url: string }[] } = {}
+  ): ContactProfile => {
+    const v = getValues();
     const clean = (s: string) => s.trim() || undefined;
-    const extra = rows
+    const { extraLinks: extraOverride, ...rest } = overrides;
+    const source = extraOverride ?? v.extraLinks;
+    const extra = source
       .map((l) => ({ label: l.label.trim(), url: l.url.trim() }))
       .filter((l) => l.url !== '');
     return {
-      fullName: clean(fullName),
-      email: clean(email),
-      phone: clean(phone),
+      fullName: clean(v.fullName),
+      email: clean(v.email),
+      phone: clean(v.phone),
       // One location for every document language — no per-language overrides.
-      location: location.trim() ? { default: location.trim() } : undefined,
-      linkedin: clean(linkedin),
-      github: clean(github),
-      website: clean(website),
+      location: v.location.trim() ? { default: v.location.trim() } : undefined,
+      linkedin: clean(v.linkedin),
+      github: clean(v.github),
+      website: clean(v.website),
       extraLinks: extra.length ? extra : undefined,
       photo: clean(photo),
+      ...rest,
     };
   };
 
   // Persist on blur (named fields + extra-link edits).
-  const persist = () => save(buildProfile(extraLinks));
+  const persist = () => save(buildProfile());
 
   // Location commits on select/clear (LocationInput has no blur), so persist
-  // immediately with the next value rather than the stale closure one.
+  // immediately with the next value rather than the stale form one.
   const persistLocation = (next: string) =>
-    save({
-      ...buildProfile(extraLinks),
-      location: next.trim() ? { default: next.trim() } : undefined,
-    });
+    save(buildProfile({ location: next.trim() ? { default: next.trim() } : undefined }));
 
   // Photo set/remove persist immediately with the next value (state is async),
   // so the data URL doesn't lag a render behind the saved profile.
-  const persistPhoto = (next: string) =>
-    save({ ...buildProfile(extraLinks), photo: next.trim() || undefined });
+  const persistPhoto = (next: string) => save(buildProfile({ photo: next.trim() || undefined }));
 
   const onPickPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -134,17 +207,16 @@ export function ContactProfileForm() {
     persistPhoto('');
   };
 
-  const updateLink = (id: number, patch: Partial<LinkRow>) =>
-    setExtraLinks((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  // Add/remove persist immediately (mirror the prior behavior).
+  const addLink = () => append({ label: '', url: '' });
 
-  const addLink = () =>
-    setExtraLinks((prev) => [...prev, { id: rowId.current++, label: '', url: '' }]);
-
-  // Add/remove persist immediately with the next array (state is async).
-  const removeLink = (id: number) => {
-    const next = extraLinks.filter((l) => l.id !== id);
-    setExtraLinks(next);
-    save(buildProfile(next));
+  // RHF flushes the field-array removal AFTER this tick, so `getValues` here
+  // still includes the removed row. Compute the next set up front and pass it as
+  // an override so `buildProfile` persists the correct final list, not the stale one.
+  const removeLink = (index: number) => {
+    const next = getValues('extraLinks').filter((_, i) => i !== index);
+    remove(index);
+    save(buildProfile({ extraLinks: next }));
   };
 
   return (
@@ -199,11 +271,20 @@ export function ContactProfileForm() {
           <label className={LABEL_CLASS} htmlFor="cp-name">
             {t('settings.contactProfile.fullName')}
           </label>
-          <Input
-            id="cp-name"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            onBlur={persist}
+          <Controller
+            control={control}
+            name="fullName"
+            render={({ field }) => (
+              <Input
+                id="cp-name"
+                value={field.value}
+                onChange={field.onChange}
+                onBlur={() => {
+                  field.onBlur();
+                  persist();
+                }}
+              />
+            )}
           />
         </div>
 
@@ -211,38 +292,66 @@ export function ContactProfileForm() {
           <label className={LABEL_CLASS} htmlFor="cp-email">
             {t('settings.contactProfile.email')}
           </label>
-          <Input
-            id="cp-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onBlur={persist}
-            placeholder={t('settings.contactProfile.emailPlaceholder')}
+          <Controller
+            control={control}
+            name="email"
+            render={({ field }) => (
+              <Input
+                id="cp-email"
+                type="email"
+                value={field.value}
+                onChange={field.onChange}
+                onBlur={() => {
+                  field.onBlur();
+                  persist();
+                }}
+                placeholder={t('settings.contactProfile.emailPlaceholder')}
+                aria-invalid={errors.email ? true : undefined}
+              />
+            )}
           />
+          {errors.email && (
+            <p className="text-xs text-amber-400/80">{t(errors.email.message ?? '')}</p>
+          )}
         </div>
 
         <div className={FIELD_CLASS}>
           <label className={LABEL_CLASS} htmlFor="cp-phone">
             {t('settings.contactProfile.phone')}
           </label>
-          <Input
-            id="cp-phone"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            onBlur={persist}
+          <Controller
+            control={control}
+            name="phone"
+            render={({ field }) => (
+              <Input
+                id="cp-phone"
+                value={field.value}
+                onChange={field.onChange}
+                onBlur={() => {
+                  field.onBlur();
+                  persist();
+                }}
+              />
+            )}
           />
         </div>
 
         <div className={FIELD_CLASS}>
           <span className={LABEL_CLASS}>{t('settings.contactProfile.location')}</span>
-          <LocationInput
-            value={location}
-            onChange={(v) => {
-              setLocation(v);
-              persistLocation(v);
-            }}
-            placeholder={t('settings.contactProfile.locationPlaceholder')}
-            onFetchSuggestions={(q) => api.geocode.suggest(q)}
+          <Controller
+            control={control}
+            name="location"
+            render={({ field }) => (
+              <LocationInput
+                value={field.value}
+                onChange={(v) => {
+                  field.onChange(v);
+                  persistLocation(v);
+                }}
+                placeholder={t('settings.contactProfile.locationPlaceholder')}
+                onFetchSuggestions={(q) => api.geocode.suggest(q)}
+              />
+            )}
           />
         </div>
 
@@ -250,39 +359,78 @@ export function ContactProfileForm() {
           <label className={LABEL_CLASS} htmlFor="cp-linkedin">
             {t('settings.contactProfile.linkedin')}
           </label>
-          <Input
-            id="cp-linkedin"
-            value={linkedin}
-            onChange={(e) => setLinkedin(e.target.value)}
-            onBlur={persist}
-            placeholder={t('settings.contactProfile.linkedinPlaceholder')}
+          <Controller
+            control={control}
+            name="linkedin"
+            render={({ field }) => (
+              <Input
+                id="cp-linkedin"
+                value={field.value}
+                onChange={field.onChange}
+                onBlur={() => {
+                  field.onBlur();
+                  persist();
+                }}
+                placeholder={t('settings.contactProfile.linkedinPlaceholder')}
+                aria-invalid={errors.linkedin ? true : undefined}
+              />
+            )}
           />
+          {errors.linkedin && (
+            <p className="text-xs text-amber-400/80">{t(errors.linkedin.message ?? '')}</p>
+          )}
         </div>
 
         <div className={FIELD_CLASS}>
           <label className={LABEL_CLASS} htmlFor="cp-github">
             {t('settings.contactProfile.github')}
           </label>
-          <Input
-            id="cp-github"
-            value={github}
-            onChange={(e) => setGithub(e.target.value)}
-            onBlur={persist}
-            placeholder={t('settings.contactProfile.githubPlaceholder')}
+          <Controller
+            control={control}
+            name="github"
+            render={({ field }) => (
+              <Input
+                id="cp-github"
+                value={field.value}
+                onChange={field.onChange}
+                onBlur={() => {
+                  field.onBlur();
+                  persist();
+                }}
+                placeholder={t('settings.contactProfile.githubPlaceholder')}
+                aria-invalid={errors.github ? true : undefined}
+              />
+            )}
           />
+          {errors.github && (
+            <p className="text-xs text-amber-400/80">{t(errors.github.message ?? '')}</p>
+          )}
         </div>
 
         <div className={FIELD_CLASS}>
           <label className={LABEL_CLASS} htmlFor="cp-website">
             {t('settings.contactProfile.website')}
           </label>
-          <Input
-            id="cp-website"
-            value={website}
-            onChange={(e) => setWebsite(e.target.value)}
-            onBlur={persist}
-            placeholder={t('settings.contactProfile.websitePlaceholder')}
+          <Controller
+            control={control}
+            name="website"
+            render={({ field }) => (
+              <Input
+                id="cp-website"
+                value={field.value}
+                onChange={field.onChange}
+                onBlur={() => {
+                  field.onBlur();
+                  persist();
+                }}
+                placeholder={t('settings.contactProfile.websitePlaceholder')}
+                aria-invalid={errors.website ? true : undefined}
+              />
+            )}
           />
+          {errors.website && (
+            <p className="text-xs text-amber-400/80">{t(errors.website.message ?? '')}</p>
+          )}
         </div>
       </div>
 
@@ -290,29 +438,48 @@ export function ContactProfileForm() {
         <span className={LABEL_CLASS}>{t('settings.contactProfile.extraLinks')}</span>
         <p className="text-xs text-foreground/55">{t('settings.contactProfile.extraLinksHint')}</p>
 
-        {extraLinks.map((row) => (
+        {fields.map((row, index) => (
           <div key={row.id} className="flex items-start gap-2">
-            <Input
-              aria-label={t('settings.contactProfile.linkLabel')}
-              value={row.label}
-              onChange={(e) => updateLink(row.id, { label: e.target.value })}
-              onBlur={persist}
-              placeholder={t('settings.contactProfile.linkLabelPlaceholder')}
-              className="w-1/3"
+            <Controller
+              control={control}
+              name={`extraLinks.${index}.label`}
+              render={({ field }) => (
+                <Input
+                  aria-label={t('settings.contactProfile.linkLabel')}
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={() => {
+                    field.onBlur();
+                    persist();
+                  }}
+                  placeholder={t('settings.contactProfile.linkLabelPlaceholder')}
+                  className="w-1/3"
+                />
+              )}
             />
-            <Input
-              aria-label={t('settings.contactProfile.linkUrl')}
-              value={row.url}
-              onChange={(e) => updateLink(row.id, { url: e.target.value })}
-              onBlur={persist}
-              placeholder={t('settings.contactProfile.linkUrlPlaceholder')}
-              className="flex-1"
+            <Controller
+              control={control}
+              name={`extraLinks.${index}.url`}
+              render={({ field }) => (
+                <Input
+                  aria-label={t('settings.contactProfile.linkUrl')}
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={() => {
+                    field.onBlur();
+                    persist();
+                  }}
+                  placeholder={t('settings.contactProfile.linkUrlPlaceholder')}
+                  className="flex-1"
+                  aria-invalid={errors.extraLinks?.[index]?.url ? true : undefined}
+                />
+              )}
             />
             <Button
               variant="ghost"
               size="sm"
               aria-label={t('settings.contactProfile.removeLink')}
-              onClick={() => removeLink(row.id)}
+              onClick={() => removeLink(index)}
             >
               <Trash2 className="size-4" />
             </Button>

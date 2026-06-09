@@ -1,6 +1,6 @@
 import { Check, Copy, Download, FileText, LayoutTemplate, Loader2, RotateCcw } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button, cn } from '@ajh/ui';
 
@@ -61,6 +61,53 @@ export function OutputPanelDone({
   const { t } = useTranslation();
   const [exportOpen, setExportOpen] = useState(false);
 
+  // ── Committed preview text (decoupled from the live edited string) ────────────
+  // The PdfPreview renders the COMMITTED text, which only changes on discrete
+  // events — initial generation, regeneration, or an explicit Save — never on raw
+  // keystrokes. Typing still updates the canonical string (resumeOut/coverOut) so
+  // copy/export stay live and correct, but the heavy Typst recompile is deferred.
+  const [committedResume, setCommittedResume] = useState(resumeOut);
+  const [committedCover, setCommittedCover] = useState(coverOut);
+  // The last value the editor emitted per doc — lets us tell a generation/regenerate
+  // (external change) apart from a local edit, so the former auto-refreshes the
+  // preview and the latter does not.
+  const lastEditRef = useRef<{ resume: string | null; cover: string | null }>({
+    resume: null,
+    cover: null,
+  });
+
+  // Auto-refresh the committed text when resumeOut/coverOut change for a reason
+  // OTHER than the local editor (generation, regeneration). If the incoming text
+  // matches what the editor last emitted for that doc, it's a local edit → leave
+  // the committed text alone (preview waits for Save).
+  useEffect(() => {
+    if (resumeOut !== lastEditRef.current.resume) {
+      setCommittedResume(resumeOut);
+      lastEditRef.current.resume = null;
+    }
+  }, [resumeOut]);
+  useEffect(() => {
+    if (coverOut !== lastEditRef.current.cover) {
+      setCommittedCover(coverOut);
+      lastEditRef.current.cover = null;
+    }
+  }, [coverOut]);
+
+  const commit = useCallback((out: 'resume' | 'cover', text: string) => {
+    if (out === 'resume') setCommittedResume(text);
+    else setCommittedCover(text);
+  }, []);
+
+  // Record the emitted value as a local edit, then propagate it to the canonical
+  // string (which keeps copy/export live without recompiling the preview).
+  const handleOutputChange = useCallback(
+    (value: string) => {
+      lastEditRef.current[activeOut] = value;
+      onOutputChange(value);
+    },
+    [activeOut, onOutputChange]
+  );
+
   const docType = activeOut === 'resume' ? 'resume' : 'cover-letter';
   // The cover letter's preview layout follows the resolved market (job country →
   // language → override), exactly like the real export; résumé keeps the locale.
@@ -80,6 +127,8 @@ export function OutputPanelDone({
   }, [activeOut, resumeOut, coverOut, onActiveOutChange]);
 
   const currentOutput = activeOut === 'resume' ? resumeOut : coverOut;
+  // Committed text for the active doc — what PdfPreview actually renders.
+  const committed = activeOut === 'resume' ? committedResume : committedCover;
   const currentMeta = meta;
 
   return (
@@ -178,14 +227,16 @@ export function OutputPanelDone({
       <div className="flex flex-1 flex-col overflow-hidden px-6 py-4">
         <EditableOutput
           value={currentOutput}
-          onChange={onOutputChange}
+          onChange={handleOutputChange}
+          onSave={() => commit(activeOut, currentOutput)}
+          canSave={currentOutput !== committed}
           disabled={isGenerating}
           docType={docType}
           meta={meta}
           className="flex h-full w-full flex-col overflow-hidden"
           previewSlot={
             <PdfPreview
-              text={currentOutput}
+              text={committed}
               docType={docType}
               meta={meta}
               templateId={templateId}

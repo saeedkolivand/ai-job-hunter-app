@@ -29,8 +29,7 @@ pub async fn system_health(app: AppHandle) -> Value {
         "scraper": { "mode": scraper_health.mode, "ready": scraper_health.ready, "scrapers": scraper_health.scrapers },
         "ai": { "ready": ai_ready, "model": ai_model },
         "cliAgents": Value::Object(cli_agents),
-        "data": { "ready": true, "sqlite": true, "vector": true },
-        "workers": { "active": 0, "idle": 1, "max": 1 }
+        "data": { "ready": true, "sqlite": true, "vector": true }
     })
 }
 

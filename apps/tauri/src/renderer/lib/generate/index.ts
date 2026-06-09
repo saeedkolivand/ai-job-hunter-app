@@ -12,6 +12,13 @@ export {
   rewriteSelection,
   synthesizeResume,
 } from './generation';
+export {
+  OUTPUT_LANGUAGES,
+  type OutputLanguage,
+  safeLocale,
+  type SupportedLocale,
+  VALID_LOCALES,
+} from './locales';
 export { isTwoColumnTemplate, TEMPLATE_IDS, type TemplateId, TEMPLATES } from './templates';
 export type {
   InterviewAnswers,

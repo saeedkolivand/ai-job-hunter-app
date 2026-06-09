@@ -109,9 +109,8 @@ pub async fn documents_render_preview_images(
     // Same empty-text guard + normalization passes as export.
     validate_and_normalize(&mut request)?;
 
-    let pages = generate_preview_svg(&request).map_err(|e| {
-        AppError::Message(format!("Preview rendering failed: {e}"))
-    })?;
+    let pages = generate_preview_svg(&request)
+        .map_err(|e| AppError::Message(format!("Preview rendering failed: {e}")))?;
 
     // The engine guards against a zero-page document, but assert at the command
     // boundary too so a future regression can't return an empty preview.

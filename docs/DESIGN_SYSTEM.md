@@ -331,6 +331,19 @@ toast({ title: 'Error exporting', variant: 'error' });
 />
 ```
 
+#### `HoverPopover`
+
+Portal-positioned hover/focus popover with tooltip semantics. Used for inline status indicators (e.g. job queue depth in the StatusBar).
+
+```typescript
+<HoverPopover
+  trigger={<ActivityIcon />}
+  content={<div>3 jobs queued</div>}
+/>
+```
+
+Popover auto-dismisses on `Escape`, loses focus, or mouse-out. Portal-rendered to avoid stacking-context clipping in scrollable containers. `role="tooltip"` for accessibility.
+
 ---
 
 ### Content & Data Display

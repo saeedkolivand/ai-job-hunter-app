@@ -13,28 +13,14 @@ import { StatusDot } from '@/features/monitoring/components/StatusDot';
 import { useActivityFeed } from '@/features/monitoring/hooks/useActivityFeed';
 import { useJobMetrics } from '@/features/monitoring/hooks/useJobMetrics';
 import type { JobRecord } from '@/features/monitoring/types';
+import { useKindLabelMap } from '@/hooks/use-kind-label-map';
 import { useTranslation } from '@/lib/i18n';
 import { useAppVersion, useJobQueue, useSystemHealth } from '@/services';
 
 export function MonitoringPage() {
   const { t } = useTranslation();
 
-  const KIND_LABEL_MAP = useMemo(
-    () => ({
-      'ai.generate': t('monitoring.jobKinds.aiGenerate'),
-      'ai.embed': t('monitoring.jobKinds.aiEmbed'),
-      'document.import': t('monitoring.jobKinds.documentImport'),
-      'document.ocr': t('monitoring.jobKinds.documentOcr'),
-      'document.chunk': t('monitoring.jobKinds.documentChunk'),
-      'document.index': t('monitoring.jobKinds.documentIndex'),
-      'scrape.board': t('monitoring.jobKinds.scrapeBoard'),
-      'scrape.url': t('monitoring.jobKinds.scrapeUrl'),
-      'persist.job': t('monitoring.jobKinds.persistJob'),
-      'match.resume': t('monitoring.jobKinds.matchResume'),
-      'autopilot.run': t('monitoring.jobKinds.autopilotRun'),
-    }),
-    [t]
-  );
+  const KIND_LABEL_MAP = useKindLabelMap();
 
   const { data: healthData } = useSystemHealth();
   const health = (healthData ?? {}) as {

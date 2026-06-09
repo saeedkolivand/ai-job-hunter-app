@@ -1,16 +1,19 @@
+import { Controller, useFormContext } from 'react-hook-form';
+
 import { TextArea } from '@ajh/ui';
 
 import { useTranslation } from '@/lib/i18n';
 
-import type { BuilderStepProps } from '../../../types';
+import type { BuilderFormValues } from '../../../types';
 import { WizardField } from '../../WizardField';
 
 /**
  * Optional professional summary. If left blank, the synthesis derives one
  * strictly from the other answers; if filled, its substance is kept verbatim.
  */
-export function StepSummary({ answers, update }: BuilderStepProps) {
+export function StepSummary() {
   const { t } = useTranslation();
+  const { control } = useFormContext<BuilderFormValues>();
 
   return (
     <WizardField
@@ -18,12 +21,20 @@ export function StepSummary({ answers, update }: BuilderStepProps) {
       hint={t('build.summary.hint')}
       htmlFor="build-summary"
     >
-      <TextArea
-        id="build-summary"
-        value={answers.summary ?? ''}
-        onChange={(e) => update({ summary: e.target.value })}
-        placeholder={t('build.summary.placeholder')}
-        rows={5}
+      <Controller
+        control={control}
+        name="summary"
+        render={({ field }) => (
+          <TextArea
+            id="build-summary"
+            variant="glass"
+            value={field.value ?? ''}
+            onChange={field.onChange}
+            onBlur={field.onBlur}
+            placeholder={t('build.summary.placeholder')}
+            rows={5}
+          />
+        )}
       />
     </WizardField>
   );

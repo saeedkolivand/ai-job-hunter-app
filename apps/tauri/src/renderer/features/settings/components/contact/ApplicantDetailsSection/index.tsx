@@ -58,6 +58,7 @@ export function ApplicantDetailsSection() {
           <label key={key} className="block">
             <span className="mb-1 block text-xs font-medium text-foreground/70">{t(labelKey)}</span>
             <Input
+              className="w-full"
               value={applicant?.[key] ?? ''}
               onChange={(e) => update(key, e.target.value)}
               placeholder={t(placeholderKey)}
