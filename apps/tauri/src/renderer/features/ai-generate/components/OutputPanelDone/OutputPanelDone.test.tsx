@@ -3,6 +3,12 @@ import { fireEvent, render, screen } from '@testing-library/react';
 
 import { OutputPanelDone } from './index';
 
+// Stub the real-PDF preview (#24) — it renders the export via IPC, out of scope
+// for this panel's preview/edit wiring test (covered in PdfPreview's own suite).
+vi.mock('../PdfPreview', () => ({
+  PdfPreview: () => <div data-testid="pdf-preview">PDF</div>,
+}));
+
 const RAW = 'Led **payments** migration at scale.';
 
 function renderPanel(overrides: Partial<React.ComponentProps<typeof OutputPanelDone>> = {}) {
@@ -17,6 +23,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof OutputPanelD
       meta={null}
       mode="ats"
       templateId="classic"
+      atsMode={false}
       onActiveOutChange={vi.fn()}
       onCopy={onCopy}
       onExport={onExport}
@@ -30,10 +37,10 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof OutputPanelD
 }
 
 describe('OutputPanelDone — preview/edit', () => {
-  it('renders prettified markdown by default, hiding the raw ** emphasis markers', () => {
+  it('shows the real-PDF preview by default (#24), not markdown or a textarea', () => {
     renderPanel();
-    // The **keyword** marker renders as bold, not as literal asterisks.
-    expect(screen.getByText('payments').tagName).toBe('STRONG');
+    // The default Preview tab renders the real-PDF view, not the markdown fallback.
+    expect(screen.getByTestId('pdf-preview')).toBeInTheDocument();
     expect(screen.queryByText(/\*\*payments\*\*/)).toBeNull();
     // No editable textarea while previewing.
     expect(screen.queryByRole('textbox')).toBeNull();

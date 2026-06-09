@@ -25,6 +25,13 @@ interface EditableOutputProps {
   className?: string;
   textAreaClassName?: string;
   placeholder?: string;
+  /**
+   * Optional custom Preview surface (#24). When provided, the Preview tab renders
+   * this instead of the prettified-markdown view — e.g. the real-PDF `PdfPreview`.
+   * The caller owns its lifecycle (it reads the same canonical text). Edit mode is
+   * unchanged. Consumers that omit it keep the markdown preview.
+   */
+  previewSlot?: React.ReactNode;
 }
 
 /** The frozen selection range + text snapshot captured when a rewrite starts. */
@@ -63,6 +70,7 @@ export function EditableOutput({
   className,
   textAreaClassName,
   placeholder,
+  previewSlot,
 }: EditableOutputProps) {
   const { t } = useTranslation();
   const selectedModel = useSelectedModel();
@@ -205,6 +213,9 @@ export function EditableOutput({
             )}
           </AnimatePresence>
         </div>
+      ) : previewSlot ? (
+        // #24 — caller-supplied Preview (e.g. the real-PDF view) replaces markdown.
+        <div className="h-full w-full overflow-hidden rounded-lg">{previewSlot}</div>
       ) : (
         <div className="h-full w-full overflow-y-auto rounded-lg">
           {value ? (
