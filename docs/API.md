@@ -25,7 +25,7 @@ All renderer ↔ Rust communication is defined as typed contracts in `packages/s
 | [aiGenerations](#aigenerations)   | Generated document metadata                |
 | [autopilot](#autopilot)           | Scheduled job-discovery agent              |
 | [boards](#boards)                 | Job board management                       |
-| [conversations](#conversations)   | Chat history                               |
+| [cliAgents](#cliagents)           | CLI agent install management               |
 | [credentials](#credentials)       | Encrypted credential storage               |
 | [dialog](#dialog)                 | Native file dialogs                        |
 | [documents](#documents)           | Document import/export                     |
@@ -275,25 +275,46 @@ interface BoardConfig {
 
 ---
 
-## `conversations`
+## `cliAgents`
 
-Chat history persistence.
+CLI agent install management — detect installed coding agents (Claude Code, etc.) on the host and one-click install via npm.
 
-#### `conversations.list(limit?: number): Promise<ConversationRecord[]>`
+#### `cliAgents.status(): Promise<CliAgentsStatus>`
 
-#### `conversations.insert(record: ConversationInsert): Promise<string>`
+Returns cached install status for every CLI agent (Claude Code, Gemini CLI, etc.) plus npm availability. Probes for binaries on PATH and version.
 
-#### `conversations.clear(): Promise<void>`
+#### `cliAgents.redetect(): Promise<CliAgentsStatus>`
+
+Clears the detection cache and re-probes all agents (call after an install).
+
+#### `cliAgents.install(opts: { commandName: string; args: string[]; onOutput?: (line: string) => void; signal?: AbortSignal }): Promise<CliAgentInstallResult>`
+
+One-click install: spawns a shell capability-allowlisted command (fixed npm args). Implemented over the `@tauri-apps/plugin-shell` adapter; the caller cannot tell it isn't a plain IPC command. The capability allowlist is static and matches exactly 3 fixed-arg commands (see `apps/tauri/src-tauri/capabilities/default.json`).
 
 ```typescript
-interface ConversationRecord {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  model?: string;
-  createdAt: string;
+interface CliAgentStatus {
+  id: string; // provider id ('claude-code' | 'codex' | 'gemini-cli')
+  binary: string; // e.g. 'claude'
+  installed: boolean;
+  version: string | null;
+  package: string; // npm package name
+  docsUrl: string; // official setup docs
+  installCommandName: string; // shell capability command
+  installArgs: string[]; // exact args; must match capability allowlist
+}
+
+interface CliAgentsStatus {
+  agents: CliAgentStatus[];
+  npmAvailable: boolean; // gates one-click install
+}
+
+interface CliAgentInstallResult {
+  code: number | null; // process exit code (null if killed); 0 = success
+  success: boolean;
 }
 ```
+
+See: `packages/shared/src/ipc/contracts/cliAgents.ts` (contract), `apps/tauri/src-tauri/src/commands/cli_agents.rs` (read-only Rust commands).
 
 ---
 
@@ -643,7 +664,7 @@ Hybrid semantic + keyword search across all collections.
 ```typescript
 interface HybridSearchRequest {
   query: string;
-  collection: 'jobs' | 'resumes' | 'skills' | 'conversations';
+  collection: 'jobs' | 'resumes' | 'skills';
   topK: number; // 1–200
   semanticWeight?: number; // 0–1, default 0.7
   filters?: Record<string, unknown>;
