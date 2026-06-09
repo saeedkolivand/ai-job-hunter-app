@@ -20,6 +20,26 @@
     "support": "Hilfe & Support",
     "settings": "Einstellungen"
   },
+  "models": {
+    "tier": {
+      "large": "Groß",
+      "medium": "Mittel",
+      "small": "Klein"
+    },
+    "guidance": {
+      "task": {
+        "strong": "Stärkste Reasoning-Leistung — ideal für Analyse und nuancierte Umformulierungen.",
+        "balanced": "Ausgewogen — solide für die Generierung; Analyse ist brauchbar.",
+        "basic": "Leichtgewichtig — gut für schnelle Entwürfe; für tiefe Analyse ein größeres Modell wählen.",
+        "light": "Schnell & sparsam — super für Generierung und schnelle Durchläufe; tiefe Analyse kann Nuancen verfehlen."
+      },
+      "kind": {
+        "cloud": "Cloud · schnell, nutzt Ihren API-Schlüssel.",
+        "local": "Lokal · privat; Geschwindigkeit hängt von Ihrer Hardware ab.",
+        "cli": "CLI · nutzt Ihren bestehenden Login, kein API-Schlüssel."
+      }
+    }
+  },
   "shortcuts": {
     "title": "Tastenkürzel",
     "navigate": "Navigieren",
