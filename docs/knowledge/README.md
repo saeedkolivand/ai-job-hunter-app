@@ -1,6 +1,6 @@
 # Knowledge base (`docs/knowledge/`)
 
-Last updated: 2026-06-01
+Last updated: 2026-06-09
 
 A **thin, pointer-style** index for AI agents (and humans). It describes _shape and contracts_ and points at the **owning source symbol**; it deliberately does **not** copy drift-prone literals (scoring weights, template/board counts) — those live in code.
 
@@ -30,20 +30,22 @@ Read the minimum; **stop at ~90% confidence**.
 
 ## Decision records index
 
-| ADR                                                                          | Title                                                                       |
-| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| [ADR-001](decision-records/adr-001-rust-first-business-logic.md)             | Rust-first business logic                                                   |
-| [ADR-002](decision-records/adr-002-dual-pdf-docx-backends-golden-parity.md)  | Dual PDF + DOCX backends with golden-parity tests                           |
-| [ADR-003](decision-records/adr-003-centralized-platform-net-error-layers.md) | Centralized platform/net/error layers                                       |
-| [ADR-004](decision-records/adr-004-ports-and-adapters-frontend.md)           | Ports & adapters in the renderer                                            |
-| [ADR-005](decision-records/adr-005-universal-thinking-normalization.md)      | Universal thinking/reasoning normalization at the provider-adapter boundary |
-| [ADR-006](decision-records/adr-006-generation-session-store.md)              | Single app-wide generation-session store                                    |
-| [ADR-007](decision-records/adr-007-ai-generations-application-aggregate.md)  | `ai_generations` as the application aggregate with merge-upsert by job URL  |
-| [ADR-008](decision-records/adr-008-pdf-glyph-subsetting.md)                  | PDF glyph subsetting at export time via `parse_font`                        |
-| [ADR-009](decision-records/adr-009-resettable-reset-registry.md)             | Full factory reset via a `Resettable` registry                              |
-| [ADR-010](decision-records/adr-010-untrusted-input-fencing.md)               | Untrusted-input fencing for web-sourced company research                    |
-| [ADR-011](decision-records/adr-011-referral-helper-manual-only.md)           | Referral helper is manual-only; no LinkedIn profile scraping                |
-| [ADR-012](decision-records/adr-012-html-preview-approximate.md)              | AI-Generate live preview renders the real exported PDF                      |
+| ADR                                                                            | Title                                                                       |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| [ADR-001](decision-records/adr-001-rust-first-business-logic.md)               | Rust-first business logic                                                   |
+| [ADR-002](decision-records/adr-002-dual-pdf-docx-backends-golden-parity.md)    | Dual PDF + DOCX backends with golden-parity tests                           |
+| [ADR-003](decision-records/adr-003-centralized-platform-net-error-layers.md)   | Centralized platform/net/error layers                                       |
+| [ADR-004](decision-records/adr-004-ports-and-adapters-frontend.md)             | Ports & adapters in the renderer                                            |
+| [ADR-005](decision-records/adr-005-universal-thinking-normalization.md)        | Universal thinking/reasoning normalization at the provider-adapter boundary |
+| [ADR-006](decision-records/adr-006-generation-session-store.md)                | Single app-wide generation-session store                                    |
+| [ADR-007](decision-records/adr-007-ai-generations-application-aggregate.md)    | `ai_generations` as the application aggregate with merge-upsert by job URL  |
+| [ADR-008](decision-records/adr-008-pdf-glyph-subsetting.md)                    | PDF glyph subsetting at export time via `parse_font`                        |
+| [ADR-009](decision-records/adr-009-resettable-reset-registry.md)               | Full factory reset via a `Resettable` registry                              |
+| [ADR-010](decision-records/adr-010-untrusted-input-fencing.md)                 | Untrusted-input fencing for web-sourced company research                    |
+| [ADR-011](decision-records/adr-011-referral-helper-manual-only.md)             | Referral helper is manual-only; no LinkedIn profile scraping                |
+| [ADR-012](decision-records/adr-012-html-preview-approximate.md)                | AI-Generate live preview renders the real exported PDF                      |
+| [ADR-013](decision-records/adr-013-resume-builder-base-plus-handoff.md)        | Resume Builder: job-agnostic base + in-memory tailor handoff                |
+| [ADR-014](decision-records/adr-014-cli-agent-shell-plugin-static-allowlist.md) | In-app agent install via shell plugin with a static allowlist               |
 
 ## Canonical docs (do not duplicate — link)
 

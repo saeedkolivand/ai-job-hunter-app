@@ -92,7 +92,6 @@ The Tauri app is split into two processes:
 | `documents/`         | Document import, OCR dispatch, [SQLite][sqlite] storage                                                                                                     |
 | `jobs/`              | Job tracker state machine (queued → running → done/failed)                                                                                                  |
 | `credentials/`       | OS keychain — AI provider keys (`ai:*`) + `credentials_available` encryption-check; board login uses the separate `boards.*`/`linkedin.*` session-auth path |
-| `conversations/`     | Chat history persistence                                                                                                                                    |
 | `autopilot/`         | Job-discovery agent + step scheduler (finds → ranks → notifies; the user tailors & applies); `run_status` + crash reconciliation                            |
 | `tray/`              | System-tray module — dynamic "New jobs: N" + "Pause all autopilots" (L3 entrypoint)                                                                         |
 | `deeplink/`          | Deep-link guard — `ajh://autopilot/<id>` validated against strict allowlist; OS scheme registered via `tauri-plugin-deep-link`                              |
@@ -130,8 +129,8 @@ packages/shared/src/
 │   │   ├── aiGenerations.ts
 │   │   ├── autopilot.ts
 │   │   ├── boards.ts
+│   │   ├── cliAgents.ts
 │   │   ├── contactProfile.ts
-│   │   ├── conversations.ts
 │   │   ├── credentials.ts
 │   │   ├── data.ts
 │   │   ├── dialog.ts
@@ -346,14 +345,6 @@ erDiagram
         text createdAt
     }
 
-    conversations {
-        text id PK
-        text role
-        text content
-        text model
-        text createdAt
-    }
-
     job_preferences {
         text id PK
         text query
@@ -378,12 +369,11 @@ erDiagram
 
 ### LanceDB Collections
 
-| Collection      | Schema                                              | Purpose                |
-| --------------- | --------------------------------------------------- | ---------------------- |
-| `jobs`          | `{id, vector[1024], text, boardId, title, company}` | Semantic job search    |
-| `resumes`       | `{id, vector[1024], text, documentId, chunkIndex}`  | Resume similarity      |
-| `skills`        | `{id, vector[1024], text, category}`                | Skill taxonomy lookup  |
-| `conversations` | `{id, vector[1024], text, role, timestamp}`         | Conversation retrieval |
+| Collection | Schema                                              | Purpose               |
+| ---------- | --------------------------------------------------- | --------------------- |
+| `jobs`     | `{id, vector[1024], text, boardId, title, company}` | Semantic job search   |
+| `resumes`  | `{id, vector[1024], text, documentId, chunkIndex}`  | Resume similarity     |
+| `skills`   | `{id, vector[1024], text, category}`                | Skill taxonomy lookup |
 
 ---
 
@@ -419,7 +409,7 @@ Rather than XState, the app uses a micro state machine implementation (`lib/mach
 
 ### 8. Uniform Data Layer + Backup/Restore
 
-Every persistent store (documents, AI generations, job preferences, autopilots, conversations, interactions) is store-per-domain and implements a single `DataStore` trait (`data_store.rs`): `export() -> Value` and `import(&Value)` with REPLACE semantics. `commands/data.rs` assembles one versioned bundle (`{ version, exportedAt, stores }`) for backup and restores it on import. Secrets (OS-keychain credentials), ephemeral caches, and the transient job log are intentionally excluded. **Cloud sync is deferred** — there is no remote backend; this bundle and trait are the substrate a future sync feature would build on.
+Every persistent store (documents, AI generations, job preferences, autopilots, interactions) is store-per-domain and implements a single `DataStore` trait (`data_store.rs`): `export() -> Value` and `import(&Value)` with REPLACE semantics. `commands/data.rs` assembles one versioned bundle (`{ version, exportedAt, stores }`) for backup and restores it on import. Secrets (OS-keychain credentials), ephemeral caches, and the transient job log are intentionally excluded. **Cloud sync is deferred** — there is no remote backend; this bundle and trait are the substrate a future sync feature would build on.
 
 ### 9. Shared Platform Infrastructure
 
