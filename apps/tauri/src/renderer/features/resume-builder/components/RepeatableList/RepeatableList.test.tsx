@@ -49,7 +49,9 @@ describe('RepeatableList', () => {
     const user = userEvent.setup();
     const { onChange } = setup([{ value: 'a' }, { value: 'b' }]);
     const removeButtons = screen.getAllByRole('button', { name: 'Remove item' });
-    await user.click(removeButtons[1]!);
+    const second = removeButtons[1];
+    expect(second).toBeDefined();
+    if (second) await user.click(second);
     expect(onChange).toHaveBeenCalledWith([{ value: 'a' }]);
   });
 
