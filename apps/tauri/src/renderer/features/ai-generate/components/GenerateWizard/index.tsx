@@ -3,7 +3,12 @@ import { AnimatePresence, motion } from 'motion/react';
 
 import { Button, StepDots, transition } from '@ajh/ui';
 
-import { type GenerationMode, isTwoColumnTemplate, type TemplateId } from '@/lib/generate';
+import {
+  type EmphasisId,
+  type GenerationMode,
+  isTwoColumnTemplate,
+  type TemplateId,
+} from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 import { useSessionStore } from '@/store/session-store';
 
@@ -15,6 +20,7 @@ const TOTAL_STEPS = 3;
 
 interface GenerateWizardProps {
   mode: GenerationMode;
+  emphasis: EmphasisId[];
   target: 'resume' | 'cover' | 'both';
   templateId: TemplateId;
   atsMode: boolean;
@@ -22,6 +28,7 @@ interface GenerateWizardProps {
   researchCompany: boolean;
   isGenerating: boolean;
   onModeChange: (mode: GenerationMode) => void;
+  onEmphasisChange: (ids: EmphasisId[]) => void;
   onTargetChange: (t: 'resume' | 'cover' | 'both') => void;
   onTemplateChange: (id: TemplateId) => void;
   onAtsModeChange: (enabled: boolean) => void;
@@ -32,6 +39,7 @@ interface GenerateWizardProps {
 
 export function GenerateWizard({
   mode,
+  emphasis,
   target,
   templateId,
   atsMode,
@@ -39,6 +47,7 @@ export function GenerateWizard({
   researchCompany,
   isGenerating,
   onModeChange,
+  onEmphasisChange,
   onTargetChange,
   onTemplateChange,
   onAtsModeChange,
@@ -158,10 +167,12 @@ export function GenerateWizard({
             {step === 2 && (
               <StepFineTune
                 mode={mode}
+                emphasis={emphasis}
                 target={target}
                 locale={locale}
                 researchCompany={researchCompany}
                 onModeChange={onModeChange}
+                onEmphasisChange={onEmphasisChange}
                 onLocaleChange={onLocaleChange}
                 onResearchCompanyChange={onResearchCompanyChange}
               />

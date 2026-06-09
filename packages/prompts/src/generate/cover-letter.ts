@@ -7,6 +7,7 @@ import {
   type ApplicantPreferences,
   buildApplicantDetailsBlock,
   buildCompanyResearchBlock,
+  buildEmphasisDirectivesBlock,
   buildGroundingBlock,
   buildLetterEmphasisBlock,
 } from './emphasis.js';
@@ -255,6 +256,7 @@ export function buildCoverLetterPrompt(
   const resumeBody = truncateResume(stripLinkBlock(resume), truncation);
 
   const emphasisBlock = buildLetterEmphasisBlock(meta.topRequirements ?? []);
+  const directivesBlock = buildEmphasisDirectivesBlock(meta.emphasis);
   const groundingBlock = buildGroundingBlock(resumeBody, meta.topRequirements ?? []);
 
   return `${linksBlock ? `${linksBlock}\n\n` : ''}<candidate_resume>
@@ -284,7 +286,7 @@ Candidate: ${meta.candidateName || 'Unknown'}
 Role: ${meta.jobTitle || 'this role'} at ${meta.companyName || 'this company'}
 Today: ${today}
 ${langNote}
-${emphasisBlock}
+${directivesBlock ? `${directivesBlock}\n` : ''}${emphasisBlock}
 ${groundingBlock ? `\n${groundingBlock}\n` : ''}
 ### WRITING NOTES (internal — do NOT output any of this) ###
 
