@@ -26,7 +26,7 @@ L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints.
 - **Resume/export** — `export/` (pdf/, docx/, typst_engine/, model_docx/, templates/, parser/, links/, types.rs), `model/`, `theme/`, `locale/`, `contact_profile/`, `validate/`.
 - **Job match / ATS** — `commands/match_resume.rs`, `commands/cover_letter.rs` + `cover_letter/`, `recommend/`, `validate/`.
 - **Automation** — `scraping/` (boards/, engine/, http/, linkedin/, board*login/), `browser/`, `autopilot/` + `autopilot_scheduler`. *(No auto-apply engine: the app is an apply **assistant** — autopilot finds → ranks → notifies; the user tailors & submits.)\_
-- **AI** — `commands/ai_provider/` (ollama/openai/anthropic/gemini + cli_agent), `commands/ai.rs`, `documents/` (embeddings), `ai_generations/`, `conversations/`, `extraction/`, `recommend/`.
+- **AI** — `commands/ai_provider/` (ollama/openai/anthropic/gemini + cli_agent), `commands/ai.rs`, `documents/` (embeddings), `ai_generations/`, `extraction/`, `recommend/`.
 - **Platform/data** — `platform/` (`config.rs` `data_dir()`), `net/` (`http.rs` `shared()`), `error.rs`, `observability.rs` (`Span`), `db.rs`, `data_store.rs`, `credentials/`, `updater/`, `pipeline/`, `jobs/`, `postings/`, `job_preferences/`, `profile_import/`.
 
 ## Shared renderer generation components

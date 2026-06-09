@@ -908,12 +908,12 @@
           notes: [],
           tag: ['scrape', 'all'],
         }),
-        N('h-use-conv', 'hooks', 'use-conversations', 'chat history', 309, 736, 232, 46, 'hooks', {
-          role: 'Hook for conversation history persistence.',
-          plain: 'Saves and loads AI chat history.',
-          path: 'apps/tauri/src/renderer/services/use-conversations/use-conversations.ts',
+        N('h-use-cli-agents', 'hooks', 'use-cli-agents', 'coding agents', 309, 736, 232, 46, 'hooks', {
+          role: 'Hook for CLI agent status detection + one-click install.',
+          plain: 'Manages install state for Claude Code, Gemini CLI, etc.',
+          path: 'apps/tauri/src/renderer/services/use-cli-agents/use-cli-agents.ts',
           notes: [],
-          tag: ['all'],
+          tag: ['settings', 'all'],
         }),
         N('h-use-cred', 'hooks', 'use-credentials', 'keychain creds', 309, 800, 232, 46, 'hooks', {
           role: 'Hook for board/provider credential CRUD (OS keychain).',
@@ -1355,21 +1355,21 @@
           tag: ['scrape', 'all'],
         }),
         N(
-          'ct-conv',
+          'ct-cli-agents',
           'contract',
-          'conversations.ts',
-          'ConversationsContract',
+          'cliAgents.ts',
+          'CliAgentsContract',
           869,
           736,
           232,
           46,
           'contract',
           {
-            role: 'Conversations namespace: chat history persistence.',
-            plain: 'The contract for saving AI chats.',
-            path: 'packages/shared/src/ipc/contracts/conversations.ts',
+            role: 'CLI agents namespace: one-click install + status detection.',
+            plain: 'The contract for managing coding agent installation.',
+            path: 'packages/shared/src/ipc/contracts/cliAgents.ts',
             notes: [],
-            tag: ['all'],
+            tag: ['settings', 'all'],
           }
         ),
         N(
@@ -1612,21 +1612,21 @@
           }
         ),
         N(
-          'cmd-conv',
+          'cmd-cli-agents',
           'command',
-          'conversations.rs',
-          'chat persist',
+          'cli_agents.rs',
+          'agent status',
           1149,
           864,
           232,
           46,
           'command',
           {
-            role: 'Conversation persistence commands.',
-            plain: 'Backend door for saving chats.',
-            path: 'apps/tauri/src-tauri/src/commands/conversations.rs',
+            role: 'CLI agent detection + redetect commands (read-only; install via shell plugin).',
+            plain: 'Backend door for probing installed coding agents.',
+            path: 'apps/tauri/src-tauri/src/commands/cli_agents.rs',
             notes: [],
-            tag: ['all'],
+            tag: ['settings', 'all'],
           }
         ),
         N('cmd-support', 'command', 'support.rs', 'diagnostics', 1149, 928, 232, 46, 'command', {
@@ -1921,25 +1921,6 @@
             tag: ['documents', 'all'],
           }
         ),
-        N(
-          'd-conv',
-          'domain',
-          'conversations store',
-          'chat persistence',
-          1429,
-          1056,
-          232,
-          46,
-          'domain',
-          {
-            role: 'Conversation history store (SQLite).',
-            plain: 'Saves AI chat history on disk.',
-            path: 'apps/tauri/src-tauri/src/conversations',
-            notes: [],
-            tag: ['all'],
-          }
-        ),
-
         // ── Scrapers (colA x 1709, colB x 1945) ─────────────────────────────────────
         N(
           'sc-registry',
@@ -2379,13 +2360,6 @@
             tag: ['aigenerate', 'all'],
           }
         ),
-        N('db-conv', 'data', 'conversations table', 'chat history', 2509, 480, 232, 46, 'data', {
-          role: 'conversations: id, role, content, model, createdAt.',
-          plain: 'The table of saved AI chats.',
-          path: 'apps/tauri/src-tauri/src/conversations',
-          notes: [],
-          tag: ['all'],
-        }),
         N(
           'db-jobprefs',
           'data',
