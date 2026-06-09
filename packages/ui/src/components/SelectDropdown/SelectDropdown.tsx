@@ -25,6 +25,10 @@ interface SelectDropdownProps {
   icon?: React.ReactNode;
   /** Forwarded to the trigger button so an external `<label htmlFor>` can name the control. */
   id?: string;
+  /** Override auto-search detection. Defaults to true when options.length >= 8. */
+  searchable?: boolean;
+  /** Tailwind max-height class applied to the options list. Defaults to 'max-h-56'. */
+  listClassName?: string;
 }
 
 export function SelectDropdown({
@@ -35,6 +39,8 @@ export function SelectDropdown({
   disabled,
   icon,
   id: idProp,
+  searchable,
+  listClassName,
 }: SelectDropdownProps) {
   const generatedId = useId();
   const id = idProp ?? generatedId;
@@ -47,7 +53,7 @@ export function SelectDropdown({
   const searchRef = useRef<HTMLInputElement>(null);
 
   const selectedOption = options.find((o) => o.value === value);
-  const showSearch = options.length >= SEARCHABLE_THRESHOLD;
+  const showSearch = searchable ?? options.length >= SEARCHABLE_THRESHOLD;
 
   const filtered =
     showSearch && search.trim()
@@ -137,7 +143,7 @@ export function SelectDropdown({
         }}
         onKeyDown={handleKeyDown}
         className={cn(
-          'flex h-8 w-full items-center justify-between gap-2 rounded-lg px-3 text-xs transition-all duration-150',
+          'flex h-9 w-full items-center justify-between gap-2 rounded-lg px-3 text-xs transition-all duration-150',
           'border border-white/[0.06] bg-white/[0.03]',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
           'disabled:cursor-not-allowed disabled:opacity-40',
@@ -183,7 +189,9 @@ export function SelectDropdown({
               )}
 
               {/* Options */}
-              <div className="max-h-56 overflow-y-auto p-1 scrollbar-thin">
+              <div
+                className={cn('overflow-y-auto p-1 scrollbar-thin', listClassName ?? 'max-h-56')}
+              >
                 {filtered.length === 0 ? (
                   <div className="px-3 py-6 text-center text-[11px] text-foreground/30">
                     No results
