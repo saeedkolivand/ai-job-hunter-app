@@ -1,6 +1,6 @@
 # Domain model (core types, traits, registries)
 
-Last updated: 2026-06-03
+Last updated: 2026-06-09
 
 Describes the **shape**; the source is authoritative for field-level detail. Use `graphify explain "<type>"` then read the owning file.
 
@@ -18,7 +18,7 @@ Describes the **shape**; the source is authoritative for field-level detail. Use
 ## Job / matching
 
 - **Job posting / postings** — `jobs/`, `postings/`, `commands/jobs.rs`. The scraped/normalized job representation consumed by matching.
-- **Matching** — `commands/match_resume.rs` (`keywords()`, `keyword_coverage()`, the score model — a weighted blend of semantic similarity + keyword coverage; **read the source for exact weights**). Recommendations: `recommend/`. Cover letters: `cover_letter/` + `commands/cover_letter.rs`.
+- **Matching** — `commands/match_resume.rs`: keywords lookup via `documents/keywords.rs` (shared module). Pipeline split: `keywords_normalized()` caches pre-stemmed tokens (language-agnostic), `apply_stemmer()` stems at match time using JD language detection (`whatlang` + Snowball per language). Tokenization: lowercase + synonym-normalize + language-detect + filter (drop ≤3 chars unless in `SHORT_TECH_TERMS` allowlist, drop stopwords). Corrupt-cache fallback: `from_str().unwrap_or_default()` returns empty set. **Translation (Ollama-only)** — `translation.rs`: `TranslationCache` (session-scoped HashMap); `translate_if_needed()` detects non-English via whatlang, gates on local-provider (`is_local()`), invokes Ollama, caches result, falls back to original on any failure. Called before stemming/keyword extraction. **Keyword coverage** — `keyword_coverage()` returns resume vs job overlap %; score model is weighted blend of semantic similarity + keyword coverage (**read source for exact weights**). Auto-scoring via service hook `useJobMatchScore` with `enabled` param, gated by sequential FIFO `ScoringScheduler` (CONCURRENCY=1, prevents mass-concurrent IPC bursts). Recommendations: `recommend/`. Cover letters: `cover_letter/` + `commands/cover_letter.rs`.
 
 ## Referrals
 

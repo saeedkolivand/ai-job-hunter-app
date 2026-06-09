@@ -132,6 +132,7 @@ export const HybridSearchRequestSchema = z.object({
 export const MatchResumeRequestSchema = z.object({
   resumeId: z.string().min(1),
   jobId: z.string().min(1),
+  semanticScoringEnabled: z.boolean().optional(),
 });
 
 export const JobIdSchema = z.object({ jobId: z.string().min(1) });
