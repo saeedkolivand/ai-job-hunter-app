@@ -1,4 +1,4 @@
-import { Plus, Trash2, Upload, UserRound } from 'lucide-react';
+import { Camera, Plus, Trash2, UserRound } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { ContactProfile } from '@ajh/shared';
@@ -150,7 +150,15 @@ export function ContactProfileForm() {
   return (
     <>
       <div className="mb-6 flex items-center gap-4">
-        <div className="size-20 shrink-0 overflow-hidden rounded-full border border-white/10 bg-white/[0.03]">
+        {/* #20 — the avatar itself is the upload target: click to add or change
+            the photo, with a camera overlay on hover. */}
+        <Button
+          variant="unstyled"
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          aria-label={t('settings.contactProfile.photoUpload')}
+          className="group relative size-20 shrink-0 overflow-hidden rounded-full border border-white/10 bg-white/[0.03]"
+        >
           {photo ? (
             <img
               src={photo}
@@ -162,34 +170,26 @@ export function ContactProfileForm() {
               <UserRound className="size-8" />
             </div>
           )}
-        </div>
+          <span className="absolute inset-0 flex items-center justify-center bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100">
+            <Camera className="size-5" />
+          </span>
+        </Button>
         <div className="flex flex-col gap-1.5">
           <span className={LABEL_CLASS}>{t('settings.contactProfile.photo')}</span>
           <p className="text-xs text-foreground/55">{t('settings.contactProfile.photoHint')}</p>
-          <div className="flex items-center gap-2">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              className="hidden"
-              onChange={onPickPhoto}
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => fileRef.current?.click()}
-              className="gap-1.5"
-            >
-              <Upload className="size-4" />
-              {t('settings.contactProfile.photoUpload')}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={onPickPhoto}
+          />
+          {photo && (
+            <Button variant="ghost" size="sm" onClick={removePhoto} className="gap-1.5 self-start">
+              <Trash2 className="size-4" />
+              {t('settings.contactProfile.photoRemove')}
             </Button>
-            {photo && (
-              <Button variant="ghost" size="sm" onClick={removePhoto} className="gap-1.5">
-                <Trash2 className="size-4" />
-                {t('settings.contactProfile.photoRemove')}
-              </Button>
-            )}
-          </div>
+          )}
           {photoError && <p className="text-xs text-amber-400/80">{photoError}</p>}
         </div>
       </div>
