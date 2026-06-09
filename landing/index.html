@@ -95,8 +95,10 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 #journey svg{display:block; width:100%; height:100%; overflow:visible}
 #journey path{fill:none; stroke:var(--red); stroke-width:3.4; stroke-linecap:round; stroke-linejoin:round}
 #journey #journey-path{opacity:.85; filter:drop-shadow(0 1px 0 rgba(0,0,0,.25))}
-/* needs real side gutters to route through — hide when the viewport is narrow */
-@media (max-width:1099px), (prefers-reduced-motion: reduce){ #journey{display:none} }
+/* narrow viewports get an edge-hugging route from the JS builder instead of
+   the gutter snake — keep the ink lighter there so it reads as margin doodle */
+@media (max-width:700px){ #journey path{stroke-width:2.6} }
+@media (prefers-reduced-motion: reduce){ #journey{display:none} }
 
 /* ---------- fixed chrome ---------- */
 #progress-wrap{position:fixed; top:0; left:0; right:0; z-index:50; pointer-events:none}
@@ -213,6 +215,13 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 .scrollhint{margin-top:34px; font-family:var(--scrawl); font-size:15px; color:#8e9bad}
 .scrollhint .arr{display:block; font-size:26px; animation:bob 1.6s ease-in-out infinite}
 @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+/* the lazy exit: same breakdown, zero scrolling */
+.filmhint{
+  display:inline-block; margin-top:16px; font-family:var(--scrawl); font-size:14px; color:#ffd27a;
+  text-decoration:none; border:2px dashed rgba(255,210,122,.45); border-radius:12px 9px 13px 8px;
+  padding:6px 14px; transition:transform .15s, background .2s, border-color .2s;
+}
+.filmhint:hover{transform:rotate(-1.5deg) translateY(-2px); background:rgba(255,210,122,.08); border-color:rgba(255,210,122,.8)}
 .dontclick{position:absolute; left:calc(100% - 6px); top:-6px; pointer-events:none; z-index:6}
 .dc-inner{display:flex; align-items:center; gap:2px; transform:rotate(6deg); transform-origin:left center; animation:dcwiggle 1.5s ease-in-out infinite}
 @keyframes dcwiggle{0%,100%{transform:rotate(6deg)}50%{transform:rotate(1deg) translateY(-3px)}}
@@ -486,6 +495,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
     <h1 class="reveal">Job hunting broke me.<br>So I built a <span class="ul">robot<svg class="draw" viewBox="0 0 120 14" aria-hidden="true"><path pathLength="1" d="M4 8 Q34 3 62 6 T116 6"/><path pathLength="1" d="M14 12 Q52 8 104 10"/></svg></span> to do it.</h1>
     <p class="sub reveal">AI Job Hunter scrapes 19 job boards, writes your cover letters, and drafts your applications while you dissociate — you just press send. Runs fully offline. <b>Built by a guy who is, himself, still unemployed.</b></p>
     <div class="scrollhint reveal">scroll to watch a man fall apart<span class="arr">↓</span></div>
+    <a class="filmhint reveal" href="film.html">▶ or don't scroll — watch the film. he falls apart automatically. (2:52)</a>
   </div>
 </section>
 
@@ -758,6 +768,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   <p class="honest">yes, this app is real. yes, it actually scrapes LinkedIn, Indeed, StepStone, Xing, and 15 others. yes, it's built with Tauri + Rust + React 19 + a vector database + a pure-Rust Typst engine that renders every PDF — because I had a lot of free time, on account of the unemployment. no, it does not auto-apply — it finds the jobs and writes the whole application; hitting submit is the one job left to you. no, I still don't have a job. the autopilot is doing its best.</p>
   <button class="cta" id="cta">ok fine, take the app →</button>
   <a class="src-link" href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app">view the source — it's MIT, like my prospects: open and freely available.</a>
+  <a class="src-link" href="film.html">▶ relive the breakdown as a short film — same despair, now with a soundtrack. your hands can rest.</a>
   <p class="footnote">macOS will say the app is "damaged." it's not damaged. it's just unsigned — like a contract I was never offered. run <code>xattr -cr</code> and we move on.</p>
   <p class="builtwith">Tauri · Rust · React 19 · TanStack · LanceDB · Typst · Ollama · pure spite</p>
   <p class="byline">made by Saeed, between rejections.</p>
@@ -926,7 +937,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
     var wrap=document.getElementById('journey');
     if(!wrap || reduce) return;
     var svg=wrap.querySelector('svg'), line=document.getElementById('journey-path'), tip=document.getElementById('journey-tip');
-    var len=0, built=false, tblL=[], tblY=[];
+    var len=0, built=false, tblL=[], tblY=[], tipS=1;
 
     /* Catmull-Rom through waypoints → smooth cubic path */
     function pts2path(P){
@@ -946,22 +957,33 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
       wrap.style.height=docH+'px';
       svg.setAttribute('width',vw); svg.setAttribute('height',docH);
       svg.setAttribute('viewBox','0 0 '+vw+' '+docH);
-      var g=Math.max(22,(vw-1100)/2), Lx=g, Rx=vw-g;
+      /* responsive routing: ≥1100px snakes through the real gutters around the
+         1100px column, weaving INWARD; narrower viewports have no gutter, so the
+         line hugs the 22px edge padding and weaves OUTWARD (toward the edge) —
+         it never crosses the content column at any width */
+      var wide=vw>=1100;
+      var g=wide?Math.max(22,(vw-1100)/2):Math.max(11,Math.min(22,vw*0.028));
+      var amp=wide?28:Math.min(16,g*0.7,g-4);
+      var dir=wide?1:-1;
+      tipS=vw<700?0.78:1;
+      var Lx=g, Rx=vw-g;
       var P=[[vw/2,0]], side=0;
       var secs=document.querySelectorAll('main > section');
       for(var i=0;i<secs.length;i++){
         var s=secs[i]; if(s.classList.contains('finale')) break;
         var r=s.getBoundingClientRect(), top=r.top+scrollY, h=r.height;
-        var x=(side%2===0)?Lx:Rx, inw=(side%2===0)?28:-28;
+        var x=(side%2===0)?Lx:Rx, inw=((side%2===0)?amp:-amp)*dir;
         P.push([x, top+h*0.18]);
         P.push([x+inw, top+h*0.5]);
         P.push([x, top+h*0.85]);
         side++;
       }
       var cr=document.getElementById('cta').getBoundingClientRect();
-      var ctaY=cr.top+scrollY+cr.height/2, endX=cr.left-38;
+      /* clamp the landing so the approach stays on-canvas when the CTA sits
+         near the left edge on small screens */
+      var ctaY=cr.top+scrollY+cr.height/2, endX=Math.max(g+amp+12, cr.left-38);
       P.push([Lx+44, ctaY-170]);
-      P.push([endX-90, ctaY-14]);
+      P.push([Math.max(8, endX-90), ctaY-14]);
       P.push([endX, ctaY]);
       line.setAttribute('d', pts2path(P));
       len=line.getTotalLength();
@@ -999,7 +1021,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
       line.style.strokeDashoffset=Math.max(0,len-at);
       var pt=line.getPointAtLength(at), pb=line.getPointAtLength(Math.max(0,at-2));
       var ang=Math.atan2(pt.y-pb.y, pt.x-pb.x)*180/Math.PI;
-      tip.setAttribute('transform','translate('+pt.x.toFixed(1)+' '+pt.y.toFixed(1)+') rotate('+ang.toFixed(1)+')');
+      tip.setAttribute('transform','translate('+pt.x.toFixed(1)+' '+pt.y.toFixed(1)+') rotate('+ang.toFixed(1)+') scale('+tipS+')');
     }
 
     var jt=false;
