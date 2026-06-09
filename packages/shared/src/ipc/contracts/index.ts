@@ -21,7 +21,6 @@ import { AI_GENERATIONS_CHANNELS, type AiGenerationsContract } from './aiGenerat
 import { AUTOPILOT_CHANNELS, type AutopilotContract } from './autopilot.js';
 import { BOARDS_CHANNELS, type BoardsContract } from './boards.js';
 import { CONTACT_PROFILE_CHANNELS, type ContactProfileContract } from './contactProfile.js';
-import { CONVERSATIONS_CHANNELS, type ConversationsContract } from './conversations.js';
 import { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js';
 import { DATA_CHANNELS, type DataContract } from './data.js';
 import { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
@@ -62,7 +61,6 @@ export interface IpcContract {
   referrals: ReferralsContract;
   resume: ResumeContract;
   support: SupportContract;
-  conversations: ConversationsContract;
   autopilot: AutopilotContract;
   updater: UpdaterContract;
   shortcuts: ShortcutsContract;
@@ -91,7 +89,6 @@ export const IPC_CHANNELS = {
   referrals: REFERRALS_CHANNELS,
   resume: RESUME_CHANNELS,
   support: SUPPORT_CHANNELS,
-  conversations: CONVERSATIONS_CHANNELS,
   autopilot: AUTOPILOT_CHANNELS,
   updater: UPDATER_CHANNELS,
   shortcuts: SHORTCUTS_CHANNELS,
@@ -142,7 +139,6 @@ export {
   type ContactProfileContract,
   type LocalizedText,
 } from './contactProfile.js';
-export { CONVERSATIONS_CHANNELS, type ConversationsContract } from './conversations.js';
 export { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js';
 export { DATA_CHANNELS, type DataContract } from './data.js';
 export { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
