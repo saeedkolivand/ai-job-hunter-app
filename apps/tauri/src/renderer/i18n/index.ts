@@ -6,8 +6,8 @@ import type { Locale } from '@ajh/shared/types';
 
 import { getClient } from '@/lib/app-client';
 
-import de from './locales/de.json';
-import en from './locales/en.json';
+import de from './locales/de/translation.json';
+import en from './locales/en/translation.json';
 
 const SUPPORTED = ['en', 'de'];
 

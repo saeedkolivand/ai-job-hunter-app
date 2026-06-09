@@ -103,16 +103,18 @@ jobs:
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
 
-      # i18next-parser rewrites the locale files from t() usage; a non-empty diff
-      # means missing/unused keys. Advisory: report the drift, then restore.
+      # i18next-cli rewrites the locale files from t() usage; a non-empty diff
+      # means missing keys (or sort drift). Advisory: report the drift, then
+      # restore. removeUnusedKeys is off (the renderer has dynamic keys), so this
+      # flags missing translations, not false "unused" removals.
       - name: 🌐 Check translation keys (advisory)
         continue-on-error: true
         run: |
-          pnpm exec i18next-parser
+          pnpm exec i18next-cli extract
           if git diff --quiet -- apps/tauri/src/renderer/i18n/locales; then
             echo "Locale files are in sync with t() usage."
           else
-            echo "::warning::i18next-parser would change the locale files (missing/unused keys):"
+            echo "::warning::i18next-cli would change the locale files (missing keys / sort drift):"
             git --no-pager diff -- apps/tauri/src/renderer/i18n/locales
             git checkout -- apps/tauri/src/renderer/i18n/locales
           fi
