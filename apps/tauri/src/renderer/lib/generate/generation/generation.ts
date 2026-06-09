@@ -9,6 +9,11 @@
  * which streams `ai:stream` deltas under the returned jobId. Export lives in `./export`.
  */
 
+import {
+  buildBuilderSystemPrompt,
+  buildInterviewResumePrompt,
+  type InterviewAnswers,
+} from '@ajh/prompts/builder';
 import { getModelTier } from '@ajh/prompts/context-manager';
 import {
   buildApplicationAnswerPrompt,
@@ -276,6 +281,35 @@ export async function generateResume(
     getLinkMap(resume),
     getBodyLinkMap(resume)
   );
+}
+
+/**
+ * Resume Builder synthesis (#1 / B9): build a from-scratch résumé from structured
+ * interview answers in a SINGLE streamed pass. Mirrors {@link generateResume} —
+ * same provider config, effective tier, and streaming pipeline (so it works for
+ * every provider with zero per-provider code and adds NO new IPC) — but uses the
+ * builder prompts grounded on `<interview_answers>` instead of a base résumé + job
+ * ad. Provided links are kept inline by the prompt, so no link-map injection is
+ * needed (there is no source résumé to parse). Returns plain text.
+ */
+export async function synthesizeResume(
+  answers: InterviewAnswers,
+  meta: GenerationMeta,
+  model: string,
+  onToken: (tok: string) => void,
+  locale = 'en',
+  signal?: AbortSignal,
+  onThinking?: (tok: string) => void
+): Promise<string> {
+  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
+  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+  const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
+  const tier = effectiveTier(activeModel, activeProvider);
+
+  const system = buildBuilderSystemPrompt(tier);
+  const user = buildInterviewResumePrompt(answers, meta);
+  const raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal, onThinking);
+  return extractPlainText(raw);
 }
 
 /**

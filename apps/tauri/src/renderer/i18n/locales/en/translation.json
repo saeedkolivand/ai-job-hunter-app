@@ -11,6 +11,7 @@
     "dashboard": "Dashboard",
     "analyze": "Resume Analyzer",
     "generate": "AI Generate",
+    "build": "Resume Builder",
     "jobs": "Jobs",
     "autopilot": "Autopilot",
     "documents": "Documents",
@@ -19,6 +20,134 @@
     "monitoring": "Monitoring",
     "support": "Help & Support",
     "settings": "Settings"
+  },
+  "build": {
+    "title": "Resume Builder",
+    "subtitle": "Answer a few questions and we'll build a résumé from your answers.",
+    "remove": "Remove",
+    "wizard": {
+      "back": "Back",
+      "next": "Next",
+      "generate": "Build résumé",
+      "generating": "Building your résumé…",
+      "stepCounter": "Step {{current}} of {{total}}"
+    },
+    "steps": {
+      "0": "Your details",
+      "1": "Professional summary",
+      "2": "Work experience",
+      "3": "Education",
+      "4": "Skills",
+      "5": "More sections",
+      "6": "Review & build"
+    },
+    "descriptions": {
+      "0": "Your contact details become the résumé header. Add an optional target role.",
+      "1": "Optional — leave blank and we'll write one from your answers.",
+      "2": "Add each role, most recent first. List real achievements as bullets.",
+      "3": "Add your degrees and qualifications.",
+      "4": "List your skills — one per line. We'll group them.",
+      "5": "Optional extras: projects, publications, awards, volunteering, languages, certifications.",
+      "6": "Pick the output language and template, then build."
+    },
+    "contact": {
+      "headlineLabel": "Target role / headline",
+      "headlinePlaceholder": "e.g. Senior Backend Engineer",
+      "headlineHint": "optional"
+    },
+    "summary": {
+      "label": "Professional summary",
+      "placeholder": "A short paragraph about who you are and what you do. Leave blank to auto-generate.",
+      "hint": "optional"
+    },
+    "experience": {
+      "add": "Add a role",
+      "empty": "No roles yet — add your work history.",
+      "title": "Job title",
+      "company": "Company",
+      "location": "Location",
+      "start": "Start",
+      "end": "End",
+      "present": "Present",
+      "current": "I currently work here",
+      "bullets": "Achievements",
+      "bulletsHint": "one per line",
+      "bulletsPlaceholder": "Built X that did Y, improving Z by 40%"
+    },
+    "education": {
+      "add": "Add education",
+      "empty": "No education yet.",
+      "degree": "Degree / qualification",
+      "institution": "Institution",
+      "location": "Location",
+      "start": "Start",
+      "end": "End",
+      "details": "Details",
+      "detailsHint": "honors, thesis, coursework"
+    },
+    "skills": {
+      "label": "Skills",
+      "hint": "one per line",
+      "placeholder": "Python\nPostgreSQL\nAWS"
+    },
+    "extras": {
+      "link": "Link",
+      "linkHint": "optional",
+      "entryTitle": "Title",
+      "entryDetail": "Detail",
+      "entryYear": "Year",
+      "projects": {
+        "title": "Projects",
+        "add": "Add a project",
+        "empty": "No projects yet.",
+        "name": "Name",
+        "description": "Description"
+      },
+      "publications": {
+        "title": "Publications",
+        "add": "Add a publication",
+        "empty": "No publications yet.",
+        "titleField": "Title",
+        "venue": "Venue",
+        "year": "Year"
+      },
+      "awards": {
+        "title": "Awards",
+        "add": "Add an award",
+        "empty": "No awards yet."
+      },
+      "volunteer": {
+        "title": "Volunteering",
+        "add": "Add volunteering",
+        "empty": "No volunteering yet."
+      },
+      "languages": {
+        "title": "Languages",
+        "label": "Languages",
+        "hint": "one per line",
+        "placeholder": "English (native)\nGerman (B2)"
+      },
+      "certifications": {
+        "title": "Certifications",
+        "label": "Certifications",
+        "hint": "one per line",
+        "placeholder": "AWS Solutions Architect"
+      }
+    },
+    "review": {
+      "language": "Output language",
+      "languageEn": "English",
+      "languageDe": "German",
+      "incomplete": "Add your name, at least one role or education entry, and some skills to build."
+    },
+    "output": {
+      "tailor": "Tailor to a job",
+      "startOver": "Start over"
+    },
+    "toast": {
+      "done": "Résumé built — saved to Documents.",
+      "failed": "Couldn't build the résumé. Please try again."
+    }
   },
   "models": {
     "tier": {

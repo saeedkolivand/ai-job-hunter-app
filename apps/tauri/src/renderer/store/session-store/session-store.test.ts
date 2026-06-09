@@ -27,6 +27,33 @@ describe('useSessionStore', () => {
     expect(useSessionStore.getState().analyze.stage).toBe('idle');
   });
 
+  it('patches and resets the Resume Builder slice (#1 / B9)', () => {
+    const { setResumeBuilder, resetResumeBuilder } = useSessionStore.getState();
+    setResumeBuilder({
+      wizardStep: 2,
+      stage: 'done',
+      output: '# Jane',
+      answers: {
+        ...useSessionStore.getState().resumeBuilder.answers,
+        fullName: 'Jane Doe',
+        skills: ['Python'],
+      },
+    });
+    let rb = useSessionStore.getState().resumeBuilder;
+    expect(rb.wizardStep).toBe(2);
+    expect(rb.stage).toBe('done');
+    expect(rb.answers.fullName).toBe('Jane Doe');
+    expect(rb.answers.skills).toEqual(['Python']);
+
+    resetResumeBuilder();
+    rb = useSessionStore.getState().resumeBuilder;
+    expect(rb.wizardStep).toBe(0);
+    expect(rb.stage).toBe('interview');
+    expect(rb.output).toBe('');
+    expect(rb.answers.fullName).toBe('');
+    expect(rb.answers.experience).toEqual([]);
+  });
+
   it('patches jobs, resumes and settings slices', () => {
     useSessionStore.getState().setJobs({ filter: 'react', sortBy: 'company' });
     expect(useSessionStore.getState().jobs).toEqual({ filter: 'react', sortBy: 'company' });
