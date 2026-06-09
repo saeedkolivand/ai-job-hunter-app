@@ -16,7 +16,6 @@
     "documents": "Documents",
     "resumes": "Resumes",
     "search": "Search",
-    "ai": "AI Workspace",
     "monitoring": "Monitoring",
     "support": "Help & Support",
     "settings": "Settings"
@@ -1729,10 +1728,6 @@
       "search": {
         "title": "Search",
         "desc": "Semantic search across all your documents and job postings using AI embeddings."
-      },
-      "ai": {
-        "title": "AI Workspace",
-        "desc": "Chat with your personal job hunting assistant. Ask questions, get advice, refine your strategy."
       }
     },
     "resume": {

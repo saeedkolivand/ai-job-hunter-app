@@ -16,7 +16,6 @@
     "documents": "Dokumente",
     "resumes": "Lebensläufe",
     "search": "Suche",
-    "ai": "KI-Arbeitsbereich",
     "monitoring": "Monitoring",
     "support": "Hilfe & Support",
     "settings": "Einstellungen"
@@ -1714,10 +1713,6 @@
       "search": {
         "title": "Suche",
         "desc": "Semantische Suche über alle Ihre Dokumente und Job-Anzeigen mit KI-Embeddings."
-      },
-      "ai": {
-        "title": "KI-Arbeitsbereich",
-        "desc": "Chatten Sie mit Ihrem persönlichen Job-Jagd-Assistenten. Stellen Sie Fragen, erhalten Sie Rat, verfeinern Sie Ihre Strategie."
       }
     },
     "resume": {

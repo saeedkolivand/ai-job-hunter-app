@@ -13,7 +13,6 @@ const GO_TO: Record<string, AppRoute> = {
   p: ROUTES.AUTOPILOT,
   r: ROUTES.RESUMES,
   m: ROUTES.MONITORING,
-  i: ROUTES.AI,
   s: ROUTES.SETTINGS,
 };
 

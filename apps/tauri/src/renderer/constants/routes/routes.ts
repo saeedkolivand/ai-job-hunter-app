@@ -6,7 +6,6 @@ export const ROUTES = {
   AUTOPILOT: '/autopilot',
   RESUMES: '/resumes',
   SEARCH: '/search',
-  AI: '/ai',
   MONITORING: '/monitoring',
   SETTINGS: '/settings',
   SUPPORT: '/support',
