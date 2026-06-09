@@ -67,7 +67,7 @@
   lang: lang,
 )
 
-#set par(leading: lead, spacing: sp-para, justify: true)
+#set par(leading: lead, spacing: sp-letter-para, justify: true)
 
 // ── Rich-text renderer ────────────────────────────────────────────────────────
 // Mirrors the single_column.typ render-runs helper exactly so font rendering
@@ -215,7 +215,7 @@
 
 #if "body" in data {
   for para in data.body {
-    block(above: 0pt, below: sp-para, breakable: true,
+    block(above: 0pt, below: sp-letter-para, breakable: true,
       render-runs(para)
     )
   }
