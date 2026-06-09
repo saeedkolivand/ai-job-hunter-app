@@ -4,7 +4,7 @@ import type { GenerationMeta } from '@ajh/prompts/generate';
 
 import { _registerClient } from '../../app-client';
 import { createMockClient } from '../../mock-client';
-import { buildFilename, exportDOCX, exportPDF, exportTXT } from './export';
+import { buildFilename, exportDOCX, exportPDF, exportTXT, renderPdfPreview } from './export';
 
 const meta: GenerationMeta = {
   resumeLanguage: 'en',
@@ -90,5 +90,41 @@ describe('exportDOCX / exportPDF', () => {
   it('throws on empty content', async () => {
     _registerClient(createMockClient());
     await expect(exportDOCX('', 'out.docx')).rejects.toThrow(/empty document/);
+  });
+});
+
+describe('renderPdfPreview (#24)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('renders via exportDocument (no save) and returns the PDF bytes', async () => {
+    const exportDocument = vi
+      .fn()
+      .mockResolvedValue({ data: [1, 2, 3], mimeType: 'application/pdf' });
+    _registerClient(createMockClient({ documents: { exportDocument } }));
+
+    const bytes = await renderPdfPreview('Resume body', 'resume', meta, 'modern');
+    expect(exportDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ format: 'pdf', documentType: 'resume', templateId: 'modern' })
+    );
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect(Array.from(bytes)).toEqual([1, 2, 3]);
+  });
+
+  it('extracts the cover-letter section before rendering', async () => {
+    const exportDocument = vi.fn().mockResolvedValue({ data: [], mimeType: 'application/pdf' });
+    _registerClient(createMockClient({ documents: { exportDocument } }));
+
+    const raw = 'Resume context\n### COMPLETE COVER LETTER ###\nDear Hiring Team, ...';
+    await renderPdfPreview(raw, 'cover-letter', meta, 'classic');
+    const arg = exportDocument.mock.calls[0]?.[0] as { text: string };
+    expect(arg.text.startsWith('Dear Hiring Team')).toBe(true);
+  });
+
+  it('throws on empty text and on an unknown template', async () => {
+    _registerClient(createMockClient());
+    await expect(renderPdfPreview('   ', 'resume', meta, 'modern')).rejects.toThrow(/empty/);
+    await expect(renderPdfPreview('Body', 'resume', meta, 'nope' as never)).rejects.toThrow(
+      /Unknown export template/
+    );
   });
 });

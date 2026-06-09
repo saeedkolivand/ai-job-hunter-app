@@ -175,6 +175,61 @@ export async function exportPDF(
   }
 }
 
+/** Raw export result over IPC: `Vec<u8>` serializes to a number[] (camelCase). */
+interface ExportPreviewResult {
+  data: number[];
+  mimeType: string;
+}
+
+/**
+ * Render the document to its real PDF bytes WITHOUT saving (#24) — the same Rust
+ * renderer the export uses (`documents.exportDocument`), so the in-app preview is
+ * the authoritative output, not an approximation (see ADR-012). Returns the PDF
+ * bytes for the caller to wrap in a `blob:` URL. Throws on empty text, unknown
+ * template, or a backend validation block, exactly like {@link exportPDF}.
+ */
+export async function renderPdfPreview(
+  text: string,
+  type: 'resume' | 'cover-letter' = 'resume',
+  meta?: GenerationMeta,
+  templateId: TemplateId = 'modern',
+  atsMode = false,
+  locale?: string
+  // ArrayBuffer-backed (not the default `Uint8Array<ArrayBufferLike>`) so the
+  // bytes are a valid `BlobPart` at the call site under TS's strict DOM lib.
+): Promise<Uint8Array<ArrayBuffer>> {
+  if (!text || text.trim().length === 0) {
+    throw new Error('Cannot preview an empty document.');
+  }
+  if (!TEMPLATES[templateId]) {
+    throw new Error(`Unknown export template: "${templateId}".`);
+  }
+
+  const api = getClient();
+  const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
+  // Same header source of truth as the real export (see exportPDF/exportDOCX).
+  const contact = await api.contactProfile.get().catch(() => undefined);
+  const result = (await api.documents.exportDocument({
+    text: exportText,
+    format: 'pdf',
+    documentType: type,
+    templateId,
+    atsMode,
+    locale,
+    contact,
+    meta: meta
+      ? {
+          candidateName: meta.candidateName,
+          jobTitle: meta.jobTitle,
+          companyName: meta.companyName,
+          targetLanguage: meta.targetLanguage,
+        }
+      : undefined,
+  })) as ExportPreviewResult;
+
+  return new Uint8Array(result.data);
+}
+
 export function exportTXT(text: string, filename: string): void {
   try {
     // Validation

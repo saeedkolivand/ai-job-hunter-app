@@ -1,8 +1,8 @@
-# ADR-012: AI-Generate live preview is an approximate HTML mirror; PDF/DOCX remain the source of truth
+# ADR-012: AI-Generate live preview renders the real exported PDF; templates stay single-source
 
 Last updated: 2026-06-09
 
-**Status:** Accepted
+**Status:** Accepted (revised during implementation)
 
 ## Context
 
@@ -13,37 +13,46 @@ shows the generated résumé/cover letter as prettified markdown text (`OutputPa
 UX item #24 asks the preview to render the real template and let the user edit in that
 template. The 9 templates render in Rust: PDF via printpdf and DOCX via the model_docx
 backend. ADR-002 (dual PDF/DOCX backends, golden parity) keeps those two outputs
-byte-for-byte aligned via golden snapshots. There is no HTML render path today.
+byte-for-byte aligned via golden snapshots.
 
-A live, edit-as-you-type preview requires a render path that updates instantly in the
-renderer process.
+During implementation we discovered that the Rust export command `documents_export_document`
+(exposed in the renderer as `documents.exportDocument`) already returns the rendered PDF
+bytes (`ExportResult { data: Uint8Array, mimeType, ... }`) without saving to disk. This
+makes a **real-PDF live preview cheap and perfectly faithful** — zero drift, because it
+IS the export pipeline.
 
 ## Decision
 
-Build a live HTML/CSS **mirror** of the templates for the in-app editing preview.
+The AI-Generate live preview renders the **real exported PDF** from the Rust renderer
+(the same pipeline as the final export), re-rendering ~500ms after edits settle
+(debounced). The raw textarea remains the edit surface; the preview pane shows a
+`<iframe>` with the live PDF.
 
-The HTML mirror is explicitly **approximate** — a preview aid for the editing flow only.
-The Rust PDF/DOCX renderers remain the **single source of truth** for exported
-documents; ADR-002 parity is untouched.
+**This supersedes the original ADR-012 decision** (approximate HTML/CSS mirror). Reasoning:
 
-The user keeps a way to see the **real exported PDF** before download (the authoritative
-output).
+- The real-PDF preview is perfectly faithful (zero drift — it IS the export).
+- No second render path or duplicated template specs.
+- Far less code than a 9-template HTML mirror + a text→sections parser.
+- ADR-002 (dual PDF/DOCX parity) is untouched; the preview reuses the existing renderer.
 
-This is a deliberately accepted **third render path**, chosen for editing UX. It is NOT a
-replacement of the export pipeline.
+**Rejected alternative (original):** Build an approximate HTML/CSS mirror of the 9 templates.
+Rejected during implementation because the real-PDF approach is cheaper, more faithful,
+and eliminates the drift risk entirely.
 
-**Rejected alternative:** Make HTML the source of truth and generate PDF/DOCX from it
-(HTML→PDF), retiring the Rust renderers. Rejected as a massive export-pipeline rewrite
-that would reject ADR-002 and its golden-parity guarantees.
+**Rejected alternative (long-term escape hatch):** Make HTML the source of truth and
+generate PDF/DOCX from it (HTML→PDF). Out of scope; ADR-002 golden-parity guarantees
+are unchanged.
 
 ## Consequences
 
-- A third render path to maintain → genuine drift risk between the HTML preview and the
-  actual PDF/DOCX export. Mitigated by (a) labelling the preview approximate and
-  (b) keeping the real-PDF view available before download.
-- Template visual specs now live in two places (the Rust renderer and the HTML mirror);
-  template changes must update both, or accept that the preview diverges from the export.
-- Export renderers (printpdf / model_docx) are unchanged; no impact on existing golden
-  snapshots or ADR-002.
-- Revisit if drift becomes a recurring user-facing problem — a future move to an
-  HTML-source-of-truth pipeline (HTML→PDF) is the escape hatch, but is out of scope here.
+- The live preview is the **actual export output**, debounced per keystroke. Cost:
+  each refresh is a Rust round-trip (acceptable for a preview; not per-keystroke).
+- No HTML render path to maintain → zero drift between preview and export.
+  Template changes update the Rust renderer once; the preview automatically reflects them.
+- **CSP allowance:** `frame-src 'self' blob:` added to `apps/tauri/src-tauri/tauri.conf.json`
+  so the PDF `blob:` URL can load in an `<iframe>`. Blob URLs are same-origin and app-generated
+  (low risk); `tauri-security-reviewer` owns the CSP surface.
+- Export renderers (printpdf / model_docx) are unchanged; ADR-002 golden snapshots untouched.
+- Implementation pointers: `renderPdfPreview()` in `apps/tauri/src/renderer/lib/generate/export/export.ts`;
+  `PdfPreview` component in `apps/tauri/src/renderer/features/ai-generate/components/PdfPreview/`;
+  `EditableOutput` gained optional `previewSlot`; `OutputPanelDone` supplies it.

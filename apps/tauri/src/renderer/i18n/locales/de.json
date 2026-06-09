@@ -570,6 +570,12 @@
     "edit": "Bearbeiten",
     "viewMode": "Ansichtsmodus",
     "placeholder": "Generierte Ausgabe erscheint hier…",
+    "pdfPreview": {
+      "title": "Dokumentvorschau",
+      "rendering": "Wird gerendert…",
+      "failed": "Vorschau nicht verfügbar",
+      "empty": "Generieren Sie ein Dokument, um es hier in der Vorschau zu sehen."
+    },
     "rewrite": {
       "trigger": "Mit KI umschreiben",
       "title": "Auswahl umschreiben",

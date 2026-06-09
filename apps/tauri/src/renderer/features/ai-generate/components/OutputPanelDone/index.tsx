@@ -9,12 +9,14 @@ import {
   buildFilename,
   type GenerationMeta,
   MODES,
+  resolveMarket,
   type TemplateId,
   TEMPLATES,
 } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 
 import { ExportModal } from '../ExportModal';
+import { PdfPreview } from '../PdfPreview';
 
 interface OutputPanelDoneProps {
   resumeOut: string;
@@ -23,6 +25,10 @@ interface OutputPanelDoneProps {
   meta: GenerationMeta | null;
   mode: string;
   templateId: TemplateId;
+  /** ATS single-column override — must match the export so the preview is faithful. */
+  atsMode: boolean;
+  /** Export market/locale — drives the cover-letter preview layout (#24). */
+  locale?: string;
   onActiveOutChange: (out: 'resume' | 'cover') => void;
   onCopy: () => void;
   onExport: (fmt: 'pdf' | 'docx' | 'txt') => Promise<void>;
@@ -41,6 +47,8 @@ export function OutputPanelDone({
   meta,
   mode,
   templateId,
+  atsMode,
+  locale,
   onActiveOutChange,
   onCopy,
   onExport,
@@ -52,6 +60,18 @@ export function OutputPanelDone({
 }: OutputPanelDoneProps) {
   const { t } = useTranslation();
   const [exportOpen, setExportOpen] = useState(false);
+
+  const docType = activeOut === 'resume' ? 'resume' : 'cover-letter';
+  // The cover letter's preview layout follows the resolved market (job country →
+  // language → override), exactly like the real export; résumé keeps the locale.
+  const previewLocale =
+    docType === 'cover-letter'
+      ? resolveMarket({
+          jobCountry: meta?.jobCountry,
+          targetLanguage: meta?.targetLanguage,
+          override: locale,
+        })
+      : locale;
 
   // If the active tab has no content but the other does, switch automatically
   useEffect(() => {
@@ -152,9 +172,21 @@ export function OutputPanelDone({
           value={currentOutput}
           onChange={onOutputChange}
           disabled={isGenerating}
-          docType={activeOut === 'resume' ? 'resume' : 'cover-letter'}
+          docType={docType}
           meta={meta}
           className="flex h-full w-full flex-col overflow-hidden"
+          previewSlot={
+            <PdfPreview
+              text={currentOutput}
+              docType={docType}
+              meta={meta}
+              templateId={templateId}
+              atsMode={atsMode}
+              locale={previewLocale}
+              paused={isGenerating}
+              className="h-full w-full"
+            />
+          }
         />
       </div>
 
