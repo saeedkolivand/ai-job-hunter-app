@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 
 import type { Stage } from '@/features/analyze/constants';
-import { type AnalysisResult, runAnalysis } from '@/lib/resume-ai';
+import { type AnalysisMode, type AnalysisResult, runAnalysis } from '@/lib/resume-ai';
 import { useOutputTone, usePromptQuality } from '@/store/preferences-store';
 
 export function useAnalysisRun(
@@ -12,7 +12,9 @@ export function useAnalysisRun(
   i18n: { language: string },
   setStage: (v: Stage) => void,
   setResult: (v: AnalysisResult | null) => void,
-  t: (key: string) => string
+  t: (key: string) => string,
+  /** Evaluate as a corporate résumé (default) or an academic CV (#54). */
+  analysisMode: AnalysisMode = 'work'
 ) {
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState('');
@@ -47,7 +49,11 @@ export function useAnalysisRun(
         jobAd,
         model: selectedModel,
         locale: i18n.language,
-        meta: { targetLocale: i18n.language, outputTone: outputTone ?? 'professional' },
+        meta: {
+          targetLocale: i18n.language,
+          outputTone: outputTone ?? 'professional',
+          analysisMode,
+        },
         onToken: (tok) => {
           if (!tokenStartRef.current) {
             tokenStartRef.current = Date.now();

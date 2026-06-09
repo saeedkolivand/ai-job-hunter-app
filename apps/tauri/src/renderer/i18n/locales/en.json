@@ -112,6 +112,13 @@
     },
     "verdict": "Final Verdict",
     "recruiterView": "Recruiter's view —",
+    "mode": {
+      "label": "Document type",
+      "work": "Work résumé",
+      "academic": "Academic CV",
+      "workHint": "Scored against corporate ATS and recruiter conventions.",
+      "academicHint": "Scored against academic-CV norms — publications, research, and length are valued, not penalized."
+    },
     "groups": {
       "strengthsSkills": "Strengths & skills",
       "recommendations": "Recommendations & rewrites",
