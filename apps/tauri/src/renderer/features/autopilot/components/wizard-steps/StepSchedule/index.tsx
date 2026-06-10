@@ -1,17 +1,14 @@
 import { Check, Clock } from 'lucide-react';
+import { useFormContext, useWatch } from 'react-hook-form';
 
 import type { AutopilotSchedule } from '@ajh/shared';
 import { Button, cn, SelectDropdown } from '@ajh/ui';
 
-import type { SetFn, WizardState } from '@/features/autopilot/types';
+import { scoreToLevel } from '@/features/autopilot/lib/match-level';
+import type { WizardState } from '@/features/autopilot/types';
 import { useTranslation } from '@/lib/i18n';
 
 import { WizardField } from '../WizardField';
-
-interface StepScheduleProps {
-  form: WizardState;
-  set: SetFn;
-}
 
 /** Zero-padded two-digit string (e.g. 9 → "09"). */
 const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -30,8 +27,20 @@ const MINUTE_OPTIONS = Array.from({ length: 12 }, (_, i) => ({
   label: pad2(i * 5),
 }));
 
-export function StepSchedule({ form, set }: StepScheduleProps) {
+export function StepSchedule() {
   const { t } = useTranslation();
+  const { control, setValue } = useFormContext<WizardState>();
+  // The schedule step is a derived/multi-control view: watch the fields it reads
+  // and write through setValue (the value-array controls don't map cleanly to a
+  // single Controller). RHF stays the single source of truth.
+  const name = useWatch({ control, name: 'name' });
+  const board = useWatch({ control, name: 'board' });
+  const query = useWatch({ control, name: 'query' });
+  const minMatchScore = useWatch({ control, name: 'minMatchScore' });
+  const schedule = useWatch({ control, name: 'schedule' });
+  const scheduleHour = useWatch({ control, name: 'scheduleHour' });
+  const scheduleMinute = useWatch({ control, name: 'scheduleMinute' });
+
   const scheduleOptions = [
     {
       id: 'manual' as AutopilotSchedule,
@@ -55,19 +64,19 @@ export function StepSchedule({ form, set }: StepScheduleProps) {
     },
   ];
 
-  const showHourMinute = form.schedule === 'daily' || form.schedule === 'twice_daily';
-  const showMinuteOnly = form.schedule === 'hourly';
-  const secondTime = formatTime((form.scheduleHour + 12) % 24, form.scheduleMinute);
+  const showHourMinute = schedule === 'daily' || schedule === 'twice_daily';
+  const showMinuteOnly = schedule === 'hourly';
+  const secondTime = formatTime((scheduleHour + 12) % 24, scheduleMinute);
 
   // Schedule label + time, formatted for the summary line.
   const scheduleSummary = (() => {
-    switch (form.schedule) {
+    switch (schedule) {
       case 'daily':
-        return `${t('autopilot.wizard.schedule.daily')} · ${formatTime(form.scheduleHour, form.scheduleMinute)}`;
+        return `${t('autopilot.wizard.schedule.daily')} · ${formatTime(scheduleHour, scheduleMinute)}`;
       case 'twice_daily':
-        return `${t('autopilot.wizard.schedule.twiceDaily')} · ${formatTime(form.scheduleHour, form.scheduleMinute)} & ${secondTime}`;
+        return `${t('autopilot.wizard.schedule.twiceDaily')} · ${formatTime(scheduleHour, scheduleMinute)} & ${secondTime}`;
       case 'hourly':
-        return `${t('autopilot.wizard.schedule.hourly')} · :${pad2(form.scheduleMinute)}`;
+        return `${t('autopilot.wizard.schedule.hourly')} · :${pad2(scheduleMinute)}`;
       default:
         return t('autopilot.wizard.schedule.manual');
     }
@@ -88,23 +97,23 @@ export function StepSchedule({ form, set }: StepScheduleProps) {
         {scheduleOptions.map(({ id, label, desc }) => (
           <Button
             key={id}
-            onClick={() => set('schedule', id)}
+            onClick={() => setValue('schedule', id, { shouldDirty: true, shouldValidate: true })}
             className={cn(
               'w-full flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all h-auto',
-              form.schedule === id
+              schedule === id
                 ? 'border-brand/35 bg-brand/10'
                 : 'border-white/[0.05] hover:border-white/[0.08]'
             )}
           >
             <Clock
               size={13}
-              className={form.schedule === id ? 'text-brand-soft' : 'text-foreground/30'}
+              className={schedule === id ? 'text-brand-soft' : 'text-foreground/30'}
             />
             <div className="flex-1">
               <div className="text-xs font-semibold text-foreground/75">{label}</div>
               <div className="text-[10px] text-foreground/40">{desc}</div>
             </div>
-            {form.schedule === id && <Check size={12} className="text-brand-soft" />}
+            {schedule === id && <Check size={12} className="text-brand-soft" />}
           </Button>
         ))}
       </div>
@@ -120,8 +129,8 @@ export function StepSchedule({ form, set }: StepScheduleProps) {
               <SelectDropdown
                 id="schedule-hour"
                 options={HOUR_OPTIONS}
-                value={String(form.scheduleHour)}
-                onChange={(v) => set('scheduleHour', Number(v))}
+                value={String(scheduleHour)}
+                onChange={(v) => setValue('scheduleHour', Number(v), { shouldDirty: true })}
               />
             </div>
             <span className="pb-2 text-sm font-medium text-foreground/40">:</span>
@@ -132,15 +141,15 @@ export function StepSchedule({ form, set }: StepScheduleProps) {
               <SelectDropdown
                 id="schedule-minute"
                 options={MINUTE_OPTIONS}
-                value={String(form.scheduleMinute)}
-                onChange={(v) => set('scheduleMinute', Number(v))}
+                value={String(scheduleMinute)}
+                onChange={(v) => setValue('scheduleMinute', Number(v), { shouldDirty: true })}
               />
             </div>
           </div>
-          {form.schedule === 'twice_daily' && (
+          {schedule === 'twice_daily' && (
             <p className="text-[10px] text-foreground/40">
               {t('autopilot.wizard.schedule.alsoRunsAt', {
-                first: formatTime(form.scheduleHour, form.scheduleMinute),
+                first: formatTime(scheduleHour, scheduleMinute),
                 second: secondTime,
               })}
             </p>
@@ -156,8 +165,8 @@ export function StepSchedule({ form, set }: StepScheduleProps) {
           <SelectDropdown
             id="schedule-minutes-past-hour"
             options={MINUTE_OPTIONS}
-            value={String(form.scheduleMinute)}
-            onChange={(v) => set('scheduleMinute', Number(v))}
+            value={String(scheduleMinute)}
+            onChange={(v) => setValue('scheduleMinute', Number(v), { shouldDirty: true })}
           />
         </WizardField>
       )}
@@ -168,11 +177,14 @@ export function StepSchedule({ form, set }: StepScheduleProps) {
           {t('autopilot.wizard.schedule.summary')}
         </div>
         {[
-          [t('autopilot.wizard.schedule.summaryName'), form.name || '—'],
-          [t('autopilot.wizard.schedule.summaryBoard'), form.board],
-          [t('autopilot.wizard.schedule.summaryQuery'), form.query || '—'],
+          [t('autopilot.wizard.schedule.summaryName'), name || '—'],
+          [t('autopilot.wizard.schedule.summaryBoard'), board],
+          [t('autopilot.wizard.schedule.summaryQuery'), query || '—'],
           [t('autopilot.wizard.schedule.summarySchedule'), scheduleSummary],
-          [t('autopilot.wizard.schedule.summaryMinScore'), `${form.minMatchScore}%`],
+          [
+            t('autopilot.wizard.schedule.summaryMinScore'),
+            t(`autopilot.wizard.filter.matchLevel.${scoreToLevel(minMatchScore)}`),
+          ],
         ].map(([k, v]) => (
           <div key={k} className="flex items-center justify-between">
             <span className="text-[10px] text-foreground/35">{k}</span>

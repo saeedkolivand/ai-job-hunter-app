@@ -103,6 +103,14 @@ async function streamGenerate(
     contextWindow: localLimits?.contextWindow,
   });
 
+  // A cancel that landed while the pipeline request was in flight is missed by the
+  // post-registration abort listener below (the signal is already aborted by the
+  // time we attach it). Honor it here so the run rejects instead of streaming on.
+  if (signal?.aborted) {
+    void api.jobs.cancel(res.jobId);
+    throw new Error('Generation cancelled');
+  }
+
   const jobId = res.jobId;
   let buffer = '';
 

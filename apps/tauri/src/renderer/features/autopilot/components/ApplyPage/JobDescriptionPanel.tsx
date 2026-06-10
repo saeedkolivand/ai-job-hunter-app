@@ -1,5 +1,7 @@
 import { ExternalLink as ExternalLinkIcon, Loader2 } from 'lucide-react';
 
+import { cn } from '@ajh/ui';
+
 import { ExternalLink } from '@/components/ui/ExternalLink';
 import { useTranslation } from '@/lib/i18n';
 
@@ -8,14 +10,20 @@ interface Props {
   hasDesc: boolean;
   fetchingDesc: boolean;
   jobUrl?: string;
+  fill?: boolean;
 }
 
-export function JobDescriptionPanel({ jobDesc, hasDesc, fetchingDesc, jobUrl }: Props) {
+export function JobDescriptionPanel({ jobDesc, hasDesc, fetchingDesc, jobUrl, fill }: Props) {
   const { t } = useTranslation();
 
   return (
-    <div>
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">
+    <div className={cn(fill && 'flex min-h-0 flex-1 flex-col')}>
+      <div
+        className={cn(
+          fill && 'shrink-0',
+          'mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55'
+        )}
+      >
         {t('autopilot.apply.jobDescription')}
       </div>
       {fetchingDesc ? (
@@ -24,7 +32,12 @@ export function JobDescriptionPanel({ jobDesc, hasDesc, fetchingDesc, jobUrl }: 
           {t('autopilot.apply.fetchingDescription')}
         </div>
       ) : hasDesc ? (
-        <div className="select-text max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] leading-relaxed text-foreground/60">
+        <div
+          className={cn(
+            'select-text overflow-y-auto whitespace-pre-wrap rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] leading-relaxed text-foreground/60',
+            fill ? 'flex-1' : 'max-h-32'
+          )}
+        >
           {jobDesc}
         </div>
       ) : jobUrl ? (

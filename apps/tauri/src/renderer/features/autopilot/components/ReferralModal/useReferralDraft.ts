@@ -46,6 +46,16 @@ export function useReferralDraft({
     setGenerating(false);
   };
 
+  // Clear the form's draft state after a save (the "add another" flow) — abort any
+  // in-flight stream and wipe draft/error/generating back to the empty state.
+  const reset = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setGenerating(false);
+    setDraft('');
+    setError(null);
+  };
+
   // Abort any in-flight generation on unmount so the stream is torn down and we
   // never setState on a dead component.
   useEffect(
@@ -104,5 +114,5 @@ export function useReferralDraft({
     }
   };
 
-  return { draft, generating, error, generate, abort, canGenerate };
+  return { draft, generating, error, generate, abort, canGenerate, reset };
 }

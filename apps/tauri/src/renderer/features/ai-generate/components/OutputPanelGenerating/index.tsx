@@ -3,9 +3,8 @@ import { AnimatePresence, motion } from 'motion/react';
 
 import { transition } from '@ajh/ui';
 
+import { ThinkingBubble } from '@/components/generation/ThinkingBubble';
 import { useTranslation } from '@/lib/i18n';
-
-import { ThinkingBubble } from '../ThinkingBubble';
 
 interface OutputPanelGeneratingProps {
   stageLabel: string;

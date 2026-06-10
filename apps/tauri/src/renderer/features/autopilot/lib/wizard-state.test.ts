@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { Autopilot } from '@ajh/shared';
 
-import { autopilotToWizardState, buildDefaults } from './wizard-state';
+import type { WizardState } from '@/features/autopilot/types';
+
+import {
+  autopilotToWizardState,
+  buildDefaults,
+  itemsToPages,
+  wizardStateToPayload,
+} from './wizard-state';
 
 // ── Minimal valid Autopilot fixture ──────────────────────────────────────────
 
@@ -115,5 +122,133 @@ describe('autopilotToWizardState()', () => {
     };
     const state = autopilotToWizardState(ap);
     expect(state.keywords).toBe('');
+  });
+});
+
+// ── wizardStateToPayload ──────────────────────────────────────────────────────
+
+function makeForm(overrides: Partial<WizardState> = {}): WizardState {
+  return {
+    name: 'Backend roles',
+    board: 'linkedin',
+    query: 'rust backend',
+    location: 'Berlin',
+    workType: 'remote',
+    amount: 75,
+    dateFilter: '24h',
+    minMatchScore: 70,
+    keywords: 'rust, tokio',
+    excludeKeywords: 'php',
+    resumeText: 'my resume',
+    schedule: 'daily',
+    scheduleHour: 9,
+    scheduleMinute: 30,
+    ...overrides,
+  };
+}
+
+describe('wizardStateToPayload()', () => {
+  it('maps a fully-populated form onto the create payload', () => {
+    expect(wizardStateToPayload(makeForm())).toEqual({
+      name: 'Backend roles',
+      target: {
+        board: 'linkedin',
+        query: 'rust backend',
+        location: 'Berlin',
+        workType: 'remote',
+        pages: 3,
+        dateFilter: '24h',
+      },
+      filter: {
+        minMatchScore: 70,
+        keywords: ['rust', 'tokio'],
+        excludeKeywords: ['php'],
+      },
+      resumeText: 'my resume',
+      schedule: 'daily',
+      scheduleHour: 9,
+      scheduleMinute: 30,
+    });
+  });
+
+  describe('keyword splitting', () => {
+    it('trims, splits on comma, and drops empty fragments', () => {
+      expect(
+        wizardStateToPayload(makeForm({ keywords: ' rust ,, tokio , ' })).filter.keywords
+      ).toEqual(['rust', 'tokio']);
+    });
+
+    it('maps an empty / whitespace-only / comma-only string to undefined', () => {
+      expect(wizardStateToPayload(makeForm({ keywords: '' })).filter.keywords).toBeUndefined();
+      expect(wizardStateToPayload(makeForm({ keywords: '   ' })).filter.keywords).toBeUndefined();
+      expect(wizardStateToPayload(makeForm({ keywords: ', ,' })).filter.keywords).toBeUndefined();
+    });
+
+    it('applies the same rule to excludeKeywords', () => {
+      expect(
+        wizardStateToPayload(makeForm({ excludeKeywords: '' })).filter.excludeKeywords
+      ).toBeUndefined();
+      expect(
+        wizardStateToPayload(makeForm({ excludeKeywords: 'java, c#' })).filter.excludeKeywords
+      ).toEqual(['java', 'c#']);
+    });
+  });
+
+  describe('items → pages conversion', () => {
+    it.each([
+      [1, 1],
+      [25, 1],
+      [26, 2],
+      [50, 2],
+      [75, 3],
+      [250, 10],
+      [500, 10], // clamped to the backend max of 10 pages
+    ])('maps amount %i to %i page(s)', (amount, pages) => {
+      expect(itemsToPages(amount)).toBe(pages);
+      expect(wizardStateToPayload(makeForm({ amount })).target.pages).toBe(pages);
+    });
+
+    it('falls back to one page for non-positive / non-finite amounts', () => {
+      expect(itemsToPages(0)).toBe(1);
+      expect(itemsToPages(-5)).toBe(1);
+      expect(itemsToPages(Number.NaN)).toBe(1);
+    });
+  });
+
+  describe('workType sentinel', () => {
+    it("drops workType when it is the 'any' sentinel", () => {
+      expect(wizardStateToPayload(makeForm({ workType: 'any' })).target.workType).toBeUndefined();
+    });
+
+    it('keeps a concrete workType', () => {
+      expect(wizardStateToPayload(makeForm({ workType: 'hybrid' })).target.workType).toBe('hybrid');
+    });
+  });
+
+  describe('schedule time', () => {
+    it('drops hour/minute for a manual schedule', () => {
+      const payload = wizardStateToPayload(makeForm({ schedule: 'manual' }));
+      expect(payload.scheduleHour).toBeUndefined();
+      expect(payload.scheduleMinute).toBeUndefined();
+    });
+
+    it('keeps hour/minute for recurring schedules', () => {
+      const payload = wizardStateToPayload(
+        makeForm({ schedule: 'twice_daily', scheduleHour: 6, scheduleMinute: 15 })
+      );
+      expect(payload.scheduleHour).toBe(6);
+      expect(payload.scheduleMinute).toBe(15);
+    });
+  });
+
+  describe('empty optionals collapse to undefined', () => {
+    it('drops empty location, dateFilter, and resumeText', () => {
+      const payload = wizardStateToPayload(
+        makeForm({ location: '', dateFilter: '', resumeText: '' })
+      );
+      expect(payload.target.location).toBeUndefined();
+      expect(payload.target.dateFilter).toBeUndefined();
+      expect(payload.resumeText).toBeUndefined();
+    });
   });
 });

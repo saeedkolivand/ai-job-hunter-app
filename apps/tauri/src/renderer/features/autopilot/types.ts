@@ -7,7 +7,8 @@ export interface WizardState {
   query: string;
   location: string;
   workType: 'remote' | 'hybrid' | 'on-site' | 'any';
-  pages: number;
+  /** Target number of jobs to fetch; converted to scraper pages on save (mirrors the jobs page). */
+  amount: number;
   dateFilter: string;
   // Step 2 — Filter
   minMatchScore: number;
@@ -22,5 +23,4 @@ export interface WizardState {
   scheduleMinute: number;
 }
 
-export type SetFn = <K extends keyof WizardState>(k: K, v: WizardState[K]) => void;
 export type Prefilled = { location: boolean; keywords: boolean };

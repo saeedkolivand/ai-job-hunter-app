@@ -52,7 +52,7 @@ function AutopilotPage() {
           job={apply.job}
           resumeText={apply.resumeText}
           board={apply.board}
-          onBack={() => setAutopilot({ apply: null })}
+          onBack={() => setAutopilot({ apply: null, applyWizardStep: 0, applyWizardForm: null })}
         />
       ) : (
         <div className="flex h-full flex-col">
@@ -119,6 +119,8 @@ function AutopilotPage() {
                       onApply={(job) =>
                         setAutopilot({
                           apply: { job, resumeText: ap.resumeText, board: ap.target.board },
+                          applyWizardStep: 0,
+                          applyWizardForm: null,
                         })
                       }
                     />

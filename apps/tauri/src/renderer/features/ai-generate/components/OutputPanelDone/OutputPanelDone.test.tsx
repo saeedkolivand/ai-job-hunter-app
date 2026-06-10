@@ -5,7 +5,7 @@ import { OutputPanelDone } from './index';
 
 // Stub the real-PDF preview (#24) — it renders the export via IPC, out of scope
 // for this panel's preview/edit wiring test (covered in PdfPreview's own suite).
-vi.mock('../PdfPreview', () => ({
+vi.mock('@/components/generation/PdfPreview', () => ({
   PdfPreview: () => <div data-testid="pdf-preview">PDF</div>,
 }));
 

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { ProgressBar, transition } from '@ajh/ui';
 
-import { ThinkingBubble } from '@/features/ai-generate/components/ThinkingBubble';
+import { ThinkingBubble } from '@/components/generation/ThinkingBubble';
 
 interface AnalysisProgressProps {
   running: boolean;

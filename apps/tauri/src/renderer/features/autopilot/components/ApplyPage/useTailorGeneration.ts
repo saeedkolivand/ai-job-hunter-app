@@ -24,7 +24,14 @@ import {
 
 export type { TailorTarget };
 
-const TEMPLATE: TemplateId = 'modern';
+/** Default résumé template for autopilot tailoring — seeds the sticky store
+ *  preference (`applyTemplateId`). The live template/ATS now come from the results
+ *  toolbar picker; preview and export read the SAME store values so the pre-download
+ *  preview always equals the file (ADR-012). */
+export const TAILOR_TEMPLATE: TemplateId = 'modern';
+/** Default ATS single-column override — seeds the sticky store preference
+ *  (`applyAtsMode`); the live value comes from the toolbar picker. */
+export const TAILOR_ATS_MODE = false;
 const MODE: GenerationMode = 'ats';
 
 interface Params {
@@ -42,6 +49,12 @@ interface Params {
   board: string;
   /** Opt-in: research the company and fold a brief into the cover-letter prompt. */
   researchCompany: boolean;
+  /** Live résumé template id (from the sticky store preference) — drives the PDF/DOCX
+   *  export so the file matches the toolbar preview. Render-time only; never regenerates. */
+  templateId: TemplateId;
+  /** Live ATS single-column override (from the sticky store preference) — must match
+   *  the preview so the export is faithful. */
+  atsMode: boolean;
 }
 
 /**
@@ -59,6 +72,8 @@ export function useTailorGeneration({
   jobUrl,
   board,
   researchCompany,
+  templateId,
+  atsMode,
 }: Params) {
   const { t } = useTranslation();
   const api = useAppClient();
@@ -197,9 +212,10 @@ export function useTailorGeneration({
       topRequirements: [],
     };
     const name = buildFilename(fileMeta, docType, fmt);
-    if (fmt === 'pdf') await exportPDF(output, name, docType, meta ?? undefined, TEMPLATE, false);
+    if (fmt === 'pdf')
+      await exportPDF(output, name, docType, meta ?? undefined, templateId, atsMode);
     else if (fmt === 'docx')
-      await exportDOCX(output, name, docType, meta ?? undefined, TEMPLATE, false);
+      await exportDOCX(output, name, docType, meta ?? undefined, templateId, atsMode);
     else exportTXT(output, name);
   };
 

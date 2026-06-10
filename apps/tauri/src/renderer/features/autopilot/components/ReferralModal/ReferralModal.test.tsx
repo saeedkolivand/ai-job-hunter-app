@@ -24,8 +24,12 @@ import type * as AjhUi from '@ajh/ui';
 const mockUpsertMutate =
   vi.fn<(req: ReferralUpsertRequest, opts?: { onSuccess?: () => void }) => void>();
 
+// Mutable per-test list so a test can seed an existing contact and exercise the
+// dedup branch in save() (re-saving the same person carries that row's id).
+let stubbedContacts: ReferralContact[] = [];
+
 vi.mock('@/services', () => ({
-  useReferrals: () => ({ data: [] as ReferralContact[] }),
+  useReferrals: () => ({ data: stubbedContacts }),
   useUpsertReferral: () => ({ mutate: mockUpsertMutate, isPending: false }),
   // useRemoveReferral is consumed by ReferralList (which is stubbed below), so
   // it only needs to exist for the service barrel import to resolve.
@@ -62,6 +66,9 @@ vi.mock('./useReferralDraft', () => ({
     generate: mockGenerate,
     abort: vi.fn(),
     canGenerate: true,
+    // save()'s onSuccess now calls reset() (the add-another flow) — stub it so the
+    // success path doesn't throw on an undefined.
+    reset: vi.fn(),
   }),
 }));
 
@@ -91,6 +98,7 @@ import { ReferralModal } from './index';
 
 beforeEach(() => {
   stubbedDraft = '';
+  stubbedContacts = [];
   mockUpsertMutate.mockClear();
   mockGenerate.mockClear();
 });
@@ -227,6 +235,54 @@ describe('ReferralModal — Save persists via upsert with correct payload', () =
       expect.objectContaining({
         channel: 'connection_note',
         inviteNoteDraft: 'Hi, I am applying to Acme and would love a referral.',
+        status: 'draft',
+      }),
+      expect.any(Object)
+    );
+  });
+
+  it('Save for an EXISTING person (same name, this job) carries their id + other drafts', () => {
+    // Dedup branch: a contact with the same name already exists for this job, so the
+    // save must update that row (id present) and preserve the other channels' drafts
+    // instead of inserting a duplicate.
+    stubbedContacts = [
+      {
+        id: 'ref-1',
+        jobUrl: 'https://acme.com/jobs/1',
+        companyName: 'Acme',
+        personName: 'Bob Chen',
+        personRole: undefined,
+        linkedinUrl: undefined,
+        emailDraft: 'old email draft',
+        messageDraft: 'old message draft',
+        inviteNoteDraft: undefined,
+        channel: 'email',
+        status: 'sent',
+        notes: undefined,
+        createdAt: 1_000,
+      } as ReferralContact,
+    ];
+    stubbedDraft = 'Hi Bob, can you refer me?';
+
+    renderModal();
+    // Match case-insensitively — lower-case input must still hit the existing row.
+    fillPersonName('bob chen');
+    // Default channel is linkedin_message → messageDraft is the field being set.
+
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /autopilot\.referral\.save/i }));
+    });
+
+    expect(mockUpsertMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'ref-1',
+        // Other channels' drafts are carried so the full-row overwrite doesn't blank them.
+        emailDraft: 'old email draft',
+        inviteNoteDraft: undefined,
+        // The current channel's draft is set last and wins.
+        messageDraft: 'Hi Bob, can you refer me?',
+        personName: 'bob chen',
+        channel: 'linkedin_message',
         status: 'draft',
       }),
       expect.any(Object)

@@ -7,10 +7,12 @@ interface WizardFieldProps {
   badge?: ReactNode;
   /** Associates the label with a control by id (for inputs that aren't nested children). */
   htmlFor?: string;
+  /** Inline validation message rendered below the control. The bound control sets its own `aria-invalid`. */
+  error?: string;
   children: ReactNode;
 }
 
-export function WizardField({ label, hint, badge, htmlFor, children }: WizardFieldProps) {
+export function WizardField({ label, hint, badge, htmlFor, error, children }: WizardFieldProps) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5">
@@ -21,6 +23,7 @@ export function WizardField({ label, hint, badge, htmlFor, children }: WizardFie
         {hint && <span className="text-[10px] text-foreground/30">{hint}</span>}
       </div>
       {children}
+      {error && <p className="text-[10px] text-red-400/80">{error}</p>}
     </div>
   );
 }

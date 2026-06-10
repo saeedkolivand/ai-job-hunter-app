@@ -6,6 +6,7 @@ import type { ReferralChannel } from '@ajh/shared/ipc';
 import { Button, Input, ModalShell, SegmentedControl, StreamingText, TextArea } from '@ajh/ui';
 
 import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
+import { WizardField } from '@/features/autopilot/components/wizard-steps/WizardField';
 import { CONNECTION_NOTE_LIMIT } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 import { useReferrals, useUpsertReferral } from '@/services';
@@ -74,12 +75,29 @@ export function ReferralModal({ job, resume, onClose }: Props) {
 
   const save = () => {
     const draft = gen.draft.trim();
-    if (!personName.trim() || !draft || overLimit) return;
+    const name = personName.trim();
+    if (!name || !draft || overLimit) return;
+    // Dedup: re-saving the same person for THIS job updates their row instead of
+    // creating a duplicate (contacts are already job-scoped). Match case-insensitively.
+    const existing = (contacts.data ?? []).find(
+      (c) => c.personName.trim().toLowerCase() === name.toLowerCase()
+    );
     upsert.mutate(
       {
+        // On update, carry the existing id AND the other channels' drafts so a
+        // full-row overwrite doesn't blank them (mirrors ReferralList's pattern);
+        // the current channel's field is set last so it wins.
+        ...(existing
+          ? {
+              id: existing.id,
+              emailDraft: existing.emailDraft,
+              messageDraft: existing.messageDraft,
+              inviteNoteDraft: existing.inviteNoteDraft,
+            }
+          : {}),
         jobUrl: job.url,
         companyName: job.company,
-        personName: personName.trim(),
+        personName: name,
         personRole: personRole.trim() || undefined,
         linkedinUrl: linkedinUrl.trim() || undefined,
         notes: notes.trim() || undefined,
@@ -90,7 +108,13 @@ export function ReferralModal({ job, resume, onClose }: Props) {
       {
         onSuccess: () => {
           setSaved(true);
-          setTimeout(() => setSaved(false), 1500);
+          setTimeout(() => setSaved(false), 2000);
+          // Add-another: clear the form + draft so the next person can be entered.
+          setPersonName('');
+          setPersonRole('');
+          setLinkedinUrl('');
+          setNotes('');
+          gen.reset();
         },
       }
     );
@@ -136,7 +160,7 @@ export function ReferralModal({ job, resume, onClose }: Props) {
         </div>
 
         {/* Body */}
-        <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
           {/* Privacy note — this stores another person's details. */}
           <div className="flex items-start gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2">
             <ShieldCheck size={13} className="mt-0.5 shrink-0 text-brand-soft" />
@@ -145,45 +169,67 @@ export function ReferralModal({ job, resume, onClose }: Props) {
             </p>
           </div>
 
-          {/* Person details — all typed by the user; no LinkedIn fetch. */}
-          <div className="space-y-2">
-            <label className="block">
-              <span className="mb-1 block text-[11px] font-medium text-foreground/70">
-                {t('autopilot.referral.personName')}
-              </span>
+          {/* Transient "saved · add another" confirmation — the form clears on save,
+              so this makes that intentional and points at the roster below. */}
+          {saved && (
+            <div className="flex items-center gap-2 text-[11px] font-medium text-brand-soft">
+              <Check size={13} className="shrink-0" />
+              <span>{t('autopilot.referral.savedAddAnother')}</span>
+            </div>
+          )}
+
+          {/* Contact fields — every user INPUT is grouped together, before the
+              Generate action. All values are typed by the user; no LinkedIn fetch.
+              Notes lives here too: it's a field saved with the record, not output. */}
+          <div className="space-y-4">
+            <WizardField label={t('autopilot.referral.personName')} htmlFor="referral-person-name">
               <Input
+                id="referral-person-name"
+                variant="default"
+                className="w-full shadow-none"
                 value={personName}
                 onChange={(e) => setPersonName(e.target.value)}
                 placeholder={t('autopilot.referral.personNamePlaceholder')}
               />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-[11px] font-medium text-foreground/70">
-                {t('autopilot.referral.personRole')}
-              </span>
+            </WizardField>
+
+            <WizardField label={t('autopilot.referral.personRole')} htmlFor="referral-person-role">
               <Input
+                id="referral-person-role"
+                variant="default"
+                className="w-full shadow-none"
                 value={personRole}
                 onChange={(e) => setPersonRole(e.target.value)}
                 placeholder={t('autopilot.referral.personRolePlaceholder')}
               />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-[11px] font-medium text-foreground/70">
-                {t('autopilot.referral.linkedinUrl')}
-              </span>
+            </WizardField>
+
+            <WizardField label={t('autopilot.referral.linkedinUrl')} htmlFor="referral-linkedin">
               <Input
+                id="referral-linkedin"
+                variant="default"
+                className="w-full shadow-none"
                 value={linkedinUrl}
                 onChange={(e) => setLinkedinUrl(e.target.value)}
                 placeholder={t('autopilot.referral.linkedinUrlPlaceholder')}
               />
-            </label>
+            </WizardField>
+
+            <WizardField label={t('autopilot.referral.notes')} htmlFor="referral-notes">
+              <TextArea
+                id="referral-notes"
+                variant="default"
+                className="w-full rounded-lg bg-white/5 px-3 py-2 shadow-none"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+                placeholder={t('autopilot.referral.notesPlaceholder')}
+              />
+            </WizardField>
           </div>
 
           {/* Channel / format picker */}
-          <div className="space-y-1.5">
-            <span className="block text-[11px] font-medium text-foreground/70">
-              {t('autopilot.referral.channel.label')}
-            </span>
+          <WizardField label={t('autopilot.referral.channel.label')}>
             <SegmentedControl<ReferralChannel>
               variant="grid"
               ariaLabel={t('autopilot.referral.channel.label')}
@@ -191,49 +237,49 @@ export function ReferralModal({ job, resume, onClose }: Props) {
               onChange={setChannel}
               options={CHANNELS.map((c) => ({ value: c, label: channelLabel(c) }))}
             />
-          </div>
+          </WizardField>
 
           {/* Model */}
           <ModelSelector />
 
-          {/* Generate */}
-          <div className="flex items-center justify-end gap-2">
+          {/* Generate — primary, full-width CTA. While streaming, a Cancel sits
+              above it so the in-flight call can be aborted. */}
+          <div className="space-y-2">
             {gen.generating && (
               <Button
                 variant="glass"
-                size="sm"
                 onClick={() => gen.abort()}
-                className="border-red-400/20 text-red-300/80 hover:text-red-200"
+                className="w-full justify-center border-red-400/20 text-red-300/80 hover:text-red-200"
               >
                 {t('autopilot.referral.cancel')}
               </Button>
             )}
             <Button
               variant="glass"
-              size="sm"
               loading={gen.generating}
               disabled={!gen.canGenerate}
               onClick={() => void gen.generate()}
+              className="w-full justify-center"
             >
               {!gen.generating && <Sparkles size={13} />}
               {gen.generating
                 ? t('autopilot.referral.generating')
                 : t('autopilot.referral.generate')}
             </Button>
+
+            {!canUse && (
+              <p className="text-[11px] text-amber-300/70">
+                {reason === 'addApiKey'
+                  ? t('autopilot.apply.addApiKey')
+                  : reason === 'installCli'
+                    ? t('autopilot.apply.installCli')
+                    : t('autopilot.apply.selectModel')}
+              </p>
+            )}
+            {gen.error && <p className="text-[11px] text-red-300/80">{gen.error}</p>}
           </div>
 
-          {!canUse && (
-            <p className="text-[11px] text-amber-300/70">
-              {reason === 'addApiKey'
-                ? t('autopilot.apply.addApiKey')
-                : reason === 'installCli'
-                  ? t('autopilot.apply.installCli')
-                  : t('autopilot.apply.selectModel')}
-            </p>
-          )}
-          {gen.error && <p className="text-[11px] text-red-300/80">{gen.error}</p>}
-
-          {/* Draft output */}
+          {/* Draft output — only the generated message and its actions. */}
           {(gen.draft || gen.generating) && (
             <div className="space-y-1.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
               <StreamingText text={gen.draft} isStreaming={gen.generating} />
@@ -276,20 +322,6 @@ export function ReferralModal({ job, resume, onClose }: Props) {
               </div>
             </div>
           )}
-
-          {/* Optional notes saved with the contact */}
-          <label className="block">
-            <span className="mb-1 block text-[11px] font-medium text-foreground/70">
-              {t('autopilot.referral.notes')}
-            </span>
-            <TextArea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={2}
-              variant="glass"
-              placeholder={t('autopilot.referral.notesPlaceholder')}
-            />
-          </label>
 
           {/* Existing contacts for this job */}
           <ReferralList contacts={contacts.data ?? []} />
