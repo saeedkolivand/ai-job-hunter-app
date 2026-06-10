@@ -161,9 +161,15 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
    sunburst rises out of the dark instead of cutting straight to bright yellow.
    The first stop stays #130c10 so it still meets beat2's bottom seamlessly. */
 .beat2::after{height:clamp(150px,30vh,340px)}
+/* taller bottom fade so what's left of the dark outer ring melts into the
+   beat4 handover orange instead of showing as a brown band */
+.beat3::after{height:clamp(150px,28vh,320px)}
 .beat3::before{
-  height:clamp(220px,42vh,480px);
-  background:linear-gradient(to bottom,#130c10 0%,#2e1705 30%,rgba(150,85,0,.36) 58%,transparent 100%);
+  /* taller veil with darkness held longer — the widened radial (72% ry)
+     brightened beat3's top edge, so the old fade let the sunburst pop in
+     too early against beat2's dark bottom */
+  height:clamp(280px,54vh,620px);
+  background:linear-gradient(to bottom,#130c10 0%,#241204 24%,#2e1705 44%,rgba(120,64,2,.5) 66%,rgba(150,85,0,.2) 82%,transparent 100%);
 }
 
 /* ---------- scroll-driven motion (scrollmagic-style) ---------- */
@@ -295,7 +301,9 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 .beat3{--line:#0b0b0b; --seam-prev:#130c10; --seam-next:#ffb24d; justify-content:flex-start; min-height:128vh; padding-top:clamp(110px,30vh,360px)}
 .beat3 .photo{background:
   repeating-conic-gradient(from 0deg at 50% 42%, rgba(255,255,255,.16) 0deg 5deg, rgba(255,210,0,0) 5deg 11deg),
-  radial-gradient(64% 54% at 50% 42%, #eec46c 0%, #d98e26 36%, #ad5b0d 70%, #6f2f05 100%);
+  /* radial reaches past the section bottom (42% + 72% > 100%) so the glow
+     hands over to the seam orange instead of pooling dark brown down there */
+  radial-gradient(72% 72% at 50% 42%, #eec46c 0%, #d98e26 36%, #ad5b0d 70%, #6f2f05 100%);
   filter:saturate(1.35) contrast(1.1) brightness(.9);
 }
 .beat3 .grade{background:radial-gradient(70% 60% at 50% 42%,rgba(255,255,255,.14),rgba(255,255,255,0) 55%); mix-blend-mode:screen}
