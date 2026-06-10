@@ -13,6 +13,8 @@
   &nbsp;·&nbsp;
   <a href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/">🌐 Live site</a>
   &nbsp;·&nbsp;
+  <a href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/recruiter.html">🎬 Short film</a>
+  &nbsp;·&nbsp;
   <a href="#-installation">📦 Install</a>
   &nbsp;·&nbsp;
   <a href="#-features">✨ Features</a>
