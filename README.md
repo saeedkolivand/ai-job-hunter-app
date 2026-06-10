@@ -13,6 +13,8 @@
   &nbsp;·&nbsp;
   <a href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/">🌐 Live site</a>
   &nbsp;·&nbsp;
+  <a href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/recruiter.html">🎬 Short film</a>
+  &nbsp;·&nbsp;
   <a href="#-installation">📦 Install</a>
   &nbsp;·&nbsp;
   <a href="#-features">✨ Features</a>
@@ -477,6 +479,7 @@ See <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBU
 | <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a>                                                                                 | Code style, branching, PR process                                |
 | <a target="_blank" rel="noopener noreferrer" href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/how-it-works.html">landing/how-it-works.html</a>         | How the AI Job Hunter works end-to-end (interactive walkthrough) |
 | <a target="_blank" rel="noopener noreferrer" href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/architecture-map.html">landing/architecture-map.html</a> | Interactive architecture map of the AI Job Hunter                |
+| <a target="_blank" rel="noopener noreferrer" href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/recruiter.html">landing/recruiter.html</a>               | THE RECRUITER — a cinematic short film about the job hunt        |
 
 ---
 
