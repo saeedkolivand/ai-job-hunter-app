@@ -87,14 +87,15 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 @media (max-width:1199px){ .xl-only{display:none} }
 
 /* ---------- the journey line ----------
-   One red path spanning the whole document, built by JS from real section
-   positions: it snakes down alternating side gutters AROUND each section's
-   content column, and its drawing tip is an arrowhead that finally lands
-   pointing at the CTA. Scrubbed by overall scroll progress, both directions. */
+   Two mirrored red paths spanning the whole document, built by JS from real
+   section positions: they snake down opposite side gutters AROUND each
+   section's content column, and each drawing tip is an arrowhead that finally
+   lands pointing at the CTA from its own side. Scrubbed by overall scroll
+   progress, both directions. */
 #journey{position:absolute; top:0; left:0; width:100%; z-index:40; pointer-events:none}
 #journey svg{display:block; width:100%; height:100%; overflow:visible}
 #journey path{fill:none; stroke:var(--red); stroke-width:3.4; stroke-linecap:round; stroke-linejoin:round}
-#journey #journey-path{opacity:.85; filter:drop-shadow(0 1px 0 rgba(0,0,0,.25))}
+#journey #journey-path,#journey #journey-path-2{opacity:.85; filter:drop-shadow(0 1px 0 rgba(0,0,0,.25))}
 /* narrow viewports get an edge-hugging route from the JS builder instead of
    the gutter snake — keep the ink lighter there so it reads as margin doodle */
 @media (max-width:700px){ #journey path{stroke-width:2.6} }
@@ -160,9 +161,15 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
    sunburst rises out of the dark instead of cutting straight to bright yellow.
    The first stop stays #130c10 so it still meets beat2's bottom seamlessly. */
 .beat2::after{height:clamp(150px,30vh,340px)}
+/* taller bottom fade so what's left of the dark outer ring melts into the
+   beat4 handover orange instead of showing as a brown band */
+.beat3::after{height:clamp(150px,28vh,320px)}
 .beat3::before{
-  height:clamp(220px,42vh,480px);
-  background:linear-gradient(to bottom,#130c10 0%,#2e1705 30%,rgba(150,85,0,.36) 58%,transparent 100%);
+  /* taller veil with darkness held longer — the widened radial (72% ry)
+     brightened beat3's top edge, so the old fade let the sunburst pop in
+     too early against beat2's dark bottom */
+  height:clamp(280px,54vh,620px);
+  background:linear-gradient(to bottom,#130c10 0%,#241204 24%,#2e1705 44%,rgba(120,64,2,.5) 66%,rgba(150,85,0,.2) 82%,transparent 100%);
 }
 
 /* ---------- scroll-driven motion (scrollmagic-style) ---------- */
@@ -188,7 +195,9 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
     transform:translate3d(0,calc(max(0, var(--p,0) - .5) * -16vh),0);
   }
   /* foreground accents move faster/opposite for parallax layering */
-  .beat4 .sun{transform:translate3d(0,calc((var(--p,.5) - .5) * 30vh),0)}
+  /* the ray ticks are a separate deco svg — same transform so sun + rays
+     travel as one element */
+  .beat4 .sun,.beat4 .sun-rays{transform:translate3d(0,calc((var(--p,.5) - .5) * 30vh),0)}
   .beat4 .stonks{transform:translate3d(0,calc((var(--p,.5) - .5) * -22vh),0)}
   .finale .finale-dood{transform:translate3d(0,calc((1 - var(--c,1)) * 28px),0)}
 }
@@ -292,7 +301,9 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 .beat3{--line:#0b0b0b; --seam-prev:#130c10; --seam-next:#ffb24d; justify-content:flex-start; min-height:128vh; padding-top:clamp(110px,30vh,360px)}
 .beat3 .photo{background:
   repeating-conic-gradient(from 0deg at 50% 42%, rgba(255,255,255,.16) 0deg 5deg, rgba(255,210,0,0) 5deg 11deg),
-  radial-gradient(64% 54% at 50% 42%, #eec46c 0%, #d98e26 36%, #ad5b0d 70%, #6f2f05 100%);
+  /* radial reaches past the section bottom (42% + 72% > 100%) so the glow
+     hands over to the seam orange instead of pooling dark brown down there */
+  radial-gradient(72% 72% at 50% 42%, #eec46c 0%, #d98e26 36%, #ad5b0d 70%, #6f2f05 100%);
   filter:saturate(1.35) contrast(1.1) brightness(.9);
 }
 .beat3 .grade{background:radial-gradient(70% 60% at 50% 42%,rgba(255,255,255,.14),rgba(255,255,255,0) 55%); mix-blend-mode:screen}
@@ -429,6 +440,8 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   <svg>
     <path id="journey-path" d="M0 0"/>
     <g id="journey-tip"><path d="M-14 -8 L2 0 L-14 8"/></g>
+    <path id="journey-path-2" d="M0 0"/>
+    <g id="journey-tip-2"><path d="M-14 -8 L2 0 L-14 8"/></g>
   </svg>
 </div>
 
@@ -565,8 +578,6 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
         <path class="dood" d="M106 72 L116 76"/><path class="dood" d="M134 72 L124 76"/>
         <ellipse class="dood" cx="120" cy="94" rx="5" ry="6"/>
         <ellipse class="dood-fill" cx="146" cy="78" rx="2.6" ry="3.8" style="fill:#6cc6ff"/>
-        <polyline class="dood" points="120,104 100,92 112,80 92,66"/>
-        <polyline class="dood" points="120,104 140,92 128,80 148,66"/>
         <polyline class="dood" points="120,108 96,108 104,120 86,124"/>
         <polyline class="dood" points="120,108 144,108 136,120 154,124"/>
         <path class="dood" d="M120 108 L120 150"/>
@@ -665,7 +676,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   <div class="sun"></div>
   <svg class="deco draw sm-hide" style="left:14%; top:13%; width:90px" viewBox="0 0 90 40" aria-hidden="true"><path pathLength="1" d="M6 24 q9 -12 18 0 q9 -12 18 0" style="stroke:#5a3610"/><path pathLength="1" d="M52 10 q7 -9 14 0 q7 -9 14 0" style="stroke:#5a3610; stroke-width:2.4"/></svg>
   <svg class="deco draw sm-hide" style="left:5%; top:30%; width:120px" viewBox="0 0 120 54" aria-hidden="true"><path pathLength="1" d="M16 42 q-12 -2 -8 -12 q-2 -12 12 -12 q4 -12 18 -8 q10 -8 20 0 q14 -4 16 8 q12 2 8 14 q2 10 -12 10 H24" style="stroke:#7a4a14; stroke-width:2.8"/></svg>
-  <svg class="deco draw sm-hide" style="right:calc(8% - 30px); top:calc(10% - 30px); width:150px" viewBox="0 0 150 150" aria-hidden="true"><path pathLength="1" d="M75 6 v14 M75 130 v14 M6 75 h14 M130 75 h14 M26 26 l10 10 M114 114 l10 10 M124 26 l-10 10 M36 114 l-10 10" style="stroke:#b8770e; stroke-width:3"/></svg>
+  <svg class="deco draw sm-hide sun-rays" style="right:calc(8% - 30px); top:calc(10% - 30px); width:150px" viewBox="0 0 150 150" aria-hidden="true"><path pathLength="1" d="M75 6 v14 M75 130 v14 M6 75 h14 M130 75 h14 M26 26 l10 10 M114 114 l10 10 M124 26 l-10 10 M36 114 l-10 10" style="stroke:#b8770e; stroke-width:3"/></svg>
   <svg class="deco draw sm-hide" style="right:14%; top:38%; width:90px" viewBox="0 0 110 50" aria-hidden="true"><path pathLength="1" d="M16 38 q-10 -2 -6 -10 q-2 -10 10 -10 q4 -10 16 -6 q10 -6 18 0 q12 -2 12 8 q10 2 6 12 q2 8 -10 8 H22" style="stroke:#7a4a14; stroke-width:2.4"/></svg>
   <svg class="deco draw sm-hide" style="left:10%; bottom:8%; width:44px" viewBox="0 0 44 64" aria-hidden="true"><path pathLength="1" d="M22 60 q2 -14 0 -26" style="stroke:#2a6d2a; stroke-width:2.6"/><path pathLength="1" d="M22 40 q-10 6 -12 -2 M22 44 q10 4 12 -4" style="stroke:#2a6d2a; stroke-width:2.2"/><path pathLength="1" d="M22 30 q-8 -2 -6 -8 q2 -6 8 -4 q2 -6 8 -2 q6 2 2 8 q4 6 -4 8 q-6 2 -8 -2 Z" style="stroke:#a3541c; stroke-width:2.4"/></svg>
   <svg class="deco draw sm-hide" style="left:34%; top:8%; width:54px" viewBox="0 0 60 26" aria-hidden="true"><path pathLength="1" d="M4 16 q5 -7 10 0 q5 -7 10 0" style="stroke:#5a3610; stroke-width:2"/><path pathLength="1" d="M36 8 q4 -6 8 0 q4 -6 8 0" style="stroke:#5a3610; stroke-width:1.8"/></svg>
@@ -677,7 +688,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
         <circle class="dood" cx="120" cy="74" r="26"/>
         <rect x="104" y="68" width="34" height="9" rx="4" class="dood-fill"/>
         <path class="dood" d="M138 72 l8 1"/>
-        <path class="dood" d="M106 90 q12 9 24 2"/>
+        <path class="dood" d="M106 84 q12 9 24 2"/>
         <path class="dood" d="M120 100 q14 26 44 30"/>
         <path class="dood" d="M120 112 q-30 6 -40 -18"/>
         <path class="dood" d="M164 130 q22 2 30 -8"/>
@@ -759,7 +770,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
     <svg viewBox="0 0 200 175">
       <circle class="dood" cx="100" cy="66" r="26"/>
       <circle class="dood-fill" cx="90" cy="64" r="2.6"/><circle class="dood-fill" cx="110" cy="64" r="2.6"/>
-      <path class="dood" d="M88 86 q12 8 24 0" id="finale-mouth"/>
+      <path class="dood" d="M88 78 q12 9 24 0" id="finale-mouth"/>
       <path class="dood" d="M100 92 L100 138"/>
       <path class="dood" d="M100 104 q-22 12 -30 34"/><path class="dood" d="M100 104 q22 12 30 34"/>
       <path class="dood" d="M100 138 L82 172"/><path class="dood" d="M100 138 L118 172"/>
@@ -913,9 +924,17 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   var scenes = document.querySelectorAll('.stage, .testi, .finale'), sceneTick=false;
   function paintScenes(){
     var vh = innerHeight || document.documentElement.clientHeight;
+    var maxS = document.documentElement.scrollHeight - vh;
     for(var i=0;i<scenes.length;i++){
       var s=scenes[i], r=s.getBoundingClientRect();
-      var p=(vh - r.top)/(vh + r.height); p = p<0?0:(p>1?1:p);
+      var p=(vh - r.top)/(vh + r.height);
+      /* sections near the document end can never travel fully past the
+         viewport, so raw --p tops out below 1 and their scroll-scrubbed
+         strokes would stay half-drawn — rescale by the progress this
+         section can actually reach at full scroll */
+      var pm=(vh - (r.top + scrollY - maxS))/(vh + r.height);
+      if(pm>0 && pm<1) p/=pm;
+      p = p<0?0:(p>1?1:p);
       var mid=r.top + r.height/2;
       var c=1 - Math.min(1, Math.abs(mid - vh/2)/(vh/2 + r.height/2));
       s.style.setProperty('--p', p.toFixed(4));
@@ -930,15 +949,17 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
     paintScenes();
   }
 
-  /* ---- the journey line: built from real section positions, snaking down
-         alternating side gutters around each content column, ending beside the
-         CTA. Dashoffset is scrubbed by total scroll progress (reversible) and
-         the drawing tip is an arrowhead riding the path tangent. ---- */
+  /* ---- the journey lines: built from real section positions, two mirrored
+         paths snaking down opposite side gutters around each content column,
+         both ending beside the CTA. Dashoffset is scrubbed by total scroll
+         progress (reversible) and each drawing tip is an arrowhead riding its
+         path tangent. ---- */
   (function(){
     var wrap=document.getElementById('journey');
     if(!wrap || reduce) return;
     var svg=wrap.querySelector('svg'), line=document.getElementById('journey-path'), tip=document.getElementById('journey-tip');
-    var len=0, built=false, tblL=[], tblY=[], tipS=1;
+    var line2=document.getElementById('journey-path-2'), tip2=document.getElementById('journey-tip-2');
+    var len=0, len2=0, built=false, tbl=null, tbl2=null, tipS=1;
 
     /* Catmull-Rom through waypoints → smooth cubic path */
     function pts2path(P){
@@ -954,6 +975,10 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 
     function build(){
       if(getComputedStyle(wrap).display==='none'){ built=false; return; }
+      /* release our own stale height before measuring — otherwise a layout
+         shrink (font swap, resize) leaves scrollHeight pinned to the old
+         overlay height and the dark body bg shows as a band below the finale */
+      wrap.style.height='0px';
       var docH=document.documentElement.scrollHeight, vw=document.documentElement.clientWidth;
       wrap.style.height=docH+'px';
       svg.setAttribute('width',vw); svg.setAttribute('height',docH);
@@ -968,61 +993,100 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
       var dir=wide?1:-1;
       tipS=vw<700?0.78:1;
       var Lx=g, Rx=vw-g;
-      var P=[[vw/2,0]], side=0;
       var secs=document.querySelectorAll('main > section');
-      for(var i=0;i<secs.length;i++){
-        var s=secs[i]; if(s.classList.contains('finale')) break;
-        var r=s.getBoundingClientRect(), top=r.top+scrollY, h=r.height;
-        var x=(side%2===0)?Lx:Rx, inw=((side%2===0)?amp:-amp)*dir;
-        P.push([x, top+h*0.18]);
-        P.push([x+inw, top+h*0.5]);
-        P.push([x, top+h*0.85]);
-        side++;
+      /* boxes the side-swap crossing must clear — exit those sections below
+         them so the X never lands on a box (secret dialog, last feature card) */
+      var clearEls=document.querySelectorAll('.dialog, .feat-grid'), clearB=[];
+      for(var c=0;c<clearEls.length;c++) clearB.push(clearEls[c].getBoundingClientRect().bottom+scrollY);
+      /* …and headings the crossing must finish ABOVE — pull that section's
+         entry waypoint up so the swap completes before them */
+      var gateEls=document.querySelectorAll('.testi h2'), gateT=[];
+      for(var c2=0;c2<gateEls.length;c2++) gateT.push(gateEls[c2].getBoundingClientRect().top+scrollY);
+      /* both lines share the gutter snake on opposite parities: the second
+         starts right wherever the first starts left, so they mirror — each
+         enters from the top of its own gutter, not the center */
+      function route(startSide){
+        var P=[[(startSide%2===0)?Lx:Rx, 0]], side=startSide, prevEy=0;
+        for(var i=0;i<secs.length;i++){
+          var s=secs[i]; if(s.classList.contains('finale')) break;
+          var r=s.getBoundingClientRect(), top=r.top+scrollY, h=r.height;
+          var x=(side%2===0)?Lx:Rx, inw=((side%2===0)?amp:-amp)*dir;
+          var en=top+h*0.18;
+          for(var b=0;b<gateT.length;b++){
+            if(gateT[b]>top && gateT[b]<top+h) en=Math.min(en, Math.max(prevEy+60, gateT[b]-40));
+          }
+          var ey=top+h*0.85;
+          for(var b2=0;b2<clearB.length;b2++){
+            if(clearB[b2]>top && clearB[b2]<top+h) ey=Math.min(top+h, Math.max(ey, clearB[b2]+40));
+          }
+          P.push([x, en]);
+          P.push([x+inw, top+h*0.5]);
+          P.push([x, ey]);
+          prevEy=ey;
+          side++;
+        }
+        return P;
       }
       var cr=document.getElementById('cta').getBoundingClientRect();
-      /* clamp the landing so the approach stays on-canvas when the CTA sits
-         near the left edge on small screens */
-      var ctaY=cr.top+scrollY+cr.height/2, endX=Math.max(g+amp+12, cr.left-38);
+      var ctaY=cr.top+scrollY+cr.height/2;
+      /* clamp both landings so each approach stays on-canvas when the CTA
+         sits near either edge on small screens */
+      var P=route(0), endX=Math.max(g+amp+12, cr.left-38);
       P.push([Lx+44, ctaY-170]);
       P.push([Math.max(8, endX-90), ctaY-14]);
       P.push([endX, ctaY]);
+      var P2=route(1), endX2=Math.min(vw-(g+amp+12), cr.right+38);
+      P2.push([Rx-44, ctaY-170]);
+      P2.push([Math.min(vw-8, endX2+90), ctaY-14]);
+      P2.push([endX2, ctaY]);
       line.setAttribute('d', pts2path(P));
-      len=line.getTotalLength();
+      line2.setAttribute('d', pts2path(P2));
+      len=line.getTotalLength(); len2=line2.getTotalLength();
       line.setAttribute('stroke-dasharray', len);
-      /* length-by-document-Y lookup so the tip can track the viewport instead
-         of lagging where path length outpaces page height (forced monotonic) */
-      tblL=[]; tblY=[];
-      var steps=Math.max(40, Math.round(len/24)), prevY=0;
-      for(var k=0;k<=steps;k++){
-        var l=len*k/steps, y=line.getPointAtLength(l).y;
-        if(y<prevY) y=prevY; prevY=y;
-        tblL.push(l); tblY.push(y);
-      }
+      line2.setAttribute('stroke-dasharray', len2);
+      tbl=makeTable(line,len); tbl2=makeTable(line2,len2);
       built=true;
       paintJourney();
     }
 
-    function lengthAtY(y){
-      var hi=tblY.length-1, lo=0;
-      if(y<=tblY[0]) return tblL[0];
-      if(y>=tblY[hi]) return tblL[hi];
-      while(hi-lo>1){ var mid=(hi+lo)>>1; if(tblY[mid]<y) lo=mid; else hi=mid; }
-      var f=(y-tblY[lo])/((tblY[hi]-tblY[lo])||1);
-      return tblL[lo]+(tblL[hi]-tblL[lo])*f;
+    /* length-by-document-Y lookup so each tip can track the viewport instead
+       of lagging where path length outpaces page height (forced monotonic) */
+    function makeTable(ln,L){
+      var TL=[], TY=[], steps=Math.max(40, Math.round(L/24)), prevY=0;
+      for(var k=0;k<=steps;k++){
+        var l=L*k/steps, y=ln.getPointAtLength(l).y;
+        if(y<prevY) y=prevY; prevY=y;
+        TL.push(l); TY.push(y);
+      }
+      return {L:TL, Y:TY};
+    }
+
+    function lengthAtY(t, y){
+      var TL=t.L, TY=t.Y, hi=TY.length-1, lo=0;
+      if(y<=TY[0]) return TL[0];
+      if(y>=TY[hi]) return TL[hi];
+      while(hi-lo>1){ var mid=(hi+lo)>>1; if(TY[mid]<y) lo=mid; else hi=mid; }
+      var f=(y-TY[lo])/((TY[hi]-TY[lo])||1);
+      return TL[lo]+(TL[hi]-TL[lo])*f;
+    }
+
+    /* tip rides ~60% down the current viewport; near the end blend to the
+       full path so each arrow finishes exactly on the CTA */
+    function drawOne(ln, tp, t, L, p){
+      var at=lengthAtY(t, scrollY+innerHeight*0.6);
+      if(p>0.85){ var f=(p-0.85)/0.15; at=at+(L-at)*f; }
+      ln.style.strokeDashoffset=Math.max(0,L-at);
+      var pt=ln.getPointAtLength(at), pb=ln.getPointAtLength(Math.max(0,at-2));
+      var ang=Math.atan2(pt.y-pb.y, pt.x-pb.x)*180/Math.PI;
+      tp.setAttribute('transform','translate('+pt.x.toFixed(1)+' '+pt.y.toFixed(1)+') rotate('+ang.toFixed(1)+') scale('+tipS+')');
     }
 
     function paintJourney(){
       if(!built) return;
       var max=document.documentElement.scrollHeight-innerHeight;
       var p=max>0?Math.min(1,Math.max(0,scrollY/max)):0;
-      /* tip rides ~60% down the current viewport; near the end blend to the
-         full path so the arrow finishes exactly on the CTA */
-      var at=lengthAtY(scrollY+innerHeight*0.6);
-      if(p>0.85){ var t=(p-0.85)/0.15; at=at+(len-at)*t; }
-      line.style.strokeDashoffset=Math.max(0,len-at);
-      var pt=line.getPointAtLength(at), pb=line.getPointAtLength(Math.max(0,at-2));
-      var ang=Math.atan2(pt.y-pb.y, pt.x-pb.x)*180/Math.PI;
-      tip.setAttribute('transform','translate('+pt.x.toFixed(1)+' '+pt.y.toFixed(1)+') rotate('+ang.toFixed(1)+') scale('+tipS+')');
+      drawOne(line, tip, tbl, len, p);
+      drawOne(line2, tip2, tbl2, len2, p);
     }
 
     var jt=false;
