@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import type { InterviewAnswers } from '@ajh/prompts/builder';
 import type { AutopilotFoundJob } from '@ajh/shared';
 
+import type { TailorWizardState } from '@/features/autopilot/components/ApplyPage/lib/tailor-state';
 import type { WizardState } from '@/features/autopilot/types';
 import type { EmphasisId, GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate';
 import type { AnalysisMode, AnalysisResult } from '@/lib/resume-ai';
@@ -110,6 +111,17 @@ interface AutopilotSlice {
   // Set when the user opens the dedicated apply page for a found job (#51);
   // cleared on Back. Null shows the autopilot list.
   apply: AutopilotApplyTarget | null;
+  // Tailoring wizard state on the apply page. Persisted (like wizardStep/
+  // wizardForm) so the configuring stage survives remounts; cleared alongside
+  // `apply` on Back so a different job starts fresh.
+  applyWizardStep: number;
+  applyWizardForm: TailorWizardState | null;
+  // Sticky render-time template preference for the apply results screen. Unlike
+  // applyWizardStep/applyWizardForm these survive Back (and switching jobs) so the
+  // chosen template/ATS mode persists across the whole autopilot session. Template/
+  // ATS are render-time only — switching them never regenerates.
+  applyTemplateId: TemplateId;
+  applyAtsMode: boolean;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -207,6 +219,10 @@ export const useSessionStore = create<SessionState>((set) => ({
     wizardForm: null,
     focusedId: null,
     apply: null,
+    applyWizardStep: 0,
+    applyWizardForm: null,
+    applyTemplateId: 'modern',
+    applyAtsMode: false,
   },
 
   setAIGenerate: (patch) => set((s) => ({ aiGenerate: { ...s.aiGenerate, ...patch } })),

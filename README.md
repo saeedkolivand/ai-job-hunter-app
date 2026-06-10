@@ -13,7 +13,7 @@
   &nbsp;·&nbsp;
   <a href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/">🌐 Live site</a>
   &nbsp;·&nbsp;
-  <a href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/recruiter.html">🎬 Short film</a>
+  <a href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/creature.html">🎬 Short film</a>
   &nbsp;·&nbsp;
   <a href="#-installation">📦 Install</a>
   &nbsp;·&nbsp;
@@ -464,22 +464,22 @@ See <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBU
 
 ## Documentation
 
-| Document                                                                                                                                                                | Description                                                      |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| <a href="docs/ARCHITECTURE.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE.md</a>                                                                       | System design, data flow, diagrams                               |
-| <a href="docs/PATTERNS.md" target="_blank" rel="noopener noreferrer">docs/PATTERNS.md</a>                                                                               | IPC, state machines, AI streaming, search patterns               |
-| <a href="docs/API.md" target="_blank" rel="noopener noreferrer">docs/API.md</a>                                                                                         | IPC namespaces + commands                                        |
-| <a href="docs/EXPORT_TEMPLATES.md" target="_blank" rel="noopener noreferrer">docs/EXPORT_TEMPLATES.md</a>                                                               | Templates, theming, PDF/DOCX export                              |
-| <a href="docs/DESIGN_SYSTEM.md" target="_blank" rel="noopener noreferrer">docs/DESIGN_SYSTEM.md</a>                                                                     | Tokens, components, motion, theming                              |
-| <a href="docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer">docs/DEVELOPMENT.md</a>                                                                         | Local dev environment setup                                      |
-| <a href="docs/DEPLOYMENT.md" target="_blank" rel="noopener noreferrer">docs/DEPLOYMENT.md</a>                                                                           | Building and releasing installers                                |
-| <a href="docs/ARCHITECTURE_STATUS.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE_STATUS.md</a>                                                         | Implementation status tracker                                    |
-| <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a>                                                                                 | Knowledge base + architecture decision records (ADRs)            |
-| <a href="SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>                                                                                         | Security policy &amp; vulnerability reporting                    |
-| <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a>                                                                                 | Code style, branching, PR process                                |
-| <a target="_blank" rel="noopener noreferrer" href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/how-it-works.html">landing/how-it-works.html</a>         | How the AI Job Hunter works end-to-end (interactive walkthrough) |
-| <a target="_blank" rel="noopener noreferrer" href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/architecture-map.html">landing/architecture-map.html</a> | Interactive architecture map of the AI Job Hunter                |
-| <a target="_blank" rel="noopener noreferrer" href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/recruiter.html">landing/recruiter.html</a>               | THE RECRUITER — a cinematic short film about the job hunt        |
+| Document                                                                                                                                                                | Description                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| <a href="docs/ARCHITECTURE.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE.md</a>                                                                       | System design, data flow, diagrams                                |
+| <a href="docs/PATTERNS.md" target="_blank" rel="noopener noreferrer">docs/PATTERNS.md</a>                                                                               | IPC, state machines, AI streaming, search patterns                |
+| <a href="docs/API.md" target="_blank" rel="noopener noreferrer">docs/API.md</a>                                                                                         | IPC namespaces + commands                                         |
+| <a href="docs/EXPORT_TEMPLATES.md" target="_blank" rel="noopener noreferrer">docs/EXPORT_TEMPLATES.md</a>                                                               | Templates, theming, PDF/DOCX export                               |
+| <a href="docs/DESIGN_SYSTEM.md" target="_blank" rel="noopener noreferrer">docs/DESIGN_SYSTEM.md</a>                                                                     | Tokens, components, motion, theming                               |
+| <a href="docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer">docs/DEVELOPMENT.md</a>                                                                         | Local dev environment setup                                       |
+| <a href="docs/DEPLOYMENT.md" target="_blank" rel="noopener noreferrer">docs/DEPLOYMENT.md</a>                                                                           | Building and releasing installers                                 |
+| <a href="docs/ARCHITECTURE_STATUS.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE_STATUS.md</a>                                                         | Implementation status tracker                                     |
+| <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a>                                                                                 | Knowledge base + architecture decision records (ADRs)             |
+| <a href="SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>                                                                                         | Security policy &amp; vulnerability reporting                     |
+| <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a>                                                                                 | Code style, branching, PR process                                 |
+| <a target="_blank" rel="noopener noreferrer" href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/how-it-works.html">landing/how-it-works.html</a>         | How the AI Job Hunter works end-to-end (interactive walkthrough)  |
+| <a target="_blank" rel="noopener noreferrer" href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/architecture-map.html">landing/architecture-map.html</a> | Interactive architecture map of the AI Job Hunter                 |
+| <a target="_blank" rel="noopener noreferrer" href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/creature.html">landing/creature.html</a>                 | THE CREATURE — a hand-drawn doodle about the recruiter you summon |
 
 ---
 

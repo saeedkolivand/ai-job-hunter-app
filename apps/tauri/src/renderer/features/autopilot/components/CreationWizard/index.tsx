@@ -1,6 +1,8 @@
 import { AlertCircle, Check, ChevronLeft, ChevronRight, X, Zap } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { FormProvider, useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 
 import type { Autopilot } from '@ajh/shared';
 import { Button, cn, ModalShell, transition } from '@ajh/ui';
@@ -9,8 +11,9 @@ import { StepAction } from '@/features/autopilot/components/wizard-steps/StepAct
 import { StepFilter } from '@/features/autopilot/components/wizard-steps/StepFilter';
 import { StepSchedule } from '@/features/autopilot/components/wizard-steps/StepSchedule';
 import { StepTarget } from '@/features/autopilot/components/wizard-steps/StepTarget';
-import { buildDefaults } from '@/features/autopilot/lib/wizard-state';
-import type { SetFn, WizardState } from '@/features/autopilot/types';
+import { autopilotWizardSchema } from '@/features/autopilot/lib/schema';
+import { buildDefaults, wizardStateToPayload } from '@/features/autopilot/lib/wizard-state';
+import type { WizardState } from '@/features/autopilot/types';
 import { useTranslation } from '@/lib/i18n';
 import { useCreateAutopilot, useJobPreferences, useUpdateAutopilot } from '@/services';
 import { useSessionStore } from '@/store/session-store';
@@ -22,6 +25,12 @@ interface CreationWizardProps {
 
 const STEPS = ['Target', 'Filter', 'Action', 'Schedule'] as const;
 
+// Fields each step must pass before "Next" advances. Steps without an entry have
+// no gate (their controls are bounded, so they can't hold invalid input).
+const STEP_FIELDS: Partial<Record<number, (keyof WizardState)[]>> = {
+  0: ['name', 'board', 'query'],
+};
+
 export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
   const { t } = useTranslation();
   const { data: jobPrefs } = useJobPreferences();
@@ -30,22 +39,36 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
   const { wizardStep: step, wizardForm, editingId } = autopilot;
   const editing = editingId !== null;
   const setStep = (v: number) => setAutopilot({ wizardStep: v });
-  const setWizardForm = useCallback(
-    (v: WizardState) => setAutopilot({ wizardForm: v }),
-    [setAutopilot]
-  );
-  const form = wizardForm ?? buildDefaults(jobPrefs);
+
+  // RHF owns the live editing layer; the store's `wizardForm` is a one-shot seed
+  // (an edit's snapshot or null on create). Seed `defaultValues` ONCE — never
+  // write back. `buildDefaults` may be sparse if job preferences haven't loaded
+  // yet; the effect below folds them in while the form is still pristine.
+  const initialForm = useRef<WizardState>(wizardForm ?? buildDefaults(jobPrefs));
+  const methods = useForm<WizardState>({
+    defaultValues: initialForm.current,
+    resolver: zodResolver(autopilotWizardSchema),
+    mode: 'onChange',
+  });
+
   const [error, setError] = useState<string | null>(null);
   const createAutopilot = useCreateAutopilot();
   const updateAutopilot = useUpdateAutopilot();
   const saving = createAutopilot.isPending || updateAutopilot.isPending;
 
-  // Initialize form in the store on first open (when wizardForm is null)
+  // Create mode only: when job preferences arrive after mount, fold their
+  // prefilled values into the still-pristine form once. Skip when editing (the
+  // seed came from the autopilot) or once the user has started typing.
+  const seededPrefs = useRef(false);
   useEffect(() => {
-    if (!wizardForm) {
-      setWizardForm(buildDefaults(jobPrefs));
+    if (editing || seededPrefs.current || !jobPrefs) return;
+    if (methods.formState.isDirty) {
+      seededPrefs.current = true;
+      return;
     }
-  }, [wizardForm, jobPrefs, setWizardForm]);
+    methods.reset(buildDefaults(jobPrefs));
+    seededPrefs.current = true;
+  }, [editing, jobPrefs, methods]);
 
   // Track which fields were pre-filled from settings so we can show a hint.
   // Suppressed when editing — those values come from the autopilot, not settings.
@@ -54,49 +77,20 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
     keywords: !editing && (jobPrefs?.techStack?.length ?? 0) > 0,
   };
 
-  const set: SetFn = <K extends keyof WizardState>(k: K, v: WizardState[K]) =>
-    setWizardForm({ ...form, [k]: v });
-
-  const canNext = () => {
-    if (step === 0)
-      return form.board && form.query.trim().length > 1 && form.name.trim().length > 1;
-    return true;
+  const handleNext = async () => {
+    const fields = STEP_FIELDS[step];
+    if (fields && !(await methods.trigger(fields))) {
+      setError(t('autopilot.wizard.validation.missingFields'));
+      return;
+    }
+    setError(null);
+    setStep(step + 1);
   };
 
-  const save = async () => {
+  const onValid = async (values: WizardState) => {
     setError(null);
-    const payload = {
-      name: form.name,
-      target: {
-        board: form.board,
-        query: form.query,
-        location: form.location || undefined,
-        workType: form.workType !== 'any' ? form.workType : undefined,
-        pages: form.pages,
-        dateFilter: form.dateFilter || undefined,
-      },
-      filter: {
-        minMatchScore: form.minMatchScore,
-        keywords: form.keywords
-          ? form.keywords
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : undefined,
-        excludeKeywords: form.excludeKeywords
-          ? form.excludeKeywords
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : undefined,
-      },
-      resumeText: form.resumeText || undefined,
-      schedule: form.schedule,
-      // Time-of-day only applies to recurring schedules; manual runs have no time.
-      scheduleHour: form.schedule === 'manual' ? undefined : form.scheduleHour,
-      scheduleMinute: form.schedule === 'manual' ? undefined : form.scheduleMinute,
-    };
     try {
+      const payload = wizardStateToPayload(values);
       const ap =
         editingId !== null
           ? await updateAutopilot.mutateAsync({ id: editingId, ...payload })
@@ -158,20 +152,22 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
 
         {/* Step content */}
         <div className="px-6 py-6 min-h-[320px]">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={step}
-              initial={{ opacity: 0, x: 16 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -16 }}
-              transition={transition.normal}
-            >
-              {step === 0 && <StepTarget form={form} set={set} prefilled={prefilledFields} />}
-              {step === 1 && <StepFilter form={form} set={set} prefilled={prefilledFields} />}
-              {step === 2 && <StepAction />}
-              {step === 3 && <StepSchedule form={form} set={set} />}
-            </motion.div>
-          </AnimatePresence>
+          <FormProvider {...methods}>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={step}
+                initial={{ opacity: 0, x: 16 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -16 }}
+                transition={transition.normal}
+              >
+                {step === 0 && <StepTarget prefilled={prefilledFields} />}
+                {step === 1 && <StepFilter prefilled={prefilledFields} />}
+                {step === 2 && <StepAction />}
+                {step === 3 && <StepSchedule />}
+              </motion.div>
+            </AnimatePresence>
+          </FormProvider>
         </div>
 
         {error && (
@@ -193,13 +189,7 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
             <Button
               variant="glass"
               size="sm"
-              onClick={() => {
-                if (!canNext()) {
-                  setError(t('autopilot.wizard.validation.missingFields'));
-                  return;
-                }
-                setStep(step + 1);
-              }}
+              onClick={() => void handleNext()}
               className="transition-all duration-150 ease-out"
             >
               {t('autopilot.wizard.next')} <ChevronRight size={13} />
@@ -209,7 +199,7 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
               variant="glass"
               size="sm"
               loading={saving}
-              onClick={() => void save()}
+              onClick={() => void methods.handleSubmit(onValid)()}
               className="transition-all duration-150 ease-out"
             >
               {!saving && <Zap size={13} />}{' '}

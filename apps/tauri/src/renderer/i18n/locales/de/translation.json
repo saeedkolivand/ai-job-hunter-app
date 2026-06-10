@@ -925,12 +925,14 @@
     },
     "apply": {
       "back": "Zurück zum Autopilot",
+      "match": "Übereinstimmung",
       "jobDescription": "Stellenbeschreibung",
       "noDescription": "Für diesen Job wurde keine Beschreibung erfasst.",
       "loadFailed": "Diese Anzeige konnte nicht geladen werden — sie ist möglicherweise geschlossen oder erfordert eine Anmeldung.",
       "fetchingDescription": "Stellenbeschreibung wird abgerufen…",
       "generate": "Generieren",
       "generating": "Generiere…",
+      "generatingHint": "Das kann einen Moment dauern – wir passen an die Stellenanzeige an.",
       "cancel": "Abbrechen",
       "analyzing": "Stellenbeschreibung wird analysiert…",
       "writingResume": "Lebenslauf wird geschrieben…",
@@ -957,6 +959,47 @@
         "resume": "Lebenslauf",
         "cover": "Anschreiben",
         "both": "Beides"
+      },
+      "tabs": {
+        "jobAd": "Stellenanzeige"
+      },
+      "tryAgain": "Erneut versuchen",
+      "hintNoResume": "Fügen Sie Ihren Lebenslauf hinzu, um zu generieren",
+      "hintNoDescription": "Keine Stellenbeschreibung zum Anpassen vorhanden",
+      "wizard": {
+        "steps": {
+          "jobAd": "Stellenanzeige",
+          "resume": "Lebenslauf",
+          "output": "Ausgabe",
+          "model": "Modell"
+        },
+        "jobAd": {
+          "title": "Prüfe die Stelle",
+          "subtitle": "Lies die Anzeige, auf die du zuschneidest"
+        },
+        "resume": {
+          "title": "Dein Lebenslauf",
+          "subtitle": "Lade den Lebenslauf hoch oder füge ihn ein"
+        },
+        "output": {
+          "title": "Was generieren",
+          "subtitle": "Wähle Lebenslauf, Anschreiben oder beides"
+        },
+        "model": {
+          "title": "KI-Modell",
+          "subtitle": "Wähle das Modell und optionale Unternehmensrecherche"
+        },
+        "next": "Weiter",
+        "back": "Zurück",
+        "generate": "Generieren",
+        "validation": {
+          "resumeRequired": "Füge deinen Lebenslauf hinzu, um fortzufahren",
+          "selectModel": "Wähle zuerst ein KI-Modell"
+        },
+        "results": {
+          "regenerate": "Neu generieren",
+          "edit": "Einstellungen bearbeiten"
+        }
       }
     },
     "referral": {
@@ -993,7 +1036,8 @@
         "sent": "Gesendet",
         "replied": "Beantwortet"
       },
-      "savedTitle": "Gespeicherte Kontakte"
+      "savedTitle": "Gespeicherte Kontakte",
+      "savedAddAnother": "Unten in deiner Liste gespeichert — das Formular ist bereit für die nächste Person."
     },
     "loading": "Laden…",
     "empty": {
@@ -1016,12 +1060,15 @@
       "create": "Autopilot erstellen",
       "save": "Änderungen speichern",
       "validation": {
-        "missingFields": "Bitte fülle alle erforderlichen Felder aus (Name, Board und Suchanfrage)."
+        "missingFields": "Bitte fülle alle erforderlichen Felder aus (Name, Board und Suchanfrage).",
+        "nameRequired": "Geben Sie dieser Suche einen Namen.",
+        "queryRequired": "Geben Sie eine Suchanfrage ein."
       },
       "target": {
         "title": "Wo sollen wir suchen?",
         "subtitle": "Wählen Sie ein Job-Board und geben Sie Ihre Suche ein.",
         "name": "Diese Suche benennen",
+        "namePlaceholder": "z.B. Senior React Stellen — Berlin",
         "board": "Job-Board",
         "query": "Suchanfrage",
         "queryPlaceholder": "z.B. React Entwickler",
@@ -1030,7 +1077,7 @@
         "locationPlaceholder": "z.B. Berlin, remote",
         "fromLocationSettings": "aus Standortseinstellungen",
         "workType": "Arbeitsart",
-        "pages": "Zu scrapende Seiten",
+        "items": "Zu scrapende Einträge",
         "postedWithin": "Veröffentlicht innerhalb",
         "anyTime": "Jederzeit",
         "last24h": "Letzte 24h",
@@ -1040,8 +1087,16 @@
       "filter": {
         "title": "Wie sollen wir Ergebnisse filtern?",
         "subtitle": "Nur Jobs, die diese Filter bestehen, werden verarbeitet.",
-        "minMatchScore": "Mindestübereinstimmung — {{score}}%",
-        "minMatchScoreHint": "(0 = kein Filter)",
+        "matchScore": "Übereinstimmung",
+        "matchScoreHint": "Wie streng die Lebenslauf-Übereinstimmung sein muss",
+        "matchLevel": {
+          "low": "Niedrig",
+          "lowDesc": "Locker",
+          "medium": "Mittel",
+          "mediumDesc": "Ausgewogen",
+          "high": "Hoch",
+          "highDesc": "Streng"
+        },
         "minMatchScoreDesc": "Jobs mit niedrigerer Bewertung werden übersprungen.",
         "resume": "Lebenslauf",
         "resumeOptional": "(optional — für Übereinstimmungsbewertung)",

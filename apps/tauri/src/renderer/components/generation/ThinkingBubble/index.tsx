@@ -37,6 +37,7 @@ export function ThinkingBubble({ thinking, done = false }: ThinkingBubbleProps) 
       {/* Header */}
       <Button
         variant="unstyled"
+        aria-expanded={expanded}
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-center gap-2 px-3 py-2 text-left"
       >

@@ -124,7 +124,15 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
 
     setSavedId: (id, savedId) => patch(id, { savedId }),
 
-    cancel: (id) => controllers.get(id)?.abort(),
+    cancel: (id) => {
+      controllers.get(id)?.abort();
+      controllers.delete(id);
+      // Deterministically return to the pre-run state so the UI leaves the generating
+      // stage on click. The abort above stops the in-flight stream (streamGenerate's
+      // abort listener does off()/jobs.cancel); resetting here guarantees the UI
+      // responds even if the abort lands in streamGenerate's pre-stream request window.
+      patch(id, { ...EMPTY_SESSION });
+    },
 
     reset: (id) =>
       set((state) => {
@@ -203,10 +211,15 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
         // Persist after a clean run only — a cancel/error throws and skips this.
         onComplete?.({ meta: detected, resumeText, coverLetterText });
       } catch (err) {
-        patch(id, { error: err instanceof Error ? err.message : t('autopilot.apply.failed') });
+        // A user cancel aborts the controller — don't surface that as an error.
+        if (!controller.signal.aborted) {
+          patch(id, { error: err instanceof Error ? err.message : t('autopilot.apply.failed') });
+        }
       } finally {
-        patch(id, { generating: false, phase: 'idle' });
         controllers.delete(id);
+        // Only flip generating off if THIS run still owns the session (a cancel may have
+        // already reset it, or a newer run may have started).
+        if (get().sessions[id]?.generating) patch(id, { generating: false, phase: 'idle' });
       }
     },
   };

@@ -24,6 +24,7 @@ import {
   transition,
 } from '@ajh/ui';
 
+import { scoreToLevel } from '@/features/autopilot/lib/match-level';
 import { useTranslation } from '@/lib/i18n';
 import { type AutopilotRunState, RUN_STATE_LABEL } from '@/lib/machines/autopilot-run.machine';
 import { timeAgo } from '@/lib/time';
@@ -292,7 +293,7 @@ export function AutopilotCard({
                       </div>
                       {typeof job.score === 'number' && (
                         <span className="shrink-0 rounded bg-brand/10 px-1.5 py-0.5 text-[9px] text-brand-soft">
-                          {Math.round(job.score)}%
+                          {t(`autopilot.wizard.filter.matchLevel.${scoreToLevel(job.score)}`)}
                         </span>
                       )}
                       <ExternalLink size={11} className="shrink-0 text-foreground/25" />

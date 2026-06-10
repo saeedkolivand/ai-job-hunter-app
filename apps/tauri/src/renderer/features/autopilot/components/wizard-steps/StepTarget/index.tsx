@@ -1,7 +1,9 @@
+import { Controller, useFormContext, useWatch } from 'react-hook-form';
+
 import { BOARD_IDS } from '@ajh/shared';
 import { Button, cn, Input, LocationInput, NumberField, SelectDropdown } from '@ajh/ui';
 
-import type { Prefilled, SetFn, WizardState } from '@/features/autopilot/types';
+import type { Prefilled, WizardState } from '@/features/autopilot/types';
 import { useTranslation } from '@/lib/i18n';
 import { useAppClient } from '@/providers/AppClientProvider';
 
@@ -9,18 +11,22 @@ import { ComingSoonBadge } from '../ComingSoonBadge';
 import { PrefilledBadge } from '../PrefilledBadge';
 import { WizardField } from '../WizardField';
 
+// Matches the @ajh/ui SelectDropdown / LocationInput trigger (h-9, same border &
+// bg) so text inputs sit flush with the dropdowns beside them on the same row.
 const inputCls =
-  'w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-foreground/80 placeholder:text-foreground/25 outline-none focus:border-brand/40 transition-colors';
+  'w-full h-9 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 text-xs text-foreground/80 placeholder:text-foreground/25 outline-none focus:border-brand/40 transition-colors';
 
 interface StepTargetProps {
-  form: WizardState;
-  set: SetFn;
   prefilled: Prefilled;
 }
 
-export function StepTarget({ form, set, prefilled }: StepTargetProps) {
+export function StepTarget({ prefilled }: StepTargetProps) {
   const { t } = useTranslation();
   const api = useAppClient();
+  const { control } = useFormContext<WizardState>();
+  // Disabled "coming soon" control — display the current value without binding.
+  const workType = useWatch({ control, name: 'workType' });
+
   return (
     <div className="space-y-4">
       <div>
@@ -30,58 +36,99 @@ export function StepTarget({ form, set, prefilled }: StepTargetProps) {
         <p className="text-xs text-foreground/35 mt-0.5">{t('autopilot.wizard.target.subtitle')}</p>
       </div>
 
-      <WizardField label={t('autopilot.wizard.target.name')}>
-        <Input
-          className={inputCls}
-          value={form.name}
-          onChange={(e) => set('name', e.target.value)}
-        />
-      </WizardField>
+      <Controller
+        control={control}
+        name="name"
+        render={({ field, fieldState }) => (
+          <WizardField
+            label={t('autopilot.wizard.target.name')}
+            htmlFor="autopilot-name"
+            error={fieldState.error?.message ? t(fieldState.error.message) : undefined}
+          >
+            <Input
+              id="autopilot-name"
+              variant="unstyled"
+              className={inputCls}
+              placeholder={t('autopilot.wizard.target.namePlaceholder')}
+              value={field.value}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
+              aria-invalid={!!fieldState.error}
+            />
+          </WizardField>
+        )}
+      />
 
-      <WizardField label={t('autopilot.wizard.target.board')}>
-        <div className="grid grid-cols-4 gap-1.5 max-h-28 overflow-y-auto pr-1">
-          {BOARD_IDS.map((b) => (
-            <Button
-              key={b}
-              onClick={() => set('board', b)}
-              className={cn(
-                'rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-all h-auto',
-                form.board === b
-                  ? 'border-brand/40 bg-brand/10 text-brand-soft'
-                  : 'border-white/[0.06] text-foreground/40 hover:border-white/10 hover:text-foreground/65'
-              )}
-            >
-              {b}
-            </Button>
-          ))}
-        </div>
-      </WizardField>
+      <Controller
+        control={control}
+        name="board"
+        render={({ field }) => (
+          <WizardField label={t('autopilot.wizard.target.board')}>
+            <div className="grid grid-cols-4 gap-1.5 max-h-28 overflow-y-auto pr-1">
+              {BOARD_IDS.map((b) => (
+                <Button
+                  key={b}
+                  onClick={() => field.onChange(b)}
+                  className={cn(
+                    'rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-all h-auto',
+                    field.value === b
+                      ? 'border-brand/40 bg-brand/10 text-brand-soft'
+                      : 'border-white/[0.06] text-foreground/40 hover:border-white/10 hover:text-foreground/65'
+                  )}
+                >
+                  {b}
+                </Button>
+              ))}
+            </div>
+          </WizardField>
+        )}
+      />
 
       <div className="grid grid-cols-2 gap-3">
-        <WizardField label={t('autopilot.wizard.target.query')}>
-          <Input
-            className={inputCls}
-            placeholder={t('autopilot.wizard.target.queryPlaceholder')}
-            value={form.query}
-            onChange={(e) => set('query', e.target.value)}
-          />
-        </WizardField>
-        <WizardField
-          label={t('autopilot.wizard.target.location')}
-          hint={t('autopilot.wizard.target.locationOptional')}
-        >
-          <div className="space-y-1.5">
-            <LocationInput
-              value={form.location}
-              onChange={(value) => set('location', value)}
-              placeholder={t('autopilot.wizard.target.locationPlaceholder')}
-              onFetchSuggestions={(q) => api.geocode.suggest(q)}
-            />
-            {prefilled.location && (
-              <PrefilledBadge field={t('autopilot.wizard.target.fromLocationSettings')} />
-            )}
-          </div>
-        </WizardField>
+        <Controller
+          control={control}
+          name="query"
+          render={({ field, fieldState }) => (
+            <WizardField
+              label={t('autopilot.wizard.target.query')}
+              htmlFor="autopilot-query"
+              error={fieldState.error?.message ? t(fieldState.error.message) : undefined}
+            >
+              <Input
+                id="autopilot-query"
+                variant="unstyled"
+                className={inputCls}
+                placeholder={t('autopilot.wizard.target.queryPlaceholder')}
+                value={field.value}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+                aria-invalid={!!fieldState.error}
+              />
+            </WizardField>
+          )}
+        />
+        <Controller
+          control={control}
+          name="location"
+          render={({ field }) => (
+            <WizardField
+              label={t('autopilot.wizard.target.location')}
+              hint={t('autopilot.wizard.target.locationOptional')}
+            >
+              <div className="space-y-1.5">
+                <LocationInput
+                  value={field.value}
+                  onChange={field.onChange}
+                  placeholder={t('autopilot.wizard.target.locationPlaceholder')}
+                  onFetchSuggestions={(q) => api.geocode.suggest(q)}
+                />
+                {prefilled.location && (
+                  <PrefilledBadge field={t('autopilot.wizard.target.fromLocationSettings')} />
+                )}
+              </div>
+            </WizardField>
+          )}
+        />
       </div>
 
       <WizardField label={t('autopilot.wizard.target.workType')} badge={<ComingSoonBadge />}>
@@ -92,7 +139,7 @@ export function StepTarget({ form, set, prefilled }: StepTargetProps) {
               disabled
               className={cn(
                 'rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-all h-auto',
-                form.workType === opt
+                workType === opt
                   ? 'border-brand/40 bg-brand/10 text-brand-soft'
                   : 'border-white/[0.06] text-foreground/40'
               )}
@@ -104,29 +151,42 @@ export function StepTarget({ form, set, prefilled }: StepTargetProps) {
       </WizardField>
 
       <div className="grid grid-cols-2 gap-3">
-        <WizardField label={t('autopilot.wizard.target.pages')}>
-          <NumberField
-            min={1}
-            max={10}
-            fallback={1}
-            className={inputCls}
-            value={form.pages}
-            onChange={(n) => set('pages', n)}
-          />
-        </WizardField>
-        <WizardField label={t('autopilot.wizard.target.postedWithin')}>
-          <SelectDropdown
-            options={[
-              { value: '', label: t('autopilot.wizard.target.anyTime') },
-              { value: '24h', label: t('autopilot.wizard.target.last24h') },
-              { value: 'week', label: t('autopilot.wizard.target.lastWeek') },
-              { value: 'month', label: t('autopilot.wizard.target.lastMonth') },
-            ]}
-            value={form.dateFilter}
-            onChange={(value) => set('dateFilter', value)}
-            placeholder={t('autopilot.wizard.target.anyTime')}
-          />
-        </WizardField>
+        <Controller
+          control={control}
+          name="amount"
+          render={({ field }) => (
+            <WizardField label={t('autopilot.wizard.target.items')}>
+              <NumberField
+                min={1}
+                max={500}
+                fallback={25}
+                variant="unstyled"
+                className={inputCls}
+                value={field.value}
+                onChange={(n) => field.onChange(n)}
+              />
+            </WizardField>
+          )}
+        />
+        <Controller
+          control={control}
+          name="dateFilter"
+          render={({ field }) => (
+            <WizardField label={t('autopilot.wizard.target.postedWithin')}>
+              <SelectDropdown
+                options={[
+                  { value: '', label: t('autopilot.wizard.target.anyTime') },
+                  { value: '24h', label: t('autopilot.wizard.target.last24h') },
+                  { value: 'week', label: t('autopilot.wizard.target.lastWeek') },
+                  { value: 'month', label: t('autopilot.wizard.target.lastMonth') },
+                ]}
+                value={field.value}
+                onChange={field.onChange}
+                placeholder={t('autopilot.wizard.target.anyTime')}
+              />
+            </WizardField>
+          )}
+        />
       </div>
     </div>
   );

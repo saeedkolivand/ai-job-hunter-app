@@ -1,37 +1,40 @@
-import { ArrowLeft, Loader2, Sparkles, UserPlus, Wand2 } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowLeft, UserPlus, Wand2 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useRef, useState } from 'react';
+import { useForm, useWatch } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 
 import type { AutopilotFoundJob } from '@ajh/shared';
-import { Button, SegmentedControl } from '@ajh/ui';
+import { Button, transition } from '@ajh/ui';
 
-import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
-import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
-import { ThinkingBubble } from '@/features/ai-generate/components/ThinkingBubble';
+import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
+import { scoreToLevel } from '@/features/autopilot/lib/match-level';
+import type { TemplateId } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 import { useExtractText, useResolveJobUrl } from '@/services';
+import { useSessionStore } from '@/store/session-store';
 
 import { ReferralModal } from '../ReferralModal';
-import { ApplicationQuestions } from './ApplicationQuestions';
-import { GenerationOutput } from './GenerationOutput';
-import { JobDescriptionPanel } from './JobDescriptionPanel';
-import { type TailorTarget, useTailorGeneration } from './useTailorGeneration';
+import { GeneratingPanel } from './GeneratingPanel';
+import { tailorWizardSchema } from './lib/tailor-schema';
+import { buildTailorDefaults, type TailorWizardState } from './lib/tailor-state';
+import { ResultsPanel } from './ResultsPanel';
+import { TailorWizard } from './TailorWizard';
+import { useTailorGeneration } from './useTailorGeneration';
 
 interface Props {
   job: AutopilotFoundJob;
-  /** The resume the autopilot used — pre-fills the resume input. */
   resumeText?: string;
-  /** The board this autopilot searches — stored on the saved application record. */
   board: string;
-  /** Return to the autopilot list. */
   onBack: () => void;
 }
 
 /**
- * Tailor a resume / cover letter for a single autopilot-found job on a dedicated
- * full-width page (#51) — replaces the old cramped ApplyJobModal. Reuses the AI
- * Generate primitives so the user never leaves the Autopilot section. Generation
- * lives in the store keyed by `autopilot:<jobUrl>`, so going Back and returning
- * preserves the in-flight or finished result.
+ * Full-page tailoring flow for a single found job. A derived stage machine
+ * (configuring → generating → done) renders the RHF wizard, the streaming panel,
+ * or the results panel. Output persistence lives in the generation store (keyed
+ * `autopilot:<jobUrl>`), so the stage is derived, never stored; the wizard form +
+ * step are persisted in the session store so configuring survives a remount.
  */
 export function ApplyPage({ job, resumeText, board, onBack }: Props) {
   const { t } = useTranslation();
@@ -39,15 +42,31 @@ export function ApplyPage({ job, resumeText, board, onBack }: Props) {
   const { canUse, reason } = useCanUseAI();
   const extractTextMutation = useExtractText();
 
-  const [resume, setResume] = useState(resumeText ?? '');
-  const [target, setTarget] = useState<TailorTarget>('both');
-  const [uploading, setUploading] = useState(false);
-  // Opt-in company research — default off, so no extra web/LLM call unless asked.
-  const [researchCompany, setResearchCompany] = useState(false);
-  // Manual referral helper (F3a) — opens a side modal for this job.
-  const [referralOpen, setReferralOpen] = useState(false);
+  const { autopilot, setAutopilot } = useSessionStore();
+  const { applyWizardStep: step, applyWizardForm, applyTemplateId, applyAtsMode } = autopilot;
+  const setStep = (v: number) => setAutopilot({ applyWizardStep: v });
+  // Sticky render-time template/ATS preference (single source of truth shared by
+  // the preview and the export — see useTailorGeneration). Render-time only.
+  const setTemplateId = (v: TemplateId) => setAutopilot({ applyTemplateId: v });
+  const setAtsMode = (v: boolean) => setAutopilot({ applyAtsMode: v });
 
-  // Fetch the description on demand when the board's list scrape omitted it.
+  // RHF owns the live editing layer; `applyWizardForm` is a one-shot seed. Seed
+  // `defaultValues` ONCE — written back on step-advance and on generate.
+  const initialForm = useRef<TailorWizardState>(applyWizardForm ?? buildTailorDefaults(resumeText));
+  const methods = useForm<TailorWizardState>({
+    defaultValues: initialForm.current,
+    resolver: zodResolver(tailorWizardSchema),
+    mode: 'onChange',
+  });
+
+  // The research toggle is an RHF field; the hook needs its live value.
+  const researchCompany = useWatch({ control: methods.control, name: 'researchCompany' });
+
+  const [referralOpen, setReferralOpen] = useState(false);
+  // "Edit settings" forces the configuring stage even though output exists; cleared
+  // when the next run starts (output is intentionally preserved underneath).
+  const [forceConfiguring, setForceConfiguring] = useState(false);
+
   const initialDesc = (job.description ?? '').trim();
   const resolved = useResolveJobUrl(job.url, !initialDesc);
   const fetchedDesc = (resolved.data?.description ?? '').trim();
@@ -55,8 +74,6 @@ export function ApplyPage({ job, resumeText, board, onBack }: Props) {
   const hasDesc = jobDesc.length > 0;
   const fetchingDesc = !initialDesc && resolved.isLoading;
 
-  // Per-job session key — generation lives in the store under this id, so leaving
-  // and returning to the page preserves the result.
   const gen = useTailorGeneration({
     contextId: `autopilot:${job.url}`,
     jobDesc,
@@ -66,32 +83,49 @@ export function ApplyPage({ job, resumeText, board, onBack }: Props) {
     jobUrl: job.url,
     board,
     researchCompany,
+    templateId: applyTemplateId,
+    atsMode: applyAtsMode,
   });
 
   const handleUpload = async (file: File) => {
-    setUploading(true);
-    try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const res = await extractTextMutation.mutateAsync({
-        name: file.name,
-        bytes,
-      });
-      const text = (res?.text ?? '').trim();
-      if (text) setResume(text);
-    } finally {
-      setUploading(false);
-    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const res = await extractTextMutation.mutateAsync({ name: file.name, bytes });
+    const text = (res?.text ?? '').trim();
+    if (text) methods.setValue('resume', text, { shouldValidate: true, shouldDirty: true });
   };
 
-  const targets: { id: TailorTarget; label: string }[] = [
-    { id: 'resume', label: t('autopilot.apply.target.resume') },
-    { id: 'cover', label: t('autopilot.apply.target.cover') },
-    { id: 'both', label: t('autopilot.apply.target.both') },
-  ];
+  // Persist the form snapshot to the session store (mirrors CreationWizard).
+  const persistForm = (values: TailorWizardState) => setAutopilot({ applyWizardForm: values });
+
+  const handleStep = (next: number) => {
+    persistForm(methods.getValues());
+    setStep(next);
+  };
+
+  // Persist the form, drop any "edit settings" override, and start a run. Shared
+  // by the wizard's Generate (validated values) and the results Regenerate.
+  const startGeneration = (values: TailorWizardState) => {
+    persistForm(values);
+    setForceConfiguring(false);
+    void gen.generate(values.resume, values.outputType);
+  };
+
+  // Stage derivation: in-flight FIRST, then output, else the wizard. "Edit
+  // settings" overrides to configuring while leaving the existing output intact.
+  const hasOutput = !!(gen.resumeOut || gen.coverOut);
+  const stage = gen.generating
+    ? 'generating'
+    : hasOutput && !forceConfiguring
+      ? 'done'
+      : 'configuring';
+
+  // The target that produced (or is producing) the output. Persisted form value
+  // is the source of truth once a run starts; falls back to the live form value.
+  const generatedTarget = applyWizardForm?.outputType ?? methods.getValues('outputType');
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
+      {/* Slim page header (persists across all stages) */}
       <div className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-8 py-4">
         <Button
           onClick={onBack}
@@ -105,159 +139,107 @@ export function ApplyPage({ job, resumeText, board, onBack }: Props) {
           <div className="flex items-center gap-2">
             <Wand2 size={14} className="shrink-0 text-brand-soft" />
             <span className="truncate text-base font-semibold text-foreground/90">{job.title}</span>
+            {typeof job.score === 'number' && (
+              <span className="shrink-0 rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-medium text-brand-soft">
+                {t(`autopilot.wizard.filter.matchLevel.${scoreToLevel(job.score)}`)}{' '}
+                {t('autopilot.apply.match')}
+              </span>
+            )}
           </div>
           <div className="truncate text-[11px] text-foreground/40">
             {job.company}
             {job.location ? ` · ${job.location}` : ''}
           </div>
         </div>
+        <Button
+          variant="glass"
+          size="sm"
+          onClick={() => setReferralOpen(true)}
+          className="shrink-0 gap-1.5 text-brand-soft"
+        >
+          <UserPlus size={13} /> {t('autopilot.referral.open')}
+        </Button>
       </div>
 
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto px-8 py-6">
-        <div className="mx-auto max-w-3xl space-y-3">
-          <JobDescriptionPanel
-            jobDesc={jobDesc}
-            hasDesc={hasDesc}
-            fetchingDesc={fetchingDesc}
-            jobUrl={job.url}
-          />
-
-          {/* Resume input */}
-          <ResumeInputCard
-            value={resume}
-            onChange={setResume}
-            onUpload={handleUpload}
-            uploading={uploading}
-          />
-
-          {/* Model */}
-          <ModelSelector />
-
-          {/* Opt-in company research — improves the cover letter AND company-specific
-              application answers, so it's offered regardless of the tailor target. */}
-          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2">
-            <input
-              type="checkbox"
-              checked={researchCompany}
-              onChange={(e) => setResearchCompany(e.target.checked)}
-              className="mt-0.5 accent-brand"
-            />
-            <span className="min-w-0">
-              <span className="block text-[11px] font-medium text-foreground/80">
-                {t('autopilot.apply.research.label')}
-              </span>
-              <span className="block text-[10px] text-foreground/40">
-                {t('autopilot.apply.research.hint')}
-              </span>
-            </span>
-          </label>
-
-          {/* Target + generate */}
-          <div className="flex items-center justify-between gap-2">
-            <SegmentedControl<TailorTarget>
-              ariaLabel={t('autopilot.apply.target.label')}
-              value={target}
-              onChange={setTarget}
-              options={targets.map(({ id, label }) => ({ value: id, label }))}
-            />
-            <div className="flex items-center gap-2">
-              {gen.generating && (
-                <Button
-                  variant="glass"
-                  size="sm"
-                  onClick={() => gen.abort()}
-                  className="border-red-400/20 text-red-300/80 hover:text-red-200"
-                >
-                  {t('autopilot.apply.cancel')}
-                </Button>
-              )}
-              <Button
-                variant="glass"
-                size="sm"
-                loading={gen.generating}
-                disabled={!canUse || !hasDesc || gen.generating || !resume.trim()}
-                onClick={() => void gen.generate(resume, target)}
-              >
-                {!gen.generating && <Sparkles size={13} />}
-                {gen.generating ? t('autopilot.apply.generating') : t('autopilot.apply.generate')}
-              </Button>
-            </div>
-          </div>
-
-          {!canUse && (
-            <p className="text-[11px] text-amber-300/70">
-              {reason === 'addApiKey'
-                ? t('autopilot.apply.addApiKey')
-                : reason === 'installCli'
-                  ? t('autopilot.apply.installCli')
-                  : t('autopilot.apply.selectModel')}
-            </p>
-          )}
-          {gen.error && <p className="text-[11px] text-red-300/80">{gen.error}</p>}
-
-          {/* Generation progress */}
-          {gen.generating && (
-            <div className="flex items-center gap-2 rounded-lg border border-brand/20 bg-brand/5 px-3 py-2 text-[11px] text-brand-soft">
-              <Loader2 size={12} className="animate-spin" />
-              {gen.phaseLabel}
-              {target === 'both' && gen.phase !== 'analyzing' && (
-                <span className="text-foreground/40">
-                  · {gen.phase === 'resume' ? '1/2' : '2/2'}
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Model reasoning — same box as AI Generate; self-hides when empty */}
-          <ThinkingBubble thinking={gen.thinking} done={!gen.generating} />
-
-          {/* Output */}
-          {(gen.resumeOut || gen.coverOut) && (
-            <GenerationOutput
-              target={target}
-              activeOut={gen.activeOut}
-              setActiveOut={gen.setActiveOut}
-              output={gen.output}
-              onEdit={gen.editActiveOutput}
-              editable={!gen.generating}
-              meta={gen.meta}
-              copied={gen.copied}
-              onCopy={gen.copy}
-              exportOpen={gen.exportOpen}
-              setExportOpen={gen.setExportOpen}
-              onExport={gen.exportAs}
-            />
-          )}
-
-          {/* Optional application-questions assistant — résumé-grounded answers. */}
-          <ApplicationQuestions
-            resume={resume}
-            jobDesc={jobDesc}
-            model={model}
-            researchCompany={researchCompany}
-            meta={gen.meta}
-            canUse={canUse}
-            hasDesc={hasDesc}
-            jobUrl={job.url}
-            board={board}
-          />
-
-          {/* Manual referral helper (F3a) — draft a referral ask to someone at the company. */}
-          <Button
-            variant="glass"
-            size="sm"
-            onClick={() => setReferralOpen(true)}
-            className="w-full justify-center"
+      {/* Stage body */}
+      <div className="min-h-0 flex-1">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={stage}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={transition.fast}
+            className="h-full"
           >
-            <UserPlus size={13} />
-            {t('autopilot.referral.open')}
-          </Button>
-        </div>
+            {stage === 'configuring' && (
+              <TailorWizard
+                methods={methods}
+                step={step}
+                setStep={handleStep}
+                jobDesc={jobDesc}
+                hasDesc={hasDesc}
+                fetchingDesc={fetchingDesc}
+                jobUrl={job.url}
+                onUpload={handleUpload}
+                uploading={extractTextMutation.isPending}
+                canUse={canUse}
+                reason={reason}
+                onGenerate={startGeneration}
+              />
+            )}
+
+            {stage === 'generating' && (
+              <GeneratingPanel
+                target={generatedTarget}
+                phase={gen.phase}
+                phaseLabel={gen.phaseLabel}
+                thinking={gen.thinking}
+                output={gen.output}
+                onCancel={() => gen.abort()}
+              />
+            )}
+
+            {stage === 'done' && (
+              <ResultsPanel
+                target={generatedTarget}
+                resume={methods.getValues('resume')}
+                jobDesc={jobDesc}
+                model={model}
+                researchCompany={researchCompany}
+                canUse={canUse}
+                hasDesc={hasDesc}
+                jobUrl={job.url}
+                board={board}
+                activeOut={gen.activeOut}
+                setActiveOut={gen.setActiveOut}
+                templateId={applyTemplateId}
+                atsMode={applyAtsMode}
+                onTemplateChange={setTemplateId}
+                onAtsModeChange={setAtsMode}
+                output={gen.output}
+                onEdit={gen.editActiveOutput}
+                meta={gen.meta}
+                copied={gen.copied}
+                onCopy={() => void gen.copy()}
+                exportOpen={gen.exportOpen}
+                setExportOpen={gen.setExportOpen}
+                onExport={(fmt) => void gen.exportAs(fmt)}
+                onRegenerate={() => startGeneration(methods.getValues())}
+                onEditSettings={() => setForceConfiguring(true)}
+                onReferral={() => setReferralOpen(true)}
+              />
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       {referralOpen && (
-        <ReferralModal job={job} resume={resume} onClose={() => setReferralOpen(false)} />
+        <ReferralModal
+          job={job}
+          resume={methods.getValues('resume')}
+          onClose={() => setReferralOpen(false)}
+        />
       )}
     </div>
   );
