@@ -961,6 +961,10 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 
     function build(){
       if(getComputedStyle(wrap).display==='none'){ built=false; return; }
+      /* release our own stale height before measuring — otherwise a layout
+         shrink (font swap, resize) leaves scrollHeight pinned to the old
+         overlay height and the dark body bg shows as a band below the finale */
+      wrap.style.height='0px';
       var docH=document.documentElement.scrollHeight, vw=document.documentElement.clientWidth;
       wrap.style.height=docH+'px';
       svg.setAttribute('width',vw); svg.setAttribute('height',docH);
