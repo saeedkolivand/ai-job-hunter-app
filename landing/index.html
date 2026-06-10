@@ -974,24 +974,35 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
       tipS=vw<700?0.78:1;
       var Lx=g, Rx=vw-g;
       var secs=document.querySelectorAll('main > section');
-      var dlgEl=document.querySelector('.dialog');
-      var dlgB=dlgEl?dlgEl.getBoundingClientRect().bottom+scrollY:0;
+      /* boxes the side-swap crossing must clear — exit those sections below
+         them so the X never lands on a box (secret dialog, last feature card) */
+      var clearEls=document.querySelectorAll('.dialog, .feat-grid'), clearB=[];
+      for(var c=0;c<clearEls.length;c++) clearB.push(clearEls[c].getBoundingClientRect().bottom+scrollY);
+      /* …and headings the crossing must finish ABOVE — pull that section's
+         entry waypoint up so the swap completes before them */
+      var gateEls=document.querySelectorAll('.testi h2'), gateT=[];
+      for(var c2=0;c2<gateEls.length;c2++) gateT.push(gateEls[c2].getBoundingClientRect().top+scrollY);
       /* both lines share the gutter snake on opposite parities: the second
          starts right wherever the first starts left, so they mirror — each
          enters from the top of its own gutter, not the center */
       function route(startSide){
-        var P=[[(startSide%2===0)?Lx:Rx, 0]], side=startSide;
+        var P=[[(startSide%2===0)?Lx:Rx, 0]], side=startSide, prevEy=0;
         for(var i=0;i<secs.length;i++){
           var s=secs[i]; if(s.classList.contains('finale')) break;
           var r=s.getBoundingClientRect(), top=r.top+scrollY, h=r.height;
           var x=(side%2===0)?Lx:Rx, inw=((side%2===0)?amp:-amp)*dir;
-          /* if this section holds the "Are you sure?" dialog, exit below it so
-             the side-swap crossing into the next section happens after the box */
+          var en=top+h*0.18;
+          for(var b=0;b<gateT.length;b++){
+            if(gateT[b]>top && gateT[b]<top+h) en=Math.min(en, Math.max(prevEy+60, gateT[b]-40));
+          }
           var ey=top+h*0.85;
-          if(dlgB>top && dlgB<top+h) ey=Math.min(top+h, Math.max(ey, dlgB+40));
-          P.push([x, top+h*0.18]);
+          for(var b2=0;b2<clearB.length;b2++){
+            if(clearB[b2]>top && clearB[b2]<top+h) ey=Math.min(top+h, Math.max(ey, clearB[b2]+40));
+          }
+          P.push([x, en]);
           P.push([x+inw, top+h*0.5]);
           P.push([x, ey]);
+          prevEy=ey;
           side++;
         }
         return P;
