@@ -87,14 +87,15 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 @media (max-width:1199px){ .xl-only{display:none} }
 
 /* ---------- the journey line ----------
-   One red path spanning the whole document, built by JS from real section
-   positions: it snakes down alternating side gutters AROUND each section's
-   content column, and its drawing tip is an arrowhead that finally lands
-   pointing at the CTA. Scrubbed by overall scroll progress, both directions. */
+   Two mirrored red paths spanning the whole document, built by JS from real
+   section positions: they snake down opposite side gutters AROUND each
+   section's content column, and each drawing tip is an arrowhead that finally
+   lands pointing at the CTA from its own side. Scrubbed by overall scroll
+   progress, both directions. */
 #journey{position:absolute; top:0; left:0; width:100%; z-index:40; pointer-events:none}
 #journey svg{display:block; width:100%; height:100%; overflow:visible}
 #journey path{fill:none; stroke:var(--red); stroke-width:3.4; stroke-linecap:round; stroke-linejoin:round}
-#journey #journey-path{opacity:.85; filter:drop-shadow(0 1px 0 rgba(0,0,0,.25))}
+#journey #journey-path,#journey #journey-path-2{opacity:.85; filter:drop-shadow(0 1px 0 rgba(0,0,0,.25))}
 /* narrow viewports get an edge-hugging route from the JS builder instead of
    the gutter snake — keep the ink lighter there so it reads as margin doodle */
 @media (max-width:700px){ #journey path{stroke-width:2.6} }
@@ -429,6 +430,8 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   <svg>
     <path id="journey-path" d="M0 0"/>
     <g id="journey-tip"><path d="M-14 -8 L2 0 L-14 8"/></g>
+    <path id="journey-path-2" d="M0 0"/>
+    <g id="journey-tip-2"><path d="M-14 -8 L2 0 L-14 8"/></g>
   </svg>
 </div>
 
@@ -930,15 +933,17 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
     paintScenes();
   }
 
-  /* ---- the journey line: built from real section positions, snaking down
-         alternating side gutters around each content column, ending beside the
-         CTA. Dashoffset is scrubbed by total scroll progress (reversible) and
-         the drawing tip is an arrowhead riding the path tangent. ---- */
+  /* ---- the journey lines: built from real section positions, two mirrored
+         paths snaking down opposite side gutters around each content column,
+         both ending beside the CTA. Dashoffset is scrubbed by total scroll
+         progress (reversible) and each drawing tip is an arrowhead riding its
+         path tangent. ---- */
   (function(){
     var wrap=document.getElementById('journey');
     if(!wrap || reduce) return;
     var svg=wrap.querySelector('svg'), line=document.getElementById('journey-path'), tip=document.getElementById('journey-tip');
-    var len=0, built=false, tblL=[], tblY=[], tipS=1;
+    var line2=document.getElementById('journey-path-2'), tip2=document.getElementById('journey-tip-2');
+    var len=0, len2=0, built=false, tbl=null, tbl2=null, tipS=1;
 
     /* Catmull-Rom through waypoints → smooth cubic path */
     function pts2path(P){
@@ -968,61 +973,83 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
       var dir=wide?1:-1;
       tipS=vw<700?0.78:1;
       var Lx=g, Rx=vw-g;
-      var P=[[vw/2,0]], side=0;
       var secs=document.querySelectorAll('main > section');
-      for(var i=0;i<secs.length;i++){
-        var s=secs[i]; if(s.classList.contains('finale')) break;
-        var r=s.getBoundingClientRect(), top=r.top+scrollY, h=r.height;
-        var x=(side%2===0)?Lx:Rx, inw=((side%2===0)?amp:-amp)*dir;
-        P.push([x, top+h*0.18]);
-        P.push([x+inw, top+h*0.5]);
-        P.push([x, top+h*0.85]);
-        side++;
+      /* both lines share the gutter snake on opposite parities: the second
+         starts right wherever the first starts left, so they mirror — each
+         enters from the top of its own gutter, not the center */
+      function route(startSide){
+        var P=[[(startSide%2===0)?Lx:Rx, 0]], side=startSide;
+        for(var i=0;i<secs.length;i++){
+          var s=secs[i]; if(s.classList.contains('finale')) break;
+          var r=s.getBoundingClientRect(), top=r.top+scrollY, h=r.height;
+          var x=(side%2===0)?Lx:Rx, inw=((side%2===0)?amp:-amp)*dir;
+          P.push([x, top+h*0.18]);
+          P.push([x+inw, top+h*0.5]);
+          P.push([x, top+h*0.85]);
+          side++;
+        }
+        return P;
       }
       var cr=document.getElementById('cta').getBoundingClientRect();
-      /* clamp the landing so the approach stays on-canvas when the CTA sits
-         near the left edge on small screens */
-      var ctaY=cr.top+scrollY+cr.height/2, endX=Math.max(g+amp+12, cr.left-38);
+      var ctaY=cr.top+scrollY+cr.height/2;
+      /* clamp both landings so each approach stays on-canvas when the CTA
+         sits near either edge on small screens */
+      var P=route(0), endX=Math.max(g+amp+12, cr.left-38);
       P.push([Lx+44, ctaY-170]);
       P.push([Math.max(8, endX-90), ctaY-14]);
       P.push([endX, ctaY]);
+      var P2=route(1), endX2=Math.min(vw-(g+amp+12), cr.right+38);
+      P2.push([Rx-44, ctaY-170]);
+      P2.push([Math.min(vw-8, endX2+90), ctaY-14]);
+      P2.push([endX2, ctaY]);
       line.setAttribute('d', pts2path(P));
-      len=line.getTotalLength();
+      line2.setAttribute('d', pts2path(P2));
+      len=line.getTotalLength(); len2=line2.getTotalLength();
       line.setAttribute('stroke-dasharray', len);
-      /* length-by-document-Y lookup so the tip can track the viewport instead
-         of lagging where path length outpaces page height (forced monotonic) */
-      tblL=[]; tblY=[];
-      var steps=Math.max(40, Math.round(len/24)), prevY=0;
-      for(var k=0;k<=steps;k++){
-        var l=len*k/steps, y=line.getPointAtLength(l).y;
-        if(y<prevY) y=prevY; prevY=y;
-        tblL.push(l); tblY.push(y);
-      }
+      line2.setAttribute('stroke-dasharray', len2);
+      tbl=makeTable(line,len); tbl2=makeTable(line2,len2);
       built=true;
       paintJourney();
     }
 
-    function lengthAtY(y){
-      var hi=tblY.length-1, lo=0;
-      if(y<=tblY[0]) return tblL[0];
-      if(y>=tblY[hi]) return tblL[hi];
-      while(hi-lo>1){ var mid=(hi+lo)>>1; if(tblY[mid]<y) lo=mid; else hi=mid; }
-      var f=(y-tblY[lo])/((tblY[hi]-tblY[lo])||1);
-      return tblL[lo]+(tblL[hi]-tblL[lo])*f;
+    /* length-by-document-Y lookup so each tip can track the viewport instead
+       of lagging where path length outpaces page height (forced monotonic) */
+    function makeTable(ln,L){
+      var TL=[], TY=[], steps=Math.max(40, Math.round(L/24)), prevY=0;
+      for(var k=0;k<=steps;k++){
+        var l=L*k/steps, y=ln.getPointAtLength(l).y;
+        if(y<prevY) y=prevY; prevY=y;
+        TL.push(l); TY.push(y);
+      }
+      return {L:TL, Y:TY};
+    }
+
+    function lengthAtY(t, y){
+      var TL=t.L, TY=t.Y, hi=TY.length-1, lo=0;
+      if(y<=TY[0]) return TL[0];
+      if(y>=TY[hi]) return TL[hi];
+      while(hi-lo>1){ var mid=(hi+lo)>>1; if(TY[mid]<y) lo=mid; else hi=mid; }
+      var f=(y-TY[lo])/((TY[hi]-TY[lo])||1);
+      return TL[lo]+(TL[hi]-TL[lo])*f;
+    }
+
+    /* tip rides ~60% down the current viewport; near the end blend to the
+       full path so each arrow finishes exactly on the CTA */
+    function drawOne(ln, tp, t, L, p){
+      var at=lengthAtY(t, scrollY+innerHeight*0.6);
+      if(p>0.85){ var f=(p-0.85)/0.15; at=at+(L-at)*f; }
+      ln.style.strokeDashoffset=Math.max(0,L-at);
+      var pt=ln.getPointAtLength(at), pb=ln.getPointAtLength(Math.max(0,at-2));
+      var ang=Math.atan2(pt.y-pb.y, pt.x-pb.x)*180/Math.PI;
+      tp.setAttribute('transform','translate('+pt.x.toFixed(1)+' '+pt.y.toFixed(1)+') rotate('+ang.toFixed(1)+') scale('+tipS+')');
     }
 
     function paintJourney(){
       if(!built) return;
       var max=document.documentElement.scrollHeight-innerHeight;
       var p=max>0?Math.min(1,Math.max(0,scrollY/max)):0;
-      /* tip rides ~60% down the current viewport; near the end blend to the
-         full path so the arrow finishes exactly on the CTA */
-      var at=lengthAtY(scrollY+innerHeight*0.6);
-      if(p>0.85){ var t=(p-0.85)/0.15; at=at+(len-at)*t; }
-      line.style.strokeDashoffset=Math.max(0,len-at);
-      var pt=line.getPointAtLength(at), pb=line.getPointAtLength(Math.max(0,at-2));
-      var ang=Math.atan2(pt.y-pb.y, pt.x-pb.x)*180/Math.PI;
-      tip.setAttribute('transform','translate('+pt.x.toFixed(1)+' '+pt.y.toFixed(1)+') rotate('+ang.toFixed(1)+') scale('+tipS+')');
+      drawOne(line, tip, tbl, len, p);
+      drawOne(line2, tip2, tbl2, len2, p);
     }
 
     var jt=false;
