@@ -124,6 +124,7 @@ export function ApplicationQuestions({
                               type="button"
                               onClick={() => void copy(q.id, answer)}
                               title={t('autopilot.apply.questions.copy')}
+                              aria-label={t('autopilot.apply.questions.copy')}
                               className="absolute right-1.5 top-1.5 rounded p-0.5 text-foreground/30 transition-colors hover:text-foreground/70"
                             >
                               {copiedId === q.id ? <Check size={11} /> : <Copy size={11} />}

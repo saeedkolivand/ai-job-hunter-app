@@ -940,12 +940,14 @@
     },
     "apply": {
       "back": "Back to autopilot",
+      "match": "match",
       "jobDescription": "Job description",
       "noDescription": "No description was captured for this job.",
       "loadFailed": "Couldn't load this posting — it may be closed or require sign-in.",
       "fetchingDescription": "Fetching job description…",
       "generate": "Generate",
       "generating": "Generating…",
+      "generatingHint": "This can take a moment — tailoring against the job posting.",
       "cancel": "Cancel",
       "analyzing": "Analyzing job description…",
       "writingResume": "Writing resume…",
@@ -972,6 +974,47 @@
         "resume": "Resume",
         "cover": "Cover letter",
         "both": "Both"
+      },
+      "tabs": {
+        "jobAd": "Job ad"
+      },
+      "tryAgain": "Try again",
+      "hintNoResume": "Add your resume to generate",
+      "hintNoDescription": "No job description to tailor against",
+      "wizard": {
+        "steps": {
+          "jobAd": "Job ad",
+          "resume": "Resume",
+          "output": "Output",
+          "model": "Model"
+        },
+        "jobAd": {
+          "title": "Review the job",
+          "subtitle": "Read the posting you're tailoring against"
+        },
+        "resume": {
+          "title": "Your resume",
+          "subtitle": "Upload or paste the resume to tailor"
+        },
+        "output": {
+          "title": "What to generate",
+          "subtitle": "Choose resume, cover letter, or both"
+        },
+        "model": {
+          "title": "AI model",
+          "subtitle": "Pick the model and optional company research"
+        },
+        "next": "Next",
+        "back": "Back",
+        "generate": "Generate",
+        "validation": {
+          "resumeRequired": "Add your resume to continue",
+          "selectModel": "Select an AI model first"
+        },
+        "results": {
+          "regenerate": "Regenerate",
+          "edit": "Edit settings"
+        }
       }
     },
     "referral": {
@@ -1008,7 +1051,8 @@
         "sent": "Sent",
         "replied": "Replied"
       },
-      "savedTitle": "Saved contacts"
+      "savedTitle": "Saved contacts",
+      "savedAddAnother": "Saved to your list below — the form is ready for the next person."
     },
     "loading": "Loading…",
     "empty": {
@@ -1031,12 +1075,15 @@
       "create": "Create Autopilot",
       "save": "Save Changes",
       "validation": {
-        "missingFields": "Please fill in all required fields (Name, Board, and Search Query)."
+        "missingFields": "Please fill in all required fields (Name, Board, and Search Query).",
+        "nameRequired": "Give this search a name.",
+        "queryRequired": "Enter a search query."
       },
       "target": {
         "title": "Where should we look?",
         "subtitle": "Pick a job board and enter your search.",
         "name": "Name this search",
+        "namePlaceholder": "e.g. Senior React roles — Berlin",
         "board": "Job board",
         "query": "Search query",
         "queryPlaceholder": "e.g. React developer",
@@ -1045,7 +1092,7 @@
         "locationPlaceholder": "e.g. Berlin, remote",
         "fromLocationSettings": "from location settings",
         "workType": "Work type",
-        "pages": "Pages to scrape",
+        "items": "Items to scrape",
         "postedWithin": "Posted within",
         "anyTime": "Any time",
         "last24h": "Last 24h",
@@ -1055,8 +1102,16 @@
       "filter": {
         "title": "How should we filter results?",
         "subtitle": "Only jobs passing these filters will be acted on.",
-        "minMatchScore": "Minimum match score — {{score}}%",
-        "minMatchScoreHint": "(0 = no filter)",
+        "matchScore": "Match score",
+        "matchScoreHint": "How strict the resume match must be",
+        "matchLevel": {
+          "low": "Low",
+          "lowDesc": "Lenient",
+          "medium": "Medium",
+          "mediumDesc": "Balanced",
+          "high": "High",
+          "highDesc": "Strict"
+        },
         "minMatchScoreDesc": "Jobs scored below this against your resume are skipped.",
         "resume": "Resume",
         "resumeOptional": "(optional — used for match scoring)",

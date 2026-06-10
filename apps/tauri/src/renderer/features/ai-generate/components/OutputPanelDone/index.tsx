@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, cn } from '@ajh/ui';
 
 import { EditableOutput } from '@/components/generation/EditableOutput';
+import { PdfPreview } from '@/components/generation/PdfPreview';
 import {
   buildFilename,
   type GenerationMeta,
@@ -16,7 +17,6 @@ import {
 import { useTranslation } from '@/lib/i18n';
 
 import { ExportModal } from '../ExportModal';
-import { PdfPreview } from '../PdfPreview';
 
 interface OutputPanelDoneProps {
   resumeOut: string;

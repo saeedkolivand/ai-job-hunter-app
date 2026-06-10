@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { FormProvider, useForm, useFormContext } from 'react-hook-form';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import type { SetFn, WizardState } from '@/features/autopilot/types';
+import type { WizardState } from '@/features/autopilot/types';
 
 import { StepSchedule } from './index';
 
@@ -31,7 +32,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     query: 'react developer',
     location: 'Berlin',
     workType: 'remote',
-    pages: 2,
+    amount: 50,
     dateFilter: '24h',
     minMatchScore: 50,
     keywords: '',
@@ -42,6 +43,39 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     scheduleMinute: 0,
     ...overrides,
   };
+}
+
+/** Surfaces the live RHF schedule fields as JSON so tests can assert value + type. */
+function Probe() {
+  const { watch } = useFormContext<WizardState>();
+  const v = watch();
+  return (
+    <output data-testid="probe">
+      {JSON.stringify({
+        schedule: v.schedule,
+        scheduleHour: v.scheduleHour,
+        scheduleMinute: v.scheduleMinute,
+      })}
+    </output>
+  );
+}
+
+/** Render StepSchedule inside a real RHF form seeded with `overrides`. */
+function renderStep(overrides: Partial<WizardState> = {}) {
+  function Host() {
+    const methods = useForm<WizardState>({ defaultValues: makeForm(overrides) });
+    return (
+      <FormProvider {...methods}>
+        <StepSchedule />
+        <Probe />
+      </FormProvider>
+    );
+  }
+  return render(<Host />);
+}
+
+function readProbe(): Pick<WizardState, 'schedule' | 'scheduleHour' | 'scheduleMinute'> {
+  return JSON.parse(screen.getByTestId('probe').textContent ?? '{}');
 }
 
 /** Open the SelectDropdown identified by its trigger button id attribute and pick an option. */
@@ -61,86 +95,59 @@ async function pickOptionById(
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('StepSchedule', () => {
-  let set: Mock<SetFn>;
-
-  beforeEach(() => {
-    set = vi.fn<SetFn>();
-  });
-
   // ── Gating: control visibility per schedule ─────────────────────────────────
 
   describe('gating — daily', () => {
     it('renders both hour and minute controls', () => {
-      render(<StepSchedule form={makeForm({ schedule: 'daily' })} set={set} />);
+      renderStep({ schedule: 'daily' });
       expect(document.getElementById('schedule-hour')).toBeInTheDocument();
       expect(document.getElementById('schedule-minute')).toBeInTheDocument();
     });
 
     it('does not render the minutes-past-hour control', () => {
-      render(<StepSchedule form={makeForm({ schedule: 'daily' })} set={set} />);
+      renderStep({ schedule: 'daily' });
       expect(document.getElementById('schedule-minutes-past-hour')).not.toBeInTheDocument();
     });
   });
 
   describe('gating — twice_daily', () => {
     it('renders both hour and minute controls', () => {
-      render(<StepSchedule form={makeForm({ schedule: 'twice_daily' })} set={set} />);
+      renderStep({ schedule: 'twice_daily' });
       expect(document.getElementById('schedule-hour')).toBeInTheDocument();
       expect(document.getElementById('schedule-minute')).toBeInTheDocument();
     });
 
     it('shows a "+12h" hint containing the second run time (hour 9 → 21:00)', () => {
-      render(
-        <StepSchedule
-          form={makeForm({ schedule: 'twice_daily', scheduleHour: 9, scheduleMinute: 0 })}
-          set={set}
-        />
-      );
+      renderStep({ schedule: 'twice_daily', scheduleHour: 9, scheduleMinute: 0 });
       // The hint text contains "21:00" — the first run at 09:00 plus 12h.
       expect(screen.getByText(/21:00/)).toBeInTheDocument();
     });
 
     it('computes the second run time correctly for hour 13 → 01:00 (wraps at midnight)', () => {
-      render(
-        <StepSchedule
-          form={makeForm({ schedule: 'twice_daily', scheduleHour: 13, scheduleMinute: 15 })}
-          set={set}
-        />
-      );
+      renderStep({ schedule: 'twice_daily', scheduleHour: 13, scheduleMinute: 15 });
       // (13 + 12) % 24 = 1 → "01:15"
       expect(screen.getByText(/01:15/)).toBeInTheDocument();
     });
 
     it('scheduleHour=0 boundary: "+12h" hint contains "12:00" and hour trigger shows "00" not the placeholder', async () => {
       const user = userEvent.setup();
-      render(
-        <StepSchedule
-          form={makeForm({ schedule: 'twice_daily', scheduleHour: 0, scheduleMinute: 0 })}
-          set={set}
-        />
-      );
+      renderStep({ schedule: 'twice_daily', scheduleHour: 0, scheduleMinute: 0 });
 
       // (a) The "+12h" hint must contain "12:00" — (0+12)%24 = 12, minute 0.
-      // The hint is rendered by the alsoRunsAt i18n key which interpolates first/second.
-      // Because our mock substitutes {{second}} → "12:00" the text "12:00" appears in the DOM.
       expect(screen.getByText(/12:00/)).toBeInTheDocument();
 
       // (b) The hour trigger's displayed label must be "00", not the placeholder "Select…".
-      // SelectDropdown looks up `options.find(o => o.value === value)` and renders
-      // `selectedOption.label`. For scheduleHour=0, value prop = String(0) = "0" which
-      // matches HOUR_OPTIONS[0].value ("0") → label "00". A naive falsy guard on value
-      // would fall through to the placeholder instead.
+      // SelectDropdown looks up `options.find(o => o.value === value)`; for scheduleHour=0
+      // the value prop = String(0) = "0" matches HOUR_OPTIONS[0] → label "00". A naive
+      // falsy guard on value would fall through to the placeholder instead.
       const hourTrigger = document.getElementById('schedule-hour');
       if (!hourTrigger) throw new Error('schedule-hour trigger not found');
 
-      // Open the dropdown and confirm the "00" option is marked as selected (aria-selected).
       await user.click(hourTrigger);
       expect(screen.getByRole('listbox')).toBeInTheDocument();
       const zeroOption = screen.getByRole('option', { name: '00' });
       expect(zeroOption).toHaveAttribute('aria-selected', 'true');
 
-      // Also confirm the trigger itself displays "00" and not the placeholder text.
-      // The trigger <button> wraps a <span> whose text is selectedOption.label.
       expect(hourTrigger).toHaveTextContent('00');
       expect(hourTrigger).not.toHaveTextContent('Select…');
     });
@@ -148,78 +155,77 @@ describe('StepSchedule', () => {
 
   describe('gating — hourly', () => {
     it('renders the minutes-past-hour control', () => {
-      render(<StepSchedule form={makeForm({ schedule: 'hourly' })} set={set} />);
+      renderStep({ schedule: 'hourly' });
       expect(document.getElementById('schedule-minutes-past-hour')).toBeInTheDocument();
     });
 
     it('does not render the hour control', () => {
-      render(<StepSchedule form={makeForm({ schedule: 'hourly' })} set={set} />);
+      renderStep({ schedule: 'hourly' });
       expect(document.getElementById('schedule-hour')).not.toBeInTheDocument();
     });
   });
 
   describe('gating — manual', () => {
     it('renders no time controls at all', () => {
-      render(<StepSchedule form={makeForm({ schedule: 'manual' })} set={set} />);
+      renderStep({ schedule: 'manual' });
       expect(document.getElementById('schedule-hour')).not.toBeInTheDocument();
       expect(document.getElementById('schedule-minute')).not.toBeInTheDocument();
       expect(document.getElementById('schedule-minutes-past-hour')).not.toBeInTheDocument();
     });
   });
 
-  // ── Wiring: set() called with correct type ──────────────────────────────────
+  // ── Wiring: setValue writes the correctly typed value into the form ──────────
 
   describe('wiring — hour control', () => {
-    it('calls set("scheduleHour", <number>) when a new hour is selected', async () => {
+    it('writes scheduleHour as a number when a new hour is selected', async () => {
       const user = userEvent.setup();
-      render(<StepSchedule form={makeForm({ schedule: 'daily', scheduleHour: 9 })} set={set} />);
+      renderStep({ schedule: 'daily', scheduleHour: 9 });
       await pickOptionById(user, 'schedule-hour', '08');
-      expect(set).toHaveBeenCalledWith('scheduleHour', 8);
-      // Guard: value must be a number, not a string.
-      const [, value] = set.mock.calls.find(([k]) => k === 'scheduleHour') ?? [];
-      expect(typeof value).toBe('number');
+      const { scheduleHour } = readProbe();
+      expect(scheduleHour).toBe(8);
+      expect(typeof scheduleHour).toBe('number');
     });
   });
 
   describe('wiring — minute control (daily)', () => {
-    it('calls set("scheduleMinute", <number>) when a new minute is selected', async () => {
+    it('writes scheduleMinute as a number when a new minute is selected', async () => {
       const user = userEvent.setup();
-      render(<StepSchedule form={makeForm({ schedule: 'daily', scheduleMinute: 0 })} set={set} />);
+      renderStep({ schedule: 'daily', scheduleMinute: 0 });
       await pickOptionById(user, 'schedule-minute', '15');
-      expect(set).toHaveBeenCalledWith('scheduleMinute', 15);
-      const [, value] = set.mock.calls.find(([k]) => k === 'scheduleMinute') ?? [];
-      expect(typeof value).toBe('number');
+      const { scheduleMinute } = readProbe();
+      expect(scheduleMinute).toBe(15);
+      expect(typeof scheduleMinute).toBe('number');
     });
   });
 
   describe('wiring — minute control (hourly)', () => {
-    it('calls set("scheduleMinute", <number>) for the minutes-past-hour control', async () => {
+    it('writes scheduleMinute as a number for the minutes-past-hour control', async () => {
       const user = userEvent.setup();
-      render(<StepSchedule form={makeForm({ schedule: 'hourly', scheduleMinute: 0 })} set={set} />);
+      renderStep({ schedule: 'hourly', scheduleMinute: 0 });
       await pickOptionById(user, 'schedule-minutes-past-hour', '30');
-      expect(set).toHaveBeenCalledWith('scheduleMinute', 30);
-      const [, value] = set.mock.calls.find(([k]) => k === 'scheduleMinute') ?? [];
-      expect(typeof value).toBe('number');
+      const { scheduleMinute } = readProbe();
+      expect(scheduleMinute).toBe(30);
+      expect(typeof scheduleMinute).toBe('number');
     });
   });
 
   describe('wiring — schedule selector buttons', () => {
-    it('calls set("schedule", "hourly") when the hourly button is clicked', async () => {
+    it('sets schedule to "hourly" when the hourly button is clicked', async () => {
       const user = userEvent.setup();
-      render(<StepSchedule form={makeForm({ schedule: 'daily' })} set={set} />);
+      renderStep({ schedule: 'daily' });
       await user.click(
         screen.getByRole('button', { name: /autopilot\.wizard\.schedule\.hourly/i })
       );
-      expect(set).toHaveBeenCalledWith('schedule', 'hourly');
+      expect(readProbe().schedule).toBe('hourly');
     });
 
-    it('calls set("schedule", "manual") when the manual button is clicked', async () => {
+    it('sets schedule to "manual" when the manual button is clicked', async () => {
       const user = userEvent.setup();
-      render(<StepSchedule form={makeForm({ schedule: 'daily' })} set={set} />);
+      renderStep({ schedule: 'daily' });
       await user.click(
         screen.getByRole('button', { name: /autopilot\.wizard\.schedule\.manual/i })
       );
-      expect(set).toHaveBeenCalledWith('schedule', 'manual');
+      expect(readProbe().schedule).toBe('manual');
     });
   });
 
@@ -227,38 +233,24 @@ describe('StepSchedule', () => {
 
   describe('summary line', () => {
     it('daily: shows "HH:MM" formatted time (09:00 for hour 9 minute 0)', () => {
-      render(
-        <StepSchedule
-          form={makeForm({ schedule: 'daily', scheduleHour: 9, scheduleMinute: 0 })}
-          set={set}
-        />
-      );
-      // The summary value cell renders the scheduleSummary string which includes "09:00".
+      renderStep({ schedule: 'daily', scheduleHour: 9, scheduleMinute: 0 });
       expect(screen.getByText(/09:00/)).toBeInTheDocument();
     });
 
     it('twice_daily: shows both times in the summary', () => {
-      render(
-        <StepSchedule
-          form={makeForm({ schedule: 'twice_daily', scheduleHour: 9, scheduleMinute: 0 })}
-          set={set}
-        />
-      );
+      renderStep({ schedule: 'twice_daily', scheduleHour: 9, scheduleMinute: 0 });
       // Summary contains "09:00 & 21:00".
       expect(screen.getByText(/09:00.*21:00/s)).toBeInTheDocument();
     });
 
     it('hourly: shows ":MM" format (":00" for minute 0)', () => {
-      render(<StepSchedule form={makeForm({ schedule: 'hourly', scheduleMinute: 0 })} set={set} />);
+      renderStep({ schedule: 'hourly', scheduleMinute: 0 });
       expect(screen.getByText(/:00/)).toBeInTheDocument();
     });
 
     it('manual: shows the manual i18n key (no time component)', () => {
-      render(<StepSchedule form={makeForm({ schedule: 'manual' })} set={set} />);
-      // The summary value cell is a <span> rendered next to the "summarySchedule" label.
-      // The same key also appears on the schedule selector button; getAllByText handles both.
+      renderStep({ schedule: 'manual' });
       const matches = screen.getAllByText('autopilot.wizard.schedule.manual');
-      // At least one match must exist (summary value); button label is the other.
       expect(matches.length).toBeGreaterThanOrEqual(1);
       // The summary value renders as a <span> (the schedule button renders as a <div>).
       const summarySpan = matches.find((el) => el.tagName.toLowerCase() === 'span');

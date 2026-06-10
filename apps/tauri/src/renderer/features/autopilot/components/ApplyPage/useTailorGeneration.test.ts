@@ -78,6 +78,8 @@ const params = {
   jobUrl: 'https://acme.com/job/42',
   board: 'linkedin',
   researchCompany: false,
+  templateId: 'modern' as const,
+  atsMode: false,
 };
 
 // useTailorGeneration uses useQueryClient (to invalidate after save), so the hook
