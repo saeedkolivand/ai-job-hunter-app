@@ -974,6 +974,8 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
       tipS=vw<700?0.78:1;
       var Lx=g, Rx=vw-g;
       var secs=document.querySelectorAll('main > section');
+      var dlgEl=document.querySelector('.dialog');
+      var dlgB=dlgEl?dlgEl.getBoundingClientRect().bottom+scrollY:0;
       /* both lines share the gutter snake on opposite parities: the second
          starts right wherever the first starts left, so they mirror — each
          enters from the top of its own gutter, not the center */
@@ -983,9 +985,13 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
           var s=secs[i]; if(s.classList.contains('finale')) break;
           var r=s.getBoundingClientRect(), top=r.top+scrollY, h=r.height;
           var x=(side%2===0)?Lx:Rx, inw=((side%2===0)?amp:-amp)*dir;
+          /* if this section holds the "Are you sure?" dialog, exit below it so
+             the side-swap crossing into the next section happens after the box */
+          var ey=top+h*0.85;
+          if(dlgB>top && dlgB<top+h) ey=Math.min(top+h, Math.max(ey, dlgB+40));
           P.push([x, top+h*0.18]);
           P.push([x+inw, top+h*0.5]);
-          P.push([x, top+h*0.85]);
+          P.push([x, ey]);
           side++;
         }
         return P;
