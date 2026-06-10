@@ -918,9 +918,17 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   var scenes = document.querySelectorAll('.stage, .testi, .finale'), sceneTick=false;
   function paintScenes(){
     var vh = innerHeight || document.documentElement.clientHeight;
+    var maxS = document.documentElement.scrollHeight - vh;
     for(var i=0;i<scenes.length;i++){
       var s=scenes[i], r=s.getBoundingClientRect();
-      var p=(vh - r.top)/(vh + r.height); p = p<0?0:(p>1?1:p);
+      var p=(vh - r.top)/(vh + r.height);
+      /* sections near the document end can never travel fully past the
+         viewport, so raw --p tops out below 1 and their scroll-scrubbed
+         strokes would stay half-drawn — rescale by the progress this
+         section can actually reach at full scroll */
+      var pm=(vh - (r.top + scrollY - maxS))/(vh + r.height);
+      if(pm>0 && pm<1) p/=pm;
+      p = p<0?0:(p>1?1:p);
       var mid=r.top + r.height/2;
       var c=1 - Math.min(1, Math.abs(mid - vh/2)/(vh/2 + r.height/2));
       s.style.setProperty('--p', p.toFixed(4));
