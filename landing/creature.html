@@ -177,6 +177,8 @@ body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;opac
 <div id="hud" aria-hidden="true"><div id="hud1"></div><div id="hud2"></div><div id="hud3"></div></div>
 
 <div id="controls">
+  <button id="pauseBtn" aria-label="pause">⏸</button>
+  <button id="speedBtn" aria-label="speed 1x">1×</button>
   <button id="muteBtn" aria-label="mute">🔊</button>
   <button id="skipBtn" aria-label="skip to next scene">⏭</button>
   <button id="replayBtn" aria-label="replay from the start">↺</button>
@@ -195,7 +197,7 @@ body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;opac
     </svg>
   </button>
   <div class="tmono">runtime ~2:40 · shorter than a take-home</div>
-  <div class="tmono thint">sound on · m mute · → skip · r replay</div>
+  <div class="tmono thint">sound on · space pause · 2× button · m mute · → skip · r replay</div>
 </div>
 
 <div id="endcard" class="overlay" hidden>
@@ -954,9 +956,10 @@ var $=function(id){return document.getElementById(id);};
 var sceneRoot=$('sceneRoot'),capsEl=$('caps'),figEl=$('fig'),stageBox=$('stagebox');
 var hud1=$('hud1'),hud2=$('hud2'),hud3=$('hud3'),barFill=$('barFill'),plabel=$('plabel');
 var titleEl=$('titlecard'),endEl=$('endcard');
-var muteBtn=$('muteBtn');
+var muteBtn=$('muteBtn'),pauseBtn=$('pauseBtn'),speedBtn=$('speedBtn');
 var turbs=Array.prototype.slice.call(document.querySelectorAll('#stage feTurbulence'));
-var started=false,endedFilm=false,t0=0,filmTime=0,sceneIdx=-1,sceneTick=null;
+var started=false,endedFilm=false,filmTime=0,sceneIdx=-1,sceneTick=null;
+var rate=1,paused=false,lastFrame=0;
 var activeCaps=[];
 var CAPDUR={cap:3.6,say:3.2,scrawl:4.6,stamp:3.2};
 function mmss(s){s=Math.max(0,Math.floor(s));return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2);}
@@ -1005,8 +1008,9 @@ function frame(now){requestAnimationFrame(frame);
  if(!RM&&now-lastBoil>120){lastBoil=now;boilSeed=boilSeed%7+1;
   for(var bi=0;bi<turbs.length;bi++)turbs[bi].setAttribute('seed',String(boilSeed+bi*3));}
  tickMusic();
- if(endedFilm)return;
- filmTime=(now-t0)/1000;
+ if(endedFilm){lastFrame=now;return;}
+ var dt=lastFrame?(now-lastFrame)/1000:0;lastFrame=now;
+ if(!paused){if(dt>0.25)dt=0.25;filmTime+=dt*rate;}
  if(filmTime>=TOTAL){finishFilm();return;}
  var i=sceneAt(filmTime);
  if(i!==sceneIdx)setScene(i);
@@ -1029,7 +1033,8 @@ function startFilm(){if(started)return;started=true;
  if(AC){if(AC.state==='suspended')AC.resume();
   musicOn=true;stepIdx=0;nextNote=AC.currentTime+0.15;curCue=null;setCue('act1');}
  titleEl.setAttribute('hidden','');
- t0=performance.now();sceneIdx=-1;endedFilm=false;}
+ filmTime=0;lastFrame=0;sceneIdx=-1;endedFilm=false;
+ paused=false;updatePauseBtn();}
 function finishFilm(){endedFilm=true;clearCaps();
  hud1.textContent='applications: handled';
  hud2.textContent='creature size: pocket (again)';
@@ -1041,10 +1046,10 @@ function finishFilm(){endedFilm=true;clearCaps();
 function skipScene(){if(!started||endedFilm)return;
  var next=sceneIdx+1;
  if(next>=SCENES.length){finishFilm();return;}
- t0=performance.now()-STARTS[next]*1000;clearCaps();}
+ filmTime=STARTS[next];clearCaps();}
 function replay(){if(!started){startFilm();return;}
  endEl.setAttribute('hidden','');endedFilm=false;sceneIdx=-1;clearCaps();
- t0=performance.now();
+ filmTime=0;lastFrame=0;paused=false;updatePauseBtn();
  if(AC){curCue=null;setCue('act1');stepIdx=0;nextNote=AC.currentTime+0.1;}}
 function setMuted(m){muted=m;
  try{localStorage.setItem('creature-muted',m?'1':'0');}catch(e){}
@@ -1053,6 +1058,16 @@ function setMuted(m){muted=m;
   master.gain.linearRampToValueAtTime(m?0:0.55,t+0.15);}
  muteBtn.textContent=m?'🔇':'🔊';
  muteBtn.setAttribute('aria-label',m?'unmute':'mute');}
+function updatePauseBtn(){pauseBtn.textContent=paused?'▶':'⏸';
+ pauseBtn.setAttribute('aria-label',paused?'play':'pause');}
+function setPaused(p){if(!started||endedFilm)return;paused=p;lastFrame=0;
+ if(AC){if(p){if(AC.state==='running')AC.suspend();}
+  else AC.resume().then(function(){nextNote=Math.max(nextNote,AC.currentTime+0.1);});}
+ updatePauseBtn();}
+function togglePause(){setPaused(!paused);}
+function setRate(r){rate=r;speedBtn.textContent=r+'×';
+ speedBtn.setAttribute('aria-label','speed '+r+'x');}
+function toggleRate(){setRate(rate===1?2:1);}
 
 /* ================= wiring ================= */
 $('play').addEventListener('click',startFilm);
@@ -1060,21 +1075,24 @@ $('skipBtn').addEventListener('click',skipScene);
 $('replayBtn').addEventListener('click',replay);
 $('replay2').addEventListener('click',replay);
 muteBtn.addEventListener('click',function(){setMuted(!muted);});
+pauseBtn.addEventListener('click',togglePause);
+speedBtn.addEventListener('click',toggleRate);
 document.addEventListener('keydown',function(e){
  if(e.key==='Enter'&&e.target&&e.target.tagName==='A')return;
  if(e.key==='m'||e.key==='M')setMuted(!muted);
  else if(e.key==='ArrowRight'){e.preventDefault();skipScene();}
  else if(e.key==='r'||e.key==='R')replay();
+ else if(e.key==='p'||e.key==='P'){e.preventDefault();togglePause();}
  else if(e.key===' '||e.key==='Enter'){
   if(!started){e.preventDefault();startFilm();}
-  else if(endedFilm&&e.key===' '){e.preventDefault();replay();}}});
+  else if(endedFilm&&e.key===' '){e.preventDefault();replay();}
+  else if(e.key===' '){e.preventDefault();togglePause();}}});
 var hiddenAt=0;
 document.addEventListener('visibilitychange',function(){
  if(document.hidden){hiddenAt=performance.now();
   if(AC&&AC.state==='running')AC.suspend();}
- else{if(started&&hiddenAt)t0+=performance.now()-hiddenAt;
-  hiddenAt=0;
-  if(AC)AC.resume().then(function(){nextNote=Math.max(nextNote,AC.currentTime+0.1);});}});
+ else{hiddenAt=0;lastFrame=0;
+  if(AC&&!paused)AC.resume().then(function(){nextNote=Math.max(nextNote,AC.currentTime+0.1);});}});
 function onResize(){var r=stageBox.getBoundingClientRect();
  stageBox.style.setProperty('--s',(r.width/1200).toFixed(4));}
 window.addEventListener('resize',onResize);
