@@ -1,12 +1,22 @@
-import { defineConfig } from 'vitest/config';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import react from '@vitejs/plugin-react';
-import { resolve } from 'node:path';
+import { defineConfig } from 'vitest/config';
+
+// Load this config as native ESM (note `import.meta.url`, not `__dirname`) so
+// `@vitejs/plugin-react` is imported via ESM rather than require()'d during
+// vitest's concurrent project setup. The require()-of-ESM path races under
+// node 22 (ERR_INTERNAL_ASSERTION, "module is not yet fully loaded"), crashing
+// the whole run. Mirrors packages/ui/vitest.{config,storybook.config}.ts.
+const here = dirname(fileURLToPath(import.meta.url));
 
 // Resolve workspace packages to their TypeScript source so tests run without a
 // prior `pnpm build:packages` step and coverage is attributed to source files.
-const sharedSrc = resolve(__dirname, '../../packages/shared/src');
-const promptsSrc = resolve(__dirname, '../../packages/prompts/src');
-const uiSrc = resolve(__dirname, '../../packages/ui/src');
+const sharedSrc = resolve(here, '../../packages/shared/src');
+const promptsSrc = resolve(here, '../../packages/prompts/src');
+const uiSrc = resolve(here, '../../packages/ui/src');
+const translationsSrc = resolve(here, '../../packages/translations/src');
 
 export default defineConfig({
   plugins: [react()],
@@ -15,7 +25,7 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
-    setupFiles: [resolve(__dirname, 'vitest.setup.ts')],
+    setupFiles: [resolve(here, 'vitest.setup.ts')],
     passWithNoTests: true,
   },
   resolve: {
@@ -40,7 +50,8 @@ export default defineConfig({
       },
       { find: '@ajh/prompts', replacement: resolve(promptsSrc, 'index.ts') },
       { find: '@ajh/ui', replacement: resolve(uiSrc, 'index.ts') },
-      { find: '@', replacement: resolve(__dirname, 'src/renderer') },
+      { find: '@ajh/translations', replacement: resolve(translationsSrc, 'index.ts') },
+      { find: '@', replacement: resolve(here, 'src/renderer') },
     ],
   },
 });
