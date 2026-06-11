@@ -18,6 +18,15 @@ import { Toolbar, type ToolbarLabels } from './Toolbar';
 export interface RichTextEditorHandle {
   /** Plain text of the current selection (`''` when the selection is empty). */
   getSelectionText: () => string;
+  /**
+   * Plain-text selection plus the surrounding document text, so the AI-rewrite
+   * prompt has real tone-grounding context for the WYSIWYG path:
+   *   - `selection` — text of the current selection (same as `getSelectionText`)
+   *   - `before`    — plain text from doc start to the selection start
+   *   - `after`     — plain text from the selection end to doc end
+   * Plain text (no markdown marks) is intentional — this is context, not content.
+   */
+  getSelectionContext: () => { selection: string; before: string; after: string };
   /** Replace the current selection with `text` (plain text, inline-parsed). */
   replaceSelection: (text: string) => void;
   /** Move keyboard focus into the editor. */
@@ -169,6 +178,18 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
           if (!editor) return '';
           const { from, to, empty } = editor.state.selection;
           return empty ? '' : editor.state.doc.textBetween(from, to, '\n', ' ');
+        },
+        getSelectionContext: () => {
+          if (!editor) return { selection: '', before: '', after: '' };
+          const { doc } = editor.state;
+          const { from, to, empty } = editor.state.selection;
+          // '\n' block separator preserves paragraph boundaries; the leaf-text
+          // arg keeps non-text leaves (e.g. hardBreak) from injecting placeholders.
+          return {
+            selection: empty ? '' : doc.textBetween(from, to, '\n', ' '),
+            before: doc.textBetween(0, from, '\n', ' '),
+            after: doc.textBetween(to, doc.content.size, '\n', ' '),
+          };
         },
         replaceSelection: (text: string) => {
           if (!editor) return;

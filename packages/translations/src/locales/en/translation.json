@@ -804,6 +804,7 @@
     "save": "Save",
     "viewMode": "View mode",
     "editor": {
+      "toolbar": "Text formatting",
       "bold": "Bold",
       "italic": "Italic",
       "link": "Link",

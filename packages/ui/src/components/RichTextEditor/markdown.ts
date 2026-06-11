@@ -63,8 +63,17 @@ export function getEditorSchema(): Schema {
  * held out of the editable body entirely and re-appended verbatim on serialize.
  */
 const LINK_BLOCK_SEP = '\n---\n';
+/**
+ * The URL portion of an inline/reference link: everything inside the `(...)`,
+ * allowing ONE level of nested parentheses so URLs like
+ * `https://en.wikipedia.org/wiki/C_(programming_language)` are matched to their
+ * FINAL `)` instead of being truncated at the first interior `)`. Deeper
+ * nesting (rare in real URLs) still stops at the first unbalanced `)`.
+ * Kept as a source string so it can be embedded in several anchored patterns.
+ */
+const LINK_URL = String.raw`\(([^()]*(?:\([^()]*\)[^()]*)*)\)`;
 /** A single reference-block line: `- [anchor](url)` (anchor/url non-empty). */
-const LINK_BLOCK_LINE = /^- \[[^\]]+\]\([^)]+\)$/;
+const LINK_BLOCK_LINE = new RegExp(String.raw`^- \[[^\]]+\]${LINK_URL}$`);
 
 export interface SplitPreserved {
   /** The editable markdown (everything before the held-out tail). */
@@ -113,9 +122,14 @@ interface InlineSeg {
 }
 
 // Order matters: links first (so `*` inside a label/url is not mistaken for
-// emphasis), then bold (`**`) before italic (`*`).
-const INLINE_TOKEN = /(\[[^\]]+\]\([^)]+\))|(\*\*[^*]+\*\*)|(\*[^*\n]+\*)/g;
-const INLINE_LINK = /^\[([^\]]+)\]\(([^)]+)\)$/;
+// emphasis), then bold (`**`) before italic (`*`). The URL sub-pattern allows
+// one level of nested parens (see `LINK_URL`) so wiki-style URLs that contain
+// a balanced `(...)` are captured whole instead of truncated at the first `)`.
+const INLINE_TOKEN = new RegExp(
+  String.raw`(\[[^\]]+\]${LINK_URL})|(\*\*[^*]+\*\*)|(\*[^*\n]+\*)`,
+  'g'
+);
+const INLINE_LINK = new RegExp(String.raw`^\[([^\]]+)\]${LINK_URL}$`);
 
 /**
  * Parse a single line of inline markdown into segments. Only `**bold**`,
@@ -149,13 +163,14 @@ function serializeInline(segs: InlineSeg[]): string {
   let out = '';
   for (const seg of segs) {
     let t = seg.text;
-    // Apply marks innermost-first so a bold link serialises as `[**x**](url)`?
-    // No — links wrap the label only; bold/italic wrap the text. Each segment
-    // carries at most one structural meaning in our flat schema, but a text run
-    // can be both bold and italic.
+    // Apply emphasis innermost-first, THEN wrap the (possibly emphasised) label
+    // in the link, so a segment that is both a link and bold serialises as
+    // `[**foo**](url)` — emphasis must wrap from `t`, not from the raw text, or
+    // a bold/italic link silently loses its marks. A run can be both bold and
+    // italic; ordering bold-then-italic yields `***foo***`.
     if (seg.bold) t = `**${t}**`;
     if (seg.italic) t = `*${t}*`;
-    if (seg.link !== undefined) t = `[${seg.text}](${seg.link})`;
+    if (seg.link !== undefined) t = `[${t}](${seg.link})`;
     out += t;
   }
   return out;

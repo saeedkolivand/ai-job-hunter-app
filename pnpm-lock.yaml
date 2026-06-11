@@ -266,9 +266,6 @@ importers:
 
   packages/ui:
     dependencies:
-      '@tiptap/extension-link':
-        specifier: 3.26.0
-        version: 3.26.0(@tiptap/core@3.26.0(@tiptap/pm@3.26.0))(@tiptap/pm@3.26.0)
       '@tiptap/pm':
         specifier: 3.26.0
         version: 3.26.0

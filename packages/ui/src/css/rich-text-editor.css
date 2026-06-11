@@ -15,6 +15,11 @@
   /* Preserve significant whitespace runs (e.g. job-entry date columns) while the
      surface is being edited. Content stays the canonical markdown regardless. */
   white-space: pre-wrap;
+  /* With pre-wrap, a long unbreakable token (e.g. a URL or hyphen-free run in a
+     job entry) would overflow the container horizontally. Break inside the word
+     so it wraps to the editor width instead of forcing a horizontal scrollbar. */
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .rich-text-editor .ProseMirror p {

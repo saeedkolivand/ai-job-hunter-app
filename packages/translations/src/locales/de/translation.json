@@ -789,6 +789,7 @@
     "save": "Speichern",
     "viewMode": "Ansichtsmodus",
     "editor": {
+      "toolbar": "Textformatierung",
       "bold": "Fett",
       "italic": "Kursiv",
       "link": "Link",

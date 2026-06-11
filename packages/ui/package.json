@@ -23,7 +23,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@tiptap/extension-link": "3.26.0",
     "@tiptap/pm": "3.26.0",
     "@tiptap/react": "3.26.0",
     "@tiptap/starter-kit": "3.26.0",

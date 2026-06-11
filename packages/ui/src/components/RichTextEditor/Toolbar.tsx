@@ -23,6 +23,8 @@ import { isAllowedLinkUrl } from './extensions';
  * sensible English fallbacks for standalone/Storybook use.
  */
 export interface ToolbarLabels {
+  /** Accessible name for the toolbar container itself (the `role="toolbar"`). */
+  toolbarLabel?: string;
   bold?: string;
   italic?: string;
   link?: string;
@@ -43,6 +45,7 @@ export interface ToolbarLabels {
 }
 
 const FALLBACK: Required<ToolbarLabels> = {
+  toolbarLabel: 'Text formatting',
   bold: 'Bold',
   italic: 'Italic',
   link: 'Link',
@@ -197,7 +200,7 @@ export function Toolbar({
     <>
       <div
         role="toolbar"
-        aria-label={l.link /* generic; the bar groups text-formatting controls */}
+        aria-label={l.toolbarLabel}
         className="flex items-center gap-0.5 border-b border-white/[0.06] px-2 py-1.5"
       >
         <ToolButton

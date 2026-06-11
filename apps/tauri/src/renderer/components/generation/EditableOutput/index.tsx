@@ -133,6 +133,7 @@ export function EditableOutput({
   // `@ajh/ui` stays translation-free (it provides English fallbacks).
   const editorLabels = useMemo<ToolbarLabels>(
     () => ({
+      toolbarLabel: t('aiGenerate.editor.toolbar'),
       bold: t('aiGenerate.editor.bold'),
       italic: t('aiGenerate.editor.italic'),
       link: t('aiGenerate.editor.link'),
@@ -183,16 +184,17 @@ export function EditableOutput({
   };
 
   // Open the rewrite popover for the WYSIWYG surface. The editor owns the
-  // selection, so we only snapshot its (plain) text. `before`/`after` are pure
-  // style-grounding context for the prompt (fenced, never rewritten); the editor's
-  // markdown-marked selection does not map cleanly back to an offset in the raw
-  // `value`, so we pass empty context — the rewrite prompt floors and tolerates it.
+  // selection, so we read its plain-text selection plus the surrounding plain
+  // text (`before`/`after`) — pure style-grounding context for the prompt (fenced,
+  // never rewritten). No string offsets are involved: on Accept the result is
+  // spliced in-document via `editorRef.replaceSelection`.
   const openEditorRewrite = () => {
-    const selection = editorRef.current?.getSelectionText() ?? '';
-    if (!selection) return;
+    const ctx = editorRef.current?.getSelectionContext();
+    if (!ctx?.selection) return;
+    const { selection, before, after } = ctx;
     setFrozen({
       mode: 'editor',
-      target: { selection, before: '', after: '' },
+      target: { selection, before, after },
     });
   };
 
