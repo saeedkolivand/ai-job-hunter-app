@@ -26,8 +26,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write # inline review comments
-  checks: write # check-run annotations (reviewdog fallback)
 
 concurrency:
   group: pr-review-${{ github.ref }}
@@ -43,6 +41,10 @@ jobs:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read # checkout
+      pull-requests: write # reviewdog/Danger inline review comments
+      checks: write # check-run annotations (reviewdog fallback)
 
     steps:
       - name: 🛡️ Harden Runner
@@ -51,7 +53,7 @@ jobs:
           egress-policy: audit
 
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
 
@@ -104,6 +106,10 @@ jobs:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      contents: read # checkout
+      pull-requests: write # clippy-action github-pr-review inline comments
+      checks: write # check-run annotations (reviewdog fallback)
 
     steps:
       - name: 🛡️ Harden Runner
@@ -112,7 +118,7 @@ jobs:
           egress-policy: audit
 
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
 

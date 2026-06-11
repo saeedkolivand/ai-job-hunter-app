@@ -3,8 +3,11 @@
 export function extractPlainText(raw: string): string {
   return (
     raw
-      .replace(/<think>[\s\S]*?<\/think>/gi, '') // local model thinking blocks
-      .replace(/<leakage_check>[\s\S]*?<\/leakage_check>/gi, '') // legacy self-check block
+      // Tempered, linear forms of the lazy-dotall strips: `[\s\S]*?</tag>` with a
+      // multichar terminator backtracks polynomially (js/polynomial-redos). The
+      // `(?:(?!</tag>)[\s\S])*` shape matches the same spans with no backtracking.
+      .replace(/<think>(?:(?!<\/think>)[\s\S])*<\/think>/gi, '') // local model thinking blocks
+      .replace(/<leakage_check>(?:(?!<\/leakage_check>)[\s\S])*<\/leakage_check>/gi, '') // legacy self-check block
       // Strip any XML wrapper tags the model might echo from the prompt
       .replace(/<\/?candidate_resume>/gi, '')
       .replace(/<\/?job_ad>/gi, '')

@@ -166,8 +166,20 @@ pub fn dispatch_menu(app: &AppHandle, event: &str, payload: serde_json::Value) {
     // the buffer rather than trusting this payload).
     let _ = app.emit(event, payload.clone());
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.emit(event, payload);
+        let _ = w.emit(event, payload.clone());
     }
+    // Deferred re-trigger: on macOS the webview defers IPC while the menu owns the
+    // foreground, so the immediate emit above is dropped when the window was already
+    // visible (menu-bar case — no focus/visibility change to fall back on). Re-emit
+    // shortly after the menu closes, when IPC has resumed. The renderer drains the
+    // PendingMenu buffer exactly-once, so this duplicate is a no-op if the first emit
+    // already landed. Platform-agnostic and harmless on Windows/tray.
+    let app_retry = app.clone();
+    let event_retry = event.to_string();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(120)).await;
+        let _ = app_retry.emit(&event_retry, payload);
+    });
 }
 
 /// After a run surfaces `new_count` brand-new jobs (>0): raise a permission-gated

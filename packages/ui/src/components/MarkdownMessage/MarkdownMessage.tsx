@@ -63,7 +63,9 @@ function renderBlocks(text: string, onLinkClick: LinkClick): React.ReactNode[] {
       continue;
     }
 
-    const headingMatch = /^(#{1,3})\s+(.+)$/.exec(line);
+    // Bounded heading text (js/polynomial-redos): a heading line is short, so the
+    // cap never truncates real content but removes the unbounded-`+` backtracking.
+    const headingMatch = /^(#{1,3})\s+(.{1,500})$/.exec(line);
     if (headingMatch && headingMatch[1] && headingMatch[2]) {
       const level = headingMatch[1].length;
       const sizeClass =
@@ -175,7 +177,10 @@ function renderBlocks(text: string, onLinkClick: LinkClick): React.ReactNode[] {
 }
 
 // `[label](url)` first so it wins over `*`/`_` emphasis inside the same string.
-const INLINE_SPLIT = /(\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*]+\*|_[^_]+_)/g;
+// Quantifiers are bounded (js/polynomial-redos): inline spans are short, so the
+// caps never affect real rendering but remove the unbounded-`+` backtracking.
+const INLINE_SPLIT =
+  /(\[[^\]]{1,200}\]\([^)]{1,2000}\)|\*\*[^*]{1,500}\*\*|__[^_]{1,500}__|`[^`]{1,500}`|\*[^*]{1,500}\*|_[^_]{1,500}_)/g;
 const LINK_RE = /^\[([^\]]+)\]\(([^)]+)\)$/;
 
 function renderInline(text: string, onLinkClick: LinkClick): React.ReactNode {

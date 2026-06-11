@@ -49,21 +49,25 @@ function isProfileUrl(url: string): boolean {
 export function urlToFriendlyLabel(url: string): string {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
-    if (host.startsWith('linkedin.com')) return 'LinkedIn';
-    if (host.startsWith('github.com')) return 'GitHub';
-    if (host.startsWith('gitlab.com')) return 'GitLab';
-    if (host.startsWith('twitter.com') || host.startsWith('x.com')) return 'Twitter';
-    if (host.startsWith('behance.net')) return 'Behance';
-    if (host.startsWith('dribbble.com')) return 'Dribbble';
-    if (host.startsWith('medium.com')) return 'Medium';
-    if (host.startsWith('stackoverflow.com')) return 'Stack Overflow';
-    if (host.startsWith('dev.to')) return 'Dev.to';
-    if (host.startsWith('codepen.io')) return 'CodePen';
-    if (host.startsWith('youtube.com') || host.startsWith('youtu.be')) return 'YouTube';
-    if (host.startsWith('notion.so')) return 'Notion';
-    if (host.startsWith('figma.com')) return 'Figma';
-    if (host.startsWith('npmjs.com')) return 'npm';
-    if (host.startsWith('crates.io')) return 'crates.io';
+    // Exact-or-subdomain match. `host.startsWith('linkedin.com')` is unsafe —
+    // `linkedin.com.evil.com` would match — so compare the host exactly or as a
+    // subdomain of the brand domain (js/incomplete-url-substring-sanitization).
+    const hostIs = (h: string, d: string) => h === d || h.endsWith('.' + d);
+    if (hostIs(host, 'linkedin.com')) return 'LinkedIn';
+    if (hostIs(host, 'github.com')) return 'GitHub';
+    if (hostIs(host, 'gitlab.com')) return 'GitLab';
+    if (hostIs(host, 'twitter.com') || hostIs(host, 'x.com')) return 'Twitter';
+    if (hostIs(host, 'behance.net')) return 'Behance';
+    if (hostIs(host, 'dribbble.com')) return 'Dribbble';
+    if (hostIs(host, 'medium.com')) return 'Medium';
+    if (hostIs(host, 'stackoverflow.com')) return 'Stack Overflow';
+    if (hostIs(host, 'dev.to')) return 'Dev.to';
+    if (hostIs(host, 'codepen.io')) return 'CodePen';
+    if (hostIs(host, 'youtube.com') || hostIs(host, 'youtu.be')) return 'YouTube';
+    if (hostIs(host, 'notion.so')) return 'Notion';
+    if (hostIs(host, 'figma.com')) return 'Figma';
+    if (hostIs(host, 'npmjs.com')) return 'npm';
+    if (hostIs(host, 'crates.io')) return 'crates.io';
     // Unknown domain: the bare host (www-stripped, no path). Mirrors the Rust
     // url_label() fallback exactly so the two implementations cannot drift — see
     // the parity test (fixtures/url-labels.json, cargo test export::links).
@@ -265,11 +269,24 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** The candidate's email — the reliable signal for "this is the contact line". */
-const CONTACT_EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
+/**
+ * The candidate's email — the reliable signal for "this is the contact line".
+ * Length-capped to a linear form (js/polynomial-redos): the previous nested
+ * `(?:\.[…]+)*\.[A-Za-z]{2,}` shape let the inner `+` overlap the trailing
+ * literal-dot segment, re-partitioning on backtrack (still quadratic). The
+ * segments are now bounded — local-part ≤64, domain ≤255, TLD ≤24 (the RFC-ish
+ * upper bounds for real addresses) — so matching is linear-time. This guards the
+ * `isContactCandidate` lines, which carry no length cap of their own.
+ */
+const CONTACT_EMAIL_RE = /[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}/;
 const SECTION_HEADER_RE = /^(PROFESSIONAL|WORK|EDUCATION|SKILLS|SUMMARY)/i;
-/** An already-injected `[label](url)` span — protected so re-runs stay idempotent. */
-const MD_LINK_SPAN_RE = /\[[^\]]+\]\([^)]+\)/g;
+/**
+ * An already-injected `[label](url)` span — protected so re-runs stay idempotent.
+ * Quantifiers are bounded (js/polynomial-redos): a real markdown label/URL is far
+ * shorter than these limits, so bounding cannot drop a genuine span, but it caps
+ * the regex's worst-case work on adversarial input.
+ */
+const MD_LINK_SPAN_RE = /\[[^\]]{1,200}\]\([^)]{1,2000}\)/g;
 
 /**
  * Post-process AI-generated resume/cover-letter text: replace the short profile
