@@ -67,7 +67,9 @@ function renderModal(onClose = vi.fn()) {
 function fillField(labelKey: string, value: string) {
   // Labels use translation keys as their text content.
   const label = screen.getByText(labelKey);
-  const input = document.getElementById(label.htmlFor ?? '') ?? screen.getByLabelText(labelKey);
+  const input =
+    document.getElementById((label as HTMLLabelElement).htmlFor ?? '') ??
+    screen.getByLabelText(labelKey);
   fireEvent.change(input, { target: { value } });
 }
 
@@ -123,7 +125,9 @@ describe('TrackJobModal — submit with blank/whitespace fields', () => {
       expect(mockTrackMutateAsync).toHaveBeenCalledTimes(1);
     });
 
-    const payload = mockTrackMutateAsync.mock.calls[0][0];
+    const call = mockTrackMutateAsync.mock.calls[0];
+    if (!call) throw new Error('Expected mutateAsync to have been called');
+    const payload = call[0];
 
     // Blank/whitespace fields must be absent (the filter strips them).
     expect(payload).not.toHaveProperty('jobUrl');

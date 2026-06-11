@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
-import type { ApplicationAnswer } from '@ajh/shared/ipc';
+import type { ApplicationAnswer } from '@ajh/shared';
 
 import {
   extractMetadata,

@@ -93,6 +93,16 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       removeBulk: noop,
     },
 
+    applications: {
+      list: emptyList,
+      get: async () => ({ application: null, events: [] }),
+      setStatus: async () => ({ success: true }),
+      update: async () => ({ success: true }),
+      remove: async () => ({ success: true }),
+      track: async () => ({ success: true }),
+      saveFromPosting: async () => ({ success: true }),
+    },
+
     documents: {
       list: emptyList,
       import: noop,
