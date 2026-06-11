@@ -1,6 +1,7 @@
 import {
   Activity,
   Briefcase,
+  ClipboardList,
   Cpu,
   FilePlus2,
   FileText,
@@ -32,20 +33,21 @@ interface NavItem {
   icon: LucideIcon;
   tourId: string;
 }
-
-// Scrollable nav, grouped by intent. Search is intentionally absent — it lives
-// on ⌘/Ctrl+K (and the dashboard quick-links); its route is unchanged.
 const NAV_SECTIONS: { labelKey: string; items: readonly NavItem[] }[] = [
   {
     labelKey: 'nav.sections.workspace',
     items: [
       { to: ROUTES.DASHBOARD, label: 'nav.dashboard', icon: LayoutDashboard, tourId: 'dashboard' },
       { to: ROUTES.JOBS, label: 'nav.jobs', icon: Briefcase, tourId: 'jobs' },
+      {
+        to: ROUTES.APPLICATIONS,
+        label: 'nav.applications',
+        icon: ClipboardList,
+        tourId: 'applications',
+      },
       { to: ROUTES.ANALYZE, label: 'nav.analyze', icon: Gauge, tourId: 'analyze' },
       { to: ROUTES.GENERATE, label: 'nav.generate', icon: Wand2, tourId: 'generate' },
       { to: ROUTES.BUILD, label: 'nav.build', icon: FilePlus2, tourId: 'build' },
-      // Labelled "Documents" (résumés + cover letters + activity); the route
-      // stays /resumes and the tour anchor is 'documents'.
       { to: ROUTES.RESUMES, label: 'nav.documents', icon: FileText, tourId: 'documents' },
     ],
   },
@@ -58,7 +60,6 @@ const NAV_SECTIONS: { labelKey: string; items: readonly NavItem[] }[] = [
   },
 ];
 
-// Pinned to the bottom of the nav, above the user/status footer.
 const PINNED_ITEMS: readonly NavItem[] = [
   { to: ROUTES.SUPPORT, label: 'nav.support', icon: HelpCircle, tourId: 'support' },
   { to: ROUTES.SETTINGS, label: 'nav.settings', icon: Settings, tourId: 'settings' },
@@ -70,7 +71,7 @@ export function Sidebar() {
   const userName = useUserName();
   const aiModel = useAIModel();
   const providerConfig = useAiProviderConfig();
-  const ai = useAICapability(); // from CapabilityProvider — no duplicate polling
+  const ai = useAICapability();
   const { data: version = 'v0.1.0' } = useAppVersion();
   const appVersion = version.startsWith('v') ? version : `v${version}`;
 
@@ -79,7 +80,6 @@ export function Sidebar() {
 
   const aiStatus = !ai ? 'checking' : ai.ready ? 'ready' : 'offline';
 
-  // Get current model name from active provider
   const activeProvider = providerConfig?.activeProvider ?? 'ollama';
   const currentModel =
     activeProvider === 'ollama'
@@ -132,7 +132,6 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Pinned: AI config + support + settings, anchored to the bottom. */}
       <nav className="mt-auto flex flex-col gap-1 border-t border-white/[0.06] pb-3 pt-3">
         {PINNED_ITEMS.map(renderNavItem)}
       </nav>
@@ -157,7 +156,6 @@ export function Sidebar() {
             </Link>
           </div>
         )}
-
         <div className="flex items-center gap-2 rounded-lg border border-foreground/[0.06] bg-foreground/[0.03] px-2 py-1.5">
           <Cpu
             size={11}
@@ -196,7 +194,6 @@ export function Sidebar() {
             </div>
           </div>
         </div>
-
         <div className="relative flex justify-center">
           <Button
             variant="unstyled"
