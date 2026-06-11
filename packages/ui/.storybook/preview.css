@@ -8,3 +8,16 @@
  */
 @import 'tailwindcss';
 @import '@ajh/ui/css';
+
+/*
+ * Dark canvas everywhere. Most @ajh/ui components (notifications, alerts, glass
+ * surfaces) are built for the app's dark theme and use light text, so render
+ * them on a dark backdrop in both the canvas and the autodocs preview — this
+ * also covers the case where the backgrounds addon is toggled off.
+ */
+body,
+.sb-show-main,
+.docs-story {
+  background-color: #07060f;
+  color: rgba(255, 255, 255, 0.9);
+}
