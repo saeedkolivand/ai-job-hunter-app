@@ -76,6 +76,22 @@ export { CardSkeleton, RowSkeleton, Skeleton } from './components/LoadingSkeleto
 
 // ── Content Rendering ─────────────────────────────────────────────────────
 export { MarkdownMessage } from './components/MarkdownMessage/index';
+export {
+  ALLOWED_LINK_PROTOCOLS,
+  buildEditorExtensions,
+  docToMarkdown,
+  getEditorSchema,
+  isAllowedLinkUrl,
+  joinPreserved,
+  markdownToDoc,
+  RichTextEditor,
+  type RichTextEditorHandle,
+  type RichTextEditorProps,
+  roundTrip,
+  type SplitPreserved,
+  splitPreserved,
+  type ToolbarLabels,
+} from './components/RichTextEditor/index';
 export { StreamingText } from './components/StreamingText/index';
 
 // ── Composition Helpers ───────────────────────────────────────────────────
