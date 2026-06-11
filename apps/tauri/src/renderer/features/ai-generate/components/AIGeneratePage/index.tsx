@@ -309,6 +309,7 @@ export function AIGeneratePage() {
                 coverOut={coverOut}
                 activeOut={activeOut}
                 meta={meta}
+                sourceResume={resume}
                 mode={mode}
                 templateId={templateId}
                 atsMode={atsMode}

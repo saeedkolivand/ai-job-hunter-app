@@ -12,6 +12,7 @@ export {
   rewriteSelection,
   synthesizeResume,
 } from './generation';
+export { buildLinkSuggestions } from './links';
 export {
   OUTPUT_LANGUAGES,
   type OutputLanguage,

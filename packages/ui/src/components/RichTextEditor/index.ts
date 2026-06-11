@@ -13,4 +13,4 @@ export {
   type RichTextEditorHandle,
   type RichTextEditorProps,
 } from './RichTextEditor';
-export { type ToolbarLabels } from './Toolbar';
+export { type LinkSuggestion, type ToolbarLabels } from './Toolbar';

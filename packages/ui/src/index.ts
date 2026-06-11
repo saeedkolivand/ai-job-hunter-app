@@ -83,6 +83,7 @@ export {
   getEditorSchema,
   isAllowedLinkUrl,
   joinPreserved,
+  type LinkSuggestion,
   markdownToDoc,
   RichTextEditor,
   type RichTextEditorHandle,

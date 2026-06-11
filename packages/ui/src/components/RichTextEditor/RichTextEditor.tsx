@@ -12,7 +12,7 @@ import { type Editor, EditorContent, useEditor } from '@tiptap/react';
 import { cn } from '../../lib/cn';
 import { buildEditorExtensions } from './extensions';
 import { docToMarkdown, joinPreserved, markdownToDoc, splitPreserved } from './markdown';
-import { Toolbar, type ToolbarLabels } from './Toolbar';
+import { type LinkSuggestion, Toolbar, type ToolbarLabels } from './Toolbar';
 
 /** Imperative API exposed via `ref` — used by the app to wire AI rewrite. */
 export interface RichTextEditorHandle {
@@ -48,6 +48,12 @@ export interface RichTextEditorProps {
   labels?: ToolbarLabels;
   /** Fired when the selection gains/loses a non-empty range. */
   onSelectionChange?: (hasSelection: boolean) => void;
+  /**
+   * Known links offered in the link dialog as a pick-list (LinkedIn, GitHub,
+   * project URLs, email). The renderer builds + de-duplicates these; the dialog
+   * filters them as the user types and still validates the picked URL on submit.
+   */
+  linkSuggestions?: LinkSuggestion[];
 }
 
 const ONCHANGE_DEBOUNCE_MS = 200;
@@ -80,6 +86,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
       spellCheck = true,
       labels,
       onSelectionChange,
+      linkSuggestions,
     },
     ref
   ) {
@@ -227,6 +234,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             labels={labels}
             linkDialogOpen={linkDialogOpen}
             onLinkDialogOpenChange={setLinkDialogOpen}
+            linkSuggestions={linkSuggestions}
           />
         )}
         <div className="relative flex-1 overflow-y-auto">

@@ -820,7 +820,8 @@
       "linkUrlError": "Enter a valid http, https, or mailto URL",
       "linkSave": "Save",
       "linkRemove": "Remove",
-      "linkCancel": "Cancel"
+      "linkCancel": "Cancel",
+      "linkSuggestions": "Your links"
     },
     "placeholder": "Generated output will appear here…",
     "pdfPreview": {

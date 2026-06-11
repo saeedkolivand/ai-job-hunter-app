@@ -8,7 +8,7 @@ import {
   Redo2,
   Undo2,
 } from 'lucide-react';
-import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import type { Editor } from '@tiptap/react';
 
 import { cn } from '../../lib/cn';
@@ -16,6 +16,17 @@ import { Button } from '../Button';
 import { Input } from '../Input';
 import { ModalShell } from '../ModalShell';
 import { isAllowedLinkUrl } from './extensions';
+
+/**
+ * A known link the renderer feeds into the dialog as a pick-list option, so the
+ * user can choose a URL they already have (LinkedIn, GitHub, a project page,
+ * an email) instead of retyping it. `url` is the raw href (e.g. an `https://`
+ * URL or a `mailto:` address); `label` is the human-readable name.
+ */
+export interface LinkSuggestion {
+  label: string;
+  url: string;
+}
 
 /**
  * a11y labels for the toolbar. Supplied by the renderer (via `RichTextEditor`'s
@@ -42,6 +53,8 @@ export interface ToolbarLabels {
   linkSave?: string;
   linkRemove?: string;
   linkCancel?: string;
+  /** Title of the suggestions pick-list shown when `linkSuggestions` is non-empty. */
+  linkSuggestionsTitle?: string;
 }
 
 const FALLBACK: Required<ToolbarLabels> = {
@@ -62,7 +75,26 @@ const FALLBACK: Required<ToolbarLabels> = {
   linkSave: 'Save',
   linkRemove: 'Remove',
   linkCancel: 'Cancel',
+  linkSuggestionsTitle: 'Your links',
 };
+
+/**
+ * Derive a compact, readable hint from a link href for the suggestions list:
+ * `host` + a truncated path for http(s) URLs, the bare address for `mailto:`,
+ * and the raw string otherwise. Display-only — never used for validation.
+ */
+function linkUrlHint(url: string): string {
+  const mailto = /^mailto:/i.exec(url);
+  if (mailto) return url.slice(mailto[0].length);
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/$/, '');
+    const tail = `${parsed.host}${path}${parsed.search}`;
+    return tail.length > 44 ? `${tail.slice(0, 43)}…` : tail;
+  } catch {
+    return url;
+  }
+}
 
 interface ToolbarProps {
   editor: Editor;
@@ -71,6 +103,8 @@ interface ToolbarProps {
   /** External request to open the link dialog (e.g. Mod-k keyboard shortcut). */
   linkDialogOpen: boolean;
   onLinkDialogOpenChange: (open: boolean) => void;
+  /** Known links offered as a pick-list under the URL field (optional). */
+  linkSuggestions?: LinkSuggestion[];
 }
 
 interface ToolButtonProps {
@@ -119,6 +153,7 @@ export function Toolbar({
   labels,
   linkDialogOpen,
   onLinkDialogOpenChange,
+  linkSuggestions,
 }: ToolbarProps) {
   const l = { ...FALLBACK, ...labels };
   // Re-render on every editor transaction so active state / undo-redo
@@ -193,6 +228,32 @@ export function Toolbar({
     editor.chain().focus().extendMarkRange('link').unsetLink().run();
     closeLinkDialog();
   }, [editor, closeLinkDialog]);
+
+  // Pick a suggestion: fill the URL field, and the label field too — but only
+  // when it is empty, so a selected-text label the user already has is never
+  // overwritten. Validation still runs on submit via `isAllowedLinkUrl`.
+  const pickSuggestion = useCallback(
+    (s: LinkSuggestion) => {
+      setLinkUrl(s.url);
+      setUrlError(false);
+      setLinkLabel((current) => (current.trim() ? current : s.label));
+    },
+    [setLinkUrl, setUrlError, setLinkLabel]
+  );
+
+  // Filter the pick-list by a case-insensitive substring of whatever is typed
+  // in either field, matched across the label, the raw URL, and the hint. Empty
+  // query → show all. An empty result hides the section entirely (no rows).
+  const visibleSuggestions = useMemo(() => {
+    if (!linkSuggestions?.length) return [];
+    const q = `${linkUrl} ${linkLabel}`.trim().toLowerCase();
+    if (!q) return linkSuggestions;
+    const terms = q.split(/\s+/);
+    return linkSuggestions.filter((s) => {
+      const haystack = `${s.label} ${s.url} ${linkUrlHint(s.url)}`.toLowerCase();
+      return terms.every((t) => haystack.includes(t));
+    });
+  }, [linkSuggestions, linkUrl, linkLabel]);
 
   const linkActive = editor.isActive('link');
 
@@ -301,6 +362,36 @@ export function Toolbar({
             />
           </label>
           {urlError && <p className="text-xs text-red-300">{l.linkUrlError}</p>}
+          {visibleSuggestions.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-foreground/50">
+                {l.linkSuggestionsTitle}
+              </span>
+              <ul className="flex max-h-40 flex-col gap-0.5 overflow-y-auto rounded-md border border-white/[0.06] bg-white/[0.02] p-1">
+                {visibleSuggestions.map((s) => (
+                  <li key={`${s.label} ${s.url}`}>
+                    <Button
+                      type="button"
+                      variant="unstyled"
+                      // Filling the fields must not blur/close the dialog inputs.
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => pickSuggestion(s)}
+                      aria-label={`${s.label} — ${s.url}`}
+                      className={cn(
+                        'flex w-full items-baseline justify-between gap-3 rounded px-2 py-1.5 text-left transition-colors',
+                        'hover:bg-brand/10 focus-visible:bg-brand/10'
+                      )}
+                    >
+                      <span className="truncate text-xs text-foreground/90">{s.label}</span>
+                      <span className="shrink-0 truncate font-mono text-[0.7rem] text-foreground/45">
+                        {linkUrlHint(s.url)}
+                      </span>
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="flex items-center justify-between gap-2 pt-1">
             {linkActive ? (
               <Button type="button" variant="danger" size="sm" onClick={removeLink}>

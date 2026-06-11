@@ -14,7 +14,8 @@ import {
 } from '@ajh/ui';
 
 import { useSelectedModel } from '@/components/ui/ModelSelector';
-import type { GenerationMeta, RewriteDocType } from '@/lib/generate';
+import { buildLinkSuggestions, type GenerationMeta, type RewriteDocType } from '@/lib/generate';
+import { useContactProfile } from '@/services/use-contact-profile';
 
 import { RewritePopover, type RewriteTarget } from './RewritePopover';
 
@@ -49,6 +50,13 @@ interface EditableOutputProps {
   onSave?: () => void;
   /** Enables the Save button — true when there are unsaved edits. */
   canSave?: boolean;
+  /**
+   * The source résumé text (the uploaded/original), when available. Feeds the
+   * link dialog's suggestion pick-list with the full extracted link map. Optional
+   * — callers without a source (history cards) still get ContactProfile + in-doc
+   * suggestions.
+   */
+  sourceResume?: string;
 }
 
 /**
@@ -112,6 +120,7 @@ export function EditableOutput({
   previewSlot,
   onSave,
   canSave = false,
+  sourceResume,
 }: EditableOutputProps) {
   const { t } = useTranslation();
   const selectedModel = useSelectedModel();
@@ -128,6 +137,15 @@ export function EditableOutput({
   const [hasSelection, setHasSelection] = useState(false);
   // Frozen range while a rewrite popover is open — null when closed.
   const [frozen, setFrozen] = useState<FrozenRange | null>(null);
+
+  const { data: contactProfile } = useContactProfile();
+  // Known links offered in the editor's link dialog as a pick-list — built from
+  // the authoritative ContactProfile, the source résumé's extracted link map, and
+  // links already inline in the document; de-duplicated by URL.
+  const linkSuggestions = useMemo(
+    () => buildLinkSuggestions({ contactProfile, docValue: value, sourceResume }),
+    [contactProfile, value, sourceResume]
+  );
 
   // Toolbar a11y/labels for the WYSIWYG editor — all i18n lives in the renderer so
   // `@ajh/ui` stays translation-free (it provides English fallbacks).
@@ -150,6 +168,7 @@ export function EditableOutput({
       linkSave: t('aiGenerate.editor.linkSave'),
       linkRemove: t('aiGenerate.editor.linkRemove'),
       linkCancel: t('aiGenerate.editor.linkCancel'),
+      linkSuggestionsTitle: t('aiGenerate.editor.linkSuggestions'),
     }),
     [t]
   );
@@ -325,6 +344,7 @@ export function EditableOutput({
             readOnly={frozen !== null}
             spellCheck
             labels={editorLabels}
+            linkSuggestions={linkSuggestions}
             onSelectionChange={setHasSelection}
             placeholder={placeholder ?? t('aiGenerate.placeholder')}
             className="h-full w-full"

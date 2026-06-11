@@ -805,7 +805,8 @@
       "linkUrlError": "Gültige http-, https- oder mailto-URL eingeben",
       "linkSave": "Speichern",
       "linkRemove": "Entfernen",
-      "linkCancel": "Abbrechen"
+      "linkCancel": "Abbrechen",
+      "linkSuggestions": "Deine Links"
     },
     "placeholder": "Generierte Ausgabe erscheint hier…",
     "pdfPreview": {
