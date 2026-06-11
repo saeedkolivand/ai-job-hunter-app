@@ -140,6 +140,10 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
     let about_metadata = AboutMetadataBuilder::new()
         .name(Some("AI Job Hunter"))
         .version(Some(env!("CARGO_PKG_VERSION")))
+        .comments(Some("Your local-first AI copilot for the job hunt."))
+        .copyright(Some("© 2026 AI Job Hunter"))
+        .website(Some(REPO_URL))
+        .website_label(Some("GitHub"))
         .build();
 
     // App submenu — must remain the FIRST submenu (the macOS app-name menu).
