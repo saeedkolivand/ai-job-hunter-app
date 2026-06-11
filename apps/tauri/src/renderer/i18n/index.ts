@@ -1,55 +1,21 @@
-import i18n from 'i18next';
-import LanguageDetector from 'i18next-browser-languagedetector';
-import { initReactI18next } from 'react-i18next';
-
+/**
+ * Renderer i18n init shim.
+ *
+ * The generic i18n instance + resources live in `@ajh/translations`.
+ * Importing that package initializes i18next as a side-effect (once).
+ *
+ * This shim adds the only renderer-coupled piece: a `languageChanged`
+ * listener that mirrors the renderer locale to the main process so the
+ * AI stays locale-aware. That listener needs `@/lib/app-client` +
+ * `@ajh/shared`, which must NOT leak into the generic package — so it
+ * stays here.
+ *
+ * `main.tsx` imports this module for its side-effects (init + listener).
+ */
 import type { Locale } from '@ajh/shared/types';
+import i18n from '@ajh/translations';
 
 import { getClient } from '@/lib/app-client';
-
-import de from './locales/de/translation.json';
-import en from './locales/en/translation.json';
-
-const SUPPORTED = ['en', 'de'];
-
-function getInitialLanguage(): string | undefined {
-  // 1. Persisted user preference takes priority
-  try {
-    const raw = localStorage.getItem('ai-job-hunter-preferences');
-    if (raw) {
-      const parsed = JSON.parse(raw) as { state?: { language?: string } };
-      const saved = parsed?.state?.language;
-      if (saved && SUPPORTED.includes(saved)) return saved;
-    }
-  } catch {
-    // ignore
-  }
-  // 2. Fall through to LanguageDetector (system locale)
-  return undefined;
-}
-
-const persisted = getInitialLanguage();
-
-void i18n
-  .use(LanguageDetector)
-  .use(initReactI18next)
-  .init({
-    resources: {
-      en: { translation: en },
-      de: { translation: de },
-    },
-    // If persisted, set it directly and skip detection
-    ...(persisted ? { lng: persisted } : {}),
-    fallbackLng: 'en',
-    supportedLngs: SUPPORTED,
-    // Strip region codes (e.g. "de-AT" → "de")
-    load: 'languageOnly',
-    detection: {
-      // Only use navigator (system locale) — no cookies/localStorage managed by i18next itself
-      order: ['navigator'],
-      caches: [],
-    },
-    interpolation: { escapeValue: false },
-  });
 
 // Sync renderer locale -> main process on change (one-way to keep AI locale-aware).
 // getClient() may not be ready yet if this fires during i18n init, so we swallow errors.
@@ -61,4 +27,6 @@ i18n.on('languageChanged', (lng) => {
   }
 });
 
+export type { TFunction } from '@ajh/translations';
+export { useTranslation } from '@ajh/translations';
 export default i18n;

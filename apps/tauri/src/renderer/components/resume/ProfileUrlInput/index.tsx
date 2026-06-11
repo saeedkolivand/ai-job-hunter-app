@@ -1,8 +1,7 @@
 import { Loader2, X } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, Input } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 interface Props {
   show: boolean;

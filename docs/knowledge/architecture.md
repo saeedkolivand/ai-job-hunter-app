@@ -11,6 +11,7 @@ Local-first desktop app, [pnpm][pnpm] monorepo. **[Tauri][tauri] is the shell.**
 - `packages/shared` — IPC contracts + [Zod][zod] schemas + types (no [React][react], no Node).
 - `packages/ui` — [React][react] component library + design system (no app logic, no IPC).
 - `packages/prompts` — AI prompt templates, provider-aware + locale-driven (pure [TypeScript][typescript], zero deps).
+- `packages/translations` — i18next singleton + adapters (`useTranslation`, `TFunction`, `i18n` re-export), language detection, resource bundles (en/de). Zero app/IPC deps; renderer couples via thin shim `@/i18n` (`languageChanged` listener).
 - `apps/tauri` — [Rust][rust] core (`src-tauri/src/`) + [React][react] renderer (`src/renderer/`).
 
 ## Rust/TS boundary (Rust-first)

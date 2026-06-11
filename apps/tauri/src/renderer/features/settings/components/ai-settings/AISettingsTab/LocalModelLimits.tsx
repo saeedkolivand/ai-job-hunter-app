@@ -1,6 +1,6 @@
+import { useTranslation } from '@ajh/translations';
 import { Button, Switch } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { useInspectModel, useSystemResources } from '@/services';
 import { usePreferencesStore } from '@/store/preferences-store';
 

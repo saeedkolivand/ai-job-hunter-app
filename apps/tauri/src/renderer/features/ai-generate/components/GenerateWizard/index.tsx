@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, StepDots, transition } from '@ajh/ui';
 
 import {
@@ -9,7 +10,6 @@ import {
   isTwoColumnTemplate,
   type TemplateId,
 } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 import { useSessionStore } from '@/store/session-store';
 
 import { StepFineTune } from '../wizard-steps/StepFineTune';

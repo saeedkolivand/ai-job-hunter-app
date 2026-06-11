@@ -3,9 +3,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { FormProvider, type UseFormReturn } from 'react-hook-form';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, transition } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 import type { TailorWizardState } from './lib/tailor-state';
 import { StepJobAd } from './wizard-steps/StepJobAd';

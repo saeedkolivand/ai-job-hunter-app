@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
 
 import type { MatchScore } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 
 import { MatchBand } from '@/features/jobs/lib/score';
-import { useTranslation } from '@/lib/i18n';
 import { useScoringScheduler } from '@/providers/ScoringScheduler';
 import { useDocuments, useJobMatchScore } from '@/services';
 

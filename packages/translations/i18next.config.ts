@@ -13,10 +13,10 @@ import { defineConfig } from 'i18next-cli';
 export default defineConfig({
   locales: ['en', 'de'],
   extract: {
-    input: ['apps/tauri/src/renderer/**/*.{ts,tsx}'],
+    input: ['../../apps/tauri/src/renderer/**/*.{ts,tsx}'],
     // Per-language namespace files (the {{namespace}} segment gives a FLAT root,
     // no "translation" wrapper) — the app loads each as the `translation` ns.
-    output: 'apps/tauri/src/renderer/i18n/locales/{{language}}/{{namespace}}.json',
+    output: 'src/locales/{{language}}/{{namespace}}.json',
     keySeparator: '.',
     nsSeparator: ':',
     defaultNS: 'translation',

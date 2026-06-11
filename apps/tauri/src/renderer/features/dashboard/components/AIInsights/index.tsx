@@ -1,8 +1,7 @@
 import { AlertTriangle, CheckCircle, Lightbulb, type LucideIcon, TrendingUp } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { cn, GlassCard, SectionLabel } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 interface Insight {
   type: 'suggestion' | 'alert' | 'match';

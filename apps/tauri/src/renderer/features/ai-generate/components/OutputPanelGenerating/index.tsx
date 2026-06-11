@@ -1,10 +1,10 @@
 import { Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
+import { useTranslation } from '@ajh/translations';
 import { transition } from '@ajh/ui';
 
 import { ThinkingBubble } from '@/components/generation/ThinkingBubble';
-import { useTranslation } from '@/lib/i18n';
 
 interface OutputPanelGeneratingProps {
   stageLabel: string;

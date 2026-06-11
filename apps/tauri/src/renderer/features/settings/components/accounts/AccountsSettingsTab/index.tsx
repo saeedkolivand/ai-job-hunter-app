@@ -1,9 +1,9 @@
 import { Lock, ShieldAlert } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { SettingsSection } from '@ajh/ui';
 
 import { AUTH_BOARDS } from '@/constants/auth';
-import { useTranslation } from '@/lib/i18n';
 import { useCredentialsAvailable } from '@/services';
 
 import { BoardSessionRow } from '../BoardSessionRow';

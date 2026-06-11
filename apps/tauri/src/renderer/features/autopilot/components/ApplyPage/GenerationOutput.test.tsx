@@ -10,7 +10,7 @@ import { GenerationOutput } from './GenerationOutput';
 // ── Module stubs ──────────────────────────────────────────────────────────────
 
 // Echo every key verbatim — no i18next runtime needed in jsdom.
-vi.mock('@/lib/i18n', () => ({
+vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 

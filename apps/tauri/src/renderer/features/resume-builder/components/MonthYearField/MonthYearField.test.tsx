@@ -20,7 +20,7 @@ import userEvent from '@testing-library/user-event';
 
 // ── i18n stub ─────────────────────────────────────────────────────────────────
 
-vi.mock('@/lib/i18n', () => ({
+vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({
     t: (k: string) => k,
     i18n: { language: 'en-US' },

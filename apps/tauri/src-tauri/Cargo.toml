@@ -129,16 +129,38 @@ image = "=0.25.10"
 rust-stemmers = "1.2"
 whatlang = "0.16"
 
+# Browser-cookie import (scraping::board_login::import): decrypt Chromium
+# `v10`/`v11` `encrypted_value` blobs (AES-256-GCM) after the OS-specific key is
+# recovered (DPAPI on Windows, Keychain/libsecret on Unix). `rookie` was the
+# preferred off-the-shelf option but is unusable here — it pins `rusqlite ^0.31`
+# (libsqlite3-sys 0.28) which collides with our `rusqlite 0.40` (libsqlite3-sys
+# 0.38) on the `links = "sqlite3"` native lib. So we hand-roll the v10 path and
+# reuse our existing `rusqlite` to read the (copied, unlocked) Cookies DB.
+aes-gcm = "0.10"
+
 
 [target.'cfg(windows)'.dependencies]
 wmi = "0.18"
 windows-native-keyring-store = "1"
+# DPAPI (CryptUnprotectData) to unwrap the Chromium os_crypt AES key on Windows.
+windows = { version = "0.62.2", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust", "vendored"] }
+
+# Unix Chromium key derivation: PBKDF2-HMAC-SHA1 over the OS-stored "Safe
+# Storage" password → AES-128-CBC decrypt of v10/v11 blobs (best-effort; the
+# password comes from macOS Keychain / Linux libsecret). `pbkdf2` with no
+# default features exposes the bare `pbkdf2_hmac` fn (no password-hash deps).
+[target."cfg(unix)".dependencies]
+aes = "0.8"
+cbc = "0.1"
+hmac = "0.12"
+pbkdf2 = { version = "0.12", default-features = false }
+sha1 = "0.10"
 
 [dev-dependencies]
 mockall = "0.14"

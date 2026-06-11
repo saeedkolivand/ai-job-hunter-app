@@ -27,6 +27,14 @@ export const useLinkedInConnect = () => {
 
   return useMutation({
     mutationFn: async () => {
+      // Try cookie import first — avoids opening a browser window when the
+      // user already has an active session in Chrome/Edge.
+      const importResult = await api.linkedin.importCookies();
+      if (importResult.outcome === 'Imported') {
+        return { connected: true, viaImport: true };
+      }
+
+      // Fall back to browser-window login.
       if (!browserCheck?.detected) {
         throw new Error(
           'Chrome or Edge is required for LinkedIn login. Please install Chrome or Edge, or set the CHROME environment variable to point to your browser installation.'
@@ -35,7 +43,6 @@ export const useLinkedInConnect = () => {
       return api.linkedin.connect();
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: KEYS.linkedinStatus }),
-    onSettled: () => qc.invalidateQueries({ queryKey: KEYS.linkedinStatus }),
   });
 };
 
@@ -71,6 +78,14 @@ export const useBoardConnect = () => {
 
   return useMutation({
     mutationFn: async (boardId: string) => {
+      // Try cookie import first — avoids opening a browser window when the
+      // user already has an active session in Chrome/Edge.
+      const importResult = await api.boards.importCookies({ boardId });
+      if (importResult.outcome === 'Imported') {
+        return { connected: true, viaImport: true };
+      }
+
+      // Fall back to browser-window login.
       if (!browserCheck?.detected) {
         throw new Error(
           'Chrome or Edge is required for job board login. Please install Chrome or Edge, or set the CHROME environment variable to point to your browser installation.'

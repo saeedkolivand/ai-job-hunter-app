@@ -13,7 +13,7 @@ vi.mock('@/lib/generate', async (importOriginal) => {
   return { ...actual, renderDocumentPreview: (...args: unknown[]) => mockRender(...args) };
 });
 
-vi.mock('@/lib/i18n', () => ({
+vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 

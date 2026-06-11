@@ -1,9 +1,9 @@
 import { ExternalLink as ExternalLinkIcon, Loader2 } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { cn } from '@ajh/ui';
 
 import { ExternalLink } from '@/components/ui/ExternalLink';
-import { useTranslation } from '@/lib/i18n';
 
 interface Props {
   jobDesc: string;

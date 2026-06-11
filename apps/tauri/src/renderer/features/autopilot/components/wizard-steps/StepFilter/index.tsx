@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { Controller, useFormContext } from 'react-hook-form';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, Input } from '@ajh/ui';
 
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import { MATCH_LEVELS, scoreToLevel } from '@/features/autopilot/lib/match-level';
 import type { Prefilled, WizardState } from '@/features/autopilot/types';
-import { useTranslation } from '@/lib/i18n';
 import { useExtractText } from '@/services';
 
 import { PrefilledBadge } from '../PrefilledBadge';

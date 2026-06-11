@@ -1,8 +1,7 @@
 import type { ReactNode } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { cn } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 interface WizardStepProps {
   stepIndex: number;

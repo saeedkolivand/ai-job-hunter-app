@@ -3,12 +3,12 @@ import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 
 import type { ContactFieldConflict, DocumentRecord } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, FloatingIcon, useNotification, withDelay } from '@ajh/ui';
 
 import { ContactConflictModal } from '@/components/contact/ContactConflictModal';
 import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
-import { useTranslation } from '@/lib/i18n';
 import { useDocuments } from '@/services';
 import { usePreferencesStore } from '@/store/preferences-store';
 

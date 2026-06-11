@@ -1,6 +1,7 @@
 import { Monitor, Moon, Palette, Sun, Type } from 'lucide-react';
 import { useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import {
   applyThemeAnimated,
   Button,
@@ -12,8 +13,6 @@ import {
   type TextScale,
   type ThemePrefs,
 } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 const SCHEMES: { id: ColorScheme; icon: typeof Sun; labelKey: string }[] = [
   { id: 'light', icon: Sun, labelKey: 'settings.appearance.light' },

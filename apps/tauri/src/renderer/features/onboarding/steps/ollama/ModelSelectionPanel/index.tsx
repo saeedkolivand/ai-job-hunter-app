@@ -2,9 +2,8 @@ import { CheckCircle2, Download, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
 import { formatBytes, MODEL_RECS } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button, transition } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 import { HardwarePopover } from './HardwarePopover';
 import { ModelCard } from './ModelCard';

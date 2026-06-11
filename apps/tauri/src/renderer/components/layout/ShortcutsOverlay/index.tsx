@@ -2,10 +2,10 @@ import { Command } from 'lucide-react';
 import { useCallback } from 'react';
 import { useRouter } from '@tanstack/react-router';
 
+import { useTranslation } from '@ajh/translations';
 import { ModalShell, SectionLabel } from '@ajh/ui';
 
 import { type AppRoute, useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
-import { useTranslation } from '@/lib/i18n';
 import { useUiStore } from '@/store/ui-store';
 
 const IS_MAC = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac');

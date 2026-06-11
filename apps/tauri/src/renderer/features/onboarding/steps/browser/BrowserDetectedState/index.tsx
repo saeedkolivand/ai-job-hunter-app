@@ -2,9 +2,8 @@ import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Globe } from 'lucide-rea
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, transition, withDelay } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 interface BrowserDetectedStateProps {
   browserPath: string;

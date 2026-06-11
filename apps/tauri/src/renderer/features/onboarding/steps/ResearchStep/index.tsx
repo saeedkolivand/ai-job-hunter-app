@@ -2,9 +2,9 @@ import { ArrowLeft, ArrowRight, Check, Eye, EyeOff, Key, Loader2, Search } from 
 import { motion } from 'motion/react';
 import { useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, FloatingIcon, Input, useNotification, withDelay } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { useHasProviderKey, useOpenExternal, useSetProviderKey } from '@/services';
 
 import { OnboardingStepWrapper } from '../../components/OnboardingStepWrapper';

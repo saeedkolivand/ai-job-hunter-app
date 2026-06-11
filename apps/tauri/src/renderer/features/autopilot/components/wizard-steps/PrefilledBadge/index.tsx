@@ -1,8 +1,9 @@
 import { Settings } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 
+import { useTranslation } from '@ajh/translations';
+
 import { ROUTES } from '@/constants/routes';
-import { useTranslation } from '@/lib/i18n';
 
 interface PrefilledBadgeProps {
   field: string;

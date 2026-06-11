@@ -5,9 +5,9 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 
 import type { ContactProfile } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button, Input, LocationInput } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { PhotoProcessingError, processPhotoFile } from '@/lib/photo';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { useContactProfile, useSaveContactProfile } from '@/services';

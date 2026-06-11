@@ -2,9 +2,9 @@ import { Bookmark, Briefcase, Clock, ExternalLink, FileText, type LucideIcon } f
 import { useMemo } from 'react';
 
 import type { JobInteraction } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { GlassCard } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { useDocuments, useInteractions } from '@/services';
 
 interface ActivityItem {

@@ -2,10 +2,10 @@ import { Check, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import type { TemplateRecommendation as Recommendation } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
 
 import type { GenerationMeta, TemplateId } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 import { useRecommendTemplate } from '@/services';
 
 interface Props {

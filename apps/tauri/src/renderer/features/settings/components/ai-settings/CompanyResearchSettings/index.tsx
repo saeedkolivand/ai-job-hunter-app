@@ -1,9 +1,9 @@
 import { Check, Eye, EyeOff, Key, Loader2, Search, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, Input, SettingsSection, useNotification } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import {
   useHasProviderKey,
   useOpenExternal,

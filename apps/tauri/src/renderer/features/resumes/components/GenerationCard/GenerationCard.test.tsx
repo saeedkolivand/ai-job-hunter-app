@@ -39,7 +39,7 @@ vi.mock('@ajh/ui', async (importOriginal) => {
 });
 
 // Translate to the raw key so assertions don't depend on locale resolution.
-vi.mock('@/lib/i18n', () => ({
+vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 

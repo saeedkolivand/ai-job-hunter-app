@@ -14,6 +14,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { Autopilot, AutopilotFoundJob } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import {
   ActionMenu,
   type ActionMenuItem,
@@ -25,7 +26,6 @@ import {
 } from '@ajh/ui';
 
 import { scoreToLevel } from '@/features/autopilot/lib/match-level';
-import { useTranslation } from '@/lib/i18n';
 import { type AutopilotRunState, RUN_STATE_LABEL } from '@/lib/machines/autopilot-run.machine';
 import { timeAgo } from '@/lib/time';
 import { useOpenExternal } from '@/services';

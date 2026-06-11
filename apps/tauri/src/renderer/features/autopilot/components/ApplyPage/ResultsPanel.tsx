@@ -1,9 +1,9 @@
 import { RefreshCw, Settings2, UserPlus } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
 
 import type { GenerationMeta, TemplateId } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 
 import { GenerationOutput } from './GenerationOutput';
 import type { TailorTarget } from './useTailorGeneration';

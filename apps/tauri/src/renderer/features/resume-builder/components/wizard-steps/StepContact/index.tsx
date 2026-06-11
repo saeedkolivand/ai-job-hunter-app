@@ -1,9 +1,9 @@
 import { Controller, useFormContext } from 'react-hook-form';
 
+import { useTranslation } from '@ajh/translations';
 import { Input } from '@ajh/ui';
 
 import { ContactProfileForm } from '@/components/contact/ContactProfileForm';
-import { useTranslation } from '@/lib/i18n';
 
 import type { BuilderFormValues } from '../../../types';
 import { WizardField } from '../../WizardField';
