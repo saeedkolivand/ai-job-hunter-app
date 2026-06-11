@@ -12,3 +12,10 @@
  */
 @import './tokens.css';
 @import './utilities.css';
+
+/* Generate utility classes used only inside @ajh/ui component source, in every
+   consumer's Tailwind build (app + Storybook). Without this, classes that appear
+   only in @ajh/ui components (and nowhere in the consuming app's own source) are
+   never generated — e.g. the Switch's `translate-x-4` / `bg-foreground/15`.
+   Paths are resolved relative to THIS file. */
+@source "../components";
