@@ -2,6 +2,7 @@ import { Check, Copy, Download, FileText, LayoutTemplate, Loader2, RotateCcw } f
 import { motion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn } from '@ajh/ui';
 
 import { EditableOutput } from '@/components/generation/EditableOutput';
@@ -14,7 +15,6 @@ import {
   type TemplateId,
   TEMPLATES,
 } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 
 import { ExportModal } from '../ExportModal';
 

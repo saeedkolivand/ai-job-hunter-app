@@ -1,10 +1,10 @@
 import { Contact } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { SettingsSection } from '@ajh/ui';
 
 import { ContactProfileForm } from '@/components/contact/ContactProfileForm';
 import { ApplicantDetailsSection } from '@/features/settings/components/contact/ApplicantDetailsSection';
-import { useTranslation } from '@/lib/i18n';
 
 /**
  * Edit the contact profile — the single source of truth for the document header

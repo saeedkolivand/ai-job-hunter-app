@@ -1,9 +1,8 @@
 import { ArrowLeft, X } from 'lucide-react';
 import { motion } from 'motion/react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, transition } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 interface BrowserErrorStateProps {
   onBack: () => void;

@@ -1,9 +1,9 @@
 import { useRouter } from '@tanstack/react-router';
 
+import { useTranslation } from '@ajh/translations';
 import { SetupHint } from '@ajh/ui';
 
 import { ROUTES } from '@/constants/routes/routes';
-import { useTranslation } from '@/lib/i18n';
 import { useSessionStore } from '@/store/session-store';
 
 /** Maps a {@link useCanUseAI} block reason to its hint copy. */

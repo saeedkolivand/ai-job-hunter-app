@@ -1,9 +1,9 @@
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, X } from 'lucide-react';
 import { motion } from 'motion/react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, transition, withDelay } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { useOpenExternal } from '@/services';
 
 interface BrowserNotDetectedStateProps {

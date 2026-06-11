@@ -3,9 +3,9 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { getRecommended } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button, FloatingIcon, withDelay } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { useAIModels, useSystemHealth, useSystemResources } from '@/services';
 import { keys, queryClient } from '@/services/query-client';
 import type { AiProvider } from '@/store/preferences-schema';

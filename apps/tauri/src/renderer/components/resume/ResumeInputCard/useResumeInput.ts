@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { DocumentRecord } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
-import { useTranslation } from '@/lib/i18n';
 import { useDocuments, useProfileImport, useSetDefaultDocument } from '@/services';
 
 import { isProfileAuthError, isSupportedProfileUrl } from '../profile-url';

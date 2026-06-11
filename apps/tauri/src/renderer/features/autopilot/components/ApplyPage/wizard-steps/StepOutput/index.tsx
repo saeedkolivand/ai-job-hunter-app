@@ -1,8 +1,7 @@
 import { Controller, useFormContext } from 'react-hook-form';
 
+import { useTranslation } from '@ajh/translations';
 import { SegmentedControl } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 import type { TailorWizardState } from '../../lib/tailor-state';
 import type { TailorTarget } from '../../useTailorGeneration';

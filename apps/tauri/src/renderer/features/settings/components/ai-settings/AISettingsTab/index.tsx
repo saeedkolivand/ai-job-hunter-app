@@ -1,9 +1,9 @@
 import { motion } from 'motion/react';
 
+import { useTranslation } from '@ajh/translations';
 import { GlassCard, transition } from '@ajh/ui';
 
 import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
-import { useTranslation } from '@/lib/i18n';
 
 import { ActiveProviderSwitcher } from '../ActiveProviderSwitcher';
 import { CompanyResearchSettings } from '../CompanyResearchSettings';

@@ -1,9 +1,9 @@
 import { Check, FileText } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn } from '@ajh/ui';
 
 import { isTwoColumnTemplate, type TemplateId, TEMPLATES } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 
 import { COVER_TEMPLATE_PREVIEWS, TEMPLATE_CAPTIONS, TEMPLATE_PREVIEWS } from '../../../samples';
 

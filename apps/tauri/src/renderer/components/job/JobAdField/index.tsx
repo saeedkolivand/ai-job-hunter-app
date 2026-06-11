@@ -1,9 +1,8 @@
 import { Briefcase, Link2 } from 'lucide-react';
 import { useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, CollapsibleFileInput } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 import { JobUrlImport } from '../JobUrlImport';
 

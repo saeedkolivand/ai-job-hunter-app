@@ -1,9 +1,9 @@
 import { Download, LogOut, RotateCcw, Shield, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { ConfirmModal, SettingsSection, useNotification } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import {
   useClearInteractions,
   useExportData,

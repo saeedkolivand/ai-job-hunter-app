@@ -1,11 +1,11 @@
 import { Languages, Power, User, Wand2 } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, Input, SettingsSection, Switch } from '@ajh/ui';
 
 import { AppearanceCard } from '@/features/settings/components/general-section/AppearanceCard';
 import { LanguageSelector } from '@/features/settings/components/shared/LanguageSelector';
 import { UpdateSection } from '@/features/settings/components/update-section';
-import { useTranslation } from '@/lib/i18n';
 import { useLaunchAtLogin, useSetCloseToTray, useSetLaunchAtLogin } from '@/services';
 import {
   useCloseToTray,

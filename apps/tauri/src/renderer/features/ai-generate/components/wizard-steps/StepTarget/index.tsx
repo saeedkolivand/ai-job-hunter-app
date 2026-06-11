@@ -1,8 +1,7 @@
 import { FileCheck, FileText, Sparkles } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 type GenTarget = 'resume' | 'cover' | 'both';
 

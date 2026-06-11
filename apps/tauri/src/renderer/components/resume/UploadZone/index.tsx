@@ -1,8 +1,7 @@
 import { Check, Loader2, Upload } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { cn } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 interface Props {
   uploading: boolean;

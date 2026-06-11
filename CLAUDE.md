@@ -63,6 +63,7 @@ Local-first desktop app in a pnpm monorepo. **Tauri is the shell.**
 packages/shared       ← IPC contracts, Zod schemas, shared types (no UI, no Node)
 packages/ui           ← React component library + design system (no app logic)
 packages/prompts      ← AI prompt templates — provider-aware + locale-driven (pure TS, zero deps)
+packages/translations ← i18next config + UI translation resources (en/de) → @ajh/translations (no app/IPC deps)
 apps/tauri            ← Tauri app: Rust core (scraping, login, documents, AI) + React renderer
 ```
 
@@ -87,9 +88,9 @@ IPC contract: `packages/shared/src/ipc/contracts.ts`.
 Use service hooks from `apps/tauri/src/renderer/services/`. They wrap IPC with React Query.
 ESLint errors on `window.api.*` in features/, routes/, or components/.
 
-### 2. i18n — import from `@/lib/i18n`, never `react-i18next` directly
+### 2. i18n — import from `@ajh/translations`, never `react-i18next` directly
 
-ESLint enforces this.
+`useTranslation` / `TFunction` come from `@ajh/translations` (the translations package). The renderer init shim `@/i18n` owns init + the locale→main-process listener; `main.tsx` imports it once for the side-effect. ESLint bans direct `react-i18next` / `i18next` imports in the renderer.
 
 ### 3. Design system — no hardcoded brand colors
 
@@ -167,6 +168,7 @@ No `useState + useEffect` for remote data. Every IPC call goes through a service
 - `packages/shared` — no React, no Node APIs
 - `packages/ui` — no Zustand, no IPC, no routing
 - `packages/prompts` — no UI, no `window`
+- `packages/translations` — no app/IPC/renderer imports (the locale→main listener stays in the `@/i18n` shim)
 
 ### 13. Stale branch check — before any work
 
@@ -192,29 +194,29 @@ No `// eslint-disable`, no `@ts-ignore`. Add scoped overrides to `eslint.config.
 
 ## Quick Reference
 
-| What                    | Where                                                                              |
-| ----------------------- | ---------------------------------------------------------------------------------- |
-| IPC contract            | `packages/shared/src/ipc/contracts.ts`                                             |
-| Tauri commands          | `apps/tauri/src-tauri/src/commands.rs`                                             |
-| Tauri client (TS)       | `apps/tauri/src/tauri-client.ts`                                                   |
-| Service hooks           | `apps/tauri/src/renderer/services/`                                                |
-| UI package              | `packages/ui/src/index.ts` → `@ajh/ui`                                             |
-| Motion tokens           | `packages/ui/src/lib/motion.ts` (import via `@/lib/motion`)                        |
-| State machines          | `apps/tauri/src/renderer/lib/machines/`                                            |
-| Design tokens           | `packages/ui/src/css/tokens.css`                                                   |
-| i18n wrapper            | `apps/tauri/src/renderer/lib/i18n.ts`                                              |
-| Config / paths (Rust)   | `apps/tauri/src-tauri/src/platform/config.rs` (`data_dir()`)                       |
-| HTTP client (Rust)      | `apps/tauri/src-tauri/src/net/http.rs` (`shared()` / `build_client()`)             |
-| Errors (Rust)           | `apps/tauri/src-tauri/src/error.rs` (`AppError` / `AppResult`)                     |
-| Trace spans (Rust)      | `apps/tauri/src-tauri/src/observability.rs` (`Span`)                               |
-| Board registry          | `scraping/boards/mod.rs` (`SCRAPERS`) — no applier registry (apply engine removed) |
-| Architecture principles | `docs/PATTERNS.md` §13                                                             |
-| Architecture status     | `docs/ARCHITECTURE_STATUS.md`                                                      |
-| Architecture (general)  | `docs/ARCHITECTURE.md`                                                             |
-| Export templates        | `docs/EXPORT_TEMPLATES.md` (9-template + backend contract)                         |
-| Patterns                | `docs/PATTERNS.md`                                                                 |
-| Design system           | `docs/DESIGN_SYSTEM.md`                                                            |
-| Dev setup               | `docs/DEVELOPMENT.md`                                                              |
+| What                    | Where                                                                                                         |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------- |
+| IPC contract            | `packages/shared/src/ipc/contracts.ts`                                                                        |
+| Tauri commands          | `apps/tauri/src-tauri/src/commands.rs`                                                                        |
+| Tauri client (TS)       | `apps/tauri/src/tauri-client.ts`                                                                              |
+| Service hooks           | `apps/tauri/src/renderer/services/`                                                                           |
+| UI package              | `packages/ui/src/index.ts` → `@ajh/ui`                                                                        |
+| Motion tokens           | `packages/ui/src/lib/motion.ts` (import via `@/lib/motion`)                                                   |
+| State machines          | `apps/tauri/src/renderer/lib/machines/`                                                                       |
+| Design tokens           | `packages/ui/src/css/tokens.css`                                                                              |
+| i18n (translations)     | `packages/translations/src/index.ts` → `@ajh/translations`; init shim `apps/tauri/src/renderer/i18n/index.ts` |
+| Config / paths (Rust)   | `apps/tauri/src-tauri/src/platform/config.rs` (`data_dir()`)                                                  |
+| HTTP client (Rust)      | `apps/tauri/src-tauri/src/net/http.rs` (`shared()` / `build_client()`)                                        |
+| Errors (Rust)           | `apps/tauri/src-tauri/src/error.rs` (`AppError` / `AppResult`)                                                |
+| Trace spans (Rust)      | `apps/tauri/src-tauri/src/observability.rs` (`Span`)                                                          |
+| Board registry          | `scraping/boards/mod.rs` (`SCRAPERS`) — no applier registry (apply engine removed)                            |
+| Architecture principles | `docs/PATTERNS.md` §13                                                                                        |
+| Architecture status     | `docs/ARCHITECTURE_STATUS.md`                                                                                 |
+| Architecture (general)  | `docs/ARCHITECTURE.md`                                                                                        |
+| Export templates        | `docs/EXPORT_TEMPLATES.md` (9-template + backend contract)                                                    |
+| Patterns                | `docs/PATTERNS.md`                                                                                            |
+| Design system           | `docs/DESIGN_SYSTEM.md`                                                                                       |
+| Dev setup               | `docs/DEVELOPMENT.md`                                                                                         |
 
 ## Release Pipeline
 

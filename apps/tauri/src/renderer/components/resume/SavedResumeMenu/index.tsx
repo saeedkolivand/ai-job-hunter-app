@@ -2,9 +2,8 @@ import { Check, FileText, Sparkles } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
 import type { DocumentRecord } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button, cn } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 interface Props {
   show: boolean;

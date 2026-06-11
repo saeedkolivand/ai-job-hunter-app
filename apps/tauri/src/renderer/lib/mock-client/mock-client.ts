@@ -154,12 +154,14 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       disconnect: noop,
       getStatus: async () => ({ connected: false }),
       importProfileFromUrl: async () => ({ error: 'not available in mock' }),
+      importCookies: async () => ({ outcome: 'NoSession', imported: 0 }),
     },
 
     boards: {
       connect: async () => ({ connected: false }),
       disconnect: noop,
       getStatus: async () => ({ connected: false }),
+      importCookies: async () => ({ outcome: 'NoSession', imported: 0 }),
     },
 
     cliAgents: {

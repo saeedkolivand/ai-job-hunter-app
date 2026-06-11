@@ -2,6 +2,7 @@ import { Activity, Mail, RefreshCw, Search, Trash2, Wand2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useMemo, useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import {
   Button,
   CardSkeleton,
@@ -18,7 +19,6 @@ import { PageTransition } from '@/components/layout/PageTransition';
 import { GenerationCard } from '@/features/resumes/components/GenerationCard';
 import { InteractionRow } from '@/features/resumes/components/InteractionRow';
 import { DOC_TABS, type DocTab, type Interaction } from '@/features/resumes/constants';
-import { useTranslation } from '@/lib/i18n';
 import { useAiGenerations, useRemoveAiGenerationsBulk } from '@/services/use-ai-generations';
 import { useInteractions } from '@/services/use-postings';
 import { useSessionStore } from '@/store/session-store';

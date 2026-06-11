@@ -2,9 +2,9 @@ import { UserCheck } from 'lucide-react';
 import { useState } from 'react';
 
 import type { ContactFieldConflict, ContactProfile } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button, Input, ModalShell, SegmentedControl, useNotification } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { useContactProfile, useSaveContactProfile } from '@/services';
 
 interface ContactConflictModalProps {

@@ -10,7 +10,7 @@ import { ContactConflictModal } from './index';
 // Vitest hoists vi.mock() calls before any imports at runtime, so the import
 // order above has no effect on mock resolution.
 
-vi.mock('@/lib/i18n', () => ({
+vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string, _opts?: Record<string, unknown>) => k }),
 }));
 

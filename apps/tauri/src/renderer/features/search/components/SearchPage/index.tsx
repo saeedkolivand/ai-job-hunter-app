@@ -2,11 +2,11 @@ import { Search } from 'lucide-react';
 import { useState } from 'react';
 
 import type { HybridSearchRequest } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button, EmptyState, GlassCard, Input } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
-import { useTranslation } from '@/lib/i18n';
 import { useSearch } from '@/services';
 
 interface JobPayload {

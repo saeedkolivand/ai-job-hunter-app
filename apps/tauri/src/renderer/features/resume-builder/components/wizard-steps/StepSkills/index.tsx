@@ -1,8 +1,7 @@
 import { Controller, useFormContext } from 'react-hook-form';
 
+import { useTranslation } from '@ajh/translations';
 import { TextArea } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 import type { BuilderFormValues } from '../../../types';
 import { WizardField } from '../../WizardField';

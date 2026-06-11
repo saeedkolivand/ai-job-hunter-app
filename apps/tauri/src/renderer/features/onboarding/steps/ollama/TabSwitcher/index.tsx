@@ -1,9 +1,8 @@
 import { Cloud, Computer, type LucideIcon, Terminal } from 'lucide-react';
 import { motion } from 'motion/react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, withDelay } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 export type TabMode = 'local' | 'cloud' | 'cli';
 

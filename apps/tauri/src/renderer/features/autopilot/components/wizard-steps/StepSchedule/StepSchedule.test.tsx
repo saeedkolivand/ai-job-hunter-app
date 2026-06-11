@@ -10,7 +10,7 @@ import { StepSchedule } from './index';
 // ── Module stubs ──────────────────────────────────────────────────────────────
 
 // Return every translation key verbatim — no i18next setup needed in jsdom.
-vi.mock('@/lib/i18n', () => ({
+vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, string>) => {
       if (!params) return key;

@@ -9,6 +9,7 @@ import {
   Zap,
 } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, SegmentedControl } from '@ajh/ui';
 
 import { JobAdField } from '@/components/job/JobAdField';
@@ -16,7 +17,6 @@ import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import { AiSetupHint } from '@/components/ui/AiSetupHint';
 import { ModelSelector } from '@/components/ui/ModelSelector';
 import type { Stage } from '@/features/analyze/constants';
-import { useTranslation } from '@/lib/i18n';
 import type { AnalysisMode } from '@/lib/resume-ai';
 import type { PromptQuality } from '@/store/preferences-schema';
 

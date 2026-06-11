@@ -1,9 +1,8 @@
 import { Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, transition } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 interface Props {
   show: boolean;

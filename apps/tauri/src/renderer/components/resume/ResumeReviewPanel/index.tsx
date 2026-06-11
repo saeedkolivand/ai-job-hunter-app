@@ -1,7 +1,6 @@
 import type { ConfidenceLevel, ResumeField, StructuredResume } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, GlassCard } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 interface Props {
   review: StructuredResume;

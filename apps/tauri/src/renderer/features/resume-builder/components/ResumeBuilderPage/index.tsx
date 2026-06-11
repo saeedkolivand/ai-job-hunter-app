@@ -2,6 +2,7 @@ import { ArrowRight, RotateCcw } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 import { useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, ErrorState } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -17,7 +18,6 @@ import {
   isTwoColumnTemplate,
   type TemplateId,
 } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 
 import { useResumeBuilder } from '../../hooks/useResumeBuilder';
 import { BuilderWizard } from '../BuilderWizard';

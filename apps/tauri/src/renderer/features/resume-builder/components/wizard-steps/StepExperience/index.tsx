@@ -1,9 +1,9 @@
 import { Briefcase } from 'lucide-react';
 import { type Control, Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 
+import { useTranslation } from '@ajh/translations';
 import { Input, LocationInput, TextArea } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { useAppClient } from '@/providers/AppClientProvider';
 
 import type { BuilderFormValues } from '../../../types';

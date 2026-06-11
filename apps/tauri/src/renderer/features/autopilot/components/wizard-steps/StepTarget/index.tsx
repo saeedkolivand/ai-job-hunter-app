@@ -1,10 +1,10 @@
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 
 import { BOARD_IDS } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, Input, LocationInput, NumberField, SelectDropdown } from '@ajh/ui';
 
 import type { Prefilled, WizardState } from '@/features/autopilot/types';
-import { useTranslation } from '@/lib/i18n';
 import { useAppClient } from '@/providers/AppClientProvider';
 
 import { ComingSoonBadge } from '../ComingSoonBadge';

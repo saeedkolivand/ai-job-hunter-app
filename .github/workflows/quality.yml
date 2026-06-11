@@ -110,13 +110,13 @@ jobs:
       - name: 🌐 Check translation keys (advisory)
         continue-on-error: true
         run: |
-          pnpm exec i18next-cli extract
-          if git diff --quiet -- apps/tauri/src/renderer/i18n/locales; then
+          pnpm --filter @ajh/translations i18n:extract
+          if git diff --quiet -- packages/translations/src/locales; then
             echo "Locale files are in sync with t() usage."
           else
             echo "::warning::i18next-cli would change the locale files (missing keys / sort drift):"
-            git --no-pager diff -- apps/tauri/src/renderer/i18n/locales
-            git checkout -- apps/tauri/src/renderer/i18n/locales
+            git --no-pager diff -- packages/translations/src/locales
+            git checkout -- packages/translations/src/locales
           fi
 
   a11y-lint:

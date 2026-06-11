@@ -1,8 +1,8 @@
 import { Bug, Terminal } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, GlassCard, SectionLabel } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { useOpenDevtools } from '@/services';
 import { useDebugMode, usePreferencesStore } from '@/store/preferences-store';
 

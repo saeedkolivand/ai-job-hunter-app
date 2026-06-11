@@ -1,7 +1,8 @@
 import { Sparkles } from 'lucide-react';
 import { type ComponentType, useEffect, useState } from 'react';
 
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation } from '@ajh/translations';
+
 import { onWindowControlsRegistered } from '@/lib/window-controls-registry';
 
 export function Titlebar() {

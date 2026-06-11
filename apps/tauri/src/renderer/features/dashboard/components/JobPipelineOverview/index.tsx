@@ -1,8 +1,8 @@
 import { Bookmark, Briefcase, CheckCircle, Eye, TrendingUp } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { GlassCard } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { useInteractions } from '@/services';
 
 export function JobPipelineOverview() {

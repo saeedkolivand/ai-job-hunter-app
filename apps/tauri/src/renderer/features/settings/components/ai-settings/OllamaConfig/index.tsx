@@ -1,8 +1,8 @@
 import { Download, ExternalLink, Loader2 } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import type { Model } from '@/types';
 
 const QUICK_MODELS = ['llama3.2', 'mistral', 'llama3.1:8b', 'llama3.2:1b'];

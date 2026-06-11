@@ -2,9 +2,9 @@ import { AlertTriangle, Globe } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
 import { isCjkLanguage } from '@ajh/shared/language-detection';
+import { useTranslation } from '@ajh/translations';
 
 import type { GenerationMeta } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 
 interface GenerationMetadataProps {
   meta: GenerationMeta | null;

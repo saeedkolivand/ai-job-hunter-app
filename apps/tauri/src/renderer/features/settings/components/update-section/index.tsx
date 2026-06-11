@@ -10,9 +10,9 @@ import {
 import { useState } from 'react';
 
 import { compareSemver } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, MarkdownMessage, RefreshButton, SettingsSection } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { useAppVersion, useOpenExternal } from '@/services';
 import { useChangelog, useUpdater } from '@/services/use-updater';
 

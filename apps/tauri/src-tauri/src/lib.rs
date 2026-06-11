@@ -590,6 +590,7 @@ pub fn run() {
             commands::boards::boards_get_disable_passkey_script,
             commands::boards::boards_list_browser_helpers,
             commands::boards::boards_login_with_browser,
+            commands::boards::boards_import_cookies,
             commands::boards::boards_logout,
             commands::boards::boards_get_status,
             commands::boards::boards_list,

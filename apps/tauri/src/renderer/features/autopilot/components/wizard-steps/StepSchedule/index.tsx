@@ -2,11 +2,11 @@ import { Check, Clock } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 
 import type { AutopilotSchedule } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, SelectDropdown } from '@ajh/ui';
 
 import { scoreToLevel } from '@/features/autopilot/lib/match-level';
 import type { WizardState } from '@/features/autopilot/types';
-import { useTranslation } from '@/lib/i18n';
 
 import { WizardField } from '../WizardField';
 

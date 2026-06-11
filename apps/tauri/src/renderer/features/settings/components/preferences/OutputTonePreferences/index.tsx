@@ -1,8 +1,8 @@
 import { Briefcase, FileText, type LucideIcon, MessageSquare, Sparkles } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { GlassCard, OptionTile, SectionLabel } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import type { OutputTone } from '@/store/preferences-schema';
 import { useOutputTone, usePreferencesStore } from '@/store/preferences-store';
 

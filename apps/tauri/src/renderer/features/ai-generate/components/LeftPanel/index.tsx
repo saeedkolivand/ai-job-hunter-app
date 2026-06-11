@@ -1,5 +1,6 @@
 import { AlertCircle, ArrowRight, RefreshCw, Wand2 } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
 
 import { JobAdField } from '@/components/job/JobAdField';
@@ -9,7 +10,6 @@ import { ModelSelector } from '@/components/ui/ModelSelector';
 import { GenerationMetadata } from '@/features/ai-generate/components/GenerationMetadata';
 import { TemplateRecommendation } from '@/features/ai-generate/components/TemplateRecommendation';
 import { type GenerationMeta, isTwoColumnTemplate, type TemplateId } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 
 interface Props {
   resume: string;

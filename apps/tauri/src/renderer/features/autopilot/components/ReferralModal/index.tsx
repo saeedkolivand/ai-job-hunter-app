@@ -3,12 +3,12 @@ import { useState } from 'react';
 
 import type { AutopilotFoundJob } from '@ajh/shared';
 import type { ReferralChannel } from '@ajh/shared/ipc';
+import { useTranslation } from '@ajh/translations';
 import { Button, Input, ModalShell, SegmentedControl, StreamingText, TextArea } from '@ajh/ui';
 
 import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { WizardField } from '@/features/autopilot/components/wizard-steps/WizardField';
 import { CONNECTION_NOTE_LIMIT } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 import { useReferrals, useUpsertReferral } from '@/services';
 
 import { ReferralList } from './ReferralList';

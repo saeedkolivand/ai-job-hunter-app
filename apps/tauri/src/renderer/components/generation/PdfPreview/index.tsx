@@ -1,10 +1,10 @@
 import { FileWarning, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { cn } from '@ajh/ui';
 
 import { type GenerationMeta, renderDocumentPreview, type TemplateId } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 
 interface PdfPreviewProps {
   /** Canonical document text (the same raw string copy/export read). */

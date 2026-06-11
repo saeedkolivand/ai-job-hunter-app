@@ -2,9 +2,8 @@ import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 
 import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, LocationInput, NumberField, SelectDropdown } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 import { AUTH_BENEFITS, REGIONS, type ScrapeFormState } from './constants';
 

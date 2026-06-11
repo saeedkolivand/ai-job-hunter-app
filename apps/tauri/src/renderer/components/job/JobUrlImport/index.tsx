@@ -1,9 +1,9 @@
 import { AlertCircle, Check, Link2, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, Input } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { useImportJobUrl } from '@/services';
 
 interface Props {

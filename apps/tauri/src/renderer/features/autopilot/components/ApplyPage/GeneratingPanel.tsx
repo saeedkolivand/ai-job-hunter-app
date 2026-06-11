@@ -1,9 +1,9 @@
 import { Wand2 } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, IconBadge, Skeleton, StepDots } from '@ajh/ui';
 
 import { ThinkingBubble } from '@/components/generation/ThinkingBubble';
-import { useTranslation } from '@/lib/i18n';
 
 import type { TailorTarget } from './useTailorGeneration';
 

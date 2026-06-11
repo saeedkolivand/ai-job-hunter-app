@@ -1,9 +1,9 @@
 import { Trash2 } from 'lucide-react';
 
 import type { ReferralContact, ReferralStatus } from '@ajh/shared/ipc';
+import { useTranslation } from '@ajh/translations';
 import { Button, SegmentedControl } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { useRemoveReferral, useUpsertReferral } from '@/services';
 
 interface Props {

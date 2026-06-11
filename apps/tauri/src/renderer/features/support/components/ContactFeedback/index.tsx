@@ -1,9 +1,9 @@
 import { Copy } from 'lucide-react';
 import { useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, SelectDropdown, TextArea, useNotification } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import {
   useCopyAppVersion,
   useCopyEnvironmentDetails,

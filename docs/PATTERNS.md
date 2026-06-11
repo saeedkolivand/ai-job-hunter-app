@@ -367,17 +367,17 @@ features/
 
 ## 9. i18n Pattern
 
-Never import `react-i18next` directly — use the wrapper:
+Never import `react-i18next` directly — use the package entrypoint:
 
 ```typescript
 // ✅ correct
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation } from '@ajh/translations';
 
 // ❌ wrong — ESLint error
 import { useTranslation } from 'react-i18next';
 ```
 
-The wrapper ensures consistent namespace resolution and enables future provider swaps.
+The `@ajh/translations` package is the canonical source for all i18n adapters (`useTranslation`, `TFunction`, `i18n` instance re-export). It owns the generic i18next singleton, language detection, resource bundles, and extraction tooling. The renderer uses a thin shim (`@/i18n/index.ts`) to attach the app-coupled `languageChanged → getClient().system.setLocale(lng)` listener — this shim is imported once in `main.tsx` for its side-effect only, never for translation imports.
 
 Translation keys follow dot notation by feature:
 

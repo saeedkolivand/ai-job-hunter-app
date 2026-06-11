@@ -4,10 +4,10 @@ import { useEffect, useRef } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, StepDots, transition } from '@ajh/ui';
 
 import type { InterviewAnswers, TemplateId } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 import { useSessionStore } from '@/store/session-store';
 
 import { type BuilderForm, builderSchema } from '../../lib/schema';

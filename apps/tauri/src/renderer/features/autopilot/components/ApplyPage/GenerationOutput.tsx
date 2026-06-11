@@ -1,6 +1,7 @@
 import { Check, Copy, Download, FileText, LayoutTemplate } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, SelectDropdown, Switch } from '@ajh/ui';
 
 import { EditableOutput } from '@/components/generation/EditableOutput';
@@ -13,7 +14,6 @@ import {
   type TemplateId,
   TEMPLATES,
 } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 
 import type { TailorTarget } from './useTailorGeneration';
 

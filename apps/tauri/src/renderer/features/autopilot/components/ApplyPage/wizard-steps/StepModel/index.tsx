@@ -1,10 +1,10 @@
 import { Search } from 'lucide-react';
 import { Controller, useFormContext } from 'react-hook-form';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn } from '@ajh/ui';
 
 import { ModelSelector } from '@/components/ui/ModelSelector';
-import { useTranslation } from '@/lib/i18n';
 
 import type { TailorWizardState } from '../../lib/tailor-state';
 

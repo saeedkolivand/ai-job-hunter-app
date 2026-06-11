@@ -136,7 +136,12 @@ export {
   type AutopilotFocusEvent,
   type AutopilotStepEvent,
 } from './autopilot.js';
-export { BOARDS_CHANNELS, type BoardsContract } from './boards.js';
+export {
+  BOARDS_CHANNELS,
+  type BoardsContract,
+  type CookieImportOutcome,
+  type CookieImportResult,
+} from './boards.js';
 export {
   CLI_AGENTS_CHANNELS,
   type CliAgentInstallResult,

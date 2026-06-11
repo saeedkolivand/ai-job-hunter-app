@@ -1,5 +1,7 @@
 import { useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
+
 import { PageTransition } from '@/components/layout/PageTransition';
 import { SettingsContent } from '@/features/settings/components/SettingsContent';
 import { SettingsSidebar } from '@/features/settings/components/SettingsSidebar';
@@ -9,7 +11,6 @@ import {
   type NavItem,
   type SectionId,
 } from '@/features/settings/constants';
-import { useTranslation } from '@/lib/i18n';
 import { usePreferencesStore, useUserName } from '@/store/preferences-store';
 import { useSessionStore } from '@/store/session-store';
 

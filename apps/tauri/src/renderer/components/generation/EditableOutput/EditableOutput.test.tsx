@@ -24,7 +24,7 @@ vi.mock('@/components/ui/ModelSelector', () => ({
   useSelectedModel: () => 'test-model',
 }));
 
-vi.mock('@/lib/i18n', () => ({
+vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 

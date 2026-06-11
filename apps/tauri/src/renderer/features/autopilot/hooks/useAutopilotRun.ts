@@ -1,9 +1,9 @@
 import { useCallback, useReducer, useState } from 'react';
 
 import type { Autopilot, AutopilotStepEvent } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 
 import type { RunStateMap, StepLogMap } from '@/features/autopilot/constants';
-import { useTranslation } from '@/lib/i18n';
 import { transition as machineTransition } from '@/lib/machine';
 import { autopilotRunMachine, stepToEvent } from '@/lib/machines/autopilot-run.machine';
 import {

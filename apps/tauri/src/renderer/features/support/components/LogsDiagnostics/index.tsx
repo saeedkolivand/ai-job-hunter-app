@@ -1,6 +1,5 @@
+import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 import { LogCategoryCard } from '../LogCategoryCard';
 import { LogEntry } from '../LogEntry';

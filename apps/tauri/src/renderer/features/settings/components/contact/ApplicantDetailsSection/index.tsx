@@ -1,8 +1,8 @@
 import { Briefcase } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Input, SettingsSection } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import type { ApplicantPreferences } from '@/store/preferences-schema';
 import { useApplicant, usePreferencesStore } from '@/store/preferences-store';
 

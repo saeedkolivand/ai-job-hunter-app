@@ -2,9 +2,8 @@ import { Check, Copy, HelpCircle, Sparkles, X } from 'lucide-react';
 import { useState } from 'react';
 
 import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
+import { useTranslation } from '@ajh/translations';
 import { Button, ModalShell } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 interface Props {
   selected: Set<string>;

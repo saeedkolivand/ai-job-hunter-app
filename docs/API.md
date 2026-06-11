@@ -250,7 +250,7 @@ interface AutopilotStepEvent {
 
 ## `boards`
 
-Job board configuration management.
+Job board configuration management and session import.
 
 #### `boards.list(): Promise<BoardConfig[]>`
 
@@ -259,6 +259,34 @@ Job board configuration management.
 #### `boards.disable(boardId: string): Promise<void>`
 
 #### `boards.getStats(boardId: string): Promise<BoardStats>`
+
+#### `boards.getConfig(boardId: string): Promise<BoardLoginConfig | null>`
+
+Returns the login configuration for a board, including login URL and available auth predicates.
+
+```typescript
+interface BoardLoginConfig {
+  id: string;
+  displayName: string;
+  loginUrl: string;
+  hasAuthUrlPredicate: boolean; // true if the board supports URL-based auth detection
+  hasAuthCookiePredicate: boolean; // true if the board supports cookie-based auth detection
+}
+```
+
+#### `boards.importCookies(boardId: string): Promise<CookieImportResult>`
+
+Attempts to import an existing job-board session from the user's installed Chromium browsers (Chrome, Edge, Brave). Reads the browser's encrypted cookie store, decrypts v10/v11 AES-256-GCM cookies (DPAPI on Windows, Keychain/libsecret on Unix), filters for the board's domain, and writes the same artifacts (`cookies.json` + `auth-status.json`) that the in-app login flow produces. Best-effort: never a regression — missing browser, locked profile, or decrypt failure all map to non-error outcomes. v20 App-Bound Encryption (Chrome 127+) is out of scope. See `apps/tauri/src-tauri/src/scraping/board_login/import.rs` (implementation + design doc) and `apps/tauri/src-tauri/src/platform/chrome/mod.rs` (Chromium detection).
+
+```typescript
+type CookieImportOutcome = 'Imported' | 'NoSession' | 'Undecryptable' | 'BrowserNotFound';
+
+interface CookieImportResult {
+  outcome: CookieImportOutcome; // 'Imported' = success; others are non-error fallbacks
+  imported: number; // cookie count (>0 only when outcome='Imported')
+  error?: string; // only set if outcome='Error' (i.e. unexpected IO)
+}
+```
 
 ```typescript
 interface BoardConfig {

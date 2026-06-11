@@ -1,6 +1,5 @@
+import { useTranslation } from '@ajh/translations';
 import { SetupHint } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 interface Props {
   show: boolean;

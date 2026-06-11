@@ -1,9 +1,9 @@
 import { Download, ExternalLink, Loader2, RotateCcw } from 'lucide-react';
 import { useRef, useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, ConfirmModal, useToast } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { useCliAgents, useInstallCliAgent } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
 

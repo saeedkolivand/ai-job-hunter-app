@@ -3,9 +3,9 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, GlassCard, Input, transition } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { useJobPreferences, useSetJobPreferences } from '@/services';
 
 const COMMON_LOCATIONS = [

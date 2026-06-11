@@ -1,11 +1,11 @@
 import { Link2 } from 'lucide-react';
 import { useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, useNotification } from '@ajh/ui';
 
 import { isProfileAuthError, isSupportedProfileUrl } from '@/components/resume/profile-url';
 import { ProfileUrlInput } from '@/components/resume/ProfileUrlInput';
-import { useTranslation } from '@/lib/i18n';
 import { useImportDocument, useProfileImport } from '@/services';
 
 interface Props {

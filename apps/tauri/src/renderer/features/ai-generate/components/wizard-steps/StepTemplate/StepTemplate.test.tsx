@@ -6,7 +6,7 @@ import { TEMPLATES } from '@/lib/generate';
 
 import { StepTemplate } from './index';
 
-vi.mock('@/lib/i18n', () => ({
+vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 

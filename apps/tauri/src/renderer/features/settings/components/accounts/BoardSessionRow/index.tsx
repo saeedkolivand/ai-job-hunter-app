@@ -1,7 +1,8 @@
 import { Check, Link as LinkIcon, LogOut } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, cn, ConfirmModal, useNotification } from '@ajh/ui';
+import { useTranslation } from '@ajh/translations';
+import { Button, ConfirmModal, useNotification } from '@ajh/ui';
 
 import {
   useBoardConnect,
@@ -20,17 +21,18 @@ interface Board {
 }
 
 const BOARD_STYLE: Record<string, { iconBg: string; glowColor: string; abbr: string }> = {
-  linkedin: { iconBg: 'bg-[#0077B5]', glowColor: 'rgba(0,119,181,0.2)', abbr: 'in' },
-  indeed: { iconBg: 'bg-[#003A9B]', glowColor: 'rgba(0,58,155,0.2)', abbr: 'id' },
-  xing: { iconBg: 'bg-[#026466]', glowColor: 'rgba(2,100,102,0.2)', abbr: 'xi' },
-  glassdoor: { iconBg: 'bg-[#0CAA41]', glowColor: 'rgba(12,170,65,0.2)', abbr: 'gd' },
+  linkedin: { iconBg: '#0077B5', glowColor: 'rgba(0,119,181,0.2)', abbr: 'in' },
+  indeed: { iconBg: '#003A9B', glowColor: 'rgba(0,58,155,0.2)', abbr: 'id' },
+  xing: { iconBg: '#026466', glowColor: 'rgba(2,100,102,0.2)', abbr: 'xi' },
+  glassdoor: { iconBg: '#0CAA41', glowColor: 'rgba(12,170,65,0.2)', abbr: 'gd' },
 };
 
-const FALLBACK = { iconBg: 'bg-brand', glowColor: 'rgba(168,85,247,0.2)', abbr: '?' };
+const FALLBACK = { iconBg: 'var(--color-brand)', glowColor: 'rgba(168,85,247,0.2)', abbr: '?' };
 
 export function BoardSessionRow({ board }: { board: Board }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const notify = useNotification();
+  const { t } = useTranslation();
 
   const isLinkedIn = board.id === 'linkedin';
   const style = BOARD_STYLE[board.id] ?? FALLBACK;
@@ -55,9 +57,13 @@ export function BoardSessionRow({ board }: { board: Board }) {
       const result = isLinkedIn
         ? await linkedInConnect.mutateAsync()
         : await boardConnect.mutateAsync(board.id);
-      const res = result as { connected?: boolean; error?: string } | undefined;
+      const res = result as
+        | { connected?: boolean; viaImport?: boolean; error?: string }
+        | undefined;
       if (res?.error) {
         notify(res.error, 'error');
+      } else if (res?.viaImport) {
+        notify(t('settings.accounts.connectedViaBrowser', { board: board.name }), 'success');
       } else if (!res?.connected) {
         notify(`${board.name} sign-in was cancelled or timed out.`, 'warning');
       }
@@ -100,10 +106,8 @@ export function BoardSessionRow({ board }: { board: Board }) {
 
         {/* Icon */}
         <div
-          className={cn(
-            'relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[11px] font-bold uppercase tracking-wider text-white shadow-md',
-            style.iconBg
-          )}
+          className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[11px] font-bold uppercase tracking-wider text-white shadow-md"
+          style={{ backgroundColor: style.iconBg }}
         >
           {style.abbr}
         </div>

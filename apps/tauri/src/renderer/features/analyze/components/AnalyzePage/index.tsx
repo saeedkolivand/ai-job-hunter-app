@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import type { DocumentRecord } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { ErrorState } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -14,7 +15,6 @@ import { ACCEPTED_EXTS, MAX_BYTES } from '@/features/analyze/constants';
 import { useAnalysisRun } from '@/features/analyze/hooks/useAnalysisRun';
 import { useAnalyzeState } from '@/features/analyze/hooks/useAnalyzeState';
 import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
-import { useTranslation } from '@/lib/i18n';
 import { useDocuments, useExtractText } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
 import { usePreferencesStore, usePromptQuality } from '@/store/preferences-store';

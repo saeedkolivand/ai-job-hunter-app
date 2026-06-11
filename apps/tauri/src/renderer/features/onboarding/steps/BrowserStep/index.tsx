@@ -1,4 +1,5 @@
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation } from '@ajh/translations';
+
 import { useCheckBrowser } from '@/services';
 
 import { OnboardingStepWrapper } from '../../components/OnboardingStepWrapper';

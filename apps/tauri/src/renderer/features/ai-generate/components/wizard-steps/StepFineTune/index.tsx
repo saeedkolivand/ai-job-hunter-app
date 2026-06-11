@@ -1,5 +1,6 @@
 import { AlertTriangle, Check, Gauge, type LucideIcon, SlidersHorizontal, Zap } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, SelectDropdown } from '@ajh/ui';
 
 import { isOllamaFamily } from '@/lib/ai-providers/provider-meta';
@@ -11,7 +12,6 @@ import {
   letterConventions,
   MODES,
 } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 import { useHasProviderKey } from '@/services';
 import type { PromptQuality } from '@/store/preferences-schema';
 import {

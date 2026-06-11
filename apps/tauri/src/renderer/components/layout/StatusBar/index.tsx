@@ -1,11 +1,11 @@
 import { Activity, ArrowRight, Cpu, Database, Loader2, Sparkles } from 'lucide-react';
 import { useRouter } from '@tanstack/react-router';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, HoverPopover } from '@ajh/ui';
 
 import { ROUTES } from '@/constants/routes';
 import { useKindLabelMap } from '@/hooks/use-kind-label-map';
-import { useTranslation } from '@/lib/i18n';
 import { useCapabilities } from '@/providers/CapabilityProvider';
 import { useWorkerActivity } from '@/services';
 import { useAIModel, useAiProviderConfig } from '@/store/preferences-store';

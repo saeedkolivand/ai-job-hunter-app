@@ -8,7 +8,7 @@ import { useGenerationStore } from '@/store/generation-store';
 import { useTailorGeneration } from './useTailorGeneration';
 
 // i18n: identity translator so phaseLabel resolves without the i18n runtime.
-vi.mock('@/lib/i18n', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+vi.mock('@ajh/translations', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
 
 // Capture the saved application record so we can assert the job link is attached.
 const save = vi.fn().mockResolvedValue({ id: 'gen-1', success: true });

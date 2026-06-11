@@ -1,6 +1,7 @@
 import { BarChart3, CheckCircle2, Cpu, Loader2, XCircle, Zap } from 'lucide-react';
 import { useMemo } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { GlassCard } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -14,7 +15,6 @@ import { useActivityFeed } from '@/features/monitoring/hooks/useActivityFeed';
 import { useJobMetrics } from '@/features/monitoring/hooks/useJobMetrics';
 import type { JobRecord } from '@/features/monitoring/types';
 import { useKindLabelMap } from '@/hooks/use-kind-label-map';
-import { useTranslation } from '@/lib/i18n';
 import { useAppVersion, useJobQueue, useSystemHealth } from '@/services';
 
 export function MonitoringPage() {

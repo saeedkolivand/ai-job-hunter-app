@@ -1,7 +1,6 @@
 import type { MODEL_RECS } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 type ModelRec = (typeof MODEL_RECS)[number];
 
