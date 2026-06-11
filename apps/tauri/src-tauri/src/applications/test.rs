@@ -2,6 +2,69 @@ use super::*;
 use rusqlite::Connection;
 use tempfile::TempDir;
 
+// ── helpers shared by the new gap tests ──────────────────────────────────────
+
+/// Insert a bare generation row directly into `ai_generations.db`, setting
+/// `application_id` to the supplied value (or NULL when None).  Used by the
+/// delete/detach cross-store tests so they don't depend on the backfill path.
+fn insert_gen_with_app_id(
+    gen_conn: &Connection,
+    id: &str,
+    job_url: &str,
+    application_id: Option<&str>,
+) {
+    gen_conn
+        .execute(
+            "INSERT INTO ai_generations
+             (id, created_at, company_name, job_url, board, application_id)
+             VALUES (?1, 1000, 'Acme', ?2, 'linkedin', ?3)",
+            rusqlite::params![id, job_url, application_id],
+        )
+        .unwrap();
+}
+
+/// Return the `application_id` column for a generation row (None when NULL).
+fn gen_application_id(gen_conn: &Connection, gen_id: &str) -> Option<String> {
+    gen_conn
+        .query_row(
+            "SELECT application_id FROM ai_generations WHERE id = ?1",
+            rusqlite::params![gen_id],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .unwrap()
+}
+
+/// Return the number of rows in `ai_generations` matching an `application_id`.
+fn gen_count_for_app(gen_conn: &Connection, application_id: &str) -> i64 {
+    gen_conn
+        .query_row(
+            "SELECT COUNT(*) FROM ai_generations WHERE application_id = ?1",
+            rusqlite::params![application_id],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+/// Open (or create) the `ai_generations.db` in `dir` and run
+/// `AiGenerationStore`'s own migrations so all columns — including
+/// `application_id` — exist before the test inserts rows.
+/// Returns an open `Connection` for direct SQL assertions.
+///
+/// We let the store migrations run rather than hand-rolling the schema so that
+/// future schema additions don't break these tests silently, and so we never
+/// hit "duplicate column" errors from a CREATE TABLE that already includes
+/// columns the migrations try to ADD.
+fn open_gen_db_with_app_id_col(dir: &std::path::Path) -> Connection {
+    // Opening the store runs all migrations (including add_application_id).
+    // We then drop it immediately; the DB file stays on disk.
+    {
+        let _store =
+            crate::ai_generations::AiGenerationStore::open(&dir.to_path_buf()).unwrap();
+    }
+    // Re-open raw for direct SQL reads/writes in the test.
+    Connection::open(dir.join("ai_generations.db")).unwrap()
+}
+
 fn meta(company: &str, title: &str) -> ApplicationMeta {
     ApplicationMeta {
         company: company.into(),
@@ -210,6 +273,12 @@ fn delete_removes_application_and_events() {
     assert!(store.events(&id).is_empty());
 }
 
+/// Seed legacy (pre-migration) generation rows using the OLD ai_generations
+/// schema that existed before the `application_id` column was added.
+///
+/// IMPORTANT: this helper deliberately uses the OLD schema and must NOT be
+/// updated to match the live schema.  Its purpose is to verify that the
+/// backfill migration runs correctly against data that predates the migration.
 fn seed_legacy_generations(dir: &std::path::Path, rows: &[(&str, &str, &str)]) {
     let conn = Connection::open(dir.join("ai_generations.db")).unwrap();
     conn.execute_batch(
@@ -303,6 +372,135 @@ fn export_import_round_trips() {
     assert_eq!(store2.list()[0].company, "X");
 }
 
+/// HIGH blocker fix: `DataStore::import` must return `Err(AppError::Parse(…))` when
+/// the supplied JSON value is not a JSON array.  The production path at mod.rs
+/// line ~825 calls `.as_array().ok_or_else(|| AppError::Parse(…))`.
+#[test]
+fn import_non_array_returns_parse_error() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+
+    // Passing an object instead of an array must be rejected.
+    let result = store.import(&serde_json::json!({"key": "value"}));
+    assert!(result.is_err(), "non-array input must return Err");
+
+    // Check it is specifically the Parse variant.
+    match result.unwrap_err() {
+        AppError::Parse(msg) => {
+            assert!(
+                msg.contains("applications"),
+                "error message should mention 'applications', got: {msg}"
+            );
+        }
+        other => panic!("expected AppError::Parse, got: {other:?}"),
+    }
+
+    // Sanity: the store is still empty — the failed import must not have written anything.
+    assert!(store.list().is_empty(), "store must be empty after a failed import");
+}
+
+/// Happy-path companion: import a valid array after the error-path test to
+/// confirm the store is still operational.
+#[test]
+fn import_non_array_does_not_corrupt_subsequent_happy_path() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+
+    // First call fails.
+    assert!(store.import(&serde_json::json!(42)).is_err());
+
+    // Subsequent valid import still works.
+    store
+        .upsert_for_origin("https://x.com/1", "b", &meta("X", "T"), ApplicationOrigin::Generate, None)
+        .unwrap();
+    let bundle = store.export();
+
+    let dir2 = TempDir::new().unwrap();
+    let store2 = ApplicationStore::open(dir2.path()).unwrap();
+    let n = store2.import(&bundle).unwrap();
+    assert_eq!(n, 1, "valid import after failed import must succeed");
+    assert_eq!(store2.list()[0].company, "X");
+}
+
+/// MEDIUM: `update_fields` null-vs-absent semantics.
+///
+/// - `Some(None)` for `next_action_at` must CLEAR the field to `None`.
+/// - `None` for `next_action_at` must leave the prior value UNCHANGED.
+#[test]
+fn update_fields_next_action_at_null_clears_and_absent_preserves() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store.track_manual("", "", &meta("C", "T")).unwrap();
+
+    // Set a value.
+    store
+        .update_fields(&id, None, Some(Some(999)), None, None, None)
+        .unwrap();
+    assert_eq!(store.get(&id).unwrap().next_action_at, Some(999), "precondition: value set");
+
+    // Passing `Some(None)` must CLEAR the value.
+    store
+        .update_fields(&id, None, Some(None), None, None, None)
+        .unwrap();
+    assert_eq!(
+        store.get(&id).unwrap().next_action_at,
+        None,
+        "Some(None) must clear next_action_at"
+    );
+
+    // Set value again.
+    store
+        .update_fields(&id, None, Some(Some(456)), None, None, None)
+        .unwrap();
+    assert_eq!(store.get(&id).unwrap().next_action_at, Some(456), "precondition: value re-set");
+
+    // Passing `None` (field absent) must PRESERVE the prior value.
+    store
+        .update_fields(&id, None, None, None, None, None)
+        .unwrap();
+    assert_eq!(
+        store.get(&id).unwrap().next_action_at,
+        Some(456),
+        "None must leave next_action_at unchanged"
+    );
+}
+
+/// MEDIUM: `set_status` must advance `updated_at` — assert `>=` old value while
+/// also confirming a status_event was appended, which together proves the call
+/// was not a no-op.  We avoid `>` because ms-resolution clocks can tick the same
+/// value; the event-count assertion is the correctness proof.
+#[test]
+fn set_status_bumps_updated_at_and_appends_event() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store.track_manual("", "", &meta("C", "T")).unwrap();
+
+    let before = store.get(&id).unwrap().updated_at;
+    let events_before = store.events(&id).len();
+
+    store
+        .set_status(&id, ApplicationStatus::Screening, "moved to screening")
+        .unwrap();
+
+    let after = store.get(&id).unwrap();
+    // updated_at must not go backwards.
+    assert!(
+        after.updated_at >= before,
+        "updated_at must advance after set_status (before={before}, after={})",
+        after.updated_at
+    );
+    // The status event is the hard proof that set_status actually ran.
+    let events_after = store.events(&id).len();
+    assert_eq!(
+        events_after,
+        events_before + 1,
+        "set_status must append exactly one new status event"
+    );
+    let last_event = store.events(&id).into_iter().last().unwrap();
+    assert_eq!(last_event.to_status, "screening");
+    assert_eq!(last_event.note, "moved to screening");
+}
+
 /// Parity guard: the Rust stage registry order/ids must match the shared-TS
 /// `APPLICATION_STAGES`. The expected list is HARD-CODED from the TS `as const`
 /// so any drift on either side fails the build (see
@@ -324,5 +522,320 @@ fn rust_stage_registry_matches_shared_ts() {
     assert_eq!(
         actual, expected,
         "ApplicationStatus::ALL drifted from shared-TS APPLICATION_STAGES"
+    );
+}
+
+// ── Gap 1: generate-save demotion behaviour ───────────────────────────────────
+//
+// The command `ai_generations_save` (ADR 0001) calls:
+//   1. ApplicationStore::upsert_for_origin(…, Generate, …)  → Application row
+//   2. AiGenerationStore::save_application(rec)             → generation row
+//
+// These tests mirror that two-step call at the store level (the Tauri command
+// wrapper cannot be unit-tested without a live AppHandle).
+
+#[test]
+fn generate_save_creates_one_application_with_applied_status() {
+    // Calling upsert_for_origin with Generate origin for the first time must
+    // produce exactly ONE Application row with status `applied` and a set
+    // `applied_at`.
+    let dir = TempDir::new().unwrap();
+    let app_store = ApplicationStore::open(dir.path()).unwrap();
+
+    let app_id = app_store
+        .upsert_for_origin(
+            "https://acme.com/job/42",
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+
+    let apps = app_store.list();
+    assert_eq!(apps.len(), 1, "exactly one Application must be created");
+    let app = app_store.get(&app_id).unwrap();
+    assert_eq!(
+        app.status,
+        ApplicationStatus::Applied,
+        "Generate origin must yield status=applied"
+    );
+    assert!(
+        app.applied_at.is_some(),
+        "applied_at must be set for Generate origin"
+    );
+}
+
+#[test]
+fn generate_save_second_generation_same_url_merge_into_one_gen_row_and_one_application() {
+    // Saving two generations (e.g. résumé then cover) for the same normalized
+    // url must produce ONE Application and TWO generation rows — the aggregate
+    // stays single while the child document table grows.
+    let dir = TempDir::new().unwrap();
+    let app_store = ApplicationStore::open(dir.path()).unwrap();
+    // Open gen store after app_store so the backfill migration has already run
+    // and the application_id column exists.
+    let gen_store =
+        crate::ai_generations::AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    let url = "https://acme.com/job/42";
+
+    // First save: résumé generation.
+    let app_id_1 = app_store
+        .upsert_for_origin(url, "linkedin", &meta("Acme", "Engineer"), ApplicationOrigin::Generate, None)
+        .unwrap();
+    let rec1 = crate::ai_generations::AiGenerationRecord {
+        id: "gen-resume".into(),
+        created_at: crate::ai_generations::now_ms(),
+        candidate_name: "Jane".into(),
+        job_title: "Engineer".into(),
+        company_name: "Acme".into(),
+        resume_language: "en".into(),
+        job_ad_language: "en".into(),
+        target_language: "en".into(),
+        mismatch: false,
+        top_requirements: vec![],
+        mode: "ats".into(),
+        resume_text: "RESUME".into(),
+        cover_letter_text: String::new(),
+        job_ad: "JD".into(),
+        job_url: url.into(),
+        board: "linkedin".into(),
+        application_answers: vec![],
+        company_brief: String::new(),
+    };
+    gen_store.save_application(rec1).unwrap();
+
+    // Second save: cover-letter generation for the same url.
+    let app_id_2 = app_store
+        .upsert_for_origin(url, "linkedin", &meta("Acme", "Engineer"), ApplicationOrigin::Generate, None)
+        .unwrap();
+    let rec2 = crate::ai_generations::AiGenerationRecord {
+        id: "gen-cover".into(),
+        created_at: crate::ai_generations::now_ms(),
+        candidate_name: "Jane".into(),
+        job_title: "Engineer".into(),
+        company_name: "Acme".into(),
+        resume_language: "en".into(),
+        job_ad_language: "en".into(),
+        target_language: "en".into(),
+        mismatch: false,
+        top_requirements: vec![],
+        mode: "ats".into(),
+        resume_text: String::new(),
+        cover_letter_text: "COVER".into(),
+        job_ad: "JD".into(),
+        job_url: url.into(),
+        board: "linkedin".into(),
+        application_answers: vec![],
+        company_brief: String::new(),
+    };
+    // AiGenerationStore::save_application merges same-url into one gen row.
+    // Both upsert_for_origin calls must return the SAME Application id.
+    gen_store.save_application(rec2).unwrap();
+
+    assert_eq!(
+        app_id_1, app_id_2,
+        "both generate-saves for the same url must resolve to the same Application id"
+    );
+
+    let apps = app_store.list();
+    assert_eq!(apps.len(), 1, "still exactly one Application for the url");
+    assert_eq!(
+        apps[0].status,
+        ApplicationStatus::Applied,
+        "Application status must remain applied"
+    );
+
+    // AiGenerationStore merges same-url into one aggregate gen row (existing
+    // save_application_upserts_by_job_url test covers this); what we assert
+    // here is that the Application aggregate is unaffected (still one row).
+    let gen_list = gen_store.list();
+    assert_eq!(
+        gen_list.len(),
+        1,
+        "same-url generations merge into one gen row (per save_application semantics)"
+    );
+}
+
+// ── Gap 2: applied_job_urls excludes saved, includes any non-saved status ─────
+//
+// The existing `applied_job_urls_excludes_saved` test only checks `saved` vs
+// `applied`.  This test also checks that after a `saved` Application is advanced
+// to a non-saved status it IS included, covering the transition edge.
+
+#[test]
+fn applied_job_urls_includes_application_after_status_leaves_saved() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+
+    // Create a saved Application.
+    let id = store
+        .upsert_for_origin(
+            "https://beta.com/job/1",
+            "linkedin",
+            &meta("Beta", "Dev"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    // Must NOT be in applied_job_urls while still saved.
+    assert!(
+        !store.applied_job_urls().contains("https://beta.com/job/1"),
+        "saved Application must not appear in applied_job_urls"
+    );
+
+    // Advance to Screening (a non-saved, non-applied status).
+    store
+        .set_status(&id, ApplicationStatus::Screening, "phone screen booked")
+        .unwrap();
+
+    // NOW it must appear.
+    assert!(
+        store.applied_job_urls().contains("https://beta.com/job/1"),
+        "Application must appear in applied_job_urls after leaving saved"
+    );
+}
+
+// ── Gap 3: delete(keepDocuments) cross-store semantics ────────────────────────
+//
+// `applications_delete` (the Tauri command) does two separate store operations:
+//   • keepDocuments=false → gen_store.remove_for_application(&id)   → rows gone
+//   • keepDocuments=true  → gen_store.detach_application(&id)        → rows stay, FK nulled
+// then ApplicationStore::delete in both cases.
+//
+// These tests call each store method directly (matching what the command does)
+// and assert the exact generation-row counts before and after.
+
+#[test]
+fn delete_keep_documents_false_removes_child_generations() {
+    let dir = TempDir::new().unwrap();
+    // Create the gen DB with the application_id column before opening ApplicationStore
+    // so the backfill migration finds it already present.
+    let gen_conn = open_gen_db_with_app_id_col(dir.path());
+
+    let app_store = ApplicationStore::open(dir.path()).unwrap();
+    let gen_store =
+        crate::ai_generations::AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    // Create an Application.
+    let app_id = app_store
+        .upsert_for_origin(
+            "https://acme.com/job/99",
+            "linkedin",
+            &meta("Acme", "Dev"),
+            ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+
+    // Pre-link two generation rows to this Application (simulates what a
+    // live session would have after the FK write-back).
+    insert_gen_with_app_id(&gen_conn, "gen-a", "https://acme.com/job/99", Some(&app_id));
+    insert_gen_with_app_id(&gen_conn, "gen-b", "https://acme.com/job/99", Some(&app_id));
+
+    assert_eq!(
+        gen_count_for_app(&gen_conn, &app_id),
+        2,
+        "precondition: two child generations linked"
+    );
+
+    // Simulate keepDocuments=false: delete child gens first, then the Application.
+    let deleted = gen_store.remove_for_application(&app_id).unwrap();
+    assert_eq!(deleted, 2, "remove_for_application must delete both rows");
+
+    app_store.delete(&app_id, false).unwrap();
+
+    // Application and its history are gone.
+    assert!(
+        app_store.get(&app_id).is_none(),
+        "Application row must be deleted"
+    );
+    assert!(
+        app_store.events(&app_id).is_empty(),
+        "status events must be deleted"
+    );
+
+    // Generation rows are gone.
+    assert_eq!(
+        gen_count_for_app(&gen_conn, &app_id),
+        0,
+        "child generations must be deleted when keepDocuments=false"
+    );
+    // The actual rows no longer exist at all.
+    let total: i64 = gen_conn
+        .query_row("SELECT COUNT(*) FROM ai_generations WHERE id IN ('gen-a','gen-b')", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(total, 0, "generation rows gen-a and gen-b must be gone");
+}
+
+#[test]
+fn delete_keep_documents_true_detaches_child_generations_but_keeps_rows() {
+    let dir = TempDir::new().unwrap();
+    let gen_conn = open_gen_db_with_app_id_col(dir.path());
+
+    let app_store = ApplicationStore::open(dir.path()).unwrap();
+    let gen_store =
+        crate::ai_generations::AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    let app_id = app_store
+        .upsert_for_origin(
+            "https://acme.com/job/100",
+            "linkedin",
+            &meta("Acme", "Dev"),
+            ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+
+    insert_gen_with_app_id(&gen_conn, "gen-c", "https://acme.com/job/100", Some(&app_id));
+    insert_gen_with_app_id(&gen_conn, "gen-d", "https://acme.com/job/100", Some(&app_id));
+
+    assert_eq!(
+        gen_count_for_app(&gen_conn, &app_id),
+        2,
+        "precondition: two child generations linked"
+    );
+
+    // Simulate keepDocuments=true: detach (null FK), then delete the Application.
+    let detached = gen_store.detach_application(&app_id).unwrap();
+    assert_eq!(detached, 2, "detach_application must update both rows");
+
+    app_store.delete(&app_id, true).unwrap();
+
+    // Application is gone.
+    assert!(
+        app_store.get(&app_id).is_none(),
+        "Application row must be deleted"
+    );
+
+    // Generation rows SURVIVE — they are now orphaned (application_id = NULL).
+    let total: i64 = gen_conn
+        .query_row("SELECT COUNT(*) FROM ai_generations WHERE id IN ('gen-c','gen-d')", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(total, 2, "generation rows must survive when keepDocuments=true");
+
+    // FK is now NULL on both rows (detached).
+    assert_eq!(
+        gen_application_id(&gen_conn, "gen-c"),
+        None,
+        "gen-c application_id must be NULL after detach"
+    );
+    assert_eq!(
+        gen_application_id(&gen_conn, "gen-d"),
+        None,
+        "gen-d application_id must be NULL after detach"
+    );
+
+    // No longer linked to the deleted Application.
+    assert_eq!(
+        gen_count_for_app(&gen_conn, &app_id),
+        0,
+        "no generation rows should still reference the deleted Application id"
     );
 }
