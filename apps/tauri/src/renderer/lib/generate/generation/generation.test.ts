@@ -139,7 +139,9 @@ describe('generateCoverLetter', () => {
     emit('Dear Hiring Team, I am a great fit for this role and more.');
     done();
     const out = await p;
-    expect(out).toContain('Dear Hiring Team');
+    expect(out.text).toContain('Dear Hiring Team');
+    // Research off → no brief on the result.
+    expect(out.companyBrief).toBe('');
   });
 
   const COVER_META = {
@@ -190,8 +192,10 @@ describe('generateCoverLetter', () => {
     await flushUntilStreaming();
     emit('Dear Hiring Team, great fit.');
     done();
-    await p;
+    const out = await p;
 
+    // The fetched brief is surfaced on the result so the caller can persist it.
+    expect(out.companyBrief).toBe('Acme builds payment rails for SMBs.');
     expect(research).toHaveBeenCalledWith(expect.objectContaining({ jobAd: 'Job ad at Acme' }));
     expect(client.ai.generatePipeline).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -334,5 +338,78 @@ describe('local model limits wiring', () => {
     const arg = call?.[0] as { provider: string; contextWindow?: number };
     expect(arg.provider).toBe('openai');
     expect(arg.contextWindow).toBeUndefined();
+  });
+});
+
+describe('per-step temperature override', () => {
+  // The resolved temperature is forwarded verbatim to generatePipeline, so we
+  // assert the wiring end-to-end through the public generation functions.
+  const META = {
+    resumeLanguage: 'en',
+    jobAdLanguage: 'en',
+    mismatch: false,
+    candidateName: 'X',
+    jobTitle: 'Y',
+    companyName: 'Z',
+    targetLanguage: 'en',
+    topRequirements: [],
+  };
+
+  const tempOf = (client: ReturnType<typeof register>) => {
+    const call = (client.ai.generatePipeline as ReturnType<typeof vi.fn>).mock.calls[0];
+    return (call?.[0] as { temperature: number }).temperature;
+  };
+
+  const setOllama = (temperature?: Record<string, number>) =>
+    usePreferencesStore.setState({
+      aiProviderConfig: {
+        activeProvider: 'ollama',
+        providers: { ollama: { model: 'llama3', modelLimits: { llama3: { temperature } } } },
+      },
+    });
+
+  it('applies the per-step override to its own step only (cover set, resume default)', async () => {
+    setOllama({ cover: 0.85 });
+    const client = register();
+    const p = generateCoverLetter('My resume', 'Job ad', META, 'recruiter', 'llama3', vi.fn());
+    await flushUntilStreaming();
+    emit('Dear Hiring Team.');
+    done();
+    await p;
+    // cover override resolves; the medium tier's 0.55 default is overridden.
+    expect(tempOf(client)).toBeCloseTo(0.85);
+  });
+
+  it('falls back to the step default when that step is undefined', async () => {
+    // Only `cover` is set — résumé generation must still use its 0.3 default.
+    setOllama({ cover: 0.85 });
+    const client = register();
+    const p = generateResume('My resume', 'Job ad', META, 'ats', 'llama3', vi.fn());
+    await flushUntilStreaming();
+    emit('RESUME CONTENT');
+    done();
+    await p;
+    expect(tempOf(client)).toBeCloseTo(0.3);
+  });
+
+  it('ignores the override for non-ollama providers (always the step default)', async () => {
+    // Cloud provider active, but ollama still carries a cover override: must be ignored.
+    usePreferencesStore.setState({
+      aiProviderConfig: {
+        activeProvider: 'openai',
+        providers: {
+          openai: { model: 'gpt-4o' },
+          ollama: { model: 'llama3', modelLimits: { llama3: { temperature: { cover: 0.85 } } } },
+        },
+      },
+    });
+    const client = register();
+    const p = generateCoverLetter('My resume', 'Job ad', META, 'recruiter', 'gpt-4o', vi.fn());
+    await flushUntilStreaming();
+    emit('Dear Hiring Team.');
+    done();
+    await p;
+    // large tier default for cloud = 0.55; the ollama override does not apply.
+    expect(tempOf(client)).toBeCloseTo(0.55);
   });
 });

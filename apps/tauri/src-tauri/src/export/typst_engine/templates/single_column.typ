@@ -132,7 +132,7 @@
     fill: c-body,
     data.header.title,
   )
-  block(below: 2pt, if name-centered { align(center, t) } else { t })
+  block(below: sp-header-title-below, if name-centered { align(center, t) } else { t })
 }
 
 #if "contact" in data.header {

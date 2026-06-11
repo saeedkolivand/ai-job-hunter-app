@@ -138,6 +138,16 @@ pub fn system_set_launch_at_login(app: AppHandle, enabled: bool) -> AppResult<bo
     Ok(manager.is_enabled().unwrap_or(enabled))
 }
 
+/// Set whether closing the window hides the app to the tray (true) or quits it
+/// (false). The renderer's preferences store owns this value and pushes it here
+/// on boot and on every change; the window-close handler in `lib.rs` reads the
+/// managed [`crate::CloseToTray`] flag. No getter — the renderer is the source
+/// of truth, so there is nothing to read back.
+#[tauri::command]
+pub fn system_set_close_to_tray(app: AppHandle, enabled: bool) {
+    *app.state::<crate::CloseToTray>().0.lock() = enabled;
+}
+
 #[cfg(windows)]
 fn get_gpu_info() -> Vec<Value> {
     use serde::Deserialize;

@@ -21,6 +21,13 @@ export interface SystemContract {
   /** Enable/disable launch-at-login; resolves to the resulting OS state. */
   setLaunchAtLogin(enabled: boolean): Promise<boolean>;
 
+  /**
+   * Push the close-to-tray preference to the shell. When enabled, closing the
+   * window hides the app to the tray; when disabled, the window closes / app
+   * quits normally. The renderer's preferences store owns the value (no getter).
+   */
+  setCloseToTray(enabled: boolean): Promise<void>;
+
   getMetrics(): Promise<AppMetrics>;
 
   checkBrowser(): Promise<{ detected: boolean; path?: string }>;
@@ -41,6 +48,7 @@ export const SYSTEM_CHANNELS = {
   setPerformanceMode: 'system:setPerformanceMode',
   getLaunchAtLogin: 'system:getLaunchAtLogin',
   setLaunchAtLogin: 'system:setLaunchAtLogin',
+  setCloseToTray: 'system:setCloseToTray',
   getMetrics: 'system:getMetrics',
   checkBrowser: 'system:checkBrowser',
   openDevtools: 'system:openDevtools',

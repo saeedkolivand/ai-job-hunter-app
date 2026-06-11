@@ -530,7 +530,9 @@
     "startup": {
       "title": "Start",
       "launchAtLogin": "Beim Anmelden starten",
-      "launchAtLoginHint": "AI Job Hunter automatisch beim Anmelden öffnen, damit Autopiloten im Hintergrund weiter Jobs finden."
+      "launchAtLoginHint": "AI Job Hunter automatisch beim Anmelden öffnen, damit Autopiloten im Hintergrund weiter Jobs finden.",
+      "closeToTray": "Im Infobereich weiterlaufen",
+      "closeToTrayHint": "Die App beim Schließen des Fensters in der Menüleiste / im Infobereich weiterlaufen lassen. Zum Beenden beim Schließen deaktivieren."
     },
     "aiProvider": {
       "title": "KI-Anbieter",
@@ -639,6 +641,14 @@
         "noInfo": "Keine Modelldetails verfügbar",
         "contextWindow": "Kontextfenster",
         "maxOutput": "Max. Ausgabe-Tokens",
+        "temperature": "Temperatur",
+        "temperatureOverride": "Eigene Temperatur",
+        "temperatureAuto": "Automatisch — verwendet die Standardwerte pro Aufgabe",
+        "tempAnalysis": "Analyse",
+        "tempResume": "Lebenslauf",
+        "tempCover": "Anschreiben",
+        "tempAnswers": "Bewerbungsantworten",
+        "tempReferral": "Empfehlung",
         "useSuggested": "Vorschlag übernehmen",
         "suggested": "Vorschlag",
         "mayLagRam": "Ein großes Kontextfenster kann bei Ihrem verfügbaren RAM ruckeln",

@@ -436,6 +436,20 @@ Radiogroup with roving arrow-key navigation. Two layout variants:
 />
 ```
 
+#### `Switch`
+
+Boolean toggle rendered as `role="switch"` (built on `Button variant="unstyled"`). Pass `label` for the standard settings row (label/description left, switch right); otherwise the bare switch is returned and `aria-label` supplies the accessible name. Source: `packages/ui/src/components/Switch/Switch.tsx`.
+
+```typescript
+<Switch
+  label="Reduce transparency"          // optional → renders a row
+  description="Use opaque surfaces"     // optional sub-text under the label
+  size="md"                            // or "sm"
+  checked={enabled}
+  onCheckedChange={setEnabled}
+/>
+```
+
 #### `SetupHint`
 
 Contextual setup nudge — used when a feature requires configuration (e.g. no AI provider set up). Generalises the former `AuthHint`.

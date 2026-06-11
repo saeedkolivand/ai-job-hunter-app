@@ -1,8 +1,10 @@
+import { useEffect, useRef } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { type Locale, PROTOCOL_VERSION } from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
+import { usePreferencesStore } from '@/store/preferences-store';
 
 import { keys, queryClient } from '../query-client';
 
@@ -106,6 +108,40 @@ export const useSetLaunchAtLogin = () => {
     mutationFn: (enabled: boolean) => api.system.setLaunchAtLogin(enabled),
     onSuccess: (actual) => queryClient.setQueryData(keys.system.launchAtLogin, actual),
   });
+};
+
+/**
+ * Toggle close-to-tray: persist the preference (source of truth) AND push the
+ * live flag to the shell so the window-close handler reflects it immediately.
+ */
+export const useSetCloseToTray = () => {
+  const api = useAppClient();
+  const setCloseToTray = usePreferencesStore((s) => s.setCloseToTray);
+  return useMutation({
+    mutationFn: (enabled: boolean) => api.system.setCloseToTray(enabled),
+    // Flip the persisted preference only after the backend push succeeded, so a
+    // rejected IPC can't leave the store and the Rust flag diverged.
+    onSuccess: (_d, enabled) => setCloseToTray(enabled),
+  });
+};
+
+/**
+ * Boot-time push of the persisted close-to-tray preference to the shell. The
+ * Rust flag defaults to `true`; this aligns it with the user's stored choice
+ * once on mount (mirrors how launch-at-login is reconciled at startup). Mount in
+ * an app-global root/provider.
+ */
+export const useSyncCloseToTray = () => {
+  const api = useAppClient();
+  const pushed = useRef(false);
+  useEffect(() => {
+    if (pushed.current) return;
+    pushed.current = true;
+    // Read once at mount (not via a reactive selector) so this fires exactly once
+    // and doesn't re-push on every preference change — the toggle handles changes.
+    const enabled = usePreferencesStore.getState().closeToTray ?? true;
+    void api.system.setCloseToTray(enabled);
+  }, [api]);
 };
 
 /** Convenience: invalidate health cache to force an immediate recheck. */

@@ -54,6 +54,7 @@ const defaultPreferences: Preferences = {
   promptQuality: 'auto',
   debugMode: false,
   semanticScoring: false,
+  closeToTray: true,
   onboardingCompleted: false,
   contactPromptSeen: false,
   lastUpdated: new Date().toISOString(),
@@ -75,6 +76,7 @@ interface PreferencesActions {
   setPromptQuality: (promptQuality: PromptQuality) => void;
   setDebugMode: (enabled: boolean) => void;
   setSemanticScoring: (enabled: boolean) => void;
+  setCloseToTray: (enabled: boolean) => void;
   setOnboardingComplete: () => void;
   setContactPromptSeen: () => void;
   resetPreferences: () => void;
@@ -215,6 +217,13 @@ export const usePreferencesStore = create<PreferencesStore>()(
           lastUpdated: new Date().toISOString(),
         })),
 
+      setCloseToTray: (closeToTray: boolean) =>
+        set((state) => ({
+          ...state,
+          closeToTray,
+          lastUpdated: new Date().toISOString(),
+        })),
+
       setOnboardingComplete: () =>
         set((state) => ({
           ...state,
@@ -259,3 +268,4 @@ export const usePromptQuality = () => usePreferencesStore((state) => state.promp
 export const useDebugMode = () => usePreferencesStore((state) => state.debugMode ?? false);
 export const useSemanticScoring = () =>
   usePreferencesStore((state) => state.semanticScoring ?? false);
+export const useCloseToTray = () => usePreferencesStore((state) => state.closeToTray ?? true);

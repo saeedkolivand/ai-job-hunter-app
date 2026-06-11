@@ -1,4 +1,4 @@
-import { ArrowLeft, UserPlus, Wand2 } from 'lucide-react';
+import { ArrowLeft, HelpCircle, UserPlus, Wand2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -15,11 +15,13 @@ import { useExtractText, useResolveJobUrl } from '@/services';
 import { useSessionStore } from '@/store/session-store';
 
 import { ReferralModal } from '../ReferralModal';
+import { ApplicationQuestionsModal } from './ApplicationQuestionsModal';
 import { GeneratingPanel } from './GeneratingPanel';
 import { tailorWizardSchema } from './lib/tailor-schema';
 import { buildTailorDefaults, type TailorWizardState } from './lib/tailor-state';
 import { ResultsPanel } from './ResultsPanel';
 import { TailorWizard } from './TailorWizard';
+import { useApplicationAnswers } from './useApplicationAnswers';
 import { useTailorGeneration } from './useTailorGeneration';
 
 interface Props {
@@ -63,6 +65,7 @@ export function ApplyPage({ job, resumeText, board, onBack }: Props) {
   const researchCompany = useWatch({ control: methods.control, name: 'researchCompany' });
 
   const [referralOpen, setReferralOpen] = useState(false);
+  const [questionsOpen, setQuestionsOpen] = useState(false);
   // "Edit settings" forces the configuring stage even though output exists; cleared
   // when the next run starts (output is intentionally preserved underneath).
   const [forceConfiguring, setForceConfiguring] = useState(false);
@@ -85,6 +88,21 @@ export function ApplyPage({ job, resumeText, board, onBack }: Props) {
     researchCompany,
     templateId: applyTemplateId,
     atsMode: applyAtsMode,
+  });
+
+  // Lifted out of ResultsPanel so the modal can fully unmount on close without
+  // losing the user's picks/answers (the hook holds non-rehydrated local state)
+  // and so an in-flight generation keeps running while the modal is closed.
+  const questions = useApplicationAnswers({
+    resume: methods.getValues('resume'),
+    jobDesc,
+    model,
+    researchCompany,
+    meta: gen.meta,
+    canUse,
+    hasDesc,
+    jobUrl: job.url,
+    board,
   });
 
   const handleUpload = async (file: File) => {
@@ -151,6 +169,21 @@ export function ApplyPage({ job, resumeText, board, onBack }: Props) {
             {job.location ? ` · ${job.location}` : ''}
           </div>
         </div>
+        {stage === 'done' && (
+          <Button
+            variant="glass"
+            size="sm"
+            onClick={() => setQuestionsOpen(true)}
+            className="shrink-0 gap-1.5 text-brand-soft"
+          >
+            <HelpCircle size={13} /> {t('autopilot.apply.questions.title')}
+            {questions.selected.size > 0 && (
+              <span className="rounded-full bg-brand/15 px-1.5 py-0.5 text-[9px] text-brand-soft">
+                {questions.selected.size}
+              </span>
+            )}
+          </Button>
+        )}
         <Button
           variant="glass"
           size="sm"
@@ -203,14 +236,7 @@ export function ApplyPage({ job, resumeText, board, onBack }: Props) {
             {stage === 'done' && (
               <ResultsPanel
                 target={generatedTarget}
-                resume={methods.getValues('resume')}
                 jobDesc={jobDesc}
-                model={model}
-                researchCompany={researchCompany}
-                canUse={canUse}
-                hasDesc={hasDesc}
-                jobUrl={job.url}
-                board={board}
                 activeOut={gen.activeOut}
                 setActiveOut={gen.setActiveOut}
                 templateId={applyTemplateId}
@@ -233,6 +259,10 @@ export function ApplyPage({ job, resumeText, board, onBack }: Props) {
           </motion.div>
         </AnimatePresence>
       </div>
+
+      {questionsOpen && (
+        <ApplicationQuestionsModal {...questions} onClose={() => setQuestionsOpen(false)} />
+      )}
 
       {referralOpen && (
         <ReferralModal

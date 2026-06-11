@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AIModelPreferenceSchema,
   AiProviderConfigSchema,
+  LocalModelLimitsSchema,
   OutputToneSchema,
   PerformanceModeSchema,
   PreferencesSchema,
@@ -38,6 +39,24 @@ describe('AIModelPreferenceSchema', () => {
   it('clamps temperature to 0–2 and maxTokens to 1–8192', () => {
     expect(() => AIModelPreferenceSchema.parse({ temperature: 2.5 })).toThrow();
     expect(() => AIModelPreferenceSchema.parse({ maxTokens: 9000 })).toThrow();
+  });
+});
+
+describe('LocalModelLimitsSchema.temperature', () => {
+  it('drops the legacy single-number temperature shape (migration)', () => {
+    const parsed = LocalModelLimitsSchema.parse({ temperature: 0.7 });
+    expect(parsed.temperature).toBeUndefined();
+  });
+
+  it('accepts a partial per-step object and leaves unset steps undefined', () => {
+    const parsed = LocalModelLimitsSchema.parse({ temperature: { cover: 0.85 } });
+    expect(parsed.temperature?.cover).toBeCloseTo(0.85);
+    expect(parsed.temperature?.resume).toBeUndefined();
+  });
+
+  it('clamps each per-step temperature to 0–2', () => {
+    expect(() => LocalModelLimitsSchema.parse({ temperature: { resume: 2.5 } })).toThrow();
+    expect(() => LocalModelLimitsSchema.parse({ temperature: { resume: -0.1 } })).toThrow();
   });
 });
 

@@ -20,6 +20,7 @@
 #let sp-subtitle-below = 2pt     // space below subtitle row
 #let sp-header-contact = 14pt    // space below contact line before first section
 #let sp-name-below    = 9pt      // space below candidate name block (before contact)
+#let sp-header-title-below = 6pt // space below the role/title line before the contact line
 
 // Cover-letter paragraph spacing (#26) — letters read better with a clearer gap
 // between paragraphs than résumé summary lines, so the letter uses its own

@@ -55,6 +55,25 @@ function effectiveTier(model: string, provider: string): ModelTier {
   return getModelTier(model);
 }
 
+/** One generation step that can carry its own per-model temperature override. */
+type TemperatureStep = 'analysis' | 'resume' | 'cover' | 'answers' | 'referral';
+
+/** Effective sampling temperature for one generation step. A user-set per-model,
+ *  per-step temperature override (settings → local model limits) wins for that
+ *  step; otherwise the per-step default applies. Each step is independent — an
+ *  unset step falls back to its default. Override is Ollama-only — cloud/CLI
+ *  providers always use the per-step default. */
+function resolveTemperature(step: TemperatureStep, stepDefault: number): number {
+  const cfg = usePreferencesStore.getState().aiProviderConfig;
+  const provider = cfg?.activeProvider ?? 'ollama';
+  if (provider !== 'ollama') return stepDefault;
+  const model = cfg?.providers?.ollama?.model;
+  const override = model
+    ? cfg?.providers?.ollama?.modelLimits?.[model]?.temperature?.[step]
+    : undefined;
+  return override ?? stepDefault;
+}
+
 export type { GenerationMeta, GenerationMode };
 export { MODES } from '@ajh/prompts/generate';
 
@@ -227,7 +246,15 @@ export async function extractMetadata(
 
   const { system, user } = buildMetadataPrompt(resume, jobAd, tier);
   try {
-    const raw = await streamGenerate(model, system, user, () => {}, 0.1, locale);
+    // Analysis carries its own per-model temperature override (user's chosen design).
+    const raw = await streamGenerate(
+      model,
+      system,
+      user,
+      () => {},
+      resolveTemperature('analysis', 0.15),
+      locale
+    );
     const meta = validateMetadata(raw);
     if (meta) {
       // Override with client-side detection
@@ -275,7 +302,16 @@ export async function generateResume(
 
   const system = buildResumeSystemPrompt(mode, tier);
   const user = buildResumePrompt(resume, jobAd, meta, mode, tier);
-  const raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal, onThinking);
+  const raw = await streamGenerate(
+    model,
+    system,
+    user,
+    onToken,
+    resolveTemperature('resume', 0.3),
+    locale,
+    signal,
+    onThinking
+  );
   // Contact links go on the header line; body links (projects/publications, #18)
   // are re-attached to their own items anywhere in the body.
   return injectLinksIntoGeneratedText(
@@ -310,7 +346,16 @@ export async function synthesizeResume(
 
   const system = buildBuilderSystemPrompt(tier);
   const user = buildInterviewResumePrompt(answers, meta);
-  const raw = await streamGenerate(model, system, user, onToken, 0.25, locale, signal, onThinking);
+  const raw = await streamGenerate(
+    model,
+    system,
+    user,
+    onToken,
+    resolveTemperature('resume', 0.3),
+    locale,
+    signal,
+    onThinking
+  );
   return extractPlainText(raw);
 }
 
@@ -345,6 +390,14 @@ export async function researchCompany(
   }
 }
 
+/**
+ * Generate the cover letter and surface the company-research brief that informed
+ * it. When `opts.researchCompany` is on, a best-effort brief is fetched and folded
+ * into the prompt; it is also returned so the caller can persist it on the
+ * generation record (the doc card's "Company research" section). `companyBrief` is
+ * `''` when research is off or the fetch yields nothing. `text` is the cleaned,
+ * link-injected letter.
+ */
 export async function generateCoverLetter(
   resume: string,
   jobAd: string,
@@ -356,7 +409,7 @@ export async function generateCoverLetter(
   signal?: AbortSignal,
   onThinking?: (tok: string) => void,
   opts?: { researchCompany?: boolean; market?: string }
-): Promise<string> {
+): Promise<{ text: string; companyBrief: string }> {
   const providerConfig = usePreferencesStore.getState().aiProviderConfig;
   const activeProvider = providerConfig?.activeProvider ?? 'ollama';
   const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
@@ -391,8 +444,10 @@ export async function generateCoverLetter(
     applicant
   );
   // Cover letters are prose: a little more temperature loosens the phrasing so it
-  // reads human, not mechanical. Small models stay lower to limit drift.
-  const temperature = tier === 'small' ? 0.4 : 0.55;
+  // reads human, not mechanical. Small models stay lower to limit drift. A
+  // per-model override (if set) wins over this tier-based default.
+  const stepDefault = tier === 'small' ? 0.4 : 0.55;
+  const temperature = resolveTemperature('cover', stepDefault);
   const raw = await streamGenerate(
     model,
     system,
@@ -403,7 +458,10 @@ export async function generateCoverLetter(
     signal,
     onThinking
   );
-  return injectLinksIntoGeneratedText(extractPlainText(raw), getLinkMap(resume));
+  return {
+    text: injectLinksIntoGeneratedText(extractPlainText(raw), getLinkMap(resume)),
+    companyBrief,
+  };
 }
 
 /**
@@ -453,7 +511,7 @@ export async function generateApplicationAnswer(params: {
     system,
     user,
     onToken ?? (() => {}),
-    0.3,
+    resolveTemperature('answers', 0.3),
     meta.targetLanguage || 'en',
     signal
   );
@@ -554,6 +612,14 @@ export async function generateReferral(params: {
     { personName, personRole, companyName, jobTitle, resume, format, charLimit },
     tier
   );
-  const raw = await streamGenerate(model, system, user, onToken ?? (() => {}), 0.4, locale, signal);
+  const raw = await streamGenerate(
+    model,
+    system,
+    user,
+    onToken ?? (() => {}),
+    resolveTemperature('referral', 0.4),
+    locale,
+    signal
+  );
   return extractPlainText(raw);
 }

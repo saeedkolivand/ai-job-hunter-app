@@ -47,7 +47,7 @@ vi.mock('@/lib/generate', () => ({
     ) => {
       onThinking?.('C-think');
       onToken('COVER');
-      return 'COVER';
+      return { text: 'COVER', companyBrief: 'BRIEF' };
     }
   ),
 }));
@@ -77,6 +77,20 @@ describe('generation store', () => {
     expect(s.generating).toBe(false);
     expect(s.phase).toBe('idle');
     expect(s.meta).not.toBeNull();
+    // Cover streams last but the results must open on the résumé tab.
+    expect(s.activeOut).toBe('resume');
+  });
+
+  it('lands a single-target run on its own tab (resume → resume, cover → cover)', async () => {
+    await useGenerationStore
+      .getState()
+      .runTailor({ contextId: 'only-resume', target: 'resume', ...base });
+    expect(useGenerationStore.getState().getSession('only-resume').activeOut).toBe('resume');
+
+    await useGenerationStore
+      .getState()
+      .runTailor({ contextId: 'only-cover', target: 'cover', ...base });
+    expect(useGenerationStore.getState().getSession('only-cover').activeOut).toBe('cover');
   });
 
   it('keeps sessions isolated per context id', async () => {
@@ -106,11 +120,24 @@ describe('generation store', () => {
       .runTailor({ contextId: 'c1', target: 'both', onComplete, ...base });
 
     expect(onComplete).toHaveBeenCalledTimes(1);
+    // The cover-letter brief threads through to onComplete so the caller persists it.
     expect(onComplete).toHaveBeenCalledWith({
       meta: expect.objectContaining({ resumeLanguage: 'en' }),
       resumeText: 'RESUME',
       coverLetterText: 'COVER',
+      companyBrief: 'BRIEF',
     });
+  });
+
+  it('passes an empty companyBrief to onComplete for a resume-only run', async () => {
+    const onComplete = vi.fn();
+    await useGenerationStore
+      .getState()
+      .runTailor({ contextId: 'resume-only', target: 'resume', onComplete, ...base });
+
+    expect(onComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ resumeText: 'RESUME', coverLetterText: '', companyBrief: '' })
+    );
   });
 
   it('does not call onComplete when the run fails (so a failed application is never saved)', async () => {

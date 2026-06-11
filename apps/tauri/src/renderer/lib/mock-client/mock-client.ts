@@ -46,6 +46,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       setPerformanceMode: noop,
       getLaunchAtLogin: async () => false,
       setLaunchAtLogin: async (enabled: boolean) => enabled,
+      setCloseToTray: noop,
       getMetrics: noop,
       checkBrowser: async () => ({ detected: false }),
       openDevtools: noop,
@@ -253,6 +254,12 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       onStep: () => () => {},
       onFocus: () => () => {},
       onNotificationClick: () => () => {},
+      notificationClicked: noop,
+    },
+
+    menu: {
+      onNavigate: unsub,
+      onAction: unsub,
     },
 
     dialog: {

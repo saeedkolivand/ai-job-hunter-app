@@ -86,7 +86,7 @@
 })
 
 #if "title" in data.header and data.header.title != none {
-  block(below: 2pt, {
+  block(below: sp-header-title-below, {
     text(size: 11pt, style: "italic", fill: c-body, data.header.title)
   })
 }

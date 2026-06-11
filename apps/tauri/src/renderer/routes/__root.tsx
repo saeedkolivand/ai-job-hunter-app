@@ -12,13 +12,19 @@ import { Titlebar } from '@/components/layout/Titlebar';
 import { UpdateBanner } from '@/components/ui/UpdateBanner';
 import { OnboardingWizard } from '@/features/onboarding/OnboardingWizard';
 import { useAutopilotFocusNavigation } from '@/hooks/use-autopilot-focus-navigation';
+import { useMenuNavigation } from '@/hooks/use-menu-navigation';
 import { CapabilityProvider } from '@/providers/CapabilityProvider';
+import { useSyncCloseToTray } from '@/services';
 
 function RootLayout() {
   const router = useRouter();
 
   // Route to an autopilot's found-jobs when the tray/deep-link asks (app-global).
   useAutopilotFocusNavigation();
+  // Route + run actions from the native menu (app-global).
+  useMenuNavigation();
+  // Push the persisted close-to-tray preference to the shell once on boot.
+  useSyncCloseToTray();
   useEffect(() => {
     // Prevent mouse side-buttons (back/forward, buttons 3 & 4) from triggering
     // browser history navigation which leads to unhandled routes in the SPA.

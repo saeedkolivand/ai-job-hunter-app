@@ -5,20 +5,12 @@ import { Button } from '@ajh/ui';
 import type { GenerationMeta, TemplateId } from '@/lib/generate';
 import { useTranslation } from '@/lib/i18n';
 
-import { ApplicationQuestions } from './ApplicationQuestions';
 import { GenerationOutput } from './GenerationOutput';
 import type { TailorTarget } from './useTailorGeneration';
 
 interface Props {
   target: TailorTarget;
-  resume: string;
   jobDesc: string;
-  model: string;
-  researchCompany: boolean;
-  canUse: boolean;
-  hasDesc: boolean;
-  jobUrl: string;
-  board: string;
   // Output / doc state from useTailorGeneration.
   activeOut: 'resume' | 'cover';
   setActiveOut: (o: 'resume' | 'cover') => void;
@@ -44,20 +36,13 @@ interface Props {
 
 /**
  * Done stage: the tailored documents (resume/cover/job-ad tabs via
- * {@link GenerationOutput}), the always-mounted application-questions assistant
- * (kept mounted so its local answers survive), a referral action, and the
- * regenerate / edit-settings footer.
+ * {@link GenerationOutput}), a referral action, and the regenerate / edit-settings
+ * footer. The application-questions assistant now lives in a header-triggered
+ * modal ({@link ApplicationQuestionsModal}), so it no longer crowds this stack.
  */
 export function ResultsPanel({
   target,
-  resume,
   jobDesc,
-  model,
-  researchCompany,
-  canUse,
-  hasDesc,
-  jobUrl,
-  board,
   activeOut,
   setActiveOut,
   templateId,
@@ -99,18 +84,6 @@ export function ResultsPanel({
           setExportOpen={setExportOpen}
           onExport={onExport}
           jobDesc={jobDesc}
-        />
-
-        <ApplicationQuestions
-          resume={resume}
-          jobDesc={jobDesc}
-          model={model}
-          researchCompany={researchCompany}
-          meta={meta}
-          canUse={canUse}
-          hasDesc={hasDesc}
-          jobUrl={jobUrl}
-          board={board}
         />
 
         <Button

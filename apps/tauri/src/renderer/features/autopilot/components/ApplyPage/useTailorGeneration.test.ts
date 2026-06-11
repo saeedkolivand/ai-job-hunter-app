@@ -60,7 +60,7 @@ vi.mock('@/lib/generate', () => ({
     ) => {
       onThinking?.('C-think');
       onToken('C');
-      return 'COVER';
+      return { text: 'COVER', companyBrief: 'BRIEF' };
     }
   ),
   buildFilename: vi.fn(),
@@ -133,6 +133,8 @@ describe('useTailorGeneration', () => {
         resumeText: 'RESUME',
         coverLetterText: 'COVER',
         mode: 'ats',
+        // The cover-letter research brief is persisted so the doc card shows it.
+        companyBrief: 'BRIEF',
       })
     );
   });

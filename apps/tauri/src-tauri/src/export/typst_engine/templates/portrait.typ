@@ -350,7 +350,7 @@
   })
 
   if "title" in data.header and data.header.title != none {
-    block(below: 4pt,
+    block(below: sp-header-title-below,
       text(
         size: section-pt,
         style: if title-italic { "italic" } else { "normal" },
@@ -387,7 +387,7 @@
   })
 
   if "title" in data.header and data.header.title != none {
-    block(below: 4pt,
+    block(below: sp-header-title-below,
       text(
         size: section-pt,
         style: if title-italic { "italic" } else { "normal" },

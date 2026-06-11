@@ -1,11 +1,12 @@
 import { Command } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { useRouter } from '@tanstack/react-router';
 
 import { ModalShell, SectionLabel } from '@ajh/ui';
 
 import { type AppRoute, useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { useTranslation } from '@/lib/i18n';
+import { useUiStore } from '@/store/ui-store';
 
 const IS_MAC = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac');
 const MOD = IS_MAC ? '⌘' : 'Ctrl';
@@ -67,10 +68,13 @@ function ShortcutList({ rows, t }: { rows: Row[]; t: (k: string) => string }) {
 export function ShortcutsOverlay() {
   const router = useRouter();
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
+  // Open state is lifted to the UI store so the native menu's "Keyboard
+  // Shortcuts" action can open it; the `?` key still toggles it locally.
+  const open = useUiStore((s) => s.shortcutsOpen);
+  const setOpen = useUiStore((s) => s.setShortcutsOpen);
 
   const onNavigate = useCallback((to: AppRoute) => void router.navigate({ to }), [router]);
-  const onToggleHelp = useCallback(() => setOpen((o) => !o), []);
+  const onToggleHelp = useCallback(() => setOpen(!open), [open, setOpen]);
   useKeyboardShortcuts({ onNavigate, onToggleHelp });
 
   return (

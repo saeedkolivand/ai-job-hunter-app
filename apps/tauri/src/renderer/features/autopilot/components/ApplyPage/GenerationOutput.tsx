@@ -1,7 +1,7 @@
 import { Check, Copy, Download, FileText, LayoutTemplate } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
-import { Button, cn, SelectDropdown } from '@ajh/ui';
+import { Button, cn, SelectDropdown, Switch } from '@ajh/ui';
 
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import { PdfPreview } from '@/components/generation/PdfPreview';
@@ -60,6 +60,7 @@ export function GenerationOutput({
 }: Props) {
   const { t } = useTranslation();
   const [view, setView] = useState<'doc' | 'jobAd'>('doc');
+  const atsSwitchId = useId();
 
   // Committed text per doc — what PdfPreview renders (recompiles only on discrete
   // events: generation/regenerate/tab-switch/Save, never per keystroke). This
@@ -226,35 +227,30 @@ export function GenerationOutput({
                 templates (copies StepTemplate's switch markup; reuses the
                 aiGenerate.atsMode keys). */}
             {activeOut === 'resume' && isTwoColumnTemplate(templateId) && (
-              <Button
-                variant="unstyled"
-                type="button"
-                role="switch"
-                aria-checked={atsMode}
-                onClick={() => onAtsModeChange(!atsMode)}
+              <div
                 title={t('aiGenerate.atsModeHint')}
                 className={cn(
                   'flex h-auto items-center gap-1.5 rounded-lg border px-2 py-1 transition-all',
                   atsMode
                     ? 'border-brand/35 bg-brand/8 text-foreground/80'
-                    : 'border-white/[0.06] bg-transparent text-foreground/45 hover:border-white/10'
+                    : 'border-white/[0.06] bg-transparent text-foreground/45'
                 )}
               >
-                <span className="text-[10px] font-medium">{t('aiGenerate.atsMode')}</span>
-                <span
-                  className={cn(
-                    'relative h-4 w-7 shrink-0 rounded-full transition-colors',
-                    atsMode ? 'bg-brand' : 'bg-white/10'
-                  )}
+                {/* Real <label htmlFor> so clicking the text toggles the switch
+                    (antd whole-control click) and supplies its accessible name. */}
+                <label
+                  htmlFor={atsSwitchId}
+                  className="cursor-pointer select-none text-[10px] font-medium"
                 >
-                  <span
-                    className={cn(
-                      'absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform',
-                      atsMode ? 'translate-x-3.5' : 'translate-x-0.5'
-                    )}
-                  />
-                </span>
-              </Button>
+                  {t('aiGenerate.atsMode')}
+                </label>
+                <Switch
+                  id={atsSwitchId}
+                  size="sm"
+                  checked={atsMode}
+                  onCheckedChange={onAtsModeChange}
+                />
+              </div>
             )}
           </div>
         </div>
