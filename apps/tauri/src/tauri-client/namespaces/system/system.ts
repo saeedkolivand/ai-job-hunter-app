@@ -12,6 +12,7 @@ export const system = {
   getLaunchAtLogin: () => invoke<boolean>('system_get_launch_at_login'),
   setLaunchAtLogin: (enabled: boolean) =>
     invoke<boolean>('system_set_launch_at_login', { enabled }),
+  setCloseToTray: (enabled: boolean) => invoke<void>('system_set_close_to_tray', { enabled }),
   getMetrics: () => invoke('system_get_metrics'),
   checkBrowser: () => invoke('system_check_browser'),
   openDevtools: () => invoke('system_open_devtools'),

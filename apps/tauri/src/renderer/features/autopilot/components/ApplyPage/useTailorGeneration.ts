@@ -114,7 +114,7 @@ export function useTailorGeneration({
   // unmounted) and talks to the client directly, so a background generation still
   // records and flips the job to "Applied". Best-effort: a save failure never
   // surfaces over the already-shown output.
-  const persist = ({ meta: m, resumeText, coverLetterText }: GenerationResult) => {
+  const persist = ({ meta: m, resumeText, coverLetterText, companyBrief }: GenerationResult) => {
     void api.aiGenerations
       .save({
         candidateName: m.candidateName,
@@ -131,6 +131,7 @@ export function useTailorGeneration({
         jobAd: jobDesc,
         jobUrl,
         board,
+        companyBrief,
       })
       .then((res) => {
         // Stash the persisted id on the session so later inline edits can patch

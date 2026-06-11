@@ -75,7 +75,7 @@ interface ResumesSlice {
   filter: string;
 }
 
-type SettingsSection =
+export type SettingsSection =
   | 'general'
   | 'contact'
   | 'ai'

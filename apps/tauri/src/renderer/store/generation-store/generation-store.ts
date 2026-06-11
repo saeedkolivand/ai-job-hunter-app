@@ -52,6 +52,10 @@ export interface GenerationResult {
   meta: GenerationMeta;
   resumeText: string;
   coverLetterText: string;
+  /** Company-research brief that informed the cover letter (`''` when research was
+   *  off or no cover letter was generated). Persisted so the doc card can show the
+   *  "Company research" section. */
+  companyBrief: string;
 }
 
 export interface RunTailorParams {
@@ -174,6 +178,9 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
 
         let resumeText = '';
         let coverLetterText = '';
+        // Carried into the saved record so the doc card's "Company research"
+        // section shows for tailored cover letters (empty for resume-only runs).
+        let companyBrief = '';
 
         if (target === 'resume' || target === 'both') {
           patch(id, { activeOut: 'resume', phase: 'resume', thinking: '' });
@@ -193,7 +200,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
 
         if (target === 'cover' || target === 'both') {
           patch(id, { activeOut: 'cover', phase: 'cover', thinking: '' });
-          coverLetterText = await generateCoverLetter(
+          const cover = await generateCoverLetter(
             resume,
             jobDesc,
             detected,
@@ -205,11 +212,17 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
             onThink,
             { researchCompany }
           );
+          coverLetterText = cover.text;
+          companyBrief = cover.companyBrief;
           patch(id, { coverOut: coverLetterText });
         }
 
+        // For a combined run, land the results on the résumé tab (cover was generated
+        // last, leaving activeOut on 'cover'); the user expects résumé first.
+        if (target === 'both') patch(id, { activeOut: 'resume' });
+
         // Persist after a clean run only — a cancel/error throws and skips this.
-        onComplete?.({ meta: detected, resumeText, coverLetterText });
+        onComplete?.({ meta: detected, resumeText, coverLetterText, companyBrief });
       } catch (err) {
         // A user cancel aborts the controller — don't surface that as an error.
         if (!controller.signal.aborted) {

@@ -92,10 +92,13 @@ export function useGeneration(
 
     let finalResume = '';
     let finalCover = '';
+    // Company-research brief that informed the cover letter — persisted so the doc
+    // card's "Company research" section shows. '' when research is off / cover failed.
+    let finalCompanyBrief = '';
 
     // Persist a finished generation (résumé and/or cover). Reused by the success
     // path and the "cover failed but the résumé is done" salvage path (#23).
-    const persist = (resumeText: string, coverLetterText: string) =>
+    const persist = (resumeText: string, coverLetterText: string, companyBrief: string) =>
       saveAiGeneration.mutate({
         candidateName: meta.candidateName,
         jobTitle: meta.jobTitle,
@@ -109,6 +112,7 @@ export function useGeneration(
         resumeText,
         coverLetterText,
         jobAd,
+        companyBrief,
       });
 
     const onTok =
@@ -165,7 +169,7 @@ export function useGeneration(
         tokenStartRef.current = null;
         setTokenCount(0);
         setGenStep({ current: total, total, label: 'Cover Letter' });
-        finalCover = await generateCoverLetter(
+        const cover = await generateCoverLetter(
           resume,
           jobAd,
           genMeta,
@@ -179,6 +183,8 @@ export function useGeneration(
           onThink,
           { researchCompany, market: marketOverride || undefined }
         );
+        finalCover = cover.text;
+        finalCompanyBrief = cover.companyBrief;
         setCoverOut(finalCover);
       }
 
@@ -188,7 +194,7 @@ export function useGeneration(
       setStage('done');
       setActiveOut(target === 'cover' ? 'cover' : finalResume ? 'resume' : 'cover');
 
-      persist(finalResume, finalCover);
+      persist(finalResume, finalCover, finalCompanyBrief);
       notify(
         target === 'both'
           ? t('aiGenerate.toast.bothReady')
@@ -209,7 +215,7 @@ export function useGeneration(
         // visible (#23: never discard a finished document) and flag the cover.
         setStage('done');
         setActiveOut('resume');
-        persist(finalResume, '');
+        persist(finalResume, '', '');
         notify(t('aiGenerate.toast.coverFailed'), 'error');
       } else {
         setError(err instanceof Error ? err.message : t('aiGenerate.errors.generationFailed'));

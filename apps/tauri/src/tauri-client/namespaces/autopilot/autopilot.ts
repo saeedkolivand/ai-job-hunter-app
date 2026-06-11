@@ -38,4 +38,8 @@ export const autopilot = {
     asyncUnsub(() =>
       onAction(() => handler()).then((listener) => () => void listener.unregister())
     ),
+  // Surfaces the hidden window + focuses the last autopilot; the shell re-emits
+  // the existing `autopilot.focus` event for that id (which onFocus turns into
+  // navigation). Called when the in-app "new jobs" notification is clicked.
+  notificationClicked: () => invoke('autopilot_notification_clicked'),
 };

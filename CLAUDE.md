@@ -110,6 +110,7 @@ ESLint errors on inline `{ duration, ease }` objects in feature/route files.
 | Input / Textarea    | `Input` / `TextArea` from `@ajh/ui`                |
 | Number input        | `NumberField` from `@ajh/ui`                       |
 | Dropdown            | `SelectDropdown` from `@ajh/ui`                    |
+| Switch / Toggle     | `Switch` from `@ajh/ui`                            |
 | Modal / Confirm     | `ModalShell` / `ConfirmModal` from `@ajh/ui`       |
 | Empty / Error state | `EmptyState` / `ErrorState` from `@ajh/ui`         |
 | Skeletons           | `RowSkeleton` / `CardSkeleton` from `@ajh/ui`      |

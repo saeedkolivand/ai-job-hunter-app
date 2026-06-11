@@ -29,6 +29,7 @@ import { jobPreferences } from './namespaces/jobPreferences/index.js';
 import { jobs } from './namespaces/jobs/index.js';
 import { linkedin } from './namespaces/linkedin/index.js';
 import { match } from './namespaces/match/index.js';
+import { menu } from './namespaces/menu/index.js';
 import { privacy } from './namespaces/privacy/index.js';
 import { referrals } from './namespaces/referrals/index.js';
 import { resume } from './namespaces/resume/index.js';
@@ -63,6 +64,7 @@ export function createTauriInvokeClient(): AppClient {
     resume: resume as AppClient['resume'],
     support: support as AppClient['support'],
     autopilot: autopilot as AppClient['autopilot'],
+    menu: menu as AppClient['menu'],
     dialog: dialog as AppClient['dialog'],
     data: data as AppClient['data'],
   } satisfies AppClient;

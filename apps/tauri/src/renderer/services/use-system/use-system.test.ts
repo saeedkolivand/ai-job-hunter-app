@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
 
 import { PROTOCOL_VERSION } from '@ajh/shared';
 
+import { usePreferencesStore } from '@/store/preferences-store';
 import { createMockClient, renderHookWithClient } from '@/test-support';
 
 import {
@@ -10,8 +11,10 @@ import {
   useGetPlatform,
   useLaunchAtLogin,
   useProtocolVersionCheck,
+  useSetCloseToTray,
   useSetLaunchAtLogin,
   useSetLocale,
+  useSyncCloseToTray,
   useSystemHealth,
 } from './use-system';
 
@@ -77,5 +80,59 @@ describe('use-system services', () => {
     result.current.mutate(true);
     await waitFor(() => expect(setLaunchAtLogin).toHaveBeenCalledWith(true));
     await waitFor(() => expect(result.current.data).toBe(true));
+  });
+});
+
+describe('close-to-tray sync', () => {
+  // Real preferences store (persisted) — reset to defaults before each test so
+  // the persisted `closeToTray` value never bleeds across cases.
+  beforeEach(() => {
+    usePreferencesStore.getState().resetPreferences();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('useSetCloseToTray pushes IPC then persists the preference on success', async () => {
+    const setCloseToTray = vi.fn().mockResolvedValue(undefined);
+    const client = createMockClient({ 'system.setCloseToTray': setCloseToTray });
+    // Baseline is the default `true`; a successful toggle must flip the store.
+    expect(usePreferencesStore.getState().closeToTray).toBe(true);
+
+    const { result } = renderHookWithClient(() => useSetCloseToTray(), { client });
+    result.current.mutate(false);
+
+    await waitFor(() => expect(setCloseToTray).toHaveBeenCalledExactlyOnceWith(false));
+    // onSuccess persists the preference (the store is the source of truth).
+    await waitFor(() => expect(usePreferencesStore.getState().closeToTray).toBe(false));
+  });
+
+  it('useSetCloseToTray does NOT persist when the IPC push rejects (the race fix)', async () => {
+    const setCloseToTray = vi.fn().mockRejectedValue(new Error('shell offline'));
+    const client = createMockClient({ 'system.setCloseToTray': setCloseToTray });
+    // Baseline `true`; a rejected push must NOT flip the persisted preference,
+    // so the store and the Rust flag can't diverge.
+    expect(usePreferencesStore.getState().closeToTray).toBe(true);
+
+    const { result } = renderHookWithClient(() => useSetCloseToTray(), { client });
+    result.current.mutate(false);
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(setCloseToTray).toHaveBeenCalledExactlyOnceWith(false);
+    expect(usePreferencesStore.getState().closeToTray).toBe(true);
+  });
+
+  it('useSyncCloseToTray pushes the persisted value to the shell exactly once on mount', async () => {
+    // Persist a non-default choice so we can assert it (not the Rust default) is pushed.
+    usePreferencesStore.getState().setCloseToTray(false);
+    const setCloseToTray = vi.fn().mockResolvedValue(undefined);
+    const client = createMockClient({ 'system.setCloseToTray': setCloseToTray });
+
+    const { rerender } = renderHookWithClient(() => useSyncCloseToTray(), { client });
+    await waitFor(() => expect(setCloseToTray).toHaveBeenCalledExactlyOnceWith(false));
+
+    // A re-render must not re-push — the useRef guard fires the effect body once.
+    rerender();
+    expect(setCloseToTray).toHaveBeenCalledTimes(1);
   });
 });

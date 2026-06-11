@@ -17,9 +17,16 @@ use tauri_plugin_notification::{NotificationExt, PermissionState};
 use crate::autopilot::{AutopilotStatus, AutopilotStore};
 
 const SHOW_ID: &str = "tray_show";
+const SETTINGS_ID: &str = "tray_settings";
+const CHECK_UPDATES_ID: &str = "tray_check_updates";
 const NEW_JOBS_ID: &str = "tray_new_jobs";
 const PAUSE_ALL_ID: &str = "tray_pause_all";
 const QUIT_ID: &str = "tray_quit";
+
+/// Renderer contract events emitted by the tray (mirrors the app-menu items).
+/// `menu.navigate` → `{ route, section }`; `menu.action` → `{ action }`.
+const NAVIGATE_EVENT: &str = "menu.navigate";
+const ACTION_EVENT: &str = "menu.action";
 
 /// Renderer event: focus an autopilot's found-jobs panel. An empty `autopilotId`
 /// is a pure "refresh autopilots" signal (e.g. after a tray Pause-All) with no
@@ -42,6 +49,9 @@ struct NewJobs {
 /// Build the tray icon + menu and register `TrayState`. Called once from setup.
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItemBuilder::with_id(SHOW_ID, "Show AI Job Hunter").build(app)?;
+    let settings = MenuItemBuilder::with_id(SETTINGS_ID, "Settings").build(app)?;
+    let check_updates =
+        MenuItemBuilder::with_id(CHECK_UPDATES_ID, "Check for Updates").build(app)?;
     // Non-clickable until a run surfaces new jobs (label updates in place).
     let new_jobs = MenuItemBuilder::with_id(NEW_JOBS_ID, "New jobs: 0")
         .enabled(false)
@@ -51,6 +61,8 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let quit = MenuItemBuilder::with_id(QUIT_ID, "Quit").build(app)?;
     let menu = MenuBuilder::new(app)
         .item(&show)
+        .item(&settings)
+        .item(&check_updates)
         .separator()
         .item(&new_jobs)
         .item(&pause_all_item)
@@ -67,6 +79,18 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         .tooltip("AI Job Hunter")
         .on_menu_event(|app, event| match event.id().as_ref() {
             SHOW_ID => show_focus(app),
+            SETTINGS_ID => {
+                let _ = app.emit(
+                    NAVIGATE_EVENT,
+                    serde_json::json!({ "route": "/settings", "section": serde_json::Value::Null }),
+                );
+            }
+            CHECK_UPDATES_ID => {
+                let _ = app.emit(
+                    ACTION_EVENT,
+                    serde_json::json!({ "action": "check-updates" }),
+                );
+            }
             NEW_JOBS_ID => on_new_jobs_click(app),
             PAUSE_ALL_ID => pause_all(app),
             QUIT_ID => app.exit(0),
@@ -91,7 +115,16 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-fn show_focus(app: &AppHandle) {
+/// Restore and focus the main window. The single entry point for every reopen
+/// path (tray Show, tray icon click, single-instance relaunch, deep link, the
+/// notification command) so they all share the macOS Dock-icon restore: when the
+/// window was hidden to the tray its activation policy is `Accessory` (no Dock
+/// icon); switch back to `Regular` before showing so the Dock icon returns.
+pub fn show_focus(app: &AppHandle) {
+    // macOS only: restore the Dock icon dropped by close-to-tray. No-op (and the
+    // policy stays `Regular`) on a normal show, so this is always safe to call.
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
         let _ = win.unminimize();
@@ -153,7 +186,11 @@ fn notify(app: &AppHandle, name: &str, count: u32) {
         .show();
 }
 
-fn on_new_jobs_click(app: &AppHandle) {
+/// Handle a "new jobs" click from either surface (the tray counter or the OS
+/// notification, via the `autopilot_notification_clicked` command): focus the
+/// window, jump to the autopilot whose run produced the newest finds, and reset
+/// the unseen counter. Shared so both entry points behave identically.
+pub fn handle_notification_click(app: &AppHandle) {
     show_focus(app);
     let Some(state) = app.try_state::<TrayState>() else {
         return;
@@ -168,6 +205,10 @@ fn on_new_jobs_click(app: &AppHandle) {
     if let Some(id) = target {
         emit_focus(app, &id);
     }
+}
+
+fn on_new_jobs_click(app: &AppHandle) {
+    handle_notification_click(app);
 }
 
 fn pause_all(app: &AppHandle) {

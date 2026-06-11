@@ -10,7 +10,9 @@
  *  - `useResolveJobUrl` / `useExtractText` (services) are mocked so no
  *    QueryClient/AppClient provider is needed inside the render tree.
  *  - Heavy sub-trees (PdfPreview, EditableOutput, ResumeInputCard, ModelSelector,
- *    ApplicationQuestions, ReferralModal) are stubbed so no Typst/IPC runs.
+ *    ApplicationQuestionsModal, ReferralModal) are stubbed so no Typst/IPC runs,
+ *    and the lifted `useApplicationAnswers` hook is mocked so ApplyPage can call
+ *    it without an AppClient/QueryClient provider in the render tree.
  *  - The real Zustand session store is used so persistence round-trips can be
  *    asserted against actual store state.
  */
@@ -116,8 +118,20 @@ vi.mock('@/components/resume/ResumeInputCard', () => ({
   ),
 }));
 
-vi.mock('./ApplicationQuestions', () => ({
-  ApplicationQuestions: () => <div data-testid="application-questions" />,
+vi.mock('./ApplicationQuestionsModal', () => ({
+  ApplicationQuestionsModal: () => <div data-testid="application-questions-modal" />,
+}));
+
+vi.mock('./useApplicationAnswers', () => ({
+  useApplicationAnswers: () => ({
+    selected: new Set<string>(),
+    toggle: vi.fn(),
+    answers: {},
+    generating: false,
+    error: null,
+    generate: vi.fn(),
+    canGenerate: false,
+  }),
 }));
 
 vi.mock('../ReferralModal', () => ({
