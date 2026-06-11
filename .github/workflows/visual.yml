@@ -33,7 +33,7 @@ jobs:
           egress-policy: audit
 
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
 
@@ -46,13 +46,16 @@ jobs:
       - name: 📚 Build Storybook
         run: pnpm --filter @ajh/ui build-storybook
 
+      - name: 🌐 Install Playwright Chromium (for Lost Pixel)
+        run: pnpm dlx playwright@1.47.2 install --with-deps chromium
+
       - name: 🖼️ Run Lost Pixel (advisory)
         continue-on-error: true
-        run: pnpm dlx lost-pixel@latest
+        run: pnpm dlx lost-pixel@3.22.0
 
       - name: 📊 Upload Lost Pixel output
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: lost-pixel-${{ github.run_id }}
           path: .lostpixel/

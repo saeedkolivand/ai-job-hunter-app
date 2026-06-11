@@ -5,7 +5,10 @@ import type { AnalysisResult } from './schema.js';
 function extractJSON(raw: string): string | null {
   const trimmed = raw.trim();
   if (trimmed.startsWith('{')) return trimmed;
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  // No `\s*` before the lazy capture — it overlapped the `[\s\S]*?` and made the
+  // match polynomial (js/polynomial-redos). The group is `.trim()`-ed below, so
+  // dropping it preserves the extracted JSON exactly.
+  const fenced = trimmed.match(/```(?:json)?([\s\S]*?)```/);
   if (fenced?.[1]) return fenced[1].trim();
   const start = trimmed.indexOf('{');
   const end = trimmed.lastIndexOf('}');
