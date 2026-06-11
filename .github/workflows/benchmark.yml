@@ -93,12 +93,13 @@ jobs:
           alert-comment-cc-users: '@saeedkolivand'
 
       # Commit the refreshed dashboard back to main, exactly like the release
-      # cask/version-sync jobs (SSH deploy key + [skip ci]). Push-only — PRs just
-      # compare. [skip ci] keeps this commit from re-triggering any workflow,
-      # so the Pages deploy is kicked explicitly in the next step.
+      # cask/version-sync jobs (SSH deploy key + [skip ci]). Runs on push AND
+      # manual workflow_dispatch (so "Run workflow" can seed/refresh the baseline)
+      # but NOT on PRs, which stay compare-only. [skip ci] keeps this commit from
+      # re-triggering any workflow, so Pages is kicked explicitly in the next step.
       - name: 📤 Commit benchmark data
         id: commit
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
