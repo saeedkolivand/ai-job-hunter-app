@@ -26,6 +26,12 @@ vi.mock('@/services/use-ai-generations', () => ({
   useUpdateAiGeneration: () => ({ mutate: mockUpdateMutate, isPending: false }),
 }));
 
+// GenerationCard renders EditableOutput which calls useContactProfile() — stub it
+// so the component tree mounts without an AppClientProvider.
+vi.mock('@/services/use-contact-profile', () => ({
+  useContactProfile: () => ({ data: undefined }),
+}));
+
 // The card now display-joins referrals and toasts on copy/mark-sent; stub these
 // so it renders without a QueryClient/Notification provider tree.
 vi.mock('@/services/use-referrals/use-referrals', () => ({
@@ -35,7 +41,17 @@ vi.mock('@/services/use-referrals/use-referrals', () => ({
 
 vi.mock('@ajh/ui', async (importOriginal) => {
   const actual = await importOriginal<typeof AjhUi>();
-  return { ...actual, useNotification: () => vi.fn() };
+  return {
+    ...actual,
+    useNotification: () => ({
+      open: vi.fn(),
+      success: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      warning: vi.fn(),
+      destroy: vi.fn(),
+    }),
+  };
 });
 
 // Translate to the raw key so assertions don't depend on locale resolution.
@@ -137,10 +153,11 @@ describe('GenerationCard — debounced persist', () => {
   }
 
   /**
-   * Open the resume section and switch EditableOutput to Edit mode so a
+   * Open the resume section and switch EditableOutput to Source mode so the raw
    * <textarea> is accessible. The section toggle is a `Button variant="unstyled"`
    * whose text content is the translation key for "Resume". EditableOutput opens
-   * in Preview mode; the Edit radio must be clicked to surface the textarea.
+   * in Preview mode; the Source radio must be clicked to surface the raw textarea
+   * (Edit is now the WYSIWYG RichTextEditor surface).
    */
   function expandResumeAndSwitchToEdit() {
     expandCard();
@@ -152,12 +169,13 @@ describe('GenerationCard — debounced persist', () => {
     if (!resumeToggle) throw new Error('Resume section toggle not found');
     fireEvent.click(resumeToggle);
 
-    // EditableOutput renders Preview by default; switch to Edit to get the textarea.
-    fireEvent.click(screen.getByRole('radio', { name: /edit/i }));
+    // EditableOutput renders Preview by default; switch to Source to get the raw textarea
+    // (Edit is now the WYSIWYG surface; t() returns raw keys so name is 'aiGenerate.source').
+    fireEvent.click(screen.getByRole('radio', { name: /aiGenerate\.source/i }));
   }
 
   /**
-   * Open the cover-letter section and switch EditableOutput to Edit mode.
+   * Open the cover-letter section and switch EditableOutput to Source mode.
    * Symmetric to expandResumeAndSwitchToEdit but targets the coverLetter key.
    */
   function expandCoverAndSwitchToEdit() {
@@ -169,7 +187,7 @@ describe('GenerationCard — debounced persist', () => {
     if (!coverToggle) throw new Error('Cover letter section toggle not found');
     fireEvent.click(coverToggle);
 
-    fireEvent.click(screen.getByRole('radio', { name: /edit/i }));
+    fireEvent.click(screen.getByRole('radio', { name: /aiGenerate\.source/i }));
   }
 
   it('editing the resume draft schedules a debounced update after PERSIST_DEBOUNCE_MS', () => {

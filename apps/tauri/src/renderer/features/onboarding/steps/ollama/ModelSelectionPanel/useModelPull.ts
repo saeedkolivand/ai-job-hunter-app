@@ -53,7 +53,7 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
     setPullProgress(100);
     setPullState('done');
     resetTracking();
-    notify(t('onboarding.ai.downloaded', { model: selectedModel }), 'success');
+    notify.success({ message: t('onboarding.ai.downloaded', { model: selectedModel }) });
     onDownloadComplete?.();
   };
 
@@ -65,7 +65,7 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
       setPullJobId(result.jobId);
     } catch (err) {
       setPullState('error');
-      notify(err instanceof Error ? err.message : 'Download failed.', 'error');
+      notify.error({ message: err instanceof Error ? err.message : 'Download failed.' });
     }
   };
 
@@ -129,7 +129,7 @@ export function useModelPull({ selectedModel, onDownloadComplete }: Params) {
     } else if (event.type === 'job.failed' && event.jobId === pullJobId) {
       setPullState('error');
       resetTracking();
-      notify(t('onboarding.ai.downloadFailed'), 'error');
+      notify.error({ message: t('onboarding.ai.downloadFailed') });
     }
   });
 

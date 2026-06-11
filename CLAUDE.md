@@ -127,7 +127,7 @@ Exception: `<input type="range|file|checkbox|radio|hidden">`.
 
 - `@ajh/ui` directly, not `@/components/ui/*` (except `UpdateBanner`)
 - Prefer `React.ComponentProps<typeof Button>` over importing named prop types
-- Only import named types from `@ajh/ui` when extending them or for non-obvious types (`ToastVariant`, `ThemeId`)
+- Only import named types from `@ajh/ui` when extending them or for non-obvious types (`NotificationVariant`, `ThemeId`)
 
 ### 7. Import ordering — auto-fixable, run `rtk pnpm lint:fix`
 

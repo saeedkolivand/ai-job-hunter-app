@@ -42,9 +42,11 @@ export function ResearchStep({ onBack, onNext, direction, stepIndex, totalSteps 
     try {
       await setProviderKey.mutateAsync({ provider: 'ollama-cloud', apiKey: apiKey.trim() });
       setApiKey('');
-      notify(t('onboarding.research.saved'), 'success');
+      notify.success({ message: t('onboarding.research.saved') });
     } catch (err) {
-      notify(err instanceof Error ? err.message : t('onboarding.research.saveError'), 'error');
+      notify.error({
+        message: err instanceof Error ? err.message : t('onboarding.research.saveError'),
+      });
     } finally {
       setSaving(false);
     }

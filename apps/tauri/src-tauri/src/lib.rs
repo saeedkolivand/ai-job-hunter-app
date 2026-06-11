@@ -50,7 +50,7 @@ use parking_lot::Mutex;
 use tauri::menu::{
     AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
 };
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use autopilot::AutopilotStore;
 use credentials::CredentialStore;
@@ -140,6 +140,10 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
     let about_metadata = AboutMetadataBuilder::new()
         .name(Some("AI Job Hunter"))
         .version(Some(env!("CARGO_PKG_VERSION")))
+        .comments(Some("Your local-first AI copilot for the job hunt."))
+        .copyright(Some("© 2026 AI Job Hunter"))
+        .website(Some(REPO_URL))
+        .website_label(Some("GitHub"))
         .build();
 
     // App submenu — must remain the FIRST submenu (the macOS app-name menu).
@@ -223,21 +227,21 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
 /// (`menu.navigate` / `menu.action`) or performs the shell-side action directly.
 fn on_app_menu_event(app: &AppHandle, id: &str) {
     match id {
-        MENU_SETTINGS => {
-            let _ = app.emit(
-                "menu.navigate",
-                serde_json::json!({ "route": "/settings", "section": serde_json::Value::Null }),
-            );
-        }
-        MENU_CHECK_UPDATES => {
-            let _ = app.emit(
-                "menu.action",
-                serde_json::json!({ "action": "check-updates" }),
-            );
-        }
-        MENU_SHORTCUTS => {
-            let _ = app.emit("menu.action", serde_json::json!({ "action": "shortcuts" }));
-        }
+        MENU_SETTINGS => crate::tray::dispatch_menu(
+            app,
+            "menu.navigate",
+            serde_json::json!({ "route": "/settings", "section": serde_json::Value::Null }),
+        ),
+        MENU_CHECK_UPDATES => crate::tray::dispatch_menu(
+            app,
+            "menu.action",
+            serde_json::json!({ "action": "check-updates" }),
+        ),
+        MENU_SHORTCUTS => crate::tray::dispatch_menu(
+            app,
+            "menu.action",
+            serde_json::json!({ "action": "shortcuts" }),
+        ),
         MENU_DOCS => open_external(app, REPO_URL),
         MENU_REPORT => open_external(app, ISSUES_URL),
         MENU_RELOAD => {
@@ -256,7 +260,8 @@ fn on_app_menu_event(app: &AppHandle, id: &str) {
         // Go-to-route items: emit `menu.navigate` with the resolved route.
         other => {
             if let Some(route) = nav_route_for(other) {
-                let _ = app.emit(
+                crate::tray::dispatch_menu(
+                    app,
                     "menu.navigate",
                     serde_json::json!({ "route": route, "section": serde_json::Value::Null }),
                 );
@@ -302,6 +307,10 @@ pub fn run() {
                     let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
                 }
             }
+            // A menu intent buffered while the window was hidden (close-to-tray) is
+            // NOT re-emitted from here: a Rust `emit` races the resumed webview's JS
+            // readiness the same way the original emit did. Instead the renderer
+            // pulls it via `menu_take_pending` on focus/visibility-restore.
         })
         // Single-instance must be the FIRST plugin: on a second launch it focuses
         // the already-running window instead of spawning another process. If that
@@ -521,6 +530,8 @@ pub fn run() {
             commands::system::system_check_browser,
             commands::system::system_open_devtools,
             commands::system::system_get_protocol_version,
+            // native menu (pull buffered intent after close-to-tray restore)
+            commands::menu::menu_take_pending,
             // jobs
             commands::jobs::jobs_list,
             commands::jobs::jobs_get,

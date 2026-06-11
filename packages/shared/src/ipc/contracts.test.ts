@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { IPC_CHANNELS, type MenuContract, PROTOCOL_VERSION } from './contracts/index';
+import {
+  IPC_CHANNELS,
+  type MenuContract,
+  type PendingMenuIntent,
+  PROTOCOL_VERSION,
+} from './contracts/index';
 
 describe('IPC_CHANNELS', () => {
   it('exposes every expected namespace', () => {
@@ -76,10 +81,12 @@ describe('MenuContract (event-only namespace)', () => {
         calls.push('action');
         return () => calls.push('action:off');
       },
+      takePending: () => Promise.resolve(null),
     };
 
     expect(typeof menu.onNavigate).toBe('function');
     expect(typeof menu.onAction).toBe('function');
+    expect(typeof menu.takePending).toBe('function');
 
     const offNavigate = menu.onNavigate(() => {});
     const offAction = menu.onAction(() => {});
@@ -88,6 +95,25 @@ describe('MenuContract (event-only namespace)', () => {
     offNavigate();
     offAction();
     expect(calls).toEqual(['navigate', 'action', 'navigate:off', 'action:off']);
+  });
+
+  it('takePending resolves to a pending intent or null (reliable pull, not an event)', async () => {
+    const navigateIntent: PendingMenuIntent = {
+      event: 'menu.navigate',
+      payload: { route: '/settings', section: 'ai' },
+    };
+    const empty: MenuContract = {
+      onNavigate: () => () => {},
+      onAction: () => () => {},
+      takePending: () => Promise.resolve(null),
+    };
+    const buffered: MenuContract = {
+      onNavigate: () => () => {},
+      onAction: () => () => {},
+      takePending: () => Promise.resolve(navigateIntent),
+    };
+    await expect(empty.takePending()).resolves.toBeNull();
+    await expect(buffered.takePending()).resolves.toEqual(navigateIntent);
   });
 
   it('declares the documented event-name channels', () => {

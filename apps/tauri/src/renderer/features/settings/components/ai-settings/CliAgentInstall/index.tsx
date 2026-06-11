@@ -2,7 +2,7 @@ import { Download, ExternalLink, Loader2, RotateCcw } from 'lucide-react';
 import { useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, ConfirmModal, useToast } from '@ajh/ui';
+import { Button, ConfirmModal, useNotification } from '@ajh/ui';
 
 import { useCliAgents, useInstallCliAgent } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
@@ -25,7 +25,7 @@ interface Props {
  */
 export function CliAgentInstall({ provider, label, onGuide, onRecheck }: Props) {
   const { t } = useTranslation();
-  const notify = useToast();
+  const notify = useNotification();
   const { data: status } = useCliAgents();
   const install = useInstallCliAgent();
 
@@ -57,13 +57,13 @@ export function CliAgentInstall({ provider, label, onGuide, onRecheck }: Props) 
           setOutput((prev) => `${prev}${line}\n`.split('\n').slice(-40).join('\n')),
       });
       if (result.success) {
-        notify(t('settings.cliInstall.done', { label }), 'success');
+        notify.success({ message: t('settings.cliInstall.done', { label }) });
         onRecheck();
       } else {
-        notify(t('settings.cliInstall.failed', { label }), 'error');
+        notify.error({ message: t('settings.cliInstall.failed', { label }) });
       }
     } catch {
-      notify(t('settings.cliInstall.failed', { label }), 'error');
+      notify.error({ message: t('settings.cliInstall.failed', { label }) });
     } finally {
       abortRef.current = null;
     }

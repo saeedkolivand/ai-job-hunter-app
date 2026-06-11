@@ -800,8 +800,29 @@
     "regenerate": "Regenerate",
     "preview": "Preview",
     "edit": "Edit",
+    "source": "Source",
     "save": "Save",
     "viewMode": "View mode",
+    "editor": {
+      "toolbar": "Text formatting",
+      "bold": "Bold",
+      "italic": "Italic",
+      "link": "Link",
+      "bulletList": "Bullet list",
+      "heading2": "Heading 2",
+      "heading3": "Heading 3",
+      "undo": "Undo",
+      "redo": "Redo",
+      "linkDialogTitle": "Add link",
+      "linkLabelField": "Text",
+      "linkUrlField": "URL",
+      "linkUrlPlaceholder": "https://example.com",
+      "linkUrlError": "Enter a valid http, https, or mailto URL",
+      "linkSave": "Save",
+      "linkRemove": "Remove",
+      "linkCancel": "Cancel",
+      "linkSuggestions": "Your links"
+    },
     "placeholder": "Generated output will appear here…",
     "pdfPreview": {
       "title": "Document preview",
@@ -2030,7 +2051,10 @@
     "downloading": "Downloading update… {{percent}}%",
     "downloaded": "v{{version}} ready to install",
     "downloadButton": "Download",
-    "installButton": "Restart & Install"
+    "installButton": "Restart & Install",
+    "checking": "Checking for updates…",
+    "upToDate": "You're on the latest version.",
+    "checkFailed": "Update check failed."
   },
   "resumeReview": {
     "title": "Review extracted resume",

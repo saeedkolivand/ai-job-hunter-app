@@ -61,14 +61,18 @@ export function BoardSessionRow({ board }: { board: Board }) {
         | { connected?: boolean; viaImport?: boolean; error?: string }
         | undefined;
       if (res?.error) {
-        notify(res.error, 'error');
+        notify.error({ message: res.error });
       } else if (res?.viaImport) {
-        notify(t('settings.accounts.connectedViaBrowser', { board: board.name }), 'success');
+        notify.success({
+          message: t('settings.accounts.connectedViaBrowser', { board: board.name }),
+        });
       } else if (!res?.connected) {
-        notify(`${board.name} sign-in was cancelled or timed out.`, 'warning');
+        notify.warning({ message: `${board.name} sign-in was cancelled or timed out.` });
       }
     } catch (err) {
-      notify(err instanceof Error ? err.message : `Failed to connect to ${board.name}.`, 'error');
+      notify.error({
+        message: err instanceof Error ? err.message : `Failed to connect to ${board.name}.`,
+      });
     }
   };
 
@@ -80,12 +84,11 @@ export function BoardSessionRow({ board }: { board: Board }) {
       } else {
         await boardDisconnect.mutateAsync(board.id);
       }
-      notify(`Disconnected from ${board.name}.`, 'success');
+      notify.success({ message: `Disconnected from ${board.name}.` });
     } catch (err) {
-      notify(
-        err instanceof Error ? err.message : `Failed to disconnect from ${board.name}.`,
-        'error'
-      );
+      notify.error({
+        message: err instanceof Error ? err.message : `Failed to disconnect from ${board.name}.`,
+      });
     }
   };
 

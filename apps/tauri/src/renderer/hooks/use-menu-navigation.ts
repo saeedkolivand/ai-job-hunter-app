@@ -2,8 +2,10 @@ import { useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
 import type { MenuActionEvent, MenuNavigateEvent } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
+import { useNotification } from '@ajh/ui';
 
-import { useMenuActionEvents, useMenuNavigateEvents } from '@/services';
+import { useMenuIntents } from '@/services';
 import { useUpdater } from '@/services/use-updater';
 import { type SettingsSection, useSessionStore } from '@/store/session-store';
 import { useUiStore } from '@/store/ui-store';
@@ -39,6 +41,8 @@ export function useMenuNavigation() {
   const setSettings = useSessionStore((s) => s.setSettings);
   const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
   const { check } = useUpdater();
+  const notify = useNotification();
+  const { t } = useTranslation();
 
   const onNavigate = useCallback(
     ({ route, section }: MenuNavigateEvent) => {
@@ -52,12 +56,42 @@ export function useMenuNavigation() {
 
   const onAction = useCallback(
     ({ action }: MenuActionEvent) => {
-      if (action === 'check-updates') void check();
-      else if (action === 'shortcuts') setShortcutsOpen(true);
+      if (action === 'shortcuts') {
+        setShortcutsOpen(true);
+        return;
+      }
+      if (action !== 'check-updates') return;
+      // A manual check needs explicit feedback: the UpdateBanner only surfaces an
+      // *available* update, so without this an up-to-date / errored check looks
+      // like nothing happened. We reuse one notification (by key) — "checking…"
+      // then the outcome. An available update hands off to the banner.
+      const KEY = 'update-check';
+      void (async () => {
+        notify.open({ key: KEY, variant: 'info', duration: 0, message: t('updater.checking') });
+        try {
+          const res = await check();
+          if ('error' in res) {
+            notify.open({ key: KEY, variant: 'error', message: res.error });
+          } else if (res.available) {
+            notify.destroy(KEY); // the UpdateBanner takes over
+          } else {
+            notify.open({ key: KEY, variant: 'success', message: t('updater.upToDate') });
+          }
+        } catch (e) {
+          notify.open({
+            key: KEY,
+            variant: 'error',
+            message: e instanceof Error ? e.message : t('updater.checkFailed'),
+          });
+        }
+      })();
     },
-    [check, setShortcutsOpen]
+    [check, notify, setShortcutsOpen, t]
   );
 
-  useMenuNavigateEvents(onNavigate);
-  useMenuActionEvents(onAction);
+  // Single reliable delivery path: the shell buffers the intent and we pull it
+  // (on the emitted event, on window focus/visibility-restore, and on mount).
+  // Works from the tray and the macOS menu bar, whether the window was visible
+  // or hidden — see `useMenuIntents`.
+  useMenuIntents(onNavigate, onAction);
 }

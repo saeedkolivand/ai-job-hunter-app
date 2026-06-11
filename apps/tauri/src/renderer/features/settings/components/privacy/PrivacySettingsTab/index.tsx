@@ -42,9 +42,9 @@ export function PrivacySettingsTab() {
     setConfirm((c) => ({ ...c, open: false }));
     try {
       await signOutAll.mutateAsync();
-      notify(t('settings.privacy.signedOutSuccess'), 'success');
+      notify.success({ message: t('settings.privacy.signedOutSuccess') });
     } catch {
-      notify(t('settings.privacy.somethingWentWrong'), 'error');
+      notify.error({ message: t('settings.privacy.somethingWentWrong') });
     }
   };
 
@@ -52,9 +52,9 @@ export function PrivacySettingsTab() {
     setConfirm((c) => ({ ...c, open: false }));
     try {
       await clearInteractions.mutateAsync();
-      notify(t('settings.privacy.historyClearedSuccess'), 'success');
+      notify.success({ message: t('settings.privacy.historyClearedSuccess') });
     } catch {
-      notify(t('settings.privacy.somethingWentWrong'), 'error');
+      notify.error({ message: t('settings.privacy.somethingWentWrong') });
     }
   };
 
@@ -65,17 +65,17 @@ export function PrivacySettingsTab() {
       // resetPreferences() is called inside useResetApp onSuccess,
       // which sets onboardingCompleted: false — the wizard re-mounts at welcome step
     } catch {
-      notify(t('settings.privacy.somethingWentWrong'), 'error');
+      notify.error({ message: t('settings.privacy.somethingWentWrong') });
     }
   };
 
   const handleExport = async () => {
     try {
       const res = (await exportData.mutateAsync()) as { success: boolean; error?: string };
-      if (res.success) notify(t('settings.privacy.exportSuccess'), 'success');
-      else if (res.error) notify(t('settings.privacy.somethingWentWrong'), 'error');
+      if (res.success) notify.success({ message: t('settings.privacy.exportSuccess') });
+      else if (res.error) notify.error({ message: t('settings.privacy.somethingWentWrong') });
     } catch {
-      notify(t('settings.privacy.somethingWentWrong'), 'error');
+      notify.error({ message: t('settings.privacy.somethingWentWrong') });
     }
   };
 
@@ -87,13 +87,12 @@ export function PrivacySettingsTab() {
           (sum, v) => sum + (typeof v === 'number' ? v : 0),
           0
         );
-        notify(
-          t('settings.privacy.importSuccess', { count, plural: count === 1 ? '' : 's' }),
-          'success'
-        );
-      } else if (res.error) notify(t('settings.privacy.somethingWentWrong'), 'error');
+        notify.success({
+          message: t('settings.privacy.importSuccess', { count, plural: count === 1 ? '' : 's' }),
+        });
+      } else if (res.error) notify.error({ message: t('settings.privacy.somethingWentWrong') });
     } catch {
-      notify(t('settings.privacy.somethingWentWrong'), 'error');
+      notify.error({ message: t('settings.privacy.somethingWentWrong') });
     }
   };
 
