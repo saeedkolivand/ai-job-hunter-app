@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780622242804,
+  "lastUpdate": 1781150842545,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-assistant-app",
   "entries": {
     "Export render": [
@@ -41,6 +41,46 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 281262,
             "range": "± 2327",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand",
+            "email": "saeedkolivand1997@gmail.com"
+          },
+          "committer": {
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand",
+            "email": "saeedkolivand1997@gmail.com"
+          },
+          "id": "ce1d609365231efc4ddcaa01e77f802f087dd199",
+          "message": "@\nci: push the benchmark action own commit so dashboard updates\n\ngithub-action-benchmark v1.22.1 makes its OWN local commit even with\nauto-push:false — it does not leave the refreshed landing/benchmarks in\nthe working tree. The commit step guarded on `git status --porcelain`,\nwhich is always clean after the action commits, so it always hit the\n\"nothing to commit\" early-exit: the data sat in an unpushed local commit\nthat died with the runner and the Pages deploy step was skipped. Result:\nruns went green but the dashboard never moved (this run, #350, #351).\n\nGuard on `git log origin/main..HEAD` (the action unpushed commit) instead\nand push HEAD; amend that commit with [skip ci] so the data push does not\nre-trigger CI while pages.yml is still kicked explicitly.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n@",
+          "timestamp": "2026-06-11T03:56:57Z",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/ce1d609365231efc4ddcaa01e77f802f087dd199"
+        },
+        "date": 1781150842208,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 3372476,
+            "range": "± 185360",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 3994950,
+            "range": "± 244868",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 300221,
+            "range": "± 16625",
             "unit": "ns/iter"
           }
         ]
