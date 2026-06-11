@@ -19,6 +19,8 @@ import {
   AiGenerateRequestSchema,
   AiGenerationSaveSchema,
   AiGenerationUpdateSchema,
+  ApplicationTrackSchema,
+  ApplicationUpdateSchema,
   AutopilotCreateSchema,
   AutopilotUpdateSchema,
   DocumentImportRequestSchema,
@@ -89,6 +91,13 @@ const MODULES: ModuleSpec[] = [
     structs: [
       { rustName: 'AutopilotCreateRequest', schema: AutopilotCreateSchema },
       { rustName: 'AutopilotUpdateRequest', schema: AutopilotUpdateSchema },
+    ],
+  },
+  {
+    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/applications.rs',
+    structs: [
+      { rustName: 'ApplicationTrackRequest', schema: ApplicationTrackSchema },
+      { rustName: 'ApplicationUpdateRequest', schema: ApplicationUpdateSchema },
     ],
   },
   {

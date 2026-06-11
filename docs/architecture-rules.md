@@ -22,7 +22,8 @@ L2  Application        pipeline, cover_letter, autopilot, autopilot_scheduler,
                        autopilot_helpers, recommend
 L1  Domain             scraping, extraction, export, documents, jobs, postings,
                        conversations, credentials, job_preferences, ai_generations,
-                       referrals, profile_import, model, layout, measure, validate,
+                       applications, referrals, profile_import, model, layout, measure,
+                       validate,
                        locale, theme
 L0  Shared infra       error, observability, db, data_store, net, platform, browser
 ```

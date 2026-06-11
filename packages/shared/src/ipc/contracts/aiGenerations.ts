@@ -1,9 +1,4 @@
-/** One answered application question stored on the application record. */
-export interface ApplicationAnswer {
-  id: string;
-  question: string;
-  answer: string;
-}
+import type { ApplicationAnswer } from '../../types/index.js';
 
 export interface AiGenerationRecord {
   id: string;

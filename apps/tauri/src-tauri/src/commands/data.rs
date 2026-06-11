@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::ai_generations::AiGenerationStore;
+use crate::applications::ApplicationStore;
 use crate::autopilot::AutopilotStore;
 use crate::contact_profile::ContactProfileStore;
 use crate::data_store::DataStore;
@@ -57,6 +58,9 @@ fn build_bundle(app: &AppHandle) -> Value {
         stores.insert(s.key().to_string(), s.export());
     }
     if let Some(s) = app.try_state::<AiGenerationStore>() {
+        stores.insert(s.key().to_string(), s.export());
+    }
+    if let Some(s) = app.try_state::<ApplicationStore>() {
         stores.insert(s.key().to_string(), s.export());
     }
     if let Some(s) = app.try_state::<JobPreferencesStore>() {
@@ -172,6 +176,9 @@ pub async fn data_import(app: AppHandle) -> Value {
     }
     if let Some(s) = app.try_state::<AiGenerationStore>() {
         import_into("aiGenerations", s.inner());
+    }
+    if let Some(s) = app.try_state::<ApplicationStore>() {
+        import_into("applications", s.inner());
     }
     if let Some(s) = app.try_state::<JobPreferencesStore>() {
         import_into("jobPreferences", s.inner());

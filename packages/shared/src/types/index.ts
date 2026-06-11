@@ -263,3 +263,73 @@ export interface AutopilotRun {
   skipped: number;
   errors: string[];
 }
+
+// ─── Application tracking (ADR docs/adr/0001-application-aggregate-split.md) ────
+//
+// An **Application** is the status-bearing aggregate root for a job pursuit (the
+// single source of truth for "am I pursuing this, and how far along"). An
+// `AiGenerationRecord` is its child Document. NOTE: this is distinct from the
+// async-exec `JobStatus` above — do NOT conflate the two.
+
+/**
+ * The ordered stage registry — the SINGLE source of truth the Rust
+ * `ApplicationStatus` enum mirrors (a Rust parity test pins the id list/order).
+ * Each entry: `id`, whether it is `terminal` (closed, would not normally reopen
+ * — `ghosted` is intentionally NOT terminal: it is soft/reopenable), and whether
+ * it is `preApply` (the user has not applied yet — only `saved`).
+ */
+export const APPLICATION_STAGES = [
+  { id: 'saved', terminal: false, preApply: true },
+  { id: 'applied', terminal: false, preApply: false },
+  { id: 'screening', terminal: false, preApply: false },
+  { id: 'interviewing', terminal: false, preApply: false },
+  { id: 'offer', terminal: false, preApply: false },
+  { id: 'accepted', terminal: true, preApply: false },
+  { id: 'rejected', terminal: true, preApply: false },
+  { id: 'ghosted', terminal: false, preApply: false },
+  { id: 'withdrawn', terminal: true, preApply: false },
+] as const;
+
+/** The application lifecycle status union, derived from {@link APPLICATION_STAGES}. */
+export type ApplicationStatus = (typeof APPLICATION_STAGES)[number]['id'];
+
+/** One answered application question carried on the Application aggregate. */
+export interface ApplicationAnswer {
+  id: string;
+  question: string;
+  answer: string;
+}
+
+/** The Application aggregate root. */
+export interface Application {
+  id: string;
+  status: ApplicationStatus;
+  /** First time the status left `saved` (ms). Absent while still `saved`. */
+  appliedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+  /** Normalized job URL — the dedup key. Empty for a link-less manual pursuit. */
+  jobUrl: string;
+  board: string;
+  company: string;
+  title: string;
+  candidate: string;
+  answers: ApplicationAnswer[];
+  brief: string;
+  notes: string;
+  /** User-set reminder timestamp (ms) for the next action. Absent = unset. */
+  nextActionAt?: number;
+  comp: string;
+  contactName: string;
+  contactEmail: string;
+}
+
+/** One append-only status-history row. */
+export interface StatusEvent {
+  applicationId: string;
+  /** Empty for the seed event of a freshly-created Application. */
+  fromStatus: string;
+  toStatus: string;
+  at: number;
+  note: string;
+}
