@@ -662,7 +662,7 @@ jobs:
         working-directory: apps/tauri/src-tauri
         run: |
           echo "::group::Running cargo check"
-          cargo check --all-targets --all-features
+          cargo check --all-targets --all-features --locked
           echo "::endgroup::"
 
       - name: 🏗️ Verify Production Build
@@ -765,7 +765,7 @@ jobs:
         working-directory: apps/tauri/src-tauri
         run: |
           echo "::group::Running cargo clippy"
-          cargo clippy --all-targets --all-features -- -D warnings
+          cargo clippy --all-targets --all-features --locked -- -D warnings
           echo "::endgroup::"
 
       # Architecture boundary enforcement — docs/architecture-rules.md (R1–R8).
@@ -776,7 +776,7 @@ jobs:
         working-directory: apps/tauri/src-tauri
         run: |
           echo "::group::Running architecture boundary tests"
-          cargo test --test architecture
+          cargo test --test architecture --locked
           echo "::endgroup::"
 
       - name: 🧰 Install cargo-deny + cargo-machete
