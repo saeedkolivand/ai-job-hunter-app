@@ -10,6 +10,7 @@ export * from './emphasis.js';
 export * from './links.js';
 export * from './metadata.js';
 export * from './modes.js';
+export * from './natural-voice.js';
 export * from './referral.js';
 export * from './resume.js';
 export * from './rewrite.js';

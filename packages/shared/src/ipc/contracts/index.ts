@@ -18,6 +18,7 @@
 
 import { AI_CHANNELS, type AiContract } from './ai.js';
 import { AI_GENERATIONS_CHANNELS, type AiGenerationsContract } from './aiGenerations.js';
+import { APPLICATIONS_CHANNELS, type ApplicationsContract } from './applications.js';
 import { AUTOPILOT_CHANNELS, type AutopilotContract } from './autopilot.js';
 import { BOARDS_CHANNELS, type BoardsContract } from './boards.js';
 import { CLI_AGENTS_CHANNELS, type CliAgentsContract } from './cliAgents.js';
@@ -46,6 +47,7 @@ import { UPDATER_CHANNELS, type UpdaterContract } from './updater.js';
 
 export interface IpcContract {
   aiGenerations: AiGenerationsContract;
+  applications: ApplicationsContract;
   system: SystemContract;
   jobs: JobsContract;
   ai: AiContract;
@@ -76,6 +78,7 @@ export interface IpcContract {
 
 export const IPC_CHANNELS = {
   aiGenerations: AI_GENERATIONS_CHANNELS,
+  applications: APPLICATIONS_CHANNELS,
   system: SYSTEM_CHANNELS,
   jobs: JOBS_CHANNELS,
   ai: AI_CHANNELS,
@@ -128,8 +131,16 @@ export {
   type AiGenerationSaveRequest,
   type AiGenerationsContract,
   type AiGenerationUpdateRequest,
-  type ApplicationAnswer,
 } from './aiGenerations.js';
+export {
+  type ApplicationCreateResult,
+  type ApplicationDetail,
+  type ApplicationMutationResult,
+  APPLICATIONS_CHANNELS,
+  type ApplicationsContract,
+  type ApplicationTrackRequest,
+  type ApplicationUpdateRequest,
+} from './applications.js';
 export {
   AUTOPILOT_CHANNELS,
   type AutopilotContract,

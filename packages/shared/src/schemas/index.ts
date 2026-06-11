@@ -226,6 +226,34 @@ export const ReferralUpsertSchema = z.object({
 // Note: the `ReferralUpsertRequest` type is declared in the referrals IPC
 // contract (single source for that name); this schema validates the same shape.
 
+// ─── Application tracking schemas (ADR 0001) ───────────────────────────────────
+
+// Manual create / Jobs-page Save. `applications_track` marks it `applied`;
+// `applications_save_from_posting` keeps it `saved`. All fields optional — a
+// hand-tracked application may have no link yet.
+export const ApplicationTrackSchema = z.object({
+  // Optional job link. Empty → a link-less pursuit (its own Application).
+  jobUrl: z.string().optional(),
+  board: z.string().optional(),
+  company: z.string().optional(),
+  title: z.string().optional(),
+  candidate: z.string().optional(),
+});
+export type ApplicationTrackRequest = z.infer<typeof ApplicationTrackSchema>;
+
+// Patch the user-editable tracking fields of an existing Application. Each field
+// is optional; an absent field is left unchanged. `nextActionAt` is nullable to
+// allow explicitly clearing the reminder.
+export const ApplicationUpdateSchema = z.object({
+  id: z.string().min(1),
+  notes: z.string().optional(),
+  nextActionAt: z.number().int().nullable().optional(),
+  comp: z.string().optional(),
+  contactName: z.string().optional(),
+  contactEmail: z.string().optional(),
+});
+export type ApplicationUpdateRequest = z.infer<typeof ApplicationUpdateSchema>;
+
 export const ResumeExtractTextSchema = z.object({
   name: z.string().min(1).max(512),
   bytes: z
