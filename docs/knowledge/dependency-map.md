@@ -9,6 +9,7 @@ For the live graph use **graphify** — `graphify query "what depends on <X>"`, 
 - `packages/shared` → depended on by everything; itself depends on **nothing app-specific** (no [React][react], no Node, no `window`).
 - `packages/ui` → no [Zustand][zustand], no IPC, no routing, no app logic.
 - `packages/prompts` → pure [TypeScript][typescript], **zero deps**, no UI, no `window`.
+- `packages/translations` → i18next singleton + adapters; **no app-specific or IPC imports** inside the package (renderer couples via thin shim `@/i18n` that owns the listener logic).
 - `apps/tauri` renderer → backend **only** via `AppClient`/service hooks (never `window.api.*` in features/routes/components).
 
 ## Layer boundaries (Rust, CI-enforced)

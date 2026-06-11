@@ -1,3 +1,5 @@
+import type { CookieImportResult } from './boards';
+
 export interface LinkedinContract {
   /** Connect to LinkedIn by launching a browser for manual login. */
   connect(): Promise<{ connected: boolean; accountEmail?: string }>;
@@ -12,6 +14,9 @@ export interface LinkedinContract {
   importProfileFromUrl(
     url: string
   ): Promise<{ text: string; name?: string; platform: string } | { error: string }>;
+
+  /** Import an existing LinkedIn session from the installed browser's cookie store. */
+  importCookies(): Promise<CookieImportResult>;
 }
 
 export const LINKEDIN_CHANNELS = {
@@ -19,4 +24,5 @@ export const LINKEDIN_CHANNELS = {
   disconnect: 'linkedin:disconnect',
   getStatus: 'linkedin:getStatus',
   importProfileFromUrl: 'linkedin:importProfileFromUrl',
+  importCookies: 'linkedin:importCookies',
 } as const;
