@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781150842545,
+  "lastUpdate": 1781203297851,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-assistant-app",
   "entries": {
     "Export render": [
@@ -81,6 +81,46 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 300221,
             "range": "± 16625",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "github-actions[bot]",
+            "username": "github-actions[bot]",
+            "email": "41898282+github-actions[bot]@users.noreply.github.com"
+          },
+          "committer": {
+            "name": "github-actions[bot]",
+            "username": "github-actions[bot]",
+            "email": "41898282+github-actions[bot]@users.noreply.github.com"
+          },
+          "id": "58a278043bacd41fb5a3703eb6ea64d44474ba39",
+          "message": "chore: sync version files to v0.91.2 [skip ci]",
+          "timestamp": "2026-06-11T18:17:36Z",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/58a278043bacd41fb5a3703eb6ea64d44474ba39"
+        },
+        "date": 1781203297428,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 3053732,
+            "range": "± 30075",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 3549934,
+            "range": "± 22157",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 278094,
+            "range": "± 1665",
             "unit": "ns/iter"
           }
         ]
