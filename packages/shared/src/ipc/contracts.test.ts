@@ -14,6 +14,7 @@ describe('IPC_CHANNELS', () => {
       [
         'ai',
         'aiGenerations',
+        'applications',
         'autopilot',
         'boards',
         'cliAgents',
