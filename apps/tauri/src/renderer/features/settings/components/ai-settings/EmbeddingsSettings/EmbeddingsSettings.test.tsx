@@ -40,7 +40,14 @@ vi.mock('@ajh/ui', async (importOriginal) => {
   const actual = await importOriginal<typeof AjhUi>();
   return {
     ...actual,
-    useNotification: () => vi.fn(),
+    useNotification: () => ({
+      open: vi.fn(),
+      success: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      warning: vi.fn(),
+      destroy: vi.fn(),
+    }),
   };
 });
 

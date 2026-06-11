@@ -41,7 +41,17 @@ vi.mock('@/services/use-referrals/use-referrals', () => ({
 
 vi.mock('@ajh/ui', async (importOriginal) => {
   const actual = await importOriginal<typeof AjhUi>();
-  return { ...actual, useNotification: () => vi.fn() };
+  return {
+    ...actual,
+    useNotification: () => ({
+      open: vi.fn(),
+      success: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      warning: vi.fn(),
+      destroy: vi.fn(),
+    }),
+  };
 });
 
 // Translate to the raw key so assertions don't depend on locale resolution.
