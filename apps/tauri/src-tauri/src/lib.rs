@@ -47,8 +47,10 @@ pub mod validate;
 
 use parking_lot::Mutex;
 
-use tauri::menu::{AboutMetadataBuilder, MenuBuilder, PredefinedMenuItem, SubmenuBuilder};
-use tauri::{AppHandle, Manager};
+use tauri::menu::{
+    AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
+};
+use tauri::{AppHandle, Emitter, Manager};
 
 use autopilot::AutopilotStore;
 use credentials::CredentialStore;
@@ -57,11 +59,84 @@ use postings::{InteractionStore, PostingsCache};
 use scraping::ScraperEngine;
 use updater::UpdaterState;
 
+/// Live in-memory "close hides to tray" flag. Managed as a distinct newtype (not
+/// a bare `Mutex<bool>`, which would collide with other managed `Mutex<bool>`
+/// state) so the window-close handler can resolve it unambiguously via
+/// `app.state::<CloseToTray>()`. Defaults to `true` so behaviour is unchanged
+/// until the renderer pushes the persisted preference (via
+/// `system_set_close_to_tray`) on boot. The renderer's preferences store is the
+/// source of truth; this is just the value the shell reads on close.
+pub struct CloseToTray(pub Mutex<bool>);
+
+impl Default for CloseToTray {
+    fn default() -> Self {
+        Self(Mutex::new(true))
+    }
+}
+
 // ── App menu ──────────────────────────────────────────────────────────────────
 
+// Custom (non-predefined) menu-item ids. Predefined roles still self-handle; only
+// these ids are dispatched in `on_app_menu_event` (registered in `setup`). The
+// `menu_nav_*` ids each map to a renderer route via [`NAV_ITEMS`].
+const MENU_SETTINGS: &str = "menu_settings";
+const MENU_CHECK_UPDATES: &str = "menu_check_updates";
+const MENU_DOCS: &str = "menu_docs";
+const MENU_SHORTCUTS: &str = "menu_shortcuts";
+const MENU_REPORT: &str = "menu_report";
+const MENU_RELOAD: &str = "menu_reload";
+const MENU_DEVTOOLS: &str = "menu_devtools";
+
+/// Public-facing URLs for the Help submenu. Derived from the repository (the only
+/// canonical URL the project ships — the updater endpoint in tauri.conf.json points
+/// at this repo's releases). No `homepage` is set in any package.json, so docs maps
+/// to the repo root and "Report an Issue" to the issues tracker.
+const REPO_URL: &str = "https://github.com/saeedkolivand/ai-job-hunter-assistant-app";
+const ISSUES_URL: &str = "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/issues";
+
+/// View-submenu go-to-route items: `(id, accelerator, route, label)`. The route
+/// strings are the canonical values from
+/// `apps/tauri/src/renderer/constants/routes/routes.ts` (Documents → `/resumes`,
+/// Resume Analyzer → `/analyze`, AI Generate → `/ai-generate`). The label is the
+/// menu-item title. `on_app_menu_event` emits `menu.navigate { route, section: null }`
+/// for each. One row per item keeps id/accel/route/label in lockstep.
+const NAV_ITEMS: &[(&str, &str, &str, &str)] = &[
+    ("menu_nav_dashboard", "CmdOrCtrl+1", "/", "Dashboard"),
+    ("menu_nav_jobs", "CmdOrCtrl+2", "/jobs", "Jobs"),
+    (
+        "menu_nav_analyze",
+        "CmdOrCtrl+3",
+        "/analyze",
+        "Resume Analyzer",
+    ),
+    (
+        "menu_nav_ai_generate",
+        "CmdOrCtrl+4",
+        "/ai-generate",
+        "AI Generate",
+    ),
+    ("menu_nav_documents", "CmdOrCtrl+5", "/resumes", "Documents"),
+    (
+        "menu_nav_autopilot",
+        "CmdOrCtrl+6",
+        "/autopilot",
+        "Autopilot",
+    ),
+    ("menu_nav_settings", "CmdOrCtrl+7", "/settings", "Settings"),
+];
+
+/// Resolve a `menu_nav_*` id to its route. Returns `None` for any other id.
+fn nav_route_for(id: &str) -> Option<&'static str> {
+    NAV_ITEMS
+        .iter()
+        .find_map(|(item_id, _, route, _)| (*item_id == id).then_some(*route))
+}
+
 fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    // Every item is a predefined role: it self-handles and carries the standard
-    // platform accelerator, so no `on_menu_event` handler is needed.
+    // Predefined roles self-handle and carry the standard platform accelerator.
+    // The custom items below (Settings, Check for Updates, the Help entries, the
+    // View nav/reload/devtools entries) carry explicit ids dispatched by
+    // `on_app_menu_event`.
     let about_metadata = AboutMetadataBuilder::new()
         .name(Some("AI Job Hunter"))
         .version(Some(env!("CARGO_PKG_VERSION")))
@@ -70,6 +145,13 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
     // App submenu — must remain the FIRST submenu (the macOS app-name menu).
     let app_submenu = SubmenuBuilder::new(app, "AI Job Hunter")
         .item(&PredefinedMenuItem::about(app, None, Some(about_metadata))?)
+        .separator()
+        .item(
+            &MenuItemBuilder::with_id(MENU_SETTINGS, "Settings…")
+                .accelerator("CmdOrCtrl+,")
+                .build(app)?,
+        )
+        .item(&MenuItemBuilder::with_id(MENU_CHECK_UPDATES, "Check for Updates…").build(app)?)
         .separator()
         .item(&PredefinedMenuItem::hide(app, None)?)
         .item(&PredefinedMenuItem::hide_others(app, None)?)
@@ -88,15 +170,43 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
         .item(&PredefinedMenuItem::select_all(app, None)?)
         .build()?;
 
-    let view_submenu = SubmenuBuilder::new(app, "View")
-        .item(&PredefinedMenuItem::fullscreen(app, None)?)
+    // View submenu — Fullscreen, then go-to-route items (Cmd/Ctrl+1..7),
+    // Reload, and Toggle DevTools.
+    let mut view_builder =
+        SubmenuBuilder::new(app, "View").item(&PredefinedMenuItem::fullscreen(app, None)?);
+    view_builder = view_builder.separator();
+    for (id, accel, _route, label) in NAV_ITEMS.iter() {
+        view_builder = view_builder.item(
+            &MenuItemBuilder::with_id(*id, label)
+                .accelerator(accel)
+                .build(app)?,
+        );
+    }
+    let view_submenu = view_builder
+        .separator()
+        .item(
+            &MenuItemBuilder::with_id(MENU_RELOAD, "Reload")
+                .accelerator("CmdOrCtrl+R")
+                .build(app)?,
+        )
+        .item(&MenuItemBuilder::with_id(MENU_DEVTOOLS, "Toggle DevTools").build(app)?)
         .build()?;
 
     let window_submenu = SubmenuBuilder::new(app, "Window")
         .item(&PredefinedMenuItem::minimize(app, None)?)
         .item(&PredefinedMenuItem::maximize(app, None)?)
+        // No `zoom` PredefinedMenuItem exists in Tauri 2.11; `bring_all_to_front`
+        // does, so we add only that (the spec says add it only if it exists).
+        .item(&PredefinedMenuItem::bring_all_to_front(app, None)?)
         .separator()
         .item(&PredefinedMenuItem::close_window(app, None)?)
+        .build()?;
+
+    // Help submenu (last) — opens external URLs / emits the shortcuts action.
+    let help_submenu = SubmenuBuilder::new(app, "Help")
+        .item(&MenuItemBuilder::with_id(MENU_DOCS, "Documentation").build(app)?)
+        .item(&MenuItemBuilder::with_id(MENU_SHORTCUTS, "Keyboard Shortcuts").build(app)?)
+        .item(&MenuItemBuilder::with_id(MENU_REPORT, "Report an Issue").build(app)?)
         .build()?;
 
     MenuBuilder::new(app)
@@ -104,7 +214,63 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
         .item(&edit_submenu)
         .item(&view_submenu)
         .item(&window_submenu)
+        .item(&help_submenu)
         .build()
+}
+
+/// App-level menu-event handler (custom ids only — predefined roles self-handle).
+/// Registered in `setup` after `set_menu`. Emits the renderer contract events
+/// (`menu.navigate` / `menu.action`) or performs the shell-side action directly.
+fn on_app_menu_event(app: &AppHandle, id: &str) {
+    match id {
+        MENU_SETTINGS => {
+            let _ = app.emit(
+                "menu.navigate",
+                serde_json::json!({ "route": "/settings", "section": serde_json::Value::Null }),
+            );
+        }
+        MENU_CHECK_UPDATES => {
+            let _ = app.emit(
+                "menu.action",
+                serde_json::json!({ "action": "check-updates" }),
+            );
+        }
+        MENU_SHORTCUTS => {
+            let _ = app.emit("menu.action", serde_json::json!({ "action": "shortcuts" }));
+        }
+        MENU_DOCS => open_external(app, REPO_URL),
+        MENU_REPORT => open_external(app, ISSUES_URL),
+        MENU_RELOAD => {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.reload();
+            }
+        }
+        MENU_DEVTOOLS => {
+            if let Some(win) = app.get_webview_window("main") {
+                // `open_devtools` is a no-op in release builds without the
+                // `devtools` feature, but always compiles (matches the existing
+                // `system_open_devtools` command).
+                win.open_devtools();
+            }
+        }
+        // Go-to-route items: emit `menu.navigate` with the resolved route.
+        other => {
+            if let Some(route) = nav_route_for(other) {
+                let _ = app.emit(
+                    "menu.navigate",
+                    serde_json::json!({ "route": route, "section": serde_json::Value::Null }),
+                );
+            }
+            // Unknown id → no-op.
+        }
+    }
+}
+
+/// Open an external URL in the user's default handler via `tauri_plugin_opener`
+/// (same path as the `system_open_external` command). Best-effort.
+fn open_external(app: &AppHandle, url: &str) {
+    use tauri_plugin_opener::OpenerExt;
+    let _ = app.opener().open_url(url, None::<&str>);
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -114,17 +280,38 @@ pub fn run() {
     credentials::init_keyring();
 
     tauri::Builder::default()
+        // Close-to-tray: intercept the window close (X / Cmd-W) and hide to the
+        // tray instead — but ONLY when (a) a tray actually exists and (b) the
+        // user's `CloseToTray` preference is on. A non-fatal `tray::build` failure
+        // leaves no `TrayState`; in that case we fall through to the default close
+        // so the window can never be soft-trapped hidden with no tray to restore
+        // it. When the preference is off the window closes / app quits normally
+        // (we never call `prevent_close`). SAFETY: `prevent_close()` intercepts
+        // only the window close; `PredefinedMenuItem::quit`, Cmd-Q, and the tray
+        // Quit (`app.exit(0)`) bypass window events and still fully quit the app.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let app = window.app_handle();
+                let hide_to_tray = app.try_state::<crate::tray::TrayState>().is_some()
+                    && *app.state::<CloseToTray>().0.lock();
+                if hide_to_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    // Drop the Dock icon while hidden (restored by `tray::show_focus`).
+                    #[cfg(target_os = "macos")]
+                    let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                }
+            }
+        })
         // Single-instance must be the FIRST plugin: on a second launch it focuses
         // the already-running window instead of spawning another process. If that
         // launch carried an `ajh://autopilot/<id>` deep link, the guard validates
         // it against a strict route allowlist before driving any navigation — a
         // hostile argv navigates nowhere (see `deeplink`).
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.unminimize();
-                let _ = win.set_focus();
-            }
+            // Route through `show_focus` so a second launch also restores the Dock
+            // icon (macOS) if the window was hidden to the tray.
+            tray::show_focus(app);
             if let Some(deeplink::FocusTarget::Autopilot(id)) = deeplink::parse_focus_target(&argv)
             {
                 tray::emit_focus(app, &id);
@@ -178,11 +365,9 @@ pub fn run() {
                     if let Some(deeplink::FocusTarget::Autopilot(id)) =
                         deeplink::parse_focus_target(&urls)
                     {
-                        if let Some(win) = dl_handle.get_webview_window("main") {
-                            let _ = win.show();
-                            let _ = win.unminimize();
-                            let _ = win.set_focus();
-                        }
+                        // Route through `show_focus` so a deep-link reopen also
+                        // restores the Dock icon (macOS) when hidden to the tray.
+                        tray::show_focus(&dl_handle);
                         tray::emit_focus(&dl_handle, &id);
                     }
                 });
@@ -260,6 +445,10 @@ pub fn run() {
             app.manage(Mutex::new(UpdaterState::default()));
             app.manage(std::sync::Arc::new(ScraperEngine::new()));
             app.manage(commands::translation::TranslationCache::new());
+            // Live close-to-tray flag (default on). The renderer pushes the
+            // persisted preference via `system_set_close_to_tray` on boot; the
+            // window-close handler above reads it.
+            app.manage(CloseToTray::default());
             // The conversations (chat) feature was removed; best-effort delete the
             // now-orphaned conversations.db (+ WAL/SHM sidecars) it left in the app-data
             // dir so dead chat history isn't kept on disk. Idempotent (no-op once gone).
@@ -279,10 +468,12 @@ pub fn run() {
 
             app.manage(reset_registry);
 
-            // Build and set the application menu. All items are predefined roles
-            // that self-handle, so no app-level menu-event handler is registered.
+            // Build and set the application menu. Predefined roles self-handle;
+            // the custom items (Settings, Check for Updates, nav, reload, devtools,
+            // Help) are dispatched by the app-level handler registered below.
             let menu = build_app_menu(handle)?;
             app.set_menu(menu)?;
+            app.on_menu_event(|app, event| on_app_menu_event(app, event.id().as_ref()));
 
             // Platform-specific window decorations
             #[cfg(target_os = "windows")]
@@ -325,6 +516,7 @@ pub fn run() {
             commands::system::system_set_performance_mode,
             commands::system::system_get_launch_at_login,
             commands::system::system_set_launch_at_login,
+            commands::system::system_set_close_to_tray,
             commands::system::system_get_metrics,
             commands::system::system_check_browser,
             commands::system::system_open_devtools,
@@ -422,6 +614,7 @@ pub fn run() {
             commands::autopilot::autopilot_run,
             commands::autopilot::autopilot_pause,
             commands::autopilot::autopilot_resume,
+            commands::autopilot::autopilot_notification_clicked,
             // ai generations
             commands::ai_generations::ai_generations_list,
             commands::ai_generations::ai_generations_save,

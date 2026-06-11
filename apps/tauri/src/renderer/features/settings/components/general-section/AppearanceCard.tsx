@@ -8,6 +8,7 @@ import {
   type ColorScheme,
   getThemePrefs,
   SettingsSection,
+  Switch,
   type TextScale,
   type ThemePrefs,
 } from '@ajh/ui';
@@ -26,44 +27,6 @@ const SCALES: { id: TextScale; labelKey: string; size: string }[] = [
   { id: 'default', labelKey: 'settings.appearance.textDefault', size: 'text-sm' },
   { id: 'large', labelKey: 'settings.appearance.textLarge', size: 'text-base' },
 ];
-
-function ToggleRow({
-  label,
-  hint,
-  checked,
-  onChange,
-}: {
-  label: string;
-  hint: string;
-  checked: boolean;
-  onChange: (next: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <div className="min-w-0">
-        <div className="text-xs font-medium text-foreground/80">{label}</div>
-        <div className="text-[11px] text-foreground/45">{hint}</div>
-      </div>
-      <Button
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        onClick={() => onChange(!checked)}
-        className={cn(
-          'relative h-5 w-9 shrink-0 rounded-full border-transparent p-0 transition-colors focus-visible:ring-2 focus-visible:ring-brand/50',
-          checked ? 'bg-brand' : 'bg-foreground/15'
-        )}
-      >
-        <span
-          className={cn(
-            'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform',
-            checked ? 'translate-x-4' : 'translate-x-0.5'
-          )}
-        />
-      </Button>
-    </div>
-  );
-}
 
 export function AppearanceCard() {
   const { t } = useTranslation();
@@ -143,17 +106,17 @@ export function AppearanceCard() {
           </div>
         </div>
 
-        <ToggleRow
+        <Switch
           label={t('settings.appearance.reduceTransparency')}
-          hint={t('settings.appearance.reduceTransparencyHint')}
+          description={t('settings.appearance.reduceTransparencyHint')}
           checked={prefs.reduceTransparency}
-          onChange={(v) => update({ reduceTransparency: v })}
+          onCheckedChange={(v) => update({ reduceTransparency: v })}
         />
-        <ToggleRow
+        <Switch
           label={t('settings.appearance.increaseContrast')}
-          hint={t('settings.appearance.increaseContrastHint')}
+          description={t('settings.appearance.increaseContrastHint')}
           checked={prefs.contrast === 'more'}
-          onChange={(v) => update({ contrast: v ? 'more' : 'normal' })}
+          onCheckedChange={(v) => update({ contrast: v ? 'more' : 'normal' })}
         />
       </div>
     </SettingsSection>

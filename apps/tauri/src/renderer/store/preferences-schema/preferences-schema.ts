@@ -40,6 +40,24 @@ export const AiProviderSchema = z.enum([
 export const LocalModelLimitsSchema = z.object({
   contextWindow: z.number().int().min(512).max(131072).optional(),
   maxTokens: z.number().int().min(1).max(32768).optional(),
+  // Optional per-model, per-step sampling temperatures (Ollama only). undefined =
+  // use the app's per-step defaults. Each step is independently settable; a step
+  // left undefined falls back to its default. (Migrates the legacy single-number
+  // shape by dropping it.)
+  temperature: z
+    .preprocess(
+      (v) => (typeof v === 'number' ? undefined : v),
+      z
+        .object({
+          analysis: z.number().min(0).max(2).optional(),
+          resume: z.number().min(0).max(2).optional(),
+          cover: z.number().min(0).max(2).optional(),
+          answers: z.number().min(0).max(2).optional(),
+          referral: z.number().min(0).max(2).optional(),
+        })
+        .optional()
+    )
+    .optional(),
 });
 
 // Per-provider settings (model choice, optional base URL, optional CLI effort)
@@ -114,6 +132,11 @@ export const PreferencesSchema = z.object({
 
   // Scoring
   semanticScoring: z.boolean().default(false),
+
+  // Window close behaviour — keep the app running in the tray/menu-bar when the
+  // window is closed (default on). Pushed to the Rust shell on boot + on change;
+  // the shell's window-close handler reads the live flag.
+  closeToTray: z.boolean().default(true),
 
   // Onboarding
   onboardingCompleted: z.boolean().default(false),

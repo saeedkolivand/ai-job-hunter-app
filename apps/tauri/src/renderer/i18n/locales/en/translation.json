@@ -545,7 +545,9 @@
     "startup": {
       "title": "Startup",
       "launchAtLogin": "Launch at login",
-      "launchAtLoginHint": "Open AI Job Hunter automatically when you sign in, so autopilots keep finding jobs in the background."
+      "launchAtLoginHint": "Open AI Job Hunter automatically when you sign in, so autopilots keep finding jobs in the background.",
+      "closeToTray": "Keep running in the tray",
+      "closeToTrayHint": "Keep the app running in the menu bar / tray when you close the window. Turn off to quit on close."
     },
     "aiProvider": {
       "title": "AI Provider",
@@ -654,6 +656,14 @@
         "noInfo": "No model details available",
         "contextWindow": "Context window",
         "maxOutput": "Max output tokens",
+        "temperature": "Temperature",
+        "temperatureOverride": "Custom temperature",
+        "temperatureAuto": "Auto — uses the app's per-task defaults",
+        "tempAnalysis": "Analysis",
+        "tempResume": "Résumé",
+        "tempCover": "Cover letter",
+        "tempAnswers": "Application answers",
+        "tempReferral": "Referral",
         "useSuggested": "Use suggested",
         "suggested": "Suggested",
         "mayLagRam": "A large context window may lag on your available RAM",

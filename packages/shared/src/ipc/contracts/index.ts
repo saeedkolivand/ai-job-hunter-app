@@ -31,6 +31,7 @@ import { JOB_PREFERENCES_CHANNELS, type JobPreferencesContract } from './jobPref
 import { JOBS_CHANNELS, type JobsContract } from './jobs.js';
 import { LINKEDIN_CHANNELS, type LinkedinContract } from './linkedin.js';
 import { MATCH_CHANNELS, type MatchContract } from './match.js';
+import type { MenuContract } from './menu.js';
 import { PRIVACY_CHANNELS, type PrivacyContract } from './privacy.js';
 import { REFERRALS_CHANNELS, type ReferralsContract } from './referrals.js';
 import { RESUME_CHANNELS, type ResumeContract } from './resume.js';
@@ -64,6 +65,7 @@ export interface IpcContract {
   resume: ResumeContract;
   support: SupportContract;
   autopilot: AutopilotContract;
+  menu: MenuContract;
   updater: UpdaterContract;
   shortcuts: ShortcutsContract;
   dialog: DialogContract;
@@ -169,6 +171,7 @@ export { JOB_PREFERENCES_CHANNELS, type JobPreferencesContract } from './jobPref
 export { JOBS_CHANNELS, type JobsContract } from './jobs.js';
 export { LINKEDIN_CHANNELS, type LinkedinContract } from './linkedin.js';
 export { MATCH_CHANNELS, type MatchContract } from './match.js';
+export { type MenuActionEvent, type MenuContract, type MenuNavigateEvent } from './menu.js';
 export { PRIVACY_CHANNELS, type PrivacyContract } from './privacy.js';
 export {
   type ReferralChannel,

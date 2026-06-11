@@ -1,13 +1,17 @@
 import { Languages, Power, User, Wand2 } from 'lucide-react';
 
-import { Button, cn, Input, SettingsSection } from '@ajh/ui';
+import { Button, cn, Input, SettingsSection, Switch } from '@ajh/ui';
 
 import { AppearanceCard } from '@/features/settings/components/general-section/AppearanceCard';
 import { LanguageSelector } from '@/features/settings/components/shared/LanguageSelector';
 import { UpdateSection } from '@/features/settings/components/update-section';
 import { useTranslation } from '@/lib/i18n';
-import { useLaunchAtLogin, useSetLaunchAtLogin } from '@/services';
-import { useOnboardingCompleted, usePreferencesStore } from '@/store/preferences-store';
+import { useLaunchAtLogin, useSetCloseToTray, useSetLaunchAtLogin } from '@/services';
+import {
+  useCloseToTray,
+  useOnboardingCompleted,
+  usePreferencesStore,
+} from '@/store/preferences-store';
 
 interface GeneralSectionProps {
   localName: string;
@@ -29,6 +33,9 @@ export function GeneralSection({
 
   const { data: launchAtLogin = false } = useLaunchAtLogin();
   const setLaunchAtLogin = useSetLaunchAtLogin();
+
+  const closeToTray = useCloseToTray();
+  const setCloseToTray = useSetCloseToTray();
 
   return (
     <>
@@ -124,6 +131,16 @@ export function GeneralSection({
             />
           </div>
         </Button>
+
+        <div className="mt-2.5 rounded-lg border border-white/[0.05] px-3 py-2.5">
+          <Switch
+            label={t('settings.startup.closeToTray')}
+            description={t('settings.startup.closeToTrayHint')}
+            checked={closeToTray}
+            disabled={setCloseToTray.isPending}
+            onCheckedChange={(next) => setCloseToTray.mutate(next)}
+          />
+        </div>
       </SettingsSection>
 
       <UpdateSection />

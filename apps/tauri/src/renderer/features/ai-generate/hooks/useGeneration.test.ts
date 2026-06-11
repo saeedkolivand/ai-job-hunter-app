@@ -19,7 +19,10 @@ vi.mock('@/lib/generate', () => ({
     topRequirements: [],
   }),
   generateResume: vi.fn(async (..._a: unknown[]) => 'RESUME'),
-  generateCoverLetter: vi.fn(async (..._a: unknown[]) => 'COVER'),
+  generateCoverLetter: vi.fn(async (..._a: unknown[]) => ({
+    text: 'COVER',
+    companyBrief: 'BRIEF',
+  })),
 }));
 
 const META: GenerationMeta = {
@@ -102,7 +105,7 @@ const stageCalls = (m: ReturnType<typeof setup>['m']) =>
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(generateResume).mockResolvedValue('RESUME');
-  vi.mocked(generateCoverLetter).mockResolvedValue('COVER');
+  vi.mocked(generateCoverLetter).mockResolvedValue({ text: 'COVER', companyBrief: 'BRIEF' });
 });
 
 describe('useGeneration — progressive reveal (#23)', () => {
@@ -120,8 +123,13 @@ describe('useGeneration — progressive reveal (#23)', () => {
     expect(m.setIsGenerating).toHaveBeenCalledWith(true);
     expect(m.setIsGenerating).toHaveBeenLastCalledWith(false);
     expect(m.notify).toHaveBeenCalledWith('aiGenerate.toast.bothReady', 'success');
+    // The cover-letter research brief is persisted alongside the documents.
     expect(m.saveAiGeneration.mutate).toHaveBeenCalledWith(
-      expect.objectContaining({ resumeText: 'RESUME', coverLetterText: 'COVER' })
+      expect.objectContaining({
+        resumeText: 'RESUME',
+        coverLetterText: 'COVER',
+        companyBrief: 'BRIEF',
+      })
     );
     expect(m.setError).not.toHaveBeenCalledWith(expect.any(String));
   });
@@ -135,9 +143,9 @@ describe('useGeneration — progressive reveal (#23)', () => {
     expect(stageCalls(m).at(-1)).toBe('done');
     expect(stageCalls(m)).not.toContain('configuring');
     expect(m.notify).toHaveBeenCalledWith('aiGenerate.toast.coverFailed', 'error');
-    // Persisted résumé-only (no cover text), and no hard error surfaced.
+    // Persisted résumé-only (no cover text / no brief), and no hard error surfaced.
     expect(m.saveAiGeneration.mutate).toHaveBeenCalledWith(
-      expect.objectContaining({ resumeText: 'RESUME', coverLetterText: '' })
+      expect.objectContaining({ resumeText: 'RESUME', coverLetterText: '', companyBrief: '' })
     );
     expect(m.setError).not.toHaveBeenCalledWith(expect.any(String));
     expect(m.setIsGenerating).toHaveBeenLastCalledWith(false);
@@ -167,7 +175,7 @@ describe('useGeneration — single target', () => {
     expect(generateResume).not.toHaveBeenCalled();
     expect(m.notify).toHaveBeenCalledWith('aiGenerate.toast.coverReady', 'success');
     expect(m.saveAiGeneration.mutate).toHaveBeenCalledWith(
-      expect.objectContaining({ resumeText: '', coverLetterText: 'COVER' })
+      expect.objectContaining({ resumeText: '', coverLetterText: 'COVER', companyBrief: 'BRIEF' })
     );
   });
 

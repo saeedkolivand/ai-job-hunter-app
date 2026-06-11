@@ -272,7 +272,7 @@
     )
   })
   if "title" in data.header and data.header.title != none {
-    block(below: 2pt, text(size: 11pt, style: "italic", fill: c-contact, data.header.title))
+    block(below: sp-header-title-below, text(size: 11pt, style: "italic", fill: c-contact, data.header.title))
   }
   block(below: sp-header-contact, text(size: 9.5pt, fill: c-contact, render-runs(data.header.contact)))
   line(length: 100%, stroke: 0.5pt + c-rule)
@@ -350,7 +350,7 @@
           )
         })
         if "title" in data.header and data.header.title != none {
-          block(below: 2pt, text(size: 11pt, style: "italic", fill: c-contact, data.header.title))
+          block(below: sp-header-title-below, text(size: 11pt, style: "italic", fill: c-contact, data.header.title))
         }
         block(below: sp-header-contact, text(size: 9.5pt, fill: c-contact, render-runs(data.header.contact)))
         line(length: 100%, stroke: 0.5pt + c-rule)
@@ -391,7 +391,7 @@
         )
       })
       if "title" in data.header and data.header.title != none {
-        block(below: 2pt, text(size: 11pt, style: "italic", fill: c-contact, data.header.title))
+        block(below: sp-header-title-below, text(size: 11pt, style: "italic", fill: c-contact, data.header.title))
       }
       block(below: sp-header-contact, text(size: 9.5pt, fill: c-contact, render-runs(data.header.contact)))
       line(length: 100%, stroke: 0.5pt + c-rule)

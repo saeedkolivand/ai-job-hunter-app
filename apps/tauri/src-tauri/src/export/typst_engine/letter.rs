@@ -356,8 +356,15 @@ pub(super) fn parse_cover_letter(
         if after_closing {
             // First non-blank line after closing that is not the candidate name
             // is the signature title (e.g. "Software Engineer").
-            if signature_title.is_none() && !clean.is_empty() && clean.trim() != name_text.as_str()
-            {
+            //
+            // Case-insensitive + trailing-punctuation-tolerant comparison so that
+            // an LLM sign-off in title-case ("Saeed Kolivand") is still recognised
+            // as the candidate name even when `name_text` is stored uppercase
+            // ("SAEED KOLIVAND") — preventing the name from being promoted to
+            // `signature_title` and rendered a second time.
+            let is_candidate_name = clean.trim().trim_end_matches([',', '.']).to_lowercase()
+                == name_text.trim().to_lowercase();
+            if signature_title.is_none() && !clean.is_empty() && !is_candidate_name {
                 signature_title = Some(clean.to_string());
             }
             continue;
@@ -746,5 +753,52 @@ Alice
         // Should not panic; intl baseline applies
         let model = parse_cover_letter("x", None, None, "zz", "en", dummy_style());
         assert_eq!(model.opts.page_width_mm, A4_W); // intl uses A4
+    }
+
+    /// Regression: LLM sign-off name in title-case must not be promoted to
+    /// `signature_title` when `meta_name` is uppercase.
+    ///
+    /// Before the fix, `clean.trim() != name_text.as_str()` was a
+    /// case-sensitive byte comparison.  "Saeed Kolivand" != "SAEED KOLIVAND"
+    /// so the name was mistakenly stored as `signature_title` and rendered
+    /// twice (bold header + plain title line).
+    #[test]
+    fn signoff_name_case_mismatch_not_promoted_to_signature_title() {
+        let letter = "\
+SAEED KOLIVAND
+saeed@example.com | https://linkedin.com/in/saeedkolivand
+
+June 10, 2025
+
+Hiring Manager
+Acme Corp
+
+Dear Hiring Manager,
+
+I am excited to apply for this role and believe my background is a strong match.
+
+Sincerely,
+
+Saeed Kolivand
+";
+        let model = parse_cover_letter(
+            letter,
+            None,
+            Some("SAEED KOLIVAND"),
+            "us",
+            "en",
+            dummy_style(),
+        );
+
+        assert_eq!(
+            model.signature_name, "SAEED KOLIVAND",
+            "signature_name must come from meta_name"
+        );
+        assert!(
+            model.signature_title.is_none(),
+            "trailing sign-off name (title-case) must not be promoted to signature_title; \
+             got {:?}",
+            model.signature_title
+        );
     }
 }

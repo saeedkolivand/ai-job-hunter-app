@@ -139,7 +139,7 @@
       pad(top: 7mm, {
         name-text
         if "title" in data.header and data.header.title != none {
-          block(above: 2pt, below: 2pt,
+          block(above: 2pt, below: sp-header-title-below,
             text(
               size: section-pt,
               style: if title-italic { "italic" } else { "normal" },
