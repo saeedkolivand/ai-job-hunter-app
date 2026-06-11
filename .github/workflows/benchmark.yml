@@ -80,9 +80,10 @@ jobs:
           benchmark-data-dir-path: landing/benchmarks
           # The action's own auto-push runs `git fetch origin main:main`, which
           # `fatal: refusing to fetch into branch 'main' checked out` — main is
-          # already the working tree. So skip its fetch and never let it push;
-          # it only writes landing/benchmarks into the tree, and the step below
-          # commits + pushes it the same way the release cask job does.
+          # already the working tree. So skip its fetch and never let it push.
+          # With auto-push:false the action still makes its OWN local commit
+          # (it does NOT leave the change in the working tree); the step below
+          # pushes that commit, the same way the release cask job pushes.
           skip-fetch-gh-pages: true
           auto-push: false
           # PRs: leave a comment when a benchmark regresses past the threshold.
@@ -103,15 +104,17 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # --porcelain catches both modified AND new untracked files (the
-          # dashboard's index.html/data.js are untracked on the very first run,
-          # which `git diff --quiet` would miss).
-          if [ -z "$(git status --porcelain -- landing/benchmarks)" ]; then
-            echo "Benchmark data unchanged — nothing to commit."
+          # github-action-benchmark makes its OWN local commit even with
+          # auto-push:false — it does NOT leave the change in the working tree,
+          # so `git status --porcelain` is always clean here. Detect the
+          # action's unpushed commit by comparing HEAD against origin/main.
+          if [ -z "$(git log origin/main..HEAD --oneline)" ]; then
+            echo "Benchmark data unchanged — nothing to push."
             exit 0
           fi
-          git add landing/benchmarks
-          git commit -m "chore: update export benchmark data [skip ci]"
+          # Re-message the action's commit with [skip ci] so the data push to
+          # main does not re-trigger CI; pages.yml is kicked explicitly below.
+          git commit --amend -m "chore: update export benchmark data [skip ci]"
           git push git@github.com:saeedkolivand/ai-job-hunter-assistant-app.git HEAD:main
           echo "committed=true" >> "$GITHUB_OUTPUT"
 
