@@ -32,12 +32,16 @@ Describes the **shape**; the source is authoritative for field-level detail. Use
 - **`Scraper`** + **`SCRAPERS`** — `scraping/boards/mod.rs`; `ScraperMode` (Http/Browser); `ScrapeContext` carries a cancellation token + progress/item callbacks.
 - _(No applier registry: the auto-apply engine was removed — the app is an apply **assistant**. See [automation-domain.md](automation-domain.md).)_
 
+## Application tracking
+
+- **`applications` aggregate** — `apps/tauri/src-tauri/src/applications/mod.rs` (`ApplicationStore`); identity, user-mutable status lifecycle, normalized `job_url`, company/title/candidate/brief metadata, and append-only `status_events` history. Child of a Generation is zero or one (save path merges by URL). Renderer views via `/applications` route (`ApplicationsPage`); IPC `commands/applications.rs`. See [ADR-007](decision-records/adr-007-ai-generations-application-aggregate.md).
+- **`ai_generations` (now child)** — `ai_generations/mod.rs` (`AiGenerationStore`); a produced artifact (résumé + cover-letter text, mode, languages). Formerly the aggregate root; now a child Document of Application (refs via `application_id`). Per-job merge-upsert by `job_url` (single row carries both texts). See [ADR-007](decision-records/adr-007-ai-generations-application-aggregate.md).
+
 ## AI / providers
 
 - **Provider adapters** — `commands/ai_provider/{ollama,openai,anthropic,gemini}.rs` behind a shared interface (`mod.rs`); business logic must not depend on a specific provider.
 - **Embeddings** — `documents/mod.rs` (storage + embedding-space invalidation on model change).
 - **Prompts** — `packages/prompts` (provider-aware, locale-driven templates).
-- **`ai_generations` aggregate** — per-job merge-upsert by `job_url` (`save_application` + pure `merge_application` in `ai_generations/mod.rs`); `applied` status derived via `applied_job_urls()`. See [ADR-007](decision-records/adr-007-ai-generations-application-aggregate.md).
 
 ## Platform / data
 

@@ -22,8 +22,9 @@ Extract a dedicated **`applications`** table as the aggregate root (identity, st
 candidate, answers, brief, plus `notes`/`next_action_at`/`comp`/`contact_*`), with an
 append-only **`status_events`** table for history. The `ai_generations` row is demoted to
 a **pure child Document** (résumé/cover text, mode, languages) referencing its parent via
-`application_id`. An Application may have zero child Generations (doc-less pursuit) or many
-(one URL, separate résumé + cover actions).
+`application_id`. An Application has zero or one child Generation today—the save path merges
+by normalized URL and the single row carries both the résumé and cover-letter columns; the
+FK permits many, reserved for a future flow that splits them.
 
 ## Considered options
 
@@ -51,5 +52,5 @@ a **pure child Document** (résumé/cover text, mode, languages) referencing its
 - Deleting an Application offers "remove tracking only (keep documents)" vs "delete
   everything"; deleting the last Generation leaves a doc-less Application with status
   intact.
-- New top-level `/applications` route (Kanban + list) and a new `applications` IPC
-  namespace (5-step capability flow).
+- New top-level `/applications` route (grouped/sectioned collapsible list by stage, with
+  per-row status selector) and a new `applications` IPC namespace (5-step capability flow).

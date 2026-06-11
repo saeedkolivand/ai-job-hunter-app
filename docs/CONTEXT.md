@@ -43,8 +43,9 @@ queued/running/streaming/…); "stage" and "status" are used interchangeably for
 A produced artifact for an Application — a tailored résumé and/or cover letter, plus its
 mode/languages/answers/brief. Formerly the `ai_generations` row doubled as "the
 application aggregate"; that role moves to the **Application** table. A Generation is now a
-**child** of an Application (`application_id`); an Application may have zero Generations
-(a `saved`/external pursuit) or many.
+**child** of an Application (`application_id`); an Application has zero or one child Generation
+today—the save path merges by normalized URL and the single row carries both the résumé and
+cover-letter columns. The FK permits many, reserved for a future flow that splits them.
 _Avoid_: Application (the pursuit ≠ the artifact); calling the generation row "the
 application aggregate" (historical comment — superseded)
 
