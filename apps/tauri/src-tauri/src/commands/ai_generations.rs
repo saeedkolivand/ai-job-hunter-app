@@ -42,8 +42,37 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
         company_brief: req.company_brief,
     };
 
-    // Per-job aggregate: when linked to a job, merge into that job's row so
-    // résumé/cover/answers/brief from separate actions land on one record.
+    // ADR 0001: the Application aggregate is the source of truth for status +
+    // "applied". A generation is its child Document. So before persisting the
+    // generation we upsert/advance the Application for this job_url (Generate
+    // origin → `applied`), then store the generation (which still carries its
+    // own job/company/board copy for backward compatibility + offline export).
+    let job_url = rec.job_url.clone();
+    let board = rec.board.clone();
+    let meta = crate::applications::ApplicationMeta {
+        company: rec.company_name.clone(),
+        title: rec.job_title.clone(),
+        candidate: rec.candidate_name.clone(),
+        brief: rec.company_brief.clone(),
+        answers: rec.application_answers.clone(),
+    };
+    if let Some(apps) = app.try_state::<crate::applications::ApplicationStore>() {
+        if let Err(e) = apps.upsert_for_origin(
+            &job_url,
+            &board,
+            &meta,
+            crate::applications::ApplicationOrigin::Generate,
+            None,
+        ) {
+            // Non-fatal: a failed Application upsert must not lose the generation
+            // the user just produced. The generation save below is the user-visible
+            // action; the aggregate can be re-derived.
+            log::warn!("[ai_generations] application upsert failed (non-fatal): {e}");
+        }
+    }
+
+    // Per-job aggregate (generation side): merge into that job's generation row so
+    // résumé/cover/answers/brief from separate actions land on one document record.
     match store.save_application(rec) {
         Ok(id) => json!({ "id": id, "success": true }),
         Err(e) => json!({ "error": e }),

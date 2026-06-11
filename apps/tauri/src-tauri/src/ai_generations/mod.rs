@@ -116,6 +116,20 @@ impl AiGenerationStore {
                 )
             },
         },
+        // ADR 0001: demote the generation to a child Document of an Application.
+        // This adds the parent FK (NULL until the backfill in
+        // `applications::ApplicationStore::open` links each row). Nullable so old
+        // rows and any future doc-less inserts are valid.
+        Migration {
+            name: "add_application_id",
+            up: |conn| {
+                conn.execute_batch(
+                    "ALTER TABLE ai_generations ADD COLUMN application_id TEXT;
+                     CREATE INDEX IF NOT EXISTS idx_ai_generations_application_id
+                         ON ai_generations(application_id);",
+                )
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -295,6 +309,35 @@ impl AiGenerationStore {
             .execute(&sql, rusqlite::params_from_iter(ids.iter()))
             .map_err(|e| e.to_string())?;
         Ok(deleted)
+    }
+
+    /// Delete every generation linked to `application_id` (the child Documents of
+    /// one Application). Used by `applications_delete` when the user chose "delete
+    /// everything". Idempotent: an Application with no documents deletes 0 rows.
+    pub fn remove_for_application(&self, application_id: &str) -> AppResult<usize> {
+        let conn = self.conn.lock();
+        let deleted = conn
+            .execute(
+                "DELETE FROM ai_generations WHERE application_id = ?1",
+                params![application_id],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(deleted)
+    }
+
+    /// Detach every generation from `application_id` (set the FK back to NULL) so
+    /// the documents survive as orphaned generations after the parent Application
+    /// is deleted. Used by `applications_delete` when the user chose "remove
+    /// tracking only (keep documents)".
+    pub fn detach_application(&self, application_id: &str) -> AppResult<usize> {
+        let conn = self.conn.lock();
+        let updated = conn
+            .execute(
+                "UPDATE ai_generations SET application_id = NULL WHERE application_id = ?1",
+                params![application_id],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(updated)
     }
 
     /// Edit the résumé and/or cover-letter text of an existing row, selected by

@@ -1,0 +1,155 @@
+import { ChevronDown, ChevronRight, ClipboardList, Plus, Search } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useMemo, useState } from 'react';
+
+import { APPLICATION_STAGES } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
+import { Button, EmptyState, ErrorState, Input, RowSkeleton, transition } from '@ajh/ui';
+
+import { PageShell } from '@/components/layout/PageShell';
+import { ApplicationRow } from '@/features/applications/components/ApplicationRow';
+import { TrackJobModal } from '@/features/applications/components/TrackJobModal';
+import { useApplications } from '@/services/use-applications';
+import { useSessionStore } from '@/store/session-store';
+
+export function ApplicationsPage() {
+  const { t } = useTranslation();
+  const { applications: appsSlice, setApplications, toggleApplicationSection } = useSessionStore();
+  const { collapsedSections, filter } = appsSlice;
+
+  const [trackOpen, setTrackOpen] = useState(false);
+
+  const { data: allApps = [], isLoading, isError } = useApplications();
+
+  // Text filter across company + title + candidate.
+  const q = filter.trim().toLowerCase();
+  const filtered = useMemo(
+    () =>
+      q
+        ? allApps.filter(
+            (a) =>
+              a.company.toLowerCase().includes(q) ||
+              a.title.toLowerCase().includes(q) ||
+              a.candidate.toLowerCase().includes(q)
+          )
+        : allApps,
+    [allApps, q]
+  );
+
+  // Group by stage in APPLICATION_STAGES order; hide stages with no applications.
+  const sections = useMemo(
+    () =>
+      APPLICATION_STAGES.map((stage) => ({
+        stage,
+        apps: filtered.filter((a) => a.status === stage.id),
+      })).filter((s) => s.apps.length > 0),
+    [filtered]
+  );
+
+  const actions = (
+    <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-1.5 transition-colors focus-within:border-brand/35">
+        <Search size={12} className="shrink-0 text-foreground/40" />
+        <Input
+          value={filter}
+          onChange={(e) => setApplications({ filter: e.target.value })}
+          placeholder={t('applications.filterPlaceholder')}
+          className="w-40 bg-transparent text-xs text-foreground outline-none placeholder:text-foreground/25 border-none p-0 rounded-none"
+          variant="default"
+        />
+      </div>
+      <Button size="sm" variant="glass" onClick={() => setTrackOpen(true)}>
+        <Plus size={12} />
+        {t('applications.trackButton')}
+      </Button>
+    </div>
+  );
+
+  return (
+    <>
+      <PageShell
+        title={t('applications.title')}
+        subtitle={t('applications.subtitle')}
+        actions={actions}
+      >
+        {isLoading && (
+          <div className="space-y-2 pt-4">
+            <RowSkeleton />
+            <RowSkeleton />
+            <RowSkeleton />
+          </div>
+        )}
+
+        {isError && (
+          <ErrorState
+            title={t('applications.errorTitle')}
+            description={t('applications.errorDesc')}
+            className="py-16"
+          />
+        )}
+
+        {!isLoading && !isError && allApps.length === 0 && (
+          <EmptyState
+            icon={ClipboardList}
+            title={t('applications.empty')}
+            description={t('applications.emptyDesc')}
+            action={
+              <Button variant="glass" size="sm" onClick={() => setTrackOpen(true)}>
+                <Plus size={13} /> {t('applications.trackButton')}
+              </Button>
+            }
+            className="py-16"
+          />
+        )}
+
+        {!isLoading && !isError && allApps.length > 0 && sections.length === 0 && (
+          <EmptyState icon={Search} title={t('applications.noResults')} className="py-10" />
+        )}
+
+        <div className="space-y-4 pt-4">
+          {sections.map(({ stage, apps }) => {
+            const collapsed = collapsedSections.includes(stage.id);
+            return (
+              <div key={stage.id}>
+                {/* Section header — collapsible; Button from @ajh/ui satisfies no-raw-button rule */}
+                <Button
+                  variant="unstyled"
+                  onClick={() => toggleApplicationSection(stage.id)}
+                  className="mb-2 flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-xs font-semibold uppercase tracking-wider text-foreground/40 transition-colors hover:text-foreground/60"
+                  aria-expanded={!collapsed}
+                >
+                  {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                  {t(`applications.stages.${stage.id}` as const)}
+                  <span className="ml-auto rounded-full bg-foreground/10 px-1.5 py-0.5 text-[10px] font-normal normal-case tracking-normal text-foreground/50">
+                    {apps.length}
+                  </span>
+                </Button>
+
+                <AnimatePresence initial={false}>
+                  {!collapsed && (
+                    <motion.div
+                      key="section-content"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={transition.fast}
+                      className="overflow-hidden"
+                    >
+                      <div className="space-y-2">
+                        {apps.map((app) => (
+                          <ApplicationRow key={app.id} application={app} />
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
+          })}
+        </div>
+      </PageShell>
+
+      <TrackJobModal open={trackOpen} onClose={() => setTrackOpen(false)} />
+    </>
+  );
+}

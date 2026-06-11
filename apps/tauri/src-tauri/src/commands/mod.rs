@@ -3,6 +3,7 @@
 pub mod ai;
 pub mod ai_generations;
 pub mod ai_provider;
+pub mod applications;
 pub mod autopilot;
 pub mod boards;
 pub mod cli_agents;
