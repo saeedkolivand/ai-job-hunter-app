@@ -127,13 +127,12 @@ export function useResumeInput({ value, onChange, onUpload }: Params) {
         // The loaded text is now backed by this saved doc.
         setSelectedDocId(result.id);
       }
-      notify(
-        asDefault ? t('resumeInput.savedAsDefault') : t('resumeInput.savedToLibrary'),
-        'success'
-      );
+      notify.success({
+        message: asDefault ? t('resumeInput.savedAsDefault') : t('resumeInput.savedToLibrary'),
+      });
       setLastUploadedFile(null);
     } catch {
-      notify(t('resumeInput.saveFailed'), 'error');
+      notify.error({ message: t('resumeInput.saveFailed') });
     } finally {
       setSaving(false);
     }
@@ -141,7 +140,7 @@ export function useResumeInput({ value, onChange, onUpload }: Params) {
 
   const handleFileChange = async (file: File) => {
     if (file.size > MAX_BYTES) {
-      notify(t('resumeInput.tooLarge'), 'error');
+      notify.error({ message: t('resumeInput.tooLarge') });
       return;
     }
     setLastUploadedFile(file);
@@ -157,19 +156,22 @@ export function useResumeInput({ value, onChange, onUpload }: Params) {
     try {
       const result = await profileImport.mutateAsync(url);
       if ('error' in result) {
-        notify(
-          isProfileAuthError(result.error) ? t('resumeInput.profileLoginRequired') : result.error,
-          'error'
-        );
+        notify.error({
+          message: isProfileAuthError(result.error)
+            ? t('resumeInput.profileLoginRequired')
+            : result.error,
+        });
         return;
       }
       onChange(result.text);
       setSelectedDocId(null);
       setProfileUrl('');
       setShowUrlInput(false);
-      notify(t('resumeInput.profileImported'), 'success');
+      notify.success({ message: t('resumeInput.profileImported') });
     } catch (err) {
-      notify(err instanceof Error ? err.message : t('resumeInput.profileImportFailed'), 'error');
+      notify.error({
+        message: err instanceof Error ? err.message : t('resumeInput.profileImportFailed'),
+      });
     }
   };
 

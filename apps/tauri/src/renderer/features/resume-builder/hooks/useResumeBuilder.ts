@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
 import { useTranslation } from '@ajh/translations';
-import { useToast } from '@ajh/ui';
+import { useNotification } from '@ajh/ui';
 
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { ROUTES } from '@/constants/routes';
@@ -21,7 +21,7 @@ import { useSessionStore } from '@/store/session-store';
 export function useResumeBuilder() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const notify = useToast();
+  const notify = useNotification();
   const selectedModel = useSelectedModel();
   const { canUse: canUseAI, reason: aiReason } = useCanUseAI();
   const { data: contact } = useContactProfile();
@@ -122,14 +122,14 @@ export function useResumeBuilder() {
         coverLetterText: '',
         jobAd: '',
       });
-      notify(t('build.toast.done'), 'success');
+      notify.success({ message: t('build.toast.done') });
     } catch (err) {
       // A user-cancelled run is silent (Start over / unmount aborts in-flight).
       if (!controller.signal.aborted) {
         const message = err instanceof Error ? err.message : String(err);
         setError(message);
         setResumeBuilder({ stage: 'interview' });
-        notify(t('build.toast.failed'), 'error');
+        notify.error({ message: t('build.toast.failed') });
       }
     } finally {
       setIsGenerating(false);

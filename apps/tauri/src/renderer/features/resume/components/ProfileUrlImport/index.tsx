@@ -40,10 +40,11 @@ export function ProfileUrlImport({ onImported }: Props) {
     try {
       const result = await profileImport.mutateAsync(url.trim());
       if ('error' in result) {
-        notify(
-          isProfileAuthError(result.error) ? t('resumeInput.profileLoginRequired') : result.error,
-          'error'
-        );
+        notify.error({
+          message: isProfileAuthError(result.error)
+            ? t('resumeInput.profileLoginRequired')
+            : result.error,
+        });
         return;
       }
       const title = result.name?.trim() || t('resumeInput.linkedinProfileTitle');
@@ -52,11 +53,13 @@ export function ProfileUrlImport({ onImported }: Props) {
         bytes: new TextEncoder().encode(result.text),
         title,
       })) as { id?: string };
-      notify(t('resumeInput.profileImported'), 'success');
+      notify.success({ message: t('resumeInput.profileImported') });
       onImported?.({ id: saved?.id, name: result.name });
       reset();
     } catch (err) {
-      notify(err instanceof Error ? err.message : t('resumeInput.profileImportFailed'), 'error');
+      notify.error({
+        message: err instanceof Error ? err.message : t('resumeInput.profileImportFailed'),
+      });
     }
   };
 

@@ -81,9 +81,9 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
   const handleCopyLink = async () => {
     try {
       await navigator.clipboard.writeText(posting.url);
-      notify(t('jobs.copyLink'), 'success');
+      notify.success({ message: t('jobs.copyLink') });
     } catch {
-      notify('Failed to copy link', 'error');
+      notify.error({ message: 'Failed to copy link' });
     }
   };
 

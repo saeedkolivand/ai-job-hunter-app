@@ -61,7 +61,14 @@ function setup(target: Target) {
     saveAiGeneration: { mutate: vi.fn() },
     setStageLabel: vi.fn(),
     setIsGenerating: vi.fn(),
-    notify: vi.fn(),
+    notify: {
+      open: vi.fn(),
+      success: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      warning: vi.fn(),
+      destroy: vi.fn(),
+    },
   };
   const tokenStartRef = { current: null as number | null };
   const abortControllerRef = { current: null as AbortController | null };
@@ -122,7 +129,7 @@ describe('useGeneration — progressive reveal (#23)', () => {
 
     expect(m.setIsGenerating).toHaveBeenCalledWith(true);
     expect(m.setIsGenerating).toHaveBeenLastCalledWith(false);
-    expect(m.notify).toHaveBeenCalledWith('aiGenerate.toast.bothReady', 'success');
+    expect(m.notify.success).toHaveBeenCalledWith({ message: 'aiGenerate.toast.bothReady' });
     // The cover-letter research brief is persisted alongside the documents.
     expect(m.saveAiGeneration.mutate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -142,7 +149,7 @@ describe('useGeneration — progressive reveal (#23)', () => {
     // The résumé is salvaged: we end on 'done', never bouncing back to configuring.
     expect(stageCalls(m).at(-1)).toBe('done');
     expect(stageCalls(m)).not.toContain('configuring');
-    expect(m.notify).toHaveBeenCalledWith('aiGenerate.toast.coverFailed', 'error');
+    expect(m.notify.error).toHaveBeenCalledWith({ message: 'aiGenerate.toast.coverFailed' });
     // Persisted résumé-only (no cover text / no brief), and no hard error surfaced.
     expect(m.saveAiGeneration.mutate).toHaveBeenCalledWith(
       expect.objectContaining({ resumeText: 'RESUME', coverLetterText: '', companyBrief: '' })
@@ -158,7 +165,7 @@ describe('useGeneration — progressive reveal (#23)', () => {
 
     expect(stageCalls(m).at(-1)).toBe('configuring');
     expect(m.setError).toHaveBeenCalledWith('resume boom');
-    expect(m.notify).toHaveBeenCalledWith('aiGenerate.toast.failed', 'error');
+    expect(m.notify.error).toHaveBeenCalledWith({ message: 'aiGenerate.toast.failed' });
     expect(m.saveAiGeneration.mutate).not.toHaveBeenCalled();
     expect(m.setIsGenerating).toHaveBeenLastCalledWith(false);
   });
@@ -173,7 +180,7 @@ describe('useGeneration — single target', () => {
     // No early progressive 'done' for a single document — only the final one.
     expect(stages).toEqual(['generating', 'done']);
     expect(generateResume).not.toHaveBeenCalled();
-    expect(m.notify).toHaveBeenCalledWith('aiGenerate.toast.coverReady', 'success');
+    expect(m.notify.success).toHaveBeenCalledWith({ message: 'aiGenerate.toast.coverReady' });
     expect(m.saveAiGeneration.mutate).toHaveBeenCalledWith(
       expect.objectContaining({ resumeText: '', coverLetterText: 'COVER', companyBrief: 'BRIEF' })
     );
@@ -185,6 +192,6 @@ describe('useGeneration — single target', () => {
 
     expect(stageCalls(m)).toEqual(['generating', 'done']);
     expect(generateCoverLetter).not.toHaveBeenCalled();
-    expect(m.notify).toHaveBeenCalledWith('aiGenerate.toast.resumeReady', 'success');
+    expect(m.notify.success).toHaveBeenCalledWith({ message: 'aiGenerate.toast.resumeReady' });
   });
 });

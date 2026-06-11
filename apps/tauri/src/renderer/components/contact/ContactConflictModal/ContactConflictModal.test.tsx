@@ -14,8 +14,15 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string, _opts?: Record<string, unknown>) => k }),
 }));
 
-// useNotification: return a spy; tests assert it is/isn't called.
-const mockNotify = vi.fn<(message: string, variant: string) => void>();
+// useNotification: return an antd-style API of spies; tests assert calls.
+const mockNotify = {
+  open: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+  warning: vi.fn(),
+  destroy: vi.fn(),
+};
 
 vi.mock('@ajh/ui', async (importOriginal) => {
   const actual = await importOriginal<typeof AjhUi>();
@@ -117,7 +124,8 @@ function getRadio(labelKey: string) {
 describe('ContactConflictModal — F2 contact-mismatch warning', () => {
   beforeEach(() => {
     mockMutateAsync.mockReset();
-    mockNotify.mockReset();
+    mockNotify.success.mockReset();
+    mockNotify.error.mockReset();
     mockMutateAsync.mockResolvedValue(undefined);
   });
 
@@ -303,7 +311,7 @@ describe('ContactConflictModal — F2 contact-mismatch warning', () => {
 
     await clickSave();
 
-    await waitFor(() => expect(mockNotify).toHaveBeenCalled());
+    await waitFor(() => expect(mockNotify.error).toHaveBeenCalled());
     // Error path must keep the modal open.
     expect(onResolved).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();

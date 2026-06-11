@@ -73,7 +73,7 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
       if (isLinkedInBoard) await linkedInDisconnect.mutateAsync();
       else await boardDisconnect.mutateAsync(scrapeForm.board);
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Disconnect failed.', 'error');
+      notify.error({ message: err instanceof Error ? err.message : 'Disconnect failed.' });
     }
   };
 
@@ -83,13 +83,13 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
         ? await linkedInConnect.mutateAsync()
         : await boardConnect.mutateAsync(scrapeForm.board);
       const res = result as { connected?: boolean; error?: string } | undefined;
-      if (res?.error) notify(res.error, 'error');
+      if (res?.error) notify.error({ message: res.error });
       else if (!res?.connected) {
         const boardName = isLinkedInBoard ? 'LinkedIn' : scrapeForm.board;
-        notify(`${boardName} sign-in was cancelled or timed out.`, 'warning');
+        notify.warning({ message: `${boardName} sign-in was cancelled or timed out.` });
       }
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Connection failed.', 'error');
+      notify.error({ message: err instanceof Error ? err.message : 'Connection failed.' });
     }
   };
 
@@ -161,7 +161,7 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
       if (res.error) {
         setScraping(false);
         setScrapeOutcome({ ok: false, note: res.error });
-        notify(res.error, 'error');
+        notify.error({ message: res.error });
         return;
       }
 
@@ -177,7 +177,7 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
     } catch (err) {
       setScraping(false);
       setScrapeOutcome({ ok: false, note: err instanceof Error ? err.message : String(err) });
-      notify(err instanceof Error ? err.message : 'Scraping failed.', 'error');
+      notify.error({ message: err instanceof Error ? err.message : 'Scraping failed.' });
     }
   };
 

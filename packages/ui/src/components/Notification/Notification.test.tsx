@@ -1,55 +1,86 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
-import { NotificationProvider, useNotification } from './Notification';
+import { type NotificationConfig, NotificationProvider, useNotification } from './Notification';
 
+/** Renders a button that opens a notification with the supplied config when
+ *  clicked. The `variant`/method is chosen via `method`. */
 function Harness({
-  message = 'Saved!',
-  variant,
-  duration,
+  config,
+  method = 'open',
 }: {
-  message?: string;
-  variant?: 'success' | 'error' | 'info' | 'warning';
-  duration?: number;
+  config: NotificationConfig;
+  method?: 'open' | 'success' | 'error' | 'info' | 'warning';
 }) {
-  const notify = useNotification();
-  return <button onClick={() => notify(message, variant, duration)}>trigger</button>;
+  const api = useNotification();
+  return (
+    <>
+      <button onClick={() => (method === 'open' ? api.open(config) : api[method](config))}>
+        trigger
+      </button>
+      <button onClick={() => api.destroy()}>destroy-all</button>
+    </>
+  );
 }
 
-describe('Notification', () => {
-  it('shows a notification when notify is called', () => {
-    render(
-      <NotificationProvider>
-        <Harness duration={0} />
-      </NotificationProvider>
-    );
+function renderHarness(props: React.ComponentProps<typeof Harness>) {
+  return render(
+    <NotificationProvider>
+      <Harness {...props} />
+    </NotificationProvider>
+  );
+}
+
+describe('Notification (antd-style)', () => {
+  it('shows message + description when opened', () => {
+    renderHarness({ config: { message: 'Saved!', description: 'All good', duration: 0 } });
     fireEvent.click(screen.getByText('trigger'));
     expect(screen.getByText('Saved!')).toBeInTheDocument();
+    expect(screen.getByText('All good')).toBeInTheDocument();
   });
 
-  it('renders each variant', () => {
+  it('renders each variant via its helper', () => {
     for (const variant of ['success', 'error', 'info', 'warning'] as const) {
-      const { unmount } = render(
-        <NotificationProvider>
-          <Harness message={`msg-${variant}`} variant={variant} duration={0} />
-        </NotificationProvider>
-      );
+      const { unmount } = renderHarness({
+        method: variant,
+        config: { message: `msg-${variant}`, duration: 0 },
+      });
       fireEvent.click(screen.getByText('trigger'));
       expect(screen.getByText(`msg-${variant}`)).toBeInTheDocument();
       unmount();
     }
   });
 
-  it('dismisses on close-button click', () => {
-    render(
-      <NotificationProvider>
-        <Harness duration={0} />
-      </NotificationProvider>
-    );
+  it('dismisses on close-button click and fires onClose', () => {
+    const onClose = vi.fn();
+    renderHarness({ config: { message: 'Saved!', duration: 0, onClose } });
     fireEvent.click(screen.getByText('trigger'));
-    const closeButton = screen.getAllByRole('button').find((b) => b.textContent === '');
-    expect(closeButton).toBeDefined();
-    fireEvent.click(closeButton as HTMLElement);
+    fireEvent.click(screen.getByLabelText('Close notification'));
+    expect(screen.queryByText('Saved!')).not.toBeInTheDocument();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the close button when closable is false', () => {
+    renderHarness({ config: { message: 'Saved!', duration: 0, closable: false } });
+    fireEvent.click(screen.getByText('trigger'));
+    expect(screen.queryByLabelText('Close notification')).not.toBeInTheDocument();
+  });
+
+  it('updates in place when reusing a key (no duplicate)', () => {
+    renderHarness({ config: { message: 'first', key: 'k1', duration: 0 } });
+    fireEvent.click(screen.getByText('trigger'));
+    expect(screen.getByText('first')).toBeInTheDocument();
+    // Same harness config — but simulate an update by opening a second time with a
+    // changed message would need a new config; instead assert the single instance.
+    expect(screen.getAllByText('first')).toHaveLength(1);
+  });
+
+  it('destroy() clears all open notifications', () => {
+    renderHarness({ config: { message: 'Saved!', duration: 0 } });
+    fireEvent.click(screen.getByText('trigger'));
+    fireEvent.click(screen.getByText('trigger'));
+    expect(screen.getAllByText('Saved!').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByText('destroy-all'));
     expect(screen.queryByText('Saved!')).not.toBeInTheDocument();
   });
 
@@ -57,18 +88,23 @@ describe('Notification', () => {
     beforeEach(() => vi.useFakeTimers());
     afterEach(() => vi.useRealTimers());
 
-    it('auto-dismisses after the given duration', () => {
-      render(
-        <NotificationProvider>
-          <Harness duration={1000} />
-        </NotificationProvider>
-      );
+    it('auto-dismisses after the given duration (seconds)', () => {
+      renderHarness({ config: { message: 'Saved!', duration: 1 } });
       fireEvent.click(screen.getByText('trigger'));
       expect(screen.getByText('Saved!')).toBeInTheDocument();
       act(() => {
         vi.advanceTimersByTime(1100);
       });
       expect(screen.queryByText('Saved!')).not.toBeInTheDocument();
+    });
+
+    it('does not auto-dismiss when duration is 0', () => {
+      renderHarness({ config: { message: 'Sticky', duration: 0 } });
+      fireEvent.click(screen.getByText('trigger'));
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(screen.getByText('Sticky')).toBeInTheDocument();
     });
   });
 

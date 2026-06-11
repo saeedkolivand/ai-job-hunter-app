@@ -36,6 +36,8 @@ interface OutputPanelDoneProps {
   onRegenerate: () => void;
   copied: boolean;
   isGenerating?: boolean;
+  /** Source résumé text — forwarded to the editor's link-suggestion pick-list. */
+  sourceResume?: string;
   /** Which document is still streaming during progressive reveal (#23), or null. */
   generatingDoc?: 'resume' | 'cover' | null;
 }
@@ -57,6 +59,7 @@ export function OutputPanelDone({
   copied,
   isGenerating = false,
   generatingDoc = null,
+  sourceResume,
 }: OutputPanelDoneProps) {
   const { t } = useTranslation();
   const [exportOpen, setExportOpen] = useState(false);
@@ -233,6 +236,7 @@ export function OutputPanelDone({
           disabled={isGenerating}
           docType={docType}
           meta={meta}
+          sourceResume={sourceResume}
           className="flex h-full w-full flex-col overflow-hidden"
           previewSlot={
             <PdfPreview

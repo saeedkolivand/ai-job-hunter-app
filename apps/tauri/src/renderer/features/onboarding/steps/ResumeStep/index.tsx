@@ -47,13 +47,15 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
       const first = (documentsRaw as (DocumentRecord & { _id?: string })[]).find(Boolean);
       const id = first?._id ?? first?.id;
       if (id) setResume({ defaultId: String(id), autoIndex: true, autoParse: true });
-      notify(t('onboarding.resume.uploaded'), 'success');
+      notify.success({ message: t('onboarding.resume.uploaded') });
       if (result.contactConflicts?.length) {
         setConflicts(result.contactConflicts);
         setImportKey((k) => k + 1);
       }
     } catch (err) {
-      notify(err instanceof Error ? err.message : t('onboarding.resume.uploadFailed'), 'error');
+      notify.error({
+        message: err instanceof Error ? err.message : t('onboarding.resume.uploadFailed'),
+      });
     }
   };
 

@@ -1,0 +1,102 @@
+/*
+ * @ajh/design-system — RichTextEditor (.ProseMirror) editor surface
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Styles the Tiptap/ProseMirror edit surface so it visually matches the
+ * MarkdownMessage preview: H2/H3 headings, flat bullet lists with brand dots,
+ * and brand-coloured links. All colours reference tokens — no raw hex.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+.rich-text-editor .ProseMirror {
+  outline: none;
+  color: color-mix(in oklab, var(--color-foreground) 85%, transparent);
+  font-size: 0.875rem; /* 14px — matches MarkdownMessage body */
+  line-height: 1.6;
+  /* Preserve significant whitespace runs (e.g. job-entry date columns) while the
+     surface is being edited. Content stays the canonical markdown regardless. */
+  white-space: pre-wrap;
+  /* With pre-wrap, a long unbreakable token (e.g. a URL or hyphen-free run in a
+     job entry) would overflow the container horizontally. Break inside the word
+     so it wraps to the editor width instead of forcing a horizontal scrollbar. */
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.rich-text-editor .ProseMirror p {
+  margin: 0;
+}
+
+/* Headings — H2/H3 are the only levels the locked schema allows. */
+.rich-text-editor .ProseMirror h2 {
+  margin: 0.75rem 0 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: color-mix(in oklab, var(--color-foreground) 90%, transparent);
+}
+.rich-text-editor .ProseMirror h3 {
+  margin: 0.5rem 0 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: color-mix(in oklab, var(--color-foreground) 90%, transparent);
+}
+.rich-text-editor .ProseMirror h2:first-child,
+.rich-text-editor .ProseMirror h3:first-child,
+.rich-text-editor .ProseMirror p:first-child {
+  margin-top: 0;
+}
+
+/* Flat bullet lists with brand-tinted markers (matches MarkdownMessage). */
+.rich-text-editor .ProseMirror ul {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+  list-style: none;
+}
+.rich-text-editor .ProseMirror ul li {
+  position: relative;
+  margin: 0.125rem 0;
+}
+.rich-text-editor .ProseMirror ul li::before {
+  content: '';
+  position: absolute;
+  left: -0.9rem;
+  top: 0.62em;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 9999px;
+  background: color-mix(in oklab, var(--color-brand) 60%, transparent);
+}
+.rich-text-editor .ProseMirror ul li p {
+  margin: 0;
+}
+
+/* Inline marks. */
+.rich-text-editor .ProseMirror strong {
+  font-weight: 600;
+  color: color-mix(in oklab, var(--color-foreground) 95%, transparent);
+}
+.rich-text-editor .ProseMirror em {
+  font-style: italic;
+}
+.rich-text-editor .ProseMirror a {
+  color: var(--color-brand-soft);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: text; /* editing surface — links open via Preview, not here */
+}
+.rich-text-editor .ProseMirror a:hover {
+  color: var(--color-brand);
+}
+
+/* Placeholder: an overlay rendered by the component when the document is empty
+   (no extra Tiptap extension needed). It sits over the editor and is removed
+   from the a11y tree / pointer events so it never blocks typing. */
+.rich-text-editor-placeholder {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.75rem;
+  color: color-mix(in oklab, var(--color-foreground) 30%, transparent);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  pointer-events: none;
+  user-select: none;
+}

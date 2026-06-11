@@ -330,6 +330,21 @@ fn is_thematic_break(line: &str) -> bool {
     matches!(first, '-' | '*' | '_') && marks.chars().all(|c| c == first)
 }
 
+/// If `line` begins with a Markdown ATX heading marker — a run of 1–6 `#` followed
+/// by a space (`# `, `## `, … `###### `) — return the content after that marker
+/// (with the leading `#`/space prefix removed but inline `**bold**` preserved).
+/// A `#hashtag` with no trailing space is NOT a heading and yields `None`. This is
+/// what lets a user-authored custom heading (`## Side Projects`) always classify
+/// as a section heading, independent of the known-name / ALL-CAPS heuristics.
+fn strip_atx_heading(line: &str) -> Option<&str> {
+    let hashes = line.chars().take_while(|&c| c == '#').count();
+    if (1..=6).contains(&hashes) && line[hashes..].starts_with(' ') {
+        Some(line[hashes..].trim_start())
+    } else {
+        None
+    }
+}
+
 /// Parse a single line
 fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
     let trimmed = raw.trim();
@@ -360,6 +375,30 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
             segments: Vec::new(),
             right_text: None,
         };
+    }
+
+    // Explicit Markdown ATX heading (`# `/`## `/`### ` … up to `######`). A
+    // user-authored custom heading like `## Side Projects` is promoted to a
+    // section heading regardless of whether it matches a known section name or is
+    // ALL-CAPS — guaranteeing editor-created headings render via
+    // `SectionId::from_header` → `Custom(name)`. Runs before the idx==0
+    // name/contact block and the all-caps / job-entry / contact branches, but
+    // after the Blank and thematic-break checks: a `---`/`***` break is still
+    // dropped as Blank, and a bare `# ` whose heading text is empty falls through
+    // to Blank rather than emitting an empty heading.
+    if let Some(heading_body) = strip_atx_heading(trimmed) {
+        let text = strip_md(heading_body);
+        if !text.is_empty() {
+            return ParsedLine {
+                kind: LineKind::SectionHeader,
+                raw: trimmed.to_string(),
+                text,
+                // Parse inline marks from the marker-stripped body so a bold run
+                // inside the heading (`## **Lead**`) still tokenizes.
+                segments: parse_inline_md(heading_body),
+                right_text: None,
+            };
+        }
     }
 
     // First line is name ONLY if it doesn't look like a section header or contact

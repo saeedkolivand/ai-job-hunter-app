@@ -1,6 +1,6 @@
 # Design System — AI Job Hunter
 
-Last updated: 2026-06-08
+Last updated: 2026-06-11
 
 The design system lives in `packages/ui` and is published as the `@ajh/ui` internal package. It provides design tokens, a component library, motion primitives, and theming infrastructure.
 
@@ -211,6 +211,49 @@ import { Button, Input, GlassCard, Modal } from '@ajh/ui';
 <TextArea label="Cover Letter" rows={8} autoResize />
 ```
 
+#### `RichTextEditor`
+
+WYSIWYG editor for resume and cover-letter markdown, constrained to the vocabulary that survives export (h2/h3 headings, paragraphs, flat bullet lists, **bold**, _italic_, links). The document is internally uncontrolled (Tiptap holds state) and serializes to the **same markdown string** the export pipeline consumes, preserving significant whitespace and a trailing link-reference block verbatim.
+
+```typescript
+<RichTextEditor
+  value={markdownString}
+  onChange={setMarkdownString}
+  placeholder="Edit your resume…"
+  labels={{
+    toolbarLabel: "Formatting toolbar",
+    bold: "Bold",
+    italic: "Italic",
+    link: "Add link",
+    bullet: "Bullet list",
+    heading2: "Heading 2",
+    heading3: "Heading 3",
+  }}
+  onSelectionChange={setHasSelection}
+/>
+```
+
+Props:
+
+- `value: string` — markdown content (re-parsed only on external document switch, not on keystroke, to preserve cursor position).
+- `onChange: (md: string) => void` — emitted debounced ~200ms.
+- `labels?: ToolbarLabels` — a11y strings for toolbar buttons; keep `@ajh/ui` translation-free.
+- `onSelectionChange?: (hasSelection: boolean) => void` — fired when selection gains/loses a non-empty range (used by AI-rewrite toggle).
+- `disabled`, `readOnly`, `placeholder`, `className`, `spellCheck` — standard HTML semantics.
+
+**Imperative handle** (via `ref`):
+
+- `getSelectionText(): string` — plain text of current selection.
+- `getSelectionContext(): { selection, before, after }` — selection + surrounding document text (no markdown marks), used by AI-rewrite prompts.
+- `replaceSelection(text: string): void` — replace selection with plain text (inline marks parsed).
+- `focus(): void` — move keyboard focus into the editor.
+
+**Locked schema (critical):** enables only h2/h3, paragraph, bullets (flat), bold, italic, links (http/https/mailto only); disables code blocks, blockquotes, nesting, images, colors. This makes typing AND paste incapable of introducing markup that won't survive export. Pasted rich HTML is coerced onto the allowed nodes.
+
+**Round-trip contract:** `serialize(parse(md)) === md` byte-exact for unedited documents, enforced by a Vitest no-drift gate that includes real generated samples. The trailing `\n---\n` link-reference block is held out of the editable body and re-appended verbatim, so editing cannot corrupt backend link data.
+
+Source: `packages/ui/src/components/RichTextEditor/`; exported from `@ajh/ui` at `packages/ui/src/index.ts`.
+
 #### `SelectDropdown`
 
 ```typescript
@@ -292,22 +335,50 @@ Wraps every route page. Provides consistent padding, max-width, and scroll conta
 
 ### Feedback & Overlays
 
-#### `Toast` / `Notification`
+#### `Notification`
+
+Imperative antd-style notifications. Use `useNotification()` (must be within `NotificationProvider`) to access the API:
 
 ```typescript
-import { useToast, ToastVariant } from '@ajh/ui';
+import { useNotification } from '@ajh/ui';
 
-const { toast } = useToast();
-toast({ title: 'Saved', variant: 'success' });
-toast({ title: 'Error exporting', variant: 'error' });
+const notify = useNotification();
+
+// Shorthand methods set the variant automatically
+notify.success({ message: 'Saved' });
+notify.error({ message: 'Export failed', description: 'File was locked' });
+notify.warning({ message: 'Warning' });
+notify.info({ message: 'Info' });
+
+// Or use .open() for dynamic variant
+notify.open({
+  message: 'Custom',
+  variant: 'success',
+  duration: 3,
+  placement: 'topRight',
+  closable: true,
+});
+
+// Dismiss one by key, or all
+notify.destroy(key); // dismiss one
+notify.destroy(); // dismiss all
 ```
 
-| `ToastVariant` | Description           |
-| -------------- | --------------------- |
-| `success`      | Green, checkmark icon |
-| `error`        | Red, X icon           |
-| `warning`      | Amber, warning icon   |
-| `info`         | Blue, info icon       |
+`NotificationConfig` shape:
+
+| Field          | Type                                                                | Default        | Description                                        |
+| -------------- | ------------------------------------------------------------------- | -------------- | -------------------------------------------------- |
+| `message`      | `ReactNode`                                                         | required       | Bold title line                                    |
+| `description`  | `ReactNode`                                                         | undefined      | Optional secondary line                            |
+| `variant`      | `success \| error \| warning \| info`                               | `'info'`       | Icon and color scheme                              |
+| `duration`     | `number` (seconds)                                                  | `4.5`          | Auto-dismiss time; `0` = sticky                    |
+| `placement`    | `top \| topLeft \| topRight \| bottom \| bottomLeft \| bottomRight` | `'topRight'`   | Corner/edge anchor                                 |
+| `closable`     | `boolean`                                                           | `true`         | Show close button                                  |
+| `pauseOnHover` | `boolean`                                                           | `true`         | Pause timer on hover                               |
+| `btn`          | `ReactNode`                                                         | undefined      | Optional action button/element                     |
+| `icon`         | `ReactNode`                                                         | auto           | Override variant icon; `null` to hide              |
+| `key`          | `string`                                                            | auto-generated | Stable ID; opening with same key updates that item |
+| `onClose`      | `() => void`                                                        | undefined      | Callback when dismissed                            |
 
 #### `Modal` / `ModalShell`
 

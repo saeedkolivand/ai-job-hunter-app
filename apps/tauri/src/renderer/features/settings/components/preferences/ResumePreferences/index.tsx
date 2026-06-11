@@ -48,13 +48,15 @@ export function ResumePreferences() {
     try {
       const result = await importFile(file);
       if (fileInputRef.current) fileInputRef.current.value = '';
-      notify(t('settings.resume.uploaded'), 'success');
+      notify.success({ message: t('settings.resume.uploaded') });
       if (result.contactConflicts?.length) {
         setConflicts(result.contactConflicts);
         setImportKey((k) => k + 1);
       }
     } catch (err) {
-      notify(err instanceof Error ? err.message : t('settings.resume.uploadFailed'), 'error');
+      notify.error({
+        message: err instanceof Error ? err.message : t('settings.resume.uploadFailed'),
+      });
     }
   };
 
@@ -75,18 +77,18 @@ export function ResumePreferences() {
   const handleSetDefault = async (id: string) => {
     try {
       await setDefaultDocument.mutateAsync(id);
-      notify(t('settings.resume.defaultSet'), 'success');
+      notify.success({ message: t('settings.resume.defaultSet') });
     } catch {
-      notify(t('settings.resume.defaultSetFailed'), 'error');
+      notify.error({ message: t('settings.resume.defaultSetFailed') });
     }
   };
 
   const handleDelete = async (id: string) => {
     try {
       await removeDocument.mutateAsync(id);
-      notify(t('settings.resume.removed'), 'success');
+      notify.success({ message: t('settings.resume.removed') });
     } catch {
-      notify(t('settings.resume.removeFailed'), 'error');
+      notify.error({ message: t('settings.resume.removeFailed') });
     }
   };
 
@@ -102,7 +104,7 @@ export function ResumePreferences() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    notify(t('settings.resume.downloaded'), 'success');
+    notify.success({ message: t('settings.resume.downloaded') });
   };
 
   const _formatFileSize = (bytes?: number) => {

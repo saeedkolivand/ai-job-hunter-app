@@ -71,10 +71,10 @@ export function ContactFeedback() {
           onClick={async () => {
             try {
               const res = await exportDiagnostics.mutateAsync();
-              if (res.success) notify('Diagnostics bundle exported.', 'success');
-              else notify('Export failed.', 'error');
+              if (res.success) notify.success({ message: 'Diagnostics bundle exported.' });
+              else notify.error({ message: 'Export failed.' });
             } catch (err) {
-              notify(err instanceof Error ? err.message : 'Export failed.', 'error');
+              notify.error({ message: err instanceof Error ? err.message : 'Export failed.' });
             }
           }}
         >
@@ -123,7 +123,7 @@ export function ContactFeedback() {
             loading={copyEnvDetails.isPending}
             onClick={async () => {
               await copyEnvDetails.mutateAsync();
-              notify('Copied to clipboard.', 'success');
+              notify.success({ message: 'Copied to clipboard.' });
             }}
           >
             <Copy size={14} className="mr-2" />
@@ -136,7 +136,7 @@ export function ContactFeedback() {
             loading={copyAppVersion.isPending}
             onClick={async () => {
               await copyAppVersion.mutateAsync();
-              notify('Copied to clipboard.', 'success');
+              notify.success({ message: 'Copied to clipboard.' });
             }}
           >
             <Copy size={14} className="mr-2" />
@@ -149,7 +149,7 @@ export function ContactFeedback() {
             loading={copySystemInfo.isPending}
             onClick={async () => {
               await copySystemInfo.mutateAsync();
-              notify('Copied to clipboard.', 'success');
+              notify.success({ message: 'Copied to clipboard.' });
             }}
           >
             <Copy size={14} className="mr-2" />

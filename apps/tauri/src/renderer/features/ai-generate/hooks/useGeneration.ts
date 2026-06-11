@@ -1,4 +1,5 @@
 import type { AiGenerationSaveRequest } from '@ajh/shared/ipc';
+import type { NotificationApi } from '@ajh/ui';
 
 import {
   type EmphasisId,
@@ -10,7 +11,6 @@ import {
 } from '@/lib/generate';
 
 type AIGenerateStage = 'idle' | 'extracting' | 'configuring' | 'generating' | 'done';
-type NotifyVariant = 'success' | 'error' | 'info' | 'warning';
 
 export function useGeneration(
   resume: string,
@@ -41,8 +41,8 @@ export function useGeneration(
    *  revealed (#23 progressive reveal) the stage is already `done` while the cover
    *  is still streaming, so "is generating" can't be derived from the stage. */
   setIsGenerating: (v: boolean) => void,
-  /** Toast sink for success/failure notices (#23). */
-  notify: (message: string, variant?: NotifyVariant) => void,
+  /** Notification API for success/failure notices (#23). */
+  notify: NotificationApi,
   /** Opt-in company research folded into the cover-letter prompt. */
   researchCompany = false,
   /**
@@ -195,14 +195,14 @@ export function useGeneration(
       setActiveOut(target === 'cover' ? 'cover' : finalResume ? 'resume' : 'cover');
 
       persist(finalResume, finalCover, finalCompanyBrief);
-      notify(
-        target === 'both'
-          ? t('aiGenerate.toast.bothReady')
-          : target === 'cover'
-            ? t('aiGenerate.toast.coverReady')
-            : t('aiGenerate.toast.resumeReady'),
-        'success'
-      );
+      notify.success({
+        message:
+          target === 'both'
+            ? t('aiGenerate.toast.bothReady')
+            : target === 'cover'
+              ? t('aiGenerate.toast.coverReady')
+              : t('aiGenerate.toast.resumeReady'),
+      });
     } catch (err) {
       stopStageRotation();
       setStreamBuffer('');
@@ -216,11 +216,11 @@ export function useGeneration(
         setStage('done');
         setActiveOut('resume');
         persist(finalResume, '', '');
-        notify(t('aiGenerate.toast.coverFailed'), 'error');
+        notify.error({ message: t('aiGenerate.toast.coverFailed') });
       } else {
         setError(err instanceof Error ? err.message : t('aiGenerate.errors.generationFailed'));
         setStage('configuring');
-        notify(t('aiGenerate.toast.failed'), 'error');
+        notify.error({ message: t('aiGenerate.toast.failed') });
       }
     } finally {
       setIsGenerating(false);

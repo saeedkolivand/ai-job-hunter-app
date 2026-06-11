@@ -795,26 +795,83 @@ type PerformanceMode = 'low' | 'balanced' | 'performance';
 
 ---
 
+## `menu`
+
+Native app menu and tray menu intent handling.
+
+#### `menu.takePending(): Promise<PendingMenuIntent | null>`
+
+Pulls any buffered menu intents that arrived while the renderer was hidden or backgrounded. Called by the renderer on window focus / visibility restore to catch missed tray-menu or macOS menu-bar events. Returns the queued intent (navigate or action), or `null` if none pending. **Root cause:** Tauri's `app.emit` is fire-and-forget with no per-listener queue; a WebView2 that's hidden, backgrounded, or not-yet-mounted misses the event entirely. Solution: buffer on the Rust side, pull from the renderer once the JS event loop is live.
+
+```typescript
+type PendingMenuIntent =
+  | { event: 'menu.navigate'; payload: MenuNavigateEvent }
+  | { event: 'menu.action'; payload: MenuActionEvent };
+
+interface MenuNavigateEvent {
+  route: string;
+  section: string | null; // optional anchor within the route
+}
+
+interface MenuActionEvent {
+  action: 'check-updates' | 'shortcuts';
+}
+```
+
+#### `menu.onNavigate(handler): Unsubscribe`
+
+Listens for menu navigation events (route clicks from app menu or tray).
+
+#### `menu.onAction(handler): Unsubscribe`
+
+Listens for menu actions (global commands like check-updates).
+
+---
+
 ## `updater`
 
 In-app update management.
 
-#### `updater.check(): Promise<UpdateInfo | null>`
+#### `updater.check(): Promise<UpdateCheckResult>`
 
-#### `updater.downloadAndInstall(): Promise<void>`
+Checks for a new release. Returns a typed result: `{ available: true, version }` if an update exists, `{ available: false }` if up-to-date, or `{ error: string }` if the check failed.
 
 ```typescript
-interface UpdateInfo {
-  version: string;
-  releaseDate: string;
-  releaseNotes: string;
-  downloadUrl: string;
+type UpdateCheckResult =
+  | { available: true; version: string }
+  | { available: false }
+  | { error: string };
+```
+
+#### `updater.download(): Promise<void>`
+
+#### `updater.install(): Promise<void>`
+
+#### `updater.changelog(): Promise<ChangelogResult>`
+
+Fetches recent release history (newest first) for the in-app changelog. Returns releases or an error string (never rejects).
+
+```typescript
+interface ChangelogRelease {
+  version: string; // without leading 'v'
+  name: string | null; // release title from GitHub
+  body: string | null; // release notes (Markdown)
+  publishedAt: string | null; // ISO 8601 timestamp
+  url: string; // GitHub release page
+  prerelease: boolean;
+}
+
+interface ChangelogResult {
+  releases?: ChangelogRelease[];
+  error?: string; // set if fetch/parse failed
 }
 ```
 
 ### Events
 
-#### `updater.onProgress(handler): Unsubscribe`
+#### `updater.onStatus(handler): Unsubscribe`
+
+Listens for update progress and check results.
 
 ```typescript
 interface UpdateProgress {
