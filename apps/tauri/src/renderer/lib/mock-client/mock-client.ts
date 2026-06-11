@@ -262,6 +262,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     menu: {
       onNavigate: unsub,
       onAction: unsub,
+      takePending: () => Promise.resolve(null),
     },
 
     dialog: {

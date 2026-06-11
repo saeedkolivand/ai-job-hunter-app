@@ -38,9 +38,11 @@ export function CompanyResearchSettings() {
     try {
       await setProviderKey.mutateAsync({ provider: 'ollama-cloud', apiKey: apiKey.trim() });
       setApiKey('');
-      notify(t('settings.companyResearch.saved'), 'success');
+      notify.success({ message: t('settings.companyResearch.saved') });
     } catch (err) {
-      notify(err instanceof Error ? err.message : t('settings.companyResearch.saveError'), 'error');
+      notify.error({
+        message: err instanceof Error ? err.message : t('settings.companyResearch.saveError'),
+      });
     } finally {
       setSaving(false);
     }
@@ -49,9 +51,11 @@ export function CompanyResearchSettings() {
   const handleRemove = async () => {
     try {
       await removeProviderKey.mutateAsync({ provider: 'ollama-cloud' });
-      notify(t('settings.companyResearch.removed'), 'success');
+      notify.success({ message: t('settings.companyResearch.removed') });
     } catch (err) {
-      notify(err instanceof Error ? err.message : t('settings.companyResearch.saveError'), 'error');
+      notify.error({
+        message: err instanceof Error ? err.message : t('settings.companyResearch.saveError'),
+      });
     }
   };
 

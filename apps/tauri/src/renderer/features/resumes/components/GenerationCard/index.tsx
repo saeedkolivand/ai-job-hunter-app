@@ -136,7 +136,7 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
     if (!draft) return;
     await navigator.clipboard.writeText(draft);
     setCopiedReferral(contact.id);
-    notify(t('resumes.generated.referralCopied'), 'success');
+    notify.success({ message: t('resumes.generated.referralCopied') });
     setTimeout(() => setCopiedReferral((id) => (id === contact.id ? null : id)), 1800);
   };
 
@@ -160,7 +160,7 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
         notes: contact.notes,
       },
       {
-        onSuccess: () => notify(t('resumes.generated.referralMarkedSent'), 'success'),
+        onSuccess: () => notify.success({ message: t('resumes.generated.referralMarkedSent') }),
       }
     );
   };

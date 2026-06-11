@@ -23,6 +23,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@tiptap/pm": "3.26.0",
+    "@tiptap/react": "3.26.0",
+    "@tiptap/starter-kit": "3.26.0",
     "clsx": "^2.1.1",
     "lucide-react": "^1.17.0",
     "motion": "^12.39.0",

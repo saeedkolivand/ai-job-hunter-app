@@ -12,6 +12,7 @@
  */
 @import './tokens.css';
 @import './utilities.css';
+@import './rich-text-editor.css';
 
 /* Generate utility classes used only inside @ajh/ui component source, in every
    consumer's Tailwind build (app + Storybook). Without this, classes that appear

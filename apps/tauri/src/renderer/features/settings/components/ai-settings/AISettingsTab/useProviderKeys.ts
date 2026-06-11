@@ -125,25 +125,25 @@ export function useProviderKeys() {
       try {
         const models = await api.ai.listProviderModels({ provider, baseUrl: baseUrlFor(provider) });
         const count = Array.isArray(models) ? models.length : 0;
-        notify(
-          count > 0
-            ? `${meta.label} connected — ${count} model${count === 1 ? '' : 's'} available.`
-            : `${meta.label} key saved, but no models returned. Double-check the key.`,
-          count > 0 ? 'success' : 'warning'
-        );
+        notify.open({
+          message:
+            count > 0
+              ? `${meta.label} connected — ${count} model${count === 1 ? '' : 's'} available.`
+              : `${meta.label} key saved, but no models returned. Double-check the key.`,
+          variant: count > 0 ? 'success' : 'warning',
+        });
         void qc.invalidateQueries({ queryKey: [...keys.ai.models, 'provider-models', provider] });
       } catch {
-        notify(
-          `${meta.label} key saved, but couldn't verify it. Check that it's correct.`,
-          'warning'
-        );
+        notify.warning({
+          message: `${meta.label} key saved, but couldn't verify it. Check that it's correct.`,
+        });
       }
       // Auto-set as active if no other active provider is connected
       if (!keyStatus[activeProvider] && activeProvider !== 'ollama') {
         setActiveProvider(provider);
       }
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Failed to save key.', 'error');
+      notify.error({ message: err instanceof Error ? err.message : 'Failed to save key.' });
     } finally {
       setSavingKey(null);
     }
@@ -155,12 +155,12 @@ export function useProviderKeys() {
     try {
       const result = await testProviderKey.mutateAsync({ provider, baseUrl: baseUrlFor(provider) });
       if (result.success) {
-        notify(`${meta.label} API key is valid!`, 'success');
+        notify.success({ message: `${meta.label} API key is valid!` });
       } else {
-        notify(`API key test failed: ${result.error ?? 'Unknown error'}`, 'error');
+        notify.error({ message: `API key test failed: ${result.error ?? 'Unknown error'}` });
       }
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Failed to test key.', 'error');
+      notify.error({ message: err instanceof Error ? err.message : 'Failed to test key.' });
     } finally {
       setTestingKey(null);
     }
@@ -170,10 +170,10 @@ export function useProviderKeys() {
     const meta = PROVIDERS[provider];
     try {
       await removeProviderKey.mutateAsync({ provider });
-      notify(`${meta.label} disconnected.`, 'success');
+      notify.success({ message: `${meta.label} disconnected.` });
       if (activeProvider === provider) setActiveProvider('ollama');
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Failed to remove key.', 'error');
+      notify.error({ message: err instanceof Error ? err.message : 'Failed to remove key.' });
     }
   };
 
@@ -183,9 +183,9 @@ export function useProviderKeys() {
       await pullModel.mutateAsync(model);
       void qc.invalidateQueries({ queryKey: keys.ai.models });
       handleSelectModel('ollama', model);
-      notify(`${model} downloaded and selected.`, 'success');
+      notify.success({ message: `${model} downloaded and selected.` });
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Download failed.', 'error');
+      notify.error({ message: err instanceof Error ? err.message : 'Download failed.' });
     } finally {
       setPulling(null);
     }
