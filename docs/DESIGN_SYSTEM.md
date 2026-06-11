@@ -335,22 +335,50 @@ Wraps every route page. Provides consistent padding, max-width, and scroll conta
 
 ### Feedback & Overlays
 
-#### `Toast` / `Notification`
+#### `Notification`
+
+Imperative antd-style notifications. Use `useNotification()` (must be within `NotificationProvider`) to access the API:
 
 ```typescript
-import { useToast, ToastVariant } from '@ajh/ui';
+import { useNotification } from '@ajh/ui';
 
-const { toast } = useToast();
-toast({ title: 'Saved', variant: 'success' });
-toast({ title: 'Error exporting', variant: 'error' });
+const notify = useNotification();
+
+// Shorthand methods set the variant automatically
+notify.success({ message: 'Saved' });
+notify.error({ message: 'Export failed', description: 'File was locked' });
+notify.warning({ message: 'Warning' });
+notify.info({ message: 'Info' });
+
+// Or use .open() for dynamic variant
+notify.open({
+  message: 'Custom',
+  variant: 'success',
+  duration: 3,
+  placement: 'topRight',
+  closable: true,
+});
+
+// Dismiss one by key, or all
+notify.destroy(key); // dismiss one
+notify.destroy(); // dismiss all
 ```
 
-| `ToastVariant` | Description           |
-| -------------- | --------------------- |
-| `success`      | Green, checkmark icon |
-| `error`        | Red, X icon           |
-| `warning`      | Amber, warning icon   |
-| `info`         | Blue, info icon       |
+`NotificationConfig` shape:
+
+| Field          | Type                                                                | Default        | Description                                        |
+| -------------- | ------------------------------------------------------------------- | -------------- | -------------------------------------------------- |
+| `message`      | `ReactNode`                                                         | required       | Bold title line                                    |
+| `description`  | `ReactNode`                                                         | undefined      | Optional secondary line                            |
+| `variant`      | `success \| error \| warning \| info`                               | `'info'`       | Icon and color scheme                              |
+| `duration`     | `number` (seconds)                                                  | `4.5`          | Auto-dismiss time; `0` = sticky                    |
+| `placement`    | `top \| topLeft \| topRight \| bottom \| bottomLeft \| bottomRight` | `'topRight'`   | Corner/edge anchor                                 |
+| `closable`     | `boolean`                                                           | `true`         | Show close button                                  |
+| `pauseOnHover` | `boolean`                                                           | `true`         | Pause timer on hover                               |
+| `btn`          | `ReactNode`                                                         | undefined      | Optional action button/element                     |
+| `icon`         | `ReactNode`                                                         | auto           | Override variant icon; `null` to hide              |
+| `key`          | `string`                                                            | auto-generated | Stable ID; opening with same key updates that item |
+| `onClose`      | `() => void`                                                        | undefined      | Callback when dismissed                            |
 
 #### `Modal` / `ModalShell`
 
