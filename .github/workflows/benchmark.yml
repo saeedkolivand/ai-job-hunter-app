@@ -50,6 +50,12 @@ jobs:
 
       - name: 📥 Checkout Repository
         uses: actions/checkout@v6
+        with:
+          # Full history + the release deploy key so the push-to-main run can
+          # commit the refreshed benchmark dashboard back to main (mirrors the
+          # release cask/version-sync jobs). Default ref keeps PR runs on PR code.
+          fetch-depth: 0
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
       - name: 🦀 Setup Rust
         uses: ./.github/actions/setup-rust
@@ -72,11 +78,49 @@ jobs:
           # Store history in the landing artifact on main.
           gh-pages-branch: main
           benchmark-data-dir-path: landing/benchmarks
-          # Commit history only when landing on main; PRs compare against it only.
-          auto-push: ${{ github.event_name == 'push' }}
+          # The action's own auto-push runs `git fetch origin main:main`, which
+          # `fatal: refusing to fetch into branch 'main' checked out` — main is
+          # already the working tree. So skip its fetch and never let it push;
+          # it only writes landing/benchmarks into the tree, and the step below
+          # commits + pushes it the same way the release cask job does.
+          skip-fetch-gh-pages: true
+          auto-push: false
           # PRs: leave a comment when a benchmark regresses past the threshold.
           comment-on-alert: true
           alert-threshold: '150%'
           # Advisory: never fail the job — comment-only until thresholds are tuned.
           fail-on-alert: false
           alert-comment-cc-users: '@saeedkolivand'
+
+      # Commit the refreshed dashboard back to main, exactly like the release
+      # cask/version-sync jobs (SSH deploy key + [skip ci]). Push-only — PRs just
+      # compare. [skip ci] keeps this commit from re-triggering any workflow,
+      # so the Pages deploy is kicked explicitly in the next step.
+      - name: 📤 Commit benchmark data
+        id: commit
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # --porcelain catches both modified AND new untracked files (the
+          # dashboard's index.html/data.js are untracked on the very first run,
+          # which `git diff --quiet` would miss).
+          if [ -z "$(git status --porcelain -- landing/benchmarks)" ]; then
+            echo "Benchmark data unchanged — nothing to commit."
+            exit 0
+          fi
+          git add landing/benchmarks
+          git commit -m "chore: update export benchmark data [skip ci]"
+          git push git@github.com:saeedkolivand/ai-job-hunter-assistant-app.git HEAD:main
+          echo "committed=true" >> "$GITHUB_OUTPUT"
+
+      # [skip ci] on the data commit stops pages.yml from auto-running, so kick
+      # it explicitly to publish the refreshed dashboard. Uses the PAT
+      # (secrets.GH_TOKEN), NOT the default GITHUB_TOKEN — a workflow_dispatch
+      # made with GITHUB_TOKEN is silently dropped by GitHub's recursion guard.
+      # Only fires when a commit actually landed.
+      - name: 🌐 Trigger Pages deploy
+        if: steps.commit.outputs.committed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: gh workflow run pages.yml --ref main
