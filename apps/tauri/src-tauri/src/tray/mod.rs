@@ -80,12 +80,16 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id().as_ref() {
             SHOW_ID => show_focus(app),
             SETTINGS_ID => {
+                // Raise the hidden/minimized window first so the settings navigation is visible.
+                show_focus(app);
                 let _ = app.emit(
                     NAVIGATE_EVENT,
                     serde_json::json!({ "route": "/settings", "section": serde_json::Value::Null }),
                 );
             }
             CHECK_UPDATES_ID => {
+                // Raise the hidden/minimized window first so the update flow is visible.
+                show_focus(app);
                 let _ = app.emit(
                     ACTION_EVENT,
                     serde_json::json!({ "action": "check-updates" }),

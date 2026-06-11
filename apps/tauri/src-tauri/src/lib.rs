@@ -224,18 +224,24 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
 fn on_app_menu_event(app: &AppHandle, id: &str) {
     match id {
         MENU_SETTINGS => {
+            // Raise the hidden/minimized window first so the settings navigation is visible.
+            tray::show_focus(app);
             let _ = app.emit(
                 "menu.navigate",
                 serde_json::json!({ "route": "/settings", "section": serde_json::Value::Null }),
             );
         }
         MENU_CHECK_UPDATES => {
+            // Raise the hidden/minimized window first so the update flow is visible.
+            tray::show_focus(app);
             let _ = app.emit(
                 "menu.action",
                 serde_json::json!({ "action": "check-updates" }),
             );
         }
         MENU_SHORTCUTS => {
+            // Raise the hidden/minimized window first so the shortcuts overlay is visible.
+            tray::show_focus(app);
             let _ = app.emit("menu.action", serde_json::json!({ "action": "shortcuts" }));
         }
         MENU_DOCS => open_external(app, REPO_URL),
@@ -256,6 +262,8 @@ fn on_app_menu_event(app: &AppHandle, id: &str) {
         // Go-to-route items: emit `menu.navigate` with the resolved route.
         other => {
             if let Some(route) = nav_route_for(other) {
+                // Raise the hidden/minimized window first so the navigation is visible.
+                tray::show_focus(app);
                 let _ = app.emit(
                     "menu.navigate",
                     serde_json::json!({ "route": route, "section": serde_json::Value::Null }),
