@@ -2,6 +2,7 @@ import { AlertCircle, Plus, X, Zap } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 
 import type { Autopilot } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button, CardSkeleton } from '@ajh/ui';
 
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -11,7 +12,6 @@ import { CreationWizard } from '@/features/autopilot/components/CreationWizard';
 import { EmptyState } from '@/features/autopilot/components/EmptyState';
 import { useAutopilotRun } from '@/features/autopilot/hooks/useAutopilotRun';
 import { autopilotToWizardState } from '@/features/autopilot/lib/wizard-state';
-import { useTranslation } from '@/lib/i18n';
 import { useAutopilots } from '@/services';
 import { useSessionStore } from '@/store/session-store';
 

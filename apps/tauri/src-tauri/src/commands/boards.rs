@@ -60,6 +60,29 @@ pub async fn boards_login_with_browser(app: AppHandle, board_id: String) -> Valu
 }
 
 #[tauri::command]
+pub fn boards_import_cookies(app: AppHandle, board_id: String) -> Value {
+    use crate::scraping::board_login::ImportOutcome;
+
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+
+    match crate::scraping::board_login::import_cookies(&data_dir, &board_id) {
+        Ok(outcome) => {
+            let (label, imported) = match outcome {
+                ImportOutcome::Imported(n) => ("Imported", n),
+                ImportOutcome::NoSession => ("NoSession", 0),
+                ImportOutcome::Undecryptable => ("Undecryptable", 0),
+                ImportOutcome::BrowserNotFound => ("BrowserNotFound", 0),
+            };
+            json!({ "outcome": label, "imported": imported })
+        }
+        Err(e) => json!({ "outcome": "Error", "imported": 0, "error": e.to_string() }),
+    }
+}
+
+#[tauri::command]
 pub fn boards_logout(app: AppHandle, board_id: String) -> Value {
     let data_dir = app
         .path()

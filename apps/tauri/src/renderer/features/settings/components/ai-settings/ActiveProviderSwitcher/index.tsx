@@ -1,8 +1,8 @@
 import { Bot, CheckCircle2 } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, GlassCard } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import type { AiProvider } from '@/store/preferences-schema';
 
 interface ProviderMeta {

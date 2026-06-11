@@ -5,12 +5,12 @@ import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 
 import type { AutopilotFoundJob } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button, transition } from '@ajh/ui';
 
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { scoreToLevel } from '@/features/autopilot/lib/match-level';
 import type { TemplateId } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 import { useExtractText, useResolveJobUrl } from '@/services';
 import { useSessionStore } from '@/store/session-store';
 

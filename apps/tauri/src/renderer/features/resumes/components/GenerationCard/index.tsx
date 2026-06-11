@@ -19,6 +19,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { AiGenerationRecord, ReferralChannel, ReferralContact } from '@ajh/shared/ipc';
+import { useTranslation } from '@ajh/translations';
 import {
   ActionMenu,
   Button,
@@ -41,7 +42,6 @@ import {
   type TemplateId,
   TEMPLATES,
 } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 import { useOpenExternal } from '@/services';
 import { useRemoveAiGeneration, useUpdateAiGeneration } from '@/services/use-ai-generations';
 import { useReferrals, useUpsertReferral } from '@/services/use-referrals/use-referrals';

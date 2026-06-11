@@ -2,9 +2,9 @@ import { Bookmark, Briefcase, FileText, Play } from 'lucide-react';
 import { useMemo } from 'react';
 
 import type { JobInteraction } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { GlassCard } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { useDocuments, useInteractions } from '@/services';
 
 function timeAgo(ts: number) {

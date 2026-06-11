@@ -1,9 +1,9 @@
 import { Contact } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, ModalShell } from '@ajh/ui';
 
 import { ContactProfileForm } from '@/components/contact/ContactProfileForm';
-import { useTranslation } from '@/lib/i18n';
 
 interface ContactPromptModalProps {
   open: boolean;

@@ -1,12 +1,12 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
+import { useTranslation } from '@ajh/translations';
 import { useToast } from '@ajh/ui';
 
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { ROUTES } from '@/constants/routes';
 import { type GenerationMeta, synthesizeResume } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 import { useSaveAiGeneration } from '@/services/use-ai-generations';
 import { useContactProfile } from '@/services/use-contact-profile';
 import { useSessionStore } from '@/store/session-store';

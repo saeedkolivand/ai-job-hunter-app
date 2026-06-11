@@ -1,9 +1,9 @@
+import { useTranslation } from '@ajh/translations';
 import { Accordion } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { getSupportSections } from '@/features/support/support-data';
-import { useTranslation } from '@/lib/i18n';
 
 export function SupportPage() {
   const { t } = useTranslation();

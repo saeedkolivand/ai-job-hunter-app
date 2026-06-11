@@ -1,8 +1,7 @@
 import { Calendar, Filter, Plus, Send, Target, Zap } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 interface EmptyStateProps {
   onNew(): void;

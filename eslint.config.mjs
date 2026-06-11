@@ -86,14 +86,13 @@ const I18N_IMPORT_RESTRICTION = {
     {
       name: 'react-i18next',
       importNames: ['useTranslation'],
-      message:
-        "Import useTranslation from '@/lib/i18n' (the adapter), not directly from 'react-i18next'.",
+      message: "Import useTranslation from '@ajh/translations', not directly from 'react-i18next'.",
     },
     {
       name: 'i18next',
       importNames: ['default'],
       message:
-        "Import the i18n instance from '@/lib/i18n' or '@/i18n', not directly from 'i18next'.",
+        "Import the i18n instance from '@ajh/translations' or '@/i18n', not directly from 'i18next'.",
     },
   ],
 };
@@ -360,14 +359,6 @@ export default tseslint.config(
           ],
         },
       ],
-    },
-  },
-
-  // ── i18n adapter and setup — allowed to import react-i18next directly ──────
-  {
-    files: ['apps/tauri/src/renderer/lib/i18n/i18n.ts', 'apps/tauri/src/renderer/i18n/index.ts'],
-    rules: {
-      'no-restricted-imports': 'off',
     },
   },
 

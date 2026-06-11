@@ -2,10 +2,10 @@ import { Check, Loader2, Sparkles, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, Input, transition, useFocusTrap } from '@ajh/ui';
 
 import { type RewriteDocType, rewriteSelection } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 
 /** The quick-action presets — id maps to an i18n label + a preset instruction. */
 const PRESETS = ['shorten', 'expand', 'rephrase', 'impact', 'grammar'] as const;

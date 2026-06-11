@@ -2,11 +2,11 @@ import { AlertTriangle, Info } from 'lucide-react';
 import { useId, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 
+import { useTranslation } from '@ajh/translations';
 import { SelectDropdown } from '@ajh/ui';
 
 import { StepTemplate } from '@/features/ai-generate/components/wizard-steps/StepTemplate';
 import { OUTPUT_LANGUAGES, type TemplateId } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 
 import type { BuilderFormValues } from '../../../types';
 import { WizardField } from '../../WizardField';

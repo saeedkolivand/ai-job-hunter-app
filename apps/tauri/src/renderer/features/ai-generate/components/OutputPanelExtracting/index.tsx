@@ -1,7 +1,7 @@
 import { Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
 
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation } from '@ajh/translations';
 
 interface OutputPanelExtractingProps {
   stageLabel: string;

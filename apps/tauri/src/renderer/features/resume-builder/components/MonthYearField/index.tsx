@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { SelectDropdown } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 interface MonthYearFieldProps {
   /** Serialized as "MMM YYYY" (e.g. "Jan 2020"). Empty ⇒ both dropdowns unset. */

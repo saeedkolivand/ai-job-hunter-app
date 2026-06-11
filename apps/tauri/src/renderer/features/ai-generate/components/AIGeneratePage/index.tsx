@@ -1,6 +1,7 @@
 import { AnimatePresence } from 'motion/react';
 import { useRef, useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { ErrorState, useToast } from '@ajh/ui';
 
 import { ContactPromptModal } from '@/components/contact/ContactPromptModal';
@@ -25,7 +26,6 @@ import {
   resolveMarket,
   type TemplateId,
 } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 import { useExtractText } from '@/services';
 import { useSaveAiGeneration } from '@/services/use-ai-generations';
 import { useContactPromptSeen, usePreferencesStore } from '@/store/preferences-store';

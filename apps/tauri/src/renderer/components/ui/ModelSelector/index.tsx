@@ -1,11 +1,11 @@
 import { AlertTriangle, Cpu } from 'lucide-react';
 import { useQueries } from '@tanstack/react-query';
 
+import { useTranslation } from '@ajh/translations';
 import { Dropdown } from '@ajh/ui';
 
 import { getModelGuidance } from '@/lib/ai-providers/model-guidance';
 import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
-import { useTranslation } from '@/lib/i18n';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { useAIModels, useHasProviderKey, useSystemHealth } from '@/services';
 import { keys } from '@/services/query-client';

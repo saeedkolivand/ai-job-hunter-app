@@ -1,7 +1,7 @@
 import { Wand2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation } from '@ajh/translations';
 
 export function OutputPanelIdle() {
   const { t } = useTranslation();

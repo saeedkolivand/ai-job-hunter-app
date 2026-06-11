@@ -1,6 +1,6 @@
 import { MemoryStick } from 'lucide-react';
 
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation } from '@ajh/translations';
 
 interface Props {
   totalRamGb: number;

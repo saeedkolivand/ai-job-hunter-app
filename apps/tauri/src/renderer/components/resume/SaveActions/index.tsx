@@ -1,8 +1,7 @@
 import { Loader2, Save, Sparkles } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 interface Props {
   fileName: string;

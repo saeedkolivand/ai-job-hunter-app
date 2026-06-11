@@ -1,4 +1,4 @@
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation } from '@ajh/translations';
 
 /** Small inline pill marking a wizard control as not-yet-available. */
 export function ComingSoonBadge() {

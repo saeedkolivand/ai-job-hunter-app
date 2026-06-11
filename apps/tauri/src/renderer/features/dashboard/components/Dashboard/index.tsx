@@ -1,12 +1,12 @@
 import { useRouter } from '@tanstack/react-router';
 
+import { useTranslation } from '@ajh/translations';
 import { ActionTile } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { AISystemStatus } from '@/features/dashboard/components/AISystemStatus';
 import { JobPipelineOverview } from '@/features/dashboard/components/JobPipelineOverview';
 import { QUICK_ACTIONS } from '@/features/dashboard/constants';
-import { useTranslation } from '@/lib/i18n';
 import { useUserName } from '@/store/preferences-store';
 
 function Dashboard() {

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation } from '@ajh/translations';
 
 /**
  * Shared job-kind → localized label map.

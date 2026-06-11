@@ -26,7 +26,7 @@ import { render, screen } from '@testing-library/react';
 
 // ── i18n stub ─────────────────────────────────────────────────────────────────
 
-vi.mock('@/lib/i18n', () => ({
+vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 

@@ -1,10 +1,10 @@
 import { Download, FileText, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, ModalShell } from '@ajh/ui';
 
 import { buildFilename, type GenerationMeta } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 
 type Fmt = 'pdf' | 'docx' | 'txt';
 

@@ -162,6 +162,10 @@ packages/shared/src/
 
 A standalone [React][react] component library with no routing, IPC, or state management dependencies. Consumed only from the renderer.
 
+### `packages/translations` — i18n Singleton (`@ajh/translations`)
+
+Portable i18next package: owns the generic i18next initialization (LanguageDetector, initReactI18next, en/de resource bundles), re-exports `useTranslation` / `TFunction` / default `i18n` instance. Browser-guarded localStorage initial-language read. Zero app-specific or IPC imports inside the package. Co-locates i18next-cli config and extraction tooling (input points back at the renderer; acceptable since the translation strings belong to the app). The renderer uses a thin shim (`@/i18n`) that imports the i18n instance, attaches the `languageChanged → getClient().system.setLocale(lng)` listener, and re-exports — this decouples app-coupled listener logic from the portable package. See PATTERNS.md §9 for the canonical import path.
+
 ### `packages/prompts` — Prompt Templates
 
 Pure-TypeScript AI prompt templates (zero dependencies). Builds prompt strings and repairs model output; it never calls an LLM or the network. Imported by the renderer's generation helpers.
@@ -441,15 +445,18 @@ graph TD
     Shared["packages/shared"]
     UI["packages/ui"]
     Prompts["packages/prompts"]
+    Translations["packages/translations"]
 
     Renderer --> Shared
     Renderer --> UI
     Renderer --> Prompts
+    Renderer --> Translations
     UI --> Shared
 
     style Renderer fill:#4f46e5,color:#fff
     style UI fill:#7c3aed,color:#fff
     style Shared fill:#0f766e,color:#fff
+    style Translations fill:#7c3aed,color:#fff
 ```
 
 **Hard rules:**
@@ -457,7 +464,8 @@ graph TD
 - `packages/shared` — no [React][react], no Node APIs, no UI
 - `packages/ui` — no [Zustand][zustand], no IPC, no routing
 - `packages/prompts` — no UI, no `window`
-- The renderer imports only `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`
+- `packages/translations` — i18next singleton + adapters; no app-specific or IPC imports
+- The renderer imports only `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`
 
 [tauri]: https://tauri.app
 [react]: https://react.dev

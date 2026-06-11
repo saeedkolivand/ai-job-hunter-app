@@ -2,11 +2,11 @@ import { Eye, Pencil, Save, Sparkles } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 import { useCallback, useRef, useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, MarkdownMessage, SegmentedControl, TextArea } from '@ajh/ui';
 
 import { useSelectedModel } from '@/components/ui/ModelSelector';
 import type { GenerationMeta, RewriteDocType } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 
 import { RewritePopover, type RewriteTarget } from './RewritePopover';
 

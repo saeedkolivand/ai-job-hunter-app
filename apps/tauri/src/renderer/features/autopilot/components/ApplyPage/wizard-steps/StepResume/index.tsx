@@ -1,7 +1,8 @@
 import { Controller, useFormContext } from 'react-hook-form';
 
+import { useTranslation } from '@ajh/translations';
+
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
-import { useTranslation } from '@/lib/i18n';
 
 import type { TailorWizardState } from '../../lib/tailor-state';
 

@@ -2,11 +2,11 @@ import { Activity, CheckCircle, Cpu, Database, Loader2, RefreshCw, XCircle } fro
 import { useState } from 'react';
 import { useRouter } from '@tanstack/react-router';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, GlassCard } from '@ajh/ui';
 
 import { ROUTES } from '@/constants/routes';
 import { useKindLabelMap } from '@/hooks/use-kind-label-map';
-import { useTranslation } from '@/lib/i18n';
 import { useSystemHealth, useSystemMetrics, useWorkerActivity } from '@/services';
 import { keys, queryClient } from '@/services/query-client';
 import { invalidateHealth } from '@/services/use-system';

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
+import { useTranslation } from '@ajh/translations';
+
 import {
   buildFilename,
   exportDOCX,
@@ -11,7 +13,6 @@ import {
   PERSIST_DEBOUNCE_MS,
   type TemplateId,
 } from '@/lib/generate';
-import { useTranslation } from '@/lib/i18n';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { keys } from '@/services/query-client';
 import { useUpdateAiGeneration } from '@/services/use-ai-generations';

@@ -1,9 +1,8 @@
 import { Award, BookText, FolderGit2, HeartHandshake } from 'lucide-react';
 import { Controller, useFieldArray, useFormContext } from 'react-hook-form';
 
+import { useTranslation } from '@ajh/translations';
 import { Accordion, Input, TextArea } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 import type { BuilderFormValues } from '../../../types';
 import { FieldArrayList } from '../../FieldArrayList';

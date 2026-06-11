@@ -11,10 +11,10 @@ import {
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
+import { useTranslation } from '@ajh/translations';
 import { ActionMenu, Button, SourceBadge, useNotification } from '@ajh/ui';
 
 import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
-import { useTranslation } from '@/lib/i18n';
 import { useOpenExternal, usePersistJob } from '@/services';
 import { useSessionStore } from '@/store/session-store';
 

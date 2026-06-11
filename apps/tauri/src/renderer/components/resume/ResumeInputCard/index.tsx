@@ -14,9 +14,8 @@ import {
   Upload,
 } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, TextArea } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 import { ProfileUrlInput } from '../ProfileUrlInput';
 import { ResumeReviewPanel } from '../ResumeReviewPanel';

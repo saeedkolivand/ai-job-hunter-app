@@ -1,9 +1,8 @@
 import { Loader2, Search, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, GlassCard, Input, transition } from '@ajh/ui';
-
-import { useTranslation } from '@/lib/i18n';
 
 import { AuthHint } from './AuthHint';
 import { AuthModeBadge } from './AuthModeBadge';

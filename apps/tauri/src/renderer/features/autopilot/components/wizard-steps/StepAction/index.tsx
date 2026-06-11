@@ -1,6 +1,6 @@
 import { Bell, ScanSearch, Wand2 } from 'lucide-react';
 
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation } from '@ajh/translations';
 
 export function StepAction() {
   const { t } = useTranslation();

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button, EmptyState, GlassCard, Input, SelectDropdown, useNotification } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -13,7 +14,6 @@ import type { ScrapeFormState } from '@/features/jobs/components/ScrapeForm/cons
 import { useFormatRelativeTime } from '@/features/jobs/hooks/useFormatRelativeTime';
 import { useScraping } from '@/features/jobs/hooks/useScraping';
 import type { JobEvent, Posting } from '@/features/jobs/types';
-import { useTranslation } from '@/lib/i18n';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { ScoringSchedulerProvider } from '@/providers/ScoringScheduler';
 import { useClearPostings, useJobEvents, usePostings } from '@/services';

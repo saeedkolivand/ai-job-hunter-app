@@ -5,6 +5,7 @@ import { FormProvider, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 
 import type { Autopilot } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, ModalShell, transition } from '@ajh/ui';
 
 import { StepAction } from '@/features/autopilot/components/wizard-steps/StepAction';
@@ -14,7 +15,6 @@ import { StepTarget } from '@/features/autopilot/components/wizard-steps/StepTar
 import { autopilotWizardSchema } from '@/features/autopilot/lib/schema';
 import { buildDefaults, wizardStateToPayload } from '@/features/autopilot/lib/wizard-state';
 import type { WizardState } from '@/features/autopilot/types';
-import { useTranslation } from '@/lib/i18n';
 import { useCreateAutopilot, useJobPreferences, useUpdateAutopilot } from '@/services';
 import { useSessionStore } from '@/store/session-store';
 

@@ -302,6 +302,11 @@ const R3_ALLOW: &[&str] = &[
     "referrals/mod.rs",
     "jobs/mod.rs",
     "pipeline/cache/mod.rs",
+    // Reads the installed browser's EXTERNAL Cookies SQLite (read-only, copied to
+    // temp) for session import — not our app DB, so it has no domain store. R3
+    // confines OUR persistence; reading a foreign SQLite legitimately needs
+    // rusqlite at the read site. See scraping::board_login::import.
+    "scraping/board_login/import.rs",
 ];
 
 #[test]

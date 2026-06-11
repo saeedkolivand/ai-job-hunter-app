@@ -17,11 +17,11 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useRef, useState } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, NavPill, transition, variants } from '@ajh/ui';
 
 import { ROUTES } from '@/constants/routes';
 import { getTimeGreeting } from '@/lib/greeting';
-import { useTranslation } from '@/lib/i18n';
 import { useAICapability } from '@/providers/CapabilityProvider';
 import { useAppVersion } from '@/services/use-system';
 import { useAIModel, useAiProviderConfig, useUserName } from '@/store/preferences-store';

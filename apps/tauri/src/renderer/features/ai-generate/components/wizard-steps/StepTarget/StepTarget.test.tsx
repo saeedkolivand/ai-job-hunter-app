@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 
 import { StepTarget } from './index';
 
-vi.mock('@/lib/i18n', () => ({
+vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 

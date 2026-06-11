@@ -6,9 +6,9 @@ import {
   formatDownloadSpeed,
   formatTimeRemaining,
 } from '@ajh/shared';
+import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
-import { useTranslation } from '@/lib/i18n';
 import { useJobEvents, usePullModel } from '@/services';
 
 type PullState = 'idle' | 'pulling' | 'done' | 'error';

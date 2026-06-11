@@ -2,11 +2,11 @@ import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, cn, transition } from '@ajh/ui';
 
 import { LOCALES } from '@/constants/locales';
 import i18n from '@/i18n';
-import { useTranslation } from '@/lib/i18n';
 import { useJobPreferences, useSetJobPreferences } from '@/services';
 import { usePreferencesStore } from '@/store/preferences-store';
 
