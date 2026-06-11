@@ -16,13 +16,18 @@ import { useMenuNavigation } from '@/hooks/use-menu-navigation';
 import { CapabilityProvider } from '@/providers/CapabilityProvider';
 import { useSyncCloseToTray } from '@/services';
 
+/** Drives the native-menu navigation/actions. Rendered INSIDE
+ *  `NotificationProvider` so its check-for-updates feedback can raise toasts. */
+function MenuNavigationBridge() {
+  useMenuNavigation();
+  return null;
+}
+
 function RootLayout() {
   const router = useRouter();
 
   // Route to an autopilot's found-jobs when the tray/deep-link asks (app-global).
   useAutopilotFocusNavigation();
-  // Route + run actions from the native menu (app-global).
-  useMenuNavigation();
   // Push the persisted close-to-tray preference to the shell once on boot.
   useSyncCloseToTray();
   useEffect(() => {
@@ -93,6 +98,7 @@ function RootLayout() {
 
   return (
     <NotificationProvider>
+      <MenuNavigationBridge />
       <ProtocolVersionGate>
         <CapabilityProvider>
           <div className="app-content relative flex h-screen flex-col overflow-hidden pt-3">

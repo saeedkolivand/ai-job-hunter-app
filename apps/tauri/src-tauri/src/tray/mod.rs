@@ -46,6 +46,12 @@ struct NewJobs {
     last_autopilot: Option<String>,
 }
 
+/// The last menu intent (navigate/action), buffered by `dispatch_menu` and
+/// pulled by the renderer (`menu_take_pending`) so it isn't lost to the
+/// fire-and-forget `emit` race. Single-slot (last click wins) holding
+/// `(event_name, payload)`; the renderer takes-and-clears it atomically.
+pub struct PendingMenu(pub Mutex<Option<(String, serde_json::Value)>>);
+
 /// Build the tray icon + menu and register `TrayState`. Called once from setup.
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItemBuilder::with_id(SHOW_ID, "Show AI Job Hunter").build(app)?;
@@ -79,22 +85,16 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         .tooltip("AI Job Hunter")
         .on_menu_event(|app, event| match event.id().as_ref() {
             SHOW_ID => show_focus(app),
-            SETTINGS_ID => {
-                // Raise the hidden/minimized window first so the settings navigation is visible.
-                show_focus(app);
-                let _ = app.emit(
-                    NAVIGATE_EVENT,
-                    serde_json::json!({ "route": "/settings", "section": serde_json::Value::Null }),
-                );
-            }
-            CHECK_UPDATES_ID => {
-                // Raise the hidden/minimized window first so the update flow is visible.
-                show_focus(app);
-                let _ = app.emit(
-                    ACTION_EVENT,
-                    serde_json::json!({ "action": "check-updates" }),
-                );
-            }
+            SETTINGS_ID => dispatch_menu(
+                app,
+                NAVIGATE_EVENT,
+                serde_json::json!({ "route": "/settings", "section": serde_json::Value::Null }),
+            ),
+            CHECK_UPDATES_ID => dispatch_menu(
+                app,
+                ACTION_EVENT,
+                serde_json::json!({ "action": "check-updates" }),
+            ),
             NEW_JOBS_ID => on_new_jobs_click(app),
             PAUSE_ALL_ID => pause_all(app),
             QUIT_ID => app.exit(0),
@@ -116,6 +116,8 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         new_jobs_item: new_jobs,
         inner: Mutex::new(NewJobs::default()),
     });
+    // Buffer for a menu intent missed by a backgrounded webview (see `dispatch_menu`).
+    app.manage(PendingMenu(Mutex::new(None)));
     Ok(())
 }
 
@@ -133,6 +135,38 @@ pub fn show_focus(app: &AppHandle) {
         let _ = win.show();
         let _ = win.unminimize();
         let _ = win.set_focus();
+    }
+}
+
+/// Restore the window and deliver a menu intent (`menu.navigate` / `menu.action`)
+/// from the tray or the macOS menu bar.
+///
+/// `emit` is fire-and-forget — there is no per-listener queue — so a push fired
+/// right after a menu click is easily lost: the webview is suspended
+/// (close-to-tray), it hasn't re-attached its listeners yet, or WebView2 defers
+/// IPC while the tray menu holds the foreground. So we ALWAYS buffer the intent
+/// in `PendingMenu` and let the RENDERER pull it (`menu_take_pending`) once its JS
+/// loop is provably live — it drains on the emitted event, on window
+/// focus/visibility-restore, and on mount. The buffer is written BEFORE
+/// `show_focus` so it's in place no matter how quickly the renderer pulls, and
+/// `menu_take_pending` takes-and-clears atomically, so the intent is delivered
+/// exactly once and can't re-fire on a later unrelated focus. The immediate emit
+/// stays purely as a low-latency *trigger* (its payload is ignored by the
+/// renderer) for the already-visible case where no focus/visibility change fires
+/// (notably the macOS menu bar, where the window never loses key focus).
+pub fn dispatch_menu(app: &AppHandle, event: &str, payload: serde_json::Value) {
+    log::info!("[menu] dispatch {event} {payload}");
+    // Buffer BEFORE showing so the renderer's pull (which may fire as soon as the
+    // window is shown / focused) always finds the intent.
+    if let Some(s) = app.try_state::<PendingMenu>() {
+        *s.0.lock() = Some((event.to_string(), payload.clone()));
+    }
+    show_focus(app);
+    // Low-latency trigger so a live webview drains immediately (the renderer pulls
+    // the buffer rather than trusting this payload).
+    let _ = app.emit(event, payload.clone());
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.emit(event, payload);
     }
 }
 

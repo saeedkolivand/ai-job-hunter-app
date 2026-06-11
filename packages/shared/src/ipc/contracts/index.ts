@@ -176,7 +176,12 @@ export { JOB_PREFERENCES_CHANNELS, type JobPreferencesContract } from './jobPref
 export { JOBS_CHANNELS, type JobsContract } from './jobs.js';
 export { LINKEDIN_CHANNELS, type LinkedinContract } from './linkedin.js';
 export { MATCH_CHANNELS, type MatchContract } from './match.js';
-export { type MenuActionEvent, type MenuContract, type MenuNavigateEvent } from './menu.js';
+export {
+  type MenuActionEvent,
+  type MenuContract,
+  type MenuNavigateEvent,
+  type PendingMenuIntent,
+} from './menu.js';
 export { PRIVACY_CHANNELS, type PrivacyContract } from './privacy.js';
 export {
   type ReferralChannel,
@@ -195,6 +200,7 @@ export { SYSTEM_CHANNELS, type SystemContract } from './system.js';
 export {
   type ChangelogRelease,
   type ChangelogResult,
+  type UpdateCheckResult,
   UPDATER_CHANNELS,
   type UpdaterContract,
 } from './updater.js';

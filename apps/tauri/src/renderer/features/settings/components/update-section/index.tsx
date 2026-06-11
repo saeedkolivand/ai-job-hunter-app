@@ -75,7 +75,14 @@ export function UpdateSection() {
         </div>
 
         {status.state === 'idle' || status.state === 'not-available' || status.state === 'error' ? (
-          <RefreshButton onRefresh={check} variant="glass" size={12} className="shrink-0 gap-2">
+          <RefreshButton
+            onRefresh={() => {
+              void check();
+            }}
+            variant="glass"
+            size={12}
+            className="shrink-0 gap-2"
+          >
             {t('settings.update.checkNow')}
           </RefreshButton>
         ) : status.state === 'checking' ? (

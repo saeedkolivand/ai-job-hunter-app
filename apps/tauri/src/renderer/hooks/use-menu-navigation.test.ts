@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
-import type { MenuActionEvent, MenuNavigateEvent } from '@ajh/shared';
+import type { PendingMenuIntent } from '@ajh/shared';
 
 import { createMockClient, withProviders } from '@/test-support';
 
@@ -10,8 +10,9 @@ import { useMenuNavigation } from './use-menu-navigation';
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 // The hook's only side-effect surface is: router navigate, the session/ui store
 // setters, and the updater `check`. We mock each so we can assert exact calls.
-// The menu subscription itself stays real — we capture the handler it registers
-// through the mock AppClient's `menu.onNavigate` / `menu.onAction`.
+// Menu intents are delivered by PULLING the shell-buffered intent via
+// `menu.takePending` (not by trusting the emitted event payload), so the mock
+// client's `takePending` is the unit under test's input.
 
 const navigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({
@@ -20,7 +21,6 @@ vi.mock('@tanstack/react-router', () => ({
 
 const setSettings = vi.fn();
 vi.mock('@/store/session-store', () => ({
-  // Selector-based store: invoke the selector against a state exposing the spy.
   useSessionStore: (selector: (s: { setSettings: typeof setSettings }) => unknown) =>
     selector({ setSettings }),
 }));
@@ -31,39 +31,38 @@ vi.mock('@/store/ui-store', () => ({
     selector({ setShortcutsOpen }),
 }));
 
-const check = vi.fn();
+const check = vi.fn().mockResolvedValue({ available: false });
 vi.mock('@/services/use-updater', () => ({
   useUpdater: () => ({ check }),
 }));
 
+// useMenuNavigation raises check-for-updates feedback via useNotification and
+// reads strings via useTranslation — mock both (provider-free, identity t).
+const notifyApi = {
+  open: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+  warning: vi.fn(),
+  destroy: vi.fn(),
+};
+vi.mock('@ajh/ui', () => ({ useNotification: () => notifyApi }));
+vi.mock('@ajh/translations', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Render the hook with a mock client whose menu subscriptions capture the
- * registered handlers, so a test can fire menu events directly.
+ * Render the hook with a mock client whose `menu.takePending` resolves to
+ * `pending` (the shell-buffered intent). On mount the hook drains once; a test
+ * can also override `takePending` to script later focus/visibility drains.
  */
-function renderWithCapture() {
-  let onNavigate: ((e: MenuNavigateEvent) => void) | undefined;
-  let onAction: ((e: MenuActionEvent) => void) | undefined;
-
-  const client = createMockClient({
-    'menu.onNavigate': vi.fn((handler: (e: MenuNavigateEvent) => void) => {
-      onNavigate = handler;
-      return () => {};
-    }),
-    'menu.onAction': vi.fn((handler: (e: MenuActionEvent) => void) => {
-      onAction = handler;
-      return () => {};
-    }),
-  });
-
+function renderWithPending(
+  pending: PendingMenuIntent | null,
+  takePending = vi.fn().mockResolvedValue(pending)
+) {
+  const client = createMockClient({ 'menu.takePending': takePending });
   const utils = renderHook(() => useMenuNavigation(), { wrapper: withProviders(client) });
-
-  return {
-    ...utils,
-    fireNavigate: (e: MenuNavigateEvent) => act(() => onNavigate?.(e)),
-    fireAction: (e: MenuActionEvent) => act(() => onAction?.(e)),
-  };
+  return { ...utils, takePending };
 }
 
 beforeEach(() => {
@@ -78,48 +77,90 @@ afterEach(() => {
 });
 
 describe('useMenuNavigation', () => {
-  it('routes a plain navigate event without touching settings', () => {
-    const { fireNavigate } = renderWithCapture();
+  it('drains a plain navigate intent and routes without touching settings', async () => {
+    renderWithPending({ event: 'menu.navigate', payload: { route: '/jobs', section: null } });
 
-    fireNavigate({ route: '/jobs', section: null });
-
-    expect(navigate).toHaveBeenCalledExactlyOnceWith({ to: '/jobs' });
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/jobs' }));
     expect(setSettings).not.toHaveBeenCalled();
   });
 
-  it('pre-selects an allowlisted settings section then navigates', () => {
-    const { fireNavigate } = renderWithCapture();
+  it('pre-selects an allowlisted settings section then navigates', async () => {
+    renderWithPending({ event: 'menu.navigate', payload: { route: '/settings', section: 'ai' } });
 
-    fireNavigate({ route: '/settings', section: 'ai' });
-
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/settings' }));
     expect(setSettings).toHaveBeenCalledExactlyOnceWith({ activeSection: 'ai' });
-    expect(navigate).toHaveBeenCalledExactlyOnceWith({ to: '/settings' });
   });
 
-  it('ignores an unknown settings section but still navigates', () => {
-    const { fireNavigate } = renderWithCapture();
+  it('ignores an unknown settings section but still navigates', async () => {
+    renderWithPending({
+      event: 'menu.navigate',
+      payload: { route: '/settings', section: 'bogus' },
+    });
 
-    fireNavigate({ route: '/settings', section: 'bogus' });
-
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/settings' }));
     expect(setSettings).not.toHaveBeenCalled();
-    expect(navigate).toHaveBeenCalledExactlyOnceWith({ to: '/settings' });
   });
 
-  it('triggers the updater check on the check-updates action', () => {
-    const { fireAction } = renderWithCapture();
+  it('triggers the updater check on the check-updates action', async () => {
+    renderWithPending({ event: 'menu.action', payload: { action: 'check-updates' } });
 
-    fireAction({ action: 'check-updates' });
-
-    expect(check).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(check).toHaveBeenCalledTimes(1));
     expect(setShortcutsOpen).not.toHaveBeenCalled();
   });
 
-  it('opens the shortcuts cheat-sheet on the shortcuts action', () => {
-    const { fireAction } = renderWithCapture();
+  it('opens the shortcuts cheat-sheet on the shortcuts action', async () => {
+    renderWithPending({ event: 'menu.action', payload: { action: 'shortcuts' } });
 
-    fireAction({ action: 'shortcuts' });
-
-    expect(setShortcutsOpen).toHaveBeenCalledExactlyOnceWith(true);
+    await waitFor(() => expect(setShortcutsOpen).toHaveBeenCalledExactlyOnceWith(true));
     expect(check).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when no intent is buffered', async () => {
+    const { takePending } = renderWithPending(null);
+
+    await waitFor(() => expect(takePending).toHaveBeenCalled());
+    expect(navigate).not.toHaveBeenCalled();
+    expect(check).not.toHaveBeenCalled();
+    expect(setShortcutsOpen).not.toHaveBeenCalled();
+  });
+
+  it('delivers a buffered intent exactly once across multiple triggers', async () => {
+    // First drain (mount) returns the intent; every later trigger sees the
+    // cleared buffer (atomic take), so navigation fires exactly once.
+    const takePending = vi
+      .fn()
+      .mockResolvedValueOnce({ event: 'menu.navigate', payload: { route: '/jobs', section: null } })
+      .mockResolvedValue(null);
+    renderWithPending(null, takePending);
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      document.dispatchEvent(new Event('visibilitychange'));
+      await Promise.resolve();
+    });
+
+    expect(navigate).toHaveBeenCalledTimes(1);
+  });
+
+  it('drains again on window focus (covers the tray/close-to-tray restore)', async () => {
+    const takePending = vi.fn().mockResolvedValue(null);
+    renderWithPending(null, takePending);
+
+    await waitFor(() => expect(takePending).toHaveBeenCalled());
+    expect(navigate).not.toHaveBeenCalled();
+
+    // A later click buffers an intent; the window-focus trigger drains it.
+    takePending.mockResolvedValueOnce({
+      event: 'menu.navigate',
+      payload: { route: '/settings', section: null },
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/settings' }));
   });
 });
