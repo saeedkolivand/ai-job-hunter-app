@@ -46,9 +46,12 @@ jobs:
       - name: 📚 Build Storybook
         run: pnpm --filter @ajh/ui build-storybook
 
+      - name: 🌐 Install Playwright Chromium (for Lost Pixel)
+        run: pnpm dlx playwright@1.47.2 install --with-deps chromium
+
       - name: 🖼️ Run Lost Pixel (advisory)
         continue-on-error: true
-        run: pnpm dlx lost-pixel@latest
+        run: pnpm dlx lost-pixel@3.22.0
 
       - name: 📊 Upload Lost Pixel output
         if: always()
