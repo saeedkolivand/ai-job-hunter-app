@@ -444,6 +444,19 @@ type TemplateId =
 
 Location lookup and reverse geocoding.
 
+#### `geocode.suggest(query: string): Promise<GeocodeSuggestion[]>`
+
+Autocomplete suggestions filtered to city-level and country-level results only (via `to_city_country` filter in Rust backend). Returned display strings are formatted as `"City, Country"` for cities or bare country name for country-level matches.
+
+```typescript
+interface GeocodeSuggestion {
+  display: string;
+  lat?: number | null;
+  lon?: number | null;
+  countryCode?: string | null;
+}
+```
+
 #### `geocode.lookup(query: string): Promise<GeocodeResult[]>`
 
 ```typescript

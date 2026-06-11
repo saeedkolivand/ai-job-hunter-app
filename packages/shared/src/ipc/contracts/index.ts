@@ -171,7 +171,7 @@ export {
   type TemplateRecommendation,
   type TemplateRecommendSignals,
 } from './documents.js';
-export { GEOCODE_CHANNELS, type GeocodeContract } from './geocode.js';
+export { GEOCODE_CHANNELS, type GeocodeContract, type GeocodeSuggestion } from './geocode.js';
 export { JOB_PREFERENCES_CHANNELS, type JobPreferencesContract } from './jobPreferences.js';
 export { JOBS_CHANNELS, type JobsContract } from './jobs.js';
 export { LINKEDIN_CHANNELS, type LinkedinContract } from './linkedin.js';
