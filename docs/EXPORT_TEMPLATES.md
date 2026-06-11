@@ -1,6 +1,6 @@
 # Export Templates — the resume/cover-letter rendering contract
 
-Last updated: 2026-06-02
+Last updated: 2026-06-11
 
 The normative reference for the document export system: the nine templates, the
 single PDF engine, and the cross-cutting rules (page size, ATS mode, links, fonts,
@@ -57,6 +57,25 @@ typst dependency ring-fenced behind the adapter.
 
 The shared layer is `DocumentModel` + `Theme` + `LocaleProfile` + section routing
 — **not** a shared paginator.
+
+### Markdown ATX headings (user-created custom sections)
+
+The resume text parser (`parse_line` in `export/parser/mod.rs`) classifies lines
+beginning with 1–6 `#` markers plus an ASCII space (`# `, `## `, `### `, …) as
+section headers with `LineKind::SectionHeader`, stripping the marker and preserving
+inline markdown marks (`**bold**`). This means **any line the WYSIWYG editor emits
+as `## Custom Section` will always render as a section heading**, independent of
+whether the text matches a known section name (`SECTION_NAMES`) or is ALL-CAPS.
+
+The rule is additive: known-section, ALL-CAPS, thematic-break (`---`), and job-entry
+heuristics are unchanged. A bare `# ` with no heading text falls through to blank.
+
+**Significance for the editor↔export contract:** The WYSIWYG editor's markdown
+serializer (`packages/ui/src/components/RichTextEditor/markdown.ts`) emits user-created
+h2/h3 nodes as `## text` / `### text` lines. The parser's ATX rule guarantees they render
+as sections. The significant-whitespace preservation (job-entry date alignment, e.g.
+`Senior Engineer␣␣Jan 2020`) is a separate round-trip invariant; see the no-drift
+gate in `markdown.roundtrip.test.ts`.
 
 ---
 

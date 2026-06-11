@@ -19,8 +19,17 @@ export interface ChangelogResult {
   error?: string;
 }
 
+/** Result of {@link UpdaterContract.check}. Mirrors the shell's `updater_check`
+ *  JSON: an available update with its version, no update, or an error string.
+ *  Detailed progress still arrives via the `updater:status` event stream. */
+export type UpdateCheckResult =
+  | { available: true; version: string }
+  | { available: false }
+  | { error: string };
+
 export interface UpdaterContract {
-  check(): Promise<void>;
+  /** Trigger a check. Resolves with the outcome (also emitted on `onStatus`). */
+  check(): Promise<UpdateCheckResult>;
 
   download(): Promise<void>;
 
