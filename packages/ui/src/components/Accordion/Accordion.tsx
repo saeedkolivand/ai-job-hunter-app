@@ -53,6 +53,14 @@ export function Accordion({ title, content, defaultOpen = false }: AccordionProp
           >
             <div className="border-transparent px-5 py-4 text-sm leading-relaxed text-foreground/60">
               {typeof content === 'string' ? (
+                // Trust boundary: `content` strings reach this sink ONLY from the
+                // Support FAQ (apps/.../SupportPage), which passes `t(...)` values
+                // from the statically-bundled @ajh/translations resources (en/de
+                // JSON, no network/user/AI input). Every other caller (AnalysisResults,
+                // StepExtras) passes JSX (React.ReactNode), which takes the `else`
+                // branch below and never touches dangerouslySetInnerHTML. No
+                // untrusted (AI-generated / resume-derived / network) text is rendered
+                // here, so the markup is safe to inject without sanitization.
                 <div dangerouslySetInnerHTML={{ __html: content }} />
               ) : (
                 content
