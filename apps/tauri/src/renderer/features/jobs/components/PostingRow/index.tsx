@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Eye,
   MapPin,
+  Save,
   Wand2,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -16,6 +17,7 @@ import { ActionMenu, Button, SourceBadge, useNotification } from '@ajh/ui';
 
 import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
 import { useOpenExternal, usePersistJob } from '@/services';
+import { useSaveFromPosting } from '@/services/use-applications';
 import { useSessionStore } from '@/store/session-store';
 
 interface Posting {
@@ -32,7 +34,6 @@ interface Posting {
   capturedAt: number;
   interactions?: { interactionType: string }[];
 }
-
 interface PostingRowProps {
   posting: Posting;
   formatRelativeTime: (timestamp?: number) => string;
@@ -45,6 +46,7 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
   const setAIGenerate = useSessionStore((s) => s.setAIGenerate);
   const openExternalMutation = useOpenExternal();
   const persistJobMutation = usePersistJob();
+  const saveFromPostingMutation = useSaveFromPosting();
 
   const [interactionTypes, setInteractionTypes] = useState(
     () => new Set(posting.interactions?.map((i) => i.interactionType) || [])
@@ -87,9 +89,6 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
     }
   };
 
-  // Apply assistant: seed the AI Generate workspace with this posting, open the
-  // posting so the user can submit it there, mark it applied, and route to the
-  // tailoring flow. Tailoring is board-agnostic, so this works for every source.
   const handleTailor = () => {
     void trackInteraction('applied');
     setAIGenerate({ jobAd: posting.description, stage: 'idle', meta: null });
@@ -97,9 +96,17 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
     void navigate({ to: '/ai-generate' });
   };
 
-  // The whole row opens the posting (#3). It's a role="button" region (not a
-  // <button>) so the inline SourceBadge / action cluster can keep their own
-  // click handlers — those stop propagation so they don't also open the row.
+  // Jobs-page Save: create an Application with status=saved linked to this posting.
+  const handleSave = () => {
+    void saveFromPostingMutation.mutateAsync({
+      jobUrl: posting.url,
+      board: posting.source,
+      company: posting.company,
+      title: posting.title,
+    });
+    notify.success({ message: t('applications.savedToTracking') });
+  };
+
   const onRowKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -152,7 +159,6 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
               <MapPin size={10} /> {posting.location}
             </span>
           )}
-          {/* Badge keeps its own click (open source); stop it bubbling to the row. */}
           <span onClick={(e) => e.stopPropagation()}>
             <SourceBadge source={posting.source} url={posting.url} />
           </span>
@@ -161,7 +167,6 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
           )}
         </div>
       </div>
-      {/* Action cluster — stops propagation so its buttons don't open the row. */}
       <div
         className="flex shrink-0 items-center gap-2"
         onClick={(e) => e.stopPropagation()}
@@ -169,6 +174,16 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
         role="presentation"
       >
         <RowMatchScore jobId={posting.id} />
+        <Button
+          size="sm"
+          variant="glass"
+          onClick={handleSave}
+          title={t('applications.saveToTracking')}
+          loading={saveFromPostingMutation.isPending}
+          className="transition-all duration-150 ease-out"
+        >
+          <Save size={11} /> {t('applications.save')}
+        </Button>
         <Button
           size="sm"
           variant="glass"

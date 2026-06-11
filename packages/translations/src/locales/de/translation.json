@@ -19,7 +19,8 @@
     "search": "Suche",
     "monitoring": "Monitoring",
     "support": "Hilfe & Support",
-    "settings": "Einstellungen"
+    "settings": "Einstellungen",
+    "applications": "Bewerbungen"
   },
   "build": {
     "title": "Lebenslauf-Builder",
@@ -2082,6 +2083,73 @@
       "import": "Importieren",
       "success": "Profil von {{name}} als Lebenslauf importiert",
       "failed": "Profilimport fehlgeschlagen"
+    }
+  },
+  "applications": {
+    "title": "Bewerbungen",
+    "subtitle": "Verfolge jede Bewerbung — von gespeichert bis angenommen.",
+    "trackButton": "Job tracken",
+    "filterPlaceholder": "Nach Unternehmen oder Stelle filtern…",
+    "empty": "Noch keine Bewerbungen",
+    "emptyDesc": "Tracke ein Stellenangebot oder speichere eines aus der Jobs-Seite.",
+    "noResults": "Keine passenden Bewerbungen",
+    "errorTitle": "Bewerbungen konnten nicht geladen werden",
+    "errorDesc": "Versuche die Seite neu zu laden.",
+    "save": "Speichern",
+    "saveToTracking": "In Bewerbungs-Tracking speichern",
+    "savedToTracking": "Im Bewerbungs-Tracking gespeichert",
+    "status": {
+      "saved": "Gespeichert",
+      "applied": "Beworben",
+      "screening": "Vorauswahl",
+      "interviewing": "Interview",
+      "offer": "Angebot",
+      "accepted": "Angenommen",
+      "rejected": "Abgelehnt",
+      "ghosted": "Kein Rückmeldung",
+      "withdrawn": "Zurückgezogen"
+    },
+    "stages": {
+      "saved": "Gespeichert",
+      "applied": "Beworben",
+      "screening": "Vorauswahl",
+      "interviewing": "Interview",
+      "offer": "Angebot",
+      "accepted": "Angenommen",
+      "rejected": "Abgelehnt",
+      "ghosted": "Kein Rückmeldung",
+      "withdrawn": "Zurückgezogen"
+    },
+    "row": {
+      "noTitle": "Kein Titel",
+      "noReply": "Keine Antwort · {{days}}d",
+      "overdue": "Überfällig",
+      "followUp": "Nachfassen",
+      "actions": "Aktionen",
+      "openUrl": "Job-Link öffnen",
+      "deleteKeepDocs": "Tracking entfernen (Dokumente behalten)",
+      "deleteAll": "Alles löschen"
+    },
+    "delete": {
+      "keepTitle": "Bewerbungs-Tracking entfernen",
+      "keepDesc": "Dies entfernt nur den Tracking-Eintrag. Deine generierten Dokumente bleiben in der Dokumentenbibliothek.",
+      "allTitle": "Bewerbung und Dokumente löschen",
+      "allDesc": "Dies löscht dauerhaft den Tracking-Eintrag und alle generierten Dokumente dieser Bewerbung.",
+      "confirm": "Löschen"
+    },
+    "trackModal": {
+      "title": "Job tracken",
+      "subtitle": "Füge einen Job hinzu, auf den du dich beworben hast oder tracken möchtest.",
+      "urlLabel": "Job-URL (optional)",
+      "urlPlaceholder": "https://…",
+      "companyLabel": "Unternehmen",
+      "companyPlaceholder": "z. B. Muster GmbH",
+      "titleLabel": "Stellenbezeichnung",
+      "titlePlaceholder": "z. B. Senior Engineer",
+      "candidateLabel": "Kandidatenname",
+      "candidatePlaceholder": "Dein Name",
+      "cancel": "Abbrechen",
+      "submit": "Tracken"
     }
   }
 }

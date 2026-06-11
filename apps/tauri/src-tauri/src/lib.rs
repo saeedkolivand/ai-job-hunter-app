@@ -11,6 +11,7 @@
 #![deny(clippy::await_holding_lock)]
 
 pub mod ai_generations;
+pub mod applications;
 pub mod autopilot;
 pub mod autopilot_helpers;
 pub mod autopilot_scheduler;
@@ -415,6 +416,16 @@ pub fn run() {
                     log::warn!("[setup] ai generations store failed to open (non-fatal): {e}")
                 }
             }
+            // Applications: the status-bearing aggregate root (ADR 0001). Opening it
+            // runs the one-time, idempotent backfill from ai_generations.db, so it
+            // is managed AFTER the generation store above (order is cosmetic — the
+            // backfill reads ai_generations.db by path, not via Tauri state).
+            match applications::ApplicationStore::open(&data_dir) {
+                Ok(store) => manage_resettable(app, &mut reset_registry, "applications", store),
+                Err(e) => {
+                    log::warn!("[setup] applications store failed to open (non-fatal): {e}")
+                }
+            }
             match job_preferences::JobPreferencesStore::open(&data_dir) {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "job_preferences", store),
                 Err(e) => {
@@ -633,6 +644,14 @@ pub fn run() {
             commands::ai_generations::ai_generations_update,
             commands::ai_generations::ai_generations_remove,
             commands::ai_generations::ai_generations_remove_bulk,
+            // applications (status-bearing aggregate — ADR 0001)
+            commands::applications::applications_list,
+            commands::applications::applications_get,
+            commands::applications::applications_set_status,
+            commands::applications::applications_update,
+            commands::applications::applications_delete,
+            commands::applications::applications_track,
+            commands::applications::applications_save_from_posting,
             // referrals (manual referral helper)
             commands::referrals::referrals_list,
             commands::referrals::referrals_upsert,

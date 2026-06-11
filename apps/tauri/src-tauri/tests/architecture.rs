@@ -41,6 +41,7 @@ const L1: &[&str] = &[
     "job_preferences",
     "contact_profile",
     "ai_generations",
+    "applications",
     "referrals",
     "profile_import",
     "model",
@@ -296,6 +297,7 @@ const R3_ALLOW: &[&str] = &[
     "db.rs",    // sole owner of the SQLite handle
     "error.rs", // From<rusqlite::Error> conversion
     "ai_generations/mod.rs",
+    "applications/mod.rs",
     "documents/mod.rs",
     "job_preferences/mod.rs",
     "contact_profile/mod.rs",

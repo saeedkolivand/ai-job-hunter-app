@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use tauri::{App, AppHandle, Manager};
 
 use crate::ai_generations::AiGenerationStore;
+use crate::applications::ApplicationStore;
 use crate::autopilot::AutopilotStore;
 use crate::contact_profile::ContactProfileStore;
 use crate::credentials::CredentialStore;
@@ -58,6 +59,11 @@ impl Resettable for DocumentStore {
     }
 }
 impl Resettable for AiGenerationStore {
+    fn reset(&self) {
+        self.clear_all();
+    }
+}
+impl Resettable for ApplicationStore {
     fn reset(&self) {
         self.clear_all();
     }

@@ -10,6 +10,14 @@ import {
 } from './emphasis.js';
 import { buildBodyLinksBlock, parseLinksFromResume, stripLinkBlock } from './links.js';
 import { type GenerationMeta, type GenerationMode, MODES } from './modes.js';
+import { ANTI_AI_TELL_LEXICAL } from './natural-voice.js';
+
+/**
+ * ATS keyword match outranks the anti-AI-tell word bans: an exact <job_ad> term
+ * that the résumé truthfully supports is kept even if it is on the discouraged
+ * list. The bans only govern words the model introduces on its own.
+ */
+const ATS_PRECEDENCE = `ATS PRECEDENCE: If a word the anti-AI-tell rules discourage is an EXACT term from the <job_ad> and is truthfully grounded in the candidate's résumé, keep it (ATS keyword match wins). The anti-AI-tell bans govern only words the model introduces on its own.`;
 
 export function buildResumeSystemPrompt(
   mode: GenerationMode,
@@ -39,6 +47,9 @@ DATE FORMAT: "January 2021 – March 2023" or "Jan 2021 – Mar 2023" — consis
 
 ${emphasisNote}
 
+${ANTI_AI_TELL_LEXICAL}
+${ATS_PRECEDENCE}
+
 MODE: ${MODES[mode].label}
 ${modeInstr}
 
@@ -64,6 +75,9 @@ ACCEPTANCE CHECKS — verify and revise until all pass:
 - Output is the rewritten resume only (no commentary), in the target language, using that market's standard section headers and one consistent date format.
 - No skill or phrase was copied from the job ad as if the candidate did it.
 - Keyword emphasis uses **double asterisks**, max 2–3 per bullet.
+
+${ANTI_AI_TELL_LEXICAL}
+${ATS_PRECEDENCE}
 
 MODE: ${MODES[mode].label}
 ${modeInstr}
@@ -196,6 +210,9 @@ ATS KEYWORD STRATEGY (CRITICAL):
 5. Education Match (10%): Required degree/certification present
 
 Your goal: Achieve 85%+ keyword match while maintaining natural, readable prose.
+
+${ANTI_AI_TELL_LEXICAL}
+${ATS_PRECEDENCE}
 
 OUTPUT FORMAT:
 Plain text with **double asterisks** for keyword emphasis (renderer converts to real bold).

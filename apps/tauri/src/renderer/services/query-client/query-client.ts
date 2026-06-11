@@ -67,4 +67,8 @@ export const keys = {
   },
   match: { score: (resumeId: string | null, jobId: string) => ['match', resumeId, jobId] as const },
   updater: { changelog: ['updater', 'changelog'] as const },
+  applications: {
+    all: ['applications'] as const,
+    detail: (id: string) => ['applications', id] as const,
+  },
 } as const;

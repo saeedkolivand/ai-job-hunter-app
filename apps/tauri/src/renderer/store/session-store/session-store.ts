@@ -8,7 +8,7 @@ import type { WizardState } from '@/features/autopilot/types';
 import type { EmphasisId, GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate';
 import type { AnalysisMode, AnalysisResult } from '@/lib/resume-ai';
 
-// ─── Per-route state shapes ───────────────────────────────────────────────────
+// Per-route state shapes
 
 type AIGenerateStage = 'idle' | 'extracting' | 'configuring' | 'generating' | 'done';
 type AIGenerateTarget = 'resume' | 'cover' | 'both';
@@ -19,17 +19,14 @@ interface AIGenerateSlice {
   stage: AIGenerateStage;
   meta: GenerationMeta | null;
   mode: GenerationMode;
-  /** User-selected emphasis directives (#15) — fact-safe rewrite biases. */
   emphasis: EmphasisId[];
   target: AIGenerateTarget;
   templateId: TemplateId;
   atsMode: boolean;
-  /** Target market id (`us`, `de`, …); drives export page size. */
   locale: string;
   resumeOut: string;
   coverOut: string;
   activeOut: 'resume' | 'cover';
-  /** Current step index in the GenerateWizard (0-based). Reset to 0 on resetAIGenerate. */
   wizardStep: number;
 }
 
@@ -40,24 +37,17 @@ interface AnalyzeSlice {
   jobAd: string;
   stage: AnalyzeStage;
   result: AnalysisResult | null;
-  /** Evaluate as a corporate résumé (default) or an academic CV (#54). */
   analysisMode: AnalysisMode;
 }
 
-/** Resume Builder (#1 / B9) — interview answers + wizard/synthesis state. */
 type ResumeBuilderStage = 'interview' | 'generating' | 'done';
 
 export interface ResumeBuilderSlice {
-  /** Structured interview answers — the grounding source for synthesis. */
   answers: InterviewAnswers;
-  /** Current wizard step index (0-based). */
   wizardStep: number;
   stage: ResumeBuilderStage;
-  /** Synthesized résumé markdown (populated when stage === 'done'). */
   output: string;
-  /** Output language for synthesis (e.g. `en`, `de`) — drives section headers. */
   language: string;
-  /** Export market id (`us`, `de`, …) — drives page size; defaults from language. */
   locale: string;
   templateId: TemplateId;
   atsMode: boolean;
@@ -90,41 +80,36 @@ interface SettingsSlice {
   activeSection: SettingsSection;
 }
 
-/** The found job + its autopilot context, opened on the dedicated apply page (#51). */
 export interface AutopilotApplyTarget {
   job: AutopilotFoundJob;
-  /** The autopilot's base resume, pre-filled on the apply page. */
   resumeText?: string;
-  /** The board the job came from — stored on the saved application record. */
   board: string;
 }
 
 interface AutopilotSlice {
   creating: boolean;
-  // Set when the wizard is editing an existing autopilot; null when creating.
   editingId: string | null;
   wizardStep: number;
   wizardForm: WizardState | null;
-  // Set by a tray "New jobs" click / deep link to auto-expand & scroll to a
-  // card's found-jobs; the card clears it once handled.
   focusedId: string | null;
-  // Set when the user opens the dedicated apply page for a found job (#51);
-  // cleared on Back. Null shows the autopilot list.
   apply: AutopilotApplyTarget | null;
-  // Tailoring wizard state on the apply page. Persisted (like wizardStep/
-  // wizardForm) so the configuring stage survives remounts; cleared alongside
-  // `apply` on Back so a different job starts fresh.
   applyWizardStep: number;
   applyWizardForm: TailorWizardState | null;
-  // Sticky render-time template preference for the apply results screen. Unlike
-  // applyWizardStep/applyWizardForm these survive Back (and switching jobs) so the
-  // chosen template/ATS mode persists across the whole autopilot session. Template/
-  // ATS are render-time only — switching them never regenerates.
   applyTemplateId: TemplateId;
   applyAtsMode: boolean;
 }
 
-// ─── Defaults ─────────────────────────────────────────────────────────────────
+/**
+ * Applications-page UI state.
+ * collapsedSections — stage ids currently collapsed; all sections expanded by default.
+ * filter — text filter applied across company/title/candidate.
+ */
+interface ApplicationsSlice {
+  collapsedSections: string[];
+  filter: string;
+}
+
+// Defaults
 
 const AI_GENERATE_DEFAULTS: AIGenerateSlice = {
   resume: '',
@@ -175,7 +160,7 @@ const RESUME_BUILDER_DEFAULTS: ResumeBuilderSlice = {
   atsMode: false,
 };
 
-// ─── Store ────────────────────────────────────────────────────────────────────
+// Store
 
 interface SessionState {
   aiGenerate: AIGenerateSlice;
@@ -185,6 +170,7 @@ interface SessionState {
   resumes: ResumesSlice;
   settings: SettingsSlice;
   autopilot: AutopilotSlice;
+  applications: ApplicationsSlice;
 
   setAIGenerate: (patch: Partial<AIGenerateSlice>) => void;
   resetAIGenerate: () => void;
@@ -196,13 +182,14 @@ interface SessionState {
   resetResumeBuilder: () => void;
 
   setJobs: (patch: Partial<JobsSlice>) => void;
-
   setResumes: (patch: Partial<ResumesSlice>) => void;
-
   setSettings: (patch: Partial<SettingsSlice>) => void;
 
   setAutopilot: (patch: Partial<AutopilotSlice>) => void;
   resetAutopilotWizard: () => void;
+
+  setApplications: (patch: Partial<ApplicationsSlice>) => void;
+  toggleApplicationSection: (stageId: string) => void;
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
@@ -224,6 +211,7 @@ export const useSessionStore = create<SessionState>((set) => ({
     applyTemplateId: 'modern',
     applyAtsMode: false,
   },
+  applications: { collapsedSections: [], filter: '' },
 
   setAIGenerate: (patch) => set((s) => ({ aiGenerate: { ...s.aiGenerate, ...patch } })),
   resetAIGenerate: () => set({ aiGenerate: { ...AI_GENERATE_DEFAULTS } }),
@@ -235,9 +223,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   resetResumeBuilder: () => set({ resumeBuilder: { ...RESUME_BUILDER_DEFAULTS } }),
 
   setJobs: (patch) => set((s) => ({ jobs: { ...s.jobs, ...patch } })),
-
   setResumes: (patch) => set((s) => ({ resumes: { ...s.resumes, ...patch } })),
-
   setSettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
 
   setAutopilot: (patch) => set((s) => ({ autopilot: { ...s.autopilot, ...patch } })),
@@ -251,4 +237,14 @@ export const useSessionStore = create<SessionState>((set) => ({
         wizardForm: null,
       },
     })),
+
+  setApplications: (patch) => set((s) => ({ applications: { ...s.applications, ...patch } })),
+  toggleApplicationSection: (stageId) =>
+    set((s) => {
+      const collapsed = s.applications.collapsedSections;
+      const next = collapsed.includes(stageId)
+        ? collapsed.filter((id) => id !== stageId)
+        : [...collapsed, stageId];
+      return { applications: { ...s.applications, collapsedSections: next } };
+    }),
 }));

@@ -19,7 +19,8 @@
     "search": "Search",
     "monitoring": "Monitoring",
     "support": "Help & Support",
-    "settings": "Settings"
+    "settings": "Settings",
+    "applications": "Applications"
   },
   "build": {
     "title": "Resume Builder",
@@ -2107,6 +2108,73 @@
       "import": "Import",
       "success": "{{name}}'s profile imported as resume",
       "failed": "Profile import failed"
+    }
+  },
+  "applications": {
+    "title": "Applications",
+    "subtitle": "Track every job pursuit — from saved to accepted.",
+    "trackButton": "Track a job",
+    "filterPlaceholder": "Filter by company or title…",
+    "empty": "No applications yet",
+    "emptyDesc": "Track a job posting or save one from the Jobs page.",
+    "noResults": "No matching applications",
+    "errorTitle": "Could not load applications",
+    "errorDesc": "Try refreshing the page.",
+    "save": "Save",
+    "saveToTracking": "Save to Application Tracking",
+    "savedToTracking": "Saved to Application Tracking",
+    "status": {
+      "saved": "Saved",
+      "applied": "Applied",
+      "screening": "Screening",
+      "interviewing": "Interviewing",
+      "offer": "Offer",
+      "accepted": "Accepted",
+      "rejected": "Rejected",
+      "ghosted": "Ghosted",
+      "withdrawn": "Withdrawn"
+    },
+    "stages": {
+      "saved": "Saved",
+      "applied": "Applied",
+      "screening": "Screening",
+      "interviewing": "Interviewing",
+      "offer": "Offer",
+      "accepted": "Accepted",
+      "rejected": "Rejected",
+      "ghosted": "Ghosted",
+      "withdrawn": "Withdrawn"
+    },
+    "row": {
+      "noTitle": "Untitled",
+      "noReply": "No reply · {{days}}d",
+      "overdue": "Overdue",
+      "followUp": "Follow up",
+      "actions": "Actions",
+      "openUrl": "Open job link",
+      "deleteKeepDocs": "Remove tracking (keep documents)",
+      "deleteAll": "Delete everything"
+    },
+    "delete": {
+      "keepTitle": "Remove application tracking",
+      "keepDesc": "This removes the tracking record. Your generated documents remain in the Documents library.",
+      "allTitle": "Delete application and documents",
+      "allDesc": "This permanently deletes the tracking record and all generated documents for this application.",
+      "confirm": "Delete"
+    },
+    "trackModal": {
+      "title": "Track a job",
+      "subtitle": "Add a job you have applied to or want to track.",
+      "urlLabel": "Job URL (optional)",
+      "urlPlaceholder": "https://…",
+      "companyLabel": "Company",
+      "companyPlaceholder": "e.g. Acme Corp",
+      "titleLabel": "Job title",
+      "titlePlaceholder": "e.g. Senior Engineer",
+      "candidateLabel": "Candidate name",
+      "candidatePlaceholder": "Your name",
+      "cancel": "Cancel",
+      "submit": "Track"
     }
   }
 }

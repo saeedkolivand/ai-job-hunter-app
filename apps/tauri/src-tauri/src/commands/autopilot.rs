@@ -38,8 +38,12 @@ fn store(app: &AppHandle) -> Arc<Mutex<AutopilotStore>> {
 /// generation — so the badge reflects a real link (a generation exists for that
 /// job) rather than a hand-set flag that could drift.
 fn enrich_applied(app: &AppHandle, list: &mut [crate::autopilot::Autopilot]) {
+    // "Applied" is now derived from the Application aggregate (ADR 0001): a URL
+    // counts as applied when it has an Application whose status is past `saved`.
+    // The set is keyed by the SAME normalization the store applies on write, so
+    // found-job urls must be normalized before the membership check below.
     let applied = app
-        .try_state::<crate::ai_generations::AiGenerationStore>()
+        .try_state::<crate::applications::ApplicationStore>()
         .map(|s| s.applied_job_urls())
         .unwrap_or_default();
     if applied.is_empty() {
@@ -47,7 +51,8 @@ fn enrich_applied(app: &AppHandle, list: &mut [crate::autopilot::Autopilot]) {
     }
     for ap in list.iter_mut() {
         for job in ap.found_jobs.iter_mut() {
-            job.applied = applied.contains(&job.url);
+            let key = crate::applications::normalize_job_url(&job.url);
+            job.applied = applied.contains(&key);
         }
     }
 }

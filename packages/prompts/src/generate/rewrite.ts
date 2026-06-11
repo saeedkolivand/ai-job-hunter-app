@@ -13,6 +13,7 @@
  */
 
 import { type PromptTarget, resolveProfile } from '../provider/index.js';
+import { ANTI_AI_TELL_LEXICAL, ANTI_AI_TELL_PROSE } from './natural-voice.js';
 
 export type RewriteDocType = 'resume' | 'cover-letter';
 
@@ -43,6 +44,17 @@ export interface RewriteParams {
 const DOC_LABELS: Record<RewriteDocType, string> = {
   resume: 'résumé',
   'cover-letter': 'cover letter',
+};
+
+/**
+ * Per-doc-type natural-voice ruleset. A résumé span keeps ATS bullet conventions,
+ * so only the lexical word bans apply; a cover-letter span is prose, so the full
+ * prose-flow ruleset applies. Mirrors {@link DOC_LABELS} so a new doc type is a
+ * compile-time error until a voice is provided (exhaustiveness).
+ */
+const DOC_VOICE: Record<RewriteDocType, string> = {
+  resume: ANTI_AI_TELL_LEXICAL,
+  'cover-letter': ANTI_AI_TELL_PROSE,
 };
 
 // Hard cap on the selected span itself so a huge selection can't blow a small
@@ -77,13 +89,15 @@ export function buildRewritePrompt(
 
   const system = `You rewrite a single selected span inside a candidate's ${doc}.
 
-ABSOLUTE RULES — never break these:
-1. Rewrite ONLY the text inside <selection>. Treat <before> and <after> as read-only context — never repeat, continue, or alter them.
-2. Output the rewritten span ONLY — no preamble, no explanation, no quotation marks, no surrounding context, no labels.
+ABSOLUTE RULES (never break these):
+1. Rewrite ONLY the text inside <selection>. Treat <before> and <after> as read-only context; never repeat, continue, or alter them.
+2. Output the rewritten span ONLY. No preamble, no explanation, no quotation marks, no surrounding context, no labels.
 3. Preserve the document's tense, voice, grammatical person, and overall style so the rewrite reads as one continuous piece with the surrounding text.
 4. Never fabricate facts: keep every concrete claim (skills, employers, titles, metrics, dates) that the original span asserts. You may rephrase, tighten, or expand wording, but do not invent new facts not present in the span.
 5. Follow the user's instruction. If it conflicts with these rules, keep the rules.
-6. Stay in the same language as the selected span.`;
+6. Stay in the same language as the selected span.
+
+${DOC_VOICE[docType]}`;
 
   const user = `<before>
 ${beforeCtx}
@@ -98,7 +112,7 @@ ${afterCtx}
 ### INSTRUCTION ###
 ${instruction}
 
-Rewrite <selection> following the instruction. Output ONLY the rewritten span — nothing else:`;
+Rewrite <selection> following the instruction. Output ONLY the rewritten span, nothing else:`;
 
   return { system, user };
 }

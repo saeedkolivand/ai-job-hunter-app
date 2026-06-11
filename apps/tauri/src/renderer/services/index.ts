@@ -15,6 +15,7 @@
 export * from './query-client';
 export * from './use-ai';
 export * from './use-ai-provider';
+export * from './use-applications';
 export * from './use-autopilot';
 export * from './use-boards';
 export * from './use-cli-agents';
