@@ -443,3 +443,43 @@ fn empty_atx_heading_falls_through_to_blank() {
         line.kind
     );
 }
+
+// ── §F bounds: H1–H6 inclusive upper-bound, H7 fall-through, idx-0 Name ────
+
+/// `###### Six` (six hashes) is the inclusive upper bound — must be SectionHeader.
+#[test]
+fn atx_heading_h6_inclusive_upper_bound() {
+    let line = parse_line("###### Six", 5, &[]);
+    assert!(
+        matches!(line.kind, LineKind::SectionHeader),
+        "H6 must be SectionHeader (inclusive upper bound), got {:?}",
+        line.kind
+    );
+    assert_eq!(line.text, "Six");
+}
+
+/// `####### Seven` (seven hashes) exceeds the ATX limit — must NOT be a heading.
+/// It falls through to whatever the normal classification produces (Text / Contact
+/// / etc.), but the key requirement is that it is NOT a SectionHeader.
+#[test]
+fn atx_heading_h7_exceeds_limit_not_heading() {
+    let line = parse_line("####### Seven", 5, &[]);
+    assert!(
+        !matches!(line.kind, LineKind::SectionHeader),
+        "7-hash line must NOT be SectionHeader (ATX limit is 6), got {:?}",
+        line.kind
+    );
+}
+
+/// A plain name line at idx 0 with no `#` prefix classifies as `LineKind::Name`,
+/// not as a SectionHeader — the ATX rule must not misfire on ordinary prose at
+/// the top of the document.
+#[test]
+fn name_line_at_idx_zero_without_hash_is_name() {
+    let line = parse_line("John Doe", 0, &["John Doe"]);
+    assert!(
+        matches!(line.kind, LineKind::Name),
+        "plain line at idx 0 must be Name (no # prefix), got {:?}",
+        line.kind
+    );
+}

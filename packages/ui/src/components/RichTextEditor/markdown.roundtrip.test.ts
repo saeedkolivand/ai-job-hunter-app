@@ -431,8 +431,8 @@ describe('targeted edit tests: single edit, rest unchanged', () => {
     expect(result).toContain('Junior Engineer | Widget Co | 2016 – 2018');
     // (c) Link block is verbatim.
     expect(result).toContain(LINK_BLOCK);
-    // (d) Double-space did not collapse.
-    expect(result).toMatch(/Senior Engineer {2,}Acme Corp {2,}Jan 2020/);
+    // (d) Double-space did not collapse — byte-exact pin (2 spaces, no more, no less).
+    expect(result).toContain('Senior Engineer  Acme Corp  Jan 2020 – Present');
   });
 
   it('adding a bullet item: new item present; dates and link block unchanged', () => {
@@ -599,6 +599,26 @@ describe('edge and negative cases', () => {
   it('link inside a bullet item: survives round-trip byte-exact', () => {
     const md =
       '## Projects\n- [rust-http-client](https://github.com/alexkim/rust-http): async Rust HTTP client.';
+    expect(roundTrip(md)).toBe(md);
+  });
+
+  it('link URL with a balanced (...) inside it survives byte-exact (no truncation)', () => {
+    // Wiki-style URL containing a nested, balanced paren. The inline-link URL
+    // pattern allows one level of nesting, so the URL is captured to its FINAL
+    // ) rather than truncated at the first interior ).
+    const md = '[C](https://en.wikipedia.org/wiki/C_(programming_language))';
+    expect(roundTrip(md)).toBe(md);
+  });
+
+  it('link with nested-paren URL followed by literal text does not over-consume', () => {
+    // Ensure the balanced-paren URL does not greedily swallow a trailing ) that
+    // belongs to surrounding prose.
+    const md = 'See [C](https://en.wikipedia.org/wiki/C_(programming_language)) (the language).';
+    expect(roundTrip(md)).toBe(md);
+  });
+
+  it('plain link followed by literal text containing ) is unaffected', () => {
+    const md = 'Built [Workers KV](https://developers.cloudflare.com/kv/) (fast).';
     expect(roundTrip(md)).toBe(md);
   });
 
