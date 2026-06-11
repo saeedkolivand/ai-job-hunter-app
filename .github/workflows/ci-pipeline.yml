@@ -54,12 +54,12 @@ jobs:
           egress-policy: audit
 
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
 
       - name: 🔍 Dependency Review
-        uses: actions/dependency-review-action@v5
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
 
@@ -85,7 +85,7 @@ jobs:
           egress-policy: audit
 
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
 
@@ -122,7 +122,7 @@ jobs:
           egress-policy: audit
 
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
 
@@ -136,7 +136,7 @@ jobs:
         run: echo "value=${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}" >> $GITHUB_OUTPUT
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: .turbo
           key: ${{ steps.cache-key.outputs.value }}
@@ -156,7 +156,7 @@ jobs:
           echo "::endgroup::"
 
       - name: 📦 Cache node_modules
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: |
             node_modules
@@ -177,7 +177,7 @@ jobs:
           egress-policy: audit
 
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
 
@@ -188,7 +188,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: |
             node_modules
@@ -203,7 +203,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -295,7 +295,7 @@ jobs:
           egress-policy: audit
 
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
 
@@ -306,7 +306,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: |
             node_modules
@@ -321,7 +321,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -390,7 +390,7 @@ jobs:
           egress-policy: audit
 
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
 
@@ -401,7 +401,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: |
             node_modules
@@ -416,7 +416,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -433,7 +433,7 @@ jobs:
       # when the playwright version bumps) to skip the ~120 MB download.
       - name: 💾 Restore Playwright Browser Cache
         id: playwright-cache
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -502,7 +502,7 @@ jobs:
       # nothing. Both must be installed before the test step below.
       - name: 🦀 Install cargo-llvm-cov + nextest
         if: always()
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2
         with:
           tool: cargo-llvm-cov,nextest
 
@@ -551,7 +551,7 @@ jobs:
 
       - name: 📊 Upload Test Results on Failure
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: test-results-${{ github.run_id }}
           # Restricted to coverage and Cargo test logs. Uploading the full
@@ -622,7 +622,7 @@ jobs:
           egress-policy: audit
 
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
 
@@ -633,7 +633,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: |
             node_modules
@@ -648,7 +648,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -682,7 +682,7 @@ jobs:
 
       - name: 📊 Upload Build Artifacts on Failure
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: build-artifacts-${{ github.run_id }}
           # Restricted to logs/output to avoid uploading the multi-GB
@@ -745,7 +745,7 @@ jobs:
           egress-policy: audit
 
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
 
@@ -780,7 +780,7 @@ jobs:
           echo "::endgroup::"
 
       - name: 🧰 Install cargo-deny + cargo-machete
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2
         with:
           tool: cargo-deny,cargo-machete
 
