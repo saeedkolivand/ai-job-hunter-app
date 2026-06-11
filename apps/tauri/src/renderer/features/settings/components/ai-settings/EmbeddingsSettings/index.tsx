@@ -47,10 +47,11 @@ export function EmbeddingsSettings() {
     if (e.type === 'job.completed' || e.type === 'job.failed' || e.type === 'job.cancelled') {
       setReindexJobId(null);
       void statusQuery.refetch();
-      notify(
-        e.type === 'job.completed' ? 'Re-indexing complete.' : 'Re-indexing did not finish.',
-        e.type === 'job.completed' ? 'success' : 'error'
-      );
+      notify.open({
+        message:
+          e.type === 'job.completed' ? 'Re-indexing complete.' : 'Re-indexing did not finish.',
+        variant: e.type === 'job.completed' ? 'success' : 'error',
+      });
     }
   });
 
@@ -73,16 +74,18 @@ export function EmbeddingsSettings() {
       baseUrl: provider === 'openai-compatible' ? baseUrl.trim() || undefined : undefined,
     });
     if (res.success) {
-      notify('Embedding model updated. Re-index documents to rebuild the index.', 'success');
+      notify.success({
+        message: 'Embedding model updated. Re-index documents to rebuild the index.',
+      });
     } else {
-      notify(res.error ?? 'Failed to update the embedding model.', 'error');
+      notify.error({ message: res.error ?? 'Failed to update the embedding model.' });
     }
   };
 
   const onReindex = async () => {
     const { jobId } = await reembed.mutateAsync();
     setReindexJobId(jobId);
-    notify('Re-indexing documents…', 'success');
+    notify.success({ message: 'Re-indexing documents…' });
   };
 
   const docs = status?.documents;

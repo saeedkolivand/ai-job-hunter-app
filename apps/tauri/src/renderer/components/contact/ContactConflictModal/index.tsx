@@ -126,11 +126,11 @@ export function ContactConflictModal({
     }
     try {
       await save(base);
-      notify(t('settings.contactConflict.saved'), 'success');
+      notify.success({ message: t('settings.contactConflict.saved') });
       onResolved?.();
       onClose();
     } catch {
-      notify(t('settings.contactConflict.saveFailed'), 'error');
+      notify.error({ message: t('settings.contactConflict.saveFailed') });
     }
   };
 

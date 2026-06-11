@@ -2,7 +2,7 @@ import { AnimatePresence } from 'motion/react';
 import { useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { ErrorState, useToast } from '@ajh/ui';
+import { ErrorState, useNotification } from '@ajh/ui';
 
 import { ContactPromptModal } from '@/components/contact/ContactPromptModal';
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -87,7 +87,7 @@ export function AIGeneratePage() {
   // stage is already `done` (résumé shown) while the cover letter still streams.
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const notify = useToast();
+  const notify = useNotification();
   const selectedModel = useSelectedModel();
   const { canUse: canUseAI, reason: aiReason } = useCanUseAI();
   const extractTextMutation = useExtractText();

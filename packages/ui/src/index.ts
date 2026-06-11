@@ -22,6 +22,7 @@ export {
   type ActionMenuProps,
 } from './components/ActionMenu/index';
 export { ActionTile } from './components/ActionTile/index';
+export { Alert, type AlertProps, type AlertType } from './components/Alert/index';
 export { Button, type ButtonProps } from './components/Button/index';
 export {
   CollapsibleFileInput,
@@ -56,17 +57,13 @@ export { GlassOverlay } from './components/GlassOverlay/index';
 export { HoverPopover, type HoverPopoverProps } from './components/HoverPopover/index';
 export { ModalShell, type ModalShellProps } from './components/ModalShell/index';
 export {
-  type NotificationItem,
+  type NotificationApi,
+  type NotificationConfig,
+  type NotificationPlacement,
   NotificationProvider,
   type NotificationVariant,
   useNotification,
 } from './components/Notification/index';
-export {
-  type ToastItem,
-  ToastProvider,
-  type ToastVariant,
-  useToast,
-} from './components/Toast/index';
 
 // ── Feedback States ───────────────────────────────────────────────────────
 export { EmptyState } from './components/EmptyState/index';

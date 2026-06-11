@@ -103,9 +103,9 @@ export function CloudProviderPanel({
         activeProvider: selectedProvider,
         providers: { [selectedProvider]: { model: CLOUD_DEFAULT_MODELS[selectedProvider] ?? '' } },
       });
-      notify(`${cloudMeta?.label ?? selectedProvider} API key saved.`, 'success');
+      notify.success({ message: `${cloudMeta?.label ?? selectedProvider} API key saved.` });
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Failed to save key.', 'error');
+      notify.error({ message: err instanceof Error ? err.message : 'Failed to save key.' });
     } finally {
       setSaving(false);
     }
@@ -117,12 +117,12 @@ export function CloudProviderPanel({
     try {
       const result = await testProviderKey.mutateAsync({ provider: selectedProvider });
       if (result.success) {
-        notify(`${cloudMeta?.label ?? selectedProvider} API key is valid!`, 'success');
+        notify.success({ message: `${cloudMeta?.label ?? selectedProvider} API key is valid!` });
       } else {
-        notify(`API key test failed: ${result.error ?? 'Unknown error'}`, 'error');
+        notify.error({ message: `API key test failed: ${result.error ?? 'Unknown error'}` });
       }
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Failed to test key.', 'error');
+      notify.error({ message: err instanceof Error ? err.message : 'Failed to test key.' });
     } finally {
       setTesting(false);
     }

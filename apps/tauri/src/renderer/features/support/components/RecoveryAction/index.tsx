@@ -28,9 +28,9 @@ export function RecoveryAction({
     setPending(true);
     try {
       await onAction();
-      notify(successMessage ?? `${title} completed.`, 'success');
+      notify.success({ message: successMessage ?? `${title} completed.` });
     } catch (err) {
-      notify(err instanceof Error ? err.message : `${title} failed.`, 'error');
+      notify.error({ message: err instanceof Error ? err.message : `${title} failed.` });
     } finally {
       setPending(false);
     }
