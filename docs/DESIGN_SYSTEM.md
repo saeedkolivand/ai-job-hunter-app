@@ -1,6 +1,6 @@
 # Design System — AI Job Hunter
 
-Last updated: 2026-06-08
+Last updated: 2026-06-11
 
 The design system lives in `packages/ui` and is published as the `@ajh/ui` internal package. It provides design tokens, a component library, motion primitives, and theming infrastructure.
 
@@ -210,6 +210,49 @@ import { Button, Input, GlassCard, Modal } from '@ajh/ui';
 ```typescript
 <TextArea label="Cover Letter" rows={8} autoResize />
 ```
+
+#### `RichTextEditor`
+
+WYSIWYG editor for resume and cover-letter markdown, constrained to the vocabulary that survives export (h2/h3 headings, paragraphs, flat bullet lists, **bold**, _italic_, links). The document is internally uncontrolled (Tiptap holds state) and serializes to the **same markdown string** the export pipeline consumes, preserving significant whitespace and a trailing link-reference block verbatim.
+
+```typescript
+<RichTextEditor
+  value={markdownString}
+  onChange={setMarkdownString}
+  placeholder="Edit your resume…"
+  labels={{
+    toolbarLabel: "Formatting toolbar",
+    bold: "Bold",
+    italic: "Italic",
+    link: "Add link",
+    bullet: "Bullet list",
+    heading2: "Heading 2",
+    heading3: "Heading 3",
+  }}
+  onSelectionChange={setHasSelection}
+/>
+```
+
+Props:
+
+- `value: string` — markdown content (re-parsed only on external document switch, not on keystroke, to preserve cursor position).
+- `onChange: (md: string) => void` — emitted debounced ~200ms.
+- `labels?: ToolbarLabels` — a11y strings for toolbar buttons; keep `@ajh/ui` translation-free.
+- `onSelectionChange?: (hasSelection: boolean) => void` — fired when selection gains/loses a non-empty range (used by AI-rewrite toggle).
+- `disabled`, `readOnly`, `placeholder`, `className`, `spellCheck` — standard HTML semantics.
+
+**Imperative handle** (via `ref`):
+
+- `getSelectionText(): string` — plain text of current selection.
+- `getSelectionContext(): { selection, before, after }` — selection + surrounding document text (no markdown marks), used by AI-rewrite prompts.
+- `replaceSelection(text: string): void` — replace selection with plain text (inline marks parsed).
+- `focus(): void` — move keyboard focus into the editor.
+
+**Locked schema (critical):** enables only h2/h3, paragraph, bullets (flat), bold, italic, links (http/https/mailto only); disables code blocks, blockquotes, nesting, images, colors. This makes typing AND paste incapable of introducing markup that won't survive export. Pasted rich HTML is coerced onto the allowed nodes.
+
+**Round-trip contract:** `serialize(parse(md)) === md` byte-exact for unedited documents, enforced by a Vitest no-drift gate that includes real generated samples. The trailing `\n---\n` link-reference block is held out of the editable body and re-appended verbatim, so editing cannot corrupt backend link data.
+
+Source: `packages/ui/src/components/RichTextEditor/`; exported from `@ajh/ui` at `packages/ui/src/index.ts`.
 
 #### `SelectDropdown`
 
