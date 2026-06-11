@@ -9,6 +9,12 @@ vi.mock('@/components/generation/PdfPreview', () => ({
   PdfPreview: () => <div data-testid="pdf-preview">PDF</div>,
 }));
 
+// EditableOutput (rendered inside OutputPanelDone) calls useContactProfile() which
+// reaches for AppClientProvider.  Return a stub so no provider tree is needed.
+vi.mock('@/services/use-contact-profile', () => ({
+  useContactProfile: () => ({ data: undefined }),
+}));
+
 const RAW = 'Led **payments** migration at scale.';
 
 function renderPanel(overrides: Partial<React.ComponentProps<typeof OutputPanelDone>> = {}) {

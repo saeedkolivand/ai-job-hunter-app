@@ -26,6 +26,12 @@ vi.mock('@/services/use-ai-generations', () => ({
   useUpdateAiGeneration: () => ({ mutate: mockUpdateMutate, isPending: false }),
 }));
 
+// GenerationCard renders EditableOutput which calls useContactProfile() — stub it
+// so the component tree mounts without an AppClientProvider.
+vi.mock('@/services/use-contact-profile', () => ({
+  useContactProfile: () => ({ data: undefined }),
+}));
+
 // The card now display-joins referrals and toasts on copy/mark-sent; stub these
 // so it renders without a QueryClient/Notification provider tree.
 vi.mock('@/services/use-referrals/use-referrals', () => ({

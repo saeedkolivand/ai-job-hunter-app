@@ -82,6 +82,12 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 
+// EditableOutput now calls useContactProfile() which reaches for AppClientProvider.
+// Stub it so the component mounts in the test environment without a provider tree.
+vi.mock('@/services/use-contact-profile', () => ({
+  useContactProfile: () => ({ data: undefined }),
+}));
+
 // rewriteSelection is the only async side-effect we need to control.
 const mockRewriteSelection = vi.fn();
 vi.mock('@/lib/generate', async (importOriginal) => {
