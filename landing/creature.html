@@ -75,7 +75,7 @@ body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;opac
 @keyframes stampin{from{opacity:0;transform:scale(2.4) rotate(7deg)}to{opacity:1;transform:none}}
 
 /* ---- hud / controls / progress ---- */
-#hud{position:fixed;top:12px;left:16px;z-index:6;font-family:var(--mono);
+#hud{position:fixed;top:12px;left:76px;z-index:6;font-family:var(--mono);
   font-size:clamp(10px,1.5vmin,14px);line-height:1.7;opacity:.92;white-space:pre}
 #controls{position:fixed;top:10px;right:12px;z-index:6;display:flex;gap:10px}
 #controls button{width:46px;height:46px;font-size:19px;line-height:1;cursor:pointer;color:var(--ink);
@@ -118,9 +118,9 @@ body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;opac
 
 /* ---- static margin doodles ---- */
 .doodle{position:fixed;z-index:0;pointer-events:none;opacity:.45}
-#d-todo{left:1.2vw;top:26vh;font-family:var(--scrawl);font-size:14px;line-height:1.8;transform:rotate(-4deg)}
+#d-todo{left:76px;top:26vh;font-family:var(--scrawl);font-size:14px;line-height:1.8;transform:rotate(-4deg)}
 #d-todo .strike{text-decoration:line-through}
-#d-page{left:1.4vw;bottom:2vh;font-family:var(--mono);font-size:11px;opacity:.4}
+#d-page{left:76px;bottom:2vh;font-family:var(--mono);font-size:11px;opacity:.4}
 #d-ring{right:2.5vw;bottom:8vh}
 #d-ttt{right:2vw;top:18vh;transform:rotate(6deg)}
 @media (max-width:760px){.doodle{display:none}}
