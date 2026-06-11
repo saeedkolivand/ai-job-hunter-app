@@ -58,8 +58,7 @@ fn open_gen_db_with_app_id_col(dir: &std::path::Path) -> Connection {
     // Opening the store runs all migrations (including add_application_id).
     // We then drop it immediately; the DB file stays on disk.
     {
-        let _store =
-            crate::ai_generations::AiGenerationStore::open(&dir.to_path_buf()).unwrap();
+        let _store = crate::ai_generations::AiGenerationStore::open(&dir.to_path_buf()).unwrap();
     }
     // Re-open raw for direct SQL reads/writes in the test.
     Connection::open(dir.join("ai_generations.db")).unwrap()
@@ -98,7 +97,10 @@ fn rejects_dangerous_url_schemes_to_empty() {
     // so an import-borne or Track-modal payload is never stored as an openable link.
     // `javascript:` has a scheme but no `://` — the `scheme:` form must be caught.
     assert_eq!(normalize_job_url("javascript:alert(1)"), "");
-    assert_eq!(normalize_job_url("data:text/html,<script>alert(1)</script>"), "");
+    assert_eq!(
+        normalize_job_url("data:text/html,<script>alert(1)</script>"),
+        ""
+    );
     assert_eq!(normalize_job_url("file:///etc/passwd"), "");
     assert_eq!(normalize_job_url("vbscript:msgbox(1)"), "");
     assert_eq!(normalize_job_url("blob:https://evil.example/uuid"), "");
@@ -396,7 +398,10 @@ fn import_non_array_returns_parse_error() {
     }
 
     // Sanity: the store is still empty — the failed import must not have written anything.
-    assert!(store.list().is_empty(), "store must be empty after a failed import");
+    assert!(
+        store.list().is_empty(),
+        "store must be empty after a failed import"
+    );
 }
 
 /// Happy-path companion: import a valid array after the error-path test to
@@ -411,7 +416,13 @@ fn import_non_array_does_not_corrupt_subsequent_happy_path() {
 
     // Subsequent valid import still works.
     store
-        .upsert_for_origin("https://x.com/1", "b", &meta("X", "T"), ApplicationOrigin::Generate, None)
+        .upsert_for_origin(
+            "https://x.com/1",
+            "b",
+            &meta("X", "T"),
+            ApplicationOrigin::Generate,
+            None,
+        )
         .unwrap();
     let bundle = store.export();
 
@@ -436,7 +447,11 @@ fn update_fields_next_action_at_null_clears_and_absent_preserves() {
     store
         .update_fields(&id, None, Some(Some(999)), None, None, None)
         .unwrap();
-    assert_eq!(store.get(&id).unwrap().next_action_at, Some(999), "precondition: value set");
+    assert_eq!(
+        store.get(&id).unwrap().next_action_at,
+        Some(999),
+        "precondition: value set"
+    );
 
     // Passing `Some(None)` must CLEAR the value.
     store
@@ -452,7 +467,11 @@ fn update_fields_next_action_at_null_clears_and_absent_preserves() {
     store
         .update_fields(&id, None, Some(Some(456)), None, None, None)
         .unwrap();
-    assert_eq!(store.get(&id).unwrap().next_action_at, Some(456), "precondition: value re-set");
+    assert_eq!(
+        store.get(&id).unwrap().next_action_at,
+        Some(456),
+        "precondition: value re-set"
+    );
 
     // Passing `None` (field absent) must PRESERVE the prior value.
     store
@@ -582,7 +601,13 @@ fn generate_save_second_generation_same_url_merge_into_one_gen_row_and_one_appli
 
     // First save: résumé generation.
     let app_id_1 = app_store
-        .upsert_for_origin(url, "linkedin", &meta("Acme", "Engineer"), ApplicationOrigin::Generate, None)
+        .upsert_for_origin(
+            url,
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Generate,
+            None,
+        )
         .unwrap();
     let rec1 = crate::ai_generations::AiGenerationRecord {
         id: "gen-resume".into(),
@@ -608,7 +633,13 @@ fn generate_save_second_generation_same_url_merge_into_one_gen_row_and_one_appli
 
     // Second save: cover-letter generation for the same url.
     let app_id_2 = app_store
-        .upsert_for_origin(url, "linkedin", &meta("Acme", "Engineer"), ApplicationOrigin::Generate, None)
+        .upsert_for_origin(
+            url,
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Generate,
+            None,
+        )
         .unwrap();
     let rec2 = crate::ai_generations::AiGenerationRecord {
         id: "gen-cover".into(),
@@ -765,9 +796,11 @@ fn delete_keep_documents_false_removes_child_generations() {
     );
     // The actual rows no longer exist at all.
     let total: i64 = gen_conn
-        .query_row("SELECT COUNT(*) FROM ai_generations WHERE id IN ('gen-a','gen-b')", [], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "SELECT COUNT(*) FROM ai_generations WHERE id IN ('gen-a','gen-b')",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(total, 0, "generation rows gen-a and gen-b must be gone");
 }
@@ -791,8 +824,18 @@ fn delete_keep_documents_true_detaches_child_generations_but_keeps_rows() {
         )
         .unwrap();
 
-    insert_gen_with_app_id(&gen_conn, "gen-c", "https://acme.com/job/100", Some(&app_id));
-    insert_gen_with_app_id(&gen_conn, "gen-d", "https://acme.com/job/100", Some(&app_id));
+    insert_gen_with_app_id(
+        &gen_conn,
+        "gen-c",
+        "https://acme.com/job/100",
+        Some(&app_id),
+    );
+    insert_gen_with_app_id(
+        &gen_conn,
+        "gen-d",
+        "https://acme.com/job/100",
+        Some(&app_id),
+    );
 
     assert_eq!(
         gen_count_for_app(&gen_conn, &app_id),
@@ -814,11 +857,16 @@ fn delete_keep_documents_true_detaches_child_generations_but_keeps_rows() {
 
     // Generation rows SURVIVE — they are now orphaned (application_id = NULL).
     let total: i64 = gen_conn
-        .query_row("SELECT COUNT(*) FROM ai_generations WHERE id IN ('gen-c','gen-d')", [], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "SELECT COUNT(*) FROM ai_generations WHERE id IN ('gen-c','gen-d')",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
-    assert_eq!(total, 2, "generation rows must survive when keepDocuments=true");
+    assert_eq!(
+        total, 2,
+        "generation rows must survive when keepDocuments=true"
+    );
 
     // FK is now NULL on both rows (detached).
     assert_eq!(
