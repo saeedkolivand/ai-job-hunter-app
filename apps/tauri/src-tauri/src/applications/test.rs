@@ -30,6 +30,48 @@ fn normalize_strips_www_query_fragment_and_trailing_slash() {
 }
 
 #[test]
+fn rejects_dangerous_url_schemes_to_empty() {
+    // Explicit non-http(s) schemes are neutralized to "" (treated as "no url")
+    // so an import-borne or Track-modal payload is never stored as an openable link.
+    // `javascript:` has a scheme but no `://` — the `scheme:` form must be caught.
+    assert_eq!(normalize_job_url("javascript:alert(1)"), "");
+    assert_eq!(normalize_job_url("data:text/html,<script>alert(1)</script>"), "");
+    assert_eq!(normalize_job_url("file:///etc/passwd"), "");
+    assert_eq!(normalize_job_url("vbscript:msgbox(1)"), "");
+    assert_eq!(normalize_job_url("blob:https://evil.example/uuid"), "");
+    // Case-insensitive scheme detection: mixed-case dangerous scheme still rejected.
+    assert_eq!(normalize_job_url("JavaScript:alert(1)"), "");
+}
+
+#[test]
+fn allows_http_and_https_including_mixed_case_scheme() {
+    // http(s) round-trips with the exact prior normalization; mixed-case scheme is
+    // lowercased like before and is NOT rejected by the dangerous-scheme guard.
+    assert_eq!(
+        normalize_job_url("HTTP://Example.com/Job/1/"),
+        "http://example.com/job/1"
+    );
+    assert_eq!(
+        normalize_job_url("HTTPS://WWW.Acme.io/job/9?ref=foo"),
+        "https://acme.io/job/9"
+    );
+}
+
+#[test]
+fn scheme_less_input_with_colon_in_path_is_not_misclassified() {
+    // A `:` inside the path/query must NOT look like a scheme — scheme-less input
+    // keeps its exact prior behavior (host/path preserved, query dropped).
+    assert_eq!(
+        normalize_job_url("example.com/job/9?x=a:b"),
+        "example.com/job/9"
+    );
+    assert_eq!(
+        normalize_job_url("www.example.com/jobs/123/"),
+        "example.com/jobs/123"
+    );
+}
+
+#[test]
 fn status_from_id_is_relaxed_and_round_trips() {
     for &s in ApplicationStatus::ALL {
         assert_eq!(ApplicationStatus::from_id(s.as_id()), s);

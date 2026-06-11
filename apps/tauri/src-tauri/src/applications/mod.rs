@@ -720,9 +720,40 @@ fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
     })
 }
 
+/// Extract an explicit URL scheme (the `scheme:` prefix per RFC 3986§3.1) if
+/// one is present, lowercased. A scheme is `ALPHA *( ALPHA / DIGIT / "+" / "-" /
+/// "." )` immediately followed by `:`, and it MUST appear before any `/`, `?`, or
+/// `#` — so `javascript:alert(1)` and `data:text/html,…` are schemes, but a
+/// scheme-less `host/path?x=a:b` (colon in the path/query) is not. Used to reject
+/// dangerous schemes; returns `None` for scheme-less input.
+fn explicit_scheme(input: &str) -> Option<String> {
+    // Only the authority-less head, before the first path/query/fragment delimiter,
+    // can carry a scheme. This keeps a `:` inside a path or query from looking like one.
+    let head = input.split(['/', '?', '#']).next().unwrap_or(input);
+    let (candidate, _) = head.split_once(':')?;
+    if candidate.is_empty() {
+        return None;
+    }
+    let mut chars = candidate.chars();
+    let first = chars.next()?;
+    if !first.is_ascii_alphabetic() {
+        return None;
+    }
+    if !chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')) {
+        return None;
+    }
+    Some(candidate.to_ascii_lowercase())
+}
+
 /// Normalize a job URL into a stable dedup key: lowercase host, strip a leading
 /// `www.`, drop the query (`?…`) and fragment (`#…`), and trim a trailing `/`.
 /// The scheme is preserved (lowercased). Empty input returns empty.
+///
+/// Security chokepoint: an input carrying an explicit scheme other than
+/// `http`/`https` (e.g. `javascript:`, `data:`, `file:`, `vbscript:`, `blob:`) is
+/// neutralized to an empty string — i.e. "no url" — so an import-borne or
+/// manually-entered payload can never be stored as an openable link. Scheme-less
+/// input and `http(s)` keep their exact prior normalization.
 ///
 /// No existing centralized URL normalizer was found in `net`/`scraping` (only
 /// host-only helpers like `contact_profile::host_of`), so this is the single
@@ -731,6 +762,13 @@ pub fn normalize_job_url(url: &str) -> String {
     let trimmed = url.trim();
     if trimmed.is_empty() {
         return String::new();
+    }
+    // Reject dangerous explicit schemes at the single backend chokepoint. Only
+    // `http`/`https` may round-trip; any other explicit scheme yields "no url".
+    if let Some(scheme) = explicit_scheme(trimmed) {
+        if scheme != "http" && scheme != "https" {
+            return String::new();
+        }
     }
     let lower = trimmed.to_lowercase();
     let (scheme, rest) = match lower.split_once("://") {

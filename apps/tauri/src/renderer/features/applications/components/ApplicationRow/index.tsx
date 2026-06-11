@@ -6,7 +6,7 @@ import { useTranslation } from '@ajh/translations';
 import { ActionMenu, cn, ConfirmModal, SelectDropdown } from '@ajh/ui';
 
 import { isStale, nextActionLabel, staleDays } from '@/features/applications/lib/stale';
-import { useRemoveApplication, useSetApplicationStatus } from '@/services/use-applications';
+import { useOpenExternal, useRemoveApplication, useSetApplicationStatus } from '@/services';
 
 interface ApplicationRowProps {
   application: Application;
@@ -18,6 +18,7 @@ export function ApplicationRow({ application }: ApplicationRowProps) {
   const { t } = useTranslation();
   const setStatus = useSetApplicationStatus();
   const remove = useRemoveApplication();
+  const openExternal = useOpenExternal();
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [keepDocs, setKeepDocs] = useState(true);
@@ -101,12 +102,12 @@ export function ApplicationRow({ application }: ApplicationRowProps) {
         <ActionMenu
           label={t('applications.row.actions')}
           items={[
-            ...(application.jobUrl
+            ...(/^https?:\/\//i.test(application.jobUrl ?? '')
               ? [
                   {
                     label: t('applications.row.openUrl'),
                     icon: <ExternalLink size={14} />,
-                    onSelect: () => window.open(application.jobUrl, '_blank'),
+                    onSelect: () => openExternal.mutate(application.jobUrl),
                   },
                 ]
               : []),
