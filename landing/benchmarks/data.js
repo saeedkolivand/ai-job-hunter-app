@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781203297851,
+  "lastUpdate": 1781223472469,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-assistant-app",
   "entries": {
     "Export render": [
@@ -121,6 +121,46 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 278094,
             "range": "± 1665",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "github-actions[bot]",
+            "username": "github-actions[bot]",
+            "email": "41898282+github-actions[bot]@users.noreply.github.com"
+          },
+          "committer": {
+            "name": "github-actions[bot]",
+            "username": "github-actions[bot]",
+            "email": "41898282+github-actions[bot]@users.noreply.github.com"
+          },
+          "id": "b29df0646abed28d7c7fbec734eb7a960a199c15",
+          "message": "chore: sync homebrew cask to v0.92.0 [skip ci]",
+          "timestamp": "2026-06-11T23:52:45Z",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commit/b29df0646abed28d7c7fbec734eb7a960a199c15"
+        },
+        "date": 1781223472001,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 3063421,
+            "range": "± 29305",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 3526920,
+            "range": "± 23835",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 276014,
+            "range": "± 1764",
             "unit": "ns/iter"
           }
         ]
