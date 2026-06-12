@@ -1,6 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
-import type { ApplicationTrackRequest, ApplicationUpdateRequest } from '@ajh/shared';
+import type {
+  ApplicationChangedEvent,
+  ApplicationTrackRequest,
+  ApplicationUpdateRequest,
+} from '@ajh/shared';
+
+import { asyncUnsub } from '../../utils.js';
 
 export const applications = {
   list: () => invoke('applications_list'),
@@ -14,4 +21,11 @@ export const applications = {
   track: (req: ApplicationTrackRequest) => invoke('applications_track', { req }),
   saveFromPosting: (req: ApplicationTrackRequest) =>
     invoke('applications_save_from_posting', { req }),
+  // The bridge (and any out-of-band creator) emits `applications:changed` with
+  // `{ applicationId, title?, company?, status? }` — see
+  // `extension_bridge::APPLICATIONS_CHANGED_EVENT`.
+  onChanged: (handler: (event: ApplicationChangedEvent) => void) =>
+    asyncUnsub(() =>
+      listen<ApplicationChangedEvent>('applications:changed', (e) => handler(e.payload))
+    ),
 };

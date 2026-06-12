@@ -586,7 +586,28 @@
     "accounts": {
       "boardsTitle": "Jobbörsen-Konten",
       "credentialsWarning": "Anmeldedaten werden lokal verschlüsselt auf Ihrem Gerät gespeichert. Sie werden niemals an einen Server gesendet.",
-      "noEncryptionWarning": "Sichere Speicherung von Anmeldedaten ist auf diesem System nicht verfügbar. Anmeldedaten können nicht gespeichert werden."
+      "noEncryptionWarning": "Sichere Speicherung von Anmeldedaten ist auf diesem System nicht verfügbar. Anmeldedaten können nicht gespeichert werden.",
+      "extension": {
+        "title": "Browser-Erweiterung",
+        "statusLabel": "Verbindung",
+        "connected": "Verbunden",
+        "disconnected": "Nicht verbunden",
+        "tokenLabel": "Kopplungs-Token",
+        "tokenPlaceholder": "Kein Token verfügbar",
+        "copy": "Kopieren",
+        "copied": "Kopplungs-Token in die Zwischenablage kopiert.",
+        "copyFailed": "Token konnte nicht kopiert werden.",
+        "portLabel": "Port",
+        "portUnavailable": "Nicht verfügbar",
+        "help": "Koppeln Sie die AI-Job-Hunter-Browser-Erweiterung, um Jobs direkt aus jeder Jobbörse in Ihre Verwaltung zu senden.",
+        "notPublished": "Demnächst im Chrome Web Store und bei Firefox Add-ons verfügbar.",
+        "regenerate": "Token neu generieren",
+        "regenerated": "Kopplungs-Token neu generiert. Koppeln Sie Ihren Browser erneut, um die Verbindung wiederherzustellen.",
+        "regenerateFailed": "Token konnte nicht neu generiert werden.",
+        "regenerateConfirmTitle": "Kopplungs-Token neu generieren",
+        "regenerateConfirmDescription": "Beim Neugenerieren wird jeder gekoppelte Browser getrennt. Sie müssen die Erweiterung erneut koppeln. Fortfahren?",
+        "regenerateConfirm": "Neu generieren"
+      }
     },
     "privacy": {
       "dataTitle": "Ihre Daten",
@@ -2129,6 +2150,11 @@
       "openUrl": "Job-Link öffnen",
       "deleteKeepDocs": "Tracking entfernen (Dokumente behalten)",
       "deleteAll": "Alles löschen"
+    },
+    "imported": {
+      "toastTitle": "Aus dem Browser importiert",
+      "view": "Job ansehen",
+      "fallback": "Ein neuer Job wurde importiert."
     },
     "delete": {
       "keepTitle": "Bewerbungs-Tracking entfernen",

@@ -601,7 +601,28 @@
     "accounts": {
       "boardsTitle": "Job board accounts",
       "credentialsWarning": "Credentials are stored locally and encrypted on your device. They are never sent to any server.",
-      "noEncryptionWarning": "Secure credential storage is not available on this system. Credentials cannot be saved."
+      "noEncryptionWarning": "Secure credential storage is not available on this system. Credentials cannot be saved.",
+      "extension": {
+        "title": "Browser extension",
+        "statusLabel": "Connection",
+        "connected": "Connected",
+        "disconnected": "Not connected",
+        "tokenLabel": "Pairing token",
+        "tokenPlaceholder": "No token available",
+        "copy": "Copy",
+        "copied": "Pairing token copied to clipboard.",
+        "copyFailed": "Could not copy the token.",
+        "portLabel": "Port",
+        "portUnavailable": "Unavailable",
+        "help": "Pair the AI Job Hunter browser extension to send jobs straight from any job board into your tracker.",
+        "notPublished": "Available soon on the Chrome Web Store and Firefox Add-ons.",
+        "regenerate": "Regenerate token",
+        "regenerated": "Pairing token regenerated. Re-pair your browser to reconnect.",
+        "regenerateFailed": "Could not regenerate the token.",
+        "regenerateConfirmTitle": "Regenerate pairing token",
+        "regenerateConfirmDescription": "Regenerating disconnects any paired browser. You will need to pair the extension again. Continue?",
+        "regenerateConfirm": "Regenerate"
+      }
     },
     "privacy": {
       "dataTitle": "Your data",
@@ -2154,6 +2175,11 @@
       "openUrl": "Open job link",
       "deleteKeepDocs": "Remove tracking (keep documents)",
       "deleteAll": "Delete everything"
+    },
+    "imported": {
+      "toastTitle": "Imported from browser",
+      "view": "View job",
+      "fallback": "A new job was imported."
     },
     "delete": {
       "keepTitle": "Remove application tracking",

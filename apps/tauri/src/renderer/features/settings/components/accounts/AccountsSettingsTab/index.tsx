@@ -7,6 +7,7 @@ import { AUTH_BOARDS } from '@/constants/auth';
 import { useCredentialsAvailable } from '@/services';
 
 import { BoardSessionRow } from '../BoardSessionRow';
+import { ExtensionBridgeSection } from '../ExtensionBridgeSection';
 
 export function AccountsSettingsTab() {
   const { t } = useTranslation();
@@ -33,6 +34,8 @@ export function AccountsSettingsTab() {
           ))}
         </div>
       </SettingsSection>
+
+      <ExtensionBridgeSection />
     </div>
   );
 }

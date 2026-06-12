@@ -12,6 +12,7 @@ pub mod credentials;
 pub mod data;
 pub mod dialog;
 pub mod documents;
+pub mod extension_bridge;
 pub mod geocoding;
 pub mod job_preferences;
 pub mod jobs;

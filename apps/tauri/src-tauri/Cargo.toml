@@ -83,6 +83,16 @@ tracing = { version = "0.1", features = ["log"] }
 
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
+# Loopback-only WebSocket server for the browser-extension bridge (Feature 2).
+# `default-features = false` drops the TLS feature set: the bridge binds 127.0.0.1
+# and speaks plain `ws://` (no certs on loopback), so no rustls/native-tls is
+# pulled in. Auth is layered in our handshake (Origin allowlist + per-frame token
+# + size cap + SSRF guard), not TLS. See extension_bridge::auth.
+#
+# Pinned to 0.28 so its `tungstenite 0.28` matches the one chromiumoxide already
+# pulls transitively (via async-tungstenite 0.32) — no duplicate tungstenite major
+# is added to the tree.
+tokio-tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
 
 chromiumoxide = { version = "0.9", features = ["fetcher", "zip8"] }
 

@@ -77,6 +77,7 @@ jobs:
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
       rust: ${{ steps.filter.outputs.rust }}
+      extension: ${{ steps.filter.outputs.extension }}
 
     steps:
       - name: 🛡️ Harden Runner
@@ -106,6 +107,12 @@ jobs:
               - '.github/**'
             rust:
               - 'apps/tauri/src-tauri/**'
+              - '.github/**'
+            extension:
+              - 'apps/extension/**'
+              - 'packages/shared/**'
+              - 'pnpm-lock.yaml'
+              - 'tsconfig*.json'
               - '.github/**'
 
   dependencies:
@@ -831,6 +838,88 @@ jobs:
           echo "::endgroup::"
 
   # ──────────────────────────────────────────────────────────────────────
+  # Extension
+  # Path-filtered: typecheck + test + build the browser extension. turbo's
+  # `^build` dependsOn builds @ajh/shared first; lint + prettier are already
+  # covered globally by the always-on lint-format job, so they're not repeated.
+  # ──────────────────────────────────────────────────────────────────────
+  extension:
+    name: 🧩 Extension
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [changes, dependencies]
+    if: needs.changes.outputs.extension == 'true'
+
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
+        with:
+          install: false
+
+      - name: 💾 Restore node_modules Cache
+        id: restore-node-modules
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            apps/*/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: 📥 Install Dependencies (cache miss fallback)
+        if: steps.restore-node-modules.outputs.cache-hit != 'true'
+        run: |
+          echo "::warning::node_modules cache miss — falling back to pnpm install"
+          pnpm install --frozen-lockfile
+
+      - name: 💾 Restore Turbo Cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: .turbo
+          key: ${{ needs.dependencies.outputs.cache-key }}
+
+      - name: 🧩 Typecheck + Test + Build Extension
+        id: extension
+        run: |
+          echo "::group::Building extension (typecheck + test + build)"
+          pnpm turbo run typecheck test build --filter=@ajh/extension
+          echo "::endgroup::"
+
+      - name: 📝 Job Summary
+        if: always()
+        run: |
+          {
+            echo "## 🧩 Extension Summary"
+            echo ""
+            echo "| Check | Status |"
+            echo "|-------|--------|"
+            echo "| Typecheck + Test + Build | ${{ steps.extension.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |"
+            echo ""
+            echo "### 🔧 Environment"
+            echo "- **Node**: $(node --version)"
+            echo "- **pnpm**: $(pnpm --version)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 🔍 Debug Environment on Failure
+        if: failure()
+        run: |
+          echo "::group::Environment Variables"
+          echo "Node Version: $(node --version)"
+          echo "pnpm Version: $(pnpm --version)"
+          echo "Runner OS: ${{ runner.os }}"
+          echo "::endgroup::"
+
+  # ──────────────────────────────────────────────────────────────────────
   # Umbrella gate — the single required status check for branch protection.
   # Passes if every gated job SUCCEEDED or was SKIPPED (path-filtered out), and
   # fails if any failed/cancelled. Make THIS ("✅ CI OK") the only required
@@ -840,13 +929,13 @@ jobs:
   ci-ok:
     name: ✅ CI OK
     if: always()
-    needs: [lint-format, type-check, tests, build-verification, quality-checks]
+    needs: [lint-format, type-check, tests, build-verification, quality-checks, extension]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: ✅ Verify required jobs
         run: |
-          results="${{ needs.lint-format.result }} ${{ needs.type-check.result }} ${{ needs.tests.result }} ${{ needs.build-verification.result }} ${{ needs.quality-checks.result }}"
+          results="${{ needs.lint-format.result }} ${{ needs.type-check.result }} ${{ needs.tests.result }} ${{ needs.build-verification.result }} ${{ needs.quality-checks.result }} ${{ needs.extension.result }}"
           echo "Job results: $results"
           for r in $results; do
             case "$r" in

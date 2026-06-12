@@ -101,6 +101,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       remove: async () => ({ success: true }),
       track: async () => ({ success: true }),
       saveFromPosting: async () => ({ success: true }),
+      onChanged: unsub,
     },
 
     documents: {
@@ -127,6 +128,11 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     contactProfile: {
       get: async () => ({}),
       set: async () => ({ success: true }),
+    },
+
+    extensionBridge: {
+      status: async () => ({ port: 47615, connected: false, token: 'mock-token' }),
+      regenerateToken: async () => ({ token: 'mock-token' }),
     },
 
     search: {

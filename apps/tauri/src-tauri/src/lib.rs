@@ -26,6 +26,7 @@ pub mod deeplink;
 pub mod documents;
 pub mod error;
 pub mod export;
+pub mod extension_bridge;
 pub mod extraction;
 pub mod ipc_contracts;
 pub mod job_preferences;
@@ -486,6 +487,11 @@ pub fn run() {
                 Err(e) => log::warn!("[setup] pipeline cache failed to open (non-fatal): {e}"),
             }
 
+            // Browser-extension bridge (Feature 2): manage the pairing-token state
+            // (+ register its factory-reset token rotation). The loopback WS server
+            // itself is started below, after the registry is in state.
+            extension_bridge::manage(app, &mut reset_registry, &data_dir);
+
             app.manage(reset_registry);
 
             // Build and set the application menu. Predefined roles self-handle;
@@ -519,6 +525,11 @@ pub fn run() {
 
             // Start autopilot schedule runner (checks every minute).
             autopilot_scheduler::start(handle.clone());
+
+            // Start the browser-extension WS bridge (loopback only). Fire-and-
+            // forget on the tokio runtime; a bind failure logs + disables the
+            // bridge and never blocks boot. `BridgeState` was managed above.
+            extension_bridge::start(handle.clone());
 
             Ok(())
         })
@@ -658,6 +669,9 @@ pub fn run() {
             commands::referrals::referrals_remove,
             // profile import
             commands::profile_import::profile_import_from_url,
+            // browser-extension bridge (Feature 2 — loopback WS control)
+            commands::extension_bridge::extension_bridge_status,
+            commands::extension_bridge::extension_bridge_regenerate_token,
             // export
             export::commands::documents_export_document,
             export::commands::documents_export_and_save,

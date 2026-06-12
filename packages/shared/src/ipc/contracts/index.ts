@@ -27,6 +27,7 @@ import { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js
 import { DATA_CHANNELS, type DataContract } from './data.js';
 import { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
 import { DOCUMENTS_CHANNELS, type DocumentsContract } from './documents.js';
+import { EXTENSION_BRIDGE_CHANNELS, type ExtensionBridgeContract } from './extensionBridge.js';
 import { GEOCODE_CHANNELS, type GeocodeContract } from './geocode.js';
 import { JOB_PREFERENCES_CHANNELS, type JobPreferencesContract } from './jobPreferences.js';
 import { JOBS_CHANNELS, type JobsContract } from './jobs.js';
@@ -54,6 +55,7 @@ export interface IpcContract {
   documents: DocumentsContract;
   jobPreferences: JobPreferencesContract;
   contactProfile: ContactProfileContract;
+  extensionBridge: ExtensionBridgeContract;
   search: SearchContract;
   scrape: ScrapeContract;
   match: MatchContract;
@@ -85,6 +87,7 @@ export const IPC_CHANNELS = {
   documents: DOCUMENTS_CHANNELS,
   jobPreferences: JOB_PREFERENCES_CHANNELS,
   contactProfile: CONTACT_PROFILE_CHANNELS,
+  extensionBridge: EXTENSION_BRIDGE_CHANNELS,
   search: SEARCH_CHANNELS,
   scrape: SCRAPE_CHANNELS,
   match: MATCH_CHANNELS,
@@ -133,6 +136,7 @@ export {
   type AiGenerationUpdateRequest,
 } from './aiGenerations.js';
 export {
+  type ApplicationChangedEvent,
   type ApplicationCreateResult,
   type ApplicationDetail,
   type ApplicationMutationResult,
@@ -182,6 +186,12 @@ export {
   type TemplateRecommendation,
   type TemplateRecommendSignals,
 } from './documents.js';
+export {
+  EXTENSION_BRIDGE_CHANNELS,
+  type ExtensionBridgeContract,
+  type ExtensionBridgeStatus,
+  type ExtensionBridgeTokenResult,
+} from './extensionBridge.js';
 export { GEOCODE_CHANNELS, type GeocodeContract, type GeocodeSuggestion } from './geocode.js';
 export { JOB_PREFERENCES_CHANNELS, type JobPreferencesContract } from './jobPreferences.js';
 export { JOBS_CHANNELS, type JobsContract } from './jobs.js';

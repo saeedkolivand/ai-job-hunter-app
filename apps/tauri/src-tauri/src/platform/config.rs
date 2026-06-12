@@ -54,6 +54,30 @@ pub fn ollama_host() -> String {
     std::env::var(OLLAMA_HOST_ENV).unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string())
 }
 
+/// Env var carrying extra allowed `Origin`s for the extension-bridge WS
+/// handshake (comma-separated, e.g.
+/// `chrome-extension://abc...,moz-extension://def...`). DEV-ONLY: an unpacked
+/// extension gets a fresh, machine-specific id each load, so the published-id
+/// allowlist can't cover local development — this lets a developer pin their
+/// local id without code edits. The centralized-config rule forbids reading env
+/// outside `platform/`, so the bridge calls this helper instead of `std::env`.
+const EXTENSION_DEV_ORIGINS_ENV: &str = "AJH_EXTENSION_DEV_ORIGINS";
+
+/// Extra extension origins to allow during development. Empty in a normal
+/// install (the var is unset). Entries are trimmed; blanks are dropped.
+pub fn extension_dev_origins() -> Vec<String> {
+    std::env::var(EXTENSION_DEV_ORIGINS_ENV)
+        .ok()
+        .map(|raw| {
+            raw.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
