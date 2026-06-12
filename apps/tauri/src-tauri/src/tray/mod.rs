@@ -225,6 +225,7 @@ pub fn on_new_jobs(app: &AppHandle, autopilot_id: &str, autopilot_name: &str, ne
             g.total
         };
         let _ = state.new_jobs_item.set_text(format!("New jobs: {total}"));
+        let _ = state.new_jobs_item.set_enabled(total > 0);
     }
 }
 
@@ -263,6 +264,7 @@ pub fn handle_notification_click(app: &AppHandle) {
         t
     };
     let _ = state.new_jobs_item.set_text("New jobs: 0");
+    let _ = state.new_jobs_item.set_enabled(false);
     if let Some(id) = target {
         emit_focus(app, &id);
     }
