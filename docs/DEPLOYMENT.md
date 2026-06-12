@@ -142,10 +142,10 @@ graph LR
 PRs to `main` run three layers (all under [`.github/workflows/`](../.github/workflows/)):
 
 - **Gating** — `ci-pipeline.yml` (lint, type-check, tests, build, Rust quality + architecture R1–R8, `cargo-deny`, dependency-review). The only layer that blocks merge.
-- **Advisory inline review — free, no secrets, `GITHUB_TOKEN` only** — `pr-review.yml` posts ESLint + Clippy as inline comments via reviewdog and runs `dangerfile.ts` (deterministic PR rules — owner hint, missing-test, security/IPC reminders, hygiene — reusing `.claude/review-routes.json`); `codeql.yml` adds JS/TS security scanning (Security tab + PR annotations). Never blocks.
-- **On-demand AI review** — comment `@claude review` on a PR (repo owner only) to run `claude-review.yml`, which reviews the changed files as the routed `.claude/agents` owner. Requires the `CLAUDE_CODE_OAUTH_TOKEN` repo secret (from `claude setup-token`); do **not** also set `ANTHROPIC_API_KEY`.
+- **Always-on AI review — CodeRabbit** (external SaaS, free on this public repo; config in [`.coderabbit.yaml`](../.coderabbit.yaml)). Posts a PR summary + walkthrough + line-by-line review, applies area labels, and runs ESLint / Clippy / Semgrep / secret-scan / actionlint inline. Advisory only — it never approves or blocks (only "✅ CI OK" gates). Its `path_instructions` mirror `.claude/review-routes.json` ownership + the `CLAUDE.md` conventions; the former `pr-review.yml` (reviewdog ESLint/Clippy + `dangerfile.ts`) and `labeler.yml` were retired in its favor. `codeql.yml` still adds JS/TS scanning to the Security tab.
+- **On-demand deep review — Claude** — comment `@claude review` on a PR (repo owner only) to run `claude-review.yml`, an agent-routed deep dive as the `.claude/agents` owner. Inert until invoked. Requires the `CLAUDE_CODE_OAUTH_TOKEN` repo secret (from `claude setup-token`); do **not** also set `ANTHROPIC_API_KEY`.
 
-> Weekly `security.yml` (`npm`/`cargo audit`) runs outside PRs. On public-repo **fork** PRs, reviewdog/Danger can't post inline comments (read-only token) — those PRs still hit the gating layer. CodeQL **Default setup** must stay off; the `codeql.yml` advanced workflow conflicts with it.
+> Weekly `security.yml` (`npm`/`cargo audit`) runs outside PRs. CodeRabbit reviews **fork** PRs too (it's a GitHub App, not a `GITHUB_TOKEN` job); all PRs still hit the gating layer. CodeQL **Default setup** must stay off; the `codeql.yml` advanced workflow conflicts with it.
 
 ---
 

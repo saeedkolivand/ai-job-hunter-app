@@ -1,0 +1,179 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+#
+# CodeRabbit — always-on AI PR review for this public repo (free OSS plan).
+# It complements (never replaces) the deterministic merge gate in
+# .github/workflows/ci-pipeline.yml and the SARIF security jobs (codeql/semgrep/
+# scorecard/security). Advisory only: it must NOT approve or block merge — only
+# "✅ CI OK" gates. The on-demand "@claude review" (.github/workflows/claude-review.yml)
+# stays for agent-routed deep dives.
+#
+# Conventions mirror CLAUDE.md + .github/copilot-instructions.md; ownership mirrors
+# .claude/review-routes.json; labels mirror the former .github/labeler.yml.
+
+language: en-US
+
+tone_instructions: >
+  Be concise and technical. Drop filler. Only HIGH/CRITICAL findings are blocking
+  (architecture-rule violations; untested error/security paths on changed code;
+  credential/IPC/updater exploits; data loss/corruption). Treat style, naming, and
+  preference as advisory. Never approve or request-changes — comment only.
+
+reviews:
+  profile: assertive
+  # We never want CodeRabbit to gate merge — "✅ CI OK" is the only required check.
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  poem: false
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+
+  # Skip generated / vendored / non-source noise so review focuses on real diffs.
+  path_filters:
+    - '!**/dist/**'
+    - '!pnpm-lock.yaml'
+    - '!**/Cargo.lock'
+    - '!landing/**'
+    - '!graphify-out/**'
+    - '!**/*.gen.ts'
+    - '!apps/tauri/src/renderer/routeTree.gen.ts'
+    - '!**/__snapshots__/**'
+    - '!**/*.snap'
+
+  # Per-area guidance — mirrors the Primary-owner map in .claude/review-routes.json.
+  # `path` is a single minimatch glob (brace alternatives group an area's dirs).
+  path_instructions:
+    - path: 'apps/tauri/src/renderer/**'
+      instructions: >
+        React renderer. Enforce ports & adapters: no window.api in features/routes/
+        components — use service hooks from @/services (React Query). Use @ajh/ui
+        primitives (Button/Input/TextArea/SelectDropdown/ModalShell/etc.), never raw
+        <button>/<select>/<textarea>. Brand/design tokens only (text-brand, bg-brand,
+        var(--color-brand)); no hardcoded [#RRGGBB]. Motion via @/lib/motion tokens,
+        no inline {duration,ease}. i18n via @ajh/translations, never react-i18next/
+        i18next directly. No useState+useEffect for remote data. Never cross-import
+        between feature dirs.
+    - path: 'packages/ui/**'
+      instructions: >
+        Design-system library. No Zustand, no IPC, no routing imports. Keep
+        components presentational; tokens from css/tokens.css; accessibility
+        (labels/roles/keyboard) matters.
+    - path: 'apps/tauri/src-tauri/src/**'
+      instructions: >
+        Rust/Tauri backend. Respect L0–L3 layering (architecture rules R1–R8 in
+        docs/architecture-rules.md — enforced by tests/architecture.rs). Use the
+        centralized layers: errors via error.rs (AppError/AppResult), HTTP via
+        net/http.rs, config/paths via platform/config.rs, spans via observability.rs.
+        New board/provider variants go through registries, not hardcoded matches.
+        Rust-first business logic. No unwrap/expect on fallible runtime paths.
+    - path: 'packages/shared/**'
+      instructions: >
+        IPC contracts / Zod schemas / shared types. No React, no Node APIs. Keep the
+        Rust mirror + the TS contract in sync (the 5-step IPC capability flow).
+    - path: 'apps/tauri/src-tauri/src/{commands/ai.rs,commands/ai_provider/**,documents/**}'
+      instructions: >
+        AI providers / embeddings. Adding a provider must be config + adapter only —
+        never business-logic coupling. Watch prompt-injection and secret leakage;
+        keep streaming/token usage efficient.
+    - path: 'packages/prompts/**'
+      instructions: >
+        Prompt templates: pure TS, zero deps, no UI, no window. Provider-aware +
+        locale-driven. Watch for injection-prone interpolation.
+    - path: 'apps/tauri/src-tauri/src/{export,model,theme,locale,layout,measure,contact_profile}/**'
+      instructions: >
+        Resume/export domain. Preserve the DocumentModel contract, ATS-safe
+        formatting/layout, and locale/country standards. Flag golden-snapshot
+        impact for PDF/DOCX rendering changes.
+    - path: 'apps/tauri/src-tauri/src/{commands/match_resume.rs,commands/cover_letter.rs,cover_letter/**,recommend/**,validate/**}'
+      instructions: >
+        ATS scoring / job-match / cover-letter relevance. Keep scoring rules and
+        keyword/skill/requirement extraction consistent; validators stay relaxed/
+        future-proof (no hard enum gates that reject new variants).
+    - path: 'apps/tauri/src-tauri/src/{scraping,applying,browser}/**'
+      instructions: >
+        Scraping / browser automation. Resilient selectors, rate-limiting,
+        cancellation, and registry-driven boards (SCRAPERS). No brittle hardcoded
+        DOM assumptions.
+    - path: 'apps/extension/**'
+      instructions: >
+        Browser extension (MV3). No dynamic import() in the background service
+        worker (Vite __vitePreload touches window/document → "window is not
+        defined"); use static imports. The pairing token only travels to the
+        loopback desktop bridge, never a remote host.
+    - path: 'apps/tauri/src-tauri/{capabilities/**,tauri.conf.json,src/net/**,src/credentials/**,src/commands/credentials.rs,src/commands/privacy.rs,src/updater/**}'
+      instructions: >
+        SECURITY-SENSITIVE surface (tauri-security-reviewer checklist): capabilities,
+        IPC attack surface, secrets/credentials, updater, rate-limit/cost/export
+        limits. Scrutinize new IPC commands and permission widening. Flag
+        HIGH/CRITICAL.
+    - path: '**/{Cargo.toml,package.json,deny.toml}'
+      instructions: >
+        Dependency/policy manifests — supply-chain surface. Justify each added
+        dependency; flag risky/unmaintained packages and license/policy issues.
+    - path: '{**/*.test.*,**/*.spec.*,apps/tauri/src-tauri/tests/**,**/e2e/**}'
+      instructions: >
+        Tests. Check for weak assertions, over-mocking, flakiness, and untested
+        edge/error/security paths on the changed code. Flag source changes that
+        ship without a matching test update.
+    - path: 'docs/**'
+      instructions: >
+        Docs/knowledge base must be thin pointers into the owning source/symbol —
+        no copied literals; keep them from drifting.
+
+  # Area labels — mirrors the retired .github/labeler.yml path→label map. CodeRabbit
+  # applies labels by name from these instructions.
+  labeling_instructions:
+    - label: 'app/extension'
+      instructions: 'Apply when files under apps/extension/** change.'
+    - label: 'app/tauri'
+      instructions: 'Apply when files under apps/tauri/** change.'
+    - label: 'pkg/shared'
+      instructions: 'Apply when files under packages/shared/** change.'
+    - label: 'pkg/ui'
+      instructions: 'Apply when files under packages/ui/** change.'
+    - label: 'pkg/prompts'
+      instructions: 'Apply when files under packages/prompts/** change.'
+    - label: 'pkg/translations'
+      instructions: 'Apply when files under packages/translations/** change.'
+    - label: 'rust'
+      instructions: 'Apply when files under apps/tauri/src-tauri/** change.'
+    - label: 'frontend'
+      instructions: 'Apply when files under apps/tauri/src/renderer/** change.'
+    - label: 'dependencies'
+      instructions: 'Apply when package.json, pnpm-lock.yaml, Cargo.toml, or Cargo.lock change.'
+    - label: 'github_actions'
+      instructions: 'Apply when files under .github/** change.'
+    - label: 'documentation'
+      instructions: 'Apply when docs/** or any *.md file changes.'
+
+  # In-PR linters/SAST. These post advisory inline comments; the deterministic
+  # gating ESLint/Clippy/fmt remain in ci-pipeline.yml, and the SARIF Semgrep
+  # (Security tab) remains in semgrep.yml.
+  tools:
+    eslint:
+      enabled: true # replaces the retired reviewdog ESLint lane
+    actionlint:
+      enabled: true # replaces the retired reviewdog actionlint lane
+    gitleaks:
+      enabled: true # net-new: secret scanning on the diff
+    yamllint:
+      enabled: true
+    markdownlint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    semgrep:
+      enabled: true
+    biome:
+      enabled: false # repo uses ESLint + Prettier, not Biome
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  learnings:
+    scope: local
