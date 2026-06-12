@@ -1,10 +1,11 @@
 name: 🧹 Workflow Lint
 
 # ──────────────────────────────────────────────────────────────────────
-# Lints + security-audits the GitHub Actions workflows & composite actions,
-# and keeps the workflow catalog honest. Runs only when CI config changes.
-# actionlint + zizmor are advisory (never block) — actionlint posts inline,
-# zizmor prints findings to the log. The catalog job DOES fail on drift: if
+# Security-audits the GitHub Actions workflows & composite actions, and keeps
+# the workflow catalog honest. Runs only when CI config changes. zizmor is
+# advisory (prints findings to the log, never blocks). actionlint now runs
+# in-PR via CodeRabbit (.coderabbit.yaml tools.actionlint), so the former
+# reviewdog actionlint lane was retired. The catalog job DOES fail on drift: if
 # .github/workflows/README.md or the root README badges are stale, regenerate
 # with `pnpm gen:workflows`. (workflow-lint is not a required check, so a
 # failure here still never blocks merge — it is a visible nudge.)
@@ -22,36 +23,12 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write # actionlint inline comments via reviewdog
 
 concurrency:
   group: workflow-lint-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  actionlint:
-    name: 🔍 actionlint
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
-        with:
-          egress-policy: audit
-
-      - name: 📥 Checkout Repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          fetch-depth: 1
-
-      - name: 🔍 actionlint (reviewdog)
-        uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d # v1.72.0
-        with:
-          reporter: github-pr-review
-          filter_mode: added
-          level: warning
-          fail_level: none # advisory; was the deprecated `fail_on_error: false`
-
   zizmor:
     name: 🛡️ zizmor
     runs-on: ubuntu-latest
