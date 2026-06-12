@@ -18,6 +18,8 @@
  * (`AJH_EXTENSION_DEV_ORIGINS` on the app side) admits a locally-loaded build.
  */
 
+import { version as VERSION } from '../package.json' with { type: 'json' };
+
 export type BrowserTarget = 'chrome' | 'firefox';
 
 /** Firefox AMO extension id — PLACEHOLDER, mirrors auth.rs. TODO(bridge). */
@@ -30,8 +32,6 @@ export const FIREFOX_EXTENSION_ID = '00000000-0000-0000-0000-000000000000';
  * CWS id is known, set it in auth.rs (the manifest needs no id field for Chrome).
  */
 export const CHROME_EXTENSION_ID_PLACEHOLDER = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-
-const VERSION = '0.1.0';
 
 /**
  * Loopback-only host permission. The background worker opens

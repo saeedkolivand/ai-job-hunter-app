@@ -17,6 +17,7 @@
  *   apps/tauri/src-tauri/Cargo.toml       — [package] version
  *   apps/tauri/src-tauri/Cargo.lock       — ajh-tauri package entry (kept in lockstep)
  *   apps/tauri/package.json               — version
+ *   apps/extension/package.json           — version
  *   package.json                          — version
  *   README.md                             — static release badge version
  */
@@ -77,6 +78,19 @@ const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
 pkg.version = version;
 fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 console.log(`apps/tauri/package.json → version=${version}`);
+
+// ── apps/extension/package.json ──────────────────────────────────────────────
+//
+// The browser extension's version flows from this single source of truth into
+// the generated manifest.json: `apps/extension/src/manifest.ts` imports the
+// package version, and the Vite build emits it into each target's manifest. Bump
+// it here so a release ships a matching extension version (not a stale 0.1.0).
+
+const extPkgPath = path.join(root, 'apps/extension/package.json');
+const extPkg = JSON.parse(fs.readFileSync(extPkgPath, 'utf8'));
+extPkg.version = version;
+fs.writeFileSync(extPkgPath, JSON.stringify(extPkg, null, 2) + '\n');
+console.log(`apps/extension/package.json → version=${version}`);
 
 // ── root package.json ───────────────────────────────────────────────────────
 

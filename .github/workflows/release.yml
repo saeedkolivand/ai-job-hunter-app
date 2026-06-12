@@ -182,7 +182,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          FILES="package.json apps/tauri/package.json apps/tauri/src-tauri/Cargo.toml apps/tauri/src-tauri/Cargo.lock apps/tauri/src-tauri/tauri.conf.json README.md"
+          FILES="package.json apps/tauri/package.json apps/extension/package.json apps/tauri/src-tauri/Cargo.toml apps/tauri/src-tauri/Cargo.lock apps/tauri/src-tauri/tauri.conf.json README.md"
           if git diff --quiet -- $FILES; then
             echo "Version files already at v$VERSION — nothing to commit."
             exit 0
@@ -504,6 +504,118 @@ jobs:
           echo "Runner OS: ${{ runner.os }}"
           echo "Platform: ${{ matrix.platform }}"
           echo "::endgroup::"
+
+  package-extension:
+    name: 🧩 Package Extension
+    # Manual-only: the browser extension is built + attached to the Release on
+    # demand from the Actions tab ("Run workflow"), never automatically on a
+    # release push — so we don't publicly attach the current placeholder-ID
+    # build to every auto-release. Mirrors the installer `build` job philosophy.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Uploads the zipped extension to the GitHub Release (softprops/action-gh-release).
+    permissions:
+      contents: write
+
+    steps:
+      - name: 📥 Checkout Repository (for tag lookup)
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 🏷️ Resolve Version
+        id: resolve
+        env:
+          # Passed via env (not inline) to avoid script injection from the input.
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${INPUT_VERSION:-}" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="$(git tag --sort=-version:refname | head -n1)"
+          fi
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::No release tags found. Create a release first or provide a version manually."
+            exit 1
+          fi
+
+          VERSION="$(echo "$VERSION" | sed 's/^v*//')"
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
+            echo "::error::Could not resolve a valid version (got '$VERSION'). Pass one via the workflow input."
+            exit 1
+          fi
+          # Using a non-secret prefix to prevent false positive secret masking
+          # that would otherwise blank the output and break the manifest generator.
+          echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Packaging extension for v$VERSION"
+
+      - name: 📥 Checkout Release Tag
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ steps.resolve.outputs.version }}
+          fetch-depth: 1
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+        with:
+          version: 11.1.3
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 📥 Install Dependencies
+        run: |
+          echo "::group::Installing dependencies"
+          pnpm install --frozen-lockfile
+          echo "::endgroup::"
+
+      - name: 🔨 Build Extension
+        run: |
+          echo "::group::Building shared packages"
+          pnpm build:packages
+          echo "::endgroup::"
+          echo "::group::Building browser extension"
+          pnpm --filter @ajh/extension build
+          echo "::endgroup::"
+
+      - name: 🗜️ Zip Extension Bundles
+        run: |
+          echo "::group::Zipping chrome + firefox bundles"
+          VERSION="${{ steps.resolve.outputs.version }}"
+          ( cd apps/extension/dist && zip -r "$GITHUB_WORKSPACE/ai-job-hunter-extension-chrome-${VERSION}.zip" chrome && zip -r "$GITHUB_WORKSPACE/ai-job-hunter-extension-firefox-${VERSION}.zip" firefox )
+          echo "::endgroup::"
+
+      - name: 📤 Upload Extension to Release
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        with:
+          tag_name: ${{ steps.resolve.outputs.version }}
+          files: |
+            ai-job-hunter-extension-chrome-${{ steps.resolve.outputs.version }}.zip
+            ai-job-hunter-extension-firefox-${{ steps.resolve.outputs.version }}.zip
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📝 Job Summary
+        if: always()
+        run: |
+          echo "## 🧩 Package Extension Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`${{ steps.resolve.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
 
   generate-update-manifest:
     name: 📝 Generate Update Manifest

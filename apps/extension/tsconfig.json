@@ -2,10 +2,11 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     // WebExtension surface: DOM (content script + popup + SW WebSocket) plus the
-    // `chrome` / `browser` (webextension-polyfill) globals. NOT the Node renderer
+    // `chrome` global (@types/chrome). The `browser` namespace comes from the
+    // @wxt-dev/browser module import, not an ambient type. NOT the Node renderer
     // toolchain — no `@types/node`, no React DOM project types.
     "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
-    "types": ["chrome", "webextension-polyfill"],
+    "types": ["chrome"],
     "noEmit": true,
     "rootDir": ".",
     "moduleResolution": "Bundler",

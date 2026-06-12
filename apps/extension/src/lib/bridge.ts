@@ -240,7 +240,7 @@ export class BridgeClient {
     if (env.type !== EXTENSION_MESSAGE_TYPES.importResult) return;
     const reqId = typeof env.reqId === 'string' ? env.reqId : '';
     const resolve = this.pending.get(reqId);
-    if (!resolve) return;
+    if (typeof resolve !== 'function') return;
 
     this.pending.delete(reqId);
     const timer = this.timers.get(reqId);

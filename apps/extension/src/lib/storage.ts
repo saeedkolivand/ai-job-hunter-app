@@ -1,5 +1,5 @@
 /**
- * Pairing-token persistence in `chrome.storage.local` (via webextension-polyfill
+ * Pairing-token persistence in `chrome.storage.local` (via @wxt-dev/browser
  * so the same code runs on Chrome + Firefox). The token is a 64-char hex secret
  * the user copies from the desktop app's Settings → "Browser extension".
  *
@@ -7,7 +7,7 @@
  * back to the loopback desktop bridge, never to any remote server.
  */
 
-import browser from 'webextension-polyfill';
+import { browser } from '@wxt-dev/browser';
 
 const TOKEN_KEY = 'pairingToken';
 

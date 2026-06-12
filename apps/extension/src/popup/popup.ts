@@ -8,7 +8,7 @@
  * explanation, never an error.
  */
 
-import browser from 'webextension-polyfill';
+import { browser } from '@wxt-dev/browser';
 
 import type { ConnectionStatus, ImportMode, PopupRequest, PopupResponse } from '../lib/messages';
 import { looksLikeToken } from '../lib/storage';

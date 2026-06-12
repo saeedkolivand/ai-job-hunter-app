@@ -1,16 +1,15 @@
 /**
  * Unit tests for apps/extension/src/lib/storage.ts.
  *
- * webextension-polyfill throws at load time outside a real extension context.
- * We intercept it with vi.mock before the module graph resolves, providing a
- * minimal browser.storage.local stub backed by an in-memory object.
+ * We intercept @wxt-dev/browser with vi.mock before the module graph resolves,
+ * providing a minimal browser.storage.local stub backed by an in-memory object.
  *
  * vi.hoisted() is used to create the in-memory store and mock fns BEFORE the
  * vi.mock factory runs (vi.mock is hoisted above imports by vitest's transform).
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import browserPolyfill from 'webextension-polyfill';
+import { browser } from '@wxt-dev/browser';
 
 import { clearToken, getToken, looksLikeToken, setToken } from './storage';
 
@@ -30,17 +29,17 @@ const { _store, storageLocal } = vi.hoisted(() => {
   return { _store, storageLocal };
 });
 
-vi.mock('webextension-polyfill', () => ({
-  default: {
+vi.mock('@wxt-dev/browser', () => ({
+  browser: {
     storage: { local: storageLocal },
   },
 }));
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-/** Expose the storage.local mock from the mocked polyfill for per-test control. */
+/** Expose the storage.local mock from the mocked browser namespace for per-test control. */
 function getStorageLocalMock() {
-  return (browserPolyfill as unknown as { storage: { local: typeof storageLocal } }).storage.local;
+  return (browser as unknown as { storage: { local: typeof storageLocal } }).storage.local;
 }
 
 /** A valid 64-char hex token. */

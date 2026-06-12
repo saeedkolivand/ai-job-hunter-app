@@ -4,19 +4,18 @@
  * Stubs globals the extension code needs so tests can run under jsdom
  * without a real browser or service-worker environment.
  *
- * IMPORTANT: webextension-polyfill throws "This script should only be loaded
- * in a browser extension" when imported outside of a browser extension context.
- * Any test file that imports a module depending on webextension-polyfill must
- * add `vi.mock('webextension-polyfill', ...)` at the top of the test file.
- * The chrome global stub here is a fallback for modules that reference chrome
- * directly (not via the polyfill).
+ * The `browser` namespace comes from @wxt-dev/browser, which reads
+ * `globalThis.browser ?? globalThis.chrome` lazily and does NOT throw on
+ * import. Tests that exercise browser-API calls mock '@wxt-dev/browser'
+ * directly; the chrome global stub here is a fallback for code paths that
+ * reference `chrome` directly or resolve the namespace through this global.
  */
 
 import { vi } from 'vitest';
 
 // ── chrome global stub ───────────────────────────────────────────────────────
-// Minimal chrome surface for code that references chrome directly.
-// Tests that import storage.ts must mock 'webextension-polyfill' instead.
+// Minimal chrome surface for code that references chrome directly, and the
+// lazy fallback @wxt-dev/browser resolves to when 'browser' is absent.
 
 export const chromeStorageStore: Record<string, unknown> = {};
 
@@ -45,8 +44,8 @@ const chromeMock = {
   },
 };
 
-// Provide the chrome global so webextension-polyfill doesn't throw on
-// "no chrome" check (used by some code paths before polyfill import).
+// Provide the chrome global so @wxt-dev/browser has a namespace to resolve to
+// (it reads `globalThis.browser ?? globalThis.chrome` lazily).
 if (typeof globalThis.chrome === 'undefined') {
   // Assign directly — vi.stubGlobal would work too but this is more explicit.
   Object.defineProperty(globalThis, 'chrome', {

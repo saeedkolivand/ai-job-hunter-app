@@ -1,43 +1,114 @@
-# AI Job Hunter — Browser Extension (`@ajh/extension`)
+# Browser Extension — AI Job Hunter
 
-MV3 browser extension (Chrome + Firefox) that imports the job posting you are
-viewing into the **AI Job Hunter desktop app** over a private, loopback-only
-WebSocket. It is the browser half of Feature 2; the desktop half (the bridge
-server, parser, and Applications store) already lives in
-`apps/tauri/src-tauri/src/extension_bridge`.
+<p align="center">
+  <strong>One-click job import from your browser to the desktop app.</strong>
+</p>
 
-> The wire protocol is owned by `@ajh/shared`
-> (`packages/shared/src/ipc/extension-protocol.ts`) and imported here — it is
-> never redefined in this package.
+<p align="center">
+  <a href="https://img.shields.io/badge/MV3-Chrome%20%7C%20Firefox-24C8DB"><img alt="MV3" src="https://img.shields.io/badge/MV3-Chrome%20%7C%20Firefox-24C8DB"></a>
+  <a href="https://img.shields.io/badge/loopback-only-2ea44f"><img alt="Loopback only" src="https://img.shields.io/badge/loopback-only-2ea44f"></a>
+  <a href="https://img.shields.io/badge/unpublished-dev-orange"><img alt="Unpublished" src="https://img.shields.io/badge/unpublished-dev-orange"></a>
+</p>
 
----
+This is the browser half of the **AI Job Hunter** job-import feature. An MV3 extension (Chrome + Firefox) that captures the job posting on the current tab and sends it to the **desktop app** running on your machine, over a private loopback WebSocket. No account. No remote backend. It is inert unless the desktop app is running and you have paired it.
 
-## Single-purpose statement (store listings)
+**What it does:** while browsing a job board, click the extension button → choose **Import via URL** (extension sends the job URL, desktop fetches + parses it) or **Scan page** (extension captures the rendered DOM, desktop parses it) → the job appears in your **AI Job Hunter** saved applications, tagged **New**. Tick **"I already applied"** to mark it applied instead.
 
-**This extension does exactly one thing: it sends the job posting on the
-current tab to the user's own AI Job Hunter desktop app running on the same
-computer.** There is no account, no analytics, no remote backend. It is inert
-unless the desktop app is running and the user has paired it.
+The desktop half (bridge server, parser, Applications store) lives in `apps/tauri/src-tauri/src/extension_bridge/`. The wire protocol is shared: `packages/shared/src/ipc/extension-protocol.ts`.
 
 ---
 
 ## How it works
 
-1. The desktop app runs a WebSocket server bound to `127.0.0.1` on the first
-   free port in `47615..47620`.
-2. The extension's background worker probes that exact port range to find it.
-3. The user copies a **pairing token** from the app's
-   **Settings → Browser extension** and pastes it into the extension's pairing
-   screen. The token is stored in `chrome.storage.local` and sent on every
-   frame; the desktop rejects any frame whose token mismatches.
-4. From the popup the user picks a mode:
-   - **Import via URL** — sends `{ url }`; the desktop fetches + parses it.
-   - **Scan page** — injects a one-shot capture into the active tab and sends
-     `{ url, html }` (the rendered, possibly authenticated DOM) so the desktop
-     can parse pages its headless fetch can't reach.
-   - An **"I already applied"** checkbox sets `applied: true`.
-5. The desktop creates/updates a `saved` (or `applied`) Application, deduped by
-   URL, and replies with `import.result`.
+```
+1. Desktop app starts → runs loopback WebSocket server on 127.0.0.1:<port>
+   ↓
+2. Extension's background worker probes port range 47615..47620
+   ↓
+3. You copy the pairing token from app Settings → paste into extension
+   ↓
+4. Open any job board → click extension button → pick import mode
+   ↓
+5. Desktop receives frame → fetches/parses job → creates saved Application
+```
+
+---
+
+## Quick Start
+
+```bash
+# Build the extension
+pnpm -F @ajh/extension build
+
+# Load unpacked:
+# Chrome:  chrome://extensions → Developer mode → Load unpacked → dist/chrome
+# Firefox: about:debugging → Load Temporary Add-on → dist/firefox/manifest.json
+```
+
+To actually **use** it, pair with the desktop app:
+
+1. Open the desktop app → go to **Settings → Browser extension**
+2. Copy the pairing token
+3. Open the extension popup → paste the token
+4. You'll see **Import via URL** and **Scan page** buttons
+5. Open a job board and click one of them
+
+For **local development**, see the section below — the unpacked extension gets a dev id that doesn't match the published allowlist, so you need to set an env var when starting the desktop app.
+
+---
+
+## Local Development & Testing
+
+When you load an unpacked extension (Chrome or Firefox), the browser assigns it a fresh, machine-specific id that **does not** match the published extension ids in the desktop app's allowlist. The app will reject the pairing handshake unless you tell it to trust your dev id.
+
+### Setup
+
+1. **Build the extension:**
+
+   ```bash
+   pnpm -F @ajh/extension build
+   ```
+
+2. **Load unpacked:**
+   - **Chrome:** `chrome://extensions` → toggle **Developer mode** → click **Load unpacked** → select `apps/extension/dist/chrome` → note the extension id (e.g. `abcdef123...`)
+   - **Firefox:** `about:debugging#/runtime/this-firefox` → click **Load Temporary Add-on** → select `apps/extension/dist/firefox/manifest.json` → note the uuid from `about:debugging` (e.g. `12345678-1234-1234-1234-123456789abc`)
+
+3. **Start the desktop app with the dev-origin override:**
+
+   **PowerShell:**
+
+   ```powershell
+   $env:AJH_EXTENSION_DEV_ORIGINS = "chrome-extension://abcdef123..."
+   pnpm dev
+   ```
+
+   **Bash / macOS / Linux:**
+
+   ```bash
+   AJH_EXTENSION_DEV_ORIGINS="chrome-extension://abcdef123..." pnpm dev
+   ```
+
+   For **Firefox**, use the uuid:
+
+   ```bash
+   AJH_EXTENSION_DEV_ORIGINS="moz-extension://12345678-1234-1234-1234-123456789abc" pnpm dev
+   ```
+
+4. **Pair the extension:**
+   - Desktop app is now running with your dev extension id allowed
+   - Extension popup → paste the pairing token from app Settings
+   - You'll see the import buttons
+
+5. **Test import modes:**
+   - **Import via URL:** open any job posting → click **Import via URL** → job appears in Saved
+   - **Scan page:** click **Scan page** → extension captures the DOM → desktop parses it (useful for authenticated pages)
+   - Tick **"I already applied"** to mark as applied instead of saved
+
+### Tips
+
+- Chrome dev id changes if you remove and re-load the unpacked extension — use `chrome://extensions` to get the new id each time
+- Firefox uuid stays the same across reloads (check `about:debugging` to confirm)
+- The pairing token can be regenerated any time from app Settings → Browser extension
 
 ---
 
@@ -129,44 +200,55 @@ extension, then open any job posting and click **Import via URL** or
 
 ---
 
-## Build & load
+## Build & Development Commands
 
 ```bash
 # from the repo root
-pnpm -F @ajh/extension build        # builds dist/chrome and dist/firefox
-pnpm -F @ajh/extension build:chrome # Chrome only → apps/extension/dist/chrome
-pnpm -F @ajh/extension build:firefox# Firefox only → apps/extension/dist/firefox
-pnpm -F @ajh/extension typecheck
-pnpm -F @ajh/extension lint
+pnpm -F @ajh/extension build        # builds both Chrome and Firefox → dist/
+pnpm -F @ajh/extension build:chrome # Chrome only → dist/chrome
+pnpm -F @ajh/extension build:firefox# Firefox only → dist/firefox
+pnpm -F @ajh/extension dev          # watch mode (Chrome)
+pnpm -F @ajh/extension typecheck    # TypeScript check
+pnpm -F @ajh/extension lint         # ESLint
+pnpm -F @ajh/extension test         # Vitest suite
 ```
 
-- **Chrome:** `chrome://extensions` → enable Developer mode → "Load unpacked" →
-  select `apps/extension/dist/chrome`.
-- **Firefox:** `about:debugging#/runtime/this-firefox` → "Load Temporary
-  Add-on" → select `apps/extension/dist/firefox/manifest.json`.
+### Build Tooling
 
-### Build tooling
+Plain **Vite 8** multi-entry (no `@crxjs` or heavy framework plugins): `background.ts` and `content.ts` as standalone ES entries, `popup/popup.html` as an HTML entry, and a small in-config plugin generates the per-browser `manifest.json` and copies icons. Chosen for determinism and to sidestep MV3 service-worker HMR fragility. Output is fully bundled — no remote chunks, no external dependencies loaded at runtime.
 
-Plain **Vite 8** multi-entry (no `@crxjs`): `background.ts` and `content.ts`
-build as standalone ES entries, `popup/popup.html` as an HTML entry, and a small
-in-config plugin emits the per-browser `manifest.json` and copies the icons.
-Chosen for determinism and to avoid the MV3 service-worker HMR fragility of
-heavier plugins. Output is fully bundled — no remote chunks.
+Browser API compatibility: **`@wxt-dev/browser`** (MV3-native polyfill) — not `webextension-polyfill`, which was dropped as obsolete for Manifest v3.
 
-### Chrome vs Firefox manifests
+### Chrome vs Firefox Manifests
 
-One typed source (`src/manifest.ts`) with a per-target delta, selected by the
-`BROWSER` env at build time:
+One typed TypeScript source (`src/manifest.ts`) with a per-target delta, selected by the `BROWSER` environment variable at build time:
 
-- **Chrome** → `background.service_worker` + `type: module`.
-- **Firefox** → `background.scripts` (MV3 non-persistent event page),
-  `browser_specific_settings.gecko.id` + `strict_min_version: "115.0"`.
+- **Chrome:** `background.service_worker` + `type: module`
+- **Firefox:** `background.scripts` (MV3 event page), `browser_specific_settings.gecko.id`, `strict_min_version: "115.0"`
 
-The `build` script runs both and writes `dist/chrome` and `dist/firefox`.
+The `build` script runs both builders in sequence and writes `dist/chrome` and `dist/firefox`.
 
 ---
 
-## AMO source-build note (Firefox)
+## CI & Release
+
+The extension has its own CI path, path-filtered to only run when extension files change:
+
+```bash
+turbo run typecheck test build --filter=@ajh/extension
+```
+
+On release, the **Release workflow** includes a manual `package-extension` job (`workflow_dispatch`) that:
+
+- Builds both Chrome and Firefox distributions
+- Packages them as zips with source-build reproducibility info
+- Uploads artifacts for store submission (when the extension is published)
+
+Release frequency: the extension version tracks the app version via `pnpm sync:version` (currently unpublished, so no store cadence).
+
+---
+
+## Firefox AMO Source Build
 
 AMO requires reviewable source for a bundled add-on. To reproduce the submitted
 `dist/firefox` artifact from this repo:
@@ -203,12 +285,8 @@ Until then, only the desktop dev-origin override
 
 ---
 
-## Native-messaging fallback
+## Native Messaging Fallback (Future)
 
-This v1 uses a loopback WebSocket. If a future store policy (or a hardened OS
-network config) blocks loopback WS from an extension context, the fallback is
-**native messaging**: register a native messaging host with the desktop app and
-swap `BridgeClient`'s transport from `WebSocket` to
-`browser.runtime.connectNative`. The wire envelope (`@ajh/shared`) and the
-desktop handlers stay identical — only the transport changes. Tracked as a
-`TODO(bridge)` follow-up; not implemented in v1.
+This v1 uses a loopback WebSocket. If a store policy or hardened OS network config blocks loopback WS from an extension, the **fallback is native messaging**: register a native messaging host with the desktop app and swap `BridgeClient`'s transport from `WebSocket` to `browser.runtime.connectNative` (via `@wxt-dev/browser`).
+
+The wire protocol envelope (`@ajh/shared`) and desktop handlers stay identical — **only the transport changes**. Native messaging is browser-approved, cannot be port-squatted, and works across permission policies. Tracked as a `TODO(bridge)` follow-up; not implemented in v1.

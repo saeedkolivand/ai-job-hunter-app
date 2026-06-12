@@ -4,19 +4,19 @@
  * popup.ts runs side-effects at module load (DOM queries via byId, wire(),
  * refreshStatusWithTimeout()).  To keep tests light we import only the PURE
  * exported functions directly — they have zero DOM dependency and zero
- * browser-API calls, so no DOM scaffolding and no webextension-polyfill mock
- * are required here.
+ * browser-API calls, so no DOM scaffolding and no @wxt-dev/browser mock
+ * are strictly required for the assertions here.
  */
 
 import { describe, expect, it, vi } from 'vitest';
 
 // vi.mock must come before the import that triggers the module side-effects.
-// popup.ts imports webextension-polyfill; stub it out so the module-level
-// side-effects (byId DOM queries) don't throw "missing element" before our
-// pure helpers are exercised. We also need a minimal DOM for the byId calls.
+// popup.ts imports @wxt-dev/browser; stub it out so the module-level
+// side-effects (wire(), runtime listener registration) have a usable browser
+// namespace. We also need a minimal DOM for the byId calls.
 
-vi.mock('webextension-polyfill', () => ({
-  default: {
+vi.mock('@wxt-dev/browser', () => ({
+  browser: {
     runtime: {
       sendMessage: vi.fn(),
       onMessage: { addListener: vi.fn() },

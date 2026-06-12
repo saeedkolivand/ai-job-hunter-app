@@ -8,7 +8,7 @@
  * whenever the popup sends its first message.
  */
 
-import browser from 'webextension-polyfill';
+import { browser } from '@wxt-dev/browser';
 
 import type { ExtensionImportRequest } from '@ajh/shared';
 

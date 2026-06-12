@@ -1,10 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act } from '@testing-library/react';
 
-import { createMockClient, makeQueryClient, renderHookWithClient } from '@/test-support';
+import {
+  createMockClient,
+  exerciseServiceHooks,
+  makeQueryClient,
+  renderHookWithClient,
+} from '@/test-support';
 
 import { keys } from '../query-client';
+import * as useApplicationsModule from './use-applications';
 import { useApplicationEvents } from './use-applications';
+
+describe('use-applications service hooks smoke', () => {
+  it('renders every hook without throwing and exercises mutations', async () => {
+    await exerciseServiceHooks(useApplicationsModule);
+  });
+});
 
 describe('useApplicationEvents', () => {
   it('invalidates applications.all when the onChanged listener fires', async () => {

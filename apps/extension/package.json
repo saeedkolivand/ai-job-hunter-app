@@ -15,16 +15,15 @@
   },
   "dependencies": {
     "@ajh/shared": "workspace:*",
-    "webextension-polyfill": "^0.12.0",
+    "@wxt-dev/browser": "^0.1.43",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/chrome": "^0.0.287",
-    "@types/webextension-polyfill": "^0.12.1",
-    "cross-env": "^7.0.3",
-    "jsdom": "^26.1.0",
+    "@types/chrome": "^0.1.43",
+    "cross-env": "^10.1.0",
+    "jsdom": "^29.1.1",
     "typescript": "^6.0.3",
-    "vite": "^8.0.13",
+    "vite": "^8.0.16",
     "vitest": "^4.1.8"
   }
 }
