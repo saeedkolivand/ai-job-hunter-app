@@ -78,13 +78,13 @@ function readProbe(): Pick<WizardState, 'schedule' | 'scheduleHour' | 'scheduleM
   return JSON.parse(screen.getByTestId('probe').textContent ?? '{}');
 }
 
-/** Open the SelectDropdown identified by its trigger button id attribute and pick an option. */
+/** Open the Dropdown identified by its trigger button id attribute and pick an option. */
 async function pickOptionById(
   user: ReturnType<typeof userEvent.setup>,
   triggerId: string,
   optionLabel: string
 ) {
-  // SelectDropdown forwards an `id` onto its trigger button.
+  // Dropdown forwards an `id` onto its trigger button.
   const trigger = document.getElementById(triggerId);
   if (!trigger) throw new Error(`No element with id="${triggerId}"`);
   await user.click(trigger);
@@ -137,7 +137,7 @@ describe('StepSchedule', () => {
       expect(screen.getByText(/12:00/)).toBeInTheDocument();
 
       // (b) The hour trigger's displayed label must be "00", not the placeholder "Select…".
-      // SelectDropdown looks up `options.find(o => o.value === value)`; for scheduleHour=0
+      // Dropdown looks up `options.find(o => o.value === value)`; for scheduleHour=0
       // the value prop = String(0) = "0" matches HOUR_OPTIONS[0] → label "00". A naive
       // falsy guard on value would fall through to the placeholder instead.
       const hourTrigger = document.getElementById('schedule-hour');

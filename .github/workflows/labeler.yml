@@ -1,0 +1,40 @@
+name: 🏷️ PR Labeler
+
+# ──────────────────────────────────────────────────────────────────────
+# Applies area/type labels to pull requests from their changed paths
+# (config: .github/labeler.yml). Uses the `pull_request` trigger — branches
+# are in-repo, so the job gets a write token WITHOUT the pull_request_target
+# untrusted-checkout footgun; actions/labeler reads the diff via the API and
+# never checks out or runs PR code. sync-labels:false → never strips a label
+# a maintainer added by hand.
+# ──────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: labeler-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    name: 🏷️ Apply labels
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 🏷️ Label by changed paths
+        uses: actions/labeler@8558fd74291d67161a8a78ce36a881fa63b766a9 # v5.0.0
+        with:
+          sync-labels: false

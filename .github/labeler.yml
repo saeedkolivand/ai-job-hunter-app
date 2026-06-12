@@ -1,0 +1,55 @@
+# ──────────────────────────────────────────────────────────────────────
+# Path-based PR auto-labels (actions/labeler v5 format). Label names must
+# already exist in the repo (gh label list); this file only maps changed
+# paths → those labels. Applied by .github/workflows/labeler.yml.
+# ──────────────────────────────────────────────────────────────────────
+
+'pkg/ui':
+  - changed-files:
+      - any-glob-to-any-file: 'packages/ui/**'
+
+'pkg/shared':
+  - changed-files:
+      - any-glob-to-any-file: 'packages/shared/**'
+
+'pkg/prompts':
+  - changed-files:
+      - any-glob-to-any-file: 'packages/prompts/**'
+
+'pkg/translations':
+  - changed-files:
+      - any-glob-to-any-file: 'packages/translations/**'
+
+'app/tauri':
+  - changed-files:
+      - any-glob-to-any-file: 'apps/tauri/**'
+
+'app/extension':
+  - changed-files:
+      - any-glob-to-any-file: 'apps/extension/**'
+
+'frontend':
+  - changed-files:
+      - any-glob-to-any-file: 'apps/tauri/src/renderer/**'
+
+'rust':
+  - changed-files:
+      - any-glob-to-any-file: 'apps/tauri/src-tauri/**'
+
+'dependencies':
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/package.json'
+          - '**/pnpm-lock.yaml'
+          - '**/Cargo.toml'
+          - '**/Cargo.lock'
+
+'github_actions':
+  - changed-files:
+      - any-glob-to-any-file: '.github/**'
+
+'documentation':
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.md'
+          - 'docs/**'

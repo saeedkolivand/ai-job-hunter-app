@@ -4,7 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 
 import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, EmptyState, GlassCard, Input, SelectDropdown, useNotification } from '@ajh/ui';
+import { Button, Dropdown, EmptyState, GlassCard, Input, useNotification } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -200,7 +200,7 @@ export function JobsPage() {
                     variant="default"
                   />
                 </div>
-                <SelectDropdown
+                <Dropdown
                   options={[
                     { value: 'newest', label: t('jobs.sortNewest') },
                     { value: 'oldest', label: t('jobs.sortOldest') },

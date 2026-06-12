@@ -88,7 +88,7 @@ export function StatusBar() {
               {activityText()}
             </Button>
           }
-          contentClassName="w-64 rounded-xl border border-white/[0.1] bg-black/95 p-3 shadow-2xl"
+          contentClassName="dropdown-surface w-64 rounded-xl p-3"
         >
           {activity.isActive || activity.queued > 0 ? (
             <div className="space-y-1.5">
@@ -121,7 +121,7 @@ export function StatusBar() {
           <Button
             variant="unstyled"
             onClick={goMonitoring}
-            className="mt-3 flex w-full items-center gap-1.5 rounded-lg border border-white/[0.06] bg-white/[0.03] px-2 py-1.5 text-left text-[11px] text-foreground/60 transition-colors hover:text-foreground/90"
+            className="mt-3 flex w-full items-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-2 py-1.5 text-left text-[11px] text-foreground/60 transition-colors hover:bg-foreground/[0.07] hover:text-foreground/90"
           >
             {t('status.viewAll')}
             <ArrowRight size={11} />

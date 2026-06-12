@@ -103,7 +103,7 @@ html[data-performance-mode='low-memory'] body {
   background: #15151a;
 }
 
-/* ── SelectDropdown low-memory mode ─────────────────────────────────────────── */
+/* ── Dropdown low-memory mode ────────────────────────────────────────────────── */
 /* Reduce backdrop-blur on dropdowns when in low-memory mode. */
 html[data-performance-mode='low-memory'] [role='listbox'] {
   backdrop-filter: blur(8px) !important;

@@ -2,7 +2,7 @@ import { Check, Copy, Download, FileText, LayoutTemplate } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, cn, SelectDropdown, Switch } from '@ajh/ui';
+import { Button, cn, Dropdown, Switch } from '@ajh/ui';
 
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import { PdfPreview } from '@/components/generation/PdfPreview';
@@ -226,7 +226,7 @@ export function GenerationOutput({
             {/* Template dropdown — render-time switch (drives BOTH docs' preview +
                 export), no regeneration. */}
             <div className="w-40">
-              <SelectDropdown
+              <Dropdown
                 options={templateOptions}
                 value={templateId}
                 onChange={handleTemplateChange}

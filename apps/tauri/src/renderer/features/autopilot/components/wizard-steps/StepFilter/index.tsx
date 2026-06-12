@@ -12,7 +12,7 @@ import { useExtractText } from '@/services';
 import { PrefilledBadge } from '../PrefilledBadge';
 import { WizardField } from '../WizardField';
 
-// Matches the @ajh/ui SelectDropdown / LocationInput trigger (h-9, same border &
+// Matches the @ajh/ui Dropdown / LocationInput trigger (h-9, same border &
 // bg) so the wizard's text inputs stay consistent across steps.
 const inputCls =
   'w-full h-9 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 text-xs text-foreground/80 placeholder:text-foreground/25 outline-none focus:border-brand/40 transition-colors';

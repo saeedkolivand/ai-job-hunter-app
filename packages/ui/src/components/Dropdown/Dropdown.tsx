@@ -1,18 +1,22 @@
-import { ChevronDown, Search } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { Check, ChevronDown } from 'lucide-react';
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 
+import { useDropdownKeyboard } from '../../hooks/useDropdownKeyboard';
+import { useDropdownPosition } from '../../hooks/useDropdownPosition';
 import { cn } from '../../lib/cn';
-import { transition } from '../../lib/motion';
-import { Button } from '../Button';
+import { DropdownPanel } from '../DropdownPanel';
+import { DropdownSearch } from '../DropdownSearch';
+
+const SEARCHABLE_THRESHOLD = 8;
 
 export interface DropdownOption {
   value: string;
   label: string;
-  /** Secondary text shown on the right (e.g. model size) */
+  /** Leading icon shown before the label. */
+  icon?: ReactNode;
+  /** Secondary text shown on the right (e.g. model size). */
   meta?: string;
-  /** Section header for grouping options */
+  /** Section header for grouping options (visual only — keyboard nav stays flat). */
   section?: string;
 }
 
@@ -21,11 +25,15 @@ export interface DropdownProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
-  /** Leading icon in the trigger button */
-  icon?: ReactNode;
-  /** Show search box. Defaults to true when options > 5. */
-  searchable?: boolean;
   disabled?: boolean;
+  /** Leading icon in the trigger button. */
+  icon?: ReactNode;
+  /** Forwarded to the trigger button so an external `<label htmlFor>` can name the control. */
+  id?: string;
+  /** Override auto-search detection. Defaults to true when options.length >= 8. */
+  searchable?: boolean;
+  /** Tailwind max-height class applied to the options list. Defaults to 'max-h-56'. */
+  listClassName?: string;
 }
 
 export function Dropdown({
@@ -33,97 +41,145 @@ export function Dropdown({
   value,
   onChange,
   placeholder = 'Select…',
-  icon,
-  searchable,
   disabled,
+  icon,
+  id: idProp,
+  searchable,
+  listClassName,
 }: DropdownProps) {
+  const generatedId = useId();
+  const id = idProp ?? generatedId;
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
-  const triggerRef = useRef<HTMLDivElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [search, setSearch] = useState('');
+  const [highlighted, setHighlighted] = useState<number>(-1);
+
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const showSearch = searchable ?? options.length > 5;
-  const selected = options.find((o) => o.value === value);
+  const selectedOption = options.find((o) => o.value === value);
+  const showSearch = searchable ?? options.length >= SEARCHABLE_THRESHOLD;
 
-  const filtered = useMemo(() => {
-    if (!query.trim()) return options;
-    const q = query.toLowerCase();
-    return options.filter((o) => o.label.toLowerCase().includes(q));
-  }, [options, query]);
+  const filtered = useMemo(
+    () =>
+      showSearch && search.trim()
+        ? options.filter((o) => o.label.toLowerCase().includes(search.toLowerCase()))
+        : options,
+    [showSearch, search, options]
+  );
 
-  // Group options by section
-  const grouped = useMemo(() => {
-    const groups: Record<string, DropdownOption[]> = {};
-    filtered.forEach((opt) => {
-      const section = opt.section || 'default';
-      if (!groups[section]) groups[section] = [];
-      groups[section].push(opt);
+  // Group filtered options by section, preserving order. Keyboard nav still
+  // operates over the flat `filtered` array — sections are visual only, so we
+  // track each option's flat index for `data-idx`/highlight wiring.
+  const groups = useMemo(() => {
+    const out: Array<{ section: string; items: Array<{ option: DropdownOption; index: number }> }> =
+      [];
+    filtered.forEach((option, index) => {
+      const section = option.section || 'default';
+      const last = out[out.length - 1];
+      if (last && last.section === section) {
+        last.items.push({ option, index });
+      } else {
+        out.push({ section, items: [{ option, index }] });
+      }
     });
-    return groups;
+    return out;
   }, [filtered]);
 
-  useEffect(() => {
-    if (open && triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      const margin = 8;
-      // At least as wide as the trigger, but never so narrow that options
-      // truncate (e.g. the model picker in the slim workspace header), and capped
-      // so it can't overrun a small viewport.
-      const width = Math.min(Math.max(rect.width, 240), 420);
-      // Keep the panel inside the window: if a right-aligned trigger would push
-      // the (wider) menu past the right edge, align the menu's right edge to the
-      // trigger instead of letting it spill out of the window.
-      const left =
-        rect.left + width > window.innerWidth - margin
-          ? Math.max(margin, rect.right - width)
-          : rect.left;
-      setPosition({ top: rect.bottom + 6, left, width });
-    }
-    if (open) {
-      setQuery('');
-      setTimeout(() => searchRef.current?.focus(), 50);
-    }
-  }, [open]);
+  const { dropUp, dropdownStyle } = useDropdownPosition(open, triggerRef);
 
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (
-        dropdownRef.current?.contains(e.target as Node) ||
-        triggerRef.current?.contains(e.target as Node)
-      )
-        return;
-      setOpen(false);
+      const target = e.target as Node;
+      if (!triggerRef.current?.contains(target) && !listRef.current?.contains(target)) {
+        setOpen(false);
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
+  const select = (val: string) => {
+    onChange(val);
+    setOpen(false);
+    setSearch('');
+    triggerRef.current?.focus();
+  };
+
+  const handleKeyDown = useDropdownKeyboard({
+    open,
+    disabled: disabled ?? false,
+    filtered,
+    value,
+    highlighted,
+    setOpen,
+    setHighlighted,
+    select,
+    triggerRef,
+  });
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (highlighted < 0) return;
+    listRef.current
+      ?.querySelector(`[data-idx="${highlighted}"]`)
+      ?.scrollIntoView({ block: 'nearest' });
+  }, [highlighted]);
+
+  const filteredRef = useRef(filtered);
+  const valueRef = useRef(value);
+  const showSearchRef = useRef(showSearch);
+  filteredRef.current = filtered;
+  valueRef.current = value;
+  showSearchRef.current = showSearch;
+
+  // Focus search when opened; sync highlighted item to current value
+  useEffect(() => {
+    if (open && showSearchRef.current) {
+      setTimeout(() => searchRef.current?.focus(), 50);
+    }
+    if (open) {
+      setHighlighted(filteredRef.current.findIndex((o) => o.value === valueRef.current));
+    }
+  }, [open]);
+
+  // Reset highlight to first item when the search query changes
+  useEffect(() => {
+    setHighlighted(filteredRef.current.length > 0 ? 0 : -1);
+  }, [search]);
+
   return (
-    <div ref={triggerRef}>
-      <Button
+    <div className="relative">
+      <button
+        ref={triggerRef}
+        id={id}
         type="button"
         disabled={disabled}
-        onClick={() => !disabled && setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => {
+          if (!disabled) {
+            setOpen((o) => !o);
+          }
+        }}
+        onKeyDown={handleKeyDown}
         className={cn(
-          'glass-graphite glass-highlight flex h-9 w-full min-w-[200px] max-w-[400px] items-center justify-between gap-2 rounded-xl px-3 text-xs transition-all duration-150',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50',
-          open ? 'border-brand/35' : 'hover:bg-white/[0.02]'
+          'flex h-9 w-full items-center justify-between gap-2 rounded-lg px-3 text-xs transition-all duration-150',
+          'border border-white/[0.06] bg-white/[0.03]',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
+          'disabled:cursor-not-allowed disabled:opacity-40',
+          open
+            ? 'border-brand/35 bg-white/[0.05] text-foreground/90'
+            : 'text-foreground/70 hover:border-white/10 hover:bg-white/[0.05] hover:text-foreground/90'
         )}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+        <span className="flex min-w-0 items-center gap-2">
           {icon && <span className="shrink-0 text-foreground/40">{icon}</span>}
-          <span
-            className={cn(
-              'truncate text-left',
-              selected ? 'text-foreground/90' : 'text-foreground/35'
-            )}
-          >
-            {selected?.label ?? placeholder}
+          <span className={cn('truncate', !selectedOption && 'text-foreground/35')}>
+            {selectedOption?.label ?? placeholder}
           </span>
-        </div>
+        </span>
         <ChevronDown
           size={12}
           className={cn(
@@ -131,87 +187,68 @@ export function Dropdown({
             open && 'rotate-180'
           )}
         />
-      </Button>
+      </button>
 
-      {createPortal(
-        <AnimatePresence>
-          {open && (
-            <motion.div
-              ref={dropdownRef}
-              initial={{ opacity: 0, y: -6, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -6, scale: 0.98 }}
-              transition={transition.fast}
-              style={{
-                position: 'fixed',
-                top: position.top,
-                left: position.left,
-                width: position.width,
-                zIndex: 9999,
-              }}
-              className="dropdown-surface overflow-hidden rounded-xl"
-            >
-              {showSearch && (
-                <div className="border-b border-white/[0.06] px-3 py-2.5">
-                  <div className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2">
-                    <Search size={11} className="shrink-0 text-foreground/30" />
-                    <input
-                      ref={searchRef}
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      placeholder="Search…"
-                      className="flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-foreground/25"
-                    />
+      <DropdownPanel
+        open={open}
+        style={dropdownStyle}
+        dropUp={dropUp}
+        panelRef={listRef}
+        role="listbox"
+        {...(idProp ? { 'aria-labelledby': id } : { 'aria-label': placeholder })}
+        onKeyDown={handleKeyDown}
+      >
+        {showSearch && (
+          <DropdownSearch search={search} setSearch={setSearch} searchRef={searchRef} />
+        )}
+
+        <div className={cn('overflow-y-auto p-1 scrollbar-thin', listClassName ?? 'max-h-56')}>
+          {filtered.length === 0 ? (
+            <div className="px-3 py-6 text-center text-[11px] text-foreground/30">No results</div>
+          ) : (
+            groups.map((group) => (
+              <div key={group.section}>
+                {group.section !== 'default' && (
+                  <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-foreground/35">
+                    {group.section}
                   </div>
-                </div>
-              )}
-
-              <div className="max-h-72 space-y-0.5 overflow-y-auto px-2 py-2">
-                {filtered.length === 0 ? (
-                  <div className="px-3 py-4 text-center text-xs text-foreground/35">No results</div>
-                ) : (
-                  Object.entries(grouped).map(([section, opts]) => (
-                    <div key={section}>
-                      {section !== 'default' && (
-                        <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-foreground/35">
-                          {section}
-                        </div>
-                      )}
-                      {opts.map((opt) => {
-                        const isSelected = opt.value === value;
-                        return (
-                          <button
-                            key={opt.value}
-                            type="button"
-                            onClick={() => {
-                              onChange(opt.value);
-                              setOpen(false);
-                            }}
-                            className={cn(
-                              'flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-xs transition-colors',
-                              isSelected
-                                ? 'bg-brand/15 text-brand-soft'
-                                : 'text-foreground/70 hover:bg-white/[0.05] hover:text-foreground/90'
-                            )}
-                          >
-                            <span className="truncate text-left">{opt.label}</span>
-                            {opt.meta && (
-                              <span className="ml-2 shrink-0 text-[10px] text-foreground/35">
-                                {opt.meta}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))
                 )}
+                {group.items.map(({ option, index }) => {
+                  const isSelected = option.value === value;
+                  const isHighlighted = index === highlighted;
+                  return (
+                    <div
+                      key={option.value}
+                      role="option"
+                      tabIndex={-1}
+                      aria-selected={isSelected}
+                      data-idx={index}
+                      onMouseEnter={() => setHighlighted(index)}
+                      onClick={() => select(option.value)}
+                      className={cn(
+                        'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs transition-colors duration-100',
+                        isHighlighted && !isSelected && 'bg-white/[0.05] text-foreground/90',
+                        isSelected ? 'bg-brand/15 text-brand-soft' : 'text-foreground/65'
+                      )}
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        {option.icon && <span className="shrink-0">{option.icon}</span>}
+                        <span className="truncate">{option.label}</span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        {option.meta && (
+                          <span className="text-[10px] text-foreground/35">{option.meta}</span>
+                        )}
+                        {isSelected && <Check size={11} className="shrink-0 text-brand-soft" />}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
-            </motion.div>
+            ))
           )}
-        </AnimatePresence>,
-        document.body
-      )}
+        </div>
+      </DropdownPanel>
     </div>
   );
 }
