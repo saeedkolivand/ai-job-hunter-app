@@ -536,7 +536,18 @@
       "reduceTransparency": "Reduce transparency",
       "reduceTransparencyHint": "Use solid surfaces instead of frosted glass.",
       "increaseContrast": "Increase contrast",
-      "increaseContrastHint": "Stronger borders and separators."
+      "increaseContrastHint": "Stronger borders and separators.",
+      "accent": "Accent color",
+      "accentHint": "Tints buttons, links, and highlights across the app.",
+      "accentDefault": "Default",
+      "accentViolet": "Violet",
+      "accentBlue": "Blue",
+      "accentGreen": "Green",
+      "accentOrange": "Orange",
+      "accentPink": "Pink",
+      "accentRed": "Red",
+      "accentYellow": "Yellow",
+      "accentGraphite": "Graphite"
     },
     "onboarding": {
       "title": "Intro Wizard",

@@ -27,6 +27,20 @@ const SCALES: { id: TextScale; labelKey: string; size: string }[] = [
   { id: 'large', labelKey: 'settings.appearance.textLarge', size: 'text-base' },
 ];
 
+// macOS-style preset accents the user can pick manually. 'default' (handled
+// separately) keeps the shipped, per-scheme-tuned violet; each preset here is a
+// fixed hex applied to both schemes via the theme engine's accent applier.
+const ACCENTS: { id: string; color: string; labelKey: string }[] = [
+  { id: 'violet', color: '#a855f7', labelKey: 'settings.appearance.accentViolet' },
+  { id: 'blue', color: '#007aff', labelKey: 'settings.appearance.accentBlue' },
+  { id: 'green', color: '#34c759', labelKey: 'settings.appearance.accentGreen' },
+  { id: 'orange', color: '#ff9500', labelKey: 'settings.appearance.accentOrange' },
+  { id: 'pink', color: '#ff2d55', labelKey: 'settings.appearance.accentPink' },
+  { id: 'red', color: '#ff3b30', labelKey: 'settings.appearance.accentRed' },
+  { id: 'yellow', color: '#ffcc00', labelKey: 'settings.appearance.accentYellow' },
+  { id: 'graphite', color: '#8e8e93', labelKey: 'settings.appearance.accentGraphite' },
+];
+
 export function AppearanceCard() {
   const { t } = useTranslation();
   const [prefs, setPrefs] = useState<ThemePrefs>(() => getThemePrefs());
@@ -67,6 +81,56 @@ export function AppearanceCard() {
                   <Icon size={16} />
                   {t(labelKey)}
                 </Button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-2 text-xs font-medium text-foreground/55">
+            {t('settings.appearance.accent')}
+          </div>
+          <div
+            role="radiogroup"
+            aria-label={t('settings.appearance.accent')}
+            className="flex flex-wrap items-center gap-2"
+          >
+            <Button
+              variant="unstyled"
+              role="radio"
+              aria-checked={prefs.accentSource === 'default'}
+              aria-label={t('settings.appearance.accentDefault')}
+              title={t('settings.appearance.accentDefault')}
+              onClick={() => update({ accentSource: 'default', accentColor: undefined })}
+              className={cn(
+                'flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-all focus-visible:ring-2 focus-visible:ring-brand/50',
+                prefs.accentSource === 'default'
+                  ? 'border-brand/40 bg-brand/10 text-brand-soft'
+                  : 'border-foreground/10 text-foreground/55 hover:text-foreground/80'
+              )}
+            >
+              <span className="h-3 w-3 rounded-full bg-brand" />
+              {t('settings.appearance.accentDefault')}
+            </Button>
+            {ACCENTS.map(({ id, color, labelKey }) => {
+              const active =
+                prefs.accentSource === 'custom' &&
+                prefs.accentColor?.toLowerCase() === color.toLowerCase();
+              return (
+                <Button
+                  key={id}
+                  variant="unstyled"
+                  role="radio"
+                  aria-checked={active}
+                  aria-label={t(labelKey)}
+                  title={t(labelKey)}
+                  onClick={() => update({ accentSource: 'custom', accentColor: color })}
+                  className={cn(
+                    'h-7 w-7 rounded-full border-2 transition-transform focus-visible:ring-2 focus-visible:ring-brand/50',
+                    active ? 'scale-110 border-foreground/70' : 'border-transparent hover:scale-105'
+                  )}
+                  style={{ backgroundColor: color }}
+                />
               );
             })}
           </div>
