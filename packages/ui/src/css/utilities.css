@@ -95,7 +95,7 @@
   box-shadow: var(--shadow-xl), var(--shadow-inset-top);
 }
 /* Canonical dropdown / popover menu surface. Every menu panel (Dropdown,
-   SelectDropdown, LocationDropdown) uses this so they stay visually identical.
+   LocationDropdown) uses this so they stay visually identical.
    Kept near-opaque on purpose: backdrop-filter is unreliable across portal
    stacking contexts, so the panel must never bleed the content behind it (e.g.
    a page's empty-state text) even when the blur doesn't apply. */
@@ -519,6 +519,20 @@
   background-clip: padding-box;
 }
 
+/* Scoped thin scrollbar — a class selector out-specifies the global `*` rule
+   so dropdown/menu lists get a 6px bar without touching the 10px page bar. */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
 /* ── Pointer cursor on interactive elements (#48) ─────────────────────────────
    Browsers default <button> (and friends) to the arrow cursor, so much of the
    app didn't signal clickability. Apply the pointer to every genuinely
@@ -698,6 +712,13 @@ html[data-text-scale='large'] {
 [data-color-scheme='light'] *::-webkit-scrollbar-thumb:hover {
   background: rgba(18, 22, 40, 0.3);
   background-clip: padding-box;
+}
+
+[data-color-scheme='light'] .scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(18, 22, 40, 0.18);
+}
+[data-color-scheme='light'] .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(18, 22, 40, 0.3);
 }
 
 /* Named dark surfaces hard-code a dark substrate (graphite gradient, near-opaque
