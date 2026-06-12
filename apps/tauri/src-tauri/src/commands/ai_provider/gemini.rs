@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::commands::ai::get_provider_key;
-use crate::events::{emit_event, AI_STREAM};
+use crate::events::{emit_event, AiStreamChunk, AI_STREAM};
 use crate::jobs::JobTracker;
 
 use crate::error::{AppError, AppResult};
@@ -213,10 +213,12 @@ impl AiProvider for GeminiClient {
                                     if text.is_empty() {
                                         continue;
                                     }
-                                    let chunk = if thought {
-                                        json!({ "jobId": job_id, "delta": text, "done": false, "thinking": true })
-                                    } else {
-                                        json!({ "jobId": job_id, "delta": text, "done": false })
+                                    let chunk = AiStreamChunk {
+                                        job_id: job_id.to_string(),
+                                        delta: text.to_string(),
+                                        done: false,
+                                        error: None,
+                                        thinking: if thought { Some(true) } else { None },
                                     };
                                     emit_event(app, AI_STREAM, chunk);
                                 }
@@ -236,7 +238,13 @@ impl AiProvider for GeminiClient {
         emit_event(
             app,
             AI_STREAM,
-            json!({ "jobId": job_id, "delta": "", "done": true }),
+            AiStreamChunk {
+                job_id: job_id.to_string(),
+                delta: String::new(),
+                done: true,
+                error: None,
+                thinking: None,
+            },
         );
         app.state::<Mutex<JobTracker>>()
             .lock()

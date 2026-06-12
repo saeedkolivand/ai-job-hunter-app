@@ -3,25 +3,35 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct ApplicationTrackRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub job_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub board: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub company: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub candidate: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct ApplicationUpdateRequest {
     pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub next_action_at: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub comp: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub contact_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub contact_email: Option<String>,
 }

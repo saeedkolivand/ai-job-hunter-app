@@ -3,6 +3,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
+pub use crate::ipc_contracts::event_payloads::*;
 pub use crate::ipc_contracts::events::*;
 
 /// Emit an app event to all windows. The one place `app.emit` for app events
