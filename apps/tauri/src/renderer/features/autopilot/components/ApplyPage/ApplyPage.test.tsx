@@ -169,7 +169,7 @@ vi.mock('@ajh/ui', async (importOriginal) => {
         ))}
       </div>
     ),
-    SelectDropdown: ({
+    Dropdown: ({
       options,
       value,
       onChange,

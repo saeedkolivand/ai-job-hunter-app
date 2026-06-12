@@ -57,14 +57,14 @@ vi.mock('@/components/generation/PdfPreview', () => ({
   PdfPreview: ({ text }: { text: string }) => <div data-testid="pdf-preview">{text}</div>,
 }));
 
-// SelectDropdown mock — preserves all other @ajh/ui exports unchanged via
-// importOriginal; only SelectDropdown is replaced with a plain <select>-like
+// Dropdown mock — preserves all other @ajh/ui exports unchanged via
+// importOriginal; only Dropdown is replaced with a plain <select>-like
 // div structure that drives onChange when an option div is clicked.
 vi.mock('@ajh/ui', async (importOriginal) => {
   const real = await importOriginal<typeof AjhUi>();
   return {
     ...real,
-    SelectDropdown: ({
+    Dropdown: ({
       options,
       value,
       onChange,

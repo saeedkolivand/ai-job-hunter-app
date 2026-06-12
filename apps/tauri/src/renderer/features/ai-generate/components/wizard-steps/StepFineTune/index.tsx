@@ -1,7 +1,7 @@
 import { AlertTriangle, Check, Gauge, type LucideIcon, SlidersHorizontal, Zap } from 'lucide-react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, cn, SelectDropdown } from '@ajh/ui';
+import { Button, cn, Dropdown } from '@ajh/ui';
 
 import { isOllamaFamily } from '@/lib/ai-providers/provider-meta';
 import {
@@ -218,7 +218,7 @@ export function StepFineTune({
           <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
             {t('aiGenerate.market.label')}
           </div>
-          <SelectDropdown
+          <Dropdown
             options={marketOptions}
             value={marketValue}
             onChange={onLocaleChange}

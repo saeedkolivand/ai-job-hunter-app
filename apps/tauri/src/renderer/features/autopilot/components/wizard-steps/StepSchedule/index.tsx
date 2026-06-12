@@ -3,7 +3,7 @@ import { useFormContext, useWatch } from 'react-hook-form';
 
 import type { AutopilotSchedule } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, cn, SelectDropdown } from '@ajh/ui';
+import { Button, cn, Dropdown } from '@ajh/ui';
 
 import { scoreToLevel } from '@/features/autopilot/lib/match-level';
 import type { WizardState } from '@/features/autopilot/types';
@@ -126,7 +126,7 @@ export function StepSchedule() {
               <label htmlFor="schedule-hour" className="text-[10px] text-foreground/35">
                 {t('autopilot.wizard.schedule.hourLabel')}
               </label>
-              <SelectDropdown
+              <Dropdown
                 id="schedule-hour"
                 options={HOUR_OPTIONS}
                 value={String(scheduleHour)}
@@ -138,7 +138,7 @@ export function StepSchedule() {
               <label htmlFor="schedule-minute" className="text-[10px] text-foreground/35">
                 {t('autopilot.wizard.schedule.minuteLabel')}
               </label>
-              <SelectDropdown
+              <Dropdown
                 id="schedule-minute"
                 options={MINUTE_OPTIONS}
                 value={String(scheduleMinute)}
@@ -162,7 +162,7 @@ export function StepSchedule() {
           label={t('autopilot.wizard.schedule.minutesPastHour')}
           htmlFor="schedule-minutes-past-hour"
         >
-          <SelectDropdown
+          <Dropdown
             id="schedule-minutes-past-hour"
             options={MINUTE_OPTIONS}
             value={String(scheduleMinute)}

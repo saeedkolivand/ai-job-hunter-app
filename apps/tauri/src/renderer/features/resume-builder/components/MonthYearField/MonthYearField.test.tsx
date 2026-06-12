@@ -1,9 +1,9 @@
 /**
  * MonthYearField — render and interaction tests.
  *
- * SelectDropdown is a real custom dropdown backed by a trigger `<button>` and a
+ * Dropdown is a real custom dropdown backed by a trigger `<button>` and a
  * portal `role="listbox"` with `role="option"` items. We drive it with
- * userEvent (click trigger → click option) the same way SelectDropdown's own
+ * userEvent (click trigger → click option) the same way Dropdown's own
  * test suite does.
  *
  * Covers:
@@ -45,7 +45,7 @@ function renderField(props: {
 describe('MonthYearField — default (not present)', () => {
   it('renders two dropdown trigger buttons', () => {
     renderField({ value: '', onChange: () => {} });
-    // SelectDropdown renders a <button aria-haspopup="listbox"> for each dropdown.
+    // Dropdown renders a <button aria-haspopup="listbox"> for each dropdown.
     const triggers = screen.getAllByRole('button', { hidden: false });
     expect(triggers.length).toBeGreaterThanOrEqual(2);
   });

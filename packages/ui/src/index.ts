@@ -45,7 +45,6 @@ export {
   type SegmentedControlProps,
   type SegmentedOption,
 } from './components/SegmentedControl/index';
-export { SelectDropdown } from './components/SelectDropdown/index';
 export { SetupHint, type SetupHintProps } from './components/SetupHint/index';
 export { SourceBadge, type SourceBadgeProps } from './components/SourceBadge/index';
 export { Switch, type SwitchProps } from './components/Switch/index';

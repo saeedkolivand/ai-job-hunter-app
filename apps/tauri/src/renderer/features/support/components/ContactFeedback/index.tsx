@@ -2,7 +2,7 @@ import { Copy } from 'lucide-react';
 import { useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, SelectDropdown, TextArea, useNotification } from '@ajh/ui';
+import { Button, Dropdown, TextArea, useNotification } from '@ajh/ui';
 
 import {
   useCopyAppVersion,
@@ -89,11 +89,7 @@ export function ContactFeedback() {
             <label className="mb-2 block text-sm font-medium text-foreground/90">
               {t('support.contact.feedbackType')}
             </label>
-            <SelectDropdown
-              options={feedbackOptions}
-              value={feedbackType}
-              onChange={setFeedbackType}
-            />
+            <Dropdown options={feedbackOptions} value={feedbackType} onChange={setFeedbackType} />
           </div>
           <div>
             <label className="mb-2 block text-sm font-medium text-foreground/90">

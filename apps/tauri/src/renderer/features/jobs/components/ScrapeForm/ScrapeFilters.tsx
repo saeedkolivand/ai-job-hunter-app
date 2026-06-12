@@ -3,7 +3,7 @@ import { useState } from 'react';
 
 import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, cn, LocationInput, NumberField, SelectDropdown } from '@ajh/ui';
+import { Button, cn, Dropdown, LocationInput, NumberField } from '@ajh/ui';
 
 import { AUTH_BENEFITS, REGIONS, type ScrapeFormState } from './constants';
 
@@ -62,7 +62,7 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className={LABEL}>{t('jobs.posted')}</label>
-            <SelectDropdown
+            <Dropdown
               options={[
                 { value: '', label: t('jobs.anyTime') },
                 ...(AUTH_BENEFITS.has(form.board) && boardConnected
@@ -115,7 +115,7 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
           {form.board === 'indeed' && (
             <div className="col-span-2">
               <label className={LABEL}>{t('jobs.region')}</label>
-              <SelectDropdown
+              <Dropdown
                 options={REGIONS.map((r) => ({ value: r.value, label: t(r.labelKey) }))}
                 value={form.locale}
                 onChange={(value) => onFormChange({ locale: value })}
