@@ -76,11 +76,17 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         .item(&quit)
         .build()?;
 
-    TrayIconBuilder::new()
-        // Without an explicit icon the tray entry renders blank — invisible in the
-        // Windows notification area and absent from the macOS menu bar. Embed the
-        // app icon so the tray is actually visible on both platforms.
-        .icon(tauri::include_image!("icons/icon.png"))
+    // macOS menu bar wants a monochrome template (the OS tints it for light/dark);
+    // Windows/Linux want the full-color glyph. Both are full-bleed (no app-icon
+    // padding) so the mark is legible in the small tray slot.
+    let builder = TrayIconBuilder::new();
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .icon(tauri::include_image!("icons/tray-template.png"))
+        .icon_as_template(true);
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.icon(tauri::include_image!("icons/tray.png"));
+    builder
         .menu(&menu)
         .tooltip("AI Job Hunter")
         .on_menu_event(|app, event| match event.id().as_ref() {
