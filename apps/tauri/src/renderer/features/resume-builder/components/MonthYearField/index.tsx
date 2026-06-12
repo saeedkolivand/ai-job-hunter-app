@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { SelectDropdown } from '@ajh/ui';
+import { Dropdown } from '@ajh/ui';
 
 interface MonthYearFieldProps {
   /** Serialized as "MMM YYYY" (e.g. "Jan 2020"). Empty ⇒ both dropdowns unset. */
@@ -43,7 +43,7 @@ function useYearOptions() {
 }
 
 /**
- * Month + year picker composed from two {@link SelectDropdown}s. Parses/serializes
+ * Month + year picker composed from two {@link Dropdown}s. Parses/serializes
  * its value as "MMM YYYY" (English month token, e.g. "Jan 2020"); a value is only
  * emitted once both month and year are chosen, and either can be cleared.
  */
@@ -70,7 +70,7 @@ export function MonthYearField({ value, onChange, disabled, present, id }: Month
 
   return (
     <div className="grid grid-cols-2 gap-2">
-      <SelectDropdown
+      <Dropdown
         id={id}
         options={monthOptions}
         value={month}
@@ -79,7 +79,7 @@ export function MonthYearField({ value, onChange, disabled, present, id }: Month
         disabled={disabled}
         searchable={false}
       />
-      <SelectDropdown
+      <Dropdown
         options={yearOptions}
         value={year}
         onChange={(y) => emit(month, y)}

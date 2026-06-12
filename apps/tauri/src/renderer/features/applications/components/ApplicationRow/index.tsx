@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { type Application, APPLICATION_STAGES } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { ActionMenu, cn, ConfirmModal, SelectDropdown } from '@ajh/ui';
+import { ActionMenu, cn, ConfirmModal, Dropdown } from '@ajh/ui';
 
 import { isStale, nextActionLabel, staleDays } from '@/features/applications/lib/stale';
 import { useOpenExternal, useRemoveApplication, useSetApplicationStatus } from '@/services';
@@ -105,7 +105,7 @@ export function ApplicationRow({ application, highlighted = false }: Application
           onKeyDown={(e) => e.stopPropagation()}
           role="presentation"
         >
-          <SelectDropdown
+          <Dropdown
             options={stageOptions}
             value={application.status}
             onChange={handleStatusChange}

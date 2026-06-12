@@ -1,6 +1,5 @@
 import { ChevronDown, MapPin, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 
 import { useGeocoding } from '../../hooks/useGeocoding';
 import { cn } from '../../lib/cn';
@@ -148,22 +147,19 @@ export function LocationInput({
         </div>
       </Button>
 
-      {createPortal(
-        <LocationDropdown
-          open={open}
-          position={position}
-          query={query}
-          setQuery={setQuery}
-          suggestions={suggestions}
-          activeIndex={activeIndex}
-          setActiveIndex={setActiveIndex}
-          onSelect={select}
-          inputRef={inputRef}
-          dropdownRef={dropdownRef}
-          onKeyDown={handleKeyDown}
-        />,
-        document.body
-      )}
+      <LocationDropdown
+        open={open}
+        position={position}
+        query={query}
+        setQuery={setQuery}
+        suggestions={suggestions}
+        activeIndex={activeIndex}
+        setActiveIndex={setActiveIndex}
+        onSelect={select}
+        inputRef={inputRef}
+        dropdownRef={dropdownRef}
+        onKeyDown={handleKeyDown}
+      />
     </div>
   );
 }

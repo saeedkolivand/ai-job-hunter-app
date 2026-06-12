@@ -26,13 +26,22 @@ export function useDropdownPosition(
   const dropUp = spaceBelow < 220;
 
   const dropdownStyle: React.CSSProperties = rect
-    ? {
-        position: 'fixed',
-        left: rect.left,
-        width: Math.max(rect.width, 120),
-        zIndex: 9999,
-        ...(dropUp ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
-      }
+    ? (() => {
+        const maxWidth = Math.min(420, window.innerWidth - 16);
+        const left =
+          rect.left + maxWidth > window.innerWidth - 8
+            ? Math.max(8, rect.right - maxWidth)
+            : rect.left;
+        return {
+          position: 'fixed',
+          left,
+          width: 'max-content',
+          minWidth: Math.min(rect.width, maxWidth),
+          maxWidth,
+          zIndex: 9999,
+          ...(dropUp ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
+        };
+      })()
     : { display: 'none' };
 
   return { rect, dropUp, dropdownStyle };

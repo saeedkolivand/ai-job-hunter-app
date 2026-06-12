@@ -2,7 +2,7 @@ import { Controller, useFormContext, useWatch } from 'react-hook-form';
 
 import { BOARD_IDS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, cn, Input, LocationInput, NumberField, SelectDropdown } from '@ajh/ui';
+import { Button, cn, Dropdown, Input, LocationInput, NumberField } from '@ajh/ui';
 
 import type { Prefilled, WizardState } from '@/features/autopilot/types';
 import { useAppClient } from '@/providers/AppClientProvider';
@@ -11,7 +11,7 @@ import { ComingSoonBadge } from '../ComingSoonBadge';
 import { PrefilledBadge } from '../PrefilledBadge';
 import { WizardField } from '../WizardField';
 
-// Matches the @ajh/ui SelectDropdown / LocationInput trigger (h-9, same border &
+// Matches the @ajh/ui Dropdown / LocationInput trigger (h-9, same border &
 // bg) so text inputs sit flush with the dropdowns beside them on the same row.
 const inputCls =
   'w-full h-9 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 text-xs text-foreground/80 placeholder:text-foreground/25 outline-none focus:border-brand/40 transition-colors';
@@ -173,7 +173,7 @@ export function StepTarget({ prefilled }: StepTargetProps) {
           name="dateFilter"
           render={({ field }) => (
             <WizardField label={t('autopilot.wizard.target.postedWithin')}>
-              <SelectDropdown
+              <Dropdown
                 options={[
                   { value: '', label: t('autopilot.wizard.target.anyTime') },
                   { value: '24h', label: t('autopilot.wizard.target.last24h') },

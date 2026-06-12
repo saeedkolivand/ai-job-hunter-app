@@ -3,7 +3,7 @@ import { useId, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 
 import { useTranslation } from '@ajh/translations';
-import { SelectDropdown } from '@ajh/ui';
+import { Dropdown } from '@ajh/ui';
 
 import { StepTemplate } from '@/features/ai-generate/components/wizard-steps/StepTemplate';
 import { OUTPUT_LANGUAGES, type TemplateId } from '@/lib/generate';
@@ -78,7 +78,7 @@ export function StepReview({
       )}
 
       <WizardField label={t('build.review.language')}>
-        <SelectDropdown
+        <Dropdown
           id={languageId}
           options={LANGUAGE_OPTIONS}
           value={language}

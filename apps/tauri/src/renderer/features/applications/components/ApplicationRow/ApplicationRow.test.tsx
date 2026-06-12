@@ -5,7 +5,7 @@
  *  - Service hooks (`useSetApplicationStatus`, `useRemoveApplication`,
  *    `useOpenExternal`) are mocked at the module level — no AppClient /
  *    QueryClient provider tree needed.
- *  - `@ajh/ui` is imported real (SelectDropdown, ActionMenu, ConfirmModal are
+ *  - `@ajh/ui` is imported real (Dropdown, ActionMenu, ConfirmModal are
  *    all exercised); only `useNotification` is stubbed if present.
  *  - `@ajh/translations` returns keys as-is.
  *  - The stale-detection functions (`isStale`, `staleDays`) depend on
@@ -85,14 +85,14 @@ beforeEach(() => {
   mockOpenExternalMutate.mockClear();
 });
 
-// ── Gap 5: status-change SelectDropdown calls setStatus mutation ──────────────
+// ── Gap 5: status-change Dropdown calls setStatus mutation ──────────────
 
 describe('ApplicationRow — status change', () => {
-  it('changing the SelectDropdown calls setStatus.mutateAsync with the correct id and status', async () => {
+  it('changing the Dropdown calls setStatus.mutateAsync with the correct id and status', async () => {
     const app = makeApp({ id: 'app-42', status: 'applied' });
     render(<ApplicationRow application={app} />);
 
-    // @ajh/ui SelectDropdown renders a <button aria-haspopup="listbox"> whose
+    // @ajh/ui Dropdown renders a <button aria-haspopup="listbox"> whose
     // accessible name is the currently selected option's label. Since t() returns
     // keys, the trigger is labelled "applications.status.applied".
     const trigger = screen.getByRole('button', {
