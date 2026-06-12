@@ -46,5 +46,4 @@ export const UPDATER_CHANNELS = {
   download: 'updater:download',
   install: 'updater:install',
   changelog: 'updater:changelog',
-  onStatus: 'updater:status',
 } as const;
