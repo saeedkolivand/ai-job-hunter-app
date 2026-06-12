@@ -100,7 +100,7 @@ ESLint errors on `[#RRGGBB]` in className strings.
 
 ### 4. Motion — no inline transition objects
 
-Use `import { transition } from '@/lib/motion'` → `transition.fast / .normal / .relaxed / .slow / .spring / .modal / .overlay`.
+Use `import { transition } from '@ajh/ui'` → `transition.fast / .normal / .relaxed / .slow / .spring / .modal / .overlay`.
 ESLint errors on inline `{ duration, ease }` objects in feature/route files.
 
 ### 5. UI primitives — always use `@ajh/ui`
@@ -201,7 +201,7 @@ No `// eslint-disable`, no `@ts-ignore`. Add scoped overrides to `eslint.config.
 | Tauri client (TS)       | `apps/tauri/src/tauri-client.ts`                                                                              |
 | Service hooks           | `apps/tauri/src/renderer/services/`                                                                           |
 | UI package              | `packages/ui/src/index.ts` → `@ajh/ui`                                                                        |
-| Motion tokens           | `packages/ui/src/lib/motion.ts` (import via `@/lib/motion`)                                                   |
+| Motion tokens           | `packages/ui/src/lib/motion.ts` (import `transition` from `@ajh/ui`)                                          |
 | State machines          | `apps/tauri/src/renderer/lib/machines/`                                                                       |
 | Design tokens           | `packages/ui/src/css/tokens.css`                                                                              |
 | i18n (translations)     | `packages/translations/src/index.ts` → `@ajh/translations`; init shim `apps/tauri/src/renderer/i18n/index.ts` |
