@@ -123,6 +123,8 @@ graph LR
 
 `.github/workflows/release.yml`. A release push publishes the release + version bump; installers are built only via the manual **Run workflow** dispatch.
 
+Every uploadable installer artifact (`.exe`, `.msi`, `.dmg`, `.AppImage`, `.deb`, `.rpm`) is prefixed with its OS (`windows-`, `macos-`, or `linux-`) so the GitHub Release asset list clusters by platform; `latest.json` and the extension zips are not prefixed.
+
 **On `push` to `main`** — `release` + `sync-version-files`:
 
 1. semantic-release analyzes commits → creates the `v*` tag + GitHub release notes

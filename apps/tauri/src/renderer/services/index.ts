@@ -2,7 +2,7 @@
  * Service layer — React Query hooks for every IPC namespace.
  *
  * This is the Ports & Adapters boundary between the renderer UI and
- * the Electron main process. Components never call window.api.* directly;
+ * the Tauri shell. Components never call window.api.* directly;
  * they use these hooks instead.
  *
  * Benefits:
@@ -28,6 +28,7 @@ export * from './use-job-preferences';
 export * from './use-jobs';
 export * from './use-match';
 export * from './use-menu';
+export * from './use-notifications';
 export * from './use-postings';
 export * from './use-privacy';
 export * from './use-profile-import';

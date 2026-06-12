@@ -103,13 +103,12 @@ interface AutopilotSlice {
  * Applications-page UI state.
  * collapsedSections — stage ids currently collapsed; all sections expanded by default.
  * filter — text filter applied across company/title/candidate.
- * highlightId — application id to scroll-to + flash once (e.g. just imported from
- *   the browser extension); cleared by the page after the flash.
+ * (The "flash a just-imported row once" highlight is now a `?highlight` search
+ *  param consumed locally by `ApplicationsPage`, not session state.)
  */
 interface ApplicationsSlice {
   collapsedSections: string[];
   filter: string;
-  highlightId: string | null;
 }
 
 // Defaults
@@ -214,7 +213,7 @@ export const useSessionStore = create<SessionState>((set) => ({
     applyTemplateId: 'modern',
     applyAtsMode: false,
   },
-  applications: { collapsedSections: [], filter: '', highlightId: null },
+  applications: { collapsedSections: [], filter: '' },
 
   setAIGenerate: (patch) => set((s) => ({ aiGenerate: { ...s.aiGenerate, ...patch } })),
   resetAIGenerate: () => set({ aiGenerate: { ...AI_GENERATE_DEFAULTS } }),

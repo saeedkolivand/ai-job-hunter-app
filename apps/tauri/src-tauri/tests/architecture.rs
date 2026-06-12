@@ -71,6 +71,11 @@ const L3: &[&str] = &[
     // AppHandle, emits Tauri events, and reaches down into L1 (applications,
     // scraping) — never the reverse.
     "extension_bridge",
+    // Persisted notification store (Notification Center, Phase 1). Shell-role:
+    // its `manage` holds a `tauri::App` to register managed state + the
+    // factory-reset hook, exactly like `extension_bridge`. The store body itself
+    // is pure data + disk (AppHandle-free); push orchestration is Phase 4.
+    "notifications",
 ];
 
 fn layer_of(module: &str) -> Option<u8> {

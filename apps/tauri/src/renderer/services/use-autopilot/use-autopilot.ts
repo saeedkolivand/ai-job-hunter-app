@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type {
@@ -17,6 +17,18 @@ import { useCheckBrowser } from '../use-system';
 export const useAutopilots = () => {
   const api = useAppClient();
   return useQuery({ queryKey: keys.autopilot.all, queryFn: () => api.autopilot.list() });
+};
+
+/**
+ * Imperative "refresh the autopilots list" handle for UI components that can't
+ * touch the query client directly (Ports & Adapters). Used by the `?focus`
+ * deep-link consumer, which may arrive while the list is stale.
+ */
+export const useInvalidateAutopilots = () => {
+  const qc = useQueryClient();
+  return useCallback(() => {
+    void qc.invalidateQueries({ queryKey: keys.autopilot.all });
+  }, [qc]);
 };
 
 export const useAutopilot = (id: string) => {
@@ -122,12 +134,4 @@ export const useAutopilotFocusEvents = (onFocus?: (event: AutopilotFocusEvent) =
     });
     return () => off?.();
   }, [api, onFocus]);
-};
-
-export const useAutopilotNotificationClick = (onClick?: () => void) => {
-  const api = useAppClient();
-  useEffect(() => {
-    const off = api.autopilot.onNotificationClick(() => onClick?.());
-    return () => off?.();
-  }, [api, onClick]);
 };

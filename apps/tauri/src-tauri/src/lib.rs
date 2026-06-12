@@ -34,6 +34,7 @@ pub mod jobs;
 pub mod locale;
 pub mod model;
 pub mod net;
+pub mod notifications;
 pub mod observability;
 pub mod pipeline;
 pub mod platform;
@@ -492,6 +493,11 @@ pub fn run() {
             // itself is started below, after the registry is in state.
             extension_bridge::manage(app, &mut reset_registry, &data_dir);
 
+            // Notification Center (Phase 1): manage the persisted notification
+            // store (+ register its factory-reset wipe). Pure data + disk; the
+            // push orchestration (OS banner / tray / renderer event) is Phase 4.
+            notifications::manage(app, &mut reset_registry, &data_dir);
+
             app.manage(reset_registry);
 
             // Build and set the application menu. Predefined roles self-handle;
@@ -648,7 +654,6 @@ pub fn run() {
             commands::autopilot::autopilot_run,
             commands::autopilot::autopilot_pause,
             commands::autopilot::autopilot_resume,
-            commands::autopilot::autopilot_notification_clicked,
             // ai generations
             commands::ai_generations::ai_generations_list,
             commands::ai_generations::ai_generations_save,
@@ -663,6 +668,13 @@ pub fn run() {
             commands::applications::applications_delete,
             commands::applications::applications_track,
             commands::applications::applications_save_from_posting,
+            // notification center (Phase 2 — IPC seam over the persisted store)
+            commands::notifications::notifications_list,
+            commands::notifications::notifications_mark_read,
+            commands::notifications::notifications_mark_all_read,
+            commands::notifications::notifications_remove,
+            commands::notifications::notifications_clear_all,
+            commands::notifications::notifications_clicked,
             // referrals (manual referral helper)
             commands::referrals::referrals_list,
             commands::referrals::referrals_upsert,

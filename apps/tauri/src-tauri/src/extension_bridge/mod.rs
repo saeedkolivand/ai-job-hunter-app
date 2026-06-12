@@ -566,6 +566,27 @@ async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<ImportOk> {
         }),
     );
 
+    // Also drop a Notification Center record. Best-effort and additive — the
+    // lists still refresh via the `applications:changed` emit above; this only
+    // adds the inbox entry + a focused-window toast, with an OS banner only when
+    // the window is unfocused (the import UX intent). Route → the Applications
+    // view, highlighting the just-imported row.
+    let mut search = serde_json::Map::new();
+    search.insert("highlight".to_string(), Value::String(id.clone()));
+    crate::commands::notifications::push_and_notify(
+        app,
+        crate::notifications::NewNotification {
+            kind: "import.result".to_string(),
+            title: format!("Imported {}", posting.title),
+            body: format!("{} · {}", posting.title, posting.company),
+            route: Some(crate::notifications::NotificationRoute {
+                to: "/applications".to_string(),
+                search: Some(search),
+            }),
+        },
+        crate::commands::notifications::OsBanner::WhenUnfocused,
+    );
+
     Ok(ImportOk {
         application_id: id,
         status,

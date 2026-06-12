@@ -295,16 +295,6 @@ pub fn autopilot_resume(app: AppHandle, autopilot_id: String) -> Value {
     json!(null)
 }
 
-/// Click handler for the autopilot "new jobs" OS notification. The notification
-/// plugin can't attach a Rust callback to a click on every platform, so the
-/// renderer's notification surface invokes this command instead. It runs the same
-/// path as the tray counter click: focus the window, jump to the autopilot whose
-/// run produced the newest finds, and reset the unseen counter.
-#[tauri::command]
-pub fn autopilot_notification_clicked(app: AppHandle) {
-    crate::tray::handle_notification_click(&app);
-}
-
 // Helper functions
 
 /// Whether a posting passes the autopilot's keyword filters: it must contain

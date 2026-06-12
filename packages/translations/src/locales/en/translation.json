@@ -2176,11 +2176,6 @@
       "deleteKeepDocs": "Remove tracking (keep documents)",
       "deleteAll": "Delete everything"
     },
-    "imported": {
-      "toastTitle": "Imported from browser",
-      "view": "View job",
-      "fallback": "A new job was imported."
-    },
     "delete": {
       "keepTitle": "Remove application tracking",
       "keepDesc": "This removes the tracking record. Your generated documents remain in the Documents library.",
@@ -2201,6 +2196,25 @@
       "candidatePlaceholder": "Your name",
       "cancel": "Cancel",
       "submit": "Track"
+    }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "empty": "You're all caught up",
+    "markAllRead": "Mark all read",
+    "clearAll": "Clear all",
+    "bell": {
+      "aria": "Notifications"
+    },
+    "remove": {
+      "aria": "Dismiss notification"
+    },
+    "unread": {
+      "aria": "{{count}} unread",
+      "dotAria": "Unread"
+    },
+    "toast": {
+      "view": "View"
     }
   }
 }
