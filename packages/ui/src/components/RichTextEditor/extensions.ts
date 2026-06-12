@@ -1,6 +1,8 @@
 import type { Extensions } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 
+import { EditorDecorations } from './decorations';
+
 /**
  * Allowed link protocols. The editor is export-safe by construction: the only
  * schemes a user (or a paste) can introduce are the three that survive to the
@@ -87,5 +89,8 @@ export function buildEditorExtensions(): Extensions {
         HTMLAttributes: { rel: 'noopener noreferrer nofollow' },
       },
     }),
+    // Display-only "document skin" decorations (header region). Adds no schema
+    // nodes/marks — pure presentation — so the markdown round-trip is unaffected.
+    EditorDecorations,
   ];
 }

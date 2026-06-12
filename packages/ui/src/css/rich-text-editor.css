@@ -87,6 +87,40 @@
   color: var(--color-brand);
 }
 
+/* ── Document skin ────────────────────────────────────────────────────────────
+   Make the editing surface read like a rendered résumé instead of a raw text
+   blob: a centered readable column, section headings styled as résumé section
+   labels (uppercase + hairline rule), and a centered header block (name / role /
+   contact) tagged by `decorations.ts`. Pure presentation — the canonical markdown
+   the editor serializes is unaffected. */
+.rich-text-editor .ProseMirror {
+  max-width: 44rem;
+  margin-inline: auto;
+}
+.rich-text-editor .ProseMirror h2 {
+  margin-top: 1.25rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8125rem;
+  color: color-mix(in oklab, var(--color-foreground) 72%, transparent);
+}
+.rich-text-editor .ProseMirror h2:first-child {
+  margin-top: 0;
+}
+/* Header region (top-level blocks before the first section heading). */
+.rich-text-editor .ProseMirror .rt-header {
+  text-align: center;
+}
+.rich-text-editor .ProseMirror .rt-name {
+  margin-bottom: 0.1rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-foreground);
+}
+
 /* Placeholder: an overlay rendered by the component when the document is empty
    (no extra Tiptap extension needed). It sits over the editor and is removed
    from the a11y tree / pointer events so it never blocks typing. */
