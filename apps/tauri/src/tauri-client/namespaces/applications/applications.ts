@@ -1,10 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-import type {
-  ApplicationChangedEvent,
-  ApplicationTrackRequest,
-  ApplicationUpdateRequest,
+import {
+  type ApplicationChangedEvent,
+  type ApplicationTrackRequest,
+  type ApplicationUpdateRequest,
+  EVENT_CHANNELS,
 } from '@ajh/shared';
 
 import { asyncUnsub } from '../../utils.js';
@@ -26,6 +27,8 @@ export const applications = {
   // `extension_bridge::APPLICATIONS_CHANGED_EVENT`.
   onChanged: (handler: (event: ApplicationChangedEvent) => void) =>
     asyncUnsub(() =>
-      listen<ApplicationChangedEvent>('applications:changed', (e) => handler(e.payload))
+      listen<ApplicationChangedEvent>(EVENT_CHANNELS.applications.changed, (e) =>
+        handler(e.payload)
+      )
     ),
 };

@@ -178,7 +178,18 @@ export function GenerationOutput({
             </Button>
             {exportOpen && (
               <>
-                <div className="fixed inset-0 z-[650]" onClick={() => setExportOpen(false)} />
+                <div
+                  role="button"
+                  tabIndex={0}
+                  className="fixed inset-0 z-[650]"
+                  onClick={() => setExportOpen(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') {
+                      e.preventDefault();
+                      setExportOpen(false);
+                    }
+                  }}
+                />
                 <div className="absolute right-0 top-full z-[700] mt-1.5 w-32 overflow-hidden rounded-lg border border-white/10 bg-secondary shadow-2xl">
                   {(['pdf', 'docx', 'txt'] as const).map((fmt) => (
                     <Button

@@ -9,7 +9,7 @@ import { useAppClient } from '@/providers/AppClientProvider';
  * BOTH the system tray and the macOS menu bar, reliably, in every window state.
  *
  * The shell's Rust→JS `emit` is fire-and-forget with no per-listener queue, so a
- * `menu.navigate` / `menu.action` fired right after a menu click can be dropped:
+ * `menu:navigate` / `menu:action` fired right after a menu click can be dropped:
  * the webview is suspended (close-to-tray), it hasn't re-attached its listeners
  * yet, or WebView2 defers IPC while the tray menu holds the foreground. So the
  * shell instead BUFFERS the intent (`tray::PendingMenu`) and the renderer PULLS
@@ -42,8 +42,8 @@ export const useMenuIntents = (
       try {
         const intent = await api.menu.takePending();
         if (cancelled || !intent) return;
-        if (intent.event === 'menu.navigate') onNavigate?.(intent.payload);
-        else if (intent.event === 'menu.action') onAction?.(intent.payload);
+        if (intent.event === 'menu:navigate') onNavigate?.(intent.payload);
+        else if (intent.event === 'menu:action') onAction?.(intent.payload);
       } catch {
         // A transient IPC pull failure must not surface as an unhandled rejection
         // (the 250ms poll would otherwise spam them). The shell buffer is retained

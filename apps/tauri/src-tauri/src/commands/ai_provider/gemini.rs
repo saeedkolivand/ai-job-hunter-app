@@ -3,9 +3,10 @@
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::commands::ai::get_provider_key;
+use crate::events::{emit_event, AI_STREAM};
 use crate::jobs::JobTracker;
 
 use crate::error::{AppError, AppResult};
@@ -217,7 +218,7 @@ impl AiProvider for GeminiClient {
                                     } else {
                                         json!({ "jobId": job_id, "delta": text, "done": false })
                                     };
-                                    let _ = app.emit("ai:stream", chunk);
+                                    emit_event(app, AI_STREAM, chunk);
                                 }
                             }
                             buf.clear();
@@ -232,8 +233,9 @@ impl AiProvider for GeminiClient {
             }
         }
 
-        let _ = app.emit(
-            "ai:stream",
+        emit_event(
+            app,
+            AI_STREAM,
             json!({ "jobId": job_id, "delta": "", "done": true }),
         );
         app.state::<Mutex<JobTracker>>()

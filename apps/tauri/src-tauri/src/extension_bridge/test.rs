@@ -53,7 +53,7 @@ fn reserved_types_are_distinct() {
 #[test]
 fn applications_changed_event_name_is_stable() {
     // Pinned so the frontend slice's subscription string can rely on it.
-    assert_eq!(APPLICATIONS_CHANGED_EVENT, "applications:changed");
+    assert_eq!(crate::events::APPLICATIONS_CHANGED, "applications:changed");
 }
 
 // ── Token lifecycle ──────────────────────────────────────────────────────────

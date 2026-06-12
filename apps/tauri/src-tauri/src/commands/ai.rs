@@ -1,9 +1,10 @@
 use parking_lot::Mutex;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::credentials::CredentialStore;
 use crate::documents::{DocumentStore, EmbeddingConfig};
+use crate::events::{emit_event, JOBS_EVENT};
 use crate::ipc_contracts::ai::AiEmbedRequest;
 use crate::jobs::{JobStatus, JobTracker};
 use crate::postings::PostingsCache;
@@ -387,8 +388,9 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
                 None => failed += 1,
             }
 
-            let _ = app_clone.emit(
-                "jobs:event",
+            emit_event(
+                &app_clone,
+                JOBS_EVENT,
                 json!({ "type": "job.stream", "jobId": job_id_clone, "data": { "done": done, "failed": failed, "total": total } }),
             );
         }
@@ -397,8 +399,9 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
             &job_id_clone,
             json!({ "reembedded": done, "failed": failed, "total": total }),
         );
-        let _ = app_clone.emit(
-            "jobs:event",
+        emit_event(
+            &app_clone,
+            JOBS_EVENT,
             json!({ "type": "job.completed", "jobId": job_id_clone, "data": { "reembedded": done, "failed": failed, "total": total } }),
         );
     });

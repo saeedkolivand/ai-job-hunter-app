@@ -14,6 +14,8 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: (...args: [string, (e: { payload: unknown }) => void]) => listen(...args),
 }));
 
+import { EVENT_CHANNELS } from '@ajh/shared';
+
 import { createTauriInvokeClient } from '../index';
 import { ai } from './ai';
 import { applications } from './applications';
@@ -59,7 +61,7 @@ describe('tauri-client namespaces', () => {
   it('wires event subscriptions through listen and forwards payloads', () => {
     const handler = vi.fn();
     const unsub = ai.onStream(handler);
-    expect(listen).toHaveBeenCalledWith('ai:stream', expect.any(Function));
+    expect(listen).toHaveBeenCalledWith(EVENT_CHANNELS.ai.stream, expect.any(Function));
 
     // Simulate the backend emitting an event.
     lastListenHandler?.({ payload: { token: 'hi' } });
@@ -70,7 +72,7 @@ describe('tauri-client namespaces', () => {
   it('wires applications:changed through listen and forwards the payload', () => {
     const handler = vi.fn();
     const unsub = applications.onChanged(handler);
-    expect(listen).toHaveBeenCalledWith('applications:changed', expect.any(Function));
+    expect(listen).toHaveBeenCalledWith(EVENT_CHANNELS.applications.changed, expect.any(Function));
 
     // Drive the inner callback so the arrow function body is covered.
     lastListenHandler?.({ payload: { applicationId: 'app-1' } });

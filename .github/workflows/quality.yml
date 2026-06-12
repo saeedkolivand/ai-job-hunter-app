@@ -369,8 +369,26 @@ jobs:
             exit 0
           fi
           git commit --amend -m "chore: update export benchmark data [skip ci]"
-          git push git@github.com:saeedkolivand/ai-job-hunter-assistant-app.git HEAD:main
-          echo "committed=true" >> "$GITHUB_OUTPUT"
+          remote="git@github.com:saeedkolivand/ai-job-hunter-assistant-app.git"
+          # origin/main can advance during the ~16-min bench run, so a plain push
+          # races and is rejected. Rebase the single [skip ci] benchmark commit
+          # onto the latest origin/main and retry the push a few times.
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            if ! git rebase origin/main; then
+              git rebase --abort || true
+              echo "::error::benchmark commit failed to rebase onto origin/main"
+              exit 1
+            fi
+            if git push "$remote" HEAD:main; then
+              echo "committed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "push rejected (attempt $attempt/5) — origin/main moved, retrying after backoff"
+            sleep $((attempt * 5))
+          done
+          echo "::error::failed to push benchmark data to main after 5 attempts"
+          exit 1
 
       - name: 🌐 Trigger Pages deploy
         if: steps.commit.outputs.committed == 'true'

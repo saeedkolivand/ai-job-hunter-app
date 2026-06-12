@@ -1,5 +1,31 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignore": ["**/*.gen.ts", "graphify-out/**"],
-  "ignoreBinaries": ["rtk"]
+  "ignore": ["graphify-out/**", "landing/**"],
+  "ignoreBinaries": ["rtk", "claude"],
+  "ignoreDependencies": [
+    "semantic-release",
+    "@semantic-release/exec",
+    "@semantic-release/github",
+    "conventional-changelog-conventionalcommits",
+    "@commitlint/types"
+  ],
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/*.{js,mjs}",
+        ".claude/hooks/*.mjs",
+        "eslint.a11y.config.mjs",
+        "lostpixel.config.ts"
+      ]
+    },
+    "apps/tauri": {
+      "entry": ["src/renderer/main.tsx", "src/e2e-main.tsx"]
+    },
+    "apps/extension": {
+      "entry": ["src/background.ts"]
+    },
+    "packages/translations": {
+      "entry": ["i18next.config.ts"]
+    }
+  }
 }

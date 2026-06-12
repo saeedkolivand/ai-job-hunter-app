@@ -26,26 +26,24 @@ export function OnboardingStepWrapper({
   showStepDots = true,
   className = '',
 }: OnboardingStepWrapperProps) {
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Don't handle Enter if focused on an input/textarea
-    const activeElement = document.activeElement;
-    const isInputFocused =
-      activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
-
-    if (e.key === 'Enter' && canAdvance && onNext && !isInputFocused) {
-      onNext();
-    } else if (e.key === 'Escape' && onBack) {
-      onBack();
-    }
-  };
-
-  // Auto-focus the wrapper when step changes
+  // Global keyboard nav for the onboarding flow: Enter advances (unless typing
+  // in an input/textarea), Escape goes back. A window listener keeps the
+  // interaction off the non-interactive step container (jsx-a11y).
   useEffect(() => {
-    const wrapper = document.querySelector('[data-onboarding-wrapper]');
-    if (wrapper instanceof HTMLElement) {
-      wrapper.focus();
-    }
-  }, [stepIndex]);
+    const onKeyDown = (e: KeyboardEvent) => {
+      const activeElement = document.activeElement;
+      const isInputFocused =
+        activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
+
+      if (e.key === 'Enter' && canAdvance && onNext && !isInputFocused) {
+        onNext();
+      } else if (e.key === 'Escape' && onBack) {
+        onBack();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [canAdvance, onNext, onBack]);
 
   return (
     <motion.div
@@ -64,8 +62,6 @@ export function OnboardingStepWrapper({
       <div
         data-onboarding-wrapper
         className="rounded-2xl border border-white/[0.08] p-8 onboarding-glass-modal"
-        onKeyDown={handleKeyDown}
-        tabIndex={0}
       >
         {children}
         {showStepDots && <StepDots currentStep={stepIndex} totalSteps={totalSteps} />}

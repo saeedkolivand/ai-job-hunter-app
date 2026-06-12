@@ -78,14 +78,14 @@ afterEach(() => {
 
 describe('useMenuNavigation', () => {
   it('drains a plain navigate intent and routes without touching settings', async () => {
-    renderWithPending({ event: 'menu.navigate', payload: { route: '/jobs', section: null } });
+    renderWithPending({ event: 'menu:navigate', payload: { route: '/jobs', section: null } });
 
     await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/jobs' }));
     expect(setSettings).not.toHaveBeenCalled();
   });
 
   it('pre-selects an allowlisted settings section then navigates', async () => {
-    renderWithPending({ event: 'menu.navigate', payload: { route: '/settings', section: 'ai' } });
+    renderWithPending({ event: 'menu:navigate', payload: { route: '/settings', section: 'ai' } });
 
     await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/settings' }));
     expect(setSettings).toHaveBeenCalledExactlyOnceWith({ activeSection: 'ai' });
@@ -93,7 +93,7 @@ describe('useMenuNavigation', () => {
 
   it('ignores an unknown settings section but still navigates', async () => {
     renderWithPending({
-      event: 'menu.navigate',
+      event: 'menu:navigate',
       payload: { route: '/settings', section: 'bogus' },
     });
 
@@ -102,14 +102,14 @@ describe('useMenuNavigation', () => {
   });
 
   it('triggers the updater check on the check-updates action', async () => {
-    renderWithPending({ event: 'menu.action', payload: { action: 'check-updates' } });
+    renderWithPending({ event: 'menu:action', payload: { action: 'check-updates' } });
 
     await waitFor(() => expect(check).toHaveBeenCalledTimes(1));
     expect(setShortcutsOpen).not.toHaveBeenCalled();
   });
 
   it('opens the shortcuts cheat-sheet on the shortcuts action', async () => {
-    renderWithPending({ event: 'menu.action', payload: { action: 'shortcuts' } });
+    renderWithPending({ event: 'menu:action', payload: { action: 'shortcuts' } });
 
     await waitFor(() => expect(setShortcutsOpen).toHaveBeenCalledExactlyOnceWith(true));
     expect(check).not.toHaveBeenCalled();
@@ -129,7 +129,7 @@ describe('useMenuNavigation', () => {
     // cleared buffer (atomic take), so navigation fires exactly once.
     const takePending = vi
       .fn()
-      .mockResolvedValueOnce({ event: 'menu.navigate', payload: { route: '/jobs', section: null } })
+      .mockResolvedValueOnce({ event: 'menu:navigate', payload: { route: '/jobs', section: null } })
       .mockResolvedValue(null);
     renderWithPending(null, takePending);
 
@@ -153,7 +153,7 @@ describe('useMenuNavigation', () => {
 
     // A later click buffers an intent; the window-focus trigger drains it.
     takePending.mockResolvedValueOnce({
-      event: 'menu.navigate',
+      event: 'menu:navigate',
       payload: { route: '/settings', section: null },
     });
     await act(async () => {

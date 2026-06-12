@@ -8,10 +8,11 @@
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::commands::ai::get_provider_key;
 use crate::error::{AppError, AppResult};
+use crate::events::{emit_event, AI_STREAM, JOBS_EVENT};
 use crate::jobs::JobTracker;
 
 use super::research::{self, SearchResult};
@@ -454,7 +455,11 @@ pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
             let total = event.get("total").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let digest = event.get("digest").and_then(|v| v.as_str()).unwrap_or("");
             let p = if total > 0.0 { completed / total } else { 0.0 };
-            let _ = app.emit("jobs:event", json!({ "type": "job.stream", "jobId": job_id, "data": { "status": status, "p": p, "completed": completed, "total": total, "digest": digest } }));
+            emit_event(
+                app,
+                JOBS_EVENT,
+                json!({ "type": "job.stream", "jobId": job_id, "data": { "status": status, "p": p, "completed": completed, "total": total, "digest": digest } }),
+            );
             if status == "success" {
                 return Ok(());
             }
@@ -557,13 +562,15 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
                         .unwrap_or("");
                     let done = event.get("done").and_then(|d| d.as_bool()).unwrap_or(false);
                     if !thinking.is_empty() {
-                        let _ = app.emit(
-                            "ai:stream",
+                        emit_event(
+                            app,
+                            AI_STREAM,
                             json!({ "jobId": job_id, "delta": thinking, "done": false, "thinking": true }),
                         );
                     }
-                    let _ = app.emit(
-                        "ai:stream",
+                    emit_event(
+                        app,
+                        AI_STREAM,
                         json!({ "jobId": job_id, "delta": delta, "done": done }),
                     );
                     if done {
@@ -583,8 +590,9 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
         }
     }
 
-    let _ = app.emit(
-        "ai:stream",
+    emit_event(
+        app,
+        AI_STREAM,
         json!({ "jobId": job_id, "delta": "", "done": true }),
     );
     app.state::<Mutex<JobTracker>>()

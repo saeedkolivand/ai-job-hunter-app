@@ -3,9 +3,10 @@
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::commands::ai::get_provider_key;
+use crate::events::{emit_event, AI_STREAM};
 use crate::jobs::JobTracker;
 
 use crate::error::{AppError, AppResult};
@@ -164,8 +165,9 @@ impl AiProvider for AnthropicClient {
                         if last_event == "message_stop"
                             || data.contains("\"type\":\"message_stop\"")
                         {
-                            let _ = app.emit(
-                                "ai:stream",
+                            emit_event(
+                                app,
+                                AI_STREAM,
                                 json!({ "jobId": job_id, "delta": "", "done": true }),
                             );
                             app.state::<Mutex<JobTracker>>()
@@ -190,8 +192,9 @@ impl AiProvider for AnthropicClient {
                                     .and_then(|t| t.as_str())
                                     .unwrap_or("");
                                 if !thinking.is_empty() {
-                                    let _ = app.emit(
-                                        "ai:stream",
+                                    emit_event(
+                                        app,
+                                        AI_STREAM,
                                         json!({ "jobId": job_id, "delta": thinking, "done": false, "thinking": true }),
                                     );
                                 }
@@ -202,8 +205,9 @@ impl AiProvider for AnthropicClient {
                                     .and_then(|t| t.as_str())
                                     .unwrap_or("");
                                 if !text.is_empty() {
-                                    let _ = app.emit(
-                                        "ai:stream",
+                                    emit_event(
+                                        app,
+                                        AI_STREAM,
                                         json!({ "jobId": job_id, "delta": text, "done": false }),
                                     );
                                 }
@@ -220,8 +224,9 @@ impl AiProvider for AnthropicClient {
             }
         }
 
-        let _ = app.emit(
-            "ai:stream",
+        emit_event(
+            app,
+            AI_STREAM,
             json!({ "jobId": job_id, "delta": "", "done": true }),
         );
         app.state::<Mutex<JobTracker>>()

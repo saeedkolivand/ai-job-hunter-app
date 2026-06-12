@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
+import { EVENT_CHANNELS } from '@ajh/shared';
 import type { AiGenerateRequest, EmbedRequest } from '@ajh/shared/schemas';
 import type { AiStreamChunk } from '@ajh/shared/types';
 
@@ -28,7 +29,7 @@ export const ai = {
   unloadModel: (model: string) => invoke('ai_unload_model', { model }),
   embed: (req: EmbedRequest) => invoke('ai_embed', { req }),
   onStream: (handler: (chunk: AiStreamChunk) => void) =>
-    asyncUnsub(() => listen<AiStreamChunk>('ai:stream', (e) => handler(e.payload))),
+    asyncUnsub(() => listen<AiStreamChunk>(EVENT_CHANNELS.ai.stream, (e) => handler(e.payload))),
   setProviderKey: ({ provider, apiKey }: { provider: string; apiKey: string }) =>
     invoke('ai_set_provider_key', { provider, apiKey }),
   removeProviderKey: ({ provider }: { provider: string }) =>

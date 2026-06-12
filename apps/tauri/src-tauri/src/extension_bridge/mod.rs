@@ -32,7 +32,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use futures::{SinkExt, StreamExt};
 use parking_lot::Mutex;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::Message;
@@ -41,6 +41,7 @@ use crate::applications::{
     normalize_job_url, ApplicationMeta, ApplicationOrigin, ApplicationStore,
 };
 use crate::error::{AppError, AppResult};
+use crate::events::{emit_event, APPLICATIONS_CHANGED};
 
 pub mod auth;
 #[cfg(test)]
@@ -59,10 +60,6 @@ pub mod msg {
     /// RESERVED (not handled yet) — "have I already applied to this URL?".
     pub const APPLIED_CHECK: &str = "applied.check";
 }
-
-/// The Tauri event the bridge emits after a successful import so the renderer
-/// live-refreshes its Applications view. The frontend slice subscribes to this.
-pub const APPLICATIONS_CHANGED_EVENT: &str = "applications:changed";
 
 /// Hard cap on a single WS message. Job HTML can be large (a few hundred KB), so
 /// 2 MB leaves generous headroom while blocking a memory-exhaustion frame.
@@ -556,8 +553,9 @@ async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<ImportOk> {
     // Tell the renderer to refresh (Applications + Jobs views) and surface a
     // live toast. Carry the title/company/status so the toast can name the job
     // without a refetch race.
-    let _ = app.emit(
-        APPLICATIONS_CHANGED_EVENT,
+    emit_event(
+        app,
+        APPLICATIONS_CHANGED,
         json!({
             "applicationId": id.clone(),
             "title": posting.title.clone(),

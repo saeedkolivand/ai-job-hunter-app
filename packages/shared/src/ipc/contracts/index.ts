@@ -40,7 +40,7 @@ import { REFERRALS_CHANNELS, type ReferralsContract } from './referrals.js';
 import { RESUME_CHANNELS, type ResumeContract } from './resume.js';
 import { SCRAPE_CHANNELS, type ScrapeContract } from './scrape.js';
 import { SEARCH_CHANNELS, type SearchContract } from './search.js';
-import { SHORTCUTS_CHANNELS, type ShortcutsContract } from './shortcuts.js';
+import type { ShortcutsContract } from './shortcuts.js';
 import { SUPPORT_CHANNELS, type SupportContract } from './support.js';
 import { SYSTEM_CHANNELS, type SystemContract } from './system.js';
 import { UPDATER_CHANNELS, type UpdaterContract } from './updater.js';
@@ -105,7 +105,6 @@ export const IPC_CHANNELS = {
   autopilot: AUTOPILOT_CHANNELS,
   notifications: NOTIFICATIONS_CHANNELS,
   updater: UPDATER_CHANNELS,
-  shortcuts: SHORTCUTS_CHANNELS,
   dialog: DIALOG_CHANNELS,
   data: DATA_CHANNELS,
 } as const;
@@ -219,7 +218,7 @@ export {
 export { RESUME_CHANNELS, type ResumeContract } from './resume.js';
 export { SCRAPE_CHANNELS, type ScrapeContract } from './scrape.js';
 export { SEARCH_CHANNELS, type SearchContract } from './search.js';
-export { SHORTCUTS_CHANNELS, type ShortcutsContract } from './shortcuts.js';
+export { type ShortcutsContract } from './shortcuts.js';
 export { SUPPORT_CHANNELS, type SupportContract } from './support.js';
 export { SYSTEM_CHANNELS, type SystemContract } from './system.js';
 export {

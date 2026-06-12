@@ -8,6 +8,7 @@ pub mod ai;
 pub mod applications;
 pub mod autopilot;
 pub mod documents;
+pub mod events;
 pub mod matching;
 pub mod referrals;
 pub mod resume;

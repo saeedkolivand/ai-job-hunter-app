@@ -21,11 +21,12 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
 use crate::error::{AppError, AppResult};
+use crate::events::{emit_event, AI_STREAM};
 use crate::jobs::JobTracker;
 use crate::platform::NoWindow;
 
@@ -430,14 +431,16 @@ async fn run_stream(
         match backend.parse_stream_line(&line) {
             Some(CliEvent::Delta(text)) if !text.is_empty() => {
                 any_delta = true;
-                let _ = app.emit(
-                    "ai:stream",
+                emit_event(
+                    app,
+                    AI_STREAM,
                     json!({ "jobId": job_id, "delta": text, "done": false }),
                 );
             }
             Some(CliEvent::Thinking(text)) if !text.is_empty() => {
-                let _ = app.emit(
-                    "ai:stream",
+                emit_event(
+                    app,
+                    AI_STREAM,
                     json!({ "jobId": job_id, "delta": text, "done": false, "thinking": true }),
                 );
             }
@@ -598,8 +601,9 @@ fn is_cancelled(app: &AppHandle, job_id: &str) -> bool {
 }
 
 fn emit_done(app: &AppHandle, job_id: &str) {
-    let _ = app.emit(
-        "ai:stream",
+    emit_event(
+        app,
+        AI_STREAM,
         json!({ "jobId": job_id, "delta": "", "done": true }),
     );
     app.state::<Mutex<JobTracker>>()
