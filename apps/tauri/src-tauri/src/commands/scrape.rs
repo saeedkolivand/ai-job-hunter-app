@@ -138,7 +138,7 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
                 emit_event(
                     &app_clone,
                     JOBS_EVENT,
-                    json!({ "type": "job.completed", "jobId": job_id_clone, "data": { "count": results.len() }, "ts": now_ms() })
+                    json!({ "type": "job.completed", "jobId": job_id_clone, "data": { "count": results.len() }, "ts": now_ms() }),
                 );
             }
             Err(e) => {
@@ -149,7 +149,7 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
                 emit_event(
                     &app_clone,
                     JOBS_EVENT,
-                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": e.to_string(), "ts": now_ms() })
+                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": e.to_string(), "ts": now_ms() }),
                 );
             }
         }
@@ -192,7 +192,7 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
                 emit_event(
                     &app_clone,
                     JOBS_EVENT,
-                    json!({ "type": "job.stream", "jobId": job_id_clone, "data": posting, "ts": now_ms() })
+                    json!({ "type": "job.stream", "jobId": job_id_clone, "data": posting, "ts": now_ms() }),
                 );
 
                 {
@@ -202,7 +202,7 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
                 emit_event(
                     &app_clone,
                     JOBS_EVENT,
-                    json!({ "type": "job.completed", "jobId": job_id_clone, "data": { "count": 1 }, "ts": now_ms() })
+                    json!({ "type": "job.completed", "jobId": job_id_clone, "data": { "count": 1 }, "ts": now_ms() }),
                 );
             }
             Ok(None) => {
@@ -213,7 +213,7 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
                 emit_event(
                     &app_clone,
                     JOBS_EVENT,
-                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": "no scraper matched this URL", "ts": now_ms() })
+                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": "no scraper matched this URL", "ts": now_ms() }),
                 );
             }
             Err(e) => {
@@ -224,7 +224,7 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
                 emit_event(
                     &app_clone,
                     JOBS_EVENT,
-                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": e.to_string(), "ts": now_ms() })
+                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": e.to_string(), "ts": now_ms() }),
                 );
             }
         }

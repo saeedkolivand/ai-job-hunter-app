@@ -455,7 +455,11 @@ pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
             let total = event.get("total").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let digest = event.get("digest").and_then(|v| v.as_str()).unwrap_or("");
             let p = if total > 0.0 { completed / total } else { 0.0 };
-            emit_event(app, JOBS_EVENT, json!({ "type": "job.stream", "jobId": job_id, "data": { "status": status, "p": p, "completed": completed, "total": total, "digest": digest } }));
+            emit_event(
+                app,
+                JOBS_EVENT,
+                json!({ "type": "job.stream", "jobId": job_id, "data": { "status": status, "p": p, "completed": completed, "total": total, "digest": digest } }),
+            );
             if status == "success" {
                 return Ok(());
             }
