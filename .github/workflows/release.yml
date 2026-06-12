@@ -544,7 +544,7 @@ jobs:
             exit 1
           fi
 
-          VERSION="$(echo "$VERSION" | sed 's/^v*//')"
+          VERSION="${VERSION#v}"
           if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
             echo "::error::Could not resolve a valid version (got '$VERSION'). Pass one via the workflow input."
             exit 1
@@ -607,15 +607,17 @@ jobs:
       - name: 📝 Job Summary
         if: always()
         run: |
-          echo "## 🧩 Package Extension Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Version | \`${{ steps.resolve.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
-          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
-          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## 🧩 Package Extension Summary"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| Version | \`${{ steps.resolve.outputs.version }}\` |"
+            echo ""
+            echo "### 🔧 Environment"
+            echo "- **Node**: $(node --version)"
+            echo "- **pnpm**: $(pnpm --version)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   generate-update-manifest:
     name: 📝 Generate Update Manifest

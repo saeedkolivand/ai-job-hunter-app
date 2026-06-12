@@ -898,15 +898,17 @@ jobs:
       - name: 📝 Job Summary
         if: always()
         run: |
-          echo "## 🧩 Extension Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Typecheck + Test + Build | ${{ steps.extension.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
-          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
-          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## 🧩 Extension Summary"
+            echo ""
+            echo "| Check | Status |"
+            echo "|-------|--------|"
+            echo "| Typecheck + Test + Build | ${{ steps.extension.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |"
+            echo ""
+            echo "### 🔧 Environment"
+            echo "- **Node**: $(node --version)"
+            echo "- **pnpm**: $(pnpm --version)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 🔍 Debug Environment on Failure
         if: failure()
