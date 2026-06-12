@@ -81,9 +81,16 @@ export const useNotificationEvents = () => {
     const offOpen = api.notifications.onOpenInbox(() => {
       setOpenRef.current(true);
     });
+    // Any OS-banner body click focuses the window + opens the inbox: `clicked()`
+    // → `notifications_clicked` → emits `notifications:open` → `onOpenInbox` above.
+    // api is a stable context value, so a direct call here is safe (no per-render re-subscribe)
+    const offBanner = api.notifications.onOsBannerClick(() => {
+      void api.notifications.clicked();
+    });
     return () => {
       offChanged();
       offOpen();
+      offBanner();
     };
   }, [api, qc]);
 };

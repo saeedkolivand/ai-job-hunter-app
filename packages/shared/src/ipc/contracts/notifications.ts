@@ -20,6 +20,12 @@ export interface NotificationsContract {
   /** Subscribe to the "open inbox" signal (OS-banner / tray click). Sync unsubscribe. */
   onOpenInbox(handler: () => void): () => void;
   /**
+   * Subscribe to OS-banner body clicks (the `@tauri-apps/plugin-notification`
+   * `onAction`). Any click opens the inbox — wire it to `clicked()` so it focuses
+   * the window and emits `notifications:open`. Sync unsubscribe.
+   */
+  onOsBannerClick(handler: () => void): () => void;
+  /**
    * Subscribe to in-app toasts: a notification was just pushed while the window
    * was focused, so the renderer shows a transient toast (with a "View" that
    * follows the carried `route`) instead of relying on the OS banner. Sync

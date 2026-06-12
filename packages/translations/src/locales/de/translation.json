@@ -2151,11 +2151,6 @@
       "deleteKeepDocs": "Tracking entfernen (Dokumente behalten)",
       "deleteAll": "Alles löschen"
     },
-    "imported": {
-      "toastTitle": "Aus dem Browser importiert",
-      "view": "Job ansehen",
-      "fallback": "Ein neuer Job wurde importiert."
-    },
     "delete": {
       "keepTitle": "Bewerbungs-Tracking entfernen",
       "keepDesc": "Dies entfernt nur den Tracking-Eintrag. Deine generierten Dokumente bleiben in der Dokumentenbibliothek.",
@@ -2192,6 +2187,9 @@
     "unread": {
       "aria": "{{count}} ungelesen",
       "dotAria": "Ungelesen"
+    },
+    "toast": {
+      "view": "Ansehen"
     }
   }
 }

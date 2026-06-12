@@ -1,5 +1,7 @@
 import { AlertCircle, Plus, X, Zap } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
+import { useEffect } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 
 import type { Autopilot } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
@@ -12,7 +14,8 @@ import { CreationWizard } from '@/features/autopilot/components/CreationWizard';
 import { EmptyState } from '@/features/autopilot/components/EmptyState';
 import { useAutopilotRun } from '@/features/autopilot/hooks/useAutopilotRun';
 import { autopilotToWizardState } from '@/features/autopilot/lib/wizard-state';
-import { useAutopilots } from '@/services';
+import { Route } from '@/routes/autopilot';
+import { useAutopilots, useInvalidateAutopilots } from '@/services';
 import { useSessionStore } from '@/store/session-store';
 
 function AutopilotPage() {
@@ -23,6 +26,20 @@ function AutopilotPage() {
   const { creating, focusedId, apply } = autopilot;
   const setCreating = (v: boolean) => setAutopilot({ creating: v });
   const resetWizard = resetAutopilotWizard;
+
+  // `?focus=<autopilotId>` deep-link (notification "View"): focus that autopilot
+  // — same path the tray/deep-link `onFocus` takes (`focusedId` flags the card to
+  // auto-expand). Consume once, refresh the list, then clear the param so a
+  // refresh/re-render doesn't re-trigger.
+  const { focus } = Route.useSearch();
+  const navigate = useNavigate();
+  const invalidateAutopilots = useInvalidateAutopilots();
+  useEffect(() => {
+    if (!focus) return;
+    setAutopilot({ focusedId: focus });
+    invalidateAutopilots();
+    void navigate({ to: '/autopilot', search: {}, replace: true });
+  }, [focus, navigate, invalidateAutopilots, setAutopilot]);
 
   const { runStates, stepLogs, error, setError, handleRun, handleTogglePause, handleDelete } =
     useAutopilotRun();

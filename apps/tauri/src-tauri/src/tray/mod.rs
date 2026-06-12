@@ -248,10 +248,9 @@ fn new_jobs_body(name: &str, count: u32) -> String {
     }
 }
 
-/// Handle a "new jobs" click from either surface (the tray counter or the OS
-/// notification, via the `autopilot_notification_clicked` command): focus the
-/// window, jump to the autopilot whose run produced the newest finds, and reset
-/// the unseen counter. Shared so both entry points behave identically.
+/// Handle a "new jobs" click from the tray counter ("New jobs: N" menu item):
+/// focus the window, jump to the autopilot whose run produced the newest finds,
+/// and reset the unseen counter.
 pub fn handle_notification_click(app: &AppHandle) {
     show_focus(app);
     let Some(state) = app.try_state::<TrayState>() else {
