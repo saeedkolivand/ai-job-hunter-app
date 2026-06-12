@@ -118,7 +118,8 @@ function scheduleLabel(schedule) {
   return 'daily';
 }
 
-const SECURITY_FILES = new Set(['codeql.yml', 'semgrep.yml', 'scorecard.yml', 'security.yml']);
+// security.yml consolidates the former codeql/semgrep/scorecard/audit workflows.
+const SECURITY_FILES = new Set(['security.yml']);
 const DEPLOY_FILES = new Set(['release.yml', 'pages.yml']);
 
 /** The workflow's role. Only `✅ required` gates merge; the rest never block. */
@@ -127,6 +128,22 @@ function role(file) {
   if (DEPLOY_FILES.has(file)) return 'deploy';
   if (SECURITY_FILES.has(file)) return 'security';
   return 'advisory';
+}
+
+// Render order + section headings for the role-grouped catalog/badges.
+const ROLE_ORDER = ['✅ required', 'security', 'advisory', 'deploy'];
+const ROLE_HEADINGS = {
+  '✅ required': '✅ Required — gates merge',
+  security: '🔒 Security — reports to the Security tab',
+  advisory: '🔎 Advisory — never blocks',
+  deploy: '🚀 Deploy — publishes on push to main',
+};
+
+/** Group rows by role in ROLE_ORDER, dropping empty groups. */
+function groupByRole(rows) {
+  return ROLE_ORDER.map((r) => ({ role: r, items: rows.filter((x) => x.role === r) })).filter(
+    (g) => g.items.length > 0
+  );
 }
 
 function buildRows() {
@@ -148,8 +165,32 @@ function buildRows() {
   });
 }
 
+/** Badges grouped by role under `###` section headings. */
 function renderBadges(rows) {
-  return rows.map((r) => badge(r.file, r.name)).join('\n');
+  return groupByRole(rows)
+    .map(
+      (g) =>
+        `### ${ROLE_HEADINGS[g.role]}\n\n${g.items.map((r) => badge(r.file, r.name)).join('\n')}`
+    )
+    .join('\n\n');
+}
+
+/** One catalog mini-table per role group (role is the heading, so no Role column). */
+function renderCatalogTables(rows) {
+  return groupByRole(rows)
+    .map((g) => {
+      const head = [
+        `### ${ROLE_HEADINGS[g.role]}`,
+        '',
+        '| Workflow | Triggers | What it does |',
+        '| --- | --- | --- |',
+      ];
+      const body = g.items.map(
+        (r) => `| [${cell(r.name)}](${r.file}) | ${cell(r.triggers)} | ${cell(r.description)} |`
+      );
+      return [...head, ...body].join('\n');
+    })
+    .join('\n\n');
 }
 
 function renderCatalog(rows) {
@@ -159,10 +200,9 @@ function renderCatalog(rows) {
     '',
     '# ⚙️ GitHub Actions — workflow catalog',
     '',
-    `${rows.length} workflows. Descriptions come from each workflow's own header comment.`,
-    'Roles: **✅ required** is the only one that gates merge (CI Pipeline → its `✅ CI OK`',
-    'umbrella check); **advisory** runs but never blocks; **security** reports to the',
-    'Security tab; **deploy** publishes on push to `main`.',
+    `${rows.length} workflows, grouped by role. Descriptions come from each workflow's own header comment.`,
+    '**✅ Required** is the only role that gates merge (CI Pipeline → its `✅ CI OK` umbrella);',
+    '**advisory** never blocks; **security** reports to the Security tab; **deploy** publishes on push to `main`.',
     '',
     '## Status',
     '',
@@ -170,14 +210,9 @@ function renderCatalog(rows) {
     '',
     '## Catalog',
     '',
-    '| Workflow | Triggers | Role | What it does |',
-    '| --- | --- | --- | --- |',
+    renderCatalogTables(rows),
   ];
-  const body = rows.map(
-    (r) =>
-      `| [${cell(r.name)}](${r.file}) | ${cell(r.triggers)} | ${r.role} | ${cell(r.description)} |`
-  );
-  return `${[...header, ...body].join('\n')}\n`;
+  return `${header.join('\n')}\n`;
 }
 
 function spliceBadges(readme, rows) {
