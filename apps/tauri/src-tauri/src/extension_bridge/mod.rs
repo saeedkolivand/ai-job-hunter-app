@@ -444,10 +444,13 @@ fn classify_frame(state: &BridgeState, text: &str) -> FrameDecision {
     }
 }
 
-/// The successful import outcome: the created/merged application id + its status.
+/// The successful import outcome: the created/merged application id, its status,
+/// and the parsed title/company (so the popup can name the imported job).
 struct ImportOk {
     application_id: String,
     status: String,
+    title: String,
+    company: String,
 }
 
 /// Build a canonical `import.result` envelope (success or error). The error's
@@ -457,6 +460,8 @@ fn result_reply(req_id: &str, outcome: AppResult<ImportOk>) -> String {
         Ok(ok) => json!({
             "applicationId": ok.application_id,
             "status": ok.status,
+            "title": ok.title,
+            "company": ok.company,
         }),
         Err(e) => json!({ "error": e.to_string() }),
     };
@@ -548,12 +553,24 @@ async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<ImportOk> {
         .map(|a| a.status.as_id().to_string())
         .unwrap_or_else(|| "saved".to_string());
 
-    // Tell the renderer to refresh (Applications + Jobs views).
-    let _ = app.emit(APPLICATIONS_CHANGED_EVENT, json!({ "applicationId": id }));
+    // Tell the renderer to refresh (Applications + Jobs views) and surface a
+    // live toast. Carry the title/company/status so the toast can name the job
+    // without a refetch race.
+    let _ = app.emit(
+        APPLICATIONS_CHANGED_EVENT,
+        json!({
+            "applicationId": id.clone(),
+            "title": posting.title.clone(),
+            "company": posting.company.clone(),
+            "status": status.clone(),
+        }),
+    );
 
     Ok(ImportOk {
         application_id: id,
         status,
+        title: posting.title,
+        company: posting.company,
     })
 }
 

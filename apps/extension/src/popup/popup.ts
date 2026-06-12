@@ -33,8 +33,14 @@ export function resolveStatusResponse(
   return { phase: 'app_not_running', port: null, hasToken: lastKnownHasToken };
 }
 
+/** Where an imported job lands in the desktop app — shown on success so the
+ *  user knows where to look (the extension can't focus the native window). */
+const IMPORT_LANDING_HINT = 'Open AI Job Hunter → Applications to view it.';
+
 /**
- * Given an `import` response, return the message text and tone to display.
+ * Given an `import` response, return the message text and tone to display. On
+ * success it names the imported job (when the desktop parsed a title) and points
+ * the user at where it landed, instead of a bare "Imported".
  *
  * Pure: no DOM access, no side effects.
  */
@@ -43,8 +49,9 @@ export function resolveImportResponse(res: PopupResponse): { text: string; tone:
   if (res.kind !== 'import') return { text: 'Unexpected response — please retry.', tone: 'err' };
   const { result } = res;
   if (result.error) return { text: result.error, tone: 'err' };
-  const status = result.status ? ` (${result.status})` : '';
-  return { text: `Imported${status}.`, tone: 'ok' };
+  const title = result.title?.trim();
+  const lead = title ? `Imported “${title}”.` : 'Imported.';
+  return { text: `${lead} ${IMPORT_LANDING_HINT}`, tone: 'ok' };
 }
 
 function byId<T extends HTMLElement>(id: string): T {

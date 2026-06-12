@@ -22,7 +22,8 @@ export const applications = {
   saveFromPosting: (req: ApplicationTrackRequest) =>
     invoke('applications_save_from_posting', { req }),
   // The bridge (and any out-of-band creator) emits `applications:changed` with
-  // `{ applicationId }` — see `extension_bridge::APPLICATIONS_CHANGED_EVENT`.
+  // `{ applicationId, title?, company?, status? }` — see
+  // `extension_bridge::APPLICATIONS_CHANGED_EVENT`.
   onChanged: (handler: (event: ApplicationChangedEvent) => void) =>
     asyncUnsub(() =>
       listen<ApplicationChangedEvent>('applications:changed', (e) => handler(e.payload))

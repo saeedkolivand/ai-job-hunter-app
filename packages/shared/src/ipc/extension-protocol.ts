@@ -55,12 +55,15 @@ export type ExtensionImportRequest = z.infer<typeof ExtensionImportRequestSchema
 
 /**
  * `import.result` payload. On success carries the created/merged
- * `applicationId` + its `status`; `matchScore` is reserved for the future
- * live-match reply. On failure carries `error`.
+ * `applicationId` + its `status`, plus the parsed `title`/`company` so the
+ * popup can confirm WHICH job was imported; `matchScore` is reserved for the
+ * future live-match reply. On failure carries `error`.
  */
 export const ExtensionImportResultSchema = z.object({
   applicationId: z.string().optional(),
   status: z.string().optional(),
+  title: z.string().optional(),
+  company: z.string().optional(),
   matchScore: z.number().optional(),
   error: z.string().optional(),
 });

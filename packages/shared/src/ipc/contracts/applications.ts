@@ -25,10 +25,19 @@ export interface ApplicationCreateResult {
 /**
  * Event payload emitted when an Application is created/changed out-of-band — e.g.
  * a job imported via the browser-extension bridge. Carries the affected id so
- * consumers can refresh the applications (and postings) lists live.
+ * consumers can refresh the applications (and postings) lists live, plus a
+ * best-effort title/company/status so a live toast can name the job without a
+ * refetch race. The descriptive fields are OPTIONAL — an older emitter (or a
+ * non-import change) may send only `applicationId`.
  */
 export interface ApplicationChangedEvent {
   applicationId: string;
+  /** Parsed job title, for a live notification ("Imported '<title>'"). */
+  title?: string;
+  /** Parsed company name, shown alongside the title. */
+  company?: string;
+  /** Resulting status id (e.g. `saved`, `applied`). */
+  status?: string;
 }
 
 /**

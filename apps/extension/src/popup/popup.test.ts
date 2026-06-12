@@ -112,18 +112,20 @@ describe('resolveImportResponse', () => {
     expect(text).toBe('Desktop app rejected the job URL.');
   });
 
-  it('returns a success message with the status when the import succeeds', () => {
+  it('names the imported job and points to where it landed when a title is present', () => {
     const res = {
       ok: true as const,
       kind: 'import' as const,
-      result: { applicationId: 'app-123', status: 'saved' },
+      result: { applicationId: 'app-123', status: 'saved', title: 'Senior Rust Engineer' },
     };
     const { text, tone } = resolveImportResponse(res);
     expect(tone).toBe('ok');
-    expect(text).toBe('Imported (saved).');
+    expect(text).toBe(
+      'Imported “Senior Rust Engineer”. Open AI Job Hunter → Applications to view it.'
+    );
   });
 
-  it('returns a success message without status when result.status is absent', () => {
+  it('falls back to a generic success + landing hint when no title is present', () => {
     const res = {
       ok: true as const,
       kind: 'import' as const,
@@ -131,6 +133,6 @@ describe('resolveImportResponse', () => {
     };
     const { text, tone } = resolveImportResponse(res);
     expect(tone).toBe('ok');
-    expect(text).toBe('Imported.');
+    expect(text).toBe('Imported. Open AI Job Hunter → Applications to view it.');
   });
 });
