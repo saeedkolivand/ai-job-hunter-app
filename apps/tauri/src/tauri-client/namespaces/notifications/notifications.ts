@@ -1,6 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
+import type { NotificationToast } from '@ajh/shared';
+
 import { asyncUnsub } from '../../utils.js';
 
 export const notifications = {
@@ -16,4 +18,8 @@ export const notifications = {
   // OS-banner / tray click "open the inbox" signal — see `notifications_clicked`.
   onOpenInbox: (handler: () => void) =>
     asyncUnsub(() => listen('notifications:open', () => handler())),
+  // In-app toast for a just-pushed notification (window focused) — see the Rust
+  // `push_and_notify` `notifications:toast` emit.
+  onToast: (handler: (toast: NotificationToast) => void) =>
+    asyncUnsub(() => listen<NotificationToast>('notifications:toast', (e) => handler(e.payload))),
 };

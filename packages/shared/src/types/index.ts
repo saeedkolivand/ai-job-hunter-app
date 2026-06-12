@@ -360,3 +360,16 @@ export interface AppNotification {
   read: boolean;
   route?: NotificationRoute;
 }
+
+/**
+ * The payload of a `notifications:toast` event — an in-app toast for a
+ * just-pushed notification while the window was focused. Mirrors the Rust
+ * `push_and_notify` emit (camelCase): the new record's `title`, `body`, and
+ * optional `route` (so the toast's "View" can navigate). NOT persisted — the
+ * full record is already in the inbox via `onChanged`.
+ */
+export interface NotificationToast {
+  title: string;
+  body: string;
+  route?: NotificationRoute;
+}

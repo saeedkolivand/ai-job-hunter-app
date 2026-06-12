@@ -1,4 +1,4 @@
-import type { AppNotification } from '../../types/index.js';
+import type { AppNotification, NotificationToast } from '../../types/index.js';
 
 /**
  * Notification Center capability (Phase 2). The read/mutate seam over the
@@ -19,6 +19,13 @@ export interface NotificationsContract {
   onChanged(handler: () => void): () => void;
   /** Subscribe to the "open inbox" signal (OS-banner / tray click). Sync unsubscribe. */
   onOpenInbox(handler: () => void): () => void;
+  /**
+   * Subscribe to in-app toasts: a notification was just pushed while the window
+   * was focused, so the renderer shows a transient toast (with a "View" that
+   * follows the carried `route`) instead of relying on the OS banner. Sync
+   * unsubscribe. See the Rust `notifications:toast` emit in `push_and_notify`.
+   */
+  onToast(handler: (toast: NotificationToast) => void): () => void;
 }
 
 /**
@@ -28,4 +35,5 @@ export interface NotificationsContract {
 export const NOTIFICATIONS_CHANNELS = {
   changed: 'notifications:changed',
   open: 'notifications:open',
+  toast: 'notifications:toast',
 } as const;

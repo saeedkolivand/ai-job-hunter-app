@@ -31,6 +31,13 @@ use uuid::Uuid;
 /// file was hand-edited over the cap).
 const MAX_NOTIFICATIONS: usize = 50;
 
+/// Character bounds for persisted/displayed notification text. Clamp
+/// attacker-influenceable scraped text at the store boundary — see Phase 4a
+/// security review. Counted by CHARACTER (not byte) so a multi-byte UTF-8
+/// codepoint is never split.
+const MAX_TITLE_CHARS: usize = 200;
+const MAX_BODY_CHARS: usize = 500;
+
 // ── Data model ──────────────────────────────────────────────────────────────
 
 /// A route the renderer navigates to when the notification is actioned. `to` is
@@ -97,11 +104,15 @@ impl NotificationStore {
     /// prepend (newest-first), trim to the cap (dropping the oldest), persist,
     /// and return the created record.
     pub fn push(&self, input: NewNotification) -> AppNotification {
+        // Clamp at the source-of-truth boundary so every current and future
+        // source is bounded in one place. Char-wise to keep UTF-8 intact.
+        let title = input.title.chars().take(MAX_TITLE_CHARS).collect::<String>();
+        let body = input.body.chars().take(MAX_BODY_CHARS).collect::<String>();
         let notification = AppNotification {
             id: Uuid::new_v4().to_string(),
             kind: input.kind,
-            title: input.title,
-            body: input.body,
+            title,
+            body,
             created_at: now_ms(),
             read: false,
             route: input.route,

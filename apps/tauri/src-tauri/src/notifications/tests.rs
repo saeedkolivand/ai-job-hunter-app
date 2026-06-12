@@ -199,3 +199,36 @@ fn record_serializes_camel_case_created_at() {
     assert!(json.contains("\"createdAt\":42"), "camelCase createdAt: {json}");
     assert!(!json.contains("created_at"), "no snake_case leak");
 }
+
+#[test]
+fn push_clamps_oversized_title_and_body_char_safe() {
+    let dir = TempDir::new().unwrap();
+    let store = NotificationStore::new(dir.path());
+
+    // Oversized input built from a multi-byte char (accented + emoji) so the
+    // clamp is proven char-safe: each char is >1 byte, so a byte-wise cut
+    // would split a codepoint and panic.
+    let big_title: String = "é".repeat(MAX_TITLE_CHARS + 50);
+    let big_body: String = "🚀".repeat(MAX_BODY_CHARS + 50);
+    let created = store.push(NewNotification {
+        kind: "import.result".to_string(),
+        title: big_title,
+        body: big_body,
+        route: None,
+    });
+
+    // Clamped to the char limits (not bytes), no codepoint split / panic.
+    assert_eq!(created.title.chars().count(), MAX_TITLE_CHARS, "title clamped by char");
+    assert_eq!(created.body.chars().count(), MAX_BODY_CHARS, "body clamped by char");
+
+    // The clamp survives the disk round-trip.
+    let reopened = NotificationStore::new(dir.path());
+    let stored = &reopened.list()[0];
+    assert_eq!(stored.title.chars().count(), MAX_TITLE_CHARS);
+    assert_eq!(stored.body.chars().count(), MAX_BODY_CHARS);
+
+    // A normal short title/body is stored verbatim.
+    let short = store.push(new_input("k", "short title"));
+    assert_eq!(short.title, "short title", "under-limit title untouched");
+    assert_eq!(short.body, "short title body", "under-limit body untouched");
+}
