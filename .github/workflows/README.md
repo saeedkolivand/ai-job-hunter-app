@@ -3,7 +3,7 @@
 
 # ⚙️ GitHub Actions — workflow catalog
 
-17 workflows. Descriptions come from each workflow's own header comment.
+18 workflows. Descriptions come from each workflow's own header comment.
 Roles: **✅ required** is the only one that gates merge (CI Pipeline → its `✅ CI OK`
 umbrella check); **advisory** runs but never blocks; **security** reports to the
 Security tab; **deploy** publishes on push to `main`.
@@ -16,6 +16,7 @@ Security tab; **deploy** publishes on push to `main`.
 [![🛡️ CodeQL](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/codeql.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/codeql.yml)
 [![🎭 E2E](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/e2e.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/e2e.yml)
 [![🎨 Format Guard](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/format-guard.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/format-guard.yml)
+[![🏷️ Labeler](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/labeler.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/labeler.yml)
 [![🔦 Lighthouse (advisory)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/lighthouse.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/lighthouse.yml)
 [![🌐 Deploy Landing Page](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pages.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pages.yml)
 [![🔎 PR Review (advisory)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pr-review.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pr-review.yml)
@@ -38,6 +39,7 @@ Security tab; **deploy** publishes on push to `main`.
 | [🛡️ CodeQL](codeql.yml)                           | PR, push, weekly         | security    | Semantic security scanning (free for public repos, zero external auth).                                                                                    |
 | [🎭 E2E](e2e.yml)                                 | PR, manual               | advisory    | Browser end-to-end tests: drive the renderer in Chromium against the in-memory mock client (no Tauri/native build required).                               |
 | [🎨 Format Guard](format-guard.yml)               | push, manual             | advisory    | Format Guard (push to main only) The main CI Pipeline runs on pull_request only — push to main is intentionally excluded there.                            |
+| [🏷️ Labeler](labeler.yml)                         | PR                       | advisory    | PR auto-labeler — chips PRs by touched area (see .github/labeler.yml).                                                                                     |
 | [🔦 Lighthouse (advisory)](lighthouse.yml)        | PR, manual               | advisory    | Perf / a11y / best-practices budgets on the renderer, served via the e2e mock entry (pnpm dev:frontend → e2e.html).                                        |
 | [🌐 Deploy Landing Page](pages.yml)               | push, manual             | deploy      | Publish the static marketing landing page (landing/) to GitHub Pages                                                                                       |
 | [🔎 PR Review (advisory)](pr-review.yml)          | PR                       | advisory    | surface review feedback as INLINE PR comments (not buried in CI logs). Uses only the auto-provided GITHUB_TOKEN — no secrets, no external accounts, no AI… |
