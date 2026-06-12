@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight, ClipboardList, Plus, Search } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { APPLICATION_STAGES } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
@@ -15,11 +15,30 @@ import { useSessionStore } from '@/store/session-store';
 export function ApplicationsPage() {
   const { t } = useTranslation();
   const { applications: appsSlice, setApplications, toggleApplicationSection } = useSessionStore();
-  const { collapsedSections, filter } = appsSlice;
+  const { collapsedSections, filter, highlightId } = appsSlice;
 
   const [trackOpen, setTrackOpen] = useState(false);
 
   const { data: allApps = [], isLoading, isError } = useApplications();
+
+  // A just-imported job (browser-extension "View" deep-link) must be visible:
+  // un-collapse its stage section so the highlighted row isn't hidden.
+  useEffect(() => {
+    if (!highlightId) return;
+    const target = allApps.find((a) => a.id === highlightId);
+    if (target && collapsedSections.includes(target.status)) {
+      setApplications({
+        collapsedSections: collapsedSections.filter((id) => id !== target.status),
+      });
+    }
+  }, [highlightId, allApps, collapsedSections, setApplications]);
+
+  // Clear the highlight after the flash so it fires once, not on every revisit.
+  useEffect(() => {
+    if (!highlightId) return;
+    const timer = setTimeout(() => setApplications({ highlightId: null }), 3500);
+    return () => clearTimeout(timer);
+  }, [highlightId, setApplications]);
 
   // Text filter across company + title + candidate.
   const q = filter.trim().toLowerCase();
@@ -137,7 +156,11 @@ export function ApplicationsPage() {
                     >
                       <div className="space-y-2">
                         {apps.map((app) => (
-                          <ApplicationRow key={app.id} application={app} />
+                          <ApplicationRow
+                            key={app.id}
+                            application={app}
+                            highlighted={app.id === highlightId}
+                          />
                         ))}
                       </div>
                     </motion.div>

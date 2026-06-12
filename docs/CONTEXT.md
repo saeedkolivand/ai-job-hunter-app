@@ -56,8 +56,34 @@ Application's own field (not derived) for cheap querying.
 _Avoid_: Interaction (the viewed/opened/applied event log on postings is a separate concept)
 
 **Application origin**:
-Where an Application was first created. Four triggers: **Save** (a Jobs-page posting →
-`saved`), **Apply** / **Generate** (AI Generate or Autopilot produce/submit docs →
-`applied`), and **Manual** ("Track a job" — e.g. applied outside the app). Dedup on
-create by normalized `jobUrl`; no URL ⇒ a new Application.
+Where an Application was first created. Canonical triggers: **Save** (a Jobs-page posting
+or browser-extension import → `saved`), **Generate** / **Apply** (AI Generate or Autopilot
+produce/submit docs → `applied`), **Manual** ("Track a job" — e.g. applied outside the
+app), and **Backfill** (legacy row migration). Dedup on create by normalized `jobUrl`; no
+URL ⇒ a new Application. The browser extension is a **Save** origin (Feature 2).
 _Avoid_: source (already means the job-board id on a JobPosting, e.g. greenhouse)
+
+**Extension import**:
+Importing a job from the browser via the local WebSocket bridge (Feature 2). The
+extension sends `{ url }` (URL mode, app resolves) or `{ url, html }` (Scan mode, app
+parses the authenticated DOM). The browser is a **Save** Application origin. The bridge
+server listens on `127.0.0.1` loopback, validates the Origin header and per-frame pairing
+token, and guards the import URL against SSRF (DNS-rebinding-safe via IP pinning).
+_Avoid_: scrape (the headless board path), Apply (extension imports are Saves)
+
+**Pairing token**:
+The per-install secret the browser extension sends on every bridge frame (`token` field).
+Generated on app first-run, persisted to the app data dir, and rotatable via the
+`extension_bridge_regenerate_token` IPC command. Shown in Settings for the user to
+copy/paste into the extension. A mismatch closes the socket; the pair is 256-bit random,
+lowercase hex.
+_Avoid_: API key, credential (it authenticates only to the local app, never remote)
+
+**Scan mode** vs **URL mode**:
+Two import paths on the extension bridge. **Scan mode** sends the rendered (authenticated)
+DOM (`{ url, html }`) — no network call needed; the app parses the posted HTML via the
+fetch-free parser. **URL mode** sends just the link (`{ url }`); the app's backend scraper
+resolves the URL (headless browser, redirects, JavaScript rendering). Scan mode is
+preferred when the extension can supply the DOM (no auth wall); URL mode is the fallback
+for link-only saves or when the extension can't intercept the HTML.
+_Avoid_: conflating with the headless scraper (which is the impl detail of URL mode)

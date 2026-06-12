@@ -1,5 +1,5 @@
 import { Clock, ExternalLink, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { type Application, APPLICATION_STAGES } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
@@ -10,11 +10,13 @@ import { useOpenExternal, useRemoveApplication, useSetApplicationStatus } from '
 
 interface ApplicationRowProps {
   application: Application;
+  /** Flash + scroll this row into view once (e.g. a just-imported job). */
+  highlighted?: boolean;
 }
 
 const STATUS_OPTIONS = APPLICATION_STAGES.map((s) => ({ value: s.id, label: s.id }));
 
-export function ApplicationRow({ application }: ApplicationRowProps) {
+export function ApplicationRow({ application, highlighted = false }: ApplicationRowProps) {
   const { t } = useTranslation();
   const setStatus = useSetApplicationStatus();
   const remove = useRemoveApplication();
@@ -22,6 +24,12 @@ export function ApplicationRow({ application }: ApplicationRowProps) {
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [keepDocs, setKeepDocs] = useState(true);
+
+  // Bring a just-imported row into view when it becomes the highlight target.
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (highlighted) rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [highlighted]);
 
   const stale = isStale(application.updatedAt);
   const nextState = nextActionLabel(application.nextActionAt);
@@ -48,7 +56,13 @@ export function ApplicationRow({ application }: ApplicationRowProps) {
 
   return (
     <>
-      <div className="surface-card flex items-center gap-4 rounded-xl px-4 py-3 transition-colors hover:bg-foreground/[0.03]">
+      <div
+        ref={rowRef}
+        className={cn(
+          'surface-card flex items-center gap-4 rounded-xl px-4 py-3 transition-colors hover:bg-foreground/[0.03]',
+          highlighted && 'ring-2 ring-brand/60'
+        )}
+      >
         {/* Company avatar */}
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-[10px] font-semibold uppercase tracking-wider text-brand-soft">
           {(application.company || '?').slice(0, 2)}

@@ -16,7 +16,9 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 import { createTauriInvokeClient } from '../index';
 import { ai } from './ai';
+import { applications } from './applications';
 import { documents } from './documents';
+import { extensionBridge } from './extensionBridge';
 import { jobs } from './jobs';
 import { scrape } from './scrape';
 import { system } from './system';
@@ -46,6 +48,12 @@ describe('tauri-client namespaces', () => {
 
     jobs.get('job-1');
     expect(invoke).toHaveBeenCalledWith('jobs_get', { jobId: 'job-1' });
+
+    extensionBridge.status();
+    expect(invoke).toHaveBeenCalledWith('extension_bridge_status');
+
+    extensionBridge.regenerateToken();
+    expect(invoke).toHaveBeenCalledWith('extension_bridge_regenerate_token');
   });
 
   it('wires event subscriptions through listen and forwards payloads', () => {
@@ -56,6 +64,17 @@ describe('tauri-client namespaces', () => {
     // Simulate the backend emitting an event.
     lastListenHandler?.({ payload: { token: 'hi' } });
     expect(handler).toHaveBeenCalledWith({ token: 'hi' });
+    expect(typeof unsub).toBe('function');
+  });
+
+  it('wires applications:changed through listen and forwards the payload', () => {
+    const handler = vi.fn();
+    const unsub = applications.onChanged(handler);
+    expect(listen).toHaveBeenCalledWith('applications:changed', expect.any(Function));
+
+    // Drive the inner callback so the arrow function body is covered.
+    lastListenHandler?.({ payload: { applicationId: 'app-1' } });
+    expect(handler).toHaveBeenCalledWith({ applicationId: 'app-1' });
     expect(typeof unsub).toBe('function');
   });
 

@@ -127,6 +127,15 @@ The only outbound calls are to the AI provider **you** configure (and an optiona
 </details>
 
 <details>
+<summary><strong>🌐 Browser extension (save jobs one-click)</strong></summary>
+
+- MV3 extension for **Chrome & Firefox** — while browsing any job board, click the extension button to import the job into your saved applications.
+- **Two import modes:** **Import via URL** (extension sends the URL, app fetches + parses), or **Scan page** (extension captures the authenticated DOM, useful for login-walled boards).
+- Fully local — jobs are sent to the desktop app over a **loopback-only WebSocket**, paired with a secret token. Zero remote backend, zero analytics.
+- See <a href="apps/extension/README.md" target="_blank" rel="noopener noreferrer">apps/extension/README.md</a> for setup, dev pairing, and architecture. Try it locally — see the extension's <a href="apps/extension/README.md#local-development--testing" target="_blank" rel="noopener noreferrer">Local development & testing</a> guide.
+</details>
+
+<details>
 <summary><strong>🔎 Company research (opt-in)</strong></summary>
 
 - Before writing a cover letter or answers, optionally research the company on the web — using your active AI provider's **own** web search (or the free Ollama Web Search API on Ollama) → a concise, factual brief: what they do, size/stage, products, mission, recent news.
@@ -378,19 +387,21 @@ A <a href="https://pypi.org/project/graphifyy/" target="_blank" rel="noopener no
 ```
 ai-job-hunter-assistant-app/
 ├── apps/
-│   └── tauri/                    # Main desktop app
-│       ├── src-tauri/            # Rust core (commands, scraping, AI, export, DB)
-│       └── src/renderer/         # React frontend
-│           ├── features/         # Feature-scoped components
-│           ├── routes/           # TanStack Router pages
-│           ├── services/         # React Query IPC hooks
-│           ├── lib/              # Utilities (generate, motion, i18n, machines)
-│           ├── store/            # Zustand stores
-│           └── providers/        # React context providers
+│   ├── tauri/                    # Main desktop app (Tauri shell: Rust core + React renderer)
+│   │   ├── src-tauri/            # Rust core (commands, scraping, AI, export, DB, extension bridge)
+│   │   └── src/renderer/         # React frontend
+│   │       ├── features/         # Feature-scoped components
+│   │       ├── routes/           # TanStack Router pages
+│   │       ├── services/         # React Query IPC hooks
+│   │       ├── lib/              # Utilities (generate, motion, i18n, machines)
+│   │       ├── store/            # Zustand stores
+│   │       └── providers/        # React context providers
+│   └── extension/                # Browser extension (MV3, Chrome + Firefox) — job import via loopback WS
 ├── packages/
-│   ├── shared/                   # IPC contracts, Zod schemas, shared types
+│   ├── shared/                   # IPC contracts, Zod schemas, shared types, extension protocol
 │   ├── ui/                       # @ajh/ui — React component library
-│   └── prompts/                  # Provider-aware, locale-driven AI prompt templates
+│   ├── prompts/                  # Provider-aware, locale-driven AI prompt templates
+│   └── translations/             # i18n config + locale strings (en, de, …)
 ├── docs/                         # Documentation + knowledge base (ADRs)
 ├── turbo.json                    # Turbo build configuration
 ├── pnpm-workspace.yaml           # pnpm workspaces
@@ -436,6 +447,7 @@ at-a-glance status of every workflow, grouped by role, fetched live from the Act
 [![🛡️ CodeQL](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/codeql.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/codeql.yml)
 [![🎭 E2E](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/e2e.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/e2e.yml)
 [![🎨 Format Guard](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/format-guard.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/format-guard.yml)
+[![🏷️ Labeler](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/labeler.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/labeler.yml)
 [![🔦 Lighthouse (advisory)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/lighthouse.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/lighthouse.yml)
 [![🌐 Deploy Landing Page](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pages.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pages.yml)
 [![🔎 PR Review (advisory)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pr-review.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pr-review.yml)
@@ -464,22 +476,33 @@ See <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBU
 
 ## Documentation
 
-| Document                                                                                                                                                                | Description                                                       |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| <a href="docs/ARCHITECTURE.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE.md</a>                                                                       | System design, data flow, diagrams                                |
-| <a href="docs/PATTERNS.md" target="_blank" rel="noopener noreferrer">docs/PATTERNS.md</a>                                                                               | IPC, state machines, AI streaming, search patterns                |
-| <a href="docs/API.md" target="_blank" rel="noopener noreferrer">docs/API.md</a>                                                                                         | IPC namespaces + commands                                         |
-| <a href="docs/EXPORT_TEMPLATES.md" target="_blank" rel="noopener noreferrer">docs/EXPORT_TEMPLATES.md</a>                                                               | Templates, theming, PDF/DOCX export                               |
-| <a href="docs/DESIGN_SYSTEM.md" target="_blank" rel="noopener noreferrer">docs/DESIGN_SYSTEM.md</a>                                                                     | Tokens, components, motion, theming                               |
-| <a href="docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer">docs/DEVELOPMENT.md</a>                                                                         | Local dev environment setup                                       |
-| <a href="docs/DEPLOYMENT.md" target="_blank" rel="noopener noreferrer">docs/DEPLOYMENT.md</a>                                                                           | Building and releasing installers                                 |
-| <a href="docs/ARCHITECTURE_STATUS.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE_STATUS.md</a>                                                         | Implementation status tracker                                     |
-| <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a>                                                                                 | Knowledge base + architecture decision records (ADRs)             |
-| <a href="SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>                                                                                         | Security policy &amp; vulnerability reporting                     |
-| <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a>                                                                                 | Code style, branching, PR process                                 |
-| <a target="_blank" rel="noopener noreferrer" href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/how-it-works.html">landing/how-it-works.html</a>         | How the AI Job Hunter works end-to-end (interactive walkthrough)  |
-| <a target="_blank" rel="noopener noreferrer" href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/architecture-map.html">landing/architecture-map.html</a> | Interactive architecture map of the AI Job Hunter                 |
-| <a target="_blank" rel="noopener noreferrer" href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/creature.html">landing/creature.html</a>                 | THE CREATURE — a hand-drawn doodle about the recruiter you summon |
+| Document                                                                                                                                                                | Description                                                          |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| <a href="apps/tauri/README.md" target="_blank" rel="noopener noreferrer">apps/tauri/README.md</a>                                                                       | Desktop app architecture, directory map, Rust/React setup            |
+| <a href="apps/extension/README.md" target="_blank" rel="noopener noreferrer">apps/extension/README.md</a>                                                               | Browser extension (MV3) — job import, local dev pairing, permissions |
+| <a href="docs/ARCHITECTURE.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE.md</a>                                                                       | System design, data flow, diagrams                                   |
+| <a href="docs/PATTERNS.md" target="_blank" rel="noopener noreferrer">docs/PATTERNS.md</a>                                                                               | IPC, state machines, AI streaming, search patterns                   |
+| <a href="docs/API.md" target="_blank" rel="noopener noreferrer">docs/API.md</a>                                                                                         | IPC namespaces + commands                                            |
+| <a href="docs/EXPORT_TEMPLATES.md" target="_blank" rel="noopener noreferrer">docs/EXPORT_TEMPLATES.md</a>                                                               | Templates, theming, PDF/DOCX export                                  |
+| <a href="docs/DESIGN_SYSTEM.md" target="_blank" rel="noopener noreferrer">docs/DESIGN_SYSTEM.md</a>                                                                     | Tokens, components, motion, theming                                  |
+| <a href="docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer">docs/DEVELOPMENT.md</a>                                                                         | Local dev environment setup                                          |
+| <a href="docs/DEPLOYMENT.md" target="_blank" rel="noopener noreferrer">docs/DEPLOYMENT.md</a>                                                                           | Building and releasing installers                                    |
+| <a href="docs/ARCHITECTURE_STATUS.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE_STATUS.md</a>                                                         | Implementation status tracker                                        |
+| <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a>                                                                                 | Knowledge base + architecture decision records (ADRs)                |
+| <a href="SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>                                                                                         | Security policy &amp; vulnerability reporting                        |
+| <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a>                                                                                 | Code style, branching, PR process                                    |
+| <a target="_blank" rel="noopener noreferrer" href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/how-it-works.html">landing/how-it-works.html</a>         | How the AI Job Hunter works end-to-end (interactive walkthrough)     |
+| <a target="_blank" rel="noopener noreferrer" href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/architecture-map.html">landing/architecture-map.html</a> | Interactive architecture map of the AI Job Hunter                    |
+| <a target="_blank" rel="noopener noreferrer" href="https://saeedkolivand.github.io/ai-job-hunter-assistant-app/creature.html">landing/creature.html</a>                 | THE CREATURE — a hand-drawn doodle about the recruiter you summon    |
+
+---
+
+## ⚖️ Responsible Use
+
+- **Respect each site's Terms of Service.** Some job boards allow only manual access or their official APIs; automated collection — or signing in with your own account to scrape — may breach their terms and can get your account suspended. You choose which boards to enable and accept that responsibility.
+- **Not affiliated.** AI Job Hunter is an independent project, not affiliated with, endorsed by, or sponsored by LinkedIn, Indeed, Glassdoor, Xing, StepStone, or any other job board or company named in this repository. Product names and trademarks belong to their respective owners.
+- **Your data stays yours.** Processing is local-first and single-user; the project maintainers do not receive, store, or process your data. Bring-your-own-key means AI prompts go only to the provider you configure.
+- **No warranty.** Provided "as is" under the MIT License, without warranty of any kind and without liability for how it is used. This is not legal advice.
 
 ---
 

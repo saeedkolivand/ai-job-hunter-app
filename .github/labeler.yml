@@ -1,0 +1,42 @@
+# PR auto-labeler config (actions/labeler v5 `changed-files` syntax).
+# Maps monorepo paths → labels. Labels must already exist in the repo
+# (actions/labeler does NOT create missing labels — it errors).
+'app/extension':
+  - changed-files:
+      - any-glob-to-any-file: 'apps/extension/**'
+'app/tauri':
+  - changed-files:
+      - any-glob-to-any-file: 'apps/tauri/**'
+'pkg/shared':
+  - changed-files:
+      - any-glob-to-any-file: 'packages/shared/**'
+'pkg/ui':
+  - changed-files:
+      - any-glob-to-any-file: 'packages/ui/**'
+'pkg/prompts':
+  - changed-files:
+      - any-glob-to-any-file: 'packages/prompts/**'
+'pkg/translations':
+  - changed-files:
+      - any-glob-to-any-file: 'packages/translations/**'
+'rust':
+  - changed-files:
+      - any-glob-to-any-file: 'apps/tauri/src-tauri/**'
+'frontend':
+  - changed-files:
+      - any-glob-to-any-file: 'apps/tauri/src/renderer/**'
+'dependencies':
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/package.json'
+          - 'pnpm-lock.yaml'
+          - '**/Cargo.toml'
+          - '**/Cargo.lock'
+'github_actions':
+  - changed-files:
+      - any-glob-to-any-file: '.github/**'
+'documentation':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - '**/*.md'

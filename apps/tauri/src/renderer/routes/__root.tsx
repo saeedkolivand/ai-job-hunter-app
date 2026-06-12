@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
-import { createRootRoute, Outlet, useRouter } from '@tanstack/react-router';
+import { createRootRoute, Outlet, useNavigate, useRouter } from '@tanstack/react-router';
 
-import { NotificationProvider } from '@ajh/ui';
+import { useTranslation } from '@ajh/translations';
+import { Button, NotificationProvider, useNotification } from '@ajh/ui';
 
 import { CinematicBackground } from '@/components/background/CinematicBackground';
 import { ProtocolVersionGate } from '@/components/layout/ProtocolVersionGate';
@@ -14,12 +15,46 @@ import { OnboardingWizard } from '@/features/onboarding/OnboardingWizard';
 import { useAutopilotFocusNavigation } from '@/hooks/use-autopilot-focus-navigation';
 import { useMenuNavigation } from '@/hooks/use-menu-navigation';
 import { CapabilityProvider } from '@/providers/CapabilityProvider';
-import { useSyncCloseToTray } from '@/services';
+import { useApplicationEvents, useSyncCloseToTray } from '@/services';
+import { useSessionStore } from '@/store/session-store';
 
 /** Drives the native-menu navigation/actions. Rendered INSIDE
  *  `NotificationProvider` so its check-for-updates feedback can raise toasts. */
 function MenuNavigationBridge() {
   useMenuNavigation();
+  return null;
+}
+
+/** Live-refreshes the applications + postings lists on a browser-extension
+ *  import, and raises a toast with a "View" deep-link to the imported job on
+ *  the Applications board. Rendered INSIDE `NotificationProvider` so it can use
+ *  `useNotification`; mounted once (the listener attaches a single time). */
+function ImportToastBridge() {
+  const { t } = useTranslation();
+  const notify = useNotification();
+  const navigate = useNavigate();
+  const setApplications = useSessionStore((s) => s.setApplications);
+
+  useApplicationEvents((event) => {
+    const name = [event.title, event.company].filter(Boolean).join(' · ');
+    notify.success({
+      message: t('applications.imported.toastTitle'),
+      description: name || t('applications.imported.fallback'),
+      btn: (
+        <Button
+          size="sm"
+          variant="glass"
+          onClick={() => {
+            setApplications({ highlightId: event.applicationId });
+            void navigate({ to: '/applications' });
+          }}
+        >
+          {t('applications.imported.view')}
+        </Button>
+      ),
+    });
+  });
+
   return null;
 }
 
@@ -99,6 +134,7 @@ function RootLayout() {
   return (
     <NotificationProvider>
       <MenuNavigationBridge />
+      <ImportToastBridge />
       <ProtocolVersionGate>
         <CapabilityProvider>
           <div className="app-content relative flex h-screen flex-col overflow-hidden pt-3">

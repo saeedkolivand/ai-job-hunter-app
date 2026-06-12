@@ -71,4 +71,7 @@ export const keys = {
     all: ['applications'] as const,
     detail: (id: string) => ['applications', id] as const,
   },
+  extensionBridge: {
+    status: ['extensionBridge', 'status'] as const,
+  },
 } as const;

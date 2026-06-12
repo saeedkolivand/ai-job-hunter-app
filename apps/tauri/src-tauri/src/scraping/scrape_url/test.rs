@@ -293,3 +293,179 @@ fn test_parse_greenhouse_url_with_query() {
     let result = parse_greenhouse_url(url);
     assert_eq!(result, Some(("stripe".to_string(), "12345".to_string())));
 }
+
+// ── parse_from_html (Scan-mode fetch-free path) ──────────────────────────────
+
+#[test]
+fn test_parse_from_html_generic_fallback() {
+    let html = r#"
+        <html>
+            <head>
+                <title>Backend Engineer</title>
+                <meta name="description" content="Build APIs">
+                <meta property="og:site_name" content="Acme Corp">
+            </head>
+            <body></body>
+        </html>
+    "#;
+    let posting = parse_from_html("https://acme.example.com/jobs/9", html)
+        .expect("a title is present, so a posting is built");
+    assert_eq!(posting.title, "Backend Engineer");
+    assert_eq!(posting.description.as_deref(), Some("Build APIs"));
+    assert_eq!(posting.company, "Acme Corp");
+    assert_eq!(posting.source, "url");
+    assert_eq!(posting.url, "https://acme.example.com/jobs/9");
+    assert_eq!(posting.location, None);
+}
+
+#[test]
+fn test_parse_from_html_prefers_json_ld() {
+    // JSON-LD JobPosting overrides the bare <title> and supplies a location.
+    let html = r#"
+        <html>
+            <head>
+                <title>Some Page Title</title>
+                <script type="application/ld+json">
+                {
+                    "@context": "https://schema.org/",
+                    "@type": "JobPosting",
+                    "title": "Senior Platform Engineer",
+                    "description": "<p>Own the platform</p>",
+                    "hiringOrganization": { "name": "Globex" },
+                    "jobLocation": {
+                        "address": {
+                            "addressLocality": "Berlin",
+                            "addressRegion": "BE"
+                        }
+                    }
+                }
+                </script>
+            </head>
+            <body></body>
+        </html>
+    "#;
+    let posting =
+        parse_from_html("https://globex.example.com/p/1", html).expect("json-ld carries a title");
+    assert_eq!(posting.title, "Senior Platform Engineer");
+    assert_eq!(posting.company, "Globex");
+    assert_eq!(posting.location.as_deref(), Some("Berlin, BE"));
+    assert!(posting
+        .description
+        .as_deref()
+        .unwrap_or_default()
+        .contains("Own the platform"));
+}
+
+#[test]
+fn test_parse_from_html_json_ld_in_graph_array() {
+    let html = r#"
+        <html><head>
+            <script type="application/ld+json">
+            { "@graph": [
+                { "@type": "WebPage" },
+                { "@type": "JobPosting", "title": "Data Scientist",
+                  "hiringOrganization": { "name": "Initech" } }
+            ] }
+            </script>
+        </head><body></body></html>
+    "#;
+    let posting = parse_from_html("https://initech.example.com/j/2", html)
+        .expect("a JobPosting node lives inside @graph");
+    assert_eq!(posting.title, "Data Scientist");
+    assert_eq!(posting.company, "Initech");
+}
+
+#[test]
+fn test_parse_from_html_empty_title_still_yields_some() {
+    // A body with no <title>/<h1> but a usable meta description must still yield
+    // `Some` (empty title string) so the description-on-demand flow surfaces it.
+    let html = r#"
+        <html>
+            <head>
+                <meta name="description" content="A great role, no title tag though">
+            </head>
+            <body><p>just text</p></body>
+        </html>
+    "#;
+    let posting = parse_from_html("https://x.example.com/", html)
+        .expect("an empty-title document still yields a posting");
+    assert_eq!(posting.title, "");
+    assert_eq!(
+        posting.description.as_deref(),
+        Some("A great role, no title tag though")
+    );
+    assert_eq!(posting.source, "url");
+}
+
+#[test]
+fn test_parse_from_html_json_ld_enriches_empty_title_page() {
+    // No <title>/<h1>, but JSON-LD JobPosting supplies title/description/location
+    // — enrichment must populate all three even on an otherwise empty-title page.
+    let html = r#"
+        <html><head>
+            <script type="application/ld+json">
+            {
+                "@context": "https://schema.org/",
+                "@type": "JobPosting",
+                "title": "Staff Engineer",
+                "description": "<p>Lead the platform</p>",
+                "hiringOrganization": { "name": "Umbrella" },
+                "jobLocation": {
+                    "address": { "addressLocality": "Munich", "addressRegion": "BY" }
+                }
+            }
+            </script>
+        </head><body></body></html>
+    "#;
+    let posting = parse_from_html("https://umbrella.example.com/p/7", html)
+        .expect("json-ld enriches an otherwise empty-title page");
+    assert_eq!(posting.title, "Staff Engineer");
+    assert_eq!(posting.company, "Umbrella");
+    assert_eq!(posting.location.as_deref(), Some("Munich, BY"));
+    assert!(posting
+        .description
+        .as_deref()
+        .unwrap_or_default()
+        .contains("Lead the platform"));
+}
+
+// ── SSRF host-gate rejection (hermetic — no network) ─────────────────────────
+//
+// A look-alike host must be rejected at the host gate and return `Ok(None)`
+// BEFORE any fetch. These resolvers return at the tightened gate (exact/suffix
+// match) before constructing a client, so calling them with an attacker host is
+// network-free: if the gate ever leaked, the call would attempt a real fetch
+// and the test would hang/fail.
+
+#[tokio::test]
+async fn try_personio_rejects_lookalike_host() {
+    // `jobs.personio.attacker.tld` passes a substring gate but not exact/suffix.
+    let out = try_personio("https://jobs.personio.attacker.tld/?id=1")
+        .await
+        .expect("look-alike host returns Ok(None) at the gate, no network");
+    assert!(
+        out.is_none(),
+        "look-alike personio host must not be accepted"
+    );
+}
+
+#[tokio::test]
+async fn try_linkedin_rejects_lookalike_host() {
+    // `linkedin.com.attacker.tld` passes a substring gate but not exact/suffix.
+    let out = try_linkedin("https://linkedin.com.attacker.tld/jobs/view/1")
+        .await
+        .expect("look-alike host returns Ok(None) at the gate, no network");
+    assert!(
+        out.is_none(),
+        "look-alike linkedin host must not be accepted"
+    );
+}
+
+#[tokio::test]
+async fn try_personio_rejects_bare_personio_substring_host() {
+    // `notpersonio.de` and `jobs.personio.de.evil.tld` must also be rejected.
+    assert!(try_personio("https://jobs.personio.de.evil.tld/?id=1")
+        .await
+        .expect("suffix evasion returns Ok(None) at the gate, no network")
+        .is_none());
+}
