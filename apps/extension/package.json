@@ -1,0 +1,29 @@
+{
+  "name": "@ajh/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI Job Hunter — browser extension (MV3, Chrome + Firefox) bridging job pages to the local desktop app",
+  "scripts": {
+    "build": "pnpm build:chrome && pnpm build:firefox",
+    "build:chrome": "cross-env BROWSER=chrome vite build",
+    "build:firefox": "cross-env BROWSER=firefox vite build",
+    "dev": "cross-env BROWSER=chrome vite build --watch --mode development",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@ajh/shared": "workspace:*",
+    "@wxt-dev/browser": "^0.1.43",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.43",
+    "cross-env": "^10.1.0",
+    "jsdom": "^29.1.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16",
+    "vitest": "^4.1.8"
+  }
+}

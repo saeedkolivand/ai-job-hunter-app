@@ -423,5 +423,47 @@ export default tseslint.config(
       'no-console': 'off',
       'no-restricted-imports': 'off',
     },
+  },
+
+  // ── @ajh/extension (browser extension) — WebExtension runtime globals ───────
+  // The MV3 extension runs in the browser/service-worker context (chrome /
+  // browser globals via webextension-polyfill), NOT the React renderer or Node.
+  // It is plain TS/HTML with no @ajh/ui or i18n surface, so only the base TS
+  // rules apply; we just add the WebExtension globals so any bare `chrome` /
+  // `browser` reference is recognized.
+  {
+    files: ['apps/extension/src/**/*.ts'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.webextensions,
+        ...globals.serviceworker,
+      },
+    },
+  },
+
+  // ── @ajh/extension test files — vitest + node globals ──────────────────────
+  // Test files run under vitest (jsdom environment) and use vitest globals
+  // (describe, it, expect, vi, beforeEach, afterEach).  The setup file at the
+  // package root also needs node globals for path resolution.
+  {
+    files: [
+      'apps/extension/src/**/*.test.ts',
+      'apps/extension/vitest.setup.ts',
+      'apps/extension/vitest.config.ts',
+    ],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.webextensions,
+        ...globals.node,
+      },
+    },
+    rules: {
+      // Tests frequently need any for mock return types and cast intermediates.
+      '@typescript-eslint/no-explicit-any': 'off',
+      // Non-null assertions are acceptable in test helper utilities.
+      '@typescript-eslint/no-non-null-assertion': 'off',
+    },
   }
 );
