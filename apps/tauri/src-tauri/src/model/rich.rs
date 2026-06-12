@@ -17,6 +17,14 @@ use crate::export::parser::parse_inline_md;
 static FULL_URL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"https?://[^\s|·•,<>"']+"#).unwrap());
 
+/// A scheme-less URL written out in body text: a domain WITH a path
+/// (`github.com/user/repo`). Linked verbatim — the full text stays visible and an
+/// `https://` scheme is added only for the hyperlink target — so résumé project
+/// links render the same in the export as in the WYSIWYG editor. A bare domain
+/// with no path, or a short-TLD token like `CI/CD`, is intentionally not matched.
+static BARE_DOMAIN_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?i)\b(?:[a-z0-9-]+\.)+[a-z]{2,}/[^\s|·•,<>"']+"#).unwrap());
+
 static EMAIL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}").unwrap());
 
@@ -151,6 +159,22 @@ pub fn split_urls(text: &str) -> Vec<Span> {
                 end: m.start() + url.len(),
                 label: url_label(url),
                 url: url.to_string(),
+            });
+        }
+    }
+
+    // Scheme-less project URLs (any domain): linked verbatim, scheme added only
+    // for the href. Runs after FULL_URL_RE so a scheme-full URL isn't matched twice.
+    for m in BARE_DOMAIN_RE.find_iter(text) {
+        let url = m.as_str().trim_end_matches(['.', ',', ')']);
+        let end = m.start() + url.len();
+        let overlaps = matches.iter().any(|u| m.start() < u.end && end > u.start);
+        if !overlaps {
+            matches.push(Match {
+                start: m.start(),
+                end,
+                label: url.to_string(),
+                url: format!("https://{url}"),
             });
         }
     }
@@ -356,6 +380,55 @@ mod tests {
                 Some("https://janedoe.dev".to_string())
             )]
         );
+    }
+
+    #[test]
+    fn split_urls_links_scheme_less_project_urls_for_any_domain() {
+        for (text, label, href) in [
+            (
+                "github.com/me/repo",
+                "github.com/me/repo",
+                "https://github.com/me/repo",
+            ),
+            (
+                "gitlab.com/me/proj",
+                "gitlab.com/me/proj",
+                "https://gitlab.com/me/proj",
+            ),
+            (
+                "behance.net/me/case",
+                "behance.net/me/case",
+                "https://behance.net/me/case",
+            ),
+            (
+                "my-site.dev/work/x",
+                "my-site.dev/work/x",
+                "https://my-site.dev/work/x",
+            ),
+        ] {
+            let spans = split_urls(text);
+            assert_eq!(spans.len(), 1, "expected one span for {text}");
+            match &spans[0] {
+                Span::Link { label: l, url: u } => {
+                    assert_eq!(l.as_str(), label, "label for {text}");
+                    assert_eq!(u.as_str(), href, "href for {text}");
+                }
+                _ => panic!("expected a link span for {text}"),
+            }
+        }
+    }
+
+    #[test]
+    fn split_urls_ignores_bare_domain_without_path_and_short_tld_tokens() {
+        // No path → not a project link; "CI/CD" has no domain dot → not a URL.
+        assert!(matches!(
+            split_urls("github.com").as_slice(),
+            [Span::Text(_)]
+        ));
+        assert!(matches!(
+            split_urls("Agile, CI/CD, TDD").as_slice(),
+            [Span::Text(_)]
+        ));
     }
 
     // ── Link helpers (moved here with their implementation from export::links) ──

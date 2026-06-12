@@ -10,6 +10,7 @@ import {
 import { type Editor, EditorContent, useEditor } from '@tiptap/react';
 
 import { cn } from '../../lib/cn';
+import { type LinkResolution, setLinkResolutions } from './decorations';
 import { buildEditorExtensions } from './extensions';
 import { docToMarkdown, joinPreserved, markdownToDoc, splitPreserved } from './markdown';
 import { type LinkSuggestion, Toolbar, type ToolbarLabels } from './Toolbar';
@@ -54,6 +55,12 @@ export interface RichTextEditorProps {
    * filters them as the user types and still validates the picked URL on submit.
    */
   linkSuggestions?: LinkSuggestion[];
+  /**
+   * Label→url pairs the editor renders as display-only links (the same links the
+   * export attaches) — supplied by the renderer from the contact/body link maps +
+   * ContactProfile. Decorations only; the canonical markdown is never changed.
+   */
+  linkResolutions?: LinkResolution[];
 }
 
 const ONCHANGE_DEBOUNCE_MS = 200;
@@ -87,6 +94,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
       labels,
       onSelectionChange,
       linkSuggestions,
+      linkResolutions,
     },
     ref
   ) {
@@ -170,6 +178,14 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     useEffect(() => {
       editor?.setEditable(editable);
     }, [editor, editable]);
+
+    // Push display-only link resolutions into the decoration plugin so plain
+    // contact/body labels + bare URLs render as links (the canonical markdown is
+    // never touched). Re-runs whenever the resolved links change.
+    useEffect(() => {
+      if (!editor) return;
+      setLinkResolutions(editor, linkResolutions ?? []);
+    }, [editor, linkResolutions]);
 
     // Flush any pending debounce on unmount so the last edit is never lost.
     useEffect(() => {

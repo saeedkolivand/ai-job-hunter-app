@@ -86,6 +86,7 @@ export function ScrapeForm({
                 onChange={(e) => onFormChange({ query: e.target.value })}
                 placeholder={t('jobs.queryPlaceholder')}
                 disabled={scraping}
+                allowClear
                 className="w-full bg-white/[0.03] text-sm text-foreground placeholder:text-foreground/25 disabled:opacity-50"
               />
             </div>

@@ -110,7 +110,7 @@ export function Alert({
         background: cfg.bg,
         border: `1px solid ${cfg.border}`,
         borderRadius: banner ? 0 : '10px',
-        color: 'rgba(255,255,255,0.88)',
+        color: 'color-mix(in srgb, var(--color-foreground) 80%, transparent)',
         fontSize: '13px',
         lineHeight: 1.45,
         ...style,
@@ -132,12 +132,21 @@ export function Alert({
 
       <div style={{ flex: 1, minWidth: 0 }}>
         <div
-          style={{ fontWeight: description != null ? 600 : 500, color: 'rgba(255,255,255,0.92)' }}
+          style={{
+            fontWeight: description != null ? 600 : 500,
+            color: 'color-mix(in srgb, var(--color-foreground) 90%, transparent)',
+          }}
         >
           {message}
         </div>
         {description != null && (
-          <div style={{ marginTop: '3px', fontSize: '12px', color: 'rgba(255,255,255,0.62)' }}>
+          <div
+            style={{
+              marginTop: '3px',
+              fontSize: '12px',
+              color: 'color-mix(in srgb, var(--color-foreground) 60%, transparent)',
+            }}
+          >
             {description}
           </div>
         )}
@@ -159,11 +168,17 @@ export function Alert({
             background: 'none',
             border: 'none',
             cursor: 'pointer',
-            color: 'rgba(255,255,255,0.45)',
+            color: 'color-mix(in srgb, var(--color-foreground) 45%, transparent)',
             transition: 'color 150ms',
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.85)')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.45)')}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.color =
+              'color-mix(in srgb, var(--color-foreground) 85%, transparent)')
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.color =
+              'color-mix(in srgb, var(--color-foreground) 45%, transparent)')
+          }
         >
           {closeIcon}
         </button>
