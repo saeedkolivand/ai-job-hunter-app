@@ -106,7 +106,11 @@ impl NotificationStore {
     pub fn push(&self, input: NewNotification) -> AppNotification {
         // Clamp at the source-of-truth boundary so every current and future
         // source is bounded in one place. Char-wise to keep UTF-8 intact.
-        let title = input.title.chars().take(MAX_TITLE_CHARS).collect::<String>();
+        let title = input
+            .title
+            .chars()
+            .take(MAX_TITLE_CHARS)
+            .collect::<String>();
         let body = input.body.chars().take(MAX_BODY_CHARS).collect::<String>();
         let notification = AppNotification {
             id: Uuid::new_v4().to_string(),

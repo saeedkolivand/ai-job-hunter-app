@@ -21,7 +21,10 @@ fn push_prepends_newest_first_and_stamps_record() {
     // Returned record is well-formed.
     assert!(!second.id.is_empty(), "id is generated and non-empty");
     assert!(!second.read, "new notifications start unread");
-    assert!(second.created_at > 0, "created_at is a sane epoch-millis stamp");
+    assert!(
+        second.created_at > 0,
+        "created_at is a sane epoch-millis stamp"
+    );
 
     // Newest-first ordering: the most recent push is at index 0.
     let list = store.list();
@@ -44,7 +47,11 @@ fn cap_keeps_newest_50_and_drops_oldest() {
     assert_eq!(list.len(), MAX_NOTIFICATIONS, "trimmed to the cap");
     // Newest (n59) retained at the head; oldest 10 (n0..n9) dropped.
     assert_eq!(list[0].title, "n59", "newest retained at head");
-    assert_eq!(list[MAX_NOTIFICATIONS - 1].title, "n10", "oldest survivor is n10");
+    assert_eq!(
+        list[MAX_NOTIFICATIONS - 1].title,
+        "n10",
+        "oldest survivor is n10"
+    );
     assert!(
         !list.iter().any(|n| n.title == "n9"),
         "the oldest over-cap entries are dropped"
@@ -156,7 +163,11 @@ fn over_cap_on_disk_file_is_trimmed_on_load() {
 
     let store = NotificationStore::new(dir.path());
     let list = store.list();
-    assert_eq!(list.len(), MAX_NOTIFICATIONS, "load defensively caps the file");
+    assert_eq!(
+        list.len(),
+        MAX_NOTIFICATIONS,
+        "load defensively caps the file"
+    );
     assert_eq!(list[0].title, "n0", "newest-first head preserved");
 }
 
@@ -196,7 +207,10 @@ fn record_serializes_camel_case_created_at() {
         route: None,
     };
     let json = serde_json::to_string(&n).unwrap();
-    assert!(json.contains("\"createdAt\":42"), "camelCase createdAt: {json}");
+    assert!(
+        json.contains("\"createdAt\":42"),
+        "camelCase createdAt: {json}"
+    );
     assert!(!json.contains("created_at"), "no snake_case leak");
 }
 
@@ -218,8 +232,16 @@ fn push_clamps_oversized_title_and_body_char_safe() {
     });
 
     // Clamped to the char limits (not bytes), no codepoint split / panic.
-    assert_eq!(created.title.chars().count(), MAX_TITLE_CHARS, "title clamped by char");
-    assert_eq!(created.body.chars().count(), MAX_BODY_CHARS, "body clamped by char");
+    assert_eq!(
+        created.title.chars().count(),
+        MAX_TITLE_CHARS,
+        "title clamped by char"
+    );
+    assert_eq!(
+        created.body.chars().count(),
+        MAX_BODY_CHARS,
+        "body clamped by char"
+    );
 
     // The clamp survives the disk round-trip.
     let reopened = NotificationStore::new(dir.path());

@@ -72,12 +72,7 @@ pub fn show_os_notification(app: &AppHandle, title: &str, body: &str) {
     if !granted {
         return;
     }
-    let _ = app
-        .notification()
-        .builder()
-        .title(title)
-        .body(body)
-        .show();
+    let _ = app.notification().builder().title(title).body(body).show();
 }
 
 /// Push a notification and deliver it across every surface, best-effort
