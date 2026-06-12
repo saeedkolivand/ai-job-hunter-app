@@ -1,24 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-import { EVENT_CHANNELS } from '@ajh/shared';
+import {
+  EVENT_CHANNELS,
+  type MenuActionEvent,
+  type MenuNavigateEvent,
+  type PendingMenuIntent,
+} from '@ajh/shared';
 
 import { asyncUnsub } from '../../utils.js';
-
-export interface MenuNavigateEvent {
-  route: string;
-  section: string | null;
-}
-
-export interface MenuActionEvent {
-  action: 'check-updates' | 'shortcuts';
-}
-
-/** A menu intent buffered shell-side while the window was hidden, pulled by the
- *  renderer once its JS loop is live (see `takePending`). */
-export type PendingMenuIntent =
-  | { event: 'menu:navigate'; payload: MenuNavigateEvent }
-  | { event: 'menu:action'; payload: MenuActionEvent };
 
 export const menu = {
   onNavigate: (handler: (event: MenuNavigateEvent) => void) =>
