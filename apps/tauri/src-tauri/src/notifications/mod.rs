@@ -114,16 +114,12 @@ impl NotificationStore {
     }
 
     /// All notifications, newest-first.
-    // wired by IPC commands in Phase 2
-    #[allow(dead_code)]
     pub fn list(&self) -> Vec<AppNotification> {
         self.load()
     }
 
     /// Mark a single notification read. Returns `true` if one was found and its
     /// `read` flag changed (already-read → `false`); persists on change.
-    // wired by IPC commands in Phase 2
-    #[allow(dead_code)]
     pub fn mark_read(&self, id: &str) -> bool {
         let mut all = self.load();
         let mut changed = false;
@@ -140,8 +136,6 @@ impl NotificationStore {
     }
 
     /// Mark every notification read; persists.
-    // wired by IPC commands in Phase 2
-    #[allow(dead_code)]
     pub fn mark_all_read(&self) {
         let mut all = self.load();
         for n in all.iter_mut() {
@@ -152,8 +146,6 @@ impl NotificationStore {
 
     /// Remove a single notification. Returns `true` if one was removed; persists
     /// on removal.
-    // wired by IPC commands in Phase 2
-    #[allow(dead_code)]
     pub fn remove(&self, id: &str) -> bool {
         let mut all = self.load();
         let before = all.len();

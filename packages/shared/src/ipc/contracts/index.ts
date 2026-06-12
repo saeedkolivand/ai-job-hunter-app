@@ -34,6 +34,7 @@ import { JOBS_CHANNELS, type JobsContract } from './jobs.js';
 import { LINKEDIN_CHANNELS, type LinkedinContract } from './linkedin.js';
 import { MATCH_CHANNELS, type MatchContract } from './match.js';
 import type { MenuContract } from './menu.js';
+import { NOTIFICATIONS_CHANNELS, type NotificationsContract } from './notifications.js';
 import { PRIVACY_CHANNELS, type PrivacyContract } from './privacy.js';
 import { REFERRALS_CHANNELS, type ReferralsContract } from './referrals.js';
 import { RESUME_CHANNELS, type ResumeContract } from './resume.js';
@@ -70,6 +71,7 @@ export interface IpcContract {
   support: SupportContract;
   autopilot: AutopilotContract;
   menu: MenuContract;
+  notifications: NotificationsContract;
   updater: UpdaterContract;
   shortcuts: ShortcutsContract;
   dialog: DialogContract;
@@ -101,6 +103,7 @@ export const IPC_CHANNELS = {
   resume: RESUME_CHANNELS,
   support: SUPPORT_CHANNELS,
   autopilot: AUTOPILOT_CHANNELS,
+  notifications: NOTIFICATIONS_CHANNELS,
   updater: UPDATER_CHANNELS,
   shortcuts: SHORTCUTS_CHANNELS,
   dialog: DIALOG_CHANNELS,
@@ -203,6 +206,7 @@ export {
   type MenuNavigateEvent,
   type PendingMenuIntent,
 } from './menu.js';
+export { NOTIFICATIONS_CHANNELS, type NotificationsContract } from './notifications.js';
 export { PRIVACY_CHANNELS, type PrivacyContract } from './privacy.js';
 export {
   type ReferralChannel,

@@ -669,6 +669,13 @@ pub fn run() {
             commands::applications::applications_delete,
             commands::applications::applications_track,
             commands::applications::applications_save_from_posting,
+            // notification center (Phase 2 — IPC seam over the persisted store)
+            commands::notifications::notifications_list,
+            commands::notifications::notifications_mark_read,
+            commands::notifications::notifications_mark_all_read,
+            commands::notifications::notifications_remove,
+            commands::notifications::notifications_clear_all,
+            commands::notifications::notifications_clicked,
             // referrals (manual referral helper)
             commands::referrals::referrals_list,
             commands::referrals::referrals_upsert,

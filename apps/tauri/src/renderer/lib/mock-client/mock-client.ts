@@ -281,6 +281,17 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       takePending: () => Promise.resolve(null),
     },
 
+    notifications: {
+      list: emptyList,
+      markRead: noop,
+      markAllRead: noop,
+      remove: noop,
+      clearAll: noop,
+      clicked: noop,
+      onChanged: unsub,
+      onOpenInbox: unsub,
+    },
+
     dialog: {
       openFiles: async () => [] as string[],
     },

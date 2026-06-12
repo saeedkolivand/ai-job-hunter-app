@@ -1,0 +1,19 @@
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+
+import { asyncUnsub } from '../../utils.js';
+
+export const notifications = {
+  list: () => invoke('notifications_list'),
+  markRead: (id: string) => invoke('notifications_mark_read', { id }),
+  markAllRead: () => invoke('notifications_mark_all_read'),
+  remove: (id: string) => invoke('notifications_remove', { id }),
+  clearAll: () => invoke('notifications_clear_all'),
+  clicked: () => invoke('notifications_clicked'),
+  // Emitted by every mutator command — see `commands::notifications::CHANGED_EVENT`.
+  onChanged: (handler: () => void) =>
+    asyncUnsub(() => listen('notifications:changed', () => handler())),
+  // OS-banner / tray click "open the inbox" signal — see `notifications_clicked`.
+  onOpenInbox: (handler: () => void) =>
+    asyncUnsub(() => listen('notifications:open', () => handler())),
+};

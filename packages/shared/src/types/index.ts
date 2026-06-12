@@ -333,3 +333,30 @@ export interface StatusEvent {
   at: number;
   note: string;
 }
+
+/**
+ * A route the renderer navigates to when a notification is actioned. Mirrors the
+ * Rust `NotificationRoute` (camelCase serde). `to` is an app route path; `search`
+ * is an optional query-param map. Open-typed for zero-change extensibility.
+ */
+export interface NotificationRoute {
+  to: string;
+  search?: Record<string, unknown>;
+}
+
+/**
+ * A persisted notification record. Hand-written to EXACTLY match the Rust
+ * `AppNotification` camelCase serialization (`createdAt`, optional `route`).
+ * `kind` is an OPEN string (e.g. `autopilot.new_jobs`, `import.result`) so new
+ * notification kinds need no codebase change.
+ */
+export interface AppNotification {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  /** Epoch millis. */
+  createdAt: number;
+  read: boolean;
+  route?: NotificationRoute;
+}
