@@ -34,6 +34,7 @@ pub mod jobs;
 pub mod locale;
 pub mod model;
 pub mod net;
+pub mod notifications;
 pub mod observability;
 pub mod pipeline;
 pub mod platform;
@@ -491,6 +492,11 @@ pub fn run() {
             // (+ register its factory-reset token rotation). The loopback WS server
             // itself is started below, after the registry is in state.
             extension_bridge::manage(app, &mut reset_registry, &data_dir);
+
+            // Notification Center (Phase 1): manage the persisted notification
+            // store (+ register its factory-reset wipe). Pure data + disk; the
+            // push orchestration (OS banner / tray / renderer event) is Phase 4.
+            notifications::manage(app, &mut reset_registry, &data_dir);
 
             app.manage(reset_registry);
 

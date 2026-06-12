@@ -14,6 +14,7 @@ use crate::data_store::Resettable;
 use crate::documents::DocumentStore;
 use crate::job_preferences::JobPreferencesStore;
 use crate::jobs::JobTracker;
+use crate::notifications::NotificationStore;
 use crate::pipeline::cache::KvCache;
 use crate::postings::{InteractionStore, PostingsCache};
 use crate::referrals::ReferralStore;
@@ -79,6 +80,11 @@ impl Resettable for ContactProfileStore {
     }
 }
 impl Resettable for ReferralStore {
+    fn reset(&self) {
+        self.clear_all();
+    }
+}
+impl Resettable for NotificationStore {
     fn reset(&self) {
         self.clear_all();
     }
