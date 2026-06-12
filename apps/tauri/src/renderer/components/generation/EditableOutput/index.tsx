@@ -5,6 +5,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '@ajh/translations';
 import {
   Button,
+  cn,
   MarkdownMessage,
   RichTextEditor,
   type RichTextEditorHandle,
@@ -285,7 +286,7 @@ export function EditableOutput({
   );
 
   return (
-    <div className={className}>
+    <div className={cn('flex min-h-0 flex-col', className)}>
       <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
         {/* Rewrite trigger — left, only in Edit/Source with a live selection. */}
         <div className="flex items-center">
@@ -333,7 +334,7 @@ export function EditableOutput({
       </div>
 
       {view === 'edit' ? (
-        <div className="relative h-full w-full">
+        <div className="relative flex-1 min-h-0 w-full">
           {/* WYSIWYG edit surface — same canonical `value`/`onChange` as Source.
               Lock with readOnly while a rewrite streams (mirrors the Source path). */}
           <RichTextEditor
@@ -353,7 +354,7 @@ export function EditableOutput({
           {rewriteOverlay}
         </div>
       ) : view === 'source' ? (
-        <div className="relative h-full w-full">
+        <div className="relative flex-1 min-h-0 w-full">
           {/* Source — raw markdown power-user / inspection view (hand-editable). */}
           <TextArea
             ref={textareaRef}
@@ -379,9 +380,9 @@ export function EditableOutput({
         </div>
       ) : previewSlot ? (
         // #24 — caller-supplied Preview (e.g. the real-PDF view) replaces markdown.
-        <div className="h-full w-full overflow-hidden rounded-lg">{previewSlot}</div>
+        <div className="min-h-0 w-full flex-1 overflow-hidden rounded-lg">{previewSlot}</div>
       ) : (
-        <div className="h-full w-full overflow-y-auto rounded-lg">
+        <div className="min-h-0 w-full flex-1 overflow-y-auto rounded-lg">
           {value ? (
             <MarkdownMessage content={value} className="text-[12px] text-foreground/80" />
           ) : (
