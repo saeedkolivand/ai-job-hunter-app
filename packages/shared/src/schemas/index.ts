@@ -19,6 +19,31 @@ export const AiMessageSchema = z.object({
   content: z.string().min(1),
 });
 
+export const AiStreamChunkSchema = z.object({
+  jobId: z.string(),
+  delta: z.string(),
+  done: z.boolean(),
+  /** Structured error frame — present instead of delta when the provider fails mid-stream. */
+  error: z.object({ code: z.string(), message: z.string() }).optional(),
+  /** Present only when the provider emits a reasoning/thinking block. */
+  thinking: z.boolean().optional(),
+});
+
+export const JobEventSchema = z.object({
+  type: z.enum([
+    'job.queued',
+    'job.started',
+    'job.progress',
+    'job.stream',
+    'job.completed',
+    'job.failed',
+    'job.cancelled',
+  ]),
+  jobId: z.string(),
+  data: z.unknown().optional(),
+  ts: z.number().int(),
+});
+
 export const AiGenerateRequestSchema = z.object({
   model: z.string().min(1),
   messages: z.array(AiMessageSchema).min(1),

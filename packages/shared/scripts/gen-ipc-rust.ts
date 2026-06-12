@@ -20,6 +20,7 @@ import {
   AiGenerateRequestSchema,
   AiGenerationSaveSchema,
   AiGenerationUpdateSchema,
+  AiStreamChunkSchema,
   ApplicationTrackSchema,
   ApplicationUpdateSchema,
   AutopilotCreateSchema,
@@ -27,6 +28,7 @@ import {
   DocumentImportRequestSchema,
   EmbedRequestSchema,
   HybridSearchRequestSchema,
+  JobEventSchema,
   MatchResumeRequestSchema,
   ReferralUpsertSchema,
   ResumeExtractTextSchema,
@@ -112,6 +114,13 @@ const MODULES: ModuleSpec[] = [
   {
     outFile: 'apps/tauri/src-tauri/src/ipc_contracts/referrals.rs',
     structs: [{ rustName: 'ReferralUpsertRequest', schema: ReferralUpsertSchema }],
+  },
+  {
+    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/event_payloads.rs',
+    structs: [
+      { rustName: 'AiStreamChunk', schema: AiStreamChunkSchema },
+      { rustName: 'JobEvent', schema: JobEventSchema },
+    ],
   },
 ];
 
@@ -203,6 +212,65 @@ function rustDefault(prop: JsonSchema, ty: string): string {
   return String(prop.default);
 }
 
+/**
+ * Rust 2018+ keywords (incl. reserved). A snake_cased field that collides with one
+ * must be emitted as a raw identifier `r#field` plus a `#[serde(rename = "key")]`
+ * carrying the ORIGINAL camelCase key, so the wire shape is unaffected.
+ */
+const RUST_KEYWORDS = new Set([
+  'as',
+  'break',
+  'const',
+  'continue',
+  'crate',
+  'dyn',
+  'else',
+  'enum',
+  'extern',
+  'false',
+  'fn',
+  'for',
+  'if',
+  'impl',
+  'in',
+  'let',
+  'loop',
+  'match',
+  'mod',
+  'move',
+  'mut',
+  'pub',
+  'ref',
+  'return',
+  'self',
+  'Self',
+  'static',
+  'struct',
+  'super',
+  'trait',
+  'true',
+  'type',
+  'unsafe',
+  'use',
+  'where',
+  'while',
+  'async',
+  'await',
+]);
+
+/**
+ * Resolve a snake_cased `field` (derived from the original camelCase `key`) to its
+ * Rust identifier and an optional rename attribute. Keyword fields become raw
+ * idents `r#field` and gain `#[serde(rename = "<originalKey>")]`. Used by all three
+ * field branches so the name/rename routing stays consistent.
+ */
+function rustFieldName(field: string, key: string): { ident: string; renameAttr: string | null } {
+  if (RUST_KEYWORDS.has(field)) {
+    return { ident: `r#${field}`, renameAttr: `    #[serde(rename = ${JSON.stringify(key)})]` };
+  }
+  return { ident: field, renameAttr: null };
+}
+
 function buildStruct(
   name: string,
   schema: JsonSchema,
@@ -217,6 +285,7 @@ function buildStruct(
     const field = snakeCase(key);
     const override = fieldOverrides[key];
     const base = override ?? rustType(prop, { emitter, structName: name, field });
+    const { ident, renameAttr } = rustFieldName(field, key);
     // A default only applies when the field is also required (create-style). In a
     // `.partial()` patch schema a defaulted field is optional → absent means "leave
     // unchanged", so it must be Option, not a forced default value.
@@ -233,18 +302,22 @@ function buildStruct(
           : `fn ${fn}() -> ${base} {`;
       struct.helpers.push(`${sig}\n    ${rustDefault(prop, base)}\n}`);
       struct.fields.push(`    #[serde(default = "${fn}")]`);
-      struct.fields.push(`    pub ${field}: ${base},`);
+      if (renameAttr) struct.fields.push(renameAttr);
+      struct.fields.push(`    pub ${ident}: ${base},`);
     } else if (override || required.has(key)) {
-      struct.fields.push(`    pub ${field}: ${base},`);
+      if (renameAttr) struct.fields.push(renameAttr);
+      struct.fields.push(`    pub ${ident}: ${base},`);
     } else {
-      struct.fields.push(`    pub ${field}: Option<${base}>,`);
+      struct.fields.push(`    #[serde(skip_serializing_if = "Option::is_none")]`);
+      if (renameAttr) struct.fields.push(renameAttr);
+      struct.fields.push(`    pub ${ident}: Option<${base}>,`);
     }
   }
 }
 
 function renderStruct(s: RustStruct): string {
   return [
-    '#[derive(Debug, Deserialize, Serialize)]',
+    '#[derive(Debug, Clone, Deserialize, Serialize)]',
     '#[serde(rename_all = "camelCase")]',
     // IPC DTO: not every field is read on the Rust side.
     '#[allow(dead_code)]',
