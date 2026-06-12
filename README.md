@@ -441,22 +441,26 @@ at-a-glance status of every workflow, grouped by role, fetched live from the Act
 
 <!-- workflows:badges:start -->
 
-[![📈 Benchmarks (advisory)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/benchmark.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/benchmark.yml)
+### ✅ Required — gates merge
+
 [![🚀 CI Pipeline](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/ci-pipeline.yml)
+
+### 🔒 Security — reports to the Security tab
+
+[![🔒 Security](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/security.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/security.yml)
+
+### 🔎 Advisory — never blocks
+
 [![🤖 Claude Review (on demand)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/claude-review.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/claude-review.yml)
-[![🛡️ CodeQL](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/codeql.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/codeql.yml)
-[![🎭 E2E](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/e2e.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/e2e.yml)
 [![🎨 Format Guard](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/format-guard.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/format-guard.yml)
-[![🔦 Lighthouse (advisory)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/lighthouse.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/lighthouse.yml)
-[![🌐 Deploy Landing Page](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pages.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pages.yml)
-[![🔎 Quality (advisory)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/quality.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/quality.yml)
-[![🚀 Release](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/release.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/release.yml)
-[![🦀 Rust Quality (advisory)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/rust-quality.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/rust-quality.yml)
-[![🏅 OpenSSF Scorecard](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/scorecard.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/scorecard.yml)
-[![🛡️ Security](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/security.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/security.yml)
-[![🔬 Semgrep](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/semgrep.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/semgrep.yml)
-[![🖼️ Visual Regression (advisory)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/visual.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/visual.yml)
+[![🔎 Quality](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/quality.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/quality.yml)
+[![🖥️ UI Checks](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/ui-checks.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/ui-checks.yml)
 [![🧹 Workflow Lint](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/workflow-lint.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/workflow-lint.yml)
+
+### 🚀 Deploy — publishes on push to main
+
+[![🌐 Deploy Landing Page](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pages.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pages.yml)
+[![🚀 Release](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/release.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/release.yml)
 
 <!-- workflows:badges:end -->
 

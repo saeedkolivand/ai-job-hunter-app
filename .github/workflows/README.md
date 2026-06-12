@@ -3,47 +3,60 @@
 
 # ⚙️ GitHub Actions — workflow catalog
 
-16 workflows. Descriptions come from each workflow's own header comment.
-Roles: **✅ required** is the only one that gates merge (CI Pipeline → its `✅ CI OK`
-umbrella check); **advisory** runs but never blocks; **security** reports to the
-Security tab; **deploy** publishes on push to `main`.
+9 workflows, grouped by role. Descriptions come from each workflow's own header comment.
+**✅ Required** is the only role that gates merge (CI Pipeline → its `✅ CI OK` umbrella);
+**advisory** never blocks; **security** reports to the Security tab; **deploy** publishes on push to `main`.
 
 ## Status
 
-[![📈 Benchmarks (advisory)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/benchmark.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/benchmark.yml)
+### ✅ Required — gates merge
+
 [![🚀 CI Pipeline](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/ci-pipeline.yml)
+
+### 🔒 Security — reports to the Security tab
+
+[![🔒 Security](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/security.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/security.yml)
+
+### 🔎 Advisory — never blocks
+
 [![🤖 Claude Review (on demand)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/claude-review.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/claude-review.yml)
-[![🛡️ CodeQL](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/codeql.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/codeql.yml)
-[![🎭 E2E](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/e2e.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/e2e.yml)
 [![🎨 Format Guard](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/format-guard.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/format-guard.yml)
-[![🔦 Lighthouse (advisory)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/lighthouse.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/lighthouse.yml)
-[![🌐 Deploy Landing Page](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pages.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pages.yml)
-[![🔎 Quality (advisory)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/quality.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/quality.yml)
-[![🚀 Release](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/release.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/release.yml)
-[![🦀 Rust Quality (advisory)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/rust-quality.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/rust-quality.yml)
-[![🏅 OpenSSF Scorecard](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/scorecard.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/scorecard.yml)
-[![🛡️ Security](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/security.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/security.yml)
-[![🔬 Semgrep](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/semgrep.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/semgrep.yml)
-[![🖼️ Visual Regression (advisory)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/visual.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/visual.yml)
+[![🔎 Quality](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/quality.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/quality.yml)
+[![🖥️ UI Checks](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/ui-checks.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/ui-checks.yml)
 [![🧹 Workflow Lint](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/workflow-lint.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/workflow-lint.yml)
+
+### 🚀 Deploy — publishes on push to main
+
+[![🌐 Deploy Landing Page](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pages.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pages.yml)
+[![🚀 Release](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/release.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/release.yml)
 
 ## Catalog
 
-| Workflow                                          | Triggers                 | Role        | What it does                                                                                                                                   |
-| ------------------------------------------------- | ------------------------ | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| [📈 Benchmarks (advisory)](benchmark.yml)         | PR, push, manual         | advisory    | Tracks export render hot-path performance (request → PDF/DOCX bytes) over time — the most performance-sensitive, user-visible path in the app. |
-| [🚀 CI Pipeline](ci-pipeline.yml)                 | PR, manual               | ✅ required | Validate code quality, type safety, and test coverage on every PR                                                                              |
-| [🤖 Claude Review (on demand)](claude-review.yml) | comment                  | advisory    | AI review, ON-DEMAND ONLY.                                                                                                                     |
-| [🛡️ CodeQL](codeql.yml)                           | PR, push, weekly         | security    | Semantic security scanning (free for public repos, zero external auth).                                                                        |
-| [🎭 E2E](e2e.yml)                                 | PR, manual               | advisory    | Browser end-to-end tests: drive the renderer in Chromium against the in-memory mock client (no Tauri/native build required).                   |
-| [🎨 Format Guard](format-guard.yml)               | push, manual             | advisory    | Format Guard (push to main only) The main CI Pipeline runs on pull_request only — push to main is intentionally excluded there.                |
-| [🔦 Lighthouse (advisory)](lighthouse.yml)        | PR, manual               | advisory    | Perf / a11y / best-practices budgets on the renderer, served via the e2e mock entry (pnpm dev:frontend → e2e.html).                            |
-| [🌐 Deploy Landing Page](pages.yml)               | push, manual             | deploy      | Publish the static marketing landing page (landing/) to GitHub Pages                                                                           |
-| [🔎 Quality (advisory)](quality.yml)              | PR, manual               | advisory    | Self-contained, ADVISORY quality checks (none block merge)                                                                                     |
-| [🚀 Release](release.yml)                         | push, manual             | deploy      | Automated semantic release (on push) + on-demand Tauri installer builds                                                                        |
-| [🦀 Rust Quality (advisory)](rust-quality.yml)    | PR, manual               | advisory    | Advisory Rust test-quality checks (neither blocks merge)                                                                                       |
-| [🏅 OpenSSF Scorecard](scorecard.yml)             | push, weekly, manual     | security    | Automated security-posture score (branch protection, pinned deps, token permissions, etc.).                                                    |
-| [🛡️ Security](security.yml)                       | weekly, manual           | security    | Automated security vulnerability scanning                                                                                                      |
-| [🔬 Semgrep](semgrep.yml)                         | PR, push, weekly, manual | security    | SAST via Semgrep OSS rulesets (no account, no cloud).                                                                                          |
-| [🖼️ Visual Regression (advisory)](visual.yml)     | PR, manual               | advisory    | Lost Pixel screenshot-diffs the existing Storybook stories.                                                                                    |
-| [🧹 Workflow Lint](workflow-lint.yml)             | PR, manual               | advisory    | Security-audits the GitHub Actions workflows & composite actions, and keeps the workflow catalog honest.                                       |
+### ✅ Required — gates merge
+
+| Workflow                          | Triggers   | What it does                                                      |
+| --------------------------------- | ---------- | ----------------------------------------------------------------- |
+| [🚀 CI Pipeline](ci-pipeline.yml) | PR, manual | Validate code quality, type safety, and test coverage on every PR |
+
+### 🔒 Security — reports to the Security tab
+
+| Workflow                    | Triggers                 | What it does                                                                               |
+| --------------------------- | ------------------------ | ------------------------------------------------------------------------------------------ |
+| [🔒 Security](security.yml) | PR, push, weekly, manual | All security scanning in one place (consolidated from codeql/semgrep/ scorecard/security). |
+
+### 🔎 Advisory — never blocks
+
+| Workflow                                          | Triggers         | What it does                                                                                                                    |
+| ------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| [🤖 Claude Review (on demand)](claude-review.yml) | comment          | AI review, ON-DEMAND ONLY.                                                                                                      |
+| [🎨 Format Guard](format-guard.yml)               | push, manual     | Format Guard (push to main only) The main CI Pipeline runs on pull_request only — push to main is intentionally excluded there. |
+| [🔎 Quality](quality.yml)                         | PR, push, manual | Advisory quality + perf (consolidated from quality/rust-quality/benchmark).                                                     |
+| [🖥️ UI Checks](ui-checks.yml)                     | PR, manual       | Advisory renderer/UI checks (consolidated from e2e/lighthouse/visual).                                                          |
+| [🧹 Workflow Lint](workflow-lint.yml)             | PR, manual       | Security-audits the GitHub Actions workflows & composite actions, and keeps the workflow catalog honest.                        |
+
+### 🚀 Deploy — publishes on push to main
+
+| Workflow                            | Triggers     | What it does                                                            |
+| ----------------------------------- | ------------ | ----------------------------------------------------------------------- |
+| [🌐 Deploy Landing Page](pages.yml) | push, manual | Publish the static marketing landing page (landing/) to GitHub Pages    |
+| [🚀 Release](release.yml)           | push, manual | Automated semantic release (on push) + on-demand Tauri installer builds |
