@@ -1,5 +1,5 @@
 use super::*;
-use serde_json::json;
+use serde_json::{json, Value};
 
 #[test]
 fn test_start_job() {
@@ -86,4 +86,56 @@ fn test_multiple_jobs() {
     assert_eq!(tracker.get("job-1").unwrap().status, JobStatus::Running);
     assert_eq!(tracker.get("job-2").unwrap().status, JobStatus::Completed);
     assert_eq!(tracker.get("job-3").unwrap().status, JobStatus::Failed);
+}
+
+#[test]
+fn test_lifecycle_timestamps() {
+    let mut tracker = JobTracker::default();
+    tracker.start("j", "ai.generate");
+    let j = tracker.get("j").unwrap();
+    assert!(j.started_at.is_some());
+    assert!(j.finished_at.is_none());
+    assert_eq!(j.retries, 0);
+    assert_eq!(j.payload, Value::Null);
+    let at_start = j.updated_at;
+
+    tracker.complete("j", json!({ "ok": true }));
+    let j = tracker.get("j").unwrap();
+    assert_eq!(j.status, JobStatus::Completed);
+    assert!(j.finished_at.is_some());
+    assert!(j.updated_at >= at_start);
+}
+
+#[test]
+fn test_persist_reload_migration_roundtrip() {
+    use tempfile::TempDir;
+    let dir = TempDir::new().unwrap();
+    {
+        let mut tracker = JobTracker::open(dir.path());
+        tracker.start("j-1", "scrape.board");
+        tracker.complete("j-1", json!({ "count": 3 }));
+    }
+    // Reopen: the appended-migration columns (payload/retries/finished_at/…) must
+    // round-trip, and a completed job stays completed (not flagged interrupted).
+    let reopened = JobTracker::open(dir.path());
+    let j = reopened.get("j-1").expect("job survives reload");
+    assert_eq!(j.kind, "scrape.board");
+    assert_eq!(j.status, JobStatus::Completed);
+    assert_eq!(j.result, Some(json!({ "count": 3 })));
+    assert!(j.finished_at.is_some());
+    assert_eq!(j.retries, 0);
+}
+
+#[test]
+fn test_interrupted_running_job_marked_failed_on_reload() {
+    use tempfile::TempDir;
+    let dir = TempDir::new().unwrap();
+    {
+        let mut tracker = JobTracker::open(dir.path());
+        tracker.start("j-run", "ai.generate"); // left running (simulated crash)
+    }
+    let reopened = JobTracker::open(dir.path());
+    let j = reopened.get("j-run").expect("job survives reload");
+    assert_eq!(j.status, JobStatus::Failed);
+    assert!(j.finished_at.is_some());
 }
