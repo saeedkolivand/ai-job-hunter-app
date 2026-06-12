@@ -34,7 +34,9 @@ pub fn job_start(app: &AppHandle, id: &str, kind: &str) {
 
 /// Update a job's progress (0.0–1.0) and emit `job.progress`.
 pub fn job_progress(app: &AppHandle, id: &str, p: f64) {
-    app.state::<Mutex<JobTracker>>().lock().update_progress(id, p);
+    app.state::<Mutex<JobTracker>>()
+        .lock()
+        .update_progress(id, p);
     emit_job_event(app, "job.progress", id, Some(json!({ "progress": p })));
 }
 

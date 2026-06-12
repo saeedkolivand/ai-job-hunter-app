@@ -625,9 +625,7 @@ fn emit_done(app: &AppHandle, job_id: &str) {
             thinking: None,
         },
     );
-    app.state::<Mutex<JobTracker>>()
-        .lock()
-        .complete(job_id, json!({ "done": true }));
+    crate::commands::jobs::job_complete(app, job_id, json!({ "done": true }));
 }
 
 /// All `system` message content, joined — passed to the agent as its system prompt.

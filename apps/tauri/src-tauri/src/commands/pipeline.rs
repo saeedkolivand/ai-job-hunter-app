@@ -7,13 +7,11 @@
 //! (e.g. a resume validator) without a bespoke architecture.
 
 use async_trait::async_trait;
-use parking_lot::Mutex;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::commands::ai_provider::{emit_stream_error, resolve, AiGenerateRequest, ProviderId};
 use crate::error::AppResult;
-use crate::jobs::JobTracker;
 use crate::pipeline::{Pipeline, Stage};
 
 fn new_job_id() -> String {
@@ -47,13 +45,11 @@ impl Stage<GenerationContext> for StreamGenerateStage {
 #[tauri::command]
 pub async fn generate_pipeline(app: AppHandle, req: AiGenerateRequest) -> Value {
     let job_id = new_job_id();
-    app.state::<Mutex<JobTracker>>()
-        .lock()
-        .start(&job_id, "pipeline.generate");
+    crate::commands::jobs::job_start(&app, &job_id, "pipeline.generate");
 
     let fail = |app: &AppHandle, job_id: &str, msg: String| -> Value {
         emit_stream_error(app, job_id, &msg);
-        app.state::<Mutex<JobTracker>>().lock().fail(job_id, msg);
+        crate::commands::jobs::job_fail(app, job_id, msg);
         json!({ "jobId": job_id })
     };
 
@@ -88,10 +84,7 @@ pub async fn generate_pipeline(app: AppHandle, req: AiGenerateRequest) -> Value 
         if let Err(e) = pipeline.run(&mut ctx).await {
             let msg = e.to_string();
             emit_stream_error(&app_clone, &job_id_clone, &msg);
-            app_clone
-                .state::<Mutex<JobTracker>>()
-                .lock()
-                .fail(&job_id_clone, msg);
+            crate::commands::jobs::job_fail(&app_clone, &job_id_clone, msg);
         }
     });
 

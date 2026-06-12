@@ -55,9 +55,7 @@ fn uuid_v4() -> String {
 #[tauri::command]
 pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
     let job_id = uuid_v4();
-    app.state::<Mutex<crate::jobs::JobTracker>>()
-        .lock()
-        .start(&job_id, "scrape.board");
+    crate::commands::jobs::job_start(&app, &job_id, "scrape.board");
 
     let engine = app.state::<std::sync::Arc<ScraperEngine>>().inner().clone();
     let input = BoardSearchInput {
@@ -88,12 +86,7 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
             SCRAPE_PROGRESS,
             json!({ "jobId": job_id_progress, "progress": p }),
         );
-        if let Some(tracker) = app_progress.try_state::<Mutex<crate::jobs::JobTracker>>() {
-            {
-                let mut g = tracker.lock();
-                g.update_progress(&job_id_progress, p as f64);
-            }
-        }
+        crate::commands::jobs::job_progress(&app_progress, &job_id_progress, p as f64);
     });
 
     let app_item = app.clone();
@@ -133,39 +126,16 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
             )
             .await;
 
-        let tracker = app_clone.state::<Mutex<crate::jobs::JobTracker>>();
         match &result {
             Ok(results) => {
-                {
-                    let mut g = tracker.lock();
-                    g.complete(&job_id_clone, json!({ "count": results.len() }));
-                }
-                emit_event(
+                crate::commands::jobs::job_complete(
                     &app_clone,
-                    JOBS_EVENT,
-                    JobEvent {
-                        r#type: "job.completed".to_string(),
-                        job_id: job_id_clone.clone(),
-                        data: Some(json!({ "count": results.len() })),
-                        ts: now_ms() as i64,
-                    },
+                    &job_id_clone,
+                    json!({ "count": results.len() }),
                 );
             }
             Err(e) => {
-                {
-                    let mut g = tracker.lock();
-                    g.fail(&job_id_clone, e.to_string());
-                }
-                emit_event(
-                    &app_clone,
-                    JOBS_EVENT,
-                    JobEvent {
-                        r#type: "job.failed".to_string(),
-                        job_id: job_id_clone.clone(),
-                        data: Some(json!(e.to_string())),
-                        ts: now_ms() as i64,
-                    },
-                );
+                crate::commands::jobs::job_fail(&app_clone, &job_id_clone, e.to_string());
             }
         }
 
@@ -183,16 +153,13 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
     }
 
     let job_id = uuid_v4();
-    app.state::<Mutex<crate::jobs::JobTracker>>()
-        .lock()
-        .start(&job_id, "scrape.url");
+    crate::commands::jobs::job_start(&app, &job_id, "scrape.url");
 
     let app_clone = app.clone();
     let job_id_clone = job_id.clone();
     tokio::spawn(async move {
         let result = crate::scraping::scrape_url::resolve(&url).await;
 
-        let tracker = app_clone.state::<Mutex<crate::jobs::JobTracker>>();
         match result {
             Ok(Some(posting)) => {
                 if let Some(cache) = app_clone.try_state::<Mutex<PostingsCache>>() {
@@ -215,52 +182,21 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
                     },
                 );
 
-                {
-                    let mut g = tracker.lock();
-                    g.complete(&job_id_clone, json!({ "ok": true }));
-                }
-                emit_event(
+                crate::commands::jobs::job_complete(
                     &app_clone,
-                    JOBS_EVENT,
-                    JobEvent {
-                        r#type: "job.completed".to_string(),
-                        job_id: job_id_clone.clone(),
-                        data: Some(json!({ "count": 1 })),
-                        ts: now_ms() as i64,
-                    },
+                    &job_id_clone,
+                    json!({ "count": 1 }),
                 );
             }
             Ok(None) => {
-                {
-                    let mut g = tracker.lock();
-                    g.fail(&job_id_clone, "no scraper matched this URL".to_string());
-                }
-                emit_event(
+                crate::commands::jobs::job_fail(
                     &app_clone,
-                    JOBS_EVENT,
-                    JobEvent {
-                        r#type: "job.failed".to_string(),
-                        job_id: job_id_clone.clone(),
-                        data: Some(json!("no scraper matched this URL")),
-                        ts: now_ms() as i64,
-                    },
+                    &job_id_clone,
+                    "no scraper matched this URL".to_string(),
                 );
             }
             Err(e) => {
-                {
-                    let mut g = tracker.lock();
-                    g.fail(&job_id_clone, e.to_string());
-                }
-                emit_event(
-                    &app_clone,
-                    JOBS_EVENT,
-                    JobEvent {
-                        r#type: "job.failed".to_string(),
-                        job_id: job_id_clone.clone(),
-                        data: Some(json!(e.to_string())),
-                        ts: now_ms() as i64,
-                    },
-                );
+                crate::commands::jobs::job_fail(&app_clone, &job_id_clone, e.to_string());
             }
         }
     });
