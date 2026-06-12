@@ -113,10 +113,13 @@ export function LocationInput({
       <Button
         id={id}
         type="button"
+        variant="unstyled"
         disabled={disabled}
         onClick={() => !disabled && setOpen((o) => !o)}
         className={cn(
-          'glass-graphite glass-highlight flex h-9 w-full items-center justify-between gap-2 rounded-xl px-3 text-xs transition-all duration-150',
+          // `unstyled` so the field doesn't inherit the Button base `active:scale`
+          // press shrink — it looks like a text input, not a pressable button.
+          'glass shadow-sm flex h-9 w-full items-center justify-between gap-2 rounded-lg px-3 text-xs transition-shadow duration-150',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50',
           open ? 'border-brand/35' : 'hover:bg-white/[0.02]'
         )}

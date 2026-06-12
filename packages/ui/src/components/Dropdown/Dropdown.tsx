@@ -34,6 +34,8 @@ export interface DropdownProps {
   searchable?: boolean;
   /** Tailwind max-height class applied to the options list. Defaults to 'max-h-56'. */
   listClassName?: string;
+  /** Trigger height — 'sm' matches Button size="sm" (h-7); 'md' is the default (h-9). */
+  size?: 'sm' | 'md';
 }
 
 export function Dropdown({
@@ -46,6 +48,7 @@ export function Dropdown({
   id: idProp,
   searchable,
   listClassName,
+  size = 'md',
 }: DropdownProps) {
   const generatedId = useId();
   const id = idProp ?? generatedId;
@@ -165,13 +168,14 @@ export function Dropdown({
         }}
         onKeyDown={handleKeyDown}
         className={cn(
-          'flex h-9 w-full items-center justify-between gap-2 rounded-lg px-3 text-xs transition-all duration-150',
-          'border border-white/[0.06] bg-white/[0.03]',
+          'flex w-full items-center justify-between gap-2 rounded-lg text-xs transition-all duration-150',
+          size === 'sm' ? 'h-7 px-2.5' : 'h-9 px-3',
+          'border border-[var(--border-soft)] bg-[rgb(var(--glass-rgb)/0.08)] shadow-sm',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
           'disabled:cursor-not-allowed disabled:opacity-40',
           open
-            ? 'border-brand/35 bg-white/[0.05] text-foreground/90'
-            : 'text-foreground/70 hover:border-white/10 hover:bg-white/[0.05] hover:text-foreground/90'
+            ? 'border-brand/35 bg-[rgb(var(--glass-rgb)/0.12)] text-foreground/90'
+            : 'text-foreground/75 hover:border-[var(--border-mid)] hover:bg-[rgb(var(--glass-rgb)/0.12)] hover:text-foreground/90'
         )}
       >
         <span className="flex min-w-0 items-center gap-2">
