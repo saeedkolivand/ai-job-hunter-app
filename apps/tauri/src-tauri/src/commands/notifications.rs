@@ -57,18 +57,23 @@ pub enum OsBanner {
 }
 
 /// The single permission-gated OS-notification path. Sends only when permission
-/// is granted, requesting once on first use and skipping silently on deny. Used
-/// by [`push_and_notify`]; the tray's autopilot banner routes through here too,
-/// so there is exactly ONE gated `.show()` call site in the app.
+/// is granted; when the state is already `Denied` it skips silently WITHOUT
+/// re-requesting (a denied permission is terminal). Any other state (`Prompt` /
+/// `PromptWithRationale`, or a read error) triggers a one-time request and shows
+/// only if that returns `Granted`. Used by [`push_and_notify`]; the tray's
+/// autopilot banner routes through here too, so there is exactly ONE gated
+/// `.show()` call site in the app.
 pub fn show_os_notification(app: &AppHandle, title: &str, body: &str) {
-    // Permission gate: send only if granted; request once when not, skip on deny.
-    let granted = matches!(
-        app.notification().permission_state(),
-        Ok(PermissionState::Granted)
-    ) || matches!(
-        app.notification().request_permission(),
-        Ok(PermissionState::Granted)
-    );
+    // Permission gate: send when granted; skip silently (no re-request) when
+    // already denied; otherwise request once and show only if that grants.
+    let granted = match app.notification().permission_state() {
+        Ok(PermissionState::Granted) => true,
+        Ok(PermissionState::Denied) => false,
+        _ => matches!(
+            app.notification().request_permission(),
+            Ok(PermissionState::Granted)
+        ),
+    };
     if !granted {
         return;
     }
