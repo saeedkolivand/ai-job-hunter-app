@@ -4,8 +4,9 @@
 //! persisted to `<dataDir>/notifications.json`. It mirrors the persistence
 //! pattern of [`crate::autopilot::AutopilotStore`] /
 //! [`crate::postings::InteractionStore`]: a `data_file` path plus an in-memory
-//! cache guarded by a `parking_lot::Mutex`, with IO swallowed via `.ok()` so the
-//! mutators stay infallible.
+//! cache guarded by a `parking_lot::Mutex`. The mutators stay infallible: read
+//! IO is swallowed via `.ok()`, and a failed save (serialize or write) is logged
+//! via `log::warn!` rather than propagated.
 //!
 //! ## Layering
 //! Pure **data + disk** — deliberately `AppHandle`-free (no Tauri imports beyond
@@ -196,8 +197,17 @@ impl NotificationStore {
     }
 
     fn save(&self, notifications: Vec<AppNotification>) {
-        if let Ok(json) = serde_json::to_string_pretty(&notifications) {
-            std::fs::write(&self.data_file, json).ok();
+        // Infallible (mirrors every sibling store), but a failed serialize or
+        // write is logged rather than silently dropped so disk-persistence
+        // problems are diagnosable. The in-memory cache is still updated so the
+        // running session stays consistent even if the disk write failed.
+        match serde_json::to_string_pretty(&notifications) {
+            Ok(json) => {
+                if let Err(e) = std::fs::write(&self.data_file, &json) {
+                    log::warn!("failed to persist notifications to disk: {e}");
+                }
+            }
+            Err(e) => log::warn!("failed to serialize notifications: {e}"),
         }
         *self.cache.lock() = Some(notifications);
     }

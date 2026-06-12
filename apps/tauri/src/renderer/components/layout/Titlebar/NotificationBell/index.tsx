@@ -6,6 +6,7 @@ import { useRouter } from '@tanstack/react-router';
 import { useTranslation } from '@ajh/translations';
 import { Button, EmptyState, transition } from '@ajh/ui';
 
+import { resolveNotificationRoute } from '@/lib/notification-route';
 import { timeAgo } from '@/lib/time';
 import {
   useClearAllNotifications,
@@ -119,10 +120,11 @@ export function NotificationBell() {
                     markRead.mutate(n.id);
                     setOpen(false);
                     if (n.route) {
-                      // `route.to` is a dynamic string from the backend, but
-                      // TanStack's `navigate` is typed for static routes — a
-                      // minimal cast is required for the runtime-driven target.
-                      void router.navigate({ to: n.route.to, search: n.route.search } as never);
+                      const validatedTo = resolveNotificationRoute(n.route.to);
+                      void router.navigate({
+                        to: validatedTo,
+                        search: validatedTo === n.route.to ? n.route.search : undefined,
+                      });
                     }
                   };
                   return (
