@@ -121,9 +121,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     );
 
     let job_id = uuid_v4();
-    app.state::<Mutex<crate::jobs::JobTracker>>()
-        .lock()
-        .start(&job_id, "autopilot.run");
+    crate::commands::jobs::job_start(&app, &job_id, "autopilot.run");
 
     // Mark the run live so the UI shows a "running" badge and a crash mid-run
     // is later reconciled to "interrupted" (see `mark_interrupted_runs`).
@@ -158,9 +156,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
             store(&app)
                 .lock()
                 .set_run_status(&autopilot_id, RunStatus::Failed);
-            app.state::<Mutex<crate::jobs::JobTracker>>()
-                .lock()
-                .fail(&job_id, e.to_string());
+            crate::commands::jobs::job_fail(&app, &job_id, e.to_string());
             span.end(false);
             return json!({ "error": e, "jobId": job_id });
         }
@@ -250,9 +246,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         store(&app)
             .lock()
             .set_run_status(&autopilot_id, RunStatus::Completed);
-        app.state::<Mutex<crate::jobs::JobTracker>>()
-            .lock()
-            .cancel(&job_id);
+        crate::commands::jobs::job_cancel(&app, &job_id);
         span.end_with("cancelled before recording results", false);
         return json!({ "jobId": job_id, "cancelled": true });
     }
@@ -267,9 +261,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
 
     engine.unregister_token(&job_id).await;
 
-    app.state::<Mutex<crate::jobs::JobTracker>>()
-        .lock()
-        .complete(&job_id, json!({ "found": kept, "applied": 0 }));
+    crate::commands::jobs::job_complete(&app, &job_id, json!({ "found": kept, "applied": 0 }));
 
     emit_step(
         &app,

@@ -176,9 +176,11 @@ impl AiProvider for AnthropicClient {
                                     thinking: None,
                                 },
                             );
-                            app.state::<Mutex<JobTracker>>()
-                                .lock()
-                                .complete(job_id, json!({ "done": true }));
+                            crate::commands::jobs::job_complete(
+                                app,
+                                job_id,
+                                json!({ "done": true }),
+                            );
                             trace.end(Some(status.as_u16()), true);
                             return Ok(());
                         }
@@ -253,9 +255,7 @@ impl AiProvider for AnthropicClient {
                 thinking: None,
             },
         );
-        app.state::<Mutex<JobTracker>>()
-            .lock()
-            .complete(job_id, json!({ "done": true }));
+        crate::commands::jobs::job_complete(app, job_id, json!({ "done": true }));
         trace.end(Some(status.as_u16()), true);
         Ok(())
     }

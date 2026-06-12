@@ -593,9 +593,7 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
                         },
                     );
                     if done {
-                        app.state::<Mutex<JobTracker>>()
-                            .lock()
-                            .complete(job_id, json!({ "done": true }));
+                        crate::commands::jobs::job_complete(app, job_id, json!({ "done": true }));
                         trace.end(Some(status.as_u16()), true);
                         return Ok(());
                     }
@@ -620,9 +618,7 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
             thinking: None,
         },
     );
-    app.state::<Mutex<JobTracker>>()
-        .lock()
-        .complete(job_id, json!({ "done": true }));
+    crate::commands::jobs::job_complete(app, job_id, json!({ "done": true }));
     trace.end(Some(status.as_u16()), true);
     Ok(())
 }
