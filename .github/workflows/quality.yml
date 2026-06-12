@@ -1,20 +1,28 @@
-name: 🔎 Quality (advisory)
+name: 🔎 Quality
 
 # ──────────────────────────────────────────────────────────────────────
-# Self-contained, ADVISORY quality checks (none block merge):
-#   - typos  : repo-wide spell check (crate-ci/typos, config: typos.toml)
-#   - links  : dead-link check for docs (lychee, config: lychee.toml)
-#   - knip   : JS/TS dead-code / unused deps/exports (config: knip.json)
-# All run on Linux with Harden-Runner egress audit. They surface findings in
-# the job log; tune the configs, then flip individual checks to blocking.
+# Advisory quality + perf (consolidated from quality/rust-quality/benchmark).
+# None blocks merge.
+#   JS/docs (PR): typos · links (lychee) · knip (dead code) · i18n key drift · jsx-a11y
+#   Rust   (PR): cargo-hack (each-feature) · cargo-mutants (--in-diff)
+#   Perf        : criterion export-render benchmark — records the baseline on
+#                 push-to-main, comments on regressions on Rust PRs.
+# The benchmark job is the ONLY one with elevated permissions (contents: write +
+# the deploy key + the Pages PAT); per-job `permissions:`/`if:` keep every other
+# job least-privilege and PR-scoped. A `changes` gate preserves the Rust-only
+# filter for benchmark.
 # ──────────────────────────────────────────────────────────────────────
 
 on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
+# File-level least privilege; only the benchmark job widens this.
 permissions:
   contents: read
 
@@ -23,10 +31,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  typos:
-    name: 🔤 Typos
+  # Path gate so the perf benchmark only runs when Rust actually changed
+  # (mirrors the former benchmark.yml paths filter, now per-job).
+  changes:
+    name: 🧭 Detect Changes
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
     steps:
       - name: 🛡️ Harden Runner
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
@@ -38,12 +53,37 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: 🧭 Path filter
+        id: filter
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          filters: |
+            rust:
+              - 'apps/tauri/src-tauri/**'
+              - '.github/workflows/quality.yml'
+
+  # ── JS / docs quality (PR + manual; never on push-to-main) ───────────────────
+  typos:
+    name: 🔤 Typos
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 1
       - name: 🔤 Spell check (advisory)
         continue-on-error: true
         uses: crate-ci/typos@37bb98842b0d8c4ffebdb75301a13db0267cef89 # v1.47.2
 
   links:
     name: 🔗 Link Check
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -51,12 +91,10 @@ jobs:
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
-
       - name: 📥 Checkout Repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
-
       - name: 🔗 Lychee link check (advisory)
         uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
         with:
@@ -65,6 +103,7 @@ jobs:
 
   knip:
     name: 🧹 Knip (dead code)
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -72,21 +111,19 @@ jobs:
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
-
       - name: 📥 Checkout Repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
-
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
-
       - name: 🧹 Run knip (advisory)
         continue-on-error: true
         run: pnpm exec knip
 
   i18n:
     name: 🌐 i18n Keys
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -94,19 +131,14 @@ jobs:
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
-
       - name: 📥 Checkout Repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
-
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
-
       # i18next-cli rewrites the locale files from t() usage; a non-empty diff
-      # means missing keys (or sort drift). Advisory: report the drift, then
-      # restore. removeUnusedKeys is off (the renderer has dynamic keys), so this
-      # flags missing translations, not false "unused" removals.
+      # means missing keys (or sort drift). Advisory: report, then restore.
       - name: 🌐 Check translation keys (advisory)
         continue-on-error: true
         run: |
@@ -121,8 +153,109 @@ jobs:
 
   a11y-lint:
     name: ♿ a11y Lint
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 1
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
+      # jsx-a11y via a SEPARATE config so the strict main lint is unaffected.
+      - name: ♿ ESLint jsx-a11y (advisory)
+        continue-on-error: true
+        run: pnpm exec eslint --config eslint.a11y.config.mjs 'apps/tauri/src/renderer/**/*.tsx'
+
+  # ── Rust test-quality (PR + manual; never on push-to-main) ───────────────────
+  cargo-hack:
+    name: 🦀 Feature combinations
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 1
+      - name: 🦀 Setup Rust (Tauri)
+        uses: ./.github/actions/setup-rust
+      - name: 🧰 Install cargo-hack
+        uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2
+        with:
+          tool: cargo-hack
+      - name: 🦀 Check each feature (advisory)
+        continue-on-error: true
+        working-directory: apps/tauri/src-tauri
+        run: cargo hack --each-feature check --all-targets
+
+  cargo-mutants:
+    name: 🦀 Mutation testing (PR diff)
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0 # full history so the merge-base diff for --in-diff resolves
+      - name: 🦀 Setup Rust (Tauri)
+        uses: ./.github/actions/setup-rust
+      - name: 🧰 Install cargo-mutants
+        uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2
+        with:
+          tool: cargo-mutants
+      - name: 🦀 Mutation testing on the diff (advisory)
+        continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "Manual run — full-crate mutation testing is slow; this job only runs --in-diff on PRs."
+            exit 0
+          fi
+          git -C "$GITHUB_WORKSPACE/apps/tauri/src-tauri" diff --relative "$BASE_SHA...HEAD" > "$RUNNER_TEMP/mutants.diff" || true
+          if [ ! -s "$RUNNER_TEMP/mutants.diff" ]; then
+            echo "No Rust changes under apps/tauri/src-tauri in this PR — skipping mutation testing."
+            exit 0
+          fi
+          cd apps/tauri/src-tauri
+          cargo mutants --in-diff "$RUNNER_TEMP/mutants.diff" --timeout 180 || true
+      - name: 📊 Upload mutants report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mutants-${{ github.run_id }}
+          path: apps/tauri/src-tauri/mutants.out/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ── Perf benchmark — push-to-main baseline + PR regression comment ───────────
+  # The ONLY elevated job: commits the refreshed dashboard back to main (deploy
+  # key) and kicks the Pages deploy (PAT). Runs on push/dispatch, and on PRs only
+  # when Rust changed (the `changes` gate).
+  benchmark:
+    name: 📈 Export render
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # commit benchmark history to landing/benchmarks on main (push runs)
+      pull-requests: write # comment on a PR when a result regresses
     steps:
       - name: 🛡️ Harden Runner
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
@@ -132,12 +265,51 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          fetch-depth: 1
+          # Full history + the release deploy key so the push-to-main run can
+          # commit the refreshed dashboard back to main. PR runs stay on PR code.
+          fetch-depth: 0
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
-      - name: 📦 Setup Node + pnpm
-        uses: ./.github/actions/setup-node-pnpm
+      - name: 🦀 Setup Rust (Tauri)
+        uses: ./.github/actions/setup-rust
 
-      # jsx-a11y via a SEPARATE config so the strict main lint is unaffected.
-      - name: ♿ ESLint jsx-a11y (advisory)
+      - name: 📈 Run export benchmarks
+        working-directory: apps/tauri/src-tauri
+        run: cargo bench --bench export_render --locked -- --output-format bencher | tee output.txt
+
+      - name: 📊 Store result & alert on regression (advisory)
+        uses: benchmark-action/github-action-benchmark@52576c92bccf6ac60c8223ec7eb2565637cae9ba # v1.22.1
         continue-on-error: true
-        run: pnpm exec eslint --config eslint.a11y.config.mjs 'apps/tauri/src/renderer/**/*.tsx'
+        with:
+          name: Export render
+          tool: cargo
+          output-file-path: apps/tauri/src-tauri/output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-pages-branch: main
+          benchmark-data-dir-path: landing/benchmarks
+          skip-fetch-gh-pages: true
+          auto-push: false
+          comment-on-alert: true
+          alert-threshold: '150%'
+          fail-on-alert: false
+          alert-comment-cc-users: '@saeedkolivand'
+
+      - name: 📤 Commit benchmark data
+        id: commit
+        if: github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -z "$(git log origin/main..HEAD --oneline)" ]; then
+            echo "Benchmark data unchanged — nothing to push."
+            exit 0
+          fi
+          git commit --amend -m "chore: update export benchmark data [skip ci]"
+          git push git@github.com:saeedkolivand/ai-job-hunter-assistant-app.git HEAD:main
+          echo "committed=true" >> "$GITHUB_OUTPUT"
+
+      - name: 🌐 Trigger Pages deploy
+        if: steps.commit.outputs.committed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: gh workflow run pages.yml --ref main

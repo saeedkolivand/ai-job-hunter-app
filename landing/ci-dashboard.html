@@ -991,9 +991,7 @@
       ];
       const ROLE = {
         "ci-pipeline.yml": "gating",
-        "codeql.yml": "security",
-        "semgrep.yml": "security",
-        "scorecard.yml": "security",
+        // security.yml consolidates codeql + semgrep + scorecard + audit.
         "security.yml": "security",
         "release.yml": "deploy",
         "pages.yml": "deploy",

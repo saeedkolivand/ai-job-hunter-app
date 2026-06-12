@@ -1,35 +1,158 @@
-name: 🛡️ Security
+name: 🔒 Security
 
 # ──────────────────────────────────────────────────────────────────────
-# Security Pipeline
-# ──────────────────────────────────────────────────────────────────────
-# Purpose: Automated security vulnerability scanning
-# Triggers: Weekly (Mondays at 3 AM UTC), manual workflow_dispatch
-# Jobs:
-#   - npm-audit: npm/pnpm vulnerability scan
-#   - cargo-audit: Rust/Cargo vulnerability scan
+# All security scanning in one place (consolidated from codeql/semgrep/
+# scorecard/security). Every job is least-privilege (per-job `permissions:`)
+# and event-gated (per-job `if:`), so the file's union `on:` never grants any
+# job more than it needs.
+#   - codeql    : semantic SAST (JS/TS) → Security tab. PR + push + weekly.
+#   - semgrep   : OSS-ruleset SAST → Security tab. PR + push + weekly.
+#   - scorecard : OpenSSF posture score → Security tab. push + weekly + branch rule.
+#   - npm/cargo audit : dependency vulnerability sweep. Weekly + manual.
+# Findings post to the Security tab (SARIF); scans never fail the build.
 #
-# Note: Dependency-review runs in ci-pipeline.yml on pull_request, where
-#       the action can compare base vs head commits. It cannot run on
-#       schedule because the action requires a pull_request event context.
+# NOTE: codeql here is the ADVANCED (workflow-based) setup — do NOT also enable
+# CodeQL "Default setup" in repo Settings (they conflict).
 # ──────────────────────────────────────────────────────────────────────
 
 on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
   schedule:
-    - cron: '0 3 * * 1'
-
+    - cron: '0 5 * * 1' # one weekly sweep (Mon 05:00 UTC) for every scheduled job
+  branch_protection_rule:
   workflow_dispatch:
 
-# Neither job uploads SARIF (no upload-sarif step); audits only read the repo.
+# Least privilege at the file level; jobs widen only what they need.
 permissions:
   contents: read
 
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # ── CodeQL (JS/TS) — PR + push + weekly ──────────────────────────────────────
+  codeql:
+    name: 🔍 CodeQL (${{ matrix.language }})
+    if: github.event_name != 'branch_protection_rule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write # CodeQL uploads SARIF to the Security tab
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 1
+
+      - name: 🧰 Initialize CodeQL
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - name: 🔬 Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
+        with:
+          category: '/language:${{ matrix.language }}'
+
+  # ── Semgrep OSS SAST — PR + push + weekly ────────────────────────────────────
+  semgrep:
+    name: 🔬 Semgrep SAST
+    if: github.event_name != 'branch_protection_rule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write # upload-sarif posts findings to the Security tab
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 1
+
+      - name: 🐍 Setup uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+
+      - name: 🔬 Run Semgrep
+        run: |
+          uvx semgrep scan \
+            --config p/security-audit \
+            --config p/typescript \
+            --config p/react \
+            --sarif --output semgrep.sarif || true
+
+      - name: 📤 Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  # ── OpenSSF Scorecard — push + weekly + branch-rule (NOT per-PR) ─────────────
+  scorecard:
+    name: 🏅 OpenSSF Scorecard
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to the Security tab
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: 🏅 Run Scorecard
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # Keep results self-contained — do not publish to the public OpenSSF API.
+          publish_results: false
+
+      - name: 📤 Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
+        with:
+          sarif_file: results.sarif
+          category: scorecard
+
+  # ── npm dependency audit — weekly + manual ───────────────────────────────────
   npm-audit:
     name: 📦 npm Audit
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
+    permissions:
+      contents: read
     steps:
       - name: 🛡️ Harden Runner
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
@@ -43,42 +166,28 @@ jobs:
 
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
+        with:
+          install: false # pnpm audit reads the lockfile; no install needed
 
       - name: 🔍 Run npm Audit
         id: npm-audit
         continue-on-error: true
-        run: |
-          echo "::group::Running npm audit"
-          pnpm audit --audit-level high
-          echo "::endgroup::"
+        run: pnpm audit --audit-level high
 
       - name: ❌ Check for Audit Failures
         if: steps.npm-audit.outcome == 'failure'
         run: |
-          echo "::error::npm audit found vulnerabilities. Please review the audit output above."
+          echo "::error::npm audit found vulnerabilities. Review the audit output above."
           exit 1
 
-      - name: 📝 Job Summary
-        if: always()
-        run: |
-          echo "## 📦 npm Audit Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| npm Audit | ${{ steps.npm-audit.outcome == 'success' && '✅ No vulnerabilities' || '❌ Vulnerabilities found' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
-          echo "- **Node**: $(node --version)" >> $GITHUB_STEP_SUMMARY
-          echo "- **pnpm**: $(pnpm --version)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 Resources" >> $GITHUB_STEP_SUMMARY
-          echo "- [npm Audit Docs](https://docs.npmjs.com/cli/v9/commands/npm-audit)" >> $GITHUB_STEP_SUMMARY
-
+  # ── cargo dependency audit — weekly + manual ─────────────────────────────────
   cargo-audit:
     name: 🦀 Cargo Audit
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
+    permissions:
+      contents: read
     steps:
       - name: 🛡️ Harden Runner
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
@@ -90,8 +199,8 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: 🦀 Setup Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - name: 🦀 Setup Rust (Tauri)
+        uses: ./.github/actions/setup-rust
 
       - name: 📥 Install cargo-audit
         uses: taiki-e/install-action@1cacf5c5198b25f60b90968ce45860e926d584b0 # cargo-audit
@@ -100,28 +209,10 @@ jobs:
         id: cargo-audit
         continue-on-error: true
         working-directory: apps/tauri/src-tauri
-        run: |
-          echo "::group::Running cargo audit"
-          cargo audit
-          echo "::endgroup::"
+        run: cargo audit
 
       - name: ❌ Check for Audit Failures
         if: steps.cargo-audit.outcome == 'failure'
         run: |
-          echo "::error::cargo audit found vulnerabilities. Please review the audit output above."
+          echo "::error::cargo audit found vulnerabilities. Review the audit output above."
           exit 1
-
-      - name: 📝 Job Summary
-        if: always()
-        run: |
-          echo "## 🦀 Cargo Audit Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Cargo Audit | ${{ steps.cargo-audit.outcome == 'success' && '✅ No vulnerabilities' || '❌ Vulnerabilities found' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
-          echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 Resources" >> $GITHUB_STEP_SUMMARY
-          echo "- [Cargo Audit Docs](https://github.com/rustsec/cargo-audit)" >> $GITHUB_STEP_SUMMARY

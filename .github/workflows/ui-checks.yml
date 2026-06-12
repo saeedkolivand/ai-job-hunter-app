@@ -1,0 +1,134 @@
+name: 🖥️ UI Checks
+
+# ──────────────────────────────────────────────────────────────────────
+# Advisory renderer/UI checks (consolidated from e2e/lighthouse/visual). All
+# drive the renderer in headless Chromium against the in-memory mock client —
+# no Tauri/native build. None blocks merge.
+#   - e2e        : Playwright end-to-end tests of the mock UI.
+#   - lighthouse : perf / a11y / best-practices budgets (served via the e2e mock entry).
+#   - visual     : Lost Pixel screenshot-diffs of the Storybook stories.
+# ──────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: 🎭 Playwright (mock UI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: 🔨 Build Shared Packages
+        run: pnpm build:packages
+
+      - name: 🎭 Install Playwright Chromium
+        run: pnpm --filter @ajh/tauri exec playwright install --with-deps chromium
+
+      - name: 🎭 Run E2E Tests
+        run: pnpm --filter @ajh/tauri test:e2e
+
+      - name: 📊 Upload Playwright Report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: apps/tauri/playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  lighthouse:
+    name: 🔦 Lighthouse CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: 🔨 Build Shared Packages
+        run: pnpm build:packages
+
+      - name: 🔦 Run Lighthouse CI (advisory)
+        continue-on-error: true
+        run: pnpm dlx @lhci/cli@latest autorun
+
+      - name: 📊 Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: lighthouse-${{ github.run_id }}
+          path: .lighthouseci/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  visual:
+    name: 🖼️ Lost Pixel
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: 🔨 Build Shared Packages
+        run: pnpm build:packages
+
+      - name: 📚 Build Storybook
+        run: pnpm --filter @ajh/ui build-storybook
+
+      - name: 🌐 Install Playwright Chromium (for Lost Pixel)
+        run: pnpm dlx playwright@1.47.2 install --with-deps chromium
+
+      - name: 🖼️ Run Lost Pixel (advisory)
+        continue-on-error: true
+        run: pnpm dlx lost-pixel@3.22.0
+
+      - name: 📊 Upload Lost Pixel output
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: lost-pixel-${{ github.run_id }}
+          path: .lostpixel/
+          retention-days: 7
+          if-no-files-found: ignore
