@@ -12,7 +12,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::commands::ai::get_provider_key;
 use crate::error::{AppError, AppResult};
-use crate::events::{emit_event, AI_STREAM, JOBS_EVENT};
+use crate::events::{emit_event, AiStreamChunk, JobEvent, AI_STREAM, JOBS_EVENT};
 use crate::jobs::JobTracker;
 
 use super::research::{self, SearchResult};
@@ -458,7 +458,14 @@ pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
             emit_event(
                 app,
                 JOBS_EVENT,
-                json!({ "type": "job.stream", "jobId": job_id, "data": { "status": status, "p": p, "completed": completed, "total": total, "digest": digest } }),
+                JobEvent {
+                    r#type: "job.stream".to_string(),
+                    job_id: job_id.to_string(),
+                    data: Some(
+                        json!({ "status": status, "p": p, "completed": completed, "total": total, "digest": digest }),
+                    ),
+                    ts: crate::documents::now_ms() as i64,
+                },
             );
             if status == "success" {
                 return Ok(());
@@ -565,13 +572,25 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
                         emit_event(
                             app,
                             AI_STREAM,
-                            json!({ "jobId": job_id, "delta": thinking, "done": false, "thinking": true }),
+                            AiStreamChunk {
+                                job_id: job_id.to_string(),
+                                delta: thinking.to_string(),
+                                done: false,
+                                error: None,
+                                thinking: Some(true),
+                            },
                         );
                     }
                     emit_event(
                         app,
                         AI_STREAM,
-                        json!({ "jobId": job_id, "delta": delta, "done": done }),
+                        AiStreamChunk {
+                            job_id: job_id.to_string(),
+                            delta: delta.to_string(),
+                            done,
+                            error: None,
+                            thinking: None,
+                        },
                     );
                     if done {
                         app.state::<Mutex<JobTracker>>()
@@ -593,7 +612,13 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
     emit_event(
         app,
         AI_STREAM,
-        json!({ "jobId": job_id, "delta": "", "done": true }),
+        AiStreamChunk {
+            job_id: job_id.to_string(),
+            delta: String::new(),
+            done: true,
+            error: None,
+            thinking: None,
+        },
     );
     app.state::<Mutex<JobTracker>>()
         .lock()

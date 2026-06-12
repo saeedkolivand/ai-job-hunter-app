@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct HybridSearchRequest {
@@ -11,6 +11,7 @@ pub struct HybridSearchRequest {
     pub collection: String,
     #[serde(default = "default_hybrid_search_request_top_k")]
     pub top_k: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub filters: Option<serde_json::Value>,
     #[serde(default = "default_hybrid_search_request_semantic_weight")]
     pub semantic_weight: f64,

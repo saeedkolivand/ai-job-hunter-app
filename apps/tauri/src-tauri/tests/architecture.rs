@@ -337,12 +337,9 @@ fn r3_rusqlite_only_in_stores() {
 }
 
 // ── R4: env access only in `platform/**` ─────────────────────────────────────────────
-// Allowlist: AI provider env reads (OLLAMA_HOST, <AGENT>_BIN override). TODO(arch):
-// centralize these in platform::config.
-const R4_ALLOW: &[&str] = &[
-    "commands/ai_provider/cli_agent/mod.rs",
-    "commands/ai_provider/ollama.rs",
-];
+// Env access is fully centralized in platform::config (ollama_host, env_override,
+// extension_dev_origins, data_dir), so no non-platform source needs an allowlist entry.
+const R4_ALLOW: &[&str] = &[];
 
 #[test]
 fn r4_env_access_only_in_platform() {

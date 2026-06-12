@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct AutopilotCreateRequest {
@@ -11,70 +11,93 @@ pub struct AutopilotCreateRequest {
     pub target: AutopilotCreateRequestTarget,
     pub filter: AutopilotCreateRequestFilter,
     pub schedule: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub schedule_hour: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub schedule_minute: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resume_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cover_letter: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct AutopilotCreateRequestTarget {
     pub board: String,
     pub query: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub work_type: Option<String>,
     #[serde(default = "default_autopilot_create_request_target_pages")]
     pub pages: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub date_filter: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct AutopilotCreateRequestFilter {
     #[serde(default = "default_autopilot_create_request_filter_min_match_score")]
     pub min_match_score: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub keywords: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub exclude_keywords: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct AutopilotUpdateRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<AutopilotUpdateRequestTarget>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<AutopilotUpdateRequestFilter>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub schedule: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub schedule_hour: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub schedule_minute: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resume_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cover_letter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct AutopilotUpdateRequestTarget {
     pub board: String,
     pub query: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub work_type: Option<String>,
     #[serde(default = "default_autopilot_update_request_target_pages")]
     pub pages: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub date_filter: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct AutopilotUpdateRequestFilter {
     #[serde(default = "default_autopilot_update_request_filter_min_match_score")]
     pub min_match_score: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub keywords: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub exclude_keywords: Option<Vec<String>>,
 }
 

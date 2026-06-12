@@ -11,7 +11,7 @@ use crate::commands::ai::get_provider_key;
 use crate::jobs::JobTracker;
 
 use crate::error::{AppError, AppResult};
-use crate::events::{emit_event, AI_STREAM};
+use crate::events::{emit_event, AiStreamChunk, AI_STREAM};
 
 use super::research;
 use super::{
@@ -218,7 +218,13 @@ impl AiProvider for OpenAiClient {
                             emit_event(
                                 app,
                                 AI_STREAM,
-                                json!({ "jobId": job_id, "delta": "", "done": true }),
+                                AiStreamChunk {
+                                    job_id: job_id.to_string(),
+                                    delta: String::new(),
+                                    done: true,
+                                    error: None,
+                                    thinking: None,
+                                },
                             );
                             app.state::<Mutex<JobTracker>>()
                                 .lock()
@@ -235,14 +241,26 @@ impl AiProvider for OpenAiClient {
                             emit_event(
                                 app,
                                 AI_STREAM,
-                                json!({ "jobId": job_id, "delta": reasoning, "done": false, "thinking": true }),
+                                AiStreamChunk {
+                                    job_id: job_id.to_string(),
+                                    delta: reasoning.to_string(),
+                                    done: false,
+                                    error: None,
+                                    thinking: Some(true),
+                                },
                             );
                         }
                         if !delta.is_empty() {
                             emit_event(
                                 app,
                                 AI_STREAM,
-                                json!({ "jobId": job_id, "delta": delta, "done": false }),
+                                AiStreamChunk {
+                                    job_id: job_id.to_string(),
+                                    delta: delta.to_string(),
+                                    done: false,
+                                    error: None,
+                                    thinking: None,
+                                },
                             );
                         }
                     }
@@ -258,7 +276,13 @@ impl AiProvider for OpenAiClient {
         emit_event(
             app,
             AI_STREAM,
-            json!({ "jobId": job_id, "delta": "", "done": true }),
+            AiStreamChunk {
+                job_id: job_id.to_string(),
+                delta: String::new(),
+                done: true,
+                error: None,
+                thinking: None,
+            },
         );
         app.state::<Mutex<JobTracker>>()
             .lock()

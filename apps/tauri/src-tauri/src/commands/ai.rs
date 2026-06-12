@@ -4,7 +4,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::credentials::CredentialStore;
 use crate::documents::{DocumentStore, EmbeddingConfig};
-use crate::events::{emit_event, JOBS_EVENT};
+use crate::events::{emit_event, JobEvent, JOBS_EVENT};
 use crate::ipc_contracts::ai::AiEmbedRequest;
 use crate::jobs::{JobStatus, JobTracker};
 use crate::postings::PostingsCache;
@@ -391,7 +391,12 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
             emit_event(
                 &app_clone,
                 JOBS_EVENT,
-                json!({ "type": "job.stream", "jobId": job_id_clone, "data": { "done": done, "failed": failed, "total": total } }),
+                JobEvent {
+                    r#type: "job.stream".to_string(),
+                    job_id: job_id_clone.clone(),
+                    data: Some(json!({ "done": done, "failed": failed, "total": total })),
+                    ts: crate::documents::now_ms() as i64,
+                },
             );
         }
 
@@ -402,7 +407,12 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
         emit_event(
             &app_clone,
             JOBS_EVENT,
-            json!({ "type": "job.completed", "jobId": job_id_clone, "data": { "reembedded": done, "failed": failed, "total": total } }),
+            JobEvent {
+                r#type: "job.completed".to_string(),
+                job_id: job_id_clone.clone(),
+                data: Some(json!({ "reembedded": done, "failed": failed, "total": total })),
+                ts: crate::documents::now_ms() as i64,
+            },
         );
     });
 

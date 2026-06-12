@@ -3,6 +3,10 @@
  * These types are SAFE to ship to the renderer (no Node/Electron internals).
  */
 
+import type { z } from 'zod';
+
+import type { AiStreamChunkSchema, JobEventSchema } from '../schemas/index.js';
+
 export type Locale = 'en' | 'de' | 'fr' | 'es' | 'it' | 'tr' | 'pt' | 'ru' | 'zh' | 'ja' | 'ko';
 
 export type JobStatus =
@@ -43,34 +47,18 @@ export interface JobRecord<TPayload = unknown, TResult = unknown> {
   finishedAt?: number;
 }
 
-export interface JobEvent {
-  type:
-    | 'job.queued'
-    | 'job.started'
-    | 'job.progress'
-    | 'job.stream'
-    | 'job.completed'
-    | 'job.failed'
-    | 'job.cancelled';
-  jobId: string;
-  data?: unknown;
-  ts: number;
-}
+export type JobEvent = z.infer<typeof JobEventSchema>;
 
 export interface AiMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
 }
 
-export interface AiStreamChunk {
-  jobId: string;
-  delta: string;
-  done: boolean;
-  /** Structured error frame — present instead of delta when the provider fails mid-stream. */
-  error?: { code: string; message: string };
-  /** Present only when the provider emits a reasoning/thinking block (e.g. Anthropic extended thinking). */
-  thinking?: boolean;
-}
+/**
+ * Structured `ai:stream` chunk. `error` is the terminal error frame; `thinking`
+ * marks a reasoning/thinking block. Inferred from `AiStreamChunkSchema`.
+ */
+export type AiStreamChunk = z.infer<typeof AiStreamChunkSchema>;
 
 export interface DocumentRecord {
   id: string;

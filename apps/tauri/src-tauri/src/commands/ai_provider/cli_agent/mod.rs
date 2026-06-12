@@ -26,7 +26,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
 use crate::error::{AppError, AppResult};
-use crate::events::{emit_event, AI_STREAM};
+use crate::events::{emit_event, AiStreamChunk, AI_STREAM};
 use crate::jobs::JobTracker;
 use crate::platform::NoWindow;
 
@@ -117,7 +117,8 @@ pub trait CliAgentBackend: Send + Sync {
 
     /// Resolved binary path: env override, else [`default_binary`](Self::default_binary).
     fn binary(&self) -> String {
-        std::env::var(self.env_override()).unwrap_or_else(|_| self.default_binary().to_string())
+        crate::platform::config::env_override(self.env_override())
+            .unwrap_or_else(|| self.default_binary().to_string())
     }
 
     /// Whether the harness should prepend the system prompt onto the user prompt.
@@ -434,14 +435,26 @@ async fn run_stream(
                 emit_event(
                     app,
                     AI_STREAM,
-                    json!({ "jobId": job_id, "delta": text, "done": false }),
+                    AiStreamChunk {
+                        job_id: job_id.to_string(),
+                        delta: text,
+                        done: false,
+                        error: None,
+                        thinking: None,
+                    },
                 );
             }
             Some(CliEvent::Thinking(text)) if !text.is_empty() => {
                 emit_event(
                     app,
                     AI_STREAM,
-                    json!({ "jobId": job_id, "delta": text, "done": false, "thinking": true }),
+                    AiStreamChunk {
+                        job_id: job_id.to_string(),
+                        delta: text,
+                        done: false,
+                        error: None,
+                        thinking: Some(true),
+                    },
                 );
             }
             Some(CliEvent::Done) => {
@@ -604,7 +617,13 @@ fn emit_done(app: &AppHandle, job_id: &str) {
     emit_event(
         app,
         AI_STREAM,
-        json!({ "jobId": job_id, "delta": "", "done": true }),
+        AiStreamChunk {
+            job_id: job_id.to_string(),
+            delta: String::new(),
+            done: true,
+            error: None,
+            thinking: None,
+        },
     );
     app.state::<Mutex<JobTracker>>()
         .lock()

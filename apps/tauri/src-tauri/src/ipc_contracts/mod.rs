@@ -8,6 +8,9 @@ pub mod ai;
 pub mod applications;
 pub mod autopilot;
 pub mod documents;
+pub mod event_payloads;
+#[cfg(test)]
+mod event_payloads_test;
 pub mod events;
 pub mod matching;
 pub mod referrals;
