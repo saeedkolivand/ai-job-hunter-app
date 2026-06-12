@@ -12,9 +12,10 @@
 use async_trait::async_trait;
 use serde::Serialize;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
 use crate::error::{AppError, AppResult};
+use crate::events::{emit_event, AI_STREAM};
 pub use crate::ipc_contracts::ai::AiGenerateRequest;
 
 mod anthropic;
@@ -492,8 +493,9 @@ pub fn friendly_api_error(
 
 /// Emit the terminal `ai:stream` error event the renderer's stream reader expects.
 pub fn emit_stream_error(app: &AppHandle, job_id: &str, message: &str) {
-    let _ = app.emit(
-        "ai:stream",
+    emit_event(
+        app,
+        AI_STREAM,
         json!({
             "jobId": job_id,
             "delta": "",

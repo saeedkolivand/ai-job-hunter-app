@@ -62,6 +62,8 @@ const L2: &[&str] = &[
 const L3: &[&str] = &[
     "commands",
     "ipc_contracts",
+    // Centralized Tauri-event emit layer (one helper + generated channel consts).
+    "events",
     "main", // thin binary launcher
     "lib",  // shell entry point: holds the Tauri builder (`run()`); `main` just calls it
     "updater",
@@ -420,6 +422,10 @@ const R7_ALLOW: &[(&str, &str)] = &[
     ("postings", "commands"),
     ("autopilot_helpers", "commands"),
     ("autopilot_scheduler", "commands"),
+    // Centralized event emit: autopilot_helpers (L2) streams scrape progress via
+    // the L3 `events` helper (crate::events::emit_event + channel consts), the same
+    // shell-reach it already has for `commands`. R2 likewise allowlists this file.
+    ("autopilot_helpers", "events"),
 ];
 
 #[test]

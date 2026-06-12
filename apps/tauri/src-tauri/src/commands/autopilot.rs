@@ -6,7 +6,9 @@ use crate::autopilot::{AutopilotFilter, AutopilotStatus, AutopilotStore, FoundJo
 use crate::autopilot_helpers::autopilot_scrape;
 use crate::scraping::{JobPosting, ScraperEngine};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
+
+use crate::events::{emit_event, AUTOPILOT_STEP};
 use tokio_util::sync::CancellationToken;
 
 // AutopilotCreateRequest / AutopilotUpdateRequest are generated from the Zod
@@ -135,8 +137,9 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
 
     let ap_id = autopilot_id.clone();
     let emit_step = move |app: &AppHandle, job_id: &str, step: &str, detail: &str| {
-        let _ = app.emit(
-            "autopilot:step",
+        emit_event(
+            app,
+            AUTOPILOT_STEP,
             json!({ "jobId": job_id, "autopilotId": ap_id, "step": step, "detail": detail }),
         );
     };

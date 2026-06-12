@@ -25,6 +25,7 @@ pub mod db;
 pub mod deeplink;
 pub mod documents;
 pub mod error;
+pub mod events;
 pub mod export;
 pub mod extension_bridge;
 pub mod extraction;
@@ -232,17 +233,17 @@ fn on_app_menu_event(app: &AppHandle, id: &str) {
     match id {
         MENU_SETTINGS => crate::tray::dispatch_menu(
             app,
-            "menu:navigate",
+            crate::events::MENU_NAVIGATE,
             serde_json::json!({ "route": "/settings", "section": serde_json::Value::Null }),
         ),
         MENU_CHECK_UPDATES => crate::tray::dispatch_menu(
             app,
-            "menu:action",
+            crate::events::MENU_ACTION,
             serde_json::json!({ "action": "check-updates" }),
         ),
         MENU_SHORTCUTS => crate::tray::dispatch_menu(
             app,
-            "menu:action",
+            crate::events::MENU_ACTION,
             serde_json::json!({ "action": "shortcuts" }),
         ),
         MENU_DOCS => open_external(app, REPO_URL),
@@ -265,7 +266,7 @@ fn on_app_menu_event(app: &AppHandle, id: &str) {
             if let Some(route) = nav_route_for(other) {
                 crate::tray::dispatch_menu(
                     app,
-                    "menu:navigate",
+                    crate::events::MENU_NAVIGATE,
                     serde_json::json!({ "route": route, "section": serde_json::Value::Null }),
                 );
             }

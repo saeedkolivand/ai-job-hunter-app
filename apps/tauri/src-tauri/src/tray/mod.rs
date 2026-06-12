@@ -13,6 +13,8 @@ use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
+use crate::events::{emit_event, AUTOPILOT_FOCUS, MENU_ACTION, MENU_NAVIGATE};
+
 use crate::autopilot::{AutopilotStatus, AutopilotStore};
 use crate::commands::notifications::{push_and_notify, OsBanner};
 use crate::notifications::{NewNotification, NotificationRoute};
@@ -23,16 +25,6 @@ const CHECK_UPDATES_ID: &str = "tray_check_updates";
 const NEW_JOBS_ID: &str = "tray_new_jobs";
 const PAUSE_ALL_ID: &str = "tray_pause_all";
 const QUIT_ID: &str = "tray_quit";
-
-/// Renderer contract events emitted by the tray (mirrors the app-menu items).
-/// `menu:navigate` → `{ route, section }`; `menu:action` → `{ action }`.
-const NAVIGATE_EVENT: &str = "menu:navigate";
-const ACTION_EVENT: &str = "menu:action";
-
-/// Renderer event: focus an autopilot's found-jobs panel. An empty `autopilotId`
-/// is a pure "refresh autopilots" signal (e.g. after a tray Pause-All) with no
-/// navigation.
-const FOCUS_EVENT: &str = "autopilot:focus";
 
 /// Tray-owned state: the dynamic "New jobs" menu item handle plus the running
 /// unseen-jobs total and which autopilot to focus when the user clicks it.
@@ -94,12 +86,12 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             SHOW_ID => show_focus(app),
             SETTINGS_ID => dispatch_menu(
                 app,
-                NAVIGATE_EVENT,
+                MENU_NAVIGATE,
                 serde_json::json!({ "route": "/settings", "section": serde_json::Value::Null }),
             ),
             CHECK_UPDATES_ID => dispatch_menu(
                 app,
-                ACTION_EVENT,
+                MENU_ACTION,
                 serde_json::json!({ "action": "check-updates" }),
             ),
             NEW_JOBS_ID => on_new_jobs_click(app),
@@ -171,7 +163,7 @@ pub fn dispatch_menu(app: &AppHandle, event: &str, payload: serde_json::Value) {
     show_focus(app);
     // Low-latency trigger so a live webview drains immediately (the renderer pulls
     // the buffer rather than trusting this payload).
-    let _ = app.emit(event, payload.clone());
+    emit_event(app, event, payload.clone());
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.emit(event, payload.clone());
     }
@@ -185,7 +177,7 @@ pub fn dispatch_menu(app: &AppHandle, event: &str, payload: serde_json::Value) {
     let event_retry = event.to_string();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(tokio::time::Duration::from_millis(120)).await;
-        let _ = app_retry.emit(&event_retry, payload);
+        emit_event(&app_retry, &event_retry, payload);
     });
 }
 
@@ -233,8 +225,9 @@ pub fn on_new_jobs(app: &AppHandle, autopilot_id: &str, autopilot_name: &str, ne
 /// panel (or, with an empty id, just refreshes the list). Shared by the tray and
 /// the single-instance deep-link guard.
 pub fn emit_focus(app: &AppHandle, autopilot_id: &str) {
-    let _ = app.emit(
-        FOCUS_EVENT,
+    emit_event(
+        app,
+        AUTOPILOT_FOCUS,
         serde_json::json!({ "autopilotId": autopilot_id }),
     );
 }

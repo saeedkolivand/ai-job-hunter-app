@@ -1,7 +1,8 @@
 use crate::autopilot::AutopilotTarget;
 use crate::error::{AppError, AppResult};
+use crate::events::{emit_event, SCRAPE_ITEM, SCRAPE_PROGRESS};
 use crate::scraping::{BoardSearchInput, JobPosting, ScraperEngine};
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use tokio_util::sync::CancellationToken;
 
 /// Scrape job postings from a board
@@ -33,8 +34,9 @@ pub async fn autopilot_scrape(
     let app_progress = app.clone();
     let job_id_progress = job_id.to_string();
     let on_progress = Box::new(move |p: f32| {
-        let _ = app_progress.emit(
-            "scrape:progress",
+        emit_event(
+            &app_progress,
+            SCRAPE_PROGRESS,
             serde_json::json!({ "jobId": job_id_progress, "progress": p }),
         );
     });
@@ -42,8 +44,9 @@ pub async fn autopilot_scrape(
     let app_item = app.clone();
     let job_id_item = job_id.to_string();
     let on_item = Box::new(move |item: JobPosting| {
-        let _ = app_item.emit(
-            "scrape:item",
+        emit_event(
+            &app_item,
+            SCRAPE_ITEM,
             serde_json::json!({ "jobId": job_id_item, "item": item }),
         );
     });

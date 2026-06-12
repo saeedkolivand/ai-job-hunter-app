@@ -25,7 +25,9 @@ use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
+
+use crate::events::{emit_event, UPDATER_STATUS};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 /// Holds the pending Update and downloaded bytes between commands.
@@ -42,7 +44,7 @@ pub struct UpdaterState {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn emit_status(app: &AppHandle, status: Value) {
-    let _ = app.emit("updater:status", status);
+    emit_event(app, UPDATER_STATUS, status);
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────
