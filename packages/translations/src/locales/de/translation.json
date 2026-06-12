@@ -2177,5 +2177,21 @@
       "cancel": "Abbrechen",
       "submit": "Tracken"
     }
+  },
+  "notifications": {
+    "title": "Benachrichtigungen",
+    "empty": "Alles erledigt",
+    "markAllRead": "Alle als gelesen markieren",
+    "clearAll": "Alle löschen",
+    "bell": {
+      "aria": "Benachrichtigungen"
+    },
+    "remove": {
+      "aria": "Benachrichtigung verwerfen"
+    },
+    "unread": {
+      "aria": "{{count}} ungelesen",
+      "dotAria": "Ungelesen"
+    }
   }
 }

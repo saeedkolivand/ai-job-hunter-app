@@ -2202,5 +2202,21 @@
       "cancel": "Cancel",
       "submit": "Track"
     }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "empty": "You're all caught up",
+    "markAllRead": "Mark all read",
+    "clearAll": "Clear all",
+    "bell": {
+      "aria": "Notifications"
+    },
+    "remove": {
+      "aria": "Dismiss notification"
+    },
+    "unread": {
+      "aria": "{{count}} unread",
+      "dotAria": "Unread"
+    }
   }
 }

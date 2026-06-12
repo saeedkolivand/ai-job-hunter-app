@@ -15,7 +15,7 @@ import { OnboardingWizard } from '@/features/onboarding/OnboardingWizard';
 import { useAutopilotFocusNavigation } from '@/hooks/use-autopilot-focus-navigation';
 import { useMenuNavigation } from '@/hooks/use-menu-navigation';
 import { CapabilityProvider } from '@/providers/CapabilityProvider';
-import { useApplicationEvents, useSyncCloseToTray } from '@/services';
+import { useApplicationEvents, useNotificationEvents, useSyncCloseToTray } from '@/services';
 import { useSessionStore } from '@/store/session-store';
 
 /** Drives the native-menu navigation/actions. Rendered INSIDE
@@ -55,6 +55,13 @@ function ImportToastBridge() {
     });
   });
 
+  return null;
+}
+
+/** Mounts the app-global notification subscriptions (list-changed + open-inbox).
+ *  Rendered once inside `NotificationProvider`; the listeners attach a single time. */
+function NotificationEventsBridge() {
+  useNotificationEvents();
   return null;
 }
 
@@ -135,6 +142,7 @@ function RootLayout() {
     <NotificationProvider>
       <MenuNavigationBridge />
       <ImportToastBridge />
+      <NotificationEventsBridge />
       <ProtocolVersionGate>
         <CapabilityProvider>
           <div className="app-content relative flex h-screen flex-col overflow-hidden pt-3">
