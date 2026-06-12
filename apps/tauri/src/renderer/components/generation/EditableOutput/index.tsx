@@ -346,6 +346,7 @@ export function EditableOutput({
             spellCheck
             labels={editorLabels}
             linkSuggestions={linkSuggestions}
+            linkResolutions={linkSuggestions}
             onSelectionChange={setHasSelection}
             placeholder={placeholder ?? t('aiGenerate.placeholder')}
             className="h-full w-full"
