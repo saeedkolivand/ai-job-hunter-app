@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 
 import type { ApplicationTrackRequest } from '@ajh/shared';
@@ -21,19 +22,28 @@ export function TrackJobModal({ open, onClose }: TrackJobModalProps) {
     defaultValues: { jobUrl: '', company: '', title: '', candidate: '' },
   });
 
+  // Guard stale in-flight mutations from closing/resetting a freshly reopened modal.
+  // Each time `open` transitions to true a new session token is issued; only the
+  // submit that captured the CURRENT token may call handleClose.
+  const sessionRef = useRef(0);
+  useEffect(() => {
+    if (open) sessionRef.current += 1;
+  }, [open]);
+
   const handleClose = () => {
     reset();
     onClose();
   };
 
   const onSubmit = handleSubmit(async (values) => {
+    const session = sessionRef.current;
     const req: ApplicationTrackRequest = {};
     if (values.jobUrl.trim()) req.jobUrl = values.jobUrl.trim();
     if (values.company.trim()) req.company = values.company.trim();
     if (values.title.trim()) req.title = values.title.trim();
     if (values.candidate.trim()) req.candidate = values.candidate.trim();
     await trackMutation.mutateAsync(req);
-    handleClose();
+    if (sessionRef.current === session) handleClose();
   });
 
   const titleId = 'track-job-modal-title';
