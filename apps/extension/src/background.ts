@@ -14,7 +14,7 @@ import type { ExtensionImportRequest } from '@ajh/shared';
 
 import { BridgeClient } from './lib/bridge';
 import type { ConnectionStatus, ImportMode, PopupRequest, PopupResponse } from './lib/messages';
-import { getToken } from './lib/storage';
+import { clearToken, getToken, setToken } from './lib/storage';
 
 /** Lazily-built, worker-lifetime-scoped client. Recreated after eviction. */
 let client: BridgeClient | null = null;
@@ -115,13 +115,11 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
         return { ok: true, kind: 'status', status };
       }
       case 'setToken': {
-        const { setToken } = await import('./lib/storage');
         await setToken(req.token);
         void getClient().ensureConnected();
         return { ok: true, kind: 'token' };
       }
       case 'clearToken': {
-        const { clearToken } = await import('./lib/storage');
         await clearToken();
         return { ok: true, kind: 'token' };
       }
