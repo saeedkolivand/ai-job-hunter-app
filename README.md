@@ -132,7 +132,7 @@ The only outbound calls are to the AI provider **you** configure (and an optiona
 - MV3 extension for **Chrome & Firefox** — while browsing any job board, click the extension button to import the job into your saved applications.
 - **Two import modes:** **Import via URL** (extension sends the URL, app fetches + parses), or **Scan page** (extension captures the authenticated DOM, useful for login-walled boards).
 - Fully local — jobs are sent to the desktop app over a **loopback-only WebSocket**, paired with a secret token. Zero remote backend, zero analytics.
-- See <a href="apps/extension/README.md" target="_blank" rel="noopener noreferrer">apps/extension/README.md</a> for setup, dev pairing, and architecture.
+- See <a href="apps/extension/README.md" target="_blank" rel="noopener noreferrer">apps/extension/README.md</a> for setup, dev pairing, and architecture. Try it locally — see the extension's <a href="apps/extension/README.md#local-development--testing" target="_blank" rel="noopener noreferrer">Local development & testing</a> guide.
 </details>
 
 <details>

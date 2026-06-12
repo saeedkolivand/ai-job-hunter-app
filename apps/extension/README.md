@@ -59,56 +59,48 @@ For **local development**, see the section below — the unpacked extension gets
 
 ## Local Development & Testing
 
-When you load an unpacked extension (Chrome or Firefox), the browser assigns it a fresh, machine-specific id that **does not** match the published extension ids in the desktop app's allowlist. The app will reject the pairing handshake unless you tell it to trust your dev id.
+The one non-obvious step is **dev pairing**: a locally-loaded (unpacked) extension gets a random dev id that is NOT in the desktop app's origin allowlist (which only holds publish-time placeholders), so the app refuses to pair with it unless you trust that dev origin via the `AJH_EXTENSION_DEV_ORIGINS` env var. Chrome is the easiest target.
 
-### Setup
-
-1. **Build the extension:**
+1. **Build the extension** (repo root):
 
    ```bash
    pnpm -F @ajh/extension build
    ```
 
-2. **Load unpacked:**
-   - **Chrome:** `chrome://extensions` → toggle **Developer mode** → click **Load unpacked** → select `apps/extension/dist/chrome` → note the extension id (e.g. `abcdef123...`)
-   - **Firefox:** `about:debugging#/runtime/this-firefox` → click **Load Temporary Add-on** → select `apps/extension/dist/firefox/manifest.json` → note the uuid from `about:debugging` (e.g. `12345678-1234-1234-1234-123456789abc`)
+   Produces `apps/extension/dist/chrome` and `apps/extension/dist/firefox`.
 
-3. **Start the desktop app with the dev-origin override:**
+2. **Load it in Chrome + copy its id:**
+
+   Open `chrome://extensions` → toggle **Developer mode** → **Load unpacked** → select `apps/extension/dist/chrome` → copy the extension **id** shown on the card (32 letters; stable for that folder).
+
+3. **Start the desktop app trusting that dev id** — the env var must be set on the shell that launches the app, from the repo root:
 
    **PowerShell:**
 
    ```powershell
-   $env:AJH_EXTENSION_DEV_ORIGINS = "chrome-extension://abcdef123..."
+   $env:AJH_EXTENSION_DEV_ORIGINS = "chrome-extension://PASTE_THE_ID_HERE"
    pnpm dev
    ```
 
-   **Bash / macOS / Linux:**
+   **Bash:**
 
    ```bash
-   AJH_EXTENSION_DEV_ORIGINS="chrome-extension://abcdef123..." pnpm dev
+   AJH_EXTENSION_DEV_ORIGINS="chrome-extension://PASTE_THE_ID_HERE" pnpm dev
    ```
 
-   For **Firefox**, use the uuid:
+   Without it, the popup can't pair (the bridge rejects the unknown origin).
 
-   ```bash
-   AJH_EXTENSION_DEV_ORIGINS="moz-extension://12345678-1234-1234-1234-123456789abc" pnpm dev
-   ```
+4. **Pair:**
 
-4. **Pair the extension:**
-   - Desktop app is now running with your dev extension id allowed
-   - Extension popup → paste the pairing token from app Settings
-   - You'll see the import buttons
+   In the app, **Settings → Browser extension** shows the port, connection status, and the **pairing token** — copy it; click the extension icon in Chrome, paste the token, **Save & pair** (status pill → Connected).
 
-5. **Test import modes:**
-   - **Import via URL:** open any job posting → click **Import via URL** → job appears in Saved
-   - **Scan page:** click **Scan page** → extension captures the DOM → desktop parses it (useful for authenticated pages)
-   - Tick **"I already applied"** to mark as applied instead of saved
+5. **Import a job:**
 
-### Tips
+   Open any job posting → click the extension → **Import via URL** (sends the tab url; the app fetches + parses) or **Scan page** (sends the rendered DOM, for logged-in LinkedIn etc.); tick **"I already applied"** to land it as `applied` instead of `saved`. The job appears live in the app's **Applications** list (deduped by url).
 
-- Chrome dev id changes if you remove and re-load the unpacked extension — use `chrome://extensions` to get the new id each time
-- Firefox uuid stays the same across reloads (check `about:debugging` to confirm)
-- The pairing token can be regenerated any time from app Settings → Browser extension
+**Notes:** the app must be running first (the popup shows an "AI Job Hunter isn't running" state with a Retry button otherwise). **Firefox:** `about:debugging` → **Load Temporary Add-on** → `dist/firefox/manifest.json`; its origin is a per-profile `moz-extension://<uuid>` (find it in `about:debugging`), so set `AJH_EXTENSION_DEV_ORIGINS="moz-extension://<uuid>"`. **Multiple browsers at once:** comma-separate, e.g. `chrome-extension://<id>,moz-extension://<uuid>`.
+
+The loopback WebSocket (`ws://127.0.0.1:47615..47620`) discovers the desktop app — see `apps/tauri/src-tauri/src/extension_bridge/` for the bridge server and `src/lib/bridge.ts::probeRange` for how the extension finds the port.
 
 ---
 
