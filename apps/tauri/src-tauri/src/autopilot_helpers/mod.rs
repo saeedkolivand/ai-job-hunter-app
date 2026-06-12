@@ -34,7 +34,7 @@ pub async fn autopilot_scrape(
     let job_id_progress = job_id.to_string();
     let on_progress = Box::new(move |p: f32| {
         let _ = app_progress.emit(
-            "scrape.progress",
+            "scrape:progress",
             serde_json::json!({ "jobId": job_id_progress, "progress": p }),
         );
     });
@@ -43,7 +43,7 @@ pub async fn autopilot_scrape(
     let job_id_item = job_id.to_string();
     let on_item = Box::new(move |item: JobPosting| {
         let _ = app_item.emit(
-            "scrape.item",
+            "scrape:item",
             serde_json::json!({ "jobId": job_id_item, "item": item }),
         );
     });

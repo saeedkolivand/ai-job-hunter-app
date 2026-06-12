@@ -3,7 +3,7 @@
 //! Autopilot is a background discovery agent: when a scheduled run surfaces
 //! brand-new postings the user isn't looking at the app, so we (1) raise a
 //! permission-gated OS notification and (2) bump a "New jobs: N" tray counter.
-//! Clicking that counter focuses the window and emits `autopilot.focus` so the
+//! Clicking that counter focuses the window and emits `autopilot:focus` so the
 //! renderer jumps to the autopilot whose run produced the newest finds.
 
 use std::sync::Arc;
@@ -25,14 +25,14 @@ const PAUSE_ALL_ID: &str = "tray_pause_all";
 const QUIT_ID: &str = "tray_quit";
 
 /// Renderer contract events emitted by the tray (mirrors the app-menu items).
-/// `menu.navigate` → `{ route, section }`; `menu.action` → `{ action }`.
-const NAVIGATE_EVENT: &str = "menu.navigate";
-const ACTION_EVENT: &str = "menu.action";
+/// `menu:navigate` → `{ route, section }`; `menu:action` → `{ action }`.
+const NAVIGATE_EVENT: &str = "menu:navigate";
+const ACTION_EVENT: &str = "menu:action";
 
 /// Renderer event: focus an autopilot's found-jobs panel. An empty `autopilotId`
 /// is a pure "refresh autopilots" signal (e.g. after a tray Pause-All) with no
 /// navigation.
-const FOCUS_EVENT: &str = "autopilot.focus";
+const FOCUS_EVENT: &str = "autopilot:focus";
 
 /// Tray-owned state: the dynamic "New jobs" menu item handle plus the running
 /// unseen-jobs total and which autopilot to focus when the user clicks it.
@@ -145,7 +145,7 @@ pub fn show_focus(app: &AppHandle) {
     }
 }
 
-/// Restore the window and deliver a menu intent (`menu.navigate` / `menu.action`)
+/// Restore the window and deliver a menu intent (`menu:navigate` / `menu:action`)
 /// from the tray or the macOS menu bar.
 ///
 /// `emit` is fire-and-forget — there is no per-listener queue — so a push fired

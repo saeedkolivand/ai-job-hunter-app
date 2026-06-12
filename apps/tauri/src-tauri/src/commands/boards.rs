@@ -45,7 +45,7 @@ pub async fn boards_login_with_browser(app: AppHandle, board_id: String) -> Valu
     // Status callback that emits Tauri events
     let on_status = move |status: &str| {
         let _ = app_clone.emit(
-            "board.login.status",
+            "boards:login-status",
             serde_json::json!({
                 "boardId": board_id_clone,
                 "status": status

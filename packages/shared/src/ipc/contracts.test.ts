@@ -101,7 +101,7 @@ describe('MenuContract (event-only namespace)', () => {
 
   it('takePending resolves to a pending intent or null (reliable pull, not an event)', async () => {
     const navigateIntent: PendingMenuIntent = {
-      event: 'menu.navigate',
+      event: 'menu:navigate',
       payload: { route: '/settings', section: 'ai' },
     };
     const empty: MenuContract = {
@@ -120,13 +120,13 @@ describe('MenuContract (event-only namespace)', () => {
 
   it('declares the documented event-name channels', () => {
     // The wire event names the shell emits and the client listens for. Source of
-    // truth: the Rust `app.emit("menu.navigate" | "menu.action", …)` in
+    // truth: the Rust `app.emit("menu:navigate" | "menu:action", …)` in
     // `apps/tauri/src-tauri/src/lib.rs` and the matching `listen(…)` calls in
     // `apps/tauri/src/tauri-client/namespaces/menu/menu.ts`. Locked here so a
     // rename on one side without the other is caught.
-    const eventNames = ['menu.navigate', 'menu.action'];
-    expect(eventNames).toContain('menu.navigate');
-    expect(eventNames).toContain('menu.action');
+    const eventNames = ['menu:navigate', 'menu:action'];
+    expect(eventNames).toContain('menu:navigate');
+    expect(eventNames).toContain('menu:action');
     // Event names must not collide with any request/response IPC channel.
     const ipcChannels = new Set<string>();
     for (const namespace of Object.values(IPC_CHANNELS)) {

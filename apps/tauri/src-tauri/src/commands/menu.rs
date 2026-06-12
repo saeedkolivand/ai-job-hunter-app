@@ -1,6 +1,6 @@
 //! Native-menu IPC commands.
 //!
-//! The shell delivers menu intents (`menu.navigate` / `menu.action`) by emitting
+//! The shell delivers menu intents (`menu:navigate` / `menu:action`) by emitting
 //! to the renderer. But `emit` is fire-and-forget: when the window was hidden
 //! (close-to-tray) the WebView2 is suspended, so an emit fired right after the
 //! window is un-hidden lands before the resumed webview re-attaches its
@@ -11,7 +11,7 @@
 //! not.
 
 /// A menu intent buffered shell-side, returned to the renderer. `event` is the
-/// same name the shell would otherwise `emit` (`menu.navigate` / `menu.action`);
+/// same name the shell would otherwise `emit` (`menu:navigate` / `menu:action`);
 /// `payload` is its untyped JSON (the renderer discriminates on `event`).
 #[derive(Debug, PartialEq, serde::Serialize)]
 pub struct PendingMenuIntent {
@@ -49,14 +49,14 @@ mod tests {
     fn returns_buffered_intent_then_clears() {
         let payload = json!({ "route": "/settings", "section": null });
         let buf = PendingMenu(Mutex::new(Some((
-            "menu.navigate".to_string(),
+            "menu:navigate".to_string(),
             payload.clone(),
         ))));
 
         assert_eq!(
             take_pending(&buf),
             Some(PendingMenuIntent {
-                event: "menu.navigate".to_string(),
+                event: "menu:navigate".to_string(),
                 payload,
             })
         );

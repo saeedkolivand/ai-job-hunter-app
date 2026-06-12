@@ -9,7 +9,7 @@ import { useSessionStore } from '@/store/session-store';
 
 /**
  * App-global listener for the autopilot "go look at the finds" signal: the shell
- * `autopilot.focus` event (tray "New jobs" click or a validated deep link) —
+ * `autopilot:focus` event (tray "New jobs" click or a validated deep link) —
  * refreshes the list and, with an `autopilotId`, routes to /autopilot + flags the
  * card to auto-expand (empty id = refresh only).
  *

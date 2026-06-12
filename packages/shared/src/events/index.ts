@@ -4,9 +4,8 @@
  * `IPC_CHANNELS` pattern for request/response channels, but for one-way events.
  *
  * Event names use the COLON convention (`ns:event`) as the target wire format.
- * Some channels still emit dot names on the wire today (e.g. `menu.navigate`);
- * a later phase renames the Rust/TS wire from dot -> colon. This registry is the
- * target, and the lock test guards it.
+ * All channels now emit colon names on the wire (e.g. `menu:navigate`). This
+ * registry is the source of truth; the lock test guards it.
  *
  * BARREL NOTE: the package barrel re-exports this file with `export *`, alongside
  * `types/index.js` and `ipc/contracts/index.js`. So this file must NOT re-export

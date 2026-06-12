@@ -136,7 +136,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     let ap_id = autopilot_id.clone();
     let emit_step = move |app: &AppHandle, job_id: &str, step: &str, detail: &str| {
         let _ = app.emit(
-            "autopilot.step",
+            "autopilot:step",
             json!({ "jobId": job_id, "autopilotId": ap_id, "step": step, "detail": detail }),
         );
     };

@@ -82,7 +82,7 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
     let job_id_progress = job_id.clone();
     let on_progress = Box::new(move |p: f32| {
         let _ = app_progress.emit(
-            "scrape.progress",
+            "scrape:progress",
             json!({ "jobId": job_id_progress, "progress": p }),
         );
         if let Some(tracker) = app_progress.try_state::<Mutex<crate::jobs::JobTracker>>() {

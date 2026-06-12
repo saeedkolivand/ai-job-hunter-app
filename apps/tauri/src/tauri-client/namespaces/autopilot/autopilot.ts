@@ -27,7 +27,7 @@ export const autopilot = {
   pause: ({ autopilotId }: { autopilotId: string }) => invoke('autopilot_pause', { autopilotId }),
   resume: ({ autopilotId }: { autopilotId: string }) => invoke('autopilot_resume', { autopilotId }),
   onStep: (handler: (event: AutopilotStepEvent) => void) =>
-    asyncUnsub(() => listen<AutopilotStepEvent>('autopilot.step', (e) => handler(e.payload))),
+    asyncUnsub(() => listen<AutopilotStepEvent>('autopilot:step', (e) => handler(e.payload))),
   onFocus: (handler: (event: AutopilotFocusEvent) => void) =>
-    asyncUnsub(() => listen<AutopilotFocusEvent>('autopilot.focus', (e) => handler(e.payload))),
+    asyncUnsub(() => listen<AutopilotFocusEvent>('autopilot:focus', (e) => handler(e.payload))),
 };
