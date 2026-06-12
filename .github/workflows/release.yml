@@ -809,8 +809,9 @@ jobs:
           | 🍎 macOS (Apple Silicon) | [.dmg]($URL/macos-AI-Job-Hunter-Assistant_${RAW}_aarch64-apple-silicon.dmg) |
           | 🍎 macOS (Intel) | [.dmg]($URL/macos-AI-Job-Hunter-Assistant_${RAW}_x64-intel.dmg) |
           | 🐧 Linux | [AppImage]($URL/linux-AI-Job-Hunter-Assistant_${RAW}_amd64.AppImage) · [.deb]($URL/linux-AI-Job-Hunter-Assistant_${RAW}_amd64.deb) · [.rpm]($URL/linux-AI-Job-Hunter-Assistant-${RAW}-1.x86_64.rpm) |
+          | 🧩 Browser extension | [Chrome (.zip)]($URL/ai-job-hunter-extension-chrome-${VERSION}.zip) · [Firefox (.zip)]($URL/ai-job-hunter-extension-firefox-${VERSION}.zip) |
 
-          _Installed apps auto-update — no need to re-download for new versions._
+          _Installed apps auto-update — no need to re-download for new versions. The browser extension installs from its .zip (load unpacked / store upload)._
           <!-- downloads:end -->
           EOF
           )"

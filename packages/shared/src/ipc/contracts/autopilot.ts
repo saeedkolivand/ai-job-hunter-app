@@ -46,5 +46,4 @@ export const AUTOPILOT_CHANNELS = {
   run: 'autopilot:run',
   pause: 'autopilot:pause',
   resume: 'autopilot:resume',
-  focus: 'autopilot:focus',
 } as const;
