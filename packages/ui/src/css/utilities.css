@@ -739,11 +739,12 @@ html[data-text-scale='large'] {
   border-color: var(--border-soft);
 }
 
-/* Two-tone chrome (macOS System Settings): the sidebar sits on the gray canvas
-   tone (lightly translucent) while content cards stay near-opaque white. We
-   override only the sidebar here so the glass elevation ladder stays intact. */
+/* In light mode the sidebar shares the page's canvas tone. The previous two-tone
+   macOS gray read as a mismatched panel against the parchment canvas; using the
+   canvas color makes the sidebar match the rest of the page while its glass border
+   + shadow keep it reading as a panel. */
 [data-color-scheme='light'] .app-sidebar {
-  background: rgb(232 235 242 / 0.72);
+  background: var(--color-background);
 }
 
 /* The main content area is a near-opaque white panel in dark mode (intended),

@@ -254,10 +254,12 @@ Props:
 
 Source: `packages/ui/src/components/RichTextEditor/`; exported from `@ajh/ui` at `packages/ui/src/index.ts`.
 
-#### `SelectDropdown`
+#### `Dropdown`
+
+The single canonical select — the former `SelectDropdown` and `Dropdown` were merged into one. Keyboard navigation, drop-up flip, a leading `icon`, auto-search at ≥8 options, and optional `options[].section` group headers + `options[].meta` right-aligned text.
 
 ```typescript
-<SelectDropdown
+<Dropdown
   options={[{ value: "en", label: "English" }, { value: "de", label: "Deutsch" }]}
   value={locale}
   onChange={setLocale}
@@ -635,7 +637,7 @@ These are enforced in CI (`pnpm lint:strict`) by [ESLint][eslint]:
 | ------------------------------------ | -------------------------------------------------------------------------------- |
 | No `[#RRGGBB]` in className          | Hardcoded hex colors                                                             |
 | No `<button>` raw element            | Missing Button primitive (use `variant="unstyled"` for custom surfaces)          |
-| No `<select>` raw element            | Missing SelectDropdown primitive                                                 |
+| No `<select>` raw element            | Missing Dropdown primitive                                                       |
 | No `<textarea>` raw element          | Missing TextArea primitive                                                       |
 | No `<input>` raw element             | Missing Input primitive — `type=range\|file\|checkbox\|radio\|hidden` are exempt |
 | No inline `{duration, ease}` objects | Missing motion token (use `transition.*`, `withDelay()`)                         |
