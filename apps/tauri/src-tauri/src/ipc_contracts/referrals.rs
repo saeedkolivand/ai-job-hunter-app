@@ -3,10 +3,11 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct ReferralUpsertRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     #[serde(default = "default_referral_upsert_request_job_url")]
     pub job_url: String,
@@ -14,15 +15,21 @@ pub struct ReferralUpsertRequest {
     pub company_name: String,
     #[serde(default = "default_referral_upsert_request_person_name")]
     pub person_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub person_role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub linkedin_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub email_draft: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message_draft: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub invite_note_draft: Option<String>,
     #[serde(default = "default_referral_upsert_request_channel")]
     pub channel: String,
     #[serde(default = "default_referral_upsert_request_status")]
     pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
 }
 

@@ -11,11 +11,11 @@
 
 use async_trait::async_trait;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tauri::AppHandle;
 
 use crate::error::{AppError, AppResult};
-use crate::events::{emit_event, AI_STREAM};
+use crate::events::{emit_event, AiStreamChunk, AiStreamChunkError, AI_STREAM};
 pub use crate::ipc_contracts::ai::AiGenerateRequest;
 
 mod anthropic;
@@ -496,12 +496,16 @@ pub fn emit_stream_error(app: &AppHandle, job_id: &str, message: &str) {
     emit_event(
         app,
         AI_STREAM,
-        json!({
-            "jobId": job_id,
-            "delta": "",
-            "done": true,
-            "error": { "code": "GENERATION_FAILED", "message": message },
-        }),
+        AiStreamChunk {
+            job_id: job_id.to_string(),
+            delta: String::new(),
+            done: true,
+            error: Some(AiStreamChunkError {
+                code: "GENERATION_FAILED".to_string(),
+                message: message.to_string(),
+            }),
+            thinking: None,
+        },
     );
 }
 

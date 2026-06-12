@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::commands::ai::get_provider_key;
-use crate::events::{emit_event, AI_STREAM};
+use crate::events::{emit_event, AiStreamChunk, AI_STREAM};
 use crate::jobs::JobTracker;
 
 use crate::error::{AppError, AppResult};
@@ -168,7 +168,13 @@ impl AiProvider for AnthropicClient {
                             emit_event(
                                 app,
                                 AI_STREAM,
-                                json!({ "jobId": job_id, "delta": "", "done": true }),
+                                AiStreamChunk {
+                                    job_id: job_id.to_string(),
+                                    delta: String::new(),
+                                    done: true,
+                                    error: None,
+                                    thinking: None,
+                                },
                             );
                             app.state::<Mutex<JobTracker>>()
                                 .lock()
@@ -195,7 +201,13 @@ impl AiProvider for AnthropicClient {
                                     emit_event(
                                         app,
                                         AI_STREAM,
-                                        json!({ "jobId": job_id, "delta": thinking, "done": false, "thinking": true }),
+                                        AiStreamChunk {
+                                            job_id: job_id.to_string(),
+                                            delta: thinking.to_string(),
+                                            done: false,
+                                            error: None,
+                                            thinking: Some(true),
+                                        },
                                     );
                                 }
                             }
@@ -208,7 +220,13 @@ impl AiProvider for AnthropicClient {
                                     emit_event(
                                         app,
                                         AI_STREAM,
-                                        json!({ "jobId": job_id, "delta": text, "done": false }),
+                                        AiStreamChunk {
+                                            job_id: job_id.to_string(),
+                                            delta: text.to_string(),
+                                            done: false,
+                                            error: None,
+                                            thinking: None,
+                                        },
                                     );
                                 }
                             }
@@ -227,7 +245,13 @@ impl AiProvider for AnthropicClient {
         emit_event(
             app,
             AI_STREAM,
-            json!({ "jobId": job_id, "delta": "", "done": true }),
+            AiStreamChunk {
+                job_id: job_id.to_string(),
+                delta: String::new(),
+                done: true,
+                error: None,
+                thinking: None,
+            },
         );
         app.state::<Mutex<JobTracker>>()
             .lock()

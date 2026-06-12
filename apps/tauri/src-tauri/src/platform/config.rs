@@ -78,6 +78,14 @@ pub fn extension_dev_origins() -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Read an arbitrary process env var by key, returning `None` when unset or
+/// non-UTF-8. The centralized home for ad-hoc env reads (e.g. a CLI agent's
+/// `<AGENT>_BIN` binary-path override) so the R4 "env access only in platform/**"
+/// rule holds without each caller touching `std::env`.
+pub fn env_override(key: &str) -> Option<String> {
+    std::env::var(key).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

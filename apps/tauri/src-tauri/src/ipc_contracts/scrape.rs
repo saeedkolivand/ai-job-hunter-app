@@ -3,24 +3,31 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct ScrapeBoardRequest {
     pub board: String,
     pub query: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
     #[serde(default = "default_scrape_board_request_pages")]
     pub pages: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub date_filter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub country_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub latitude: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub longitude: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub radius_km: Option<u32>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct ScrapeUrlRequest {

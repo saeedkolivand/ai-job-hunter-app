@@ -3,23 +3,30 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct AiGenerateRequest {
     pub model: String,
     pub messages: Vec<AiGenerateRequestMessage>,
     pub locale: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub context_window: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct AiGenerateRequestMessage {
@@ -27,15 +34,16 @@ pub struct AiGenerateRequestMessage {
     pub content: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct AiEmbedRequest {
     pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct AiGenerationSaveRequest {
@@ -73,7 +81,7 @@ pub struct AiGenerationSaveRequest {
     pub company_brief: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct AiGenerationSaveRequestApplicationAnswer {
@@ -85,12 +93,14 @@ pub struct AiGenerationSaveRequestApplicationAnswer {
     pub answer: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct AiGenerationUpdateRequest {
     pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resume_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cover_letter_text: Option<String>,
 }
 
