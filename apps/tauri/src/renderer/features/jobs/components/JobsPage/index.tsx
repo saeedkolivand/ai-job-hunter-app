@@ -190,17 +190,18 @@ export function JobsPage() {
                     {t('jobs.clear')}
                   </Button>
                 )}
-                <div className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-1.5 transition-colors focus-within:border-brand/35">
-                  <ListFilter size={12} className="shrink-0 text-foreground/40" />
-                  <Input
-                    value={filter}
-                    onChange={(e) => setFilter(e.target.value)}
-                    placeholder={t('jobs.searchPlaceholder')}
-                    className="w-48 bg-transparent text-xs text-foreground outline-none placeholder:text-foreground/25 border-none p-0 rounded-none"
-                    variant="default"
-                  />
-                </div>
+                <Input
+                  prefix={<ListFilter size={12} />}
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  placeholder={t('jobs.searchPlaceholder')}
+                  className="w-48 text-xs text-foreground/75 placeholder:text-foreground/30"
+                  variant="default"
+                  wrapperClassName="h-7"
+                  allowClear
+                />
                 <Dropdown
+                  size="sm"
                   options={[
                     { value: 'newest', label: t('jobs.sortNewest') },
                     { value: 'oldest', label: t('jobs.sortOldest') },

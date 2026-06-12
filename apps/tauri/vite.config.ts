@@ -9,7 +9,17 @@ const TAURI_DEV_PORT = 5174;
 
 export default defineConfig({
   resolve: {
-    alias: { '@': path.resolve(__dirname, 'src/renderer') },
+    alias: [
+      // Resolve the design system to its SOURCE in dev so packages/ui edits
+      // hot-reload — otherwise the renderer loads the prebuilt dist (exports
+      // "." → ./dist/index.js) and src changes are invisible until a rebuild.
+      // Exact-match regex so `@ajh/ui/css` still resolves to the package.
+      {
+        find: /^@ajh\/ui$/,
+        replacement: path.resolve(__dirname, '../../packages/ui/src/index.ts'),
+      },
+      { find: '@', replacement: path.resolve(__dirname, 'src/renderer') },
+    ],
   },
   plugins: [
     TanStackRouterVite({

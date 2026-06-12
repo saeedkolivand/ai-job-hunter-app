@@ -1,19 +1,12 @@
-import { Info, Loader2, type LucideIcon } from 'lucide-react';
+import { Loader2, type LucideIcon } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { ReactNode } from 'react';
 
-import { cn } from '../../lib/cn';
 import { transition } from '../../lib/motion';
+import { Alert } from '../Alert';
+import { Button } from '../Button';
 
 type Tone = 'info' | 'amber';
-
-const TONE: Record<Tone, { box: string; icon: string }> = {
-  info: { box: 'border-blue-400/15 bg-blue-400/5 text-blue-200/75', icon: 'text-blue-400/60' },
-  amber: {
-    box: 'border-amber-400/15 bg-amber-400/5 text-amber-200/80',
-    icon: 'text-amber-400/60',
-  },
-};
 
 export interface SetupHintProps {
   /** Collapses (with animation) when false. Default true. */
@@ -31,8 +24,7 @@ export interface SetupHintProps {
 
 /**
  * Inline "a prerequisite blocks this flow — here's the one-click fix" banner.
- * Generalized from the jobs ScrapeForm auth hint so every blocked flow (no AI
- * provider, disconnected board, …) gets the same nudge + action affordance.
+ * Renders via `Alert` so tone, layout, and accessibility are consistent.
  */
 export function SetupHint({
   show = true,
@@ -40,11 +32,26 @@ export function SetupHint({
   actionLabel,
   onAction,
   pending = false,
-  icon: Icon = Info,
+  icon: IconProp,
   tone = 'info',
   className,
 }: SetupHintProps) {
-  const c = TONE[tone];
+  const alertType = tone === 'amber' ? 'warning' : 'info';
+  const iconNode = IconProp ? <IconProp size={12} /> : undefined;
+
+  const action =
+    actionLabel && onAction ? (
+      <Button
+        type="button"
+        variant="unstyled"
+        disabled={pending}
+        onClick={onAction}
+        className="shrink-0 text-[11px] text-brand-soft underline-offset-2 hover:underline disabled:opacity-50"
+      >
+        {pending ? <Loader2 size={11} className="animate-spin" /> : actionLabel}
+      </Button>
+    ) : undefined;
+
   return (
     <AnimatePresence>
       {show && (
@@ -55,26 +62,15 @@ export function SetupHint({
           transition={transition.fast}
           className="overflow-hidden"
         >
-          <div
-            className={cn(
-              'flex items-center gap-2 rounded-lg border px-3 py-2 text-[11px]',
-              c.box,
-              className
-            )}
-          >
-            <Icon size={12} className={cn('shrink-0', c.icon)} />
-            <span>{message}</span>
-            {actionLabel && onAction && (
-              <button
-                type="button"
-                disabled={pending}
-                onClick={onAction}
-                className="ml-auto shrink-0 text-brand-soft underline-offset-2 hover:underline disabled:opacity-50"
-              >
-                {pending ? <Loader2 size={11} className="animate-spin" /> : actionLabel}
-              </button>
-            )}
-          </div>
+          <Alert
+            type={alertType}
+            message={message}
+            showIcon
+            icon={iconNode}
+            action={action}
+            className={className}
+            style={{ fontSize: '11px', padding: '6px 10px' }}
+          />
         </motion.div>
       )}
     </AnimatePresence>

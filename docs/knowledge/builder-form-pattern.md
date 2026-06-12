@@ -11,7 +11,7 @@ React Component (BuilderWizard)
     ↓
 useForm (RHF) → form state (live editing)
     ↓
-Controller → @ajh/ui primitives (Button, Input, SelectDropdown, etc.)
+Controller → @ajh/ui primitives (Button, Input, Dropdown, etc.)
     ↓
 useFieldArray (FieldArrayList) → repeatable sections
     ↓
@@ -72,9 +72,9 @@ const onBuild = async () => {
 ## RHF patterns
 
 - **useFieldArray** for repeatable sections (experience, education, extra links). Call `remove(index)` to delete; note the **stale-read hazard** (see lessons).
-- **Controller** wraps custom @ajh/ui controls (Input, SelectDropdown, etc.) since they don't accept `ref`.
+- **Controller** wraps custom @ajh/ui controls (Input, Dropdown, etc.) since they don't accept `ref`.
 - **@ajh/ui LocationInput** for experience/education location (custom control, Controller-bound).
-- **MonthYearField** — two SelectDropdown fields ("MMM", "YYYY") or "Present" checkbox; rendered as inline controls.
+- **MonthYearField** — two Dropdown fields ("MMM", "YYYY") or "Present" checkbox; rendered as inline controls.
 - **Form-level validation**: `formState.isValid` gates the Build button until all required fields pass schema validation.
 
 ## ContactProfileForm (isolated)
