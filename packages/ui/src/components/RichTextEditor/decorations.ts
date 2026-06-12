@@ -47,7 +47,10 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-const BARE_URL_RE = /\bhttps?:\/\/[^\s)]+/gi;
+// A URL in body text: a scheme URL, OR a scheme-less domain WITH a path
+// (`github.com/user/repo`) — the form résumé project links usually take. A bare
+// domain with no path, or a token like `CI/CD`, is intentionally NOT matched.
+const URL_RE = /\bhttps?:\/\/[^\s)]+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\/[^\s)]+/gi;
 
 // ── Header region ───────────────────────────────────────────────────────────
 
@@ -58,6 +61,15 @@ function firstHeadingIndex(doc: PMNode): number {
     if (found === -1 && node.type.name === 'heading') found = index;
   });
   return found;
+}
+
+/** Document position where the first top-level heading starts, or -1 if none. */
+function firstHeadingPos(doc: PMNode): number {
+  let pos = -1;
+  doc.forEach((node, offset) => {
+    if (pos === -1 && node.type.name === 'heading') pos = offset;
+  });
+  return pos;
 }
 
 function headerDecorations(doc: PMNode): Decoration[] {
@@ -80,6 +92,14 @@ function headerDecorations(doc: PMNode): Decoration[] {
 // ── Links ───────────────────────────────────────────────────────────────────
 
 function linkDecorations(doc: PMNode, resolutions: LinkResolution[]): Decoration[] {
+  // Contact-brand labels (LinkedIn, GitHub, Website, …) are linked ONLY inside the
+  // header region — the contact line lives before the first section heading —
+  // mirroring the backend's contact-line gating. This stops a brand keyword from
+  // being linked where it merely appears in body text (e.g. "github" inside a
+  // project URL in a PROJECTS section). Project links are picked up as URLs below.
+  const headingPos = firstHeadingPos(doc);
+  const headerLimit = headingPos === -1 ? Number.POSITIVE_INFINITY : headingPos;
+
   // Whole-word, case-insensitive matchers for each resolved label. Labels under
   // 2 chars are skipped to avoid decorating stray fragments.
   const matchers = resolutions
@@ -96,19 +116,23 @@ function linkDecorations(doc: PMNode, resolutions: LinkResolution[]): Decoration
     if (node.marks.some((m) => m.type.name === 'link')) return;
     const text = node.text;
 
-    for (const { url, re } of matchers) {
-      re.lastIndex = 0;
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(text)) !== null) {
-        decorations.push(
-          Decoration.inline(pos + m.index, pos + m.index + m[0].length, linkSpec(url))
-        );
+    // Brand labels: header region only (gated like the export's contact line).
+    if (pos < headerLimit) {
+      for (const { url, re } of matchers) {
+        re.lastIndex = 0;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(text)) !== null) {
+          decorations.push(
+            Decoration.inline(pos + m.index, pos + m.index + m[0].length, linkSpec(url))
+          );
+        }
       }
     }
 
-    BARE_URL_RE.lastIndex = 0;
+    // URLs (including scheme-less project links): anywhere in the document.
+    URL_RE.lastIndex = 0;
     let u: RegExpExecArray | null;
-    while ((u = BARE_URL_RE.exec(text)) !== null) {
+    while ((u = URL_RE.exec(text)) !== null) {
       decorations.push(
         Decoration.inline(pos + u.index, pos + u.index + u[0].length, linkSpec(u[0]))
       );

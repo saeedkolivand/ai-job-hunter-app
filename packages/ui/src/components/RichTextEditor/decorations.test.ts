@@ -40,6 +40,27 @@ describe('buildDecorations — links', () => {
   it('ignores labels shorter than two characters', () => {
     expect(decoratedTexts('a b a', [{ label: 'a', url: 'https://x.com' }])).toHaveLength(0);
   });
+
+  it('autolinks a scheme-less project url (domain + path)', () => {
+    expect(decoratedTexts('AI Job Hunter — github.com/me/ai-job-hunter')).toContain(
+      'github.com/me/ai-job-hunter'
+    );
+  });
+
+  it('does not match a bare token like CI/CD as a url', () => {
+    expect(decoratedTexts('Methodologies: Agile, Scrum, CI/CD, TDD')).toHaveLength(0);
+  });
+
+  it('links the project url, not the brand keyword, in a body section', () => {
+    // "GitHub" sits in a body bullet (after a heading), not on the contact line,
+    // so the brand label must NOT be linked — only the project URL is.
+    const texts = decoratedTexts('## PROJECTS\n- AI Job Hunter — github.com/me/repo', [
+      { label: 'GitHub', url: 'https://github.com/me' },
+    ]);
+    expect(texts).not.toContain('GitHub');
+    expect(texts).not.toContain('github');
+    expect(texts).toContain('github.com/me/repo');
+  });
 });
 
 describe('buildDecorations — header region', () => {
