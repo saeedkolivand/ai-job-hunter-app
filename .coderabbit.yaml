@@ -12,11 +12,10 @@
 
 language: en-US
 
-tone_instructions: >
-  Be concise and technical. Drop filler. Only HIGH/CRITICAL findings are blocking
-  (architecture-rule violations; untested error/security paths on changed code;
-  credential/IPC/updater exploits; data loss/corruption). Treat style, naming, and
-  preference as advisory. Never approve or request-changes — comment only.
+tone_instructions: >-
+  Be concise and technical; no filler. Only HIGH/CRITICAL findings block (arch
+  violations, untested error/security paths, credential/IPC/updater exploits, data
+  loss); the rest is advisory. Never approve or block — comment only.
 
 reviews:
   profile: assertive
