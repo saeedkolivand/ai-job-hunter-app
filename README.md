@@ -497,6 +497,15 @@ See <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBU
 
 ---
 
+## ⚖️ Responsible Use
+
+- **Respect each site's Terms of Service.** Some job boards allow only manual access or their official APIs; automated collection — or signing in with your own account to scrape — may breach their terms and can get your account suspended. You choose which boards to enable and accept that responsibility.
+- **Not affiliated.** AI Job Hunter is an independent project, not affiliated with, endorsed by, or sponsored by LinkedIn, Indeed, Glassdoor, Xing, StepStone, or any other job board or company named in this repository. Product names and trademarks belong to their respective owners.
+- **Your data stays yours.** Processing is local-first and single-user; the project maintainers do not receive, store, or process your data. Bring-your-own-key means AI prompts go only to the provider you configure.
+- **No warranty.** Provided "as is" under the MIT License, without warranty of any kind and without liability for how it is used. This is not legal advice.
+
+---
+
 ## Security
 
 Found a vulnerability? Please report it privately — see **<a href="SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>**. Don't open a public issue for security reports.
