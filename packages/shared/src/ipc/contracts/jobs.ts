@@ -17,5 +17,4 @@ export const JOBS_CHANNELS = {
   get: 'jobs:get',
   cancel: 'jobs:cancel',
   retry: 'jobs:retry',
-  event: 'jobs:event',
 } as const;

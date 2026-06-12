@@ -6,30 +6,18 @@
 //! and the mutators return `()`, mirroring the simpler `applications_*` reads
 //! rather than the fallible `{ success } | { error }` mutators.
 //!
-//! Every mutator emits [`CHANGED_EVENT`] (`notifications:changed`) so any live
-//! renderer inbox refetches. [`notifications_clicked`] is the unified OS-banner /
-//! tray click target: it focuses the main window (via [`crate::tray::show_focus`])
-//! and emits [`OPEN_EVENT`] (`notifications:open`) so the renderer opens the
-//! inbox. (Phase 4 repoints the global notification `onAction` at it.)
+//! Every mutator emits [`crate::events::NOTIFICATIONS_CHANGED`]
+//! (`notifications:changed`) so any live renderer inbox refetches.
+//! [`notifications_clicked`] is the unified OS-banner / tray click target: it
+//! focuses the main window (via [`crate::tray::show_focus`]) and emits
+//! [`crate::events::NOTIFICATIONS_OPEN`] (`notifications:open`) so the renderer
+//! opens the inbox. (Phase 4 repoints the global notification `onAction` at it.)
 
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::{NotificationExt, PermissionState};
 
+use crate::events::{emit_event, NOTIFICATIONS_CHANGED, NOTIFICATIONS_OPEN, NOTIFICATIONS_TOAST};
 use crate::notifications::{AppNotification, NewNotification, NotificationStore};
-
-/// Renderer event: the notification list changed (push / read / remove / clear).
-/// A live inbox refetches on this.
-const CHANGED_EVENT: &str = "notifications:changed";
-
-/// Renderer event: open the notification inbox (OS-banner / tray click target).
-const OPEN_EVENT: &str = "notifications:open";
-
-/// Renderer event: show an in-app toast for a just-pushed notification. Fired by
-/// [`push_and_notify`] only when the main window is focused (so an OS banner
-/// would be redundant). Payload is `{ title, body, route }` (camelCase) lifted
-/// from the freshly-created record, so the renderer's toast can offer a working
-/// "View" without refetching.
-const TOAST_EVENT: &str = "notifications:toast";
 
 fn store(app: &AppHandle) -> tauri::State<'_, NotificationStore> {
     app.state::<NotificationStore>()
@@ -37,7 +25,7 @@ fn store(app: &AppHandle) -> tauri::State<'_, NotificationStore> {
 
 /// Emit `notifications:changed` so a live renderer inbox refetches.
 fn emit_changed(app: &AppHandle) {
-    let _ = app.emit(CHANGED_EVENT, ());
+    emit_event(app, NOTIFICATIONS_CHANGED, ());
 }
 
 // ── Push orchestration (Phase 4a) ────────────────────────────────────────────
@@ -101,8 +89,9 @@ pub fn push_and_notify(app: &AppHandle, input: NewNotification, banner: OsBanner
         .unwrap_or(false);
 
     if focused {
-        let _ = app.emit(
-            TOAST_EVENT,
+        emit_event(
+            app,
+            NOTIFICATIONS_TOAST,
             serde_json::json!({
                 "title": rec.title,
                 "body": rec.body,
@@ -155,5 +144,5 @@ pub async fn notifications_clear_all(app: AppHandle) {
 #[tauri::command]
 pub fn notifications_clicked(app: AppHandle) {
     crate::tray::show_focus(&app);
-    let _ = app.emit(OPEN_EVENT, ());
+    emit_event(&app, NOTIFICATIONS_OPEN, ());
 }

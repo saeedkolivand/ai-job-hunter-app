@@ -28,9 +28,9 @@ const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 
 /**
  * App-global listeners for the native menu (the "richer macOS shell"):
- *  - `menu.navigate` → route to a page, optionally pre-selecting a settings
+ *  - `menu:navigate` → route to a page, optionally pre-selecting a settings
  *    sub-section (e.g. Settings → AI). Mirrors the autopilot-focus hook.
- *  - `menu.action` → app-level actions that aren't routes: trigger the existing
+ *  - `menu:action` → app-level actions that aren't routes: trigger the existing
  *    in-app update check (the `UpdateBanner` surfaces via the shared
  *    `updater:status` event) or open the keyboard-shortcuts cheat-sheet.
  *

@@ -1,5 +1,5 @@
 import { AlertCircle, Check, Link2, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button, Input } from '@ajh/ui';
@@ -20,6 +20,7 @@ interface Props {
 export function JobUrlImport({ onImport, disabled }: Props) {
   const { t } = useTranslation();
   const importJob = useImportJobUrl();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState('');
   const [error, setError] = useState<string | null>(null);
   // What the last successful import resolved to — shown so the user sees the
@@ -27,6 +28,11 @@ export function JobUrlImport({ onImport, disabled }: Props) {
   const [imported, setImported] = useState<{ title?: string; company?: string } | null>(null);
 
   const busy = importJob.isPending;
+
+  // Focus-on-mount without the `autoFocus` prop (jsx-a11y/no-autofocus).
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   const handleImport = async () => {
     const trimmed = url.trim();
@@ -52,7 +58,7 @@ export function JobUrlImport({ onImport, disabled }: Props) {
     <div className="space-y-1.5">
       <div className="flex gap-1.5">
         <Input
-          autoFocus
+          ref={inputRef}
           value={url}
           onChange={(e) => {
             setUrl(e.target.value);

@@ -1,5 +1,7 @@
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
+
+use crate::events::{emit_event, BOARDS_LOGIN_STATUS};
 
 #[tauri::command]
 pub fn boards_get_config(board_id: String) -> Value {
@@ -44,8 +46,9 @@ pub async fn boards_login_with_browser(app: AppHandle, board_id: String) -> Valu
 
     // Status callback that emits Tauri events
     let on_status = move |status: &str| {
-        let _ = app_clone.emit(
-            "board.login.status",
+        emit_event(
+            &app_clone,
+            BOARDS_LOGIN_STATUS,
             serde_json::json!({
                 "boardId": board_id_clone,
                 "status": status

@@ -1,20 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
+import { type AutopilotFocusEvent, type AutopilotStepEvent, EVENT_CHANNELS } from '@ajh/shared';
 import type { AutopilotCreate, AutopilotUpdate } from '@ajh/shared/schemas';
 
 import { asyncUnsub } from '../../utils.js';
-
-export interface AutopilotStepEvent {
-  jobId: string;
-  autopilotId: string;
-  step: string;
-  detail: string;
-}
-
-export interface AutopilotFocusEvent {
-  autopilotId: string;
-}
 
 export const autopilot = {
   list: () => invoke('autopilot_list'),
@@ -27,7 +17,11 @@ export const autopilot = {
   pause: ({ autopilotId }: { autopilotId: string }) => invoke('autopilot_pause', { autopilotId }),
   resume: ({ autopilotId }: { autopilotId: string }) => invoke('autopilot_resume', { autopilotId }),
   onStep: (handler: (event: AutopilotStepEvent) => void) =>
-    asyncUnsub(() => listen<AutopilotStepEvent>('autopilot.step', (e) => handler(e.payload))),
+    asyncUnsub(() =>
+      listen<AutopilotStepEvent>(EVENT_CHANNELS.autopilot.step, (e) => handler(e.payload))
+    ),
   onFocus: (handler: (event: AutopilotFocusEvent) => void) =>
-    asyncUnsub(() => listen<AutopilotFocusEvent>('autopilot.focus', (e) => handler(e.payload))),
+    asyncUnsub(() =>
+      listen<AutopilotFocusEvent>(EVENT_CHANNELS.autopilot.focus, (e) => handler(e.payload))
+    ),
 };

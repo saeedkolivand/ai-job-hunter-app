@@ -35,11 +35,10 @@ export interface NotificationsContract {
 }
 
 /**
- * Event channel names emitted by the notification commands. `changed` fires on
- * every mutation; `open` is the OS-banner / tray click "open the inbox" signal.
+ * Request/response channel registry for the notification commands. The push
+ * event names (`notifications:changed` / `:open` / `:toast`) live in the
+ * centralized `EVENT_CHANNELS` registry under `packages/shared/src/events/`,
+ * not here. This namespace is currently request-only and has no channels yet
+ * (the read/mutate commands invoke their own Tauri command names directly).
  */
-export const NOTIFICATIONS_CHANNELS = {
-  changed: 'notifications:changed',
-  open: 'notifications:open',
-  toast: 'notifications:toast',
-} as const;
+export const NOTIFICATIONS_CHANNELS = {} as const;

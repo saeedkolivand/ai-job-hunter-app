@@ -25,6 +25,7 @@ pub mod db;
 pub mod deeplink;
 pub mod documents;
 pub mod error;
+pub mod events;
 pub mod export;
 pub mod extension_bridge;
 pub mod extraction;
@@ -101,7 +102,7 @@ const ISSUES_URL: &str = "https://github.com/saeedkolivand/ai-job-hunter-assista
 /// strings are the canonical values from
 /// `apps/tauri/src/renderer/constants/routes/routes.ts` (Documents → `/resumes`,
 /// Resume Analyzer → `/analyze`, AI Generate → `/ai-generate`). The label is the
-/// menu-item title. `on_app_menu_event` emits `menu.navigate { route, section: null }`
+/// menu-item title. `on_app_menu_event` emits `menu:navigate { route, section: null }`
 /// for each. One row per item keeps id/accel/route/label in lockstep.
 const NAV_ITEMS: &[(&str, &str, &str, &str)] = &[
     ("menu_nav_dashboard", "CmdOrCtrl+1", "/", "Dashboard"),
@@ -227,22 +228,22 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
 
 /// App-level menu-event handler (custom ids only — predefined roles self-handle).
 /// Registered in `setup` after `set_menu`. Emits the renderer contract events
-/// (`menu.navigate` / `menu.action`) or performs the shell-side action directly.
+/// (`menu:navigate` / `menu:action`) or performs the shell-side action directly.
 fn on_app_menu_event(app: &AppHandle, id: &str) {
     match id {
         MENU_SETTINGS => crate::tray::dispatch_menu(
             app,
-            "menu.navigate",
+            crate::events::MENU_NAVIGATE,
             serde_json::json!({ "route": "/settings", "section": serde_json::Value::Null }),
         ),
         MENU_CHECK_UPDATES => crate::tray::dispatch_menu(
             app,
-            "menu.action",
+            crate::events::MENU_ACTION,
             serde_json::json!({ "action": "check-updates" }),
         ),
         MENU_SHORTCUTS => crate::tray::dispatch_menu(
             app,
-            "menu.action",
+            crate::events::MENU_ACTION,
             serde_json::json!({ "action": "shortcuts" }),
         ),
         MENU_DOCS => open_external(app, REPO_URL),
@@ -260,12 +261,12 @@ fn on_app_menu_event(app: &AppHandle, id: &str) {
                 win.open_devtools();
             }
         }
-        // Go-to-route items: emit `menu.navigate` with the resolved route.
+        // Go-to-route items: emit `menu:navigate` with the resolved route.
         other => {
             if let Some(route) = nav_route_for(other) {
                 crate::tray::dispatch_menu(
                     app,
-                    "menu.navigate",
+                    crate::events::MENU_NAVIGATE,
                     serde_json::json!({ "route": route, "section": serde_json::Value::Null }),
                 );
             }

@@ -5,12 +5,13 @@
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::commands::ai::get_provider_key;
 use crate::jobs::JobTracker;
 
 use crate::error::{AppError, AppResult};
+use crate::events::{emit_event, AI_STREAM};
 
 use super::research;
 use super::{
@@ -214,8 +215,9 @@ impl AiProvider for OpenAiClient {
                             None => continue,
                         };
                         if data == "[DONE]" {
-                            let _ = app.emit(
-                                "ai:stream",
+                            emit_event(
+                                app,
+                                AI_STREAM,
                                 json!({ "jobId": job_id, "delta": "", "done": true }),
                             );
                             app.state::<Mutex<JobTracker>>()
@@ -230,14 +232,16 @@ impl AiProvider for OpenAiClient {
                         };
                         let (reasoning, delta) = parse_openai_delta(&event);
                         if !reasoning.is_empty() {
-                            let _ = app.emit(
-                                "ai:stream",
+                            emit_event(
+                                app,
+                                AI_STREAM,
                                 json!({ "jobId": job_id, "delta": reasoning, "done": false, "thinking": true }),
                             );
                         }
                         if !delta.is_empty() {
-                            let _ = app.emit(
-                                "ai:stream",
+                            emit_event(
+                                app,
+                                AI_STREAM,
                                 json!({ "jobId": job_id, "delta": delta, "done": false }),
                             );
                         }
@@ -251,8 +255,9 @@ impl AiProvider for OpenAiClient {
             }
         }
 
-        let _ = app.emit(
-            "ai:stream",
+        emit_event(
+            app,
+            AI_STREAM,
             json!({ "jobId": job_id, "delta": "", "done": true }),
         );
         app.state::<Mutex<JobTracker>>()

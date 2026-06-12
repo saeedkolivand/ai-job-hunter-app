@@ -3,7 +3,9 @@ use crate::scraping::{BoardSearchInput, ScraperEngine};
 use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
+
+use crate::events::{emit_event, JOBS_EVENT, SCRAPE_PROGRESS};
 
 // ScrapeBoardRequest and ScrapeUrlRequest are generated from the Zod schemas in
 // packages/shared by `pnpm gen:ipc`. See crate::ipc_contracts::scrape.
@@ -81,8 +83,9 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
     let app_progress = app.clone();
     let job_id_progress = job_id.clone();
     let on_progress = Box::new(move |p: f32| {
-        let _ = app_progress.emit(
-            "scrape.progress",
+        emit_event(
+            &app_progress,
+            SCRAPE_PROGRESS,
             json!({ "jobId": job_id_progress, "progress": p }),
         );
         if let Some(tracker) = app_progress.try_state::<Mutex<crate::jobs::JobTracker>>() {
@@ -105,8 +108,9 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
             }
         }
 
-        let _ = app_item.emit(
-            "jobs:event",
+        emit_event(
+            &app_item,
+            JOBS_EVENT,
             json!({ "type": "job.stream", "jobId": job_id_item, "data": item, "ts": now_ms() }),
         );
     });
@@ -131,9 +135,10 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
                     let mut g = tracker.lock();
                     g.complete(&job_id_clone, json!({ "count": results.len() }));
                 }
-                let _ = app_clone.emit(
-                    "jobs:event",
-                    json!({ "type": "job.completed", "jobId": job_id_clone, "data": { "count": results.len() }, "ts": now_ms() })
+                emit_event(
+                    &app_clone,
+                    JOBS_EVENT,
+                    json!({ "type": "job.completed", "jobId": job_id_clone, "data": { "count": results.len() }, "ts": now_ms() }),
                 );
             }
             Err(e) => {
@@ -141,9 +146,10 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
                     let mut g = tracker.lock();
                     g.fail(&job_id_clone, e.to_string());
                 }
-                let _ = app_clone.emit(
-                    "jobs:event",
-                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": e.to_string(), "ts": now_ms() })
+                emit_event(
+                    &app_clone,
+                    JOBS_EVENT,
+                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": e.to_string(), "ts": now_ms() }),
                 );
             }
         }
@@ -183,18 +189,20 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
                     }
                 }
 
-                let _ = app_clone.emit(
-                    "jobs:event",
-                    json!({ "type": "job.stream", "jobId": job_id_clone, "data": posting, "ts": now_ms() })
+                emit_event(
+                    &app_clone,
+                    JOBS_EVENT,
+                    json!({ "type": "job.stream", "jobId": job_id_clone, "data": posting, "ts": now_ms() }),
                 );
 
                 {
                     let mut g = tracker.lock();
                     g.complete(&job_id_clone, json!({ "ok": true }));
                 }
-                let _ = app_clone.emit(
-                    "jobs:event",
-                    json!({ "type": "job.completed", "jobId": job_id_clone, "data": { "count": 1 }, "ts": now_ms() })
+                emit_event(
+                    &app_clone,
+                    JOBS_EVENT,
+                    json!({ "type": "job.completed", "jobId": job_id_clone, "data": { "count": 1 }, "ts": now_ms() }),
                 );
             }
             Ok(None) => {
@@ -202,9 +210,10 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
                     let mut g = tracker.lock();
                     g.fail(&job_id_clone, "no scraper matched this URL".to_string());
                 }
-                let _ = app_clone.emit(
-                    "jobs:event",
-                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": "no scraper matched this URL", "ts": now_ms() })
+                emit_event(
+                    &app_clone,
+                    JOBS_EVENT,
+                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": "no scraper matched this URL", "ts": now_ms() }),
                 );
             }
             Err(e) => {
@@ -212,9 +221,10 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
                     let mut g = tracker.lock();
                     g.fail(&job_id_clone, e.to_string());
                 }
-                let _ = app_clone.emit(
-                    "jobs:event",
-                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": e.to_string(), "ts": now_ms() })
+                emit_event(
+                    &app_clone,
+                    JOBS_EVENT,
+                    json!({ "type": "job.failed", "jobId": job_id_clone, "data": e.to_string(), "ts": now_ms() }),
                 );
             }
         }

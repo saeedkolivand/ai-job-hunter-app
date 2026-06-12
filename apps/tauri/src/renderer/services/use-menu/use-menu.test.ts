@@ -10,12 +10,12 @@ import { useMenuIntents } from './use-menu';
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const NAV_INTENT: PendingMenuIntent = {
-  event: 'menu.navigate',
+  event: 'menu:navigate',
   payload: { route: '/jobs', section: null } satisfies MenuNavigateEvent,
 };
 
 const ACTION_INTENT: PendingMenuIntent = {
-  event: 'menu.action',
+  event: 'menu:action',
   payload: { action: 'check-updates' } satisfies MenuActionEvent,
 };
 
@@ -278,7 +278,7 @@ describe('useMenuIntents — poll backstop', () => {
     expect(onNavigate).not.toHaveBeenCalled();
   });
 
-  it('routes a buffered menu.action intent to onAction, not onNavigate', async () => {
+  it('routes a buffered menu:action intent to onAction, not onNavigate', async () => {
     vi.spyOn(document, 'hasFocus').mockReturnValue(true);
     setVisibilityState('visible');
 

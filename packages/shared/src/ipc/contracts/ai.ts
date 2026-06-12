@@ -111,7 +111,6 @@ export interface EmbeddingStatus {
 
 export const AI_CHANNELS = {
   generate: 'ai:generate',
-  stream: 'ai:stream',
   listModels: 'ai:listModels',
   pullModel: 'ai:pullModel',
   unloadModel: 'ai:unloadModel',
