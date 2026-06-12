@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight, ClipboardList, Plus, Search } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 
 import { APPLICATION_STAGES } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
@@ -9,19 +10,35 @@ import { Button, EmptyState, ErrorState, Input, RowSkeleton, transition } from '
 import { PageShell } from '@/components/layout/PageShell';
 import { ApplicationRow } from '@/features/applications/components/ApplicationRow';
 import { TrackJobModal } from '@/features/applications/components/TrackJobModal';
+import { Route } from '@/routes/applications';
 import { useApplications } from '@/services/use-applications';
 import { useSessionStore } from '@/store/session-store';
 
 export function ApplicationsPage() {
   const { t } = useTranslation();
   const { applications: appsSlice, setApplications, toggleApplicationSection } = useSessionStore();
-  const { collapsedSections, filter, highlightId } = appsSlice;
+  const { collapsedSections, filter } = appsSlice;
 
   const [trackOpen, setTrackOpen] = useState(false);
 
   const { data: allApps = [], isLoading, isError } = useApplications();
 
-  // A just-imported job (browser-extension "View" deep-link) must be visible:
+  // `?highlight=<applicationId>` deep-link (notification "View"). Seed a LOCAL
+  // flash id from the param so the flash lives in component state, not the URL;
+  // the param is cleared after consuming it (below) so a revisit doesn't re-flash.
+  const { highlight } = Route.useSearch();
+  const navigate = useNavigate();
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+
+  // Consume the URL param once: seed the local flash + clear the param so a
+  // refresh/revisit doesn't re-highlight.
+  useEffect(() => {
+    if (!highlight) return;
+    setHighlightId(highlight);
+    void navigate({ to: '/applications', search: {}, replace: true });
+  }, [highlight, navigate]);
+
+  // A just-imported job (notification "View" deep-link) must be visible:
   // un-collapse its stage section so the highlighted row isn't hidden.
   useEffect(() => {
     if (!highlightId) return;
@@ -33,12 +50,12 @@ export function ApplicationsPage() {
     }
   }, [highlightId, allApps, collapsedSections, setApplications]);
 
-  // Clear the highlight after the flash so it fires once, not on every revisit.
+  // Clear the local flash after ~3.5s so it fires once, not indefinitely.
   useEffect(() => {
     if (!highlightId) return;
-    const timer = setTimeout(() => setApplications({ highlightId: null }), 3500);
+    const timer = setTimeout(() => setHighlightId(null), 3500);
     return () => clearTimeout(timer);
-  }, [highlightId, setApplications]);
+  }, [highlightId]);
 
   // Text filter across company + title + candidate.
   const q = filter.trim().toLowerCase();

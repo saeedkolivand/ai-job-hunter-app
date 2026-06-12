@@ -11,9 +11,15 @@ interface UiState {
    *  the native "Keyboard Shortcuts" menu item. */
   shortcutsOpen: boolean;
   setShortcutsOpen: (open: boolean) => void;
+  /** The notification-center inbox dropdown. Toggled by the titlebar bell and
+   *  opened by the `notifications:open` event (OS-banner / tray click). */
+  notificationsOpen: boolean;
+  setNotificationsOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
   shortcutsOpen: false,
   setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
+  notificationsOpen: false,
+  setNotificationsOpen: (open) => set({ notificationsOpen: open }),
 }));

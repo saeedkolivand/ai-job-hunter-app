@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useForm } from 'react-hook-form';
 
 import type { ApplicationTrackRequest } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, Input, ModalShell } from '@ajh/ui';
 
 import { useTrackApplication } from '@/services/use-applications';
+
+type TrackFormValues = { jobUrl: string; company: string; title: string; candidate: string };
 
 interface TrackJobModalProps {
   open: boolean;
@@ -15,35 +17,30 @@ export function TrackJobModal({ open, onClose }: TrackJobModalProps) {
   const { t } = useTranslation();
   const trackMutation = useTrackApplication();
 
-  const [form, setForm] = useState<ApplicationTrackRequest>({
-    jobUrl: '',
-    company: '',
-    title: '',
-    candidate: '',
-    board: '',
+  const { register, handleSubmit, reset } = useForm<TrackFormValues>({
+    defaultValues: { jobUrl: '', company: '', title: '', candidate: '' },
   });
 
   const handleClose = () => {
-    setForm({ jobUrl: '', company: '', title: '', candidate: '', board: '' });
+    reset();
     onClose();
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = handleSubmit(async (values) => {
     const req: ApplicationTrackRequest = {};
-    if (form.jobUrl?.trim()) req.jobUrl = form.jobUrl.trim();
-    if (form.company?.trim()) req.company = form.company.trim();
-    if (form.title?.trim()) req.title = form.title.trim();
-    if (form.candidate?.trim()) req.candidate = form.candidate.trim();
+    if (values.jobUrl.trim()) req.jobUrl = values.jobUrl.trim();
+    if (values.company.trim()) req.company = values.company.trim();
+    if (values.title.trim()) req.title = values.title.trim();
+    if (values.candidate.trim()) req.candidate = values.candidate.trim();
     await trackMutation.mutateAsync(req);
     handleClose();
-  };
+  });
 
   const titleId = 'track-job-modal-title';
 
   return (
     <ModalShell open={open} onClose={handleClose} maxWidth="max-w-md" ariaLabelledby={titleId}>
-      <form onSubmit={(e) => void handleSubmit(e)}>
+      <form onSubmit={(e) => void onSubmit(e)}>
         <div className="border-b border-white/5 px-6 py-5">
           <h2 id={titleId} className="text-base font-medium text-foreground">
             {t('applications.trackModal.title')}
@@ -62,8 +59,8 @@ export function TrackJobModal({ open, onClose }: TrackJobModalProps) {
             <Input
               id="track-url"
               type="url"
-              value={form.jobUrl ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, jobUrl: e.target.value }))}
+              className="w-full"
+              {...register('jobUrl')}
               placeholder={t('applications.trackModal.urlPlaceholder')}
             />
           </div>
@@ -76,8 +73,8 @@ export function TrackJobModal({ open, onClose }: TrackJobModalProps) {
             </label>
             <Input
               id="track-company"
-              value={form.company ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
+              className="w-full"
+              {...register('company')}
               placeholder={t('applications.trackModal.companyPlaceholder')}
             />
           </div>
@@ -90,8 +87,8 @@ export function TrackJobModal({ open, onClose }: TrackJobModalProps) {
             </label>
             <Input
               id="track-title"
-              value={form.title ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+              className="w-full"
+              {...register('title')}
               placeholder={t('applications.trackModal.titlePlaceholder')}
             />
           </div>
@@ -104,8 +101,8 @@ export function TrackJobModal({ open, onClose }: TrackJobModalProps) {
             </label>
             <Input
               id="track-candidate"
-              value={form.candidate ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, candidate: e.target.value }))}
+              className="w-full"
+              {...register('candidate')}
               placeholder={t('applications.trackModal.candidatePlaceholder')}
             />
           </div>

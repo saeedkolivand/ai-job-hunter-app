@@ -77,9 +77,40 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 1
+      - name: 🧰 Install typos
+        id: install-typos
+        continue-on-error: true
+        uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2
+        with:
+          tool: typos
+      # Advisory: run typos ourselves so the findings land in the job Summary
+      # (the crate-ci action only emits inline annotations). Never fails the job.
       - name: 🔤 Spell check (advisory)
         continue-on-error: true
-        uses: crate-ci/typos@37bb98842b0d8c4ffebdb75301a13db0267cef89 # v1.47.2
+        run: |
+          set +e
+          if ! command -v typos >/dev/null 2>&1; then
+            {
+              echo "## 🔤 Typos"
+              echo "⚠️ typos binary unavailable — check skipped."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          typos --format brief > "$RUNNER_TEMP/typos.txt" 2>&1
+          code=$?
+          {
+            echo "## 🔤 Typos"
+            if [ "$code" -eq 0 ]; then
+              echo "✅ No typos found."
+            else
+              echo "Advisory — does not block merge. Possible typos:"
+              echo ""
+              echo '```'
+              cat "$RUNNER_TEMP/typos.txt"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
 
   links:
     name: 🔗 Link Check
@@ -117,9 +148,25 @@ jobs:
           fetch-depth: 1
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
+      # Advisory: knip's markdown reporter writes a readable table to the job
+      # Summary. Never fails the job.
       - name: 🧹 Run knip (advisory)
         continue-on-error: true
-        run: pnpm exec knip
+        run: |
+          set +e
+          pnpm exec knip --reporter markdown > "$RUNNER_TEMP/knip.md" 2>&1
+          code=$?
+          {
+            echo "## 🧹 Knip (dead code)"
+            if [ "$code" -eq 0 ]; then
+              echo "✅ No dead code found."
+            else
+              echo "Advisory — does not block merge."
+              echo ""
+              cat "$RUNNER_TEMP/knip.md"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
 
   i18n:
     name: 🌐 i18n Keys
@@ -168,9 +215,26 @@ jobs:
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
       # jsx-a11y via a SEPARATE config so the strict main lint is unaffected.
+      # Advisory: capture the ESLint report into the job Summary. Never fails.
       - name: ♿ ESLint jsx-a11y (advisory)
         continue-on-error: true
-        run: pnpm exec eslint --config eslint.a11y.config.mjs 'apps/tauri/src/renderer/**/*.tsx'
+        run: |
+          set +e
+          pnpm exec eslint --config eslint.a11y.config.mjs 'apps/tauri/src/renderer/**/*.tsx' -f stylish > "$RUNNER_TEMP/a11y.txt" 2>&1
+          code=$?
+          {
+            echo "## ♿ a11y Lint (jsx-a11y)"
+            if [ "$code" -eq 0 ]; then
+              echo "✅ No accessibility problems."
+            else
+              echo "Advisory — does not block merge."
+              echo ""
+              echo '```'
+              cat "$RUNNER_TEMP/a11y.txt"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
 
   # ── Rust test-quality (PR + manual; never on push-to-main) ───────────────────
   cargo-hack:

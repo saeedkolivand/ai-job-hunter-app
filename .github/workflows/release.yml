@@ -430,6 +430,35 @@ jobs:
           tag_macos_artifacts "${{ matrix.target }}" "${{ matrix.arch_suffix }}"
           echo "::endgroup::"
 
+      - name: 🏷️ Prefix Artifacts With Platform
+        if: success()
+        run: |
+          echo "::group::Prefixing artifacts with platform (windows-/macos-/linux-)"
+          # Prepend "<os>-" to every uploadable bundle artifact so the flat,
+          # alphabetically sorted GitHub Release asset list clusters by platform.
+          # Upload globs are extension-based (*.exe, *.dmg, …) so they still match;
+          # latest.json generation + the Homebrew cask reference the prefixed names.
+          case "$RUNNER_OS" in
+            Windows) p=windows ;;
+            macOS)   p=macos ;;
+            *)       p=linux ;;
+          esac
+          shopt -s nullglob
+          base=apps/tauri/src-tauri/target
+          for f in \
+            "$base"/release/bundle/nsis/*.exe "$base"/release/bundle/nsis/*.sig \
+            "$base"/release/bundle/msi/*.msi \
+            "$base"/*/release/bundle/dmg/*.dmg \
+            "$base"/*/release/bundle/macos/*.tar.gz "$base"/*/release/bundle/macos/*.tar.gz.sig \
+            "$base"/release/bundle/deb/*.deb "$base"/release/bundle/rpm/*.rpm \
+            "$base"/release/bundle/appimage/*.AppImage "$base"/release/bundle/appimage/*.AppImage.sig; do
+            d=$(dirname "$f"); b=$(basename "$f")
+            case "$b" in "$p"-*) continue ;; esac
+            mv "$f" "$d/${p}-$b"
+            echo "Prefixed: $b -> ${p}-$b"
+          done
+          echo "::endgroup::"
+
       - name: Upload Release Assets
         if: success()
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
@@ -685,28 +714,29 @@ jobs:
           echo "::endgroup::"
 
           # Filenames below match the normalized names produced by the
-          # "Normalize Artifact Names" step in the build job (spaces -> dashes).
+          # "Normalize Artifact Names" step in the build job (spaces -> dashes), plus
+          # the OS prefixes from the "Prefix Artifacts With Platform" step.
           BASE_URL="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/$VERSION"
 
           # Windows (NSIS is the primary updater target)
-          NSIS_SIG="temp/AI-Job-Hunter-Assistant_${RAW_VERSION}_x64-setup.exe.sig"
+          NSIS_SIG="temp/windows-AI-Job-Hunter-Assistant_${RAW_VERSION}_x64-setup.exe.sig"
           if [ -f "$NSIS_SIG" ]; then
             SIG=$(tr -d '\n' < "$NSIS_SIG")
             echo '    "windows-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"${BASE_URL}/AI-Job-Hunter-Assistant_${RAW_VERSION}_x64-setup.exe\"" >> latest.json
+            echo "      \"url\": \"${BASE_URL}/windows-AI-Job-Hunter-Assistant_${RAW_VERSION}_x64-setup.exe\"" >> latest.json
             echo '    },' >> latest.json
           else
             echo "::warning::Windows NSIS signature not found at $NSIS_SIG"
           fi
 
           # Linux (AppImage is the primary updater target)
-          APPIMAGE_SIG="temp/AI-Job-Hunter-Assistant_${RAW_VERSION}_amd64.AppImage.sig"
+          APPIMAGE_SIG="temp/linux-AI-Job-Hunter-Assistant_${RAW_VERSION}_amd64.AppImage.sig"
           if [ -f "$APPIMAGE_SIG" ]; then
             SIG=$(tr -d '\n' < "$APPIMAGE_SIG")
             echo '    "linux-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"${BASE_URL}/AI-Job-Hunter-Assistant_${RAW_VERSION}_amd64.AppImage\"" >> latest.json
+            echo "      \"url\": \"${BASE_URL}/linux-AI-Job-Hunter-Assistant_${RAW_VERSION}_amd64.AppImage\"" >> latest.json
             echo '    },' >> latest.json
           else
             echo "::warning::Linux AppImage signature not found at $APPIMAGE_SIG"
@@ -716,23 +746,23 @@ jobs:
           # its own (non-universal) bundle, so each updater target must point at
           # the matching file + signature. Names come from the macOS
           # disambiguation step in the build job (-intel / -apple-silicon).
-          MAC_INTEL_SIG="temp/AI-Job-Hunter-Assistant-intel.app.tar.gz.sig"
+          MAC_INTEL_SIG="temp/macos-AI-Job-Hunter-Assistant-intel.app.tar.gz.sig"
           if [ -f "$MAC_INTEL_SIG" ]; then
             SIG=$(tr -d '\n' < "$MAC_INTEL_SIG")
             echo '    "darwin-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"${BASE_URL}/AI-Job-Hunter-Assistant-intel.app.tar.gz\"" >> latest.json
+            echo "      \"url\": \"${BASE_URL}/macos-AI-Job-Hunter-Assistant-intel.app.tar.gz\"" >> latest.json
             echo '    },' >> latest.json
           else
             echo "::warning::macOS Intel app bundle signature not found at $MAC_INTEL_SIG"
           fi
 
-          MAC_ARM_SIG="temp/AI-Job-Hunter-Assistant-apple-silicon.app.tar.gz.sig"
+          MAC_ARM_SIG="temp/macos-AI-Job-Hunter-Assistant-apple-silicon.app.tar.gz.sig"
           if [ -f "$MAC_ARM_SIG" ]; then
             SIG=$(tr -d '\n' < "$MAC_ARM_SIG")
             echo '    "darwin-aarch64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"${BASE_URL}/AI-Job-Hunter-Assistant-apple-silicon.app.tar.gz\"" >> latest.json
+            echo "      \"url\": \"${BASE_URL}/macos-AI-Job-Hunter-Assistant-apple-silicon.app.tar.gz\"" >> latest.json
             echo '    },' >> latest.json
           else
             echo "::warning::macOS Apple Silicon app bundle signature not found at $MAC_ARM_SIG"
@@ -756,6 +786,36 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📥 Append grouped Downloads table to release notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "::group::Appending per-platform Downloads table to $VERSION notes"
+          RAW="${VERSION#v}"
+          URL="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/$VERSION"
+          # Strip any prior block (idempotent) then re-append a fresh one.
+          BODY="$(gh release view "$VERSION" --json body -q .body)"
+          BODY="$(printf '%s' "$BODY" | sed '/<!-- downloads:start -->/,/<!-- downloads:end -->/d')"
+          TABLE="$(cat <<EOF
+          <!-- downloads:start -->
+          ## 📥 Downloads
+
+          | Platform | Get it |
+          |----------|--------|
+          | 🪟 Windows | [Installer (.exe)]($URL/windows-AI-Job-Hunter-Assistant_${RAW}_x64-setup.exe) · [MSI]($URL/windows-AI-Job-Hunter-Assistant_${RAW}_x64_en-US.msi) |
+          | 🍎 macOS (Apple Silicon) | [.dmg]($URL/macos-AI-Job-Hunter-Assistant_${RAW}_aarch64-apple-silicon.dmg) |
+          | 🍎 macOS (Intel) | [.dmg]($URL/macos-AI-Job-Hunter-Assistant_${RAW}_x64-intel.dmg) |
+          | 🐧 Linux | [AppImage]($URL/linux-AI-Job-Hunter-Assistant_${RAW}_amd64.AppImage) · [.deb]($URL/linux-AI-Job-Hunter-Assistant_${RAW}_amd64.deb) · [.rpm]($URL/linux-AI-Job-Hunter-Assistant-${RAW}-1.x86_64.rpm) |
+
+          _Installed apps auto-update — no need to re-download for new versions._
+          <!-- downloads:end -->
+          EOF
+          )"
+          gh release edit "$VERSION" --notes "$BODY"$'\n\n'"$TABLE"
+          echo "::endgroup::"
 
   update-cask:
     name: 🍺 Update Homebrew Cask

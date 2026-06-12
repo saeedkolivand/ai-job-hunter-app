@@ -18,6 +18,7 @@ pub mod job_preferences;
 pub mod jobs;
 pub mod match_resume;
 pub mod menu;
+pub mod notifications;
 pub mod pipeline;
 pub mod privacy;
 pub mod profile_import;

@@ -12,6 +12,9 @@
  *  - `TrackJobModal` is stubbed to avoid its own provider requirements.
  *  - `ApplicationRow` is stubbed to a deterministic data-testid so section
  *    membership assertions are cheap and don't pull in that component's deps.
+ *  - the `/applications` route `useSearch` + `useNavigate` are mocked so the page
+ *    renders without a RouterProvider; `useSearch` returns `{}` (no `?highlight`),
+ *    so the flash path is inert and these grouped-rendering tests are unaffected.
  */
 
 import React from 'react';
@@ -46,6 +49,16 @@ vi.mock('motion/react', () => ({
       )
     ),
   },
+}));
+
+// ── Router — render standalone (no RouterProvider) ────────────────────────────
+
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => vi.fn(),
+}));
+
+vi.mock('@/routes/applications', () => ({
+  Route: { useSearch: () => ({}) },
 }));
 
 // ── Service hook — controlled mock ────────────────────────────────────────────

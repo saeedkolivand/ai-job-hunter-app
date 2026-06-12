@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { onAction } from '@tauri-apps/plugin-notification';
 
 import type { AutopilotCreate, AutopilotUpdate } from '@ajh/shared/schemas';
 
@@ -31,15 +30,4 @@ export const autopilot = {
     asyncUnsub(() => listen<AutopilotStepEvent>('autopilot.step', (e) => handler(e.payload))),
   onFocus: (handler: (event: AutopilotFocusEvent) => void) =>
     asyncUnsub(() => listen<AutopilotFocusEvent>('autopilot.focus', (e) => handler(e.payload))),
-  // Clicking the OS notification (autopilot is the only notification source) →
-  // open the autopilot page. Body-click fires `onAction` on macOS + packaged
-  // Windows; best-effort on Linux. The payload is unused — any click navigates.
-  onNotificationClick: (handler: () => void) =>
-    asyncUnsub(() =>
-      onAction(() => handler()).then((listener) => () => void listener.unregister())
-    ),
-  // Surfaces the hidden window + focuses the last autopilot; the shell re-emits
-  // the existing `autopilot.focus` event for that id (which onFocus turns into
-  // navigation). Called when the in-app "new jobs" notification is clicked.
-  notificationClicked: () => invoke('autopilot_notification_clicked'),
 };

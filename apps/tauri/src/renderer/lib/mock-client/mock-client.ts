@@ -271,14 +271,25 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       resume: noop,
       onStep: () => () => {},
       onFocus: () => () => {},
-      onNotificationClick: () => () => {},
-      notificationClicked: noop,
     },
 
     menu: {
       onNavigate: unsub,
       onAction: unsub,
       takePending: () => Promise.resolve(null),
+    },
+
+    notifications: {
+      list: emptyList,
+      markRead: noop,
+      markAllRead: noop,
+      remove: noop,
+      clearAll: noop,
+      clicked: noop,
+      onChanged: unsub,
+      onOpenInbox: unsub,
+      onOsBannerClick: unsub,
+      onToast: unsub,
     },
 
     dialog: {

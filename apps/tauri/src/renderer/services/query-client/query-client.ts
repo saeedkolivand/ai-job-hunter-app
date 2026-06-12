@@ -74,4 +74,5 @@ export const keys = {
   extensionBridge: {
     status: ['extensionBridge', 'status'] as const,
   },
+  notifications: { all: ['notifications'] as const },
 } as const;

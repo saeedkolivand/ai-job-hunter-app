@@ -12,9 +12,10 @@ use parking_lot::Mutex;
 use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, Wry};
-use tauri_plugin_notification::{NotificationExt, PermissionState};
 
 use crate::autopilot::{AutopilotStatus, AutopilotStore};
+use crate::commands::notifications::{push_and_notify, OsBanner};
+use crate::notifications::{NewNotification, NotificationRoute};
 
 const SHOW_ID: &str = "tray_show";
 const SETTINGS_ID: &str = "tray_settings";
@@ -76,11 +77,17 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         .item(&quit)
         .build()?;
 
-    TrayIconBuilder::new()
-        // Without an explicit icon the tray entry renders blank — invisible in the
-        // Windows notification area and absent from the macOS menu bar. Embed the
-        // app icon so the tray is actually visible on both platforms.
-        .icon(tauri::include_image!("icons/icon.png"))
+    // macOS menu bar wants a monochrome template (the OS tints it for light/dark);
+    // Windows/Linux want the full-color glyph. Both are full-bleed (no app-icon
+    // padding) so the mark is legible in the small tray slot.
+    let builder = TrayIconBuilder::new();
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .icon(tauri::include_image!("icons/tray-template.png"))
+        .icon_as_template(true);
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.icon(tauri::include_image!("icons/tray.png"));
+    builder
         .menu(&menu)
         .tooltip("AI Job Hunter")
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -182,14 +189,34 @@ pub fn dispatch_menu(app: &AppHandle, event: &str, payload: serde_json::Value) {
     });
 }
 
-/// After a run surfaces `new_count` brand-new jobs (>0): raise a permission-gated
-/// notification and bump the tray "New jobs: N" counter, remembering which
-/// autopilot to focus when the user clicks it.
+/// After a run surfaces `new_count` brand-new jobs (>0): push a Notification
+/// Center record (which also raises the OS banner + an in-app toast via
+/// [`push_and_notify`]) and bump the tray "New jobs: N" counter, remembering
+/// which autopilot to focus when the user clicks it. The banner policy is
+/// [`OsBanner::Always`]: a background run finishing warrants the OS nudge even
+/// while the window is focused.
 pub fn on_new_jobs(app: &AppHandle, autopilot_id: &str, autopilot_name: &str, new_count: u32) {
     if new_count == 0 {
         return;
     }
-    notify(app, autopilot_name, new_count);
+    let mut search = serde_json::Map::new();
+    search.insert(
+        "focus".to_string(),
+        serde_json::Value::String(autopilot_id.to_string()),
+    );
+    push_and_notify(
+        app,
+        NewNotification {
+            kind: "autopilot.new_jobs".to_string(),
+            title: autopilot_name.to_string(),
+            body: new_jobs_body(autopilot_name, new_count),
+            route: Some(NotificationRoute {
+                to: "/autopilot".to_string(),
+                search: Some(search),
+            }),
+        },
+        OsBanner::Always,
+    );
     if let Some(state) = app.try_state::<TrayState>() {
         let total = {
             let mut g = state.inner.lock();
@@ -211,35 +238,19 @@ pub fn emit_focus(app: &AppHandle, autopilot_id: &str) {
     );
 }
 
-fn notify(app: &AppHandle, name: &str, count: u32) {
-    // Permission gate: send only if granted; request once when not, skip on deny.
-    let granted = matches!(
-        app.notification().permission_state(),
-        Ok(PermissionState::Granted)
-    ) || matches!(
-        app.notification().request_permission(),
-        Ok(PermissionState::Granted)
-    );
-    if !granted {
-        return;
-    }
-    let body = if count == 1 {
+/// The human "N new job(s) for …" notification body. Extracted from the old
+/// `notify` so the wording is unchanged after the move to `push_and_notify`.
+fn new_jobs_body(name: &str, count: u32) -> String {
+    if count == 1 {
         format!("1 new job for “{name}”")
     } else {
         format!("{count} new jobs for “{name}”")
-    };
-    let _ = app
-        .notification()
-        .builder()
-        .title("AI Job Hunter")
-        .body(body)
-        .show();
+    }
 }
 
-/// Handle a "new jobs" click from either surface (the tray counter or the OS
-/// notification, via the `autopilot_notification_clicked` command): focus the
-/// window, jump to the autopilot whose run produced the newest finds, and reset
-/// the unseen counter. Shared so both entry points behave identically.
+/// Handle a "new jobs" click from the tray counter ("New jobs: N" menu item):
+/// focus the window, jump to the autopilot whose run produced the newest finds,
+/// and reset the unseen counter.
 pub fn handle_notification_click(app: &AppHandle) {
     show_focus(app);
     let Some(state) = app.try_state::<TrayState>() else {

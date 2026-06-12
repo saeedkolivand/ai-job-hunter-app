@@ -8,7 +8,8 @@
 # Maintenance:
 #   • `version` tracks the latest release that ships macOS .dmg artifacts (the
 #     installer build is manual, so not every release has them). The dmg assets
-#     are named "AI-Job-Hunter-Assistant_<version>_<arch>.dmg".
+#     are named "macos-AI-Job-Hunter-Assistant_<version>_<arch>.dmg" (the release
+#     pipeline prefixes every artifact with its OS).
 #   • When a new build publishes dmgs, bump `version` and refresh both per-arch
 #     `sha256` values — `brew bump-cask-pr` does this, or read the assets'
 #     sha256 digests from `gh release view v<version> --json assets`.
@@ -20,7 +21,7 @@ cask "ai-job-hunter" do
 
   arch arm: "aarch64-apple-silicon", intel: "x64-intel"
 
-  url "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v#{version}/AI-Job-Hunter-Assistant_#{version}_#{arch}.dmg",
+  url "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/v#{version}/macos-AI-Job-Hunter-Assistant_#{version}_#{arch}.dmg",
       verified: "github.com/saeedkolivand/ai-job-hunter-assistant-app/"
   name "AI Job Hunter Assistant"
   desc "Local-first, AI-native desktop assistant for job searching and applications"

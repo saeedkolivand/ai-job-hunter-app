@@ -1,6 +1,13 @@
-import { useEffect } from 'react';
-import { createRootRoute, Outlet, useNavigate, useRouter } from '@tanstack/react-router';
+import { useEffect, useRef } from 'react';
+import {
+  createRootRoute,
+  type NavigateOptions,
+  Outlet,
+  useNavigate,
+  useRouter,
+} from '@tanstack/react-router';
 
+import type { NotificationToast } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, NotificationProvider, useNotification } from '@ajh/ui';
 
@@ -14,9 +21,9 @@ import { UpdateBanner } from '@/components/ui/UpdateBanner';
 import { OnboardingWizard } from '@/features/onboarding/OnboardingWizard';
 import { useAutopilotFocusNavigation } from '@/hooks/use-autopilot-focus-navigation';
 import { useMenuNavigation } from '@/hooks/use-menu-navigation';
+import { useAppClient } from '@/providers/AppClientProvider';
 import { CapabilityProvider } from '@/providers/CapabilityProvider';
-import { useApplicationEvents, useSyncCloseToTray } from '@/services';
-import { useSessionStore } from '@/store/session-store';
+import { useApplicationEvents, useNotificationEvents, useSyncCloseToTray } from '@/services';
 
 /** Drives the native-menu navigation/actions. Rendered INSIDE
  *  `NotificationProvider` so its check-for-updates feedback can raise toasts. */
@@ -25,35 +32,62 @@ function MenuNavigationBridge() {
   return null;
 }
 
-/** Live-refreshes the applications + postings lists on a browser-extension
- *  import, and raises a toast with a "View" deep-link to the imported job on
- *  the Applications board. Rendered INSIDE `NotificationProvider` so it can use
- *  `useNotification`; mounted once (the listener attaches a single time). */
-function ImportToastBridge() {
+/** Live-refreshes the applications + postings lists on out-of-band application
+ *  changes (e.g. a browser-extension import). The user-facing toast now comes
+ *  from the store-driven `NotificationToastBridge`; this only keeps the lists
+ *  fresh. Mounted once (the listener attaches a single time). */
+function ApplicationEventsBridge() {
+  useApplicationEvents();
+  return null;
+}
+
+/** Mounts the app-global notification subscriptions (list-changed + open-inbox).
+ *  Rendered once inside `NotificationProvider`; the listeners attach a single time. */
+function NotificationEventsBridge() {
+  useNotificationEvents();
+  return null;
+}
+
+/** Raises a transient in-app toast for each pushed notification (window focused),
+ *  with a "View" that follows the record's carried `route`. The title/body come
+ *  from the Rust-generated record — the unified source for all toasts. Rendered
+ *  once inside `NotificationProvider`; the listener attaches a single time via the
+ *  subscribe-once `useRef` discipline. */
+function NotificationToastBridge() {
   const { t } = useTranslation();
+  const api = useAppClient();
   const notify = useNotification();
   const navigate = useNavigate();
-  const setApplications = useSessionStore((s) => s.setApplications);
 
-  useApplicationEvents((event) => {
-    const name = [event.title, event.company].filter(Boolean).join(' · ');
+  // Keep the latest toast-raising logic in a ref so the listener subscribes ONCE.
+  const handlerRef = useRef<(toast: NotificationToast) => void>(() => {});
+  handlerRef.current = (toast: NotificationToast) => {
+    const route = toast.route;
     notify.success({
-      message: t('applications.imported.toastTitle'),
-      description: name || t('applications.imported.fallback'),
-      btn: (
+      message: toast.title,
+      description: toast.body,
+      btn: route ? (
         <Button
           size="sm"
           variant="glass"
           onClick={() => {
-            setApplications({ highlightId: event.applicationId });
-            void navigate({ to: '/applications' });
+            // `route.to`/`route.search` are open-typed (string / unknown map) on
+            // the wire; TanStack's `navigate` is strictly typed over the route
+            // tree, so cast to its option shape — the value is validated by the
+            // route's `validateSearch` on arrival.
+            void navigate({ to: route.to, search: route.search } as NavigateOptions);
           }}
         >
-          {t('applications.imported.view')}
+          {t('notifications.toast.view')}
         </Button>
-      ),
+      ) : undefined,
     });
-  });
+  };
+
+  useEffect(() => {
+    const off = api.notifications.onToast((toast) => handlerRef.current(toast));
+    return () => off();
+  }, [api]);
 
   return null;
 }
@@ -134,7 +168,9 @@ function RootLayout() {
   return (
     <NotificationProvider>
       <MenuNavigationBridge />
-      <ImportToastBridge />
+      <ApplicationEventsBridge />
+      <NotificationEventsBridge />
+      <NotificationToastBridge />
       <ProtocolVersionGate>
         <CapabilityProvider>
           <div className="app-content relative flex h-screen flex-col overflow-hidden pt-3">
