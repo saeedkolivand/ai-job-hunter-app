@@ -1,6 +1,6 @@
 [package]
 name = "ajh-tauri"
-version = "0.94.0"
+version = "0.94.1"
 edition = "2021"
 description = "AI Job Hunter — Tauri desktop shell"
 authors = ["Saeed Kolivand"]
