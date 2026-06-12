@@ -6,7 +6,17 @@ import jsxA11y from 'eslint-plugin-jsx-a11y';
 import tseslint from 'typescript-eslint';
 
 export default [
-  { ignores: ['**/dist/**', '**/out/**', '**/node_modules/**', '**/*.gen.ts'] },
+  {
+    // Test fixtures simulate clicks on divs and are not shipped UI.
+    ignores: [
+      '**/dist/**',
+      '**/out/**',
+      '**/node_modules/**',
+      '**/*.gen.ts',
+      '**/*.test.tsx',
+      '**/*.spec.tsx',
+    ],
+  },
   {
     files: ['apps/tauri/src/renderer/**/*.tsx'],
     languageOptions: {

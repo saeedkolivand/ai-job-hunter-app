@@ -159,7 +159,11 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
               <MapPin size={10} /> {posting.location}
             </span>
           )}
-          <span onClick={(e) => e.stopPropagation()}>
+          <span
+            role="presentation"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             <SourceBadge source={posting.source} url={posting.url} />
           </span>
           {posting.postedAt && (
