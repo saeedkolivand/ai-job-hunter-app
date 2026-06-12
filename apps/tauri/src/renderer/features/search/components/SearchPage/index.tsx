@@ -44,7 +44,7 @@ export function SearchPage() {
           placeholder="Search scraped jobs (e.g. senior rust engineer remote)"
           className="flex-1"
         />
-        <Button type="submit" variant="glass" disabled={!text.trim()} loading={isFetching}>
+        <Button type="submit" variant="primary" disabled={!text.trim()} loading={isFetching}>
           <Search size={14} /> Search
         </Button>
       </form>

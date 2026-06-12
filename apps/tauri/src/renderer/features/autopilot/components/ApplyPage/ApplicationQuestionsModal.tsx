@@ -126,7 +126,7 @@ export function ApplicationQuestionsModal({
           {error && <p className="text-[11px] text-red-300/80">{error}</p>}
 
           <Button
-            variant="glass"
+            variant="primary"
             size="sm"
             loading={generating}
             disabled={!canGenerate || generating}

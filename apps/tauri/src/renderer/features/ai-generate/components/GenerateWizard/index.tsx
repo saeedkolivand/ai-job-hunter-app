@@ -115,7 +115,7 @@ export function GenerateWizard({
             onClick={onGenerate}
             disabled={isGenerating}
             loading={isGenerating}
-            variant="glass"
+            variant="primary"
             size="sm"
             className="gap-1.5 transition-all duration-150 ease-out"
           >
@@ -125,7 +125,7 @@ export function GenerateWizard({
         ) : (
           <Button
             onClick={() => setStep(step + 1)}
-            variant="glass"
+            variant="primary"
             size="sm"
             className="gap-1.5 transition-all duration-150 ease-out"
           >
