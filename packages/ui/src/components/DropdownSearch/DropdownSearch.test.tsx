@@ -49,7 +49,7 @@ describe('DropdownSearch', () => {
       const input = screen.getByRole('textbox');
       fireEvent.keyDown(input, { key: 'Enter' });
       expect(onKeyDown).toHaveBeenCalledTimes(1);
-      expect(onKeyDown.mock.calls[0][0].key).toBe('Enter');
+      expect(onKeyDown.mock.calls[0]?.[0]?.key).toBe('Enter');
     });
   });
 
