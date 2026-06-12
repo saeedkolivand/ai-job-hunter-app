@@ -28,13 +28,20 @@ export function useDropdownPosition(
   const dropdownStyle: React.CSSProperties = rect
     ? (() => {
         const maxWidth = Math.min(420, window.innerWidth - 16);
-        const left =
-          rect.left + maxWidth > window.innerWidth - 8
-            ? Math.max(8, rect.right - maxWidth)
-            : rect.left;
+        // Anchor the panel under its trigger. The panel is `max-content` wide, so
+        // its rendered width is unknown here — when the trigger sits near the right
+        // edge, anchor by CSS `right` (to the trigger's right edge) and let the
+        // panel grow leftward; otherwise anchor `left`. This keeps the panel under
+        // its trigger in both cases without guessing the width. (The old
+        // `left = rect.right - maxWidth` assumed a `maxWidth`-wide panel and placed
+        // a narrow one far to the left of the trigger.)
+        const nearRight = rect.left + maxWidth > window.innerWidth - 8;
+        const horizontal = nearRight
+          ? { right: Math.max(8, window.innerWidth - rect.right) }
+          : { left: rect.left };
         return {
           position: 'fixed',
-          left,
+          ...horizontal,
           width: 'max-content',
           minWidth: Math.min(rect.width, maxWidth),
           maxWidth,

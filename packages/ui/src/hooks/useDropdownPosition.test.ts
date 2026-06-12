@@ -87,10 +87,10 @@ describe('useDropdownPosition', () => {
     expect(style.minWidth).toBe(420);
   });
 
-  it('right-edge overflow: left is clamped so the panel stays in viewport', () => {
+  it('near the right edge: anchors by `right` to the trigger edge, not `left`', () => {
     // innerWidth=400, maxWidth=min(420,384)=384
-    // rect.left=350, rect.right=400, width=50
-    // rect.left + maxWidth = 350+384=734 > 400-8=392 → clamp: max(8, rect.right - maxWidth) = max(8, 400-384) = max(8,16) = 16
+    // rect.left=350, rect.right=400 → 350+384=734 > 400-8=392 → near right edge
+    // → right = max(8, innerWidth - rect.right) = max(8, 400-400) = max(8,0) = 8; no `left`
     const { getBCR } = setupWindow(
       { left: 350, right: 400, width: 50, bottom: 450, top: 400 },
       { innerWidth: 400 }
@@ -110,11 +110,10 @@ describe('useDropdownPosition', () => {
     });
 
     const style = result.current.dropdownStyle as Record<string, unknown>;
-    // left = max(8, 400 - 384) = max(8, 16) = 16
-    expect(style.left).toBe(16);
-    // Must not overflow: left + maxWidth <= innerWidth - 8 is not guaranteed to be perfect
-    // but the hook ensures left >= 8
-    expect((style.left as number) >= 8).toBe(true);
+    // Right-anchored to the trigger's right edge so a max-content panel grows
+    // leftward and stays under the trigger (no width guess, no left-clamp).
+    expect(style.right).toBe(8);
+    expect(style).not.toHaveProperty('left');
   });
 
   it('drop-up: little space below triggers dropUp=true and style uses bottom instead of top', () => {

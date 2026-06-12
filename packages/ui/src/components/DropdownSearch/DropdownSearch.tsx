@@ -22,6 +22,12 @@ export function DropdownSearch({
     <div className="border-b border-white/[0.06] px-2 py-2">
       <div className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-2.5 py-1.5 ring-inset focus-within:ring-2 focus-within:ring-brand/50">
         <Search size={11} className="shrink-0 text-foreground/30" />
+        {/* The wrapper's `focus-within:ring` above is the single focus indicator.
+            The global `:focus-visible { outline }` in utilities.css is UNLAYERED, so
+            Tailwind's layered `focus-visible:outline-none` cannot override it under
+            Tailwind v4 (layers beat specificity) — leaving the input with its own
+            outline INSIDE the wrapper ring (a double ring). An inline `outline:none`
+            outranks any author rule, so it reliably drops the input's outline. */}
         <input
           ref={searchRef}
           type="text"
@@ -29,7 +35,8 @@ export function DropdownSearch({
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder={placeholder}
-          className="flex-1 bg-transparent text-xs text-foreground focus-visible:outline-none placeholder:text-foreground/25"
+          style={{ outline: 'none' }}
+          className="flex-1 bg-transparent text-xs text-foreground placeholder:text-foreground/25"
         />
         {onClear && search && (
           <button
