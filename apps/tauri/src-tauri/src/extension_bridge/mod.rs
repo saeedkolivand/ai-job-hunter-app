@@ -186,11 +186,15 @@ fn persist_token(data_dir: &Path, token: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Spawn the bridge server on the existing tokio runtime. Fire-and-forget: a
+/// Spawn the bridge server via the Tauri async runtime. Fire-and-forget: a
 /// bind failure logs and leaves the bridge disabled (port stays `None`) — it
-/// never panics or blocks boot. Call once from the Tauri `setup`.
+/// never panics or blocks boot. Call once from the Tauri `setup`, which runs on
+/// the main thread with **no** ambient Tokio reactor in scope — so this routes
+/// through [`spawn_detached`] ([`tauri::async_runtime::spawn`]), the house idiom
+/// for spawning from a sync/no-runtime context (a bare `tokio::spawn` here
+/// panics with "there is no reactor running").
 pub fn start(app: AppHandle) {
-    tokio::spawn(async move {
+    spawn_detached(async move {
         let Some(state) = app.try_state::<BridgeState>() else {
             log::warn!("[extension_bridge] BridgeState not managed — bridge disabled");
             return;
@@ -216,7 +220,7 @@ pub fn start(app: AppHandle) {
             match listener.accept().await {
                 Ok((stream, _peer)) => {
                     let conn_app = app.clone();
-                    tokio::spawn(async move {
+                    spawn_detached(async move {
                         handle_connection(conn_app, stream).await;
                     });
                 }
@@ -226,6 +230,20 @@ pub fn start(app: AppHandle) {
             }
         }
     });
+}
+
+/// Fire-and-forget spawn through the Tauri async runtime. Unlike a bare
+/// `tokio::spawn`, this does **not** require an ambient Tokio reactor in the
+/// caller's scope, so it is safe to call from the sync `setup` hook (which runs
+/// on the main thread with no runtime). This is the house idiom shared with
+/// `updater`/`tray`/`autopilot_scheduler`. Isolated as a one-line helper so the
+/// no-runtime spawn path is exercisable from a plain `#[test]` (no ambient
+/// runtime) — a regression to bare `tokio::spawn` would panic that test.
+fn spawn_detached<F>(fut: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    tauri::async_runtime::spawn(fut);
 }
 
 /// Try each port in [`PORT_RANGE`] in order; return the first that binds.
