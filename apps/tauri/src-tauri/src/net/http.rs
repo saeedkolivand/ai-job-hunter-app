@@ -67,3 +67,221 @@ pub fn build_client(cfg: ClientConfig) -> reqwest::Result<reqwest::Client> {
     }
     builder.build()
 }
+
+/// Build a one-off client for [`get_guarded`]: same rustls/pool/UA base as
+/// [`shared`] plus a 20s timeout. When `pin` is `Some((host, ips))`, the client
+/// pins DNS for `host` to exactly those validated IPs via reqwest's
+/// `resolve_to_addrs`, so the actual GET cannot rebind to a different (e.g.
+/// freshly-rebound) address between the validation lookup and connect. The
+/// `SocketAddr` port carries the real destination port from `lookup_host`.
+///
+/// Redirects are **disabled** ([`reqwest::redirect::Policy::none`]) on this
+/// client only — without it reqwest would follow up to 10 redirects, and a
+/// `301 Location: http://169.254.169.254/` (or a rebinding host) on the first
+/// hop would bypass the IP pin entirely. A 3xx is surfaced as the response
+/// status; `get_guarded`'s callers treat a non-2xx as "no scraper matched".
+fn build_guarded_client(
+    pin: Option<(String, Vec<std::net::SocketAddr>)>,
+) -> crate::error::AppResult<reqwest::Client> {
+    use crate::error::AppError;
+    let mut builder = base_builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(20));
+    if let Some((host, addrs)) = pin {
+        builder = builder.resolve_to_addrs(&host, &addrs);
+    }
+    builder.build().map_err(AppError::from)
+}
+
+/// IP-validated, IP-pinned GET for fetching an **attacker-controlled** URL (the
+/// generic-HTML scrape fallback). Closes the DNS-rebinding TOCTOU on the only
+/// egress that fetches a raw user URL:
+///
+/// 1. Reject non-`http(s)` schemes.
+/// 2. If the host is an IP literal, validate it directly ([`crate::net::ssrf::is_safe_ip`])
+///    and fetch — hermetic, no DNS (reqwest resolves a literal itself, so pinning
+///    is a no-op there).
+/// 3. Otherwise resolve the host once, validate **every** returned address, then
+///    pin the client to those exact IPs so the connect cannot rebind to a
+///    private/loopback address after the check.
+///
+/// Returns [`crate::error::AppError::Validation`] for an unsafe/rejected host.
+pub async fn get_guarded(url: &str) -> crate::error::AppResult<reqwest::Response> {
+    use crate::error::AppError;
+    use std::net::IpAddr;
+
+    let u =
+        reqwest::Url::parse(url).map_err(|e| AppError::Validation(format!("invalid url: {e}")))?;
+    match u.scheme() {
+        "http" | "https" => {}
+        s => return Err(AppError::Validation(format!("unsupported scheme: {s}"))),
+    }
+    let host = u
+        .host_str()
+        .ok_or_else(|| AppError::Validation("url has no host".into()))?
+        .to_string();
+    let port = u
+        .port_or_known_default()
+        .unwrap_or(if u.scheme() == "https" { 443 } else { 80 });
+
+    let client = if let Ok(ip) = host.parse::<IpAddr>() {
+        // IP literal: validate directly, no DNS, no pin (reqwest won't re-resolve
+        // a literal so it cannot rebind).
+        if !crate::net::ssrf::is_safe_ip(ip) {
+            return Err(AppError::Validation(
+                "url host resolves to a private/loopback address".into(),
+            ));
+        }
+        build_guarded_client(None)?
+    } else {
+        let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host((host.as_str(), port))
+            .await
+            .map_err(|e| AppError::Validation(format!("dns resolution failed: {e}")))?
+            .collect();
+        validate_resolved_addrs(&addrs)?;
+        build_guarded_client(Some((host.clone(), addrs)))?
+    };
+
+    client.get(u).send().await.map_err(AppError::from)
+}
+
+/// Validate the set of addresses a hostname resolved to. This is the security
+/// core of the hostname branch of [`get_guarded`] — the check that actually
+/// closes the DNS-rebinding TOCTOU. Rejects the whole set (with
+/// [`crate::error::AppError::Validation`]) if it is empty or if **any** resolved
+/// address is unsafe ([`crate::net::ssrf::is_safe_ip`]); returns `Ok(())` only
+/// when every address is a safe public IP. Behaviorally identical to the prior
+/// inline loop in `get_guarded` (same empty-set and any-unsafe rejections, same
+/// error variant/message).
+fn validate_resolved_addrs(addrs: &[std::net::SocketAddr]) -> crate::error::AppResult<()> {
+    use crate::error::AppError;
+    if addrs.is_empty() {
+        return Err(AppError::Validation("url host did not resolve".into()));
+    }
+    for sa in addrs {
+        if !crate::net::ssrf::is_safe_ip(sa.ip()) {
+            return Err(AppError::Validation(
+                "url host resolves to a private/loopback address".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::AppError;
+
+    // IP-literal unsafe URLs must be rejected WITHOUT any network/DNS — the
+    // literal path is hermetic.
+    #[tokio::test]
+    async fn get_guarded_rejects_metadata_literal() {
+        let err = get_guarded("http://169.254.169.254/").await.unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn get_guarded_rejects_loopback_v4_literal() {
+        let err = get_guarded("http://127.0.0.1/").await.unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn get_guarded_rejects_private_literal() {
+        let err = get_guarded("http://10.0.0.1/").await.unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn get_guarded_rejects_loopback_v6_literal() {
+        let err = get_guarded("http://[::1]/").await.unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn get_guarded_rejects_non_http_scheme() {
+        let err = get_guarded("ftp://1.1.1.1/").await.unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    // ── get_guarded: literal-branch validation actually runs ──────────────────
+
+    // A private IP literal must be rejected by get_guarded's OWN validation
+    // (not merely by the ssrf classifier in isolation) — this exercises the
+    // literal branch's `is_safe_ip` gate and the Validation error it returns.
+    #[tokio::test]
+    async fn get_guarded_private_literal_returns_validation_error() {
+        let err = get_guarded("http://192.168.1.1/job").await.unwrap_err();
+        assert!(
+            matches!(err, AppError::Validation(_)),
+            "private IP literal must be a Validation error, got {err:?}"
+        );
+    }
+
+    // A public IP literal passes get_guarded's validation step. We use TEST-NET-3
+    // (203.0.113.0/24, RFC 5737 — documentation/example range, guaranteed
+    // unroutable) so the connect cannot reach a real host; whatever the send
+    // resolves to, the ONE thing we assert is that get_guarded did NOT reject it
+    // at the validation gate. A subsequent connection/timeout error is expected
+    // and acceptable — it proves we got *past* validation.
+    #[tokio::test]
+    async fn get_guarded_public_literal_passes_validation() {
+        let result = get_guarded("http://203.0.113.1/job").await;
+        if let Err(AppError::Validation(msg)) = &result {
+            panic!("public IP literal must pass validation, but was rejected: {msg}");
+        }
+        // Ok(_) (unlikely against TEST-NET-3) or a non-Validation transport error
+        // both confirm validation was passed.
+    }
+
+    // ── validate_resolved_addrs: the hostname-branch security core ─────────────
+    // This is the post-`lookup_host` gate that closes the DNS-rebinding TOCTOU on
+    // the hostname path. Tested hermetically with synthetic resolved sets — no
+    // real DNS — so the security logic is asserted independent of the network.
+
+    fn sa(s: &str) -> std::net::SocketAddr {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn validate_resolved_addrs_rejects_empty_set() {
+        let err = validate_resolved_addrs(&[]).unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn validate_resolved_addrs_rejects_any_private_addr() {
+        // A host that resolves to a public AND a private address (a classic
+        // rebinding payload) must be rejected because ANY unsafe addr fails.
+        let addrs = [sa("1.1.1.1:80"), sa("192.168.1.10:80")];
+        let err = validate_resolved_addrs(&addrs).unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn validate_resolved_addrs_rejects_loopback_addr() {
+        let err = validate_resolved_addrs(&[sa("127.0.0.1:80")]).unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn validate_resolved_addrs_rejects_metadata_addr() {
+        // 169.254.169.254 — cloud metadata endpoint reached via a rebinding host.
+        let err = validate_resolved_addrs(&[sa("169.254.169.254:80")]).unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn validate_resolved_addrs_accepts_all_public_set() {
+        let addrs = [
+            sa("1.1.1.1:443"),
+            sa("8.8.8.8:443"),
+            sa("[2606:4700:4700::1111]:443"),
+        ];
+        assert!(
+            validate_resolved_addrs(&addrs).is_ok(),
+            "an all-public resolved set must pass"
+        );
+    }
+}

@@ -14,7 +14,7 @@ import { OnboardingWizard } from '@/features/onboarding/OnboardingWizard';
 import { useAutopilotFocusNavigation } from '@/hooks/use-autopilot-focus-navigation';
 import { useMenuNavigation } from '@/hooks/use-menu-navigation';
 import { CapabilityProvider } from '@/providers/CapabilityProvider';
-import { useSyncCloseToTray } from '@/services';
+import { useApplicationEvents, useSyncCloseToTray } from '@/services';
 
 /** Drives the native-menu navigation/actions. Rendered INSIDE
  *  `NotificationProvider` so its check-for-updates feedback can raise toasts. */
@@ -28,6 +28,8 @@ function RootLayout() {
 
   // Route to an autopilot's found-jobs when the tray/deep-link asks (app-global).
   useAutopilotFocusNavigation();
+  // Refresh the applications + postings lists live on browser-extension imports.
+  useApplicationEvents();
   // Push the persisted close-to-tray preference to the shell once on boot.
   useSyncCloseToTray();
   useEffect(() => {

@@ -23,6 +23,15 @@ export interface ApplicationCreateResult {
 }
 
 /**
+ * Event payload emitted when an Application is created/changed out-of-band — e.g.
+ * a job imported via the browser-extension bridge. Carries the affected id so
+ * consumers can refresh the applications (and postings) lists live.
+ */
+export interface ApplicationChangedEvent {
+  applicationId: string;
+}
+
+/**
  * Application-tracking capability (ADR 0001). The Generate trigger lives in the
  * `aiGenerations.save` flow (it upserts the Application as a side-effect); the two
  * creation triggers here are the doc-less ones: `track` (manual, → `applied`) and
@@ -40,6 +49,9 @@ export interface ApplicationsContract {
   remove(args: { id: string; keepDocuments: boolean }): Promise<ApplicationMutationResult>;
   track(req: ApplicationTrackRequest): Promise<ApplicationCreateResult>;
   saveFromPosting(req: ApplicationTrackRequest): Promise<ApplicationCreateResult>;
+  /** Subscribe to out-of-band application changes (e.g. browser-extension imports).
+   *  Returns a sync unsubscribe handle. */
+  onChanged(handler: (event: ApplicationChangedEvent) => void): () => void;
 }
 
 export const APPLICATIONS_CHANNELS = {

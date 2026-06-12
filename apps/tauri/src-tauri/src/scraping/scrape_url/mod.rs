@@ -292,30 +292,65 @@ async fn try_ashby(url: &str) -> Result<Option<JobPosting>> {
 // ── Generic HTML fallback ───────────────────────────────────────────────────
 
 async fn generic_html(url: &str) -> Result<Option<JobPosting>> {
-    let res = crate::net::http::shared()
-        .get(url)
-        .timeout(std::time::Duration::from_secs(20))
-        .send()
-        .await?;
+    // The only egress that fetches the raw, attacker-controlled user URL. The
+    // guarded fetch IP-validates + IP-pins the resolved address (closing the
+    // DNS-rebinding TOCTOU); a rejected/unsafe host is treated as "no scraper
+    // matched" so the paste-a-URL flow degrades gracefully (the bridge then
+    // replies a clean "could not parse" import error).
+    let res = match crate::net::http::get_guarded(url).await {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
     if !res.status().is_success() {
         return Ok(None);
     }
     let html = res.text().await?;
+    Ok(parse_from_html(url, &html))
+}
 
-    let (title, description) = parse_generic_html(&html);
+/// Build a `JobPosting` from already-fetched HTML — the fetch-free half of
+/// [`generic_html`]. The extension-bridge **Scan mode** supplies the
+/// authenticated DOM (a logged-in board page the desktop's anonymous fetch
+/// can't see), so it reuses this exact parse path instead of re-fetching.
+///
+/// Prefers JSON-LD `JobPosting` fields (title/description/location/company) when
+/// the page ships them, falling back to the generic `<title>`/`<h1>` + meta
+/// description and the `parse_generic_company` employer-name heuristic. Always
+/// returns `Some` for a successfully-parsed document — the title may be an empty
+/// string (e.g. a page with only a meta description) so the description-on-demand
+/// flow still surfaces the page. (The fetch half short-circuits earlier on a
+/// non-success status / rejected host.)
+pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
+    let (mut title, mut description) = parse_generic_html(html);
+    let mut location = None;
+
+    // JSON-LD `JobPosting` is the richest source when present — let it override
+    // the generic title/description and supply a location the meta tags lack.
+    if let Some(jl) = json_ld_job_posting(html) {
+        if !jl.title.is_empty() {
+            title = jl.title;
+        }
+        if jl.description.is_some() {
+            description = jl.description;
+        }
+        if jl.location.is_some() {
+            location = jl.location;
+        }
+    }
+
     let host = reqwest::Url::parse(url)
         .ok()
         .and_then(|u| u.host_str().map(str::to_string))
         .unwrap_or_default();
     // Prefer a real employer name (JSON-LD / og:site_name) over the bare host.
-    let company = parse_generic_company(&html).unwrap_or(host);
+    let company = parse_generic_company(html).unwrap_or(host);
 
-    Ok(Some(JobPosting {
+    Some(JobPosting {
         id: format!("url:{}", url),
         external_id: None,
         title,
         company,
-        location: None,
+        location,
         url: url.to_string(),
         source: "url".to_string(),
         description,
@@ -323,7 +358,87 @@ async fn generic_html(url: &str) -> Result<Option<JobPosting>> {
         posted_at: None,
         captured_at: chrono::Utc::now().timestamp_millis(),
         extra: HashMap::new(),
-    }))
+    })
+}
+
+/// The subset of JSON-LD `JobPosting` fields the generic parse path consumes.
+struct JsonLdJob {
+    title: String,
+    description: Option<String>,
+    location: Option<String>,
+}
+
+/// Best-effort pull of a JSON-LD `JobPosting` node (single object, or one inside
+/// an `@graph` array) — title/description/jobLocation address locality. Returns
+/// `None` when no `@type: JobPosting` node carries a usable title.
+fn json_ld_job_posting(html: &str) -> Option<JsonLdJob> {
+    fn is_job_posting(node: &serde_json::Value) -> bool {
+        match node.get("@type") {
+            Some(serde_json::Value::String(s)) => s == "JobPosting",
+            Some(serde_json::Value::Array(arr)) => {
+                arr.iter().any(|v| v.as_str() == Some("JobPosting"))
+            }
+            _ => false,
+        }
+    }
+    fn from_node(node: &serde_json::Value) -> Option<JsonLdJob> {
+        if !is_job_posting(node) {
+            return None;
+        }
+        let title = node
+            .get("title")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if title.is_empty() {
+            return None;
+        }
+        let description = node
+            .get("description")
+            .and_then(|s| s.as_str())
+            .map(crate::scraping::http::strip_html)
+            .filter(|s| !s.trim().is_empty());
+        // jobLocation.address.addressLocality (+ region) is the common shape.
+        let location = node
+            .get("jobLocation")
+            .and_then(|jl| jl.get("address"))
+            .and_then(|addr| {
+                let locality = addr.get("addressLocality").and_then(|s| s.as_str());
+                let region = addr.get("addressRegion").and_then(|s| s.as_str());
+                match (locality, region) {
+                    (Some(c), Some(r)) => Some(format!("{c}, {r}")),
+                    (Some(c), None) => Some(c.to_string()),
+                    (None, Some(r)) => Some(r.to_string()),
+                    _ => None,
+                }
+            });
+        Some(JsonLdJob {
+            title,
+            description,
+            location,
+        })
+    }
+
+    let doc = Html::parse_document(html);
+    let sel = Selector::parse(r#"script[type="application/ld+json"]"#).ok()?;
+    for node in doc.select(&sel) {
+        let raw = node.text().collect::<String>();
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            continue;
+        };
+        if let Some(job) = from_node(&json) {
+            return Some(job);
+        }
+        if let Some(job) = json
+            .get("@graph")
+            .and_then(|g| g.as_array())
+            .and_then(|nodes| nodes.iter().find_map(from_node))
+        {
+            return Some(job);
+        }
+    }
+    None
 }
 
 fn parse_generic_html(html: &str) -> (String, Option<String>) {
@@ -413,7 +528,11 @@ async fn try_linkedin(url: &str) -> Result<Option<JobPosting>> {
         Some(h) => h,
         None => return Ok(None),
     };
-    if !host.contains("linkedin.com") {
+    // Exact/suffix match only. The authed (cookie-bearing) LinkedIn client must
+    // *only* ever talk to real `*.linkedin.com` — a substring gate would let a
+    // look-alike host (`linkedin.com.attacker.tld`) pass and exfiltrate the
+    // user's session cookies cross-host (SSRF + cookie exfil).
+    if host != "linkedin.com" && host != "www.linkedin.com" && !host.ends_with(".linkedin.com") {
         return Ok(None);
     }
     let path = u.path();
@@ -660,7 +779,15 @@ async fn try_personio(url: &str) -> Result<Option<JobPosting>> {
         Some(h) => h,
         None => return Ok(None),
     };
-    if !host.contains("jobs.personio.") {
+    // Exact/suffix match only. A substring gate (`contains("jobs.personio.")`)
+    // would let `jobs.personio.attacker.tld` pass and turn the feed fetch into
+    // an attacker-controlled, rebindable egress. Real Personio job hosts are
+    // `jobs.personio.{de,com}` and `<company>.jobs.personio.{de,com}`.
+    if host != "jobs.personio.de"
+        && host != "jobs.personio.com"
+        && !host.ends_with(".jobs.personio.de")
+        && !host.ends_with(".jobs.personio.com")
+    {
         return Ok(None);
     }
 
@@ -680,8 +807,13 @@ async fn try_personio(url: &str) -> Result<Option<JobPosting>> {
 
     // Fetch the XML feed and find the matching position.
     let feed_url = format!("https://{}", host);
-    let client = crate::net::http::shared();
-    let res = client.get(&feed_url).send().await?;
+    // Route through the IP-validated, IP-pinned, redirect-disabled guarded
+    // client: even with the tightened host gate, treat the feed fetch as an
+    // attacker-influenced egress and close the DNS-rebinding TOCTOU.
+    let res = match crate::net::http::get_guarded(&feed_url).await {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
     if !res.status().is_success() {
         return Ok(None);
     }

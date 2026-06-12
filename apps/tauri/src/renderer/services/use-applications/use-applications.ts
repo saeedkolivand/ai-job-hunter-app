@@ -1,6 +1,12 @@
+import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { Application, ApplicationTrackRequest, ApplicationUpdateRequest } from '@ajh/shared';
+import type {
+  Application,
+  ApplicationChangedEvent,
+  ApplicationTrackRequest,
+  ApplicationUpdateRequest,
+} from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
@@ -80,4 +86,31 @@ export const useSaveFromPosting = () => {
       void qc.invalidateQueries({ queryKey: keys.applications.all });
     },
   });
+};
+
+/**
+ * App-global subscription to out-of-band application changes (`applications:changed`),
+ * emitted by the browser-extension bridge on a successful import. Invalidates the
+ * applications list and the postings list so both refresh live.
+ *
+ * Mounted ONCE in the root layout (like `useMenuNavigation`); never call from a
+ * feature component, or the listener would attach/detach per route.
+ */
+export const useApplicationEvents = (onChanged?: (event: ApplicationChangedEvent) => void) => {
+  const api = useAppClient();
+  const qc = useQueryClient();
+  // Keep the latest handler in a ref so the listener subscribes ONCE — re-subscribing
+  // on every render races the async Tauri `listen` and can drop an event in the gap.
+  const handlerRef = useRef(onChanged);
+  handlerRef.current = onChanged;
+  useEffect(() => {
+    const off = api.applications.onChanged((event) => {
+      void qc.invalidateQueries({ queryKey: keys.applications.all });
+      // A new application created from a posting flips that posting's "applied" badge,
+      // so the postings list must refresh too.
+      void qc.invalidateQueries({ queryKey: keys.postings.all });
+      handlerRef.current?.(event);
+    });
+    return () => off();
+  }, [api, qc]);
 };

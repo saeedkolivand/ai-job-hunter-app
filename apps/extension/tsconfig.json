@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // WebExtension surface: DOM (content script + popup + SW WebSocket) plus the
+    // `chrome` / `browser` (webextension-polyfill) globals. NOT the Node renderer
+    // toolchain — no `@types/node`, no React DOM project types.
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+    "types": ["chrome", "webextension-polyfill"],
+    "noEmit": true,
+    "rootDir": ".",
+    "moduleResolution": "Bundler",
+    "verbatimModuleSyntax": false
+  },
+  "include": ["src/**/*"],
+  "exclude": ["dist", "node_modules", "src/**/*.test.ts", "vitest.config.ts", "vitest.setup.ts"]
+}

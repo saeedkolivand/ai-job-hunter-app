@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Tests run in jsdom which provides DOM + browser globals.
+    // Add node types for vitest config file.
+    "types": ["chrome", "webextension-polyfill", "vitest/globals", "node"],
+    // Relax the rootDir restriction so vitest.setup.ts (at package root)
+    // is included alongside src/**/*.
+    "rootDir": "."
+  },
+  "include": ["src/**/*", "vitest.setup.ts", "vitest.config.ts"],
+  "exclude": ["dist", "node_modules"]
+}

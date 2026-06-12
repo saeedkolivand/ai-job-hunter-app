@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Job Hunter Extension</title>
+    <!-- No inline script/style: the bundled module (which imports its CSS) is
+         loaded externally to satisfy the MV3 content security policy. -->
+  </head>
+  <body>
+    <main class="app">
+      <header class="head">
+        <h1 class="title">AI Job Hunter</h1>
+        <!-- role="status" already implies aria-live="polite"; no redundant attr. -->
+        <span id="status-pill" class="pill pill--searching" role="status">
+          ○ Connecting…
+        </span>
+      </header>
+
+      <!-- Import view: shown when paired + connected. -->
+      <section id="view-import" class="view" hidden>
+        <p class="hint">Import the job on this page into your desktop app.</p>
+        <div class="actions">
+          <button id="btn-url" class="btn btn--primary" type="button">Import via URL</button>
+          <button id="btn-scan" class="btn" type="button">Scan page</button>
+        </div>
+        <label class="check">
+          <input id="chk-applied" type="checkbox" />
+          <span>I already applied to this job</span>
+        </label>
+        <p id="import-msg" class="msg" role="status" aria-live="polite"></p>
+        <button id="btn-unpair" class="link" type="button">Unpair this device</button>
+      </section>
+
+      <!-- Pairing view: shown when the app is reachable but no token is stored. -->
+      <section id="view-pair" class="view" hidden>
+        <p class="hint">
+          Paste the pairing token from the desktop app's
+          <strong>Settings → Browser extension</strong>.
+        </p>
+        <input
+          id="token-input"
+          class="token"
+          type="text"
+          inputmode="text"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="64-character pairing token"
+          aria-label="Pairing token"
+        />
+        <p id="pair-msg" class="msg" role="status" aria-live="polite"></p>
+        <button id="btn-save-token" class="btn btn--primary" type="button">Save & pair</button>
+      </section>
+
+      <!-- Empty state: the desktop app is not running. -->
+      <section id="view-offline" class="view" hidden>
+        <div class="empty">
+          <p class="empty__title">AI Job Hunter isn't running</p>
+          <p class="empty__body">
+            Open the desktop app, then reopen this popup. The extension only talks
+            to the app on your own computer.
+          </p>
+          <button id="btn-retry" class="btn" type="button">Retry</button>
+        </div>
+      </section>
+
+      <!-- Searching placeholder. -->
+      <section id="view-searching" class="view">
+        <div class="empty">
+          <p class="empty__body">Looking for the desktop app…</p>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./popup/popup.ts"></script>
+  </body>
+</html>

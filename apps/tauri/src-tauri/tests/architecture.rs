@@ -67,6 +67,10 @@ const L3: &[&str] = &[
     "updater",
     "tray",
     "deeplink",
+    // Loopback WS bridge for the browser extension. Shell-role: holds an
+    // AppHandle, emits Tauri events, and reaches down into L1 (applications,
+    // scraping) — never the reverse.
+    "extension_bridge",
 ];
 
 fn layer_of(module: &str) -> Option<u8> {
