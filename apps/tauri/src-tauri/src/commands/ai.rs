@@ -30,13 +30,11 @@ fn uuid_v4() -> String {
 #[tauri::command]
 pub async fn ai_generate(app: AppHandle, req: AiGenerateRequest) -> Value {
     let job_id = uuid_v4();
-    app.state::<Mutex<JobTracker>>()
-        .lock()
-        .start(&job_id, "ai.generate");
+    crate::commands::jobs::job_start(&app, &job_id, "ai.generate");
 
     let fail = |app: &AppHandle, job_id: &str, msg: String| -> Value {
         emit_stream_error(app, job_id, &msg);
-        app.state::<Mutex<JobTracker>>().lock().fail(job_id, msg);
+        crate::commands::jobs::job_fail(app, job_id, msg);
         json!({ "jobId": job_id })
     };
 
@@ -75,10 +73,7 @@ pub async fn ai_generate(app: AppHandle, req: AiGenerateRequest) -> Value {
         if let Err(e) = provider.chat_stream(&app_clone, &job_id_clone, &req).await {
             let msg = e.to_string();
             emit_stream_error(&app_clone, &job_id_clone, &msg);
-            app_clone
-                .state::<Mutex<JobTracker>>()
-                .lock()
-                .fail(&job_id_clone, msg);
+            crate::commands::jobs::job_fail(&app_clone, &job_id_clone, msg);
         }
     });
 
@@ -206,9 +201,7 @@ pub async fn ai_research_company(
 #[tauri::command]
 pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
     let job_id = uuid_v4();
-    app.state::<Mutex<JobTracker>>()
-        .lock()
-        .start(&job_id, "ai.pull_model");
+    crate::commands::jobs::job_start(&app, &job_id, "ai.pull_model");
 
     let job_id_clone = job_id.clone();
     let app_clone = app.clone();
@@ -216,16 +209,14 @@ pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
     tauri::async_runtime::spawn(async move {
         match ollama::pull(&app_clone, &job_id_clone, &model).await {
             Ok(()) => {
-                app_clone
-                    .state::<Mutex<JobTracker>>()
-                    .lock()
-                    .complete(&job_id_clone, json!({ "model": model, "done": true }));
+                crate::commands::jobs::job_complete(
+                    &app_clone,
+                    &job_id_clone,
+                    json!({ "model": model, "done": true }),
+                );
             }
             Err(e) => {
-                app_clone
-                    .state::<Mutex<JobTracker>>()
-                    .lock()
-                    .fail(&job_id_clone, e.to_string());
+                crate::commands::jobs::job_fail(&app_clone, &job_id_clone, e.to_string());
             }
         }
     });
@@ -348,9 +339,7 @@ pub async fn ai_set_embedding_config(
 #[tauri::command]
 pub async fn ai_reembed_all(app: AppHandle) -> Value {
     let job_id = uuid_v4();
-    app.state::<Mutex<JobTracker>>()
-        .lock()
-        .start(&job_id, "ai.reembed");
+    crate::commands::jobs::job_start(&app, &job_id, "ai.reembed");
 
     let job_id_clone = job_id.clone();
     let app_clone = app.clone();
@@ -400,19 +389,10 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
             );
         }
 
-        app_clone.state::<Mutex<JobTracker>>().lock().complete(
+        crate::commands::jobs::job_complete(
+            &app_clone,
             &job_id_clone,
             json!({ "reembedded": done, "failed": failed, "total": total }),
-        );
-        emit_event(
-            &app_clone,
-            JOBS_EVENT,
-            JobEvent {
-                r#type: "job.completed".to_string(),
-                job_id: job_id_clone.clone(),
-                data: Some(json!({ "reembedded": done, "failed": failed, "total": total })),
-                ts: crate::documents::now_ms() as i64,
-            },
         );
     });
 
