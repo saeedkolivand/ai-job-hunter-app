@@ -109,7 +109,7 @@ The Apple `{rounded.*}` grammar is namespaced `--rounded-*` so it does **not** c
   --rounded-pill: 9999px --rounded-full: 9999px;
 ```
 
-- **Pill** (`--rounded-pill`) — the signature primary/colorful CTA + search input.
+- **Pill** (`--rounded-pill`) — the semantic colorful action CTAs (`run`/`edit`/`delete`) + search input.
 - **lg** (18px) — utility/grid cards (`.surface-card`).
 - **sm** (8px) — compact utility buttons.
 
@@ -215,7 +215,7 @@ import { Button, Input, GlassCard, Modal } from '@ajh/ui';
 | `loading`  | boolean | Shows spinner, disables click                                                                                  |
 | `disabled` | boolean | Greyed out, no interaction                                                                                     |
 
-- **`primary`** — the signature solid **violet pill** CTA (`--color-action-primary`). **`run` / `edit` / `delete`** — solid colorful action pills (semantic colour; the deliberate divergence). All filled actions take the pill radius.
+- **`primary`** — the signature solid **violet** CTA (`--color-action-primary`), on the **utility radius** so it matches neutral buttons like `default`. **`run` / `edit` / `delete`** — solid colorful action **pills** (semantic colour; the deliberate divergence) — these are the only filled actions that take the pill radius.
 - **`default` / `glass` / `ghost`** — neutral utility buttons (rounded `sm`, not pill). **`danger` / `warning` / `info` / `success`** — translucent inline state chips.
 - Apple micro-interaction baked in: weight **400** (no 500), `active:scale-[0.95]` press, 2px brand focus ring.
 
@@ -288,7 +288,7 @@ Source: `packages/ui/src/components/RichTextEditor/`; exported from `@ajh/ui` at
 
 #### `Dropdown`
 
-The single canonical select — the former `SelectDropdown` and `Dropdown` were merged into one. Keyboard navigation, drop-up flip, a leading `icon`, auto-search at ≥8 options, and optional `options[].section` group headers + `options[].meta` right-aligned text.
+The single canonical select — the former `SelectDropdown` and `Dropdown` were merged into one. Keyboard navigation, drop-up flip, a leading `icon`, auto-search at ≥8 options, and optional `options[].section` group headers + `options[].meta` right-aligned text. An opt-in `tone="primary"` brand-tints the trigger (e.g. the application **status** selector); every other dropdown stays the neutral glass `tone="default"`.
 
 ```typescript
 <Dropdown
