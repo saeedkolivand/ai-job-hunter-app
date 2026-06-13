@@ -5,54 +5,102 @@
 //! IP-pinned guarded fetch ([`crate::net::http::get_guarded`]) can share it;
 //! [`is_safe_import_url`] is the thin URL-parsing wrapper the bridge calls.
 
-/// Allowed published-extension ids. The Firefox AMO id is an email-style AMO id
-/// tied to the aijobhunter.app domain
-/// (mirrored in `apps/extension/src/manifest.ts::FIREFOX_EXTENSION_ID`).
+/// Allowed published **Chrome** extension ids. The Chrome `chrome-extension://`
+/// host IS the stable Chrome Web Store id, so a Chrome origin is pinned by
+/// exact id match against this list.
+///
+/// Firefox is **not** pinned here: Firefox assigns every install a random,
+/// per-profile internal UUID (anti-fingerprinting) and uses that — never the
+/// AMO/gecko id — in `moz-extension://` URLs, so the id is unknowable in
+/// advance. Firefox origins are therefore accepted by UUID **shape** instead
+/// (see [`is_allowed_origin`] / [`is_extension_uuid`]); the gecko id
+/// (`job-importer@aijobhunter.app`, in `apps/extension/src/manifest.ts`) never
+/// appears as an origin and is intentionally absent from this list.
+///
 /// **TODO(bridge): the Chrome Web Store id is still a placeholder** — it is
 /// assigned at publish time, so until the extension is published no Chrome
 /// production origin matches and only the dev override
 /// (`platform::config::extension_dev_origins`) admits a local Chrome extension.
-/// Each id is matched as `chrome-extension://<id>` AND `moz-extension://<id>`.
+/// Each id is matched as `chrome-extension://<id>` (Chrome only).
 pub const ALLOWED_EXTENSION_IDS: &[&str] = &[
     // Chrome Web Store id (32 lowercase a–p chars) — PLACEHOLDER (set at publish).
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    // Firefox AMO extension id (email-style id tied to the aijobhunter.app domain).
-    "job-importer@aijobhunter.app",
 ];
 
-/// Whether a handshake `Origin` is an allowed extension origin. Accepts only
-/// `chrome-extension://<id>` / `moz-extension://<id>` where `<id>` is in
-/// [`ALLOWED_EXTENSION_IDS`], plus any exact-match `dev_origins` entry (a
-/// developer's locally-loaded extension, supplied via the dev env override).
+/// Whether a handshake `Origin` is an allowed extension origin.
+///
+/// This check is **defense-in-depth, not the primary boundary**. The real
+/// authentication is the per-frame 256-bit pairing token enforced in
+/// [`super::classify_frame`] (every envelope token must equal `state.token()`),
+/// over a loopback-only (`127.0.0.1`) listener. The token is copied by the user
+/// from the app Settings and a sibling extension cannot read it, so even a local
+/// extension that opens a socket cannot import anything without it.
+///
+/// Acceptance:
+/// - **Dev override** (checked first): any exact-match `dev_origins` entry (a
+///   developer locally-loaded extension, supplied via the dev env override).
+/// - **Chrome**: `chrome-extension://<id>` where `<id>` is in
+///   [`ALLOWED_EXTENSION_IDS`] (the stable Chrome Web Store id).
+/// - **Firefox**: `moz-extension://<uuid>` where `<uuid>` is a well-formed
+///   extension UUID ([`is_extension_uuid`]). The Firefox per-install UUID is
+///   unknowable in advance, so the origin check can only assert scheme + UUID
+///   shape; the pairing token is what actually authenticates.
+///
+/// In all cases the origin must be scheme + host only — a trailing path or any
+/// extra slash segment is rejected.
 pub fn is_allowed_origin(origin: &str, dev_origins: &[String]) -> bool {
     let origin = origin.trim();
     if origin.is_empty() {
         return false;
     }
-    // Dev override: exact-match the full origin string.
+    // Dev override: exact-match the full origin string (checked first).
     if dev_origins.iter().any(|d| d == origin) {
         return true;
     }
-    // Production: scheme + known id (no path/extra segments).
-    let id = if let Some(rest) = origin.strip_prefix("chrome-extension://") {
-        rest
-    } else if let Some(rest) = origin.strip_prefix("moz-extension://") {
-        rest
-    } else {
-        return false;
-    };
-    // Reject anything past the id (e.g. a trailing path) — an origin is just the
-    // scheme + host, so a clean id has no `/`.
-    if id.contains('/') {
+    // Chrome: scheme + known store id. An origin is just scheme + host, so a
+    // clean id has no slash (reject a trailing path / extra segment).
+    if let Some(id) = origin.strip_prefix("chrome-extension://") {
+        return !id.contains('/') && ALLOWED_EXTENSION_IDS.contains(&id);
+    }
+    // Firefox: scheme + per-install internal UUID. The id is random per profile
+    // and unknowable in advance, so accept any well-formed UUID host (again, no
+    // trailing path). `is_extension_uuid` already rejects anything containing a
+    // slash, since a slash is not a hex/dash UUID char.
+    if let Some(host) = origin.strip_prefix("moz-extension://") {
+        return is_extension_uuid(host);
+    }
+    false
+}
+
+/// Whether `s` is a well-formed Firefox extension UUID: the standard
+/// `8-4-4-4-12` form, lowercase hex, dashes in the canonical positions, and
+/// nothing else (no trailing path, no extra segment). Hand-written hex/dash
+/// check so the bridge takes no new dependency (no `uuid` crate).
+///
+/// Example accepted: `12345678-90ab-cdef-1234-567890abcdef`.
+fn is_extension_uuid(s: &str) -> bool {
+    // 32 hex digits + 4 dashes = 36 chars.
+    if s.len() != 36 {
         return false;
     }
-    ALLOWED_EXTENSION_IDS.contains(&id)
+    for (i, b) in s.bytes().enumerate() {
+        let ok = match i {
+            // Canonical dash positions in 8-4-4-4-12.
+            8 | 13 | 18 | 23 => b == b'-',
+            // Everything else must be a lowercase hex digit (0-9 or a-f).
+            _ => b.is_ascii_digit() || matches!(b, b'a'..=b'f'),
+        };
+        if !ok {
+            return false;
+        }
+    }
+    true
 }
 
 /// SSRF guard for an import target URL: parse the host and reject loopback,
-/// private, link-local, and `*.local` hosts so the bridge can't be used to probe
-/// the user's internal network. Returns `true` only for a host that is a public
-/// hostname or a public IP. A URL that fails to parse a host is rejected.
+/// private, link-local, and `*.local` hosts so the bridge can not be used to
+/// probe the user internal network. Returns `true` only for a host that is a
+/// public hostname or a public IP. A URL that fails to parse a host is rejected.
 ///
 /// This is a fast-fail by host **name**; the actual fetch
 /// ([`crate::net::http::get_guarded`]) additionally IP-validates and IP-pins the
@@ -77,6 +125,9 @@ pub fn is_safe_import_url(url: &str) -> bool {
 mod tests {
     use super::*;
 
+    // A well-formed Firefox per-install UUID (8-4-4-4-12 lowercase hex).
+    const FIREFOX_UUID: &str = "12345678-90ab-cdef-1234-567890abcdef";
+
     fn dev() -> Vec<String> {
         vec!["chrome-extension://devdevdevdevdevdevdevdevdevdevde".to_string()]
     }
@@ -88,9 +139,47 @@ mod tests {
     }
 
     #[test]
-    fn allows_known_firefox_id() {
-        let origin = format!("moz-extension://{}", ALLOWED_EXTENSION_IDS[1]);
+    fn allows_well_formed_firefox_uuid() {
+        let origin = format!("moz-extension://{FIREFOX_UUID}");
         assert!(is_allowed_origin(&origin, &[]));
+    }
+
+    #[test]
+    fn rejects_firefox_gecko_id() {
+        // The AMO/gecko id never appears as a real `moz-extension://` origin —
+        // Firefox uses a random per-install UUID instead — so it is not a UUID
+        // and must be rejected.
+        assert!(!is_allowed_origin(
+            "moz-extension://job-importer@aijobhunter.app",
+            &[]
+        ));
+    }
+
+    #[test]
+    fn rejects_firefox_uuid_with_trailing_path() {
+        let origin = format!("moz-extension://{FIREFOX_UUID}/popup.html");
+        assert!(!is_allowed_origin(&origin, &[]));
+    }
+
+    #[test]
+    fn rejects_malformed_firefox_uuid() {
+        // Too short.
+        assert!(!is_allowed_origin("moz-extension://12345678-90ab", &[]));
+        // Non-hex char in a hex position.
+        assert!(!is_allowed_origin(
+            "moz-extension://g2345678-90ab-cdef-1234-567890abcdef",
+            &[]
+        ));
+        // Uppercase hex (origins are lowercase).
+        assert!(!is_allowed_origin(
+            "moz-extension://12345678-90AB-cdef-1234-567890abcdef",
+            &[]
+        ));
+        // Dash in the wrong position (right length, bad shape).
+        assert!(!is_allowed_origin(
+            "moz-extension://123456789-0ab-cdef-1234-567890abcdef",
+            &[]
+        ));
     }
 
     #[test]
@@ -123,6 +212,15 @@ mod tests {
             "chrome-extension://otherotherotherotherotherotherot",
             &origins
         ));
+    }
+
+    #[test]
+    fn is_extension_uuid_shape() {
+        assert!(is_extension_uuid(FIREFOX_UUID));
+        assert!(!is_extension_uuid(""));
+        assert!(!is_extension_uuid("not-a-uuid"));
+        // Trailing path can never be a UUID (contains a slash, wrong length).
+        assert!(!is_extension_uuid("12345678-90ab-cdef-1234-567890abcdef/x"));
     }
 
     // ── SSRF URL guard (host classifier itself is tested in crate::net::ssrf) ──
