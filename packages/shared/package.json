@@ -14,6 +14,10 @@
       "types": "./src/ipc/contracts/index.ts",
       "default": "./dist/ipc/contracts.js"
     },
+    "./extension-protocol": {
+      "types": "./src/ipc/extension-protocol-constants.ts",
+      "default": "./dist/ipc/extension-protocol-constants.js"
+    },
     "./language-detection": {
       "types": "./src/language-detection.ts",
       "default": "./dist/language-detection.js"
