@@ -739,12 +739,11 @@ html[data-text-scale='large'] {
   border-color: var(--border-soft);
 }
 
-/* In light mode the sidebar shares the page's canvas tone. The previous two-tone
-   macOS gray read as a mismatched panel against the parchment canvas; using the
-   canvas color makes the sidebar match the rest of the page while its glass border
-   + shadow keep it reading as a panel. */
+/* In light mode the sidebar is a white panel (the card tone) floating on the
+   gray canvas — its glass border + shadow lift it off the page, matching the
+   white content cards rather than blending into the gray backdrop. */
 [data-color-scheme='light'] .app-sidebar {
-  background: var(--color-background);
+  background: var(--color-card);
 }
 
 /* The main content area is a near-opaque white panel in dark mode (intended),
