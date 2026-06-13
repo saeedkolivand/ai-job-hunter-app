@@ -56,9 +56,11 @@ done
 
 RUST=""
 NODE=""
+LANDING=""
 if [ -n "${PREPUSH_FULL:-}" ] || [ "$HAVE_RANGE" -eq 0 ]; then
   RUST=1
   NODE=1
+  LANDING=1
   if [ -n "${PREPUSH_FULL:-}" ]; then
     echo "▶ Path filter: FULL gate (PREPUSH_FULL set)"
   else
@@ -71,9 +73,12 @@ else
   if printf '%s\n' "$CHANGED" | grep -qE '^apps/tauri/src/|^packages/|^package\.json$|^pnpm-lock\.yaml$|^tsconfig.*\.json$|^eslint\.config\.mjs$|^vitest\.config\.ts$|^turbo\.json$|^\.github/'; then
     NODE=1
   fi
+  if printf '%s\n' "$CHANGED" | grep -qE '^landing/'; then
+    LANDING=1
+  fi
   count=$(printf '%s\n' "$CHANGED" | grep -c . || true)
-  echo "▶ Path filter: NODE=${NODE:-0} RUST=${RUST:-0} (${count} files changed)"
-  if [ -z "$RUST" ] && [ -z "$NODE" ]; then
+  echo "▶ Path filter: NODE=${NODE:-0} RUST=${RUST:-0} LANDING=${LANDING:-0} (${count} files changed)"
+  if [ -z "$RUST" ] && [ -z "$NODE" ] && [ -z "$LANDING" ]; then
     echo "✓ No gated paths changed — skipping the build/test gate."
   fi
 fi
@@ -102,6 +107,14 @@ fi
 if [ -n "$NODE" ] || [ -n "$RUST" ]; then
   echo "▶ Checking IPC codegen drift..."
   pnpm gen:ipc:check
+fi
+
+# ── Landing-diagram drift ──────────────────────────────────────────────────────
+# The landing architecture/how-it-works diagrams are derived from the code, so a
+# change to the diagrammed source (node/rust) OR to the landing pages can drift.
+if [ -n "$NODE" ] || [ -n "$RUST" ] || [ -n "$LANDING" ]; then
+  echo "▶ Checking landing-diagram drift..."
+  pnpm check:landing-drift
 fi
 
 # ── Rust gate (CI `rust` filter) ───────────────────────────────────────────────
