@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use super::rate_limiter::RateLimiter;
 use super::session::LinkedInSessionData;
 use crate::error::{AppError, AppResult};

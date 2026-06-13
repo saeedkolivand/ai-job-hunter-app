@@ -1,3 +1,9 @@
+// DORMANT SUBSYSTEM — zero live callers outside this module's own tests.
+// `BrowserController` was designed for CDP-based scraping but has never been
+// wired into the SCRAPERS registry; all current board scrapers use the
+// `scraping::http` path instead.  Kept for future browser-automation scrapers
+// (e.g. sites that require JS rendering).  Remove only after confirming no
+// planned scraper needs it — see M2 audit note.
 #![allow(dead_code)]
 
 use chromiumoxide::browser::{Browser, BrowserConfig};

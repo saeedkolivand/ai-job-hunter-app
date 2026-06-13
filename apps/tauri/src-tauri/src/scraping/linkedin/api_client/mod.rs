@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use super::client::LinkedInHttpClient;
 use super::session::LinkedInSessionData;
 use crate::scraping::types::JobPosting;
