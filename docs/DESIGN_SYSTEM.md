@@ -118,7 +118,7 @@ The Apple `{rounded.*}` grammar is namespaced `--rounded-*` so it does **not** c
 ## Theming
 
 Both schemes follow the **Apple design language** with the brand violet kept as the accent:
-light is a **parchment `#f5f5f7` canvas with white `#ffffff` cards** and near-black ink
+light is a **cool-gray `#f1f1f4` canvas with white `#ffffff` cards** (and a white sidebar) and near-black ink
 `#1d1d1f` — separation comes from **hairlines**, not shadows; dark is **near-black
 `#1d1d1f` canvas with `#272729` tiles** that read _lighter_ than the canvas (Apple
 elevation). Content surfaces are flat; glass is hero-only. Theme is **orthogonal axes**,
