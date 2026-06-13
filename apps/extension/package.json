@@ -15,8 +15,7 @@
   },
   "dependencies": {
     "@ajh/shared": "workspace:*",
-    "@wxt-dev/browser": "^0.1.43",
-    "zod": "^4.4.3"
+    "@wxt-dev/browser": "^0.1.43"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.43",

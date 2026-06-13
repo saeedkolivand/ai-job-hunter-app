@@ -4,6 +4,11 @@ use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, 
 use async_trait::async_trait;
 use serde::Deserialize;
 
+// __NEXT_DATA__ JSON blob compiled once (hoisted out of the per-call body).
+static NEXT_DATA_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r#"<script id="__NEXT_DATA__"[^>]*>(.*?)</script>"#).unwrap()
+});
+
 #[derive(Debug, Deserialize)]
 struct NextJob {
     #[serde(rename = "_id")]
@@ -89,8 +94,7 @@ impl Scraper for GermanTechJobsScraper {
         }
 
         // Extract __NEXT_DATA__ JSON from HTML
-        let re = regex::Regex::new(r#"<script id="__NEXT_DATA__"[^>]*>(.*?)</script>"#).unwrap();
-        let raw = match re.captures(&res.text) {
+        let raw = match NEXT_DATA_RE.captures(&res.text) {
             Some(c) => c.get(1).map(|m| m.as_str()).unwrap_or(""),
             None => return Ok(vec![]),
         };

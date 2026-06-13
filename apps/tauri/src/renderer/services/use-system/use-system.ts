@@ -83,14 +83,6 @@ export const useOpenDevtools = () => {
   return useMutation({ mutationFn: () => api.system.openDevtools() });
 };
 
-export const useSetPerformanceMode = () => {
-  const api = useAppClient();
-  return useMutation({
-    mutationFn: (mode: 'low-memory' | 'balanced' | 'performance') =>
-      api.system.setPerformanceMode(mode),
-  });
-};
-
 /** Current launch-at-login state, sourced from the OS (not local prefs). */
 export const useLaunchAtLogin = () => {
   const api = useAppClient();

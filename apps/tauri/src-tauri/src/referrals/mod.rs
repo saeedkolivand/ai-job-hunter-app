@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::data_store::DataStore;
-use crate::db::{run_migrations, Migration};
+use crate::db::{run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::AppResult;
 
 /// One locally-stored referral contact. Optional drafts/notes are empty strings
@@ -164,8 +164,8 @@ impl ReferralStore {
                 rec.channel,
                 rec.status,
                 rec.notes,
-                rec.created_at as i64,
-                rec.updated_at as i64,
+                ts_to_db(rec.created_at),
+                ts_to_db(rec.updated_at),
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -196,8 +196,8 @@ fn row_to_record(row: &rusqlite::Row) -> rusqlite::Result<ReferralContact> {
         channel: row.get(9)?,
         status: row.get(10)?,
         notes: row.get(11)?,
-        created_at: row.get::<_, i64>(12)? as u64,
-        updated_at: row.get::<_, i64>(13)? as u64,
+        created_at: ts_from_db(row.get::<_, i64>(12)?),
+        updated_at: ts_from_db(row.get::<_, i64>(13)?),
     })
 }
 

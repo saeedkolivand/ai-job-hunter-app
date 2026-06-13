@@ -12,7 +12,7 @@
 //! [`super::docx_renderer`]; cover letters stay on the legacy path until they are
 //! modeled explicitly.
 
-use anyhow::Result;
+use crate::error::AppResult;
 use docx_rs::*;
 
 use crate::export::docx_renderer::{
@@ -48,7 +48,7 @@ pub(crate) fn generate_resume_docx(
     meta: Option<&GenerationMeta>,
     template: &Template,
     ats_mode: bool,
-) -> Result<Docx> {
+) -> AppResult<Docx> {
     generate_resume_docx_in(
         text,
         meta,
@@ -73,7 +73,7 @@ pub(crate) fn generate_resume_docx_in(
     geom: PageGeometry,
     contact: Option<&crate::contact_profile::ContactProfile>,
     lang: &str,
-) -> Result<Docx> {
+) -> AppResult<Docx> {
     let mut model = model_from_resume_text(text);
 
     if let Some(name) = meta.and_then(|m| m.candidate_name.as_deref()) {

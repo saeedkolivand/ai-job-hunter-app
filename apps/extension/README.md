@@ -259,21 +259,12 @@ emitted JS stays readable for review.
 
 ---
 
-## Pinned extension IDs
+## Extension origin validation (bridge side)
 
-The desktop bridge's origin allowlist
-(`apps/tauri/src-tauri/src/extension_bridge/auth.rs::ALLOWED_EXTENSION_IDS`)
-mirrors the ids the extension ships with:
+The desktop bridge validates `moz-extension://` and `chrome-extension://` origins in the WS handshake (`apps/tauri/src-tauri/src/extension_bridge/auth.rs::is_allowed_origin`). **The origin is not the auth boundary** — the per-frame 256-bit pairing token is; the origin is defense-in-depth.
 
-- **Firefox:** set — `browser_specific_settings.gecko.id` is an email-style AMO id
-  tied to the aijobhunter.app domain (`job-importer@aijobhunter.app`), matched in
-  `auth.rs`.
-- **Chrome:** still a placeholder (`aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`). The real
-  CWS id is assigned at publish and cannot be forced from the manifest — set it
-  in `auth.rs` once published.
-
-Until the Chrome id is published, a locally-loaded Chrome build is admitted only
-via the desktop dev-origin override (`AJH_EXTENSION_DEV_ORIGINS`).
+- **Firefox:** origins are random per-install internal UUIDs (anti-fingerprinting), not the AMO gecko id. The bridge accepts any well-formed UUID shape (8-4-4-4-12 lowercase hex) via `is_extension_uuid`. The gecko id (`job-importer@aijobhunter.app`) never appears in a real `moz-extension://` origin and is intentionally absent from the allowlist.
+- **Chrome:** the bridge holds the stable Chrome Web Store id in `ALLOWED_EXTENSION_IDS[0]` (still a placeholder `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`). The real CWS id is assigned at publish and cannot be forced from the manifest — it must be set in `auth.rs` once published. Until then, a locally-loaded Chrome build is admitted only via the desktop dev-origin override (`AJH_EXTENSION_DEV_ORIGINS`).
 
 ---
 

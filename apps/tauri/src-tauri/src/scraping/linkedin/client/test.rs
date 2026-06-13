@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn test_client_new() {
-    let client = LinkedInHttpClient::new(None);
+    let client = LinkedInHttpClient::new(None).expect("build LinkedIn client");
     assert!(!client.has_session());
 }
 
@@ -15,13 +15,13 @@ fn test_client_with_session() {
         csrf_token: Some("csrf".to_string()),
         last_updated: 0,
     };
-    let client = LinkedInHttpClient::new(Some(session));
+    let client = LinkedInHttpClient::new(Some(session)).expect("build LinkedIn client");
     assert!(client.has_session());
 }
 
 #[test]
 fn test_update_session() {
-    let mut client = LinkedInHttpClient::new(None);
+    let mut client = LinkedInHttpClient::new(None).expect("build LinkedIn client");
     assert!(!client.has_session());
 
     let session = LinkedInSessionData {
@@ -37,8 +37,10 @@ fn test_update_session() {
 
 #[test]
 fn test_get_default_headers() {
-    let client = LinkedInHttpClient::new(None);
-    let headers = client.get_default_headers();
+    let client = LinkedInHttpClient::new(None).expect("build LinkedIn client");
+    let headers = client
+        .get_default_headers()
+        .expect("headers build for sessionless client");
     assert!(headers.contains_key(reqwest::header::USER_AGENT));
     assert!(headers.contains_key(reqwest::header::ACCEPT));
 }
@@ -52,8 +54,10 @@ fn test_get_default_headers_with_session() {
         csrf_token: Some("csrf".to_string()),
         last_updated: 0,
     };
-    let client = LinkedInHttpClient::new(Some(session));
-    let headers = client.get_default_headers();
+    let client = LinkedInHttpClient::new(Some(session)).expect("build LinkedIn client");
+    let headers = client
+        .get_default_headers()
+        .expect("headers build with session");
     assert!(headers.contains_key(reqwest::header::COOKIE));
     assert!(headers.contains_key("X-CSRF-Token"));
 }

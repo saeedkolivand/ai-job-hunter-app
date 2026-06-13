@@ -77,4 +77,3 @@ export function CapabilityProvider({ children }: CapabilityProviderProps) {
 export const useCapabilities = () => useContext(CapabilityContext);
 
 export const useAICapability = () => useContext(CapabilityContext).ai;
-export const useDataCapability = () => useContext(CapabilityContext).data;

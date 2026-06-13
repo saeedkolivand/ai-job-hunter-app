@@ -8,6 +8,16 @@ use futures::StreamExt;
 use scraper::{Html, Selector};
 use std::time::Duration;
 
+// Glassdoor job-card CSS selectors compiled once (Selector is Send + Sync).
+static GD_CARD_SEL: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("li[data-test='jobListing']").unwrap());
+static GD_TITLE_SEL: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("a[data-test='job-link']").unwrap());
+static GD_COMPANY_SEL: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("div[data-test='employer-name']").unwrap());
+static GD_LOCATION_SEL: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("div[data-test='emp-location']").unwrap());
+
 pub struct GlassdoorScraper;
 
 #[async_trait]
@@ -93,19 +103,15 @@ impl Scraper for GlassdoorScraper {
             {
                 let doc = Html::parse_document(&html);
 
-                // Glassdoor job card selectors
-                let card_sel = Selector::parse("li[data-test='jobListing']").unwrap();
-                let title_sel = Selector::parse("a[data-test='job-link']").unwrap();
-                let company_sel = Selector::parse("div[data-test='employer-name']").unwrap();
-                let location_sel = Selector::parse("div[data-test='emp-location']").unwrap();
+                // Glassdoor job card selectors (compiled once at module level)
 
-                for card in doc.select(&card_sel) {
+                for card in doc.select(&GD_CARD_SEL) {
                     if ctx.signal.is_cancelled() {
                         break;
                     }
 
                     let title = card
-                        .select(&title_sel)
+                        .select(&GD_TITLE_SEL)
                         .next()
                         .and_then(|e| e.text().next())
                         .unwrap_or("")
@@ -113,7 +119,7 @@ impl Scraper for GlassdoorScraper {
                         .to_string();
 
                     let company = card
-                        .select(&company_sel)
+                        .select(&GD_COMPANY_SEL)
                         .next()
                         .and_then(|e| e.text().next())
                         .unwrap_or("")
@@ -121,13 +127,13 @@ impl Scraper for GlassdoorScraper {
                         .to_string();
 
                     let loc = card
-                        .select(&location_sel)
+                        .select(&GD_LOCATION_SEL)
                         .next()
                         .and_then(|e| e.text().next())
                         .map(|s| s.trim().to_string());
 
                     let url = card
-                        .select(&title_sel)
+                        .select(&GD_TITLE_SEL)
                         .next()
                         .and_then(|e| e.value().attr("href"))
                         .map(|href| {

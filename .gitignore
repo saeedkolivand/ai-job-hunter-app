@@ -12,6 +12,8 @@ dist/
 out/
 build/
 apps/extension/store-packages/
+# Packaged browser-extension zips dropped at the repo root by the package/release step.
+/ai-job-hunter-*.zip
 .vite/
 .turbo/
 storybook-static/

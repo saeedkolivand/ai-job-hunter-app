@@ -61,7 +61,7 @@ impl Scraper for LinkedInScraper {
         }
 
         // Create HTTP client with session
-        let http_client = LinkedInHttpClient::new(session_data);
+        let http_client = LinkedInHttpClient::new(session_data)?;
         let api_client = LinkedInJobsApiClient::new(http_client);
 
         // Resolve a precise geoId for the location (best-effort). On failure we

@@ -18,7 +18,7 @@ use rusqlite::{params, Connection};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::db::{run_migrations, Migration};
+use crate::db::{run_migrations, ts_from_db, ts_to_db, Migration};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -150,7 +150,7 @@ impl JobTracker {
                  updated_at = ?1, finished_at = ?1
              WHERE status IN ('running', 'pending', 'queued', 'streaming', 'retrying')
                AND created_at > ?2",
-            params![now as i64, cutoff as i64],
+            params![ts_to_db(now), ts_to_db(cutoff)],
         );
 
         let mut jobs = HashMap::new();
@@ -159,7 +159,7 @@ impl JobTracker {
                     max_retries, created_at, updated_at, started_at, finished_at
              FROM jobs WHERE created_at > ?1 ORDER BY created_at DESC",
         ) {
-            let rows = stmt.query_map(params![cutoff as i64], |row| {
+            let rows = stmt.query_map(params![ts_to_db(cutoff)], |row| {
                 let payload_str: Option<String> = row.get(4)?;
                 let payload = payload_str
                     .as_deref()
@@ -179,10 +179,10 @@ impl JobTracker {
                     error: row.get(6)?,
                     retries: row.get::<_, i64>(7)? as u32,
                     max_retries: row.get::<_, i64>(8)? as u32,
-                    created_at: row.get::<_, i64>(9)? as u64,
-                    updated_at: row.get::<_, i64>(10)? as u64,
-                    started_at: row.get::<_, Option<i64>>(11)?.map(|v| v as u64),
-                    finished_at: row.get::<_, Option<i64>>(12)?.map(|v| v as u64),
+                    created_at: ts_from_db(row.get::<_, i64>(9)?),
+                    updated_at: ts_from_db(row.get::<_, i64>(10)?),
+                    started_at: row.get::<_, Option<i64>>(11)?.map(ts_from_db),
+                    finished_at: row.get::<_, Option<i64>>(12)?.map(ts_from_db),
                 })
             });
             if let Ok(rows) = rows {
@@ -319,10 +319,10 @@ impl JobTracker {
                     record.error,
                     record.retries as i64,
                     record.max_retries as i64,
-                    record.created_at as i64,
-                    record.updated_at as i64,
-                    record.started_at.map(|v| v as i64),
-                    record.finished_at.map(|v| v as i64),
+                    ts_to_db(record.created_at),
+                    ts_to_db(record.updated_at),
+                    record.started_at.map(ts_to_db),
+                    record.finished_at.map(ts_to_db),
                 ],
             );
         }

@@ -16,7 +16,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::commands::ai_provider::{EmbeddingSpace, EmbeddingVector, ProviderId};
 use crate::data_store::DataStore;
-use crate::db::{column_exists, run_migrations, Migration};
+use crate::db::{column_exists, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::AppResult;
 
 pub mod keywords;
@@ -220,7 +220,7 @@ impl DocumentStore {
                     locale: row.get(3)?,
                     text: row.get(4)?,
                     pages: row.get(5)?,
-                    created_at: row.get::<_, i64>(6)? as u64,
+                    created_at: ts_from_db(row.get::<_, i64>(6)?),
                     indexed: row.get::<_, i64>(7)? != 0,
                     is_default: row.get::<_, i64>(8).unwrap_or(0) != 0,
                     keywords_json: row.get::<_, Option<String>>(9).unwrap_or(None),
@@ -247,7 +247,7 @@ impl DocumentStore {
                     locale: row.get(3)?,
                     text: row.get(4)?,
                     pages: row.get(5)?,
-                    created_at: row.get::<_, i64>(6)? as u64,
+                    created_at: ts_from_db(row.get::<_, i64>(6)?),
                     indexed: row.get::<_, i64>(7)? != 0,
                     is_default: row.get::<_, i64>(8).unwrap_or(0) != 0,
                     keywords_json: row.get::<_, Option<String>>(9).unwrap_or(None),
@@ -275,7 +275,7 @@ impl DocumentStore {
                 rec.locale,
                 rec.text,
                 rec.pages,
-                rec.created_at as i64,
+                ts_to_db(rec.created_at),
                 rec.indexed as i64,
                 is_default as i64,
                 rec.keywords_json,
@@ -458,7 +458,7 @@ impl DocumentStore {
              ON CONFLICT(id) DO UPDATE SET
                 provider = excluded.provider, model = excluded.model,
                 base_url = excluded.base_url, updated_at = excluded.updated_at",
-            params![cfg.provider, cfg.model, cfg.base_url, now_ms() as i64],
+            params![cfg.provider, cfg.model, cfg.base_url, ts_to_db(now_ms())],
         )
         .map_err(|e| e.to_string())?;
         Ok(())

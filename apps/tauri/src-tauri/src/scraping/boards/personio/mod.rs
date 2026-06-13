@@ -5,6 +5,65 @@ use async_trait::async_trait;
 
 const HOSTS: &[&str] = &["jobs.personio.de", "jobs.personio.com"];
 
+// Personio XML feed parsing (shared). The public feed is a flat <position>
+// list; the regex set + capture loop is identical for the board scraper and the
+// single-URL resolver (scrape_url::try_personio), so parsing lives here once.
+// Each caller still builds its own JobPosting (different id/url/posted_at shape).
+static POSITION_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"<position>(.*?)</position>").unwrap());
+static ID_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"<id>(.*?)</id>").unwrap());
+static NAME_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"<name>(.*?)</name>").unwrap());
+static OFFICE_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"<office>(.*?)</office>").unwrap());
+static DESC_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"<jobDescription>\s*<value>(.*?)</value>\s*</jobDescription>").unwrap()
+});
+static CREATED_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"<createdAt>(.*?)</createdAt>").unwrap());
+
+/// One parsed Personio position. Description is already run through strip_html.
+pub(crate) struct PersonioPosition {
+    pub id: String,
+    pub title: String,
+    pub office: String,
+    pub description: String,
+    pub created: String,
+}
+
+/// Parse a Personio XML feed into its positions, skipping empty-id entries.
+pub(crate) fn parse_xml_feed(xml: &str) -> Vec<PersonioPosition> {
+    let mut out = Vec::new();
+    for position_cap in POSITION_RE.captures_iter(xml) {
+        let Some(position_content) = position_cap.get(1) else {
+            continue;
+        };
+        let position_str = position_content.as_str();
+        let cap = |re: &regex::Regex| {
+            re.captures(position_str)
+                .and_then(|c| c.get(1).map(|m| m.as_str().trim().to_string()))
+                .unwrap_or_default()
+        };
+        let id = cap(&ID_RE);
+        if id.is_empty() {
+            continue;
+        }
+        let description = DESC_RE
+            .captures(position_str)
+            .and_then(|c| c.get(1).map(|m| strip_html(m.as_str().trim())))
+            .unwrap_or_default();
+        out.push(PersonioPosition {
+            id,
+            title: cap(&NAME_RE),
+            office: cap(&OFFICE_RE),
+            description,
+            created: cap(&CREATED_RE),
+        });
+    }
+    out
+}
+
 pub struct PersonioScraper;
 
 #[async_trait]
@@ -50,82 +109,43 @@ impl Scraper for PersonioScraper {
         let now = chrono::Utc::now().timestamp_millis();
         let mut out = vec![];
 
-        // Parse XML manually since feed-rs may not handle this format
-        let position_re = regex::Regex::new(r"<position>(.*?)</position>").unwrap();
-        let id_re = regex::Regex::new(r"<id>(.*?)</id>").unwrap();
-        let name_re = regex::Regex::new(r"<name>(.*?)</name>").unwrap();
-        let office_re = regex::Regex::new(r"<office>(.*?)</office>").unwrap();
-        let desc_re =
-            regex::Regex::new(r"<jobDescription>\s*<value>(.*?)</value>\s*</jobDescription>")
-                .unwrap();
-        let created_re = regex::Regex::new(r"<createdAt>(.*?)</createdAt>").unwrap();
+        for pos in parse_xml_feed(&xml) {
+            let posted_at = if pos.created.is_empty() {
+                None
+            } else {
+                chrono::DateTime::parse_from_rfc3339(&pos.created)
+                    .ok()
+                    .map(|dt| dt.timestamp_millis())
+            };
 
-        for position_cap in position_re.captures_iter(&xml) {
-            if let Some(position_content) = position_cap.get(1) {
-                let position_str = position_content.as_str();
-
-                let id = id_re
-                    .captures(position_str)
-                    .and_then(|c| c.get(1).map(|m| m.as_str().trim()))
-                    .unwrap_or("");
-
-                if id.is_empty() {
-                    continue;
-                }
-
-                let title = name_re
-                    .captures(position_str)
-                    .and_then(|c| c.get(1).map(|m| m.as_str().trim()))
-                    .unwrap_or("");
-
-                let office = office_re
-                    .captures(position_str)
-                    .and_then(|c| c.get(1).map(|m| m.as_str().trim()))
-                    .unwrap_or("");
-
-                let desc = desc_re
-                    .captures(position_str)
-                    .and_then(|c| c.get(1).map(|m| strip_html(m.as_str().trim())))
-                    .unwrap_or_default();
-
-                let created = created_re
-                    .captures(position_str)
-                    .and_then(|c| c.get(1).map(|m| m.as_str().trim()))
-                    .unwrap_or("");
-
-                let posted_at = if !created.is_empty() {
-                    chrono::DateTime::parse_from_rfc3339(created)
-                        .ok()
-                        .map(|dt| dt.timestamp_millis())
-                } else {
+            let posting = JobPosting {
+                id: format!("{}:{}", self.id(), pos.id),
+                external_id: Some(pos.id.clone()),
+                title: pos.title,
+                company: company.clone(),
+                location: if pos.office.is_empty() {
                     None
-                };
+                } else {
+                    Some(pos.office)
+                },
+                url: format!("https://{}.{}/job/{}", company, HOSTS[0], pos.id),
+                source: self.id().to_string(),
+                description: if pos.description.is_empty() {
+                    None
+                } else {
+                    Some(pos.description)
+                },
+                requirements: None,
+                posted_at,
+                captured_at: now,
+                extra: std::collections::HashMap::new(),
+            };
 
-                let posting = JobPosting {
-                    id: format!("{}:{}", self.id(), id),
-                    external_id: Some(id.to_string()),
-                    title: title.to_string(),
-                    company: company.clone(),
-                    location: if office.is_empty() {
-                        None
-                    } else {
-                        Some(office.to_string())
-                    },
-                    url: format!("https://{}.{}/job/{}", company, HOSTS[0], id),
-                    source: self.id().to_string(),
-                    description: if desc.is_empty() { None } else { Some(desc) },
-                    requirements: None,
-                    posted_at,
-                    captured_at: now,
-                    extra: std::collections::HashMap::new(),
-                };
-
-                if let Some(ref on_item) = ctx.on_item {
-                    on_item(posting.clone());
-                }
-
-                out.push(posting);
+            if let Some(ref on_item) = ctx.on_item {
+                on_item(posting.clone());
             }
+
+            out.push(posting);
         }
 
         if let Some(ref on_progress) = ctx.on_progress {

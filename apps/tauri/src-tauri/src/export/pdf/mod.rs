@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use crate::error::{AppError, AppResult};
 
 use super::{
     templates::Template,
@@ -136,7 +136,7 @@ fn prepare_letter_text(request: &ExportRequest) -> (&str, String) {
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
-pub fn generate_pdf(request: &ExportRequest) -> Result<Vec<u8>> {
+pub fn generate_pdf(request: &ExportRequest) -> AppResult<Vec<u8>> {
     match request.document_type {
         DocumentType::Resume => {
             let ResumeRenderInputs {
@@ -153,9 +153,7 @@ pub fn generate_pdf(request: &ExportRequest) -> Result<Vec<u8>> {
                 render_pdf(&model, typst_template, &opts, Some(&template))
             };
 
-            result
-                .map_err(|e| anyhow::anyhow!("{e}"))
-                .context("Failed to generate resume PDF")
+            result.map_err(|e| AppError::Parse(format!("Failed to generate resume PDF: {e}")))
         }
         DocumentType::CoverLetter => {
             let template = Template::get(request.template_id);
@@ -174,8 +172,7 @@ pub fn generate_pdf(request: &ExportRequest) -> Result<Vec<u8>> {
                 market,
                 &lang,
             )
-            .map_err(|e| anyhow::anyhow!("{e}"))
-            .context("Failed to generate cover letter PDF")
+            .map_err(|e| AppError::Parse(format!("Failed to generate cover letter PDF: {e}")))
         }
     }
 }
@@ -193,7 +190,7 @@ pub fn generate_pdf(request: &ExportRequest) -> Result<Vec<u8>> {
 /// `validate/` gate (which also normalizes ATS-mode); the preview command reuses
 /// the exact same request validation and normalization before calling this, so
 /// the previewed bytes track what export would produce.
-pub fn generate_preview_svg(request: &ExportRequest) -> Result<Vec<String>> {
+pub fn generate_preview_svg(request: &ExportRequest) -> AppResult<Vec<String>> {
     match request.document_type {
         DocumentType::Resume => {
             let ResumeRenderInputs {
@@ -216,9 +213,7 @@ pub fn generate_preview_svg(request: &ExportRequest) -> Result<Vec<String>> {
                 render_resume_svg_pages(&model, typst_template, &opts, Some(&template))
             };
 
-            result
-                .map_err(|e| anyhow::anyhow!("{e}"))
-                .context("Failed to render resume preview")
+            result.map_err(|e| AppError::Parse(format!("Failed to render resume preview: {e}")))
         }
         DocumentType::CoverLetter => {
             let template = Template::get(request.template_id);
@@ -237,8 +232,7 @@ pub fn generate_preview_svg(request: &ExportRequest) -> Result<Vec<String>> {
                 market,
                 &lang,
             )
-            .map_err(|e| anyhow::anyhow!("{e}"))
-            .context("Failed to render cover letter preview")
+            .map_err(|e| AppError::Parse(format!("Failed to render cover letter preview: {e}")))
         }
     }
 }

@@ -15,7 +15,6 @@ pub mod applications;
 pub mod autopilot;
 pub mod autopilot_helpers;
 pub mod autopilot_scheduler;
-pub mod browser;
 pub mod commands;
 pub mod contact_profile;
 pub mod cover_letter;
@@ -300,7 +299,12 @@ fn open_external(app: &AppHandle, url: &str) {
 
 /// Build and run the Tauri application. Called by the binary shim in `main.rs`.
 pub fn run() {
-    credentials::init_keyring();
+    // Initialise the OS keyring up front. A failure here is non-fatal: the app
+    // still boots, and credential operations (AI provider keys, factory reset)
+    // surface the error later through `AppError` rather than aborting startup.
+    if let Err(e) = credentials::init_keyring() {
+        log::warn!("[startup] OS keyring unavailable (credential features degraded): {e}");
+    }
 
     tauri::Builder::default()
         // Close-to-tray: intercept the window close (X / Cmd-W) and hide to the

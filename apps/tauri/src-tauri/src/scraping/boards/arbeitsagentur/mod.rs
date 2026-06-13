@@ -131,7 +131,7 @@ impl Scraper for ArbeitsagenturScraper {
             .await
             {
                 Ok(l) => l,
-                Err(e) if out.is_empty() => return Err(e),
+                Err(e) if out.is_empty() => return Err(e.into()),
                 Err(e) => {
                     log::warn!(
                         "[arbeitsagentur] page {page} failed: {e}; returning {} collected",

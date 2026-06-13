@@ -47,8 +47,11 @@ pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<
     // extraction, and reports what it found.
     let (data, mime_type, extension, report) = match request.format {
         ExportFormat::Docx => {
-            let (bytes, report) = validate_and_fix(request.clone(), generate_docx)
-                .map_err(|e| format!("DOCX generation failed: {}", e))?;
+            let (bytes, report) = validate_and_fix(request.clone(), |r| {
+                // `generate_docx` (export/docx) is still on `anyhow::Result` this pass;
+                // bridge its error into the typed hierarchy at the boundary.
+                generate_docx(r).map_err(crate::error::AppError::from)
+            })?;
             (
                 bytes,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -58,8 +61,7 @@ pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<
             )
         }
         ExportFormat::Pdf => {
-            let (bytes, report) = validate_and_fix(request.clone(), generate_pdf)
-                .map_err(|e| format!("PDF generation failed: {}", e))?;
+            let (bytes, report) = validate_and_fix(request.clone(), generate_pdf)?;
             (bytes, "application/pdf".to_string(), "pdf", Some(report))
         }
         ExportFormat::Txt => {
@@ -109,8 +111,7 @@ pub async fn documents_render_preview_images(
     // Same empty-text guard + normalization passes as export.
     validate_and_normalize(&mut request)?;
 
-    let pages = generate_preview_svg(&request)
-        .map_err(|e| AppError::Message(format!("Preview rendering failed: {e}")))?;
+    let pages = generate_preview_svg(&request)?;
 
     // The engine guards against a zero-page document, but assert at the command
     // boundary too so a future regression can't return an empty preview.

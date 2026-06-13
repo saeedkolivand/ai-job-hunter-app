@@ -27,6 +27,7 @@ use chrono::{DateTime, Datelike, Local, TimeZone, Timelike};
 use tauri::{AppHandle, Manager};
 
 use crate::autopilot::{Autopilot, AutopilotStatus, AutopilotStore};
+use crate::db::ts_to_db;
 
 const TICK_INTERVAL_SECS: u64 = 60;
 
@@ -132,7 +133,7 @@ fn is_due(ap: &Autopilot) -> bool {
         // Due iff the last run predates the most recent occurrence: a missed or
         // just-reached occurrence is due; a run at/after it is not (no
         // double-run until the next occurrence).
-        Some(last) => (last as i64) < occurrence_ms,
+        Some(last) => ts_to_db(last) < occurrence_ms,
     }
 }
 

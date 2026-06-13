@@ -29,10 +29,6 @@ export type { TailorTarget };
  *  preference (`applyTemplateId`). The live template/ATS now come from the results
  *  toolbar picker; preview and export read the SAME store values so the pre-download
  *  preview always equals the file (ADR-012). */
-export const TAILOR_TEMPLATE: TemplateId = 'modern';
-/** Default ATS single-column override — seeds the sticky store preference
- *  (`applyAtsMode`); the live value comes from the toolbar picker. */
-export const TAILOR_ATS_MODE = false;
 const MODE: GenerationMode = 'ats';
 
 interface Params {

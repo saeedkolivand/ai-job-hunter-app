@@ -253,7 +253,6 @@ export const usePreferencesStore = create<PreferencesStore>()(
 
 // Selectors for common use cases
 export const useUserName = () => usePreferencesStore((state) => state.userName);
-export const useLanguage = () => usePreferencesStore((state) => state.language);
 export const useAIModel = () => usePreferencesStore((state) => state.aiModel);
 export const useAiProviderConfig = () => usePreferencesStore((state) => state.aiProviderConfig);
 export const useOutputTone = () => usePreferencesStore((state) => state.outputTone);
@@ -261,7 +260,6 @@ export const useOnboardingCompleted = () =>
   usePreferencesStore((state) => state.onboardingCompleted);
 export const useContactPromptSeen = () =>
   usePreferencesStore((state) => state.contactPromptSeen ?? false);
-export const useResume = () => usePreferencesStore((state) => state.resume);
 export const useApplicant = () => usePreferencesStore((state) => state.applicant);
 export const usePerformanceMode = () => usePreferencesStore((state) => state.performanceMode);
 export const usePromptQuality = () => usePreferencesStore((state) => state.promptQuality ?? 'auto');

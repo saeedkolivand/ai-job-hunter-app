@@ -8,6 +8,21 @@ use async_trait::async_trait;
 use scraper::{Html, Selector};
 use std::collections::HashSet;
 
+// Xing job-card CSS selectors compiled once (Selector is Send + Sync).
+static XING_CARD_SEL: std::sync::LazyLock<Selector> = std::sync::LazyLock::new(|| {
+    Selector::parse("article[data-testid=\"job-search-result\"], article.job-teaser").unwrap()
+});
+static XING_LINK_SEL: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("a[href*=\"/jobs/\"]").unwrap());
+static XING_TITLE_SEL: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("h2, [data-testid=\"job-title\"]").unwrap());
+static XING_COMPANY_SEL: std::sync::LazyLock<Selector> = std::sync::LazyLock::new(|| {
+    Selector::parse("[data-testid=\"job-company-name\"], .companyName, p.company").unwrap()
+});
+static XING_LOCATION_SEL: std::sync::LazyLock<Selector> = std::sync::LazyLock::new(|| {
+    Selector::parse("[data-testid=\"job-location\"], .location, p.location").unwrap()
+});
+
 pub struct XingScraper;
 
 #[async_trait]
@@ -101,20 +116,13 @@ impl Scraper for XingScraper {
 
 fn parse_xing_page(html: &str, seen: &mut HashSet<String>) -> Vec<JobPosting> {
     let doc = Html::parse_document(html);
-    let card_sel =
-        Selector::parse("article[data-testid=\"job-search-result\"], article.job-teaser").unwrap();
-    let link_sel = Selector::parse("a[href*=\"/jobs/\"]").unwrap();
-    let title_sel = Selector::parse("h2, [data-testid=\"job-title\"]").unwrap();
-    let company_sel =
-        Selector::parse("[data-testid=\"job-company-name\"], .companyName, p.company").unwrap();
-    let location_sel =
-        Selector::parse("[data-testid=\"job-location\"], .location, p.location").unwrap();
+    // Card/field selectors are compiled once at module level.
 
     let now = chrono::Utc::now().timestamp_millis();
     let mut out = Vec::new();
 
-    for card in doc.select(&card_sel) {
-        let link_el = match card.select(&link_sel).next() {
+    for card in doc.select(&XING_CARD_SEL) {
+        let link_el = match card.select(&XING_LINK_SEL).next() {
             Some(e) => e,
             None => continue,
         };
@@ -125,17 +133,17 @@ fn parse_xing_page(html: &str, seen: &mut HashSet<String>) -> Vec<JobPosting> {
         }
 
         let title = card
-            .select(&title_sel)
+            .select(&XING_TITLE_SEL)
             .next()
             .map(|e| e.text().collect::<String>().trim().to_string())
             .unwrap_or_default();
         let company = card
-            .select(&company_sel)
+            .select(&XING_COMPANY_SEL)
             .next()
             .map(|e| e.text().collect::<String>().trim().to_string())
             .unwrap_or_default();
         let location = card
-            .select(&location_sel)
+            .select(&XING_LOCATION_SEL)
             .next()
             .map(|e| e.text().collect::<String>().trim().to_string());
 

@@ -389,6 +389,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write # post the JS coverage PR comment
+      checks: write # dorny/test-reporter creates a test-results check run
 
     steps:
       - name: 🛡️ Harden Runner
@@ -467,7 +468,11 @@ jobs:
         run: |
           echo "::group::Running tests with coverage"
           set -o pipefail
-          pnpm test:coverage 2>&1 | tee coverage-output.txt
+          # Keep the default reporter (its plain text feeds the coverage-summary
+          # grep) AND add a JUnit report for dorny/test-reporter. The dotted
+          # --outputFile.junit form scopes the path to the junit reporter only
+          # (vitest 4 outputFile per-reporter map); vitest creates parent dirs.
+          pnpm test:coverage --reporter=default --reporter=junit --outputFile.junit=reports/vitest.junit.xml 2>&1 | tee coverage-output.txt
           echo "::endgroup::"
 
       - name: 📊 Coverage Table → Job Summary
@@ -548,6 +553,36 @@ jobs:
           else
             echo "_Rust coverage report unavailable._" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      # Surface test results as a rich GitHub check + inline PR annotations
+      # (instead of buried in logs). These NEVER gate the build — fail-on-error
+      # is false so a missing/empty report can't fail CI; the gate below owns
+      # pass/fail. fail-on-empty is intentionally left unset (defaults off).
+      - name: 🧪 Frontend test report
+        if: always()
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        with:
+          name: Frontend tests (vitest)
+          path: reports/vitest.junit.xml
+          reporter: java-junit
+          list-suites: failed
+          list-tests: failed
+          fail-on-error: false
+          use-actions-summary: true
+
+      - name: 🦀 Rust test report
+        if: always()
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        with:
+          name: Rust tests (nextest)
+          # Glob: cargo-llvm-cov redirects the target dir (target/llvm-cov-target),
+          # so nextest's junit lands under there, not plain target/nextest.
+          path: apps/tauri/src-tauri/target/**/nextest/ci/junit.xml
+          reporter: java-junit
+          list-suites: failed
+          list-tests: failed
+          fail-on-error: false
+          use-actions-summary: true
 
       - name: ❌ Check for Test Failures
         if: steps.js-tests.outcome == 'failure' || steps.rust-tests.outcome == 'failure'

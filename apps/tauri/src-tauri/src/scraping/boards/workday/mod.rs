@@ -136,7 +136,7 @@ impl Scraper for WorkdayScraper {
             .await
             {
                 Ok(d) => d,
-                Err(e) if out.is_empty() => return Err(e),
+                Err(e) if out.is_empty() => return Err(e.into()),
                 Err(e) => {
                     log::warn!(
                         "[workday] page {p} failed: {e}; returning {} collected",
