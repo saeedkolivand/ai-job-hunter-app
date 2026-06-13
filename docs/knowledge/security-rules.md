@@ -12,7 +12,7 @@ For `tauri-security-reviewer` (cross-cutting authority). Security/data findings 
 
 ## Application / secrets
 
-- Credentials via the OS keychain (`credentials/`, `commands/credentials.rs`) — never plaintext, never logged. API keys handled as secrets; no secrets in logs/observability spans.
+- Credentials via the OS keychain (`credentials/`, `commands/credentials.rs`) — never plaintext, never logged. Keyring init degrades gracefully if the system service is unavailable (warns, does not panic); subsequent reads/writes error rather than fall back to plaintext. API keys handled as secrets; no secrets in logs/observability spans.
 
 ## Backend
 
