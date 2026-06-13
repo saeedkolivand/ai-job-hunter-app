@@ -87,7 +87,7 @@ if [ -n "$NODE" ]; then
   pnpm lint:strict
 
   echo "▶ Checking formatting..."
-  pnpm format
+  pnpm format:check
 
   echo "▶ Running TypeScript type check..."
   pnpm typecheck --force
@@ -109,13 +109,13 @@ if [ -n "$RUST" ]; then
   cd apps/tauri/src-tauri
 
   echo "▶ Running cargo check..."
-  cargo check --all-targets --all-features
+  cargo check --all-targets --all-features --locked
 
   echo "▶ Running Rust tests (incl. architecture boundary tests)..."
-  cargo test --all-features
+  cargo test --all-features --locked
 
   echo "▶ Running Rust clippy..."
-  cargo clippy --all-targets --all-features -- -D warnings
+  cargo clippy --all-targets --all-features --locked -- -D warnings
 
   echo "▶ Checking Rust formatting..."
   cargo fmt --all -- --check
