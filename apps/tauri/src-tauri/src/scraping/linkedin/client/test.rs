@@ -38,7 +38,9 @@ fn test_update_session() {
 #[test]
 fn test_get_default_headers() {
     let client = LinkedInHttpClient::new(None);
-    let headers = client.get_default_headers().expect("headers build for sessionless client");
+    let headers = client
+        .get_default_headers()
+        .expect("headers build for sessionless client");
     assert!(headers.contains_key(reqwest::header::USER_AGENT));
     assert!(headers.contains_key(reqwest::header::ACCEPT));
 }
@@ -53,7 +55,9 @@ fn test_get_default_headers_with_session() {
         last_updated: 0,
     };
     let client = LinkedInHttpClient::new(Some(session));
-    let headers = client.get_default_headers().expect("headers build with session");
+    let headers = client
+        .get_default_headers()
+        .expect("headers build with session");
     assert!(headers.contains_key(reqwest::header::COOKIE));
     assert!(headers.contains_key("X-CSRF-Token"));
 }

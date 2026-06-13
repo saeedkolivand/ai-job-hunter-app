@@ -35,8 +35,9 @@ pub fn init_keyring() -> AppResult<()> {
     #[cfg(target_os = "windows")]
     {
         use windows_native_keyring_store::Store;
-        let store = Store::new_with_configuration(&cfg)
-            .map_err(|e| AppError::Storage(format!("Windows Credential Manager unavailable: {e}")))?;
+        let store = Store::new_with_configuration(&cfg).map_err(|e| {
+            AppError::Storage(format!("Windows Credential Manager unavailable: {e}"))
+        })?;
         keyring_core::set_default_store(store);
     }
     #[cfg(target_os = "macos")]

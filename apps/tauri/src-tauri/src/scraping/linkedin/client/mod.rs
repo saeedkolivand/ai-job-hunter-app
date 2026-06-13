@@ -62,10 +62,7 @@ impl LinkedInHttpClient {
             reqwest::header::CONNECTION,
             HeaderValue::from_static("keep-alive"),
         );
-        headers.insert(
-            "Upgrade-Insecure-Requests",
-            HeaderValue::from_static("1"),
-        );
+        headers.insert("Upgrade-Insecure-Requests", HeaderValue::from_static("1"));
         headers.insert("Sec-Fetch-Dest", HeaderValue::from_static("document"));
         headers.insert("Sec-Fetch-Mode", HeaderValue::from_static("navigate"));
         headers.insert("Sec-Fetch-Site", HeaderValue::from_static("none"));

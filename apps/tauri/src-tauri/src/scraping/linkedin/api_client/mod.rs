@@ -19,12 +19,10 @@ static LI_TITLE_SEL: std::sync::LazyLock<scraper::Selector> = std::sync::LazyLoc
     scraper::Selector::parse(".base-search-card__title, .job-card-container__title").unwrap()
 });
 static LI_COMPANY_SEL: std::sync::LazyLock<scraper::Selector> = std::sync::LazyLock::new(|| {
-    scraper::Selector::parse(".base-search-card__subtitle, .job-card-container__subtitle")
-        .unwrap()
+    scraper::Selector::parse(".base-search-card__subtitle, .job-card-container__subtitle").unwrap()
 });
 static LI_LOCATION_SEL: std::sync::LazyLock<scraper::Selector> = std::sync::LazyLock::new(|| {
-    scraper::Selector::parse(".job-search-card__location, .job-card-container__location")
-        .unwrap()
+    scraper::Selector::parse(".job-search-card__location, .job-card-container__location").unwrap()
 });
 static LI_TIME_SEL: std::sync::LazyLock<scraper::Selector> =
     std::sync::LazyLock::new(|| scraper::Selector::parse("time").unwrap());

@@ -11,8 +11,9 @@ use std::collections::HashSet;
 // Indeed job-card CSS selectors compiled once (Selector is Send + Sync).
 static IND_CARD_SEL: std::sync::LazyLock<Selector> =
     std::sync::LazyLock::new(|| Selector::parse("div.job_seen_beacon, td.resultContent").unwrap());
-static IND_TITLE_SEL: std::sync::LazyLock<Selector> =
-    std::sync::LazyLock::new(|| Selector::parse("h2.jobTitle span[title], h2.jobTitle a span").unwrap());
+static IND_TITLE_SEL: std::sync::LazyLock<Selector> = std::sync::LazyLock::new(|| {
+    Selector::parse("h2.jobTitle span[title], h2.jobTitle a span").unwrap()
+});
 static IND_LINK_SEL: std::sync::LazyLock<Selector> =
     std::sync::LazyLock::new(|| Selector::parse("h2.jobTitle a").unwrap());
 static IND_COMPANY_SEL: std::sync::LazyLock<Selector> = std::sync::LazyLock::new(|| {
