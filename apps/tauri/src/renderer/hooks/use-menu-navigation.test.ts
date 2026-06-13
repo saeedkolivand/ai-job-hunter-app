@@ -26,9 +26,14 @@ vi.mock('@/store/session-store', () => ({
 }));
 
 const setShortcutsOpen = vi.fn();
+const setExtensionTokenFocus = vi.fn();
 vi.mock('@/store/ui-store', () => ({
-  useUiStore: (selector: (s: { setShortcutsOpen: typeof setShortcutsOpen }) => unknown) =>
-    selector({ setShortcutsOpen }),
+  useUiStore: (
+    selector: (s: {
+      setShortcutsOpen: typeof setShortcutsOpen;
+      setExtensionTokenFocus: typeof setExtensionTokenFocus;
+    }) => unknown
+  ) => selector({ setShortcutsOpen, setExtensionTokenFocus }),
 }));
 
 const check = vi.fn().mockResolvedValue({ available: false });
@@ -69,6 +74,7 @@ beforeEach(() => {
   navigate.mockClear();
   setSettings.mockClear();
   setShortcutsOpen.mockClear();
+  setExtensionTokenFocus.mockClear();
   check.mockClear();
 });
 
@@ -162,5 +168,27 @@ describe('useMenuNavigation', () => {
     });
 
     await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/settings' }));
+  });
+
+  it('sets extensionTokenFocus and still navigates + sets section when focus is extension-token', async () => {
+    renderWithPending({
+      event: 'menu:navigate',
+      payload: { route: '/settings', section: 'accounts', focus: 'extension-token' },
+    });
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/settings' }));
+    expect(setSettings).toHaveBeenCalledExactlyOnceWith({ activeSection: 'accounts' });
+    expect(setExtensionTokenFocus).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  it('does not call setExtensionTokenFocus when focus is absent (native-menu path)', async () => {
+    renderWithPending({
+      event: 'menu:navigate',
+      payload: { route: '/settings', section: 'accounts' },
+    });
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/settings' }));
+    expect(setSettings).toHaveBeenCalledExactlyOnceWith({ activeSection: 'accounts' });
+    expect(setExtensionTokenFocus).not.toHaveBeenCalled();
   });
 });
