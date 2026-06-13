@@ -6,12 +6,14 @@ import {
   Gauge,
   Languages,
   Lock,
+  Palette,
   Shield,
   Terminal,
 } from 'lucide-react';
 
 export type SectionId =
   | 'general'
+  | 'appearance'
   | 'contact'
   | 'ai'
   | 'job'
@@ -42,6 +44,12 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'settings.sections.general.label',
         icon: Languages,
         description: 'settings.sections.general.description',
+      },
+      {
+        id: 'appearance',
+        label: 'settings.sections.appearance.label',
+        icon: Palette,
+        description: 'settings.sections.appearance.description',
       },
       {
         id: 'contact',

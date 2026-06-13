@@ -412,7 +412,11 @@
     "sections": {
       "general": {
         "label": "General",
-        "description": "Name, language, appearance"
+        "description": "Name, language & startup"
+      },
+      "appearance": {
+        "label": "Appearance",
+        "description": "Theme, accent & text size"
       },
       "contact": {
         "label": "Contact Profile",
@@ -1648,7 +1652,11 @@
       "sections": {
         "general": {
           "label": "General",
-          "description": "Name, language, appearance"
+          "description": "Name, language & startup"
+        },
+        "appearance": {
+          "label": "Appearance",
+          "description": "Theme, accent & text size"
         },
         "contact": {
           "label": "Contact Profile",
