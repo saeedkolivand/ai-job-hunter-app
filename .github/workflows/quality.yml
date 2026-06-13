@@ -369,7 +369,7 @@ jobs:
             exit 0
           fi
           git commit --amend -m "chore: update export benchmark data [skip ci]"
-          remote="git@github.com:saeedkolivand/ai-job-hunter-assistant-app.git"
+          remote="git@github.com:saeedkolivand/ai-job-hunter-app.git"
           # origin/main can advance during the ~16-min bench run, so a plain push
           # races and is rejected. Rebase the single [skip ci] benchmark commit
           # onto the latest origin/main and retry the push a few times.

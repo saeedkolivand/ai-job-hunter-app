@@ -778,7 +778,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   </div>
   <p class="honest">yes, this app is real. yes, it actually scrapes LinkedIn, Indeed, StepStone, Xing, and 15 others. yes, it's built with Tauri + Rust + React 19 + a vector database + a pure-Rust Typst engine that renders every PDF — because I had a lot of free time, on account of the unemployment. no, it does not auto-apply — it finds the jobs and writes the whole application; hitting submit is the one job left to you. no, I still don't have a job. the autopilot is doing its best.</p>
   <button class="cta" id="cta">ok fine, take the app →</button>
-  <a class="src-link" href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app">view the source — it's MIT, like my prospects: open and freely available.</a>
+  <a class="src-link" href="https://github.com/saeedkolivand/ai-job-hunter-app">view the source — it's MIT, like my prospects: open and freely available.</a>
   <a class="src-link" href="creature.html">▶ THE CREATURE — a hand-drawn doodle about the tiny recruiter you accidentally summon. it grows. (2:40)</a>
   <p class="footnote">macOS will say the app is "damaged." it's not damaged. it's just unsigned — like a contract I was never offered. run <code>xattr -cr</code> and we move on.</p>
   <p class="builtwith">Tauri · Rust · React 19 · TanStack · LanceDB · Typst · Ollama · pure spite</p>
@@ -798,7 +798,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
     var soft='color:#9fb0c6;font:13px/1.7 monospace';
     var link='color:#6cc6ff;font:13px/1.7 monospace';
     console.log('%c PLEASE HIRE HIM. ', head);
-    console.log('%cmade it this far? you’re either hiring or you’re me at 3am. if it’s the former — he’s alarmingly available 👉 https://github.com/saeedkolivand/ai-job-hunter-assistant-app', link);
+    console.log('%cmade it this far? you’re either hiring or you’re me at 3am. if it’s the former — he’s alarmingly available 👉 https://github.com/saeedkolivand/ai-job-hunter-app', link);
     console.log('%c(source’s MIT — open and freely available, like my prospects.)', soft);
   }catch(e){}
 })();
@@ -1146,7 +1146,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   var cta=document.getElementById('cta'), fd=document.getElementById('finale-dood'), fb=fd.querySelector('.bubble');
   cta.addEventListener('mouseenter', function(){ fb.textContent="you sure? …ok."; fb.classList.add('show'); });
   cta.addEventListener('mouseleave', function(){ fb.classList.remove('show'); });
-  cta.addEventListener('click', function(){ location.href='https://github.com/saeedkolivand/ai-job-hunter-assistant-app'; });
+  cta.addEventListener('click', function(){ location.href='https://github.com/saeedkolivand/ai-job-hunter-app'; });
 
   /* ---- the secret "Are you sure?" dialog: yes / YES do nothing (by design),
           but the fried guy completely loses it — escalating, reuses the shared

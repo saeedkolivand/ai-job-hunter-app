@@ -95,8 +95,8 @@ const MENU_DEVTOOLS: &str = "menu_devtools";
 /// canonical URL the project ships — the updater endpoint in tauri.conf.json points
 /// at this repo's releases). No `homepage` is set in any package.json, so docs maps
 /// to the repo root and "Report an Issue" to the issues tracker.
-const REPO_URL: &str = "https://github.com/saeedkolivand/ai-job-hunter-assistant-app";
-const ISSUES_URL: &str = "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/issues";
+const REPO_URL: &str = "https://github.com/saeedkolivand/ai-job-hunter-app";
+const ISSUES_URL: &str = "https://github.com/saeedkolivand/ai-job-hunter-app/issues";
 
 /// View-submenu go-to-route items: `(id, accelerator, route, label)`. The route
 /// strings are the canonical values from
