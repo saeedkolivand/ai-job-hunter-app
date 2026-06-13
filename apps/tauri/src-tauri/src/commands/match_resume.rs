@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::documents::keywords::{apply_stemmer, keywords, make_stemmer};
-use crate::documents::{embed, DocumentStore};
+use crate::documents::{embed, posting_vector_or_embed, sha256_hex, DocumentStore, MatchScoreKey};
 use crate::ipc_contracts::matching::MatchResumeRequest;
 use crate::ipc_contracts::resume::ResumeExtractTextRequest;
 use crate::postings::PostingsCache;
@@ -16,9 +16,32 @@ use crate::postings::PostingsCache;
 /// embedding cosine similarity, an ATS score from job-keyword coverage, a
 /// weighted `combined` score, the missing keywords (`gaps`), and short
 /// recommendations. Degrades gracefully to keyword-only when Ollama is offline.
+/// Cache-busting version for the match_scores result cache. Bump whenever the
+/// 0.6/0.4 weighting, the combined-score formula, or the keyword/stemmer logic
+/// changes — any of which would make a previously-cached score stale.
+const MATCH_FORMULA_VERSION: i64 = 1;
+
+/// Map the `semantic_scoring_enabled` request flag to the `semantic_enabled`
+/// cache-key column: `Some(false)` disables semantic scoring (`0`); every other
+/// value (`None` / `Some(true)`) keeps it on (`1`). Single source of this bit so
+/// the cache key and the skip-branch can't drift; unit-tested directly.
+fn semantic_enabled_bit(flag: Option<bool>) -> i64 {
+    if flag == Some(false) {
+        0
+    } else {
+        1
+    }
+}
+
 #[tauri::command]
 pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
     let store = app.state::<DocumentStore>();
+    // INVARIANT (errors-never-cached): every error early-return below MUST
+    // precede the first `get_match_score`/`upsert_match_score` call. The
+    // match_scores cache is read+written only AFTER these guards, so an error
+    // path can never read or pollute the result cache. Keep these returns above
+    // the `cache_key` block; see `errors_never_populate_match_scores_cache` in
+    // documents/test.rs, which pins the store-level non-pollution half.
     let Some(resume) = store.get(&req.resume_id) else {
         return json!({ "error": format!("resume not found: {}", req.resume_id) });
     };
@@ -42,8 +65,32 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
     .await;
     let job_text = translated; // shadow with the owned String; downstream code unchanged
 
-    let skip_semantic = req.semantic_scoring_enabled == Some(false);
+    // `semantic_enabled` is the cache-key bit; `skip_semantic` is its inverse —
+    // both derive from one helper so they can never drift.
+    let semantic_enabled: i64 = semantic_enabled_bit(req.semantic_scoring_enabled);
+    let skip_semantic = semantic_enabled == 0;
+    // Fetched here (post-translation) so it can key both the semantic branch
+    // below and the match-result cache. `job_text` is now final.
     let active = store.embedding_config();
+
+    // Self-invalidating result cache: the key captures every input that can
+    // change the score (ids, embedding space, semantic on/off, formula version,
+    // and a hash of the final job text). A hit skips embedding + cosine +
+    // keyword work entirely. Errors above are returned before this point and
+    // are never cached.
+    let job_text_hash = sha256_hex(&job_text);
+    let cache_key = MatchScoreKey {
+        resume_id: &req.resume_id,
+        job_id: &req.job_id,
+        provider: &active.provider,
+        model: &active.model,
+        semantic_enabled,
+        formula_version: MATCH_FORMULA_VERSION,
+        job_text_hash: &job_text_hash,
+    };
+    if let Some(cached) = store.get_match_score(&cache_key) {
+        return cached;
+    }
     let (resume_vec, job_vec) = if skip_semantic {
         (None, None)
     } else {
@@ -57,7 +104,7 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
                 v
             }
         };
-        let jv = embed(&app, &job_text).await;
+        let jv = posting_vector_or_embed(&app, &req.job_id, &job_text).await;
         (rv, jv)
     };
     let semantic = match (&resume_vec, &job_vec) {
@@ -104,7 +151,7 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
         )
     };
 
-    json!({
+    let result = json!({
         "resumeId": req.resume_id,
         "jobId": req.job_id,
         "ats": ats,
@@ -113,7 +160,11 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
         "gaps": gaps,
         "recommendations": recommendations,
         "explanation": explanation,
-    })
+    });
+    if let Ok(s) = serde_json::to_string(&result) {
+        store.upsert_match_score(&cache_key, &s).ok();
+    }
+    result
 }
 
 /// Build a searchable text blob for a cached job posting (title + description +
@@ -250,5 +301,49 @@ mod test {
             cov > 0.0,
             "ATS coverage must be > 0 when resume text contains matching terms"
         );
+    }
+
+    // Pins the production `semantic_enabled_bit` helper (used by both the cache
+    // key and the skip-branch): `Some(false)` → 0 (disabled); `Some(true)` and
+    // `None` → 1 (enabled). Tests the real fn, not an inline re-implementation.
+    #[test]
+    fn semantic_enabled_bit_maps_flag_to_key_column() {
+        assert_eq!(semantic_enabled_bit(Some(false)), 0, "explicit disable → 0");
+        assert_eq!(semantic_enabled_bit(Some(true)), 1, "explicit enable → 1");
+        assert_eq!(semantic_enabled_bit(None), 1, "default (unset) → enabled");
+    }
+
+    // A bump to MATCH_FORMULA_VERSION must change the cache key, so a score
+    // cached under the current version is a miss under the next one. Exercises
+    // self-invalidation end-to-end against a real store.
+    #[test]
+    fn formula_version_bump_invalidates_cached_score() {
+        use crate::documents::{sha256_hex, DocumentStore, MatchScoreKey};
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+        let hash = sha256_hex("job text");
+        let key = |fv: i64| MatchScoreKey {
+            resume_id: "r",
+            job_id: "j",
+            provider: "ollama",
+            model: "nomic-embed-text",
+            semantic_enabled: 1,
+            formula_version: fv,
+            job_text_hash: &hash,
+        };
+
+        // Cache a score under the current formula version → hit.
+        store
+            .upsert_match_score(&key(MATCH_FORMULA_VERSION), "{\"combined\":50}")
+            .unwrap();
+        assert!(store.get_match_score(&key(MATCH_FORMULA_VERSION)).is_some());
+
+        // The next formula version is a different key → miss (stale on bump).
+        assert!(store
+            .get_match_score(&key(MATCH_FORMULA_VERSION + 1))
+            .is_none());
     }
 }
