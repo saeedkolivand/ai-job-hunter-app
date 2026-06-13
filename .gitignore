@@ -11,6 +11,7 @@ node_modules/
 dist/
 out/
 build/
+apps/extension/store-packages/
 .vite/
 .turbo/
 storybook-static/

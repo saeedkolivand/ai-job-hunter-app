@@ -116,6 +116,9 @@ export default tseslint.config(
     ignores: [
       '**/dist/**',
       '**/out/**',
+      // Generated browser-store packaging output (unpacked dirs + zips) — minified
+      // bundles, never source; like dist/, must not be linted.
+      'apps/extension/store-packages/**',
       '**/node_modules/**',
       '**/*.gen.ts',
       '**/*.tsbuildinfo',
