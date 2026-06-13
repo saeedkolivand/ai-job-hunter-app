@@ -159,6 +159,20 @@ export const useSystemMetrics = () => {
   });
 };
 
+/**
+ * OS accent color for the 'System' accent source. `supported` is false on
+ * platforms we can't read (Linux) — the Appearance UI hides the System option
+ * rather than showing an error. Accent rarely changes, so it's cached.
+ */
+export const useSystemAccent = () => {
+  const api = useAppClient();
+  return useQuery({
+    queryKey: keys.system.accent,
+    queryFn: () => api.system.accentColor(),
+    staleTime: Infinity,
+  });
+};
+
 /** Check if Chrome/Edge is available for browser automation. */
 export const useCheckBrowser = () => {
   const api = useAppClient();

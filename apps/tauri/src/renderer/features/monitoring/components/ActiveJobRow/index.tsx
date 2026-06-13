@@ -53,7 +53,7 @@ export function ActiveJobRow({ job, kindLabel, t }: Props) {
       {job.progress > 0 && (
         <div className="h-0.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-brand to-primary transition-all duration-300"
+            className="h-full rounded-full bg-gradient-to-r from-brand to-brand-soft transition-all duration-300"
             style={{ width: `${Math.round(job.progress * 100)}%` }}
           />
         </div>

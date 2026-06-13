@@ -3,7 +3,6 @@ import { Languages, Power, User, Wand2 } from 'lucide-react';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Input, SettingsSection, Switch } from '@ajh/ui';
 
-import { AppearanceCard } from '@/features/settings/components/general-section/AppearanceCard';
 import { LanguageSelector } from '@/features/settings/components/shared/LanguageSelector';
 import { UpdateSection } from '@/features/settings/components/update-section';
 import { useLaunchAtLogin, useSetCloseToTray, useSetLaunchAtLogin } from '@/services';
@@ -71,8 +70,6 @@ export function GeneralSection({
       <SettingsSection icon={Languages} label={t('settings.language.title')}>
         <LanguageSelector />
       </SettingsSection>
-
-      <AppearanceCard />
 
       <SettingsSection icon={Wand2} label={t('settings.onboarding.title')}>
         <div className="flex items-center justify-between">

@@ -143,7 +143,7 @@ export function ScrapeForm({
               <div className="mb-4">
                 <div className="h-px w-full overflow-hidden rounded-full bg-white/[0.06]">
                   <motion.div
-                    className="h-full rounded-full bg-gradient-to-r from-brand to-primary"
+                    className="h-full rounded-full bg-gradient-to-r from-brand to-brand-soft"
                     initial={{ width: '0%' }}
                     animate={{ width: '85%' }}
                     transition={transition.fakeProgress}
@@ -176,7 +176,7 @@ export function ScrapeForm({
               )}
               <Button
                 size="sm"
-                variant="glass"
+                variant="primary"
                 onClick={() => onStart()}
                 disabled={scraping || !form.query.trim()}
                 loading={scraping}

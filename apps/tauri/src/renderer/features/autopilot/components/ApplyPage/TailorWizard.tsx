@@ -156,11 +156,11 @@ export function TailorWizard({
           <ChevronLeft size={13} /> {t('autopilot.apply.wizard.back')}
         </Button>
         {isLast ? (
-          <Button variant="glass" size="sm" onClick={handleGenerate} className="gap-1.5">
+          <Button variant="primary" size="sm" onClick={handleGenerate} className="gap-1.5">
             <Sparkles size={13} /> {t('autopilot.apply.wizard.generate')}
           </Button>
         ) : (
-          <Button variant="glass" size="sm" onClick={() => void handleNext()} className="gap-1.5">
+          <Button variant="primary" size="sm" onClick={() => void handleNext()} className="gap-1.5">
             {t('autopilot.apply.wizard.next')} <ChevronRight size={13} />
           </Button>
         )}

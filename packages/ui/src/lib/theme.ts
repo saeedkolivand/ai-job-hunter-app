@@ -15,10 +15,19 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
+import { lightenHex, readableForeground } from './color';
+
 export type ColorScheme = 'light' | 'dark' | 'system';
 export type ContrastPref = 'normal' | 'more';
 /** UI text size — scales the rem root so every rem-based size grows together. */
 export type TextScale = 'small' | 'default' | 'large';
+/**
+ * Accent source: 'default' keeps the shipped per-scheme violet (no override);
+ * 'system' uses the OS accent (resolved to a hex by the settings layer via the
+ * native read); 'custom' uses a user-picked hex. The last two both resolve to
+ * `accentColor`, which the applier writes to --color-brand on :root.
+ */
+export type AccentSource = 'default' | 'system' | 'custom';
 
 export interface ThemePrefs {
   scheme: ColorScheme;
@@ -28,6 +37,10 @@ export interface ThemePrefs {
   contrast: ContrastPref;
   /** UI text size; sets the rem root (small 15px / default 16px / large 18px). */
   textScale: TextScale;
+  /** Accent source. 'default' clears any accent override. */
+  accentSource: AccentSource;
+  /** Resolved hex accent for 'system'/'custom' (e.g. '#a855f7'). */
+  accentColor?: string;
 }
 
 const STORAGE_KEY = 'ajh-theme';
@@ -37,7 +50,33 @@ export const DEFAULT_THEME_PREFS: ThemePrefs = {
   reduceTransparency: false,
   contrast: 'normal',
   textScale: 'default',
+  accentSource: 'default',
 };
+
+/** Accent-derived CSS vars the applier owns on :root (cleared for 'default'). */
+const ACCENT_VARS = ['--color-brand', '--color-brand-soft', '--color-action-foreground'] as const;
+
+/**
+ * Write (or clear) the runtime accent override on :root. brand-dim, the focus
+ * ring, action-primary, and the brand glows all derive from --color-brand via
+ * CSS, so only brand + its lighter step + the auto-contrast label need setting.
+ * Invalid/absent colors fall back to Default (clears the overrides).
+ */
+function applyAccent(root: HTMLElement, prefs: ThemePrefs, scheme: 'light' | 'dark'): void {
+  const color = prefs.accentSource === 'default' ? undefined : prefs.accentColor;
+  // Dark canvas needs a bigger lift for the soft step than the light canvas.
+  const softAmount = scheme === 'dark' ? 0.28 : 0.16;
+  const soft = color ? lightenHex(color, softAmount) : null;
+  const foreground = color ? readableForeground(color) : null;
+
+  if (!color || !soft || !foreground) {
+    for (const v of ACCENT_VARS) root.style.removeProperty(v);
+    return;
+  }
+  root.style.setProperty('--color-brand', color);
+  root.style.setProperty('--color-brand-soft', soft);
+  root.style.setProperty('--color-action-foreground', foreground);
+}
 
 const mq = (query: string): MediaQueryList | null =>
   typeof window !== 'undefined' && typeof window.matchMedia === 'function'
@@ -77,6 +116,10 @@ export function applyTheme(prefs: ThemePrefs): void {
   // Scales the rem root; CSS keys font-size off data-text-scale (small/large).
   root.dataset.textScale = prefs.textScale;
 
+  // Accent override (single source of truth: --color-brand). Applied after the
+  // scheme so the soft-step lift matches the resolved light/dark canvas.
+  applyAccent(root, prefs, resolved);
+
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
   } catch {
@@ -109,17 +152,11 @@ export function getThemePrefs(): ThemePrefs {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_THEME_PREFS;
     // Legacy single-string themes → modifier flags on the dark scheme.
-    if (raw === 'default')
-      return {
-        scheme: 'dark',
-        reduceTransparency: false,
-        contrast: 'normal',
-        textScale: 'default',
-      };
+    if (raw === 'default') return { ...DEFAULT_THEME_PREFS, scheme: 'dark' };
     if (raw === 'reduced-glass')
-      return { scheme: 'dark', reduceTransparency: true, contrast: 'normal', textScale: 'default' };
+      return { ...DEFAULT_THEME_PREFS, scheme: 'dark', reduceTransparency: true };
     if (raw === 'high-contrast')
-      return { scheme: 'dark', reduceTransparency: false, contrast: 'more', textScale: 'default' };
+      return { ...DEFAULT_THEME_PREFS, scheme: 'dark', contrast: 'more' };
     const parsed = JSON.parse(raw) as Partial<ThemePrefs>;
     if (parsed && typeof parsed === 'object' && typeof parsed.scheme === 'string') {
       return { ...DEFAULT_THEME_PREFS, ...parsed };

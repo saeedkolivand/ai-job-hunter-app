@@ -83,6 +83,57 @@ pub fn system_check_browser() -> Value {
     })
 }
 
+/// Best-effort read of the OS accent color as `#rrggbb`.
+///
+/// `supported` is true only on platforms we can read (Windows, macOS); Linux and
+/// any read failure report a null color so the renderer silently keeps the
+/// Default accent — the UI never shows an "unsupported" error. The `System`
+/// accent option is hidden when `supported` is false.
+#[tauri::command]
+pub fn system_accent_color() -> Value {
+    json!({
+        "supported": cfg!(any(windows, target_os = "macos")),
+        "color": read_accent_hex(),
+    })
+}
+
+#[cfg(windows)]
+fn read_accent_hex() -> Option<String> {
+    // UISettings returns the true accent (honouring "Automatic accent color"),
+    // unlike DwmGetColorizationColor which yields the colorization tint.
+    use windows::UI::ViewManagement::{UIColorType, UISettings};
+    let settings = UISettings::new().ok()?;
+    let c = settings.GetColorValue(UIColorType::Accent).ok()?;
+    Some(format!("#{:02x}{:02x}{:02x}", c.R, c.G, c.B))
+}
+
+#[cfg(target_os = "macos")]
+fn read_accent_hex() -> Option<String> {
+    // macOS accent is a FIXED palette (not an arbitrary color): `defaults read -g
+    // AppleAccentColor` is an integer; absent = the multicolor/blue default. The
+    // integer→hex map is therefore exact for macOS's named accents — and dep-free.
+    let out = std::process::Command::new("defaults")
+        .args(["read", "-g", "AppleAccentColor"])
+        .output()
+        .ok()?;
+    let hex = match String::from_utf8_lossy(&out.stdout).trim() {
+        "0" => "#ff5257",         // red
+        "1" => "#f8821a",         // orange
+        "2" => "#ffc402",         // yellow
+        "3" => "#62ba46",         // green
+        "5" => "#a550a7",         // purple
+        "6" => "#f74f9e",         // pink
+        "-1" | "-2" => "#8c8c8c", // graphite
+        _ => "#007aff",           // 4 / absent / multicolor → blue
+    };
+    Some(hex.to_string())
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn read_accent_hex() -> Option<String> {
+    None
+}
+
 #[tauri::command]
 pub fn system_get_platform() -> Value {
     json!({

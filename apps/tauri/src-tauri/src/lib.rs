@@ -550,6 +550,7 @@ pub fn run() {
             commands::system::system_get_locale,
             commands::system::system_set_locale,
             commands::system::system_get_platform,
+            commands::system::system_accent_color,
             commands::system::system_open_external,
             commands::system::system_set_performance_mode,
             commands::system::system_get_launch_at_login,

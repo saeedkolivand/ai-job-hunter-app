@@ -1,7 +1,9 @@
 // ── Design utilities ──────────────────────────────────────────────────────
 export { cn } from './lib/cn';
+export { lightenHex, luminance, parseHex, readableForeground, type Rgb } from './lib/color';
 export * from './lib/motion';
 export {
+  type AccentSource,
   applyTheme,
   applyThemeAnimated,
   type ColorScheme,

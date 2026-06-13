@@ -119,11 +119,10 @@ export function ResearchStep({ onBack, onNext, direction, stepIndex, totalSteps 
             </div>
             <div className="flex justify-end">
               <Button
-                variant="glass"
+                variant="primary"
                 size="sm"
                 disabled={!apiKey.trim() || saving}
                 onClick={() => void handleSave()}
-                className={apiKey.trim() && !saving ? 'ring-1 ring-brand/20' : ''}
               >
                 {saving ? (
                   <Loader2 size={13} className="animate-spin" />

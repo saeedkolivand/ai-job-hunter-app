@@ -34,10 +34,17 @@
   --color-ring: oklch(65% 50% 270);
   --color-spotlight-overlay: rgba(0, 0, 0, 0.76);
 
-  /* Brand aliases — use text-brand, bg-brand in Tailwind classes */
+  /* Brand / accent — SINGLE SOURCE OF TRUTH.
+     `--color-brand` is the one user-customizable accent (Settings → Appearance:
+     Default / System / Custom). Everything accent DERIVES from it: brand-soft is
+     the lighter step (a Default preset literal, recomputed by the runtime applier
+     for custom/system accents), brand-dim is brand at low alpha, the focus ring
+     uses ring-brand, and --color-action-primary = brand. Change this one value
+     (statically here for Default, or at runtime on :root) and the whole accent
+     re-tints. Semantic action (run/edit/delete) + status colors are NOT accent. */
   --color-brand: #a855f7;
   --color-brand-soft: #c084fc;
-  --color-brand-dim: oklch(65% 50% 270 / 0.15);
+  --color-brand-dim: color-mix(in srgb, var(--color-brand) 15%, transparent);
 
   /* Native macOS font (San Francisco) where it exists — it can't be bundled, so
      it only appears on real macOS via the OS; everyone else gets bundled Inter.
@@ -197,8 +204,8 @@
   /* ── Glow scale ─────────────────────────────────────────────────────────────
      A1 NOTE: glows are dropped from content under the Apple pass; retained only
      where glass hero surfaces deliberately keep brand atmosphere. */
-  --glow-brand-sm: 0 0 20px rgba(168, 85, 247, 0.15);
-  --glow-brand-md: 0 0 40px rgba(168, 85, 247, 0.3);
+  --glow-brand-sm: 0 0 20px color-mix(in srgb, var(--color-brand) 15%, transparent);
+  --glow-brand-md: 0 0 40px color-mix(in srgb, var(--color-brand) 30%, transparent);
   --glow-blue-md: 0 0 40px rgba(99, 102, 241, 0.3);
 
   /* ── Border opacity scale ─────────────────────────────────────────────── */
@@ -292,7 +299,7 @@
      to ~#7C3AED (still the same violet family, just legible on white). */
   --color-brand: #7c3aed;
   --color-brand-soft: #8b5cf6;
-  --color-brand-dim: oklch(50% 58% 285 / 0.12);
+  --color-brand-dim: color-mix(in srgb, var(--color-brand) 12%, transparent);
   --color-primary: oklch(50% 58% 285);
   --color-primary-foreground: oklch(99% 0.15% 270);
   --color-accent: oklch(50% 58% 285);

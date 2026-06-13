@@ -23,6 +23,7 @@ All tokens are CSS custom properties defined in `packages/ui/src/css/tokens.css`
 /* Brand palette */
 --color-brand          /* Primary interactive color (violet — the accent) */
 --color-brand-soft     /* Muted/secondary brand variant */
+--color-brand-dim      /* Darker accent tone (derived via CSS color-mix from brand) */
 
 /* Colorful action tokens (semantic; the deliberate divergence — tokens only,
    never a raw [#hex]). Used by Button variants primary/run/edit/delete. */
@@ -30,7 +31,7 @@ All tokens are CSS custom properties defined in `packages/ui/src/css/tokens.css`
 --color-action-run        /* run / start (green) */
 --color-action-edit       /* edit (blue) */
 --color-action-delete     /* delete (red, = destructive) */
---color-action-foreground /* label on a filled action */
+--color-action-foreground /* label on a filled action; auto-contrasted for legibility */
 
 /* Elevation — the ONLY drop-shadow on non-chrome, reserved for product/preview
    imagery resting on a surface. Cards/buttons get NO shadow. */
@@ -155,6 +156,37 @@ elevation = the `--color-card` step over `--color-background`). Frosted **glass 
 and reads a single material token set (`--glass-rgb`, `--glass-alpha-*`, `--glass-sat`,
 `--glass-specular`) — see `utilities.css`. Never hard-code colors that don't exist in the
 token system.
+
+### Accent Color System
+
+A **single-source, user-customizable accent** system colllapses brand-color fragmentation (formerly ~5 violet tokens) into one. The accent is always sourced from exactly one of three origins:
+
+**Accent source enum** — `ThemePrefs.accentSource` in `packages/ui/src/lib/theme.ts`:
+
+- **`'default'`** — uses the shipped per-scheme violet; no runtime override.
+- **`'system'`** — reads the OS accent color (Windows via `UISettings::GetColorValue(UIColorType::Accent)`; macOS via the fixed accent palette; unsupported on Linux).
+- **`'custom'`** — uses a user-picked hex (`ThemePrefs.accentColor`).
+
+**Single point of derivation** — `--color-brand` in `packages/ui/src/css/tokens.css` is the sole accent. All derived colors compute from it at paint time:
+
+- **`--color-brand-soft`** — a lighter step for secondary accent text/icons (28% whiter on dark schemes, 16% on light to account for canvas contrast).
+- **`--color-brand-dim`** — a darker tone for disabled/subtle states (derived via CSS `color-mix(–10%)`).
+- **`--color-action-primary`** — alias for brand (the signature CTA color); semantic, never diverges.
+- **`ring-brand`** — the focus ring (2px brand outline on focus-visible buttons/inputs).
+- **Brand glows and gradients** — all derive via `color-mix` in `utilities.css`, so they auto-adjust with the accent.
+
+**Auto-contrast for legibility** — `--color-action-foreground` is computed at runtime by `applyAccent()` in `packages/ui/src/lib/theme.ts` using `readableForeground()` from `packages/ui/src/lib/color.ts`. The function applies WCAG luminance (`> 0.55 → dark label; ≤ 0.55 → white label`) so filled primary CTAs remain readable on any accent (pale lavender accents get `#1d1d1f` labels; deep indigo accents get `#ffffff`).
+
+**Runtime applier** — `applyAccent(root, prefs, scheme)` writes the three accent vars (`--color-brand`, `--color-brand-soft`, `--color-action-foreground`) to `<html>.style` before paint, or clears them for `'default'`. The applier is idempotent and re-runs on scheme changes (light/dark swap) to recalculate the soft-step lightness per-canvas. Applied via `restoreTheme()` on init and `applyThemeAnimated()` on user change.
+
+**User picker** — Settings → Appearance card (`apps/tauri/src/renderer/features/settings/components/general-section/AppearanceCard.tsx`) offers:
+
+- Default chip + 8 preset macOS-style swatches + System chip (hidden when `supported:false`).
+- Persisted to `localStorage` as part of `ThemePrefs`.
+
+**One primary CTA per view** — to avoid visual noise and let the accent shine, each view has at most one `variant="primary"` button (the main action). Secondary actions use `variant="default"` (neutral, no accent).
+
+**Semantic action colors unchanged** — status colors (success/warning/error/info) and semantic action buttons (run/edit/delete) are explicitly NOT re-tinted by accent and remain their fixed hues. Only the primary accent-driven elements change.
 
 ---
 

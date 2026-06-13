@@ -67,6 +67,7 @@ interface ResumesSlice {
 
 export type SettingsSection =
   | 'general'
+  | 'appearance'
   | 'contact'
   | 'ai'
   | 'job'

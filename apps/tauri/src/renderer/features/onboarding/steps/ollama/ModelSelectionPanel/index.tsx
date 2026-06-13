@@ -164,7 +164,7 @@ export function ModelSelectionPanel({
                 </div>
                 <div className="h-1 overflow-hidden rounded-full bg-white/[0.06]">
                   <motion.div
-                    className={`h-full rounded-full bg-gradient-to-r from-violet-700 via-brand to-brand-soft ${
+                    className={`h-full rounded-full bg-gradient-to-r from-brand via-brand-soft to-brand-soft ${
                       pullState === 'done' ? 'bg-emerald-500' : ''
                     }`}
                     animate={{ width: `${pullProgress}%` }}

@@ -152,8 +152,9 @@ aes-gcm = "0.10"
 [target.'cfg(windows)'.dependencies]
 wmi = "0.18"
 windows-native-keyring-store = "1"
-# DPAPI (CryptUnprotectData) to unwrap the Chromium os_crypt AES key on Windows.
-windows = { version = "0.62.2", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
+# DPAPI (CryptUnprotectData) to unwrap the Chromium os_crypt AES key on Windows;
+# UI_ViewManagement reads the system accent color via UISettings (Appearance).
+windows = { version = "0.62.2", features = ["Win32_Security_Cryptography", "Win32_Foundation", "UI_ViewManagement"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
