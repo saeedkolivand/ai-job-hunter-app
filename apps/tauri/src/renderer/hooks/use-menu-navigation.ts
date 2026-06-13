@@ -40,18 +40,20 @@ export function useMenuNavigation() {
   const navigate = useNavigate();
   const setSettings = useSessionStore((s) => s.setSettings);
   const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
+  const setExtensionTokenFocus = useUiStore((s) => s.setExtensionTokenFocus);
   const { check } = useUpdater();
   const notify = useNotification();
   const { t } = useTranslation();
 
   const onNavigate = useCallback(
-    ({ route, section }: MenuNavigateEvent) => {
+    ({ route, section, focus }: MenuNavigateEvent) => {
       if (section && SETTINGS_SECTIONS.includes(section as SettingsSection)) {
         setSettings({ activeSection: section as SettingsSection });
       }
       void navigate({ to: route as AppRoute });
+      if (focus === 'extension-token') setExtensionTokenFocus(true);
     },
-    [navigate, setSettings]
+    [navigate, setSettings, setExtensionTokenFocus]
   );
 
   const onAction = useCallback(

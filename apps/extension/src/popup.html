@@ -10,7 +10,12 @@
   <body>
     <main class="app">
       <header class="head">
-        <h1 class="title">AI Job Hunter</h1>
+        <h1 class="title">
+          AI Job Hunter
+          <svg class="title__ul" viewBox="0 0 120 8" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M3 5 Q34 1 62 4 T117 4" />
+          </svg>
+        </h1>
         <!-- role="status" already implies aria-live="polite"; no redundant attr. -->
         <span id="status-pill" class="pill pill--searching" role="status"> ○ Connecting… </span>
       </header>
@@ -48,6 +53,7 @@
         />
         <p id="pair-msg" class="msg" role="status" aria-live="polite"></p>
         <button id="btn-save-token" class="btn btn--primary" type="button">Save & pair</button>
+        <button id="btn-open-settings" class="link" type="button">Find my token</button>
       </section>
 
       <!-- Empty state: the desktop app is not running. -->
@@ -58,6 +64,9 @@
             Open the desktop app, then reopen this popup. The extension only talks to the app on
             your own computer.
           </p>
+          <button id="btn-open-app" class="btn btn--primary" type="button">
+            Open AI Job Hunter
+          </button>
           <button id="btn-retry" class="btn" type="button">Retry</button>
         </div>
       </section>

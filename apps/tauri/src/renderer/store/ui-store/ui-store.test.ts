@@ -5,7 +5,11 @@ import { useUiStore } from './ui-store';
 describe('useUiStore', () => {
   beforeEach(() => {
     // Reset to initial state between tests.
-    useUiStore.setState({ shortcutsOpen: false });
+    useUiStore.setState({
+      shortcutsOpen: false,
+      notificationsOpen: false,
+      extensionTokenFocus: false,
+    });
   });
 
   it('starts with shortcuts closed', () => {
@@ -21,5 +25,20 @@ describe('useUiStore', () => {
     useUiStore.getState().setShortcutsOpen(true);
     useUiStore.getState().setShortcutsOpen(false);
     expect(useUiStore.getState().shortcutsOpen).toBe(false);
+  });
+
+  it('extensionTokenFocus defaults to false', () => {
+    expect(useUiStore.getState().extensionTokenFocus).toBe(false);
+  });
+
+  it('setExtensionTokenFocus(true) sets the flag', () => {
+    useUiStore.getState().setExtensionTokenFocus(true);
+    expect(useUiStore.getState().extensionTokenFocus).toBe(true);
+  });
+
+  it('setExtensionTokenFocus(false) clears the flag', () => {
+    useUiStore.getState().setExtensionTokenFocus(true);
+    useUiStore.getState().setExtensionTokenFocus(false);
+    expect(useUiStore.getState().extensionTokenFocus).toBe(false);
   });
 });

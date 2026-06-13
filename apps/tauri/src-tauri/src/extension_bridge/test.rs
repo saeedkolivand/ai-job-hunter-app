@@ -1,15 +1,18 @@
 //! Rust ↔ TS protocol parity + bridge-state unit tests.
 //!
 //! The parity test mirrors the Feature-1 stage-registry approach: it reads the
-//! shared TS protocol source (`packages/shared/src/ipc/extension-protocol.ts`)
-//! as text and asserts every Rust message-type constant in [`super::msg`]
-//! appears as the exact string literal on the TS side. If either side renames a
-//! wire `type` without the other, this fails — the two can't drift.
+//! shared TS protocol source
+//! (`packages/shared/src/ipc/extension-protocol-constants.ts`) as text and
+//! asserts every Rust message-type constant in [`super::msg`] appears as the
+//! exact string literal on the TS side. If either side renames a wire `type`
+//! without the other, this fails — the two can't drift.
 
 use super::*;
 
-/// Path from this crate's manifest dir to the shared TS protocol source.
-const TS_PROTOCOL: &str = "../../../packages/shared/src/ipc/extension-protocol.ts";
+/// Path from this crate's manifest dir to the shared TS protocol constants
+/// source — the zod-free module that holds the `EXTENSION_MESSAGE_TYPES`
+/// literal strings (`extension-protocol.ts` only re-exports them).
+const TS_PROTOCOL: &str = "../../../packages/shared/src/ipc/extension-protocol-constants.ts";
 
 fn ts_protocol_source() -> String {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(TS_PROTOCOL);
@@ -31,7 +34,7 @@ fn message_type_constants_match_ts() {
         let needle = format!("'{literal}'");
         assert!(
             ts.contains(&needle),
-            "wire type {literal:?} (Rust) not found as {needle} in extension-protocol.ts — \
+            "wire type {literal:?} (Rust) not found as {needle} in extension-protocol-constants.ts — \
              the Rust msg:: constants drifted from the shared TS EXTENSION_MESSAGE_TYPES"
         );
     }

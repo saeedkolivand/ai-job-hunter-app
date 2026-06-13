@@ -4,7 +4,7 @@ Thanks for helping keep **AI Job Hunter** and its users safe.
 
 ## Supported versions
 
-AI Job Hunter ships frequently from `main`. Security fixes land in the **latest release** — please reproduce on the most recent version from the [Releases](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases) page (or current `main`) before reporting.
+AI Job Hunter ships frequently from `main`. Security fixes land in the **latest release** — please reproduce on the most recent version from the [Releases](https://github.com/saeedkolivand/ai-job-hunter-app/releases) page (or current `main`) before reporting.
 
 | Version        | Supported           |
 | -------------- | ------------------- |
@@ -17,7 +17,7 @@ AI Job Hunter ships frequently from `main`. Security fixes land in the **latest 
 
 Report privately through one of:
 
-1. **GitHub Private Vulnerability Reporting** (preferred) — open the repository's **[Security → Report a vulnerability](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/security/advisories/new)** form. This keeps the report private until a fix is ready.
+1. **GitHub Private Vulnerability Reporting** (preferred) — open the repository's **[Security → Report a vulnerability](https://github.com/saeedkolivand/ai-job-hunter-app/security/advisories/new)** form. This keeps the report private until a fix is ready.
 2. **Email** — `saeedkolivand1997@gmail.com` with the subject `SECURITY: ai-job-hunter`.
 
 Please include:

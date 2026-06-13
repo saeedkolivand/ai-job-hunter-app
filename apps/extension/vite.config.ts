@@ -38,6 +38,10 @@ function webExtensionAssets(): Plugin {
           source: new Uint8Array(readFileSync(resolve(iconsDir, file))),
         });
       }
+      // The popup display font (Patrick Hand, OFL, vendored under src/fonts) is
+      // emitted automatically by Vite's CSS url() asset pipeline into the build
+      // root, and popup.css is rewritten to reference it — no manual copy needed,
+      // and still no remote fetch.
     },
   };
 }

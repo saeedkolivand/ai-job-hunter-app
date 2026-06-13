@@ -32,6 +32,39 @@ fn rejects_unknown_scheme_or_action() {
 }
 
 #[test]
+fn accepts_the_extension_pairing_url() {
+    assert_eq!(
+        parse_focus_target(&argv("ajh://settings/extension")),
+        Some(FocusTarget::ExtensionPairing)
+    );
+}
+
+#[test]
+fn rejects_other_settings_shapes() {
+    // Only `settings/extension` is allowlisted — every other settings sub-page,
+    // extra segment, query/fragment, or case variant stays denied.
+    assert_eq!(parse_focus_target(&argv("ajh://settings/wipe")), None);
+    assert_eq!(
+        parse_focus_target(&argv("ajh://settings/extension/x")),
+        None // extra segment
+    );
+    assert_eq!(
+        parse_focus_target(&argv("ajh://settings/extension?x=1")),
+        None // query
+    );
+    assert_eq!(
+        parse_focus_target(&argv("ajh://settings/extension#frag")),
+        None // fragment
+    );
+    assert_eq!(parse_focus_target(&argv("ajh://settings")), None); // no id segment
+    assert_eq!(parse_focus_target(&argv("ajh://settings/")), None); // empty id
+    assert_eq!(
+        parse_focus_target(&argv("ajh://settings/Extension")),
+        None // case-sensitive id
+    );
+}
+
+#[test]
 fn rejects_path_traversal_and_injection_shapes() {
     assert_eq!(
         parse_focus_target(&argv("ajh://autopilot/../../settings")),

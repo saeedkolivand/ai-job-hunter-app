@@ -5,16 +5,19 @@
 //! IP-pinned guarded fetch ([`crate::net::http::get_guarded`]) can share it;
 //! [`is_safe_import_url`] is the thin URL-parsing wrapper the bridge calls.
 
-/// Placeholder published-extension ids. **TODO(bridge): replace these with the
-/// real Chrome Web Store / AMO ids before store submission** — until then no
-/// production extension origin matches, so only the dev override
-/// (`platform::config::extension_dev_origins`) admits a local extension. Each id
-/// is matched as `chrome-extension://<id>` AND `moz-extension://<id>`.
+/// Allowed published-extension ids. The Firefox AMO id is an email-style AMO id
+/// tied to the aijobhunter.app domain
+/// (mirrored in `apps/extension/src/manifest.ts::FIREFOX_EXTENSION_ID`).
+/// **TODO(bridge): the Chrome Web Store id is still a placeholder** — it is
+/// assigned at publish time, so until the extension is published no Chrome
+/// production origin matches and only the dev override
+/// (`platform::config::extension_dev_origins`) admits a local Chrome extension.
+/// Each id is matched as `chrome-extension://<id>` AND `moz-extension://<id>`.
 pub const ALLOWED_EXTENSION_IDS: &[&str] = &[
-    // Chrome Web Store id (32 lowercase a–p chars) — PLACEHOLDER.
+    // Chrome Web Store id (32 lowercase a–p chars) — PLACEHOLDER (set at publish).
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    // Firefox AMO extension id (UUID form) — PLACEHOLDER.
-    "00000000-0000-0000-0000-000000000000",
+    // Firefox AMO extension id (email-style id tied to the aijobhunter.app domain).
+    "job-importer@aijobhunter.app",
 ];
 
 /// Whether a handshake `Origin` is an allowed extension origin. Accepts only

@@ -37,8 +37,8 @@ winget install Microsoft.EdgeWebView2Runtime
 ## Clone and Install
 
 ```bash
-git clone https://github.com/saeedkolivand/ai-job-hunter-assistant-app.git
-cd ai-job-hunter-assistant-app
+git clone https://github.com/saeedkolivand/ai-job-hunter-app.git
+cd ai-job-hunter-app
 
 # Install all workspace dependencies
 pnpm install

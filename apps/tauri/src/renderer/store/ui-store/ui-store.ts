@@ -15,6 +15,12 @@ interface UiState {
    *  opened by the `notifications:open` event (OS-banner / tray click). */
   notificationsOpen: boolean;
   setNotificationsOpen: (open: boolean) => void;
+  /** One-shot focus request for the Accounts → Browser-extension pairing token.
+   *  Set by the `ajh://settings/extension` deep link (via the `menu:navigate`
+   *  handler) and consumed + cleared by `ExtensionBridgeSection`, which scrolls
+   *  the token field into view and gives it a one-shot highlight. */
+  extensionTokenFocus: boolean;
+  setExtensionTokenFocus: (focus: boolean) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -22,4 +28,6 @@ export const useUiStore = create<UiState>((set) => ({
   setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
   notificationsOpen: false,
   setNotificationsOpen: (open) => set({ notificationsOpen: open }),
+  extensionTokenFocus: false,
+  setExtensionTokenFocus: (focus) => set({ extensionTokenFocus: focus }),
 }));

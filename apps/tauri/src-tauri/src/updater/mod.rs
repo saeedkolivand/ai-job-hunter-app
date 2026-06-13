@@ -202,7 +202,7 @@ const CHANGELOG_LIMIT: u32 = 15;
 /// CSP) and returned over IPC, reusing the shared HTTP client.
 fn releases_api_url() -> String {
     format!(
-        "https://api.github.com/repos/saeedkolivand/ai-job-hunter-assistant-app/releases?per_page={CHANGELOG_LIMIT}"
+        "https://api.github.com/repos/saeedkolivand/ai-job-hunter-app/releases?per_page={CHANGELOG_LIMIT}"
     )
 }
 

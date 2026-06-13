@@ -21,6 +21,13 @@ export default defineConfig({
   },
   resolve: {
     alias: [
+      // Mirrors the package `exports` "./extension-protocol" subpath → the
+      // zod-free constants source. Must precede the bare `@ajh/shared` alias so
+      // the longer prefix wins (Vite matches aliases in array order).
+      {
+        find: '@ajh/shared/extension-protocol',
+        replacement: resolve(sharedSrc, 'ipc/extension-protocol-constants.ts'),
+      },
       { find: '@ajh/shared/ipc', replacement: resolve(sharedSrc, 'ipc/contracts/index.ts') },
       { find: '@ajh/shared', replacement: resolve(sharedSrc, 'index.ts') },
     ],

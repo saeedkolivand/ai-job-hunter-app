@@ -77,6 +77,8 @@ const els = {
   pairMsg: byId<HTMLParagraphElement>('pair-msg'),
   btnSaveToken: byId<HTMLButtonElement>('btn-save-token'),
   btnRetry: byId<HTMLButtonElement>('btn-retry'),
+  btnOpenApp: byId<HTMLButtonElement>('btn-open-app'),
+  btnOpenSettings: byId<HTMLButtonElement>('btn-open-settings'),
 };
 
 /**
@@ -92,6 +94,11 @@ const PILL_LABEL: Record<ConnectionStatus['phase'], string> = {
 
 /** First status resolves within this budget, else fall back to the offline/Retry view. */
 const STATUS_TIMEOUT_MS = 3_000;
+
+/** Desktop deep link: launches/focuses the app on Settings → Browser extension
+ *  with the pairing token highlighted. The click is the required user gesture;
+ *  the browser may show its own "Open AI Job Hunter?" confirmation (expected). */
+const PAIRING_DEEP_LINK = 'ajh://settings/extension';
 
 /**
  * Last-known token state, cached so a transient `!ok` status reply (asleep or
@@ -212,6 +219,17 @@ async function retry(): Promise<void> {
   await refreshStatus();
 }
 
+/** Open the desktop app at the extension-pairing settings via the custom URL
+ *  scheme. `tabs.create` needs no permission; failures are swallowed so the
+ *  popup never shows a disruptive error. */
+async function openAppPairing(): Promise<void> {
+  try {
+    await browser.tabs.create({ url: PAIRING_DEEP_LINK });
+  } catch {
+    // No-op: the deep link is best-effort; the user can still pair manually.
+  }
+}
+
 function wire(): void {
   els.btnUrl.addEventListener('click', () => void doImport('url'));
   els.btnScan.addEventListener('click', () => void doImport('scan'));
@@ -221,6 +239,8 @@ function wire(): void {
   });
   els.btnUnpair.addEventListener('click', () => void unpair());
   els.btnRetry.addEventListener('click', () => void retry());
+  els.btnOpenApp.addEventListener('click', () => void openAppPairing());
+  els.btnOpenSettings.addEventListener('click', () => void openAppPairing());
 
   // Live status pushes from the background while the popup is open.
   browser.runtime.onMessage.addListener((message: unknown) => {
