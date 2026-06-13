@@ -28,6 +28,12 @@ export type PendingMenuIntent =
 export interface MenuNavigateEvent {
   route: string;
   section: string | null;
+  /** Optional in-page focus signal carried alongside the route. The native menu
+   *  and tray omit it; the `ajh://settings/extension` deep link sets it to
+   *  `'extension-token'` so the Accounts → Browser-extension section focuses the
+   *  pairing token. Optional so omitting consumers (the native menu) still
+   *  type-check. */
+  focus?: 'extension-token';
 }
 
 export interface MenuActionEvent {
