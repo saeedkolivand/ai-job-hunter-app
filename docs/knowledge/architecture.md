@@ -20,7 +20,7 @@ Business logic, processing pipelines, ATS analysis, and document generation live
 
 ## L0–L3 layers (enforced)
 
-L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints. Hard rules (CI-failing): env only in `platform/`; `reqwest::Client` only in `net/`; typed errors via `error.rs` (`AppError`/`AppResult`). Modules returning `AppResult` include `scraping/http/`, `scraping/linkedin/client/`, `validate/`, `export/{model_docx,pdf}/`, `browser/`, and the `From<anyhow::Error>` boundary at `error.rs` (bridging remaining `anyhow`-returning code; ~29 other modules still use `anyhow::Result` internally and convert at IPC boundaries). See `docs/architecture-rules.md`.
+L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints. Hard rules (CI-failing): env only in `platform/`; `reqwest::Client` only in `net/`; typed errors via `error.rs` (`AppError`/`AppResult`). L1 and L3 modules return `AppResult`; lower-level helpers use `anyhow::Result` and convert at `error.rs` via `From<anyhow::Error>` impl. See `apps/tauri/src-tauri/src/error.rs` (canonical) and the enforcing test `tests/architecture.rs::r6_no_stringly_result`. Full rules: `docs/architecture-rules.md`.
 
 ## Backend modules (`apps/tauri/src-tauri/src/`)
 
