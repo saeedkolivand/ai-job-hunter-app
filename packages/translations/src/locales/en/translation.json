@@ -611,6 +611,8 @@
       "save": "Save",
       "saved": "Ollama key saved.",
       "removed": "Ollama key removed.",
+      "removeConfirmTitle": "Remove Ollama key?",
+      "removeConfirmDesc": "This deletes your saved Ollama account key. Company research stops until you add a key again.",
       "saveError": "Couldn't save the key."
     },
     "accounts": {
@@ -1120,7 +1122,9 @@
         "replied": "Replied"
       },
       "savedTitle": "Saved contacts",
-      "savedAddAnother": "Saved to your list below — the form is ready for the next person."
+      "savedAddAnother": "Saved to your list below — the form is ready for the next person.",
+      "deleteConfirmTitle": "Delete this referral?",
+      "deleteConfirmDesc": "This removes the saved referral contact from this job. This action cannot be undone."
     },
     "loading": "Loading…",
     "empty": {
@@ -1291,6 +1295,8 @@
     "cancel": "Cancel",
     "clear": "Clear",
     "clearScrapedJobs": "Clear scraped jobs",
+    "clearConfirmTitle": "Clear scraped jobs?",
+    "clearConfirmDesc": "This removes every scraped posting from this board. Tracked applications and saved documents are not affected.",
     "sort": "Sort",
     "sortNewest": "Newest",
     "sortOldest": "Oldest",

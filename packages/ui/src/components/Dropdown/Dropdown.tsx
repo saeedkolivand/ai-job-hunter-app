@@ -36,6 +36,12 @@ export interface DropdownProps {
   listClassName?: string;
   /** Trigger height — 'sm' matches Button size="sm" (h-7); 'md' is the default (h-9). */
   size?: 'sm' | 'md';
+  /**
+   * Trigger accent. `default` is the neutral glass trigger; `primary` tints the
+   * trigger with the brand colour (e.g. an application-status selector). Opt-in
+   * per call site — other dropdowns stay neutral.
+   */
+  tone?: 'default' | 'primary';
 }
 
 export function Dropdown({
@@ -49,6 +55,7 @@ export function Dropdown({
   searchable,
   listClassName,
   size = 'md',
+  tone = 'default',
 }: DropdownProps) {
   const generatedId = useId();
   const id = idProp ?? generatedId;
@@ -168,14 +175,21 @@ export function Dropdown({
         }}
         onKeyDown={handleKeyDown}
         className={cn(
-          'flex w-full items-center justify-between gap-2 rounded-lg text-xs transition-all duration-150',
+          'flex w-full items-center justify-between gap-2 rounded-lg text-xs transition-all duration-150 shadow-sm',
           size === 'sm' ? 'h-7 px-2.5' : 'h-9 px-3',
-          'border border-[var(--border-soft)] bg-[rgb(var(--glass-rgb)/0.08)] shadow-sm',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
           'disabled:cursor-not-allowed disabled:opacity-40',
-          open
-            ? 'border-brand/35 bg-[rgb(var(--glass-rgb)/0.12)] text-foreground/90'
-            : 'text-foreground/75 hover:border-[var(--border-mid)] hover:bg-[rgb(var(--glass-rgb)/0.12)] hover:text-foreground/90'
+          tone === 'primary'
+            ? cn(
+                'border border-brand/30 bg-brand/10 text-brand-soft',
+                open ? 'border-brand/55 bg-brand/15' : 'hover:border-brand/45 hover:bg-brand/15'
+              )
+            : cn(
+                'border border-[var(--border-soft)] bg-[rgb(var(--glass-rgb)/0.08)]',
+                open
+                  ? 'border-brand/35 bg-[rgb(var(--glass-rgb)/0.12)] text-foreground/90'
+                  : 'text-foreground/75 hover:border-[var(--border-mid)] hover:bg-[rgb(var(--glass-rgb)/0.12)] hover:text-foreground/90'
+              )
         )}
       >
         <span className="flex min-w-0 items-center gap-2">
@@ -187,7 +201,8 @@ export function Dropdown({
         <ChevronDown
           size={12}
           className={cn(
-            'shrink-0 text-foreground/30 transition-transform duration-150',
+            'shrink-0 transition-transform duration-150',
+            tone === 'primary' ? 'text-brand-soft/70' : 'text-foreground/30',
             open && 'rotate-180'
           )}
         />

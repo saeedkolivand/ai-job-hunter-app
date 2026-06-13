@@ -4,7 +4,7 @@
  * Covers:
  *  - Status change upserts the FULL contact + new status (a partial { id, status }
  *    would blank the row — the backend overwrites every column by id).
- *  - Delete button calls remove with the contact's id.
+ *  - Delete asks for confirmation first, then calls remove with the contact's id.
  *  - Nothing renders when the contacts array is empty.
  */
 import { describe, expect, it, vi } from 'vitest';
@@ -102,10 +102,20 @@ describe('ReferralList — status change', () => {
 });
 
 describe('ReferralList — delete', () => {
-  it('delete button calls remove.mutate with the contact id', () => {
+  it('confirming the delete dialog calls remove.mutate with the contact id', () => {
     render(<ReferralList contacts={[makeContact({ id: 'ref-99' })]} />);
 
+    // The row trash button only opens the confirm dialog — no mutation yet.
     fireEvent.click(screen.getByRole('button', { name: 'autopilot.referral.delete' }));
+    expect(mockRemoveMutate).not.toHaveBeenCalled();
+
+    // The dialog's confirm button shares the `delete` label; it's the last one
+    // in the document once the modal is mounted.
+    const confirmButton = screen
+      .getAllByRole('button', { name: 'autopilot.referral.delete' })
+      .at(-1);
+    if (!confirmButton) throw new Error('confirm button not found');
+    fireEvent.click(confirmButton);
 
     expect(mockRemoveMutate).toHaveBeenCalledTimes(1);
     expect(mockRemoveMutate).toHaveBeenCalledWith('ref-99');

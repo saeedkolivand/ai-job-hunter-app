@@ -87,11 +87,11 @@ export function CollapsibleFileInput({
                 }}
               />
               <Button
-                variant="ghost"
+                variant="primary"
                 size="sm"
                 onClick={() => ref.current?.click()}
                 disabled={uploading || disabled}
-                className="flex items-center gap-1 rounded-md bg-white/[0.04] px-2 py-1 text-[10px] text-foreground/50 hover:text-foreground/80 transition-colors h-auto"
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] transition-colors h-auto"
               >
                 <Upload size={10} className={uploading ? 'animate-pulse' : ''} />
                 {uploading ? '…' : uploadText}
