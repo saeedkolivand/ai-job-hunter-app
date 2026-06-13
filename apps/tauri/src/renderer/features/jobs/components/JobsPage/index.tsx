@@ -4,7 +4,15 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 
 import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, Dropdown, EmptyState, GlassCard, Input, useNotification } from '@ajh/ui';
+import {
+  Button,
+  ConfirmModal,
+  Dropdown,
+  EmptyState,
+  GlassCard,
+  Input,
+  useNotification,
+} from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -35,6 +43,7 @@ export function JobsPage() {
   const setFilter = (v: string) => setJobs({ filter: v });
   const setSortBy = (v: 'newest' | 'oldest' | 'company') => setJobs({ sortBy: v });
   const [showScrapeForm, setShowScrapeForm] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const [scrapeForm, setScrapeForm] = useState<ScrapeFormState>({
     board: 'linkedin',
     query: '',
@@ -104,6 +113,7 @@ export function JobsPage() {
   }, [postings, livePostings]);
 
   const handleClearPostings = async () => {
+    setConfirmClear(false);
     await clearPostings.mutateAsync();
     setLivePostings([]);
   };
@@ -172,7 +182,7 @@ export function JobsPage() {
               <div className="flex items-center gap-2">
                 <Button
                   size="sm"
-                  variant="glass"
+                  variant="primary"
                   onClick={() => setShowScrapeForm(!showScrapeForm)}
                   className="transition-all duration-150 ease-out"
                 >
@@ -183,7 +193,7 @@ export function JobsPage() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => void handleClearPostings()}
+                    onClick={() => setConfirmClear(true)}
                     title={t('jobs.clearScrapedJobs')}
                   >
                     <Trash2 size={12} />
@@ -243,7 +253,7 @@ export function JobsPage() {
                 icon={Search}
                 title={t('jobs.empty')}
                 action={
-                  <Button variant="glass" size="sm" onClick={() => setShowScrapeForm(true)}>
+                  <Button variant="primary" size="sm" onClick={() => setShowScrapeForm(true)}>
                     <Search size={13} /> {t('jobs.emptyCta')}
                   </Button>
                 }
@@ -291,6 +301,17 @@ export function JobsPage() {
           )}
         </div>
       </PageTransition>
+
+      <ConfirmModal
+        open={confirmClear}
+        onClose={() => setConfirmClear(false)}
+        onConfirm={() => void handleClearPostings()}
+        title={t('jobs.clearConfirmTitle')}
+        description={t('jobs.clearConfirmDesc')}
+        confirmText={t('jobs.clear')}
+        variant="danger"
+        isConfirming={clearPostings.isPending}
+      />
     </ScoringSchedulerProvider>
   );
 }

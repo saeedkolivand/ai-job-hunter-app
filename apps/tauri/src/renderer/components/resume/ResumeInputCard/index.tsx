@@ -141,12 +141,12 @@ export function ResumeInputCard({
           {/* Profile URL import button */}
           {!disabled && (
             <Button
-              variant="ghost"
+              variant="info"
               size="sm"
               onClick={toggleUrlInput}
               className={cn(
-                'h-6 w-6 p-0 hover:text-foreground/70',
-                showUrlInput ? 'text-brand-soft' : 'text-foreground/40'
+                'h-6 w-6 p-0',
+                showUrlInput && 'border-brand/30 bg-brand/15 text-brand-soft'
               )}
               title={t('resumeInput.pasteProfileUrl')}
             >
@@ -191,21 +191,20 @@ export function ResumeInputCard({
               className={cn(
                 'flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-medium transition-all',
                 inputMode === 'upload'
-                  ? 'bg-white/[0.08] text-foreground/90 shadow-sm'
-                  : 'text-foreground/40 hover:text-foreground/60'
+                  ? 'bg-action-primary text-action-foreground shadow-sm'
+                  : 'text-brand-soft/60 hover:text-brand-soft'
               )}
             >
               <Upload size={10} />
               {t('resumeInput.modeUpload')}
             </Button>
             <Button
-              variant="unstyled"
+              variant="default"
+              size="sm"
               onClick={() => setInputMode('paste')}
               className={cn(
-                'flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-medium transition-all',
-                inputMode === 'paste'
-                  ? 'bg-white/[0.08] text-foreground/90 shadow-sm'
-                  : 'text-foreground/40 hover:text-foreground/60'
+                'flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-medium transition-all h-auto',
+                inputMode === 'paste' && 'border-white/15 bg-white/[0.10] text-foreground/90'
               )}
             >
               <ClipboardPaste size={10} />

@@ -1,8 +1,9 @@
 import { Trash2 } from 'lucide-react';
+import { useState } from 'react';
 
 import type { ReferralContact, ReferralStatus } from '@ajh/shared/ipc';
 import { useTranslation } from '@ajh/translations';
-import { Button, SegmentedControl } from '@ajh/ui';
+import { Button, ConfirmModal, SegmentedControl } from '@ajh/ui';
 
 import { useRemoveReferral, useUpsertReferral } from '@/services';
 
@@ -22,6 +23,7 @@ export function ReferralList({ contacts }: Props) {
   const { t } = useTranslation();
   const upsert = useUpsertReferral();
   const remove = useRemoveReferral();
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   if (contacts.length === 0) return null;
 
@@ -53,7 +55,7 @@ export function ReferralList({ contacts }: Props) {
             <Button
               variant="unstyled"
               type="button"
-              onClick={() => remove.mutate(c.id)}
+              onClick={() => setPendingDelete(c.id)}
               title={t('autopilot.referral.delete')}
               aria-label={t('autopilot.referral.delete')}
               className="shrink-0 rounded p-1 text-foreground/30 transition-colors hover:text-red-300/80"
@@ -95,6 +97,19 @@ export function ReferralList({ contacts }: Props) {
           {c.notes ? <p className="text-[10px] text-foreground/50">{c.notes}</p> : null}
         </div>
       ))}
+
+      <ConfirmModal
+        open={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (pendingDelete) remove.mutate(pendingDelete);
+          setPendingDelete(null);
+        }}
+        title={t('autopilot.referral.deleteConfirmTitle')}
+        description={t('autopilot.referral.deleteConfirmDesc')}
+        confirmText={t('autopilot.referral.delete')}
+        variant="danger"
+      />
     </div>
   );
 }

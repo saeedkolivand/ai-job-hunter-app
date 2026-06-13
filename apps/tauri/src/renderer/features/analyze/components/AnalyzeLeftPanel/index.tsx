@@ -185,7 +185,7 @@ export function AnalyzeLeftPanel({
       <div className="px-6 pb-6 mt-auto">
         <Button
           size="md"
-          variant={canRun && stage !== 'running' ? 'glass' : 'ghost'}
+          variant={canRun && stage !== 'running' ? 'primary' : 'ghost'}
           onClick={() => void onRun()}
           loading={stage === 'running'}
           disabled={!canRun || stage === 'running'}

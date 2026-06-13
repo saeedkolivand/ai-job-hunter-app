@@ -28,7 +28,7 @@ export function AnalysisScores({ result, t }: AnalysisScoresProps) {
         return (
           <div
             key={key}
-            className="relative overflow-hidden rounded-xl border border-foreground/[0.08] bg-foreground/[0.03] px-4 py-4"
+            className="surface-card relative overflow-hidden rounded-xl px-4 py-4 shadow-sm"
           >
             <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">
               {label}

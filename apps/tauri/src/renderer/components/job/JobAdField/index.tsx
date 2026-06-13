@@ -61,14 +61,12 @@ export function JobAdField({
         showCheckmark
         headerAction={
           <Button
-            variant="ghost"
+            variant="info"
             size="sm"
             onClick={() => setShowUrl((s) => !s)}
             className={cn(
               'flex items-center gap-1 rounded-md px-2 py-1 text-[10px] transition-colors h-auto',
-              showUrl
-                ? 'bg-brand/15 text-brand-soft'
-                : 'bg-white/[0.04] text-foreground/50 hover:text-foreground/80'
+              showUrl && 'border-brand/30 bg-brand/15 text-brand-soft'
             )}
           >
             <Link2 size={10} />

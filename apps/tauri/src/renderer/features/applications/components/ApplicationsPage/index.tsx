@@ -94,7 +94,7 @@ export function ApplicationsPage() {
         wrapperClassName="h-7"
         allowClear
       />
-      <Button size="sm" variant="glass" onClick={() => setTrackOpen(true)}>
+      <Button size="sm" variant="primary" onClick={() => setTrackOpen(true)}>
         <Plus size={12} />
         {t('applications.trackButton')}
       </Button>
@@ -130,7 +130,7 @@ export function ApplicationsPage() {
             title={t('applications.empty')}
             description={t('applications.emptyDesc')}
             action={
-              <Button variant="glass" size="sm" onClick={() => setTrackOpen(true)}>
+              <Button variant="primary" size="sm" onClick={() => setTrackOpen(true)}>
                 <Plus size={13} /> {t('applications.trackButton')}
               </Button>
             }

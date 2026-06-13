@@ -2,7 +2,7 @@ import { Check, Eye, EyeOff, Key, Loader2, Search, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, Input, SettingsSection, useNotification } from '@ajh/ui';
+import { Button, ConfirmModal, Input, SettingsSection, useNotification } from '@ajh/ui';
 
 import {
   useHasProviderKey,
@@ -31,6 +31,7 @@ export function CompanyResearchSettings() {
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   const handleSave = async () => {
     if (!apiKey.trim()) return;
@@ -49,6 +50,7 @@ export function CompanyResearchSettings() {
   };
 
   const handleRemove = async () => {
+    setConfirmRemove(false);
     try {
       await removeProviderKey.mutateAsync({ provider: 'ollama-cloud' });
       notify.success({ message: t('settings.companyResearch.removed') });
@@ -74,7 +76,7 @@ export function CompanyResearchSettings() {
             variant="ghost"
             size="sm"
             className="text-xs text-red-400/60 hover:text-red-400"
-            onClick={() => void handleRemove()}
+            onClick={() => setConfirmRemove(true)}
           >
             <Trash2 size={11} /> {t('settings.companyResearch.remove')}
           </Button>
@@ -130,6 +132,17 @@ export function CompanyResearchSettings() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={confirmRemove}
+        onClose={() => setConfirmRemove(false)}
+        onConfirm={() => void handleRemove()}
+        title={t('settings.companyResearch.removeConfirmTitle')}
+        description={t('settings.companyResearch.removeConfirmDesc')}
+        confirmText={t('settings.companyResearch.remove')}
+        variant="danger"
+        isConfirming={removeProviderKey.isPending}
+      />
     </SettingsSection>
   );
 }
