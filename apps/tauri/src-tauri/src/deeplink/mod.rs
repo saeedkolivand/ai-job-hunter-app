@@ -3,26 +3,35 @@
 //! When the app is re-launched (or a second instance starts) with an `ajh://…`
 //! URL on its argv, we must NOT blindly drive the renderer to whatever route the
 //! URL names — a hostile argv (`ajh://settings/wipe`, `ajh://../../x`) is an
-//! injection vector. This parses argv and accepts ONLY the allowlisted
-//! `ajh://autopilot/<id>` shape with a syntactically valid id; everything else
-//! yields `None` (the caller then just focuses the window, navigating nowhere).
+//! injection vector. This parses argv and accepts ONLY two allowlisted shapes:
+//!   - `ajh://autopilot/<id>` with a syntactically valid id, and
+//!   - `ajh://settings/extension` (exactly — the browser-extension pairing
+//!     deep link; no id, no other settings sub-page).
 //!
-//! The OS URI scheme itself is not registered yet (a follow-up will add
-//! `tauri-plugin-deep-link`); the guard lives here first so it is in place and
-//! unit-tested before any externally-controlled URL can reach navigation.
+//! Everything else yields `None` (the caller then just focuses the window,
+//! navigating nowhere). Both targets are navigation-only: they focus the window
+//! and route the renderer; they carry no command/action payload.
+//!
+//! The OS URI scheme is registered (`tauri-plugin-deep-link`: `init()` +
+//! `register_all()` in `lib.rs`); this guard validates every incoming URL/argv
+//! against the allowlist before any navigation, on every delivery path.
 
 /// A validated, allowlisted deep-link target.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FocusTarget {
     /// Focus a specific autopilot's found-jobs panel.
     Autopilot(String),
+    /// Navigate to Settings → Accounts → Browser extension and focus the
+    /// pairing token. From `ajh://settings/extension` (the popup's pair button).
+    ExtensionPairing,
 }
 
 const SCHEME: &str = "ajh://";
 
-/// Scan argv for the first valid `ajh://autopilot/<id>` URL. Returns `None` for
-/// any other scheme, host/action, extra path segments, query/fragment, or a
-/// malformed id — the deny-by-default posture for an externally-controlled input.
+/// Scan argv for the first valid `ajh://autopilot/<id>` or
+/// `ajh://settings/extension` URL. Returns `None` for any other scheme,
+/// host/action, extra path segments, query/fragment, or a malformed id — the
+/// deny-by-default posture for an externally-controlled input.
 pub fn parse_focus_target(argv: &[String]) -> Option<FocusTarget> {
     argv.iter().find_map(|arg| parse_one(arg.trim()))
 }
@@ -41,6 +50,8 @@ fn parse_one(arg: &str) -> Option<FocusTarget> {
     }
     match action {
         "autopilot" if is_valid_id(id) => Some(FocusTarget::Autopilot(id.to_string())),
+        // Exactly `ajh://settings/extension` — no id, no other settings sub-page.
+        "settings" if id == "extension" => Some(FocusTarget::ExtensionPairing),
         _ => None,
     }
 }

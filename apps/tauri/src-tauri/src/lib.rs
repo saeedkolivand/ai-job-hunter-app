@@ -95,8 +95,8 @@ const MENU_DEVTOOLS: &str = "menu_devtools";
 /// canonical URL the project ships — the updater endpoint in tauri.conf.json points
 /// at this repo's releases). No `homepage` is set in any package.json, so docs maps
 /// to the repo root and "Report an Issue" to the issues tracker.
-const REPO_URL: &str = "https://github.com/saeedkolivand/ai-job-hunter-assistant-app";
-const ISSUES_URL: &str = "https://github.com/saeedkolivand/ai-job-hunter-assistant-app/issues";
+const REPO_URL: &str = "https://github.com/saeedkolivand/ai-job-hunter-app";
+const ISSUES_URL: &str = "https://github.com/saeedkolivand/ai-job-hunter-app/issues";
 
 /// View-submenu go-to-route items: `(id, accelerator, route, label)`. The route
 /// strings are the canonical values from
@@ -134,6 +134,20 @@ fn nav_route_for(id: &str) -> Option<&'static str> {
     NAV_ITEMS
         .iter()
         .find_map(|(item_id, _, route, _)| (*item_id == id).then_some(*route))
+}
+
+/// Drive the renderer for a validated deep-link target. Shared by every delivery
+/// path (single-instance relaunch, `on_open_url`, cold first-instance launch) so
+/// they stay in lockstep. `None` (a hostile/unrecognized URL) navigates nowhere
+/// — the caller has already focused the window. Each arm picks the right
+/// renderer signal: autopilot uses the fire-and-forget focus emit; pairing uses
+/// the cold-start-robust buffered `menu:navigate` intent.
+fn handle_deep_link(app: &AppHandle, target: Option<deeplink::FocusTarget>) {
+    match target {
+        Some(deeplink::FocusTarget::Autopilot(id)) => tray::emit_focus(app, &id),
+        Some(deeplink::FocusTarget::ExtensionPairing) => tray::dispatch_extension_pairing(app),
+        None => {}
+    }
 }
 
 fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
@@ -318,17 +332,15 @@ pub fn run() {
         })
         // Single-instance must be the FIRST plugin: on a second launch it focuses
         // the already-running window instead of spawning another process. If that
-        // launch carried an `ajh://autopilot/<id>` deep link, the guard validates
-        // it against a strict route allowlist before driving any navigation — a
-        // hostile argv navigates nowhere (see `deeplink`).
+        // launch carried an `ajh://autopilot/<id>` or `ajh://settings/extension`
+        // deep link, the guard validates it against a strict route allowlist
+        // before driving any navigation — a hostile argv navigates nowhere (see
+        // `deeplink`).
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // Route through `show_focus` so a second launch also restores the Dock
             // icon (macOS) if the window was hidden to the tray.
             tray::show_focus(app);
-            if let Some(deeplink::FocusTarget::Autopilot(id)) = deeplink::parse_focus_target(&argv)
-            {
-                tray::emit_focus(app, &id);
-            }
+            handle_deep_link(app, deeplink::parse_focus_target(&argv));
         }))
         .plugin(
             tauri_plugin_log::Builder::new()
@@ -375,15 +387,37 @@ pub fn run() {
                 let dl_handle = handle.clone();
                 app.deep_link().on_open_url(move |event| {
                     let urls: Vec<String> = event.urls().iter().map(|u| u.to_string()).collect();
-                    if let Some(deeplink::FocusTarget::Autopilot(id)) =
-                        deeplink::parse_focus_target(&urls)
-                    {
-                        // Route through `show_focus` so a deep-link reopen also
-                        // restores the Dock icon (macOS) when hidden to the tray.
-                        tray::show_focus(&dl_handle);
-                        tray::emit_focus(&dl_handle, &id);
-                    }
+                    // `show_focus` so a deep-link reopen also restores the Dock
+                    // icon (macOS) when hidden to the tray. (The pairing path's
+                    // `dispatch_menu` calls `show_focus` itself, so calling it
+                    // first here is a harmless no-op for that target.)
+                    tray::show_focus(&dl_handle);
+                    handle_deep_link(&dl_handle, deeplink::parse_focus_target(&urls));
                 });
+
+                // Cold start: when the app was NOT already running, the OS launches
+                // it FRESH with the `ajh://…` URL and the single-instance callback
+                // never fires (it only triggers on a *second* launch). On Windows/
+                // Linux that first-instance URL arrives on argv; on macOS the plugin
+                // surfaces it via `get_current()`. Parse both so a not-running launch
+                // (the primary case for `ajh://settings/extension`) still routes.
+                let initial = deeplink::parse_focus_target(
+                    &std::env::args_os()
+                        .filter_map(|a| a.into_string().ok())
+                        .collect::<Vec<String>>(),
+                )
+                .or_else(|| {
+                    app.deep_link()
+                        .get_current()
+                        .ok()
+                        .flatten()
+                        .map(|urls| urls.iter().map(|u| u.to_string()).collect::<Vec<_>>())
+                        .and_then(|urls| deeplink::parse_focus_target(&urls))
+                });
+                if initial.is_some() {
+                    tray::show_focus(handle);
+                    handle_deep_link(handle, initial);
+                }
             }
 
             // Data dir for all persistent state. Resolved + exported once here so

@@ -18,8 +18,7 @@ import {
   type ExtensionEnvelope,
   type ExtensionImportRequest,
   type ExtensionImportResult,
-  ExtensionImportResultSchema,
-} from '@ajh/shared';
+} from '@ajh/shared/extension-protocol';
 
 /** Inclusive probe range — mirrors the desktop `PORT_RANGE` (47615..=47620). */
 const PORT_START = 47615;
@@ -46,6 +45,27 @@ export interface BridgeStatus {
 /** A short id for `reqId` correlation. `crypto.randomUUID` exists in SW + DOM. */
 function newReqId(): string {
   return crypto.randomUUID();
+}
+
+/**
+ * Hand-written guard for an `import.result` payload — replaces the zod schema so
+ * the extension bundle stays zod-free (zod v4's JIT probe trips AMO's
+ * `DANGEROUS_EVAL` lint). Mirrors `ExtensionImportResultSchema`: every field is
+ * optional; the string fields must be strings and `matchScore` a number when
+ * present.
+ */
+function isExtensionImportResult(v: unknown): v is ExtensionImportResult {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  const optionalString = (x: unknown): boolean => x === undefined || typeof x === 'string';
+  return (
+    optionalString(o.applicationId) &&
+    optionalString(o.status) &&
+    optionalString(o.title) &&
+    optionalString(o.company) &&
+    optionalString(o.error) &&
+    (o.matchScore === undefined || typeof o.matchScore === 'number')
+  );
 }
 
 export class BridgeClient {
@@ -249,12 +269,24 @@ export class BridgeClient {
       this.timers.delete(reqId);
     }
 
-    const result = ExtensionImportResultSchema.safeParse(env.payload);
-    if (!result.success) {
+    if (!isExtensionImportResult(env.payload)) {
       resolve({ error: 'The desktop app sent a malformed import result.' });
       return;
     }
-    resolve(result.data);
+    // Rebuild from only the known, defined keys — mirrors the old zod
+    // `.safeParse(...).data` which STRIPPED unknown keys (the guard alone would
+    // pass extra keys through). Copying only defined keys also keeps `toEqual`
+    // equality with the minimal payloads tests send (vitest treats an explicit
+    // `undefined` key as present).
+    const src = env.payload;
+    const normalized: ExtensionImportResult = {};
+    if (src.applicationId !== undefined) normalized.applicationId = src.applicationId;
+    if (src.status !== undefined) normalized.status = src.status;
+    if (src.title !== undefined) normalized.title = src.title;
+    if (src.company !== undefined) normalized.company = src.company;
+    if (src.matchScore !== undefined) normalized.matchScore = src.matchScore;
+    if (src.error !== undefined) normalized.error = src.error;
+    resolve(normalized);
   }
 
   private failAllPending(reason: string): void {

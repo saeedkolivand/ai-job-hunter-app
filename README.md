@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases"><strong>⬇️ Download the latest release</strong></a>
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><strong>⬇️ Download the latest release</strong></a>
   &nbsp;·&nbsp;
   <a href="https://aijobhunter.app">🌐 Live site</a>
   &nbsp;·&nbsp;
@@ -23,19 +23,19 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases"><img alt="Release" src="https://img.shields.io/github/v/release/saeedkolivand/ai-job-hunter-assistant-app?color=e24b4a&label=release"></a>
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/saeedkolivand/ai-job-hunter-assistant-app/total?color=e24b4a&label=downloads"></a>
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/ci-pipeline.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/saeedkolivand/ai-job-hunter-assistant-app/ci-pipeline.yml?branch=main&label=CI"></a>
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/saeedkolivand/ai-job-hunter-assistant-app"></a>
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><img alt="Release" src="https://img.shields.io/github/v/release/saeedkolivand/ai-job-hunter-app?color=e24b4a&label=release"></a>
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/saeedkolivand/ai-job-hunter-app/total?color=e24b4a&label=downloads"></a>
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/saeedkolivand/ai-job-hunter-app/ci-pipeline.yml?branch=main&label=CI"></a>
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/saeedkolivand/ai-job-hunter-app"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey"></a>
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey"></a>
   <a href="https://aijobhunter.app"><img alt="Live site" src="https://img.shields.io/badge/Live-site-e24b4a"></a>
   <a href="SECURITY.md"><img alt="Security policy" src="https://img.shields.io/badge/security-policy-2ea44f"></a>
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/saeedkolivand/ai-job-hunter-assistant-app?style=flat&color=f5b301"></a>
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/pulls"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/saeedkolivand/ai-job-hunter-app?style=flat&color=f5b301"></a>
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/pulls"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
 </p>
 
 <p align="center">
@@ -73,11 +73,11 @@
 
 ```bash
 # 🚀 Try it           → download a build for your OS:
-#                        https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases
+#                        https://github.com/saeedkolivand/ai-job-hunter-app/releases
 #
 # 🛠️  Develop it       → run the full desktop app from source:
-git clone https://github.com/saeedkolivand/ai-job-hunter-assistant-app.git
-cd ai-job-hunter-assistant-app && pnpm install
+git clone https://github.com/saeedkolivand/ai-job-hunter-app.git
+cd ai-job-hunter-app && pnpm install
 ollama pull mistral   # optional: a local model for the offline Ollama provider
 pnpm dev              # launches the Tauri app with hot reload
 ```
@@ -182,12 +182,12 @@ API keys are stored encrypted in the OS keychain. CLI agents run as a headless s
 <details open>
 <summary><strong>Download a released build</strong> (recommended)</summary>
 
-Grab the latest installer for your OS from the **<a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases" target="_blank" rel="noopener noreferrer">Releases</a>** page.
+Grab the latest installer for your OS from the **<a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases" target="_blank" rel="noopener noreferrer">Releases</a>** page.
 
 **macOS** — open the `.dmg` and drag the app into Applications. Because the app isn't notarized by Apple, Gatekeeper may refuse to open it the first time ("app is damaged and can't be opened"). Clear the quarantine attribute once:
 
 ```bash
-xattr -cr "/Applications/AI Job Hunter Assistant.app"
+xattr -cr "/Applications/AI Job Hunter.app"
 ```
 
 **Windows / Linux** — run the installer / AppImage from the Releases page.
@@ -200,11 +200,11 @@ xattr -cr "/Applications/AI Job Hunter Assistant.app"
 Releases ship signed macOS `.dmg`s, and the repo doubles as its own Homebrew tap (the <a href="Casks/ai-job-hunter.rb" target="_blank" rel="noopener noreferrer">`Casks/ai-job-hunter.rb`</a> cask). Install with:
 
 ```bash
-brew tap saeedkolivand/ai-job-hunter-assistant-app https://github.com/saeedkolivand/ai-job-hunter-assistant-app
+brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app
 brew install --cask ai-job-hunter
 ```
 
-The cask clears the Gatekeeper quarantine flag for you (the app isn't notarized). Prefer a one-off download? Grab the `.dmg` straight from the <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases" target="_blank" rel="noopener noreferrer">Releases</a> page.
+The cask clears the Gatekeeper quarantine flag for you (the app isn't notarized). Prefer a one-off download? Grab the `.dmg` straight from the <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases" target="_blank" rel="noopener noreferrer">Releases</a> page.
 
 > The cask pins per-arch `sha256` checksums for a verified install, tracking the latest release that ships macOS `.dmg`s. Since the installer build is manual, bump the cask `version` + both checksums when a newer build publishes dmgs (`brew bump-cask-pr`).
 
@@ -223,8 +223,8 @@ The cask clears the Gatekeeper quarantine flag for you (the app isn't notarized)
 | Ollama         | latest  | <a href="https://ollama.com" target="_blank" rel="noopener noreferrer">ollama.com</a> — for local AI |
 
 ```bash
-git clone https://github.com/saeedkolivand/ai-job-hunter-assistant-app.git
-cd ai-job-hunter-assistant-app
+git clone https://github.com/saeedkolivand/ai-job-hunter-app.git
+cd ai-job-hunter-app
 pnpm install
 
 # Pull a local model (optional — only for the Ollama provider)
@@ -241,7 +241,7 @@ pnpm dev
 
 | Symptom                                       | Fix                                                                                                                                                                         |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| macOS: _"app is damaged and can't be opened"_ | Not notarized — clear quarantine once: `xattr -cr "/Applications/AI Job Hunter Assistant.app"`                                                                              |
+| macOS: _"app is damaged and can't be opened"_ | Not notarized — clear quarantine once: `xattr -cr "/Applications/AI Job Hunter.app"`                                                                                        |
 | No models in the picker / "select a model"    | Start Ollama and `ollama pull <model>`, or add a cloud key in **Settings → AI**                                                                                             |
 | Company research does nothing                 | It's opt-in and uses your AI provider's own web search; on **Ollama** add the free Ollama key (Settings → AI). Without a usable search, generation proceeds without a brief |
 | Scraping can't find a browser                 | Set the browser path in **Settings → Scraping**                                                                                                                             |
@@ -385,7 +385,7 @@ A <a href="https://pypi.org/project/graphifyy/" target="_blank" rel="noopener no
 ## Project Structure
 
 ```
-ai-job-hunter-assistant-app/
+ai-job-hunter-app/
 ├── apps/
 │   ├── tauri/                    # Main desktop app (Tauri shell: Rust core + React renderer)
 │   │   ├── src-tauri/            # Rust core (commands, scraping, AI, export, DB, extension bridge)
@@ -443,25 +443,25 @@ at-a-glance status of every workflow, grouped by role, fetched live from the Act
 
 ### ✅ Required — gates merge
 
-[![🚀 CI Pipeline](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/ci-pipeline.yml)
+[![🚀 CI Pipeline](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml)
 
 ### 🔒 Security — reports to the Security tab
 
-[![🔒 Security](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/security.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/security.yml)
+[![🔒 Security](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/security.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/security.yml)
 
 ### 🔎 Advisory — never blocks
 
-[![🤖 Claude Review (on demand)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/claude-review.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/claude-review.yml)
-[![🎨 Format Guard](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/format-guard.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/format-guard.yml)
-[![🏷️ PR Labeler](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/labeler.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/labeler.yml)
-[![🔎 Quality](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/quality.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/quality.yml)
-[![🖥️ UI Checks](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/ui-checks.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/ui-checks.yml)
-[![🧹 Workflow Lint](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/workflow-lint.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/workflow-lint.yml)
+[![🤖 Claude Review (on demand)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml)
+[![🎨 Format Guard](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/format-guard.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/format-guard.yml)
+[![🏷️ PR Labeler](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/labeler.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/labeler.yml)
+[![🔎 Quality](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/quality.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/quality.yml)
+[![🖥️ UI Checks](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ui-checks.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ui-checks.yml)
+[![🧹 Workflow Lint](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/workflow-lint.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/workflow-lint.yml)
 
 ### 🚀 Deploy — publishes on push to main
 
-[![🌐 Deploy Landing Page](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pages.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/pages.yml)
-[![🚀 Release](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/release.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-assistant-app/actions/workflows/release.yml)
+[![🌐 Deploy Landing Page](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/pages.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/pages.yml)
+[![🚀 Release](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/release.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/release.yml)
 
 <!-- workflows:badges:end -->
 
@@ -479,21 +479,21 @@ See <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBU
 
 ## Documentation
 
-| Document                                                                                                                                                                | Description                                                          |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| <a href="apps/tauri/README.md" target="_blank" rel="noopener noreferrer">apps/tauri/README.md</a>                                                                       | Desktop app architecture, directory map, Rust/React setup            |
-| <a href="apps/extension/README.md" target="_blank" rel="noopener noreferrer">apps/extension/README.md</a>                                                               | Browser extension (MV3) — job import, local dev pairing, permissions |
-| <a href="docs/ARCHITECTURE.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE.md</a>                                                                       | System design, data flow, diagrams                                   |
-| <a href="docs/PATTERNS.md" target="_blank" rel="noopener noreferrer">docs/PATTERNS.md</a>                                                                               | IPC, state machines, AI streaming, search patterns                   |
-| <a href="docs/API.md" target="_blank" rel="noopener noreferrer">docs/API.md</a>                                                                                         | IPC namespaces + commands                                            |
-| <a href="docs/EXPORT_TEMPLATES.md" target="_blank" rel="noopener noreferrer">docs/EXPORT_TEMPLATES.md</a>                                                               | Templates, theming, PDF/DOCX export                                  |
-| <a href="docs/DESIGN_SYSTEM.md" target="_blank" rel="noopener noreferrer">docs/DESIGN_SYSTEM.md</a>                                                                     | Tokens, components, motion, theming                                  |
-| <a href="docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer">docs/DEVELOPMENT.md</a>                                                                         | Local dev environment setup                                          |
-| <a href="docs/DEPLOYMENT.md" target="_blank" rel="noopener noreferrer">docs/DEPLOYMENT.md</a>                                                                           | Building and releasing installers                                    |
-| <a href="docs/ARCHITECTURE_STATUS.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE_STATUS.md</a>                                                         | Implementation status tracker                                        |
-| <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a>                                                                                 | Knowledge base + architecture decision records (ADRs)                |
-| <a href="SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>                                                                                         | Security policy &amp; vulnerability reporting                        |
-| <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a>                                                                                 | Code style, branching, PR process                                    |
+| Document                                                                                                                            | Description                                                          |
+| ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| <a href="apps/tauri/README.md" target="_blank" rel="noopener noreferrer">apps/tauri/README.md</a>                                   | Desktop app architecture, directory map, Rust/React setup            |
+| <a href="apps/extension/README.md" target="_blank" rel="noopener noreferrer">apps/extension/README.md</a>                           | Browser extension (MV3) — job import, local dev pairing, permissions |
+| <a href="docs/ARCHITECTURE.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE.md</a>                                   | System design, data flow, diagrams                                   |
+| <a href="docs/PATTERNS.md" target="_blank" rel="noopener noreferrer">docs/PATTERNS.md</a>                                           | IPC, state machines, AI streaming, search patterns                   |
+| <a href="docs/API.md" target="_blank" rel="noopener noreferrer">docs/API.md</a>                                                     | IPC namespaces + commands                                            |
+| <a href="docs/EXPORT_TEMPLATES.md" target="_blank" rel="noopener noreferrer">docs/EXPORT_TEMPLATES.md</a>                           | Templates, theming, PDF/DOCX export                                  |
+| <a href="docs/DESIGN_SYSTEM.md" target="_blank" rel="noopener noreferrer">docs/DESIGN_SYSTEM.md</a>                                 | Tokens, components, motion, theming                                  |
+| <a href="docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer">docs/DEVELOPMENT.md</a>                                     | Local dev environment setup                                          |
+| <a href="docs/DEPLOYMENT.md" target="_blank" rel="noopener noreferrer">docs/DEPLOYMENT.md</a>                                       | Building and releasing installers                                    |
+| <a href="docs/ARCHITECTURE_STATUS.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE_STATUS.md</a>                     | Implementation status tracker                                        |
+| <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a>                                             | Knowledge base + architecture decision records (ADRs)                |
+| <a href="SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>                                                     | Security policy &amp; vulnerability reporting                        |
+| <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a>                                             | Code style, branching, PR process                                    |
 | <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/how-it-works.html">landing/how-it-works.html</a>         | How the AI Job Hunter works end-to-end (interactive walkthrough)     |
 | <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/architecture-map.html">landing/architecture-map.html</a> | Interactive architecture map of the AI Job Hunter                    |
 | <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/creature.html">landing/creature.html</a>                 | THE CREATURE — a hand-drawn doodle about the recruiter you summon    |
@@ -546,8 +546,8 @@ MIT — see <a href="LICENSE" target="_blank" rel="noopener noreferrer">LICENSE<
 <h2 align="center">Contributors</h2>
 
 <p align="center">
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/graphs/contributors">
-    <img alt="Contributors" src="https://contrib.rocks/image?repo=saeedkolivand/ai-job-hunter-assistant-app">
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/graphs/contributors">
+    <img alt="Contributors" src="https://contrib.rocks/image?repo=saeedkolivand/ai-job-hunter-app">
   </a>
 </p>
 
@@ -558,7 +558,7 @@ MIT — see <a href="LICENSE" target="_blank" rel="noopener noreferrer">LICENSE<
 <h2 align="center">Star History</h2>
 
 <p align="center">
-  <a href="https://star-history.com/#saeedkolivand/ai-job-hunter-assistant-app&Date">
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=saeedkolivand/ai-job-hunter-assistant-app&type=Date" width="600">
+  <a href="https://star-history.com/#saeedkolivand/ai-job-hunter-app&Date">
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=saeedkolivand/ai-job-hunter-app&type=Date" width="600">
   </a>
 </p>

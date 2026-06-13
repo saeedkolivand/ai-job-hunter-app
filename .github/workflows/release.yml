@@ -194,7 +194,7 @@ jobs:
           # A bare push can fail non-fast-forward when another merge raced in during
           # this job; rebase onto the latest main and retry so the sync is never
           # silently dropped (the bug that left the files a release behind).
-          REMOTE="git@github.com:saeedkolivand/ai-job-hunter-assistant-app.git"
+          REMOTE="git@github.com:saeedkolivand/ai-job-hunter-app.git"
           for attempt in 1 2 3; do
             if git push "$REMOTE" HEAD:main; then
               echo "Pushed version sync to v$VERSION (attempt $attempt)."
@@ -700,7 +700,7 @@ jobs:
           cat > latest.json << EOF
           {
             "version": "$RAW_VERSION",
-            "notes": "See https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/tag/$VERSION for details",
+            "notes": "See https://github.com/saeedkolivand/ai-job-hunter-app/releases/tag/$VERSION for details",
             "pub_date": "$PUB_DATE",
             "platforms": {
           EOF
@@ -716,27 +716,27 @@ jobs:
           # Filenames below match the normalized names produced by the
           # "Normalize Artifact Names" step in the build job (spaces -> dashes), plus
           # the OS prefixes from the "Prefix Artifacts With Platform" step.
-          BASE_URL="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/$VERSION"
+          BASE_URL="https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/$VERSION"
 
           # Windows (NSIS is the primary updater target)
-          NSIS_SIG="temp/windows-AI-Job-Hunter-Assistant_${RAW_VERSION}_x64-setup.exe.sig"
+          NSIS_SIG="temp/windows-AI-Job-Hunter_${RAW_VERSION}_x64-setup.exe.sig"
           if [ -f "$NSIS_SIG" ]; then
             SIG=$(tr -d '\n' < "$NSIS_SIG")
             echo '    "windows-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"${BASE_URL}/windows-AI-Job-Hunter-Assistant_${RAW_VERSION}_x64-setup.exe\"" >> latest.json
+            echo "      \"url\": \"${BASE_URL}/windows-AI-Job-Hunter_${RAW_VERSION}_x64-setup.exe\"" >> latest.json
             echo '    },' >> latest.json
           else
             echo "::warning::Windows NSIS signature not found at $NSIS_SIG"
           fi
 
           # Linux (AppImage is the primary updater target)
-          APPIMAGE_SIG="temp/linux-AI-Job-Hunter-Assistant_${RAW_VERSION}_amd64.AppImage.sig"
+          APPIMAGE_SIG="temp/linux-AI-Job-Hunter_${RAW_VERSION}_amd64.AppImage.sig"
           if [ -f "$APPIMAGE_SIG" ]; then
             SIG=$(tr -d '\n' < "$APPIMAGE_SIG")
             echo '    "linux-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"${BASE_URL}/linux-AI-Job-Hunter-Assistant_${RAW_VERSION}_amd64.AppImage\"" >> latest.json
+            echo "      \"url\": \"${BASE_URL}/linux-AI-Job-Hunter_${RAW_VERSION}_amd64.AppImage\"" >> latest.json
             echo '    },' >> latest.json
           else
             echo "::warning::Linux AppImage signature not found at $APPIMAGE_SIG"
@@ -746,23 +746,23 @@ jobs:
           # its own (non-universal) bundle, so each updater target must point at
           # the matching file + signature. Names come from the macOS
           # disambiguation step in the build job (-intel / -apple-silicon).
-          MAC_INTEL_SIG="temp/macos-AI-Job-Hunter-Assistant-intel.app.tar.gz.sig"
+          MAC_INTEL_SIG="temp/macos-AI-Job-Hunter-intel.app.tar.gz.sig"
           if [ -f "$MAC_INTEL_SIG" ]; then
             SIG=$(tr -d '\n' < "$MAC_INTEL_SIG")
             echo '    "darwin-x86_64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"${BASE_URL}/macos-AI-Job-Hunter-Assistant-intel.app.tar.gz\"" >> latest.json
+            echo "      \"url\": \"${BASE_URL}/macos-AI-Job-Hunter-intel.app.tar.gz\"" >> latest.json
             echo '    },' >> latest.json
           else
             echo "::warning::macOS Intel app bundle signature not found at $MAC_INTEL_SIG"
           fi
 
-          MAC_ARM_SIG="temp/macos-AI-Job-Hunter-Assistant-apple-silicon.app.tar.gz.sig"
+          MAC_ARM_SIG="temp/macos-AI-Job-Hunter-apple-silicon.app.tar.gz.sig"
           if [ -f "$MAC_ARM_SIG" ]; then
             SIG=$(tr -d '\n' < "$MAC_ARM_SIG")
             echo '    "darwin-aarch64": {' >> latest.json
             echo "      \"signature\": \"$SIG\"," >> latest.json
-            echo "      \"url\": \"${BASE_URL}/macos-AI-Job-Hunter-Assistant-apple-silicon.app.tar.gz\"" >> latest.json
+            echo "      \"url\": \"${BASE_URL}/macos-AI-Job-Hunter-apple-silicon.app.tar.gz\"" >> latest.json
             echo '    },' >> latest.json
           else
             echo "::warning::macOS Apple Silicon app bundle signature not found at $MAC_ARM_SIG"
@@ -795,7 +795,7 @@ jobs:
           set -euo pipefail
           echo "::group::Appending per-platform Downloads table to $VERSION notes"
           RAW="${VERSION#v}"
-          URL="https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/download/$VERSION"
+          URL="https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/$VERSION"
           # Strip any prior block (idempotent) then re-append a fresh one.
           BODY="$(gh release view "$VERSION" --json body -q .body)"
           BODY="$(printf '%s' "$BODY" | sed '/<!-- downloads:start -->/,/<!-- downloads:end -->/d')"
@@ -805,10 +805,10 @@ jobs:
 
           | Platform | Get it |
           |----------|--------|
-          | 🪟 Windows | [Installer (.exe)]($URL/windows-AI-Job-Hunter-Assistant_${RAW}_x64-setup.exe) · [MSI]($URL/windows-AI-Job-Hunter-Assistant_${RAW}_x64_en-US.msi) |
-          | 🍎 macOS (Apple Silicon) | [.dmg]($URL/macos-AI-Job-Hunter-Assistant_${RAW}_aarch64-apple-silicon.dmg) |
-          | 🍎 macOS (Intel) | [.dmg]($URL/macos-AI-Job-Hunter-Assistant_${RAW}_x64-intel.dmg) |
-          | 🐧 Linux | [AppImage]($URL/linux-AI-Job-Hunter-Assistant_${RAW}_amd64.AppImage) · [.deb]($URL/linux-AI-Job-Hunter-Assistant_${RAW}_amd64.deb) · [.rpm]($URL/linux-AI-Job-Hunter-Assistant-${RAW}-1.x86_64.rpm) |
+          | 🪟 Windows | [Installer (.exe)]($URL/windows-AI-Job-Hunter_${RAW}_x64-setup.exe) · [MSI]($URL/windows-AI-Job-Hunter_${RAW}_x64_en-US.msi) |
+          | 🍎 macOS (Apple Silicon) | [.dmg]($URL/macos-AI-Job-Hunter_${RAW}_aarch64-apple-silicon.dmg) |
+          | 🍎 macOS (Intel) | [.dmg]($URL/macos-AI-Job-Hunter_${RAW}_x64-intel.dmg) |
+          | 🐧 Linux | [AppImage]($URL/linux-AI-Job-Hunter_${RAW}_amd64.AppImage) · [.deb]($URL/linux-AI-Job-Hunter_${RAW}_amd64.deb) · [.rpm]($URL/linux-AI-Job-Hunter-${RAW}-1.x86_64.rpm) |
           | 🧩 Browser extension | [Chrome (.zip)]($URL/ai-job-hunter-extension-chrome-${VERSION}.zip) · [Firefox (.zip)]($URL/ai-job-hunter-extension-firefox-${VERSION}.zip) |
 
           _Installed apps auto-update — no need to re-download for new versions. The browser extension installs from its .zip (load unpacked / store upload)._
@@ -890,4 +890,4 @@ jobs:
           fi
           git add Casks/ai-job-hunter.rb
           git commit -m "chore: sync homebrew cask to ${VERSION} [skip ci]"
-          git push git@github.com:saeedkolivand/ai-job-hunter-assistant-app.git HEAD:main
+          git push git@github.com:saeedkolivand/ai-job-hunter-app.git HEAD:main

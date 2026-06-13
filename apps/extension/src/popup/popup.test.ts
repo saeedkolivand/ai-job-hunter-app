@@ -47,6 +47,8 @@ function buildPopupDom(): void {
     <p id="pair-msg"></p>
     <button id="btn-save-token"></button>
     <button id="btn-retry"></button>
+    <button id="btn-open-app"></button>
+    <button id="btn-open-settings"></button>
   `;
 }
 

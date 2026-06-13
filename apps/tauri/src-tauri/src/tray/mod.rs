@@ -221,6 +221,27 @@ pub fn on_new_jobs(app: &AppHandle, autopilot_id: &str, autopilot_name: &str, ne
     }
 }
 
+/// Restore the window and route the renderer to Settings → Accounts → Browser
+/// extension, signalling it to focus the pairing token (`focus:
+/// "extension-token"`). Shared by every `ajh://settings/extension` delivery path
+/// (single-instance relaunch, `on_open_url`, cold first-instance launch).
+///
+/// Goes through [`dispatch_menu`] so it inherits the cold-start-robust delivery:
+/// the intent is buffered in `PendingMenu` and the renderer pulls it once its JS
+/// loop is live (the primary use case is the app NOT already running, so the
+/// renderer may not have its `menu:navigate` listener attached when this fires).
+pub fn dispatch_extension_pairing(app: &AppHandle) {
+    dispatch_menu(
+        app,
+        MENU_NAVIGATE,
+        serde_json::json!({
+            "route": "/settings",
+            "section": "accounts",
+            "focus": "extension-token",
+        }),
+    );
+}
+
 /// Emit a focus event so the renderer jumps to a specific autopilot's found-jobs
 /// panel (or, with an empty id, just refreshes the list). Shared by the tray and
 /// the single-instance deep-link guard.

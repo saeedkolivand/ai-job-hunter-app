@@ -63,8 +63,7 @@ export function UpdateSection() {
       : [];
 
   const noRelease = status.state === 'error' && isNoReleaseError(status.message);
-  const GITHUB_RELEASES_URL =
-    'https://github.com/saeedkolivand/ai-job-hunter-assistant-app/releases/latest';
+  const GITHUB_RELEASES_URL = 'https://github.com/saeedkolivand/ai-job-hunter-app/releases/latest';
 
   return (
     <SettingsSection icon={Sparkles} label={t('settings.update.title')}>
