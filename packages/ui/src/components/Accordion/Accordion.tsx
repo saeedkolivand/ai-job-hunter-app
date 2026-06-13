@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 
@@ -16,32 +16,27 @@ export function Accordion({ title, content, defaultOpen = false }: AccordionProp
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div
-      className={cn(
-        'overflow-hidden rounded-xl border-transparent transition-colors duration-150',
-        open ? 'border-transparent bg-white/[0.04]' : 'border-transparent bg-white/[0.02]'
-      )}
-    >
+    <div className="surface-card overflow-hidden rounded-lg">
+      {/* Ant-Design Collapse grammar: a left caret that rotates 90° on expand,
+         a subtly filled header that reads distinct from the white body, and a
+         hairline divider between header and content. */}
       <Button
-        variant="ghost"
+        variant="unstyled"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left hover:bg-transparent"
+        aria-expanded={open}
+        className={cn(
+          'flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors',
+          open ? 'bg-foreground/[0.04]' : 'bg-foreground/[0.02] hover:bg-foreground/[0.04]'
+        )}
       >
-        <span
+        <ChevronRight
+          size={14}
           className={cn(
-            'text-sm font-medium transition-colors',
-            open ? 'text-foreground/90' : 'text-foreground/65'
-          )}
-        >
-          {title}
-        </span>
-        <ChevronDown
-          size={15}
-          className={cn(
-            'shrink-0 text-foreground/30 transition-transform duration-200',
-            open && 'rotate-180'
+            'shrink-0 text-foreground/45 transition-transform duration-200',
+            open && 'rotate-90'
           )}
         />
+        <span className="text-sm font-medium text-foreground/85">{title}</span>
       </Button>
       <AnimatePresence initial={false}>
         {open && (
@@ -51,7 +46,7 @@ export function Accordion({ title, content, defaultOpen = false }: AccordionProp
             exit={{ height: 0, opacity: 0 }}
             transition={transition.relaxed}
           >
-            <div className="border-transparent px-5 py-4 text-sm leading-relaxed text-foreground/60">
+            <div className="border-t border-[var(--border-soft)] px-4 py-4 text-sm leading-relaxed text-foreground/60">
               {typeof content === 'string' ? (
                 // Trust boundary: `content` strings reach this sink ONLY from the
                 // Support FAQ (apps/.../SupportPage), which passes `t(...)` values

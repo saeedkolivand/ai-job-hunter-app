@@ -6,7 +6,7 @@ import { cn } from '../../lib/cn';
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /**
    * Apple-grammar variants:
-   * - `primary` — the signature solid violet pill CTA (action-primary token).
+   * - `primary` — the signature solid violet CTA (action-primary token, rounded utility radius).
    * - `run` / `edit` / `delete` — solid colorful action pills (semantic colour,
    *   the deliberate divergence from Apple's single-accent rule; tokens only).
    * - `default` / `glass` / `ghost` — neutral utility buttons (rounded, not pill).
@@ -37,10 +37,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     // their own appearance via className. It still routes through this primitive
     // for consistent focus-visible + disabled handling, but injects no chrome.
     const unstyled = variant === 'unstyled';
-    // Filled colorful actions take the signature Apple pill radius; neutral
-    // utility buttons stay on the rounded (≈8px) utility radius.
-    const isPill =
-      variant === 'primary' || variant === 'run' || variant === 'edit' || variant === 'delete';
+    // Semantic action pills (run/edit/delete) take the Apple pill radius;
+    // `primary` and every neutral utility button stay on the rounded (≈8px)
+    // utility radius so the primary CTA matches buttons like `default`.
+    const isPill = variant === 'run' || variant === 'edit' || variant === 'delete';
     return (
       <button
         ref={ref}

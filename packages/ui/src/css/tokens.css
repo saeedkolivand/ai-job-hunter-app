@@ -279,7 +279,7 @@
      so the near-opaque white cards float above it with real separation. White
      cards on a white canvas were the "flashbang" — a bright wall with nothing
      lifting off it. Primary text is near-black for crisp, native legibility. */
-  --color-background: oklch(96.6% 0.3% 264); /* #f5f5f7 — Apple parchment canvas */
+  --color-background: oklch(95.5% 0.4% 264); /* #f1f1f4 — cool gray canvas */
   --color-foreground: oklch(21% 0.4% 280); /* #1d1d1f — Apple ink */
   --color-card: oklch(
     100% 0 0

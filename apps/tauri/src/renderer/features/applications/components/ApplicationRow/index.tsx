@@ -109,6 +109,7 @@ export function ApplicationRow({ application, highlighted = false }: Application
             options={stageOptions}
             value={application.status}
             onChange={handleStatusChange}
+            tone="primary"
           />
         </div>
 
@@ -133,6 +134,7 @@ export function ApplicationRow({ application, highlighted = false }: Application
             {
               label: t('applications.row.deleteAll'),
               icon: <Trash2 size={14} />,
+              destructive: true,
               onSelect: () => handleDelete(false),
             },
           ]}

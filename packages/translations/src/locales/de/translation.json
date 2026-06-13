@@ -581,6 +581,8 @@
       "save": "Speichern",
       "saved": "Ollama-Schlüssel gespeichert.",
       "removed": "Ollama-Schlüssel entfernt.",
+      "removeConfirmTitle": "Ollama-Schlüssel entfernen?",
+      "removeConfirmDesc": "Dadurch wird Ihr gespeicherter Ollama-Schlüssel gelöscht. Die Unternehmensrecherche pausiert, bis Sie wieder einen Schlüssel hinzufügen.",
       "saveError": "Schlüssel konnte nicht gespeichert werden."
     },
     "accounts": {
@@ -1090,7 +1092,9 @@
         "replied": "Beantwortet"
       },
       "savedTitle": "Gespeicherte Kontakte",
-      "savedAddAnother": "Unten in deiner Liste gespeichert — das Formular ist bereit für die nächste Person."
+      "savedAddAnother": "Unten in deiner Liste gespeichert — das Formular ist bereit für die nächste Person.",
+      "deleteConfirmTitle": "Diesen Kontakt löschen?",
+      "deleteConfirmDesc": "Dadurch wird der gespeicherte Empfehlungskontakt für diesen Job entfernt. Diese Aktion kann nicht rückgängig gemacht werden."
     },
     "loading": "Laden…",
     "empty": {
@@ -1261,6 +1265,8 @@
     "cancel": "Abbrechen",
     "clear": "Löschen",
     "clearScrapedJobs": "Gescrapte Jobs löschen",
+    "clearConfirmTitle": "Gescrapte Jobs löschen?",
+    "clearConfirmDesc": "Dadurch werden alle gescrapten Anzeigen aus diesem Board entfernt. Erfasste Bewerbungen und gespeicherte Dokumente sind nicht betroffen.",
     "sort": "Sortieren",
     "sortNewest": "Neueste",
     "sortOldest": "Älteste",
