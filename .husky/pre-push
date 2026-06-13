@@ -25,6 +25,9 @@ pnpm lint:strict
 echo "▶ Checking formatting..."
 pnpm format
 
+echo "▶ Checking IPC codegen drift..."
+pnpm gen:ipc:check
+
 echo "▶ Running TypeScript type check..."
 pnpm typecheck --force
 
