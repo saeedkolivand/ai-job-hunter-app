@@ -216,7 +216,7 @@ Browser API compatibility: **`@wxt-dev/browser`** (MV3-native polyfill) — not 
 One typed TypeScript source (`src/manifest.ts`) with a per-target delta, selected by the `BROWSER` environment variable at build time:
 
 - **Chrome:** `background.service_worker` + `type: module`
-- **Firefox:** `background.scripts` (MV3 event page), `browser_specific_settings.gecko.id`, `strict_min_version: "115.0"`
+- **Firefox:** `background.scripts` (MV3 event page), `browser_specific_settings.gecko.id`, `strict_min_version: "140.0"`
 
 The `build` script runs both builders in sequence and writes `dist/chrome` and `dist/firefox`.
 
@@ -259,21 +259,21 @@ emitted JS stays readable for review.
 
 ---
 
-## Pinned extension IDs — `TODO(bridge)` before store submission
+## Pinned extension IDs
 
 The desktop bridge's origin allowlist
 (`apps/tauri/src-tauri/src/extension_bridge/auth.rs::ALLOWED_EXTENSION_IDS`)
-currently carries **placeholders**, matched here:
+mirrors the ids the extension ships with:
 
-- Chrome: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` (the real CWS id is assigned at
-  publish and cannot be forced from the manifest — it only needs to be set in
-  `auth.rs`).
-- Firefox: `00000000-0000-0000-0000-000000000000`
-  (`browser_specific_settings.gecko.id` here **and** in `auth.rs`).
+- **Firefox:** set — `browser_specific_settings.gecko.id` is an email-style AMO id
+  tied to the aijobhunter.app domain (`job-importer@aijobhunter.app`), matched in
+  `auth.rs`.
+- **Chrome:** still a placeholder (`aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`). The real
+  CWS id is assigned at publish and cannot be forced from the manifest — set it
+  in `auth.rs` once published.
 
-**Before store submission, replace BOTH sides** with the real published IDs.
-Until then, only the desktop dev-origin override
-(`AJH_EXTENSION_DEV_ORIGINS`) admits a locally-loaded build.
+Until the Chrome id is published, a locally-loaded Chrome build is admitted only
+via the desktop dev-origin override (`AJH_EXTENSION_DEV_ORIGINS`).
 
 ---
 

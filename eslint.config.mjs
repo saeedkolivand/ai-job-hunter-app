@@ -465,5 +465,21 @@ export default tseslint.config(
       // Non-null assertions are acceptable in test helper utilities.
       '@typescript-eslint/no-non-null-assertion': 'off',
     },
+  },
+
+  // ── @ajh/extension store-asset generator scripts — Node + browser globals ──
+  // These are Node ESM Playwright generators: the script body runs in Node
+  // (console / process / Buffer), but its `page.evaluate(() => …)` callbacks
+  // execute in the headless-Chromium page context (document / getComputedStyle),
+  // so the file legitimately references BOTH global sets. Placed last so it wins
+  // for these files.
+  {
+    files: ['apps/extension/scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals.browser,
+      },
+    },
   }
 );

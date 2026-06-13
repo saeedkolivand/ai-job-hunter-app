@@ -12,18 +12,25 @@
  * Pairing only works when the extension's runtime origin
  * (`chrome-extension://<id>` / `moz-extension://<id>`) is in that list.
  *
- * TODO(bridge): before store submission replace BOTH placeholders here AND the
- * matching constants in `auth.rs` with the real published Chrome Web Store id
- * and Firefox AMO id. Until then, only the dev-origin override
- * (`AJH_EXTENSION_DEV_ORIGINS` on the app side) admits a locally-loaded build.
+ * The Firefox AMO id below is an email-style AMO id tied to the aijobhunter.app
+ * domain (mirrored in
+ * `auth.rs`). TODO(bridge): the Chrome Web Store id is still a placeholder — it
+ * is assigned at publish time and cannot be forced from the manifest, so set the
+ * real CWS id in `auth.rs` once published. Until then, a locally-loaded build is
+ * admitted only via the dev-origin override (`AJH_EXTENSION_DEV_ORIGINS`).
  */
 
 import { version as VERSION } from '../package.json' with { type: 'json' };
 
 export type BrowserTarget = 'chrome' | 'firefox';
 
-/** Firefox AMO extension id — PLACEHOLDER, mirrors auth.rs. TODO(bridge). */
-export const FIREFOX_EXTENSION_ID = '00000000-0000-0000-0000-000000000000';
+/**
+ * Firefox AMO extension id — an email-style AMO id tied to the aijobhunter.app
+ * domain (the product owner owns the domain). Mirrors the Firefox entry in
+ * `auth.rs::ALLOWED_EXTENSION_IDS` exactly. (The Chrome CWS id is still assigned
+ * at publish — see below.)
+ */
+export const FIREFOX_EXTENSION_ID = 'job-importer@aijobhunter.app';
 
 /**
  * Chrome Web Store id is assigned by the store at publish time and cannot be
@@ -92,7 +99,9 @@ function chromeManifest(): ManifestRecord {
 /**
  * Firefox: MV3 uses a non-persistent event page (`background.scripts`), not a
  * `service_worker`, and pins the add-on id via `browser_specific_settings`.
- * `strict_min_version` 115 is the first ESR with stable MV3 event-page support.
+ * `strict_min_version` is `140.0` because that is the first release where Firefox
+ * honors `browser_specific_settings.gecko.data_collection_permissions` (the AMO
+ * data-consent key); this floor drops Firefox 115–139 / Android <142 users.
  */
 function firefoxManifest(): ManifestRecord {
   return {
@@ -104,8 +113,14 @@ function firefoxManifest(): ManifestRecord {
     browser_specific_settings: {
       gecko: {
         id: FIREFOX_EXTENSION_ID,
-        strict_min_version: '115.0',
+        strict_min_version: '140.0',
+        data_collection_permissions: { required: ['none'] },
       },
+      // Android's data_collection_permissions support landed in 142; this is a
+      // desktop-companion extension (pairs with the desktop app over loopback)
+      // so it cannot function on Firefox for Android anyway — the higher Android
+      // floor has no real-user impact.
+      gecko_android: { strict_min_version: '142.0' },
     },
   };
 }

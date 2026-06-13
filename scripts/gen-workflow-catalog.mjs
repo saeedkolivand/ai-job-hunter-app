@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { parse } from 'yaml';
 
 const OWNER = 'saeedkolivand';
-const REPO = 'ai-job-hunter-assistant-app';
+const REPO = 'ai-job-hunter-app';
 const WORKFLOW_DIR = '.github/workflows';
 const CATALOG_PATH = join(WORKFLOW_DIR, 'README.md');
 const ROOT_README = 'README.md';
