@@ -406,16 +406,14 @@ pub fn run() {
                         .filter_map(|a| a.into_string().ok())
                         .collect::<Vec<String>>(),
                 )
-                    .or_else(|| {
-                        app.deep_link()
-                            .get_current()
-                            .ok()
-                            .flatten()
-                            .map(|urls| {
-                                urls.iter().map(|u| u.to_string()).collect::<Vec<_>>()
-                            })
-                            .and_then(|urls| deeplink::parse_focus_target(&urls))
-                    });
+                .or_else(|| {
+                    app.deep_link()
+                        .get_current()
+                        .ok()
+                        .flatten()
+                        .map(|urls| urls.iter().map(|u| u.to_string()).collect::<Vec<_>>())
+                        .and_then(|urls| deeplink::parse_focus_target(&urls))
+                });
                 if initial.is_some() {
                     tray::show_focus(handle);
                     handle_deep_link(handle, initial);
