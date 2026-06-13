@@ -14,17 +14,17 @@ pub struct LinkedInHttpClient {
 }
 
 impl LinkedInHttpClient {
-    pub fn new(session_data: Option<LinkedInSessionData>) -> Self {
-        Self {
+    pub fn new(session_data: Option<LinkedInSessionData>) -> AppResult<Self> {
+        Ok(Self {
             session_data,
             user_agent: crate::net::http::DEFAULT_UA.to_string(),
             client: crate::net::http::build_client(crate::net::http::ClientConfig {
                 timeout: Some(Duration::from_secs(30)),
                 ..Default::default()
             })
-            .expect("failed to build LinkedIn HTTP client"),
+            .map_err(|e| AppError::Network(format!("failed to build LinkedIn HTTP client: {e}")))?,
             rate_limiter: super::rate_limiter::linkedin_rate_limiter(),
-        }
+        })
     }
 
     pub fn update_session(&mut self, session_data: LinkedInSessionData) {
