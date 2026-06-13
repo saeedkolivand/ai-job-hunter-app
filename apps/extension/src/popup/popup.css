@@ -29,6 +29,27 @@
   --shadow: rgba(28, 24, 18, 0.16);
   --hand: 'Patrick Hand', 'Segoe Print', cursive;
   --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* Theme-able colors extracted from inline values so the dark variant
+   * below can override them while light output stays byte-identical. */
+  --card-border: var(--ink);
+  --token-bg: #fffefb;
+  --placeholder: #8a8270;
+  --primary-hover: #e8504f;
+  --pill-search-bg: #f1e9d7;
+  --pill-search-fg: var(--ink-soft);
+  --pill-search-border: var(--ink-soft);
+  --pill-connected-bg: #e4f2e7;
+  --pill-connected-fg: #1e5e3a;
+  --pill-connected-border: #2f7d4f;
+  --pill-paired-bg: #f6ecd0;
+  --pill-paired-fg: #7a520c;
+  --pill-paired-border: #9a6a12;
+  --pill-down-bg: var(--red);
+  --pill-down-fg: #fff;
+  --pill-down-border: var(--red-ink);
+  --btn-text-on-red: #fff;
+  --focus-ring: var(--red);
 }
 
 * {
@@ -49,7 +70,7 @@ body {
   padding: 14px 16px 16px;
   /* Hand-drawn card: cream fill, ink border, wonky radius + offset shadow. */
   background: var(--card);
-  border: 2px solid var(--ink);
+  border: 2px solid var(--card-border);
   border-radius: 16px 11px 18px 9px / 9px 17px 11px 16px;
   box-shadow: 4px 5px 0 var(--shadow);
 }
@@ -105,27 +126,27 @@ body {
 }
 
 .pill--searching {
-  color: var(--ink-soft);
-  border-color: var(--ink-soft);
-  background: #f1e9d7;
+  color: var(--pill-search-fg);
+  border-color: var(--pill-search-border);
+  background: var(--pill-search-bg);
 }
 
 .pill--connected {
-  color: #1e5e3a;
-  border-color: #2f7d4f;
-  background: #e4f2e7;
+  color: var(--pill-connected-fg);
+  border-color: var(--pill-connected-border);
+  background: var(--pill-connected-bg);
 }
 
 .pill--not_paired {
-  color: #7a520c;
-  border-color: #9a6a12;
-  background: #f6ecd0;
+  color: var(--pill-paired-fg);
+  border-color: var(--pill-paired-border);
+  background: var(--pill-paired-bg);
 }
 
 .pill--app_not_running {
-  color: #fff;
-  border-color: var(--red-ink);
-  background: var(--red);
+  color: var(--pill-down-fg);
+  border-color: var(--pill-down-border);
+  background: var(--pill-down-bg);
 }
 
 .view {
@@ -157,7 +178,7 @@ body {
   font-size: 13px;
   font-weight: 600;
   /* Secondary: cream/paper bg, ink border, ink text, wonky radius. */
-  border: 2px solid var(--ink);
+  border: 2px solid var(--card-border);
   background: var(--card);
   color: var(--ink);
   padding: 9px 10px;
@@ -188,12 +209,12 @@ body {
 .btn--primary {
   /* Primary: red bg, white text (landing .cta, recoloured red). */
   background: var(--red);
-  color: #fff;
+  color: var(--btn-text-on-red);
   border-color: var(--red-ink);
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: #e8504f;
+  background: var(--primary-hover);
 }
 
 .check {
@@ -220,16 +241,16 @@ body {
   border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
   /* Dashed ink border = hand-drawn touch; cream fill, readable placeholder. */
   border: 2px dashed var(--ink);
-  background: #fffefb;
+  background: var(--token-bg);
   color: var(--ink);
 }
 
 .token::placeholder {
-  color: #8a8270;
+  color: var(--placeholder);
 }
 
 .token:focus {
-  outline: 2px solid var(--red);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
   border-style: solid;
 }
@@ -302,12 +323,54 @@ body {
 .btn:focus-visible,
 .link:focus-visible,
 .check input:focus-visible {
-  outline: 2px solid var(--red);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .btn {
     transition: none;
+  }
+}
+
+/* Warm-dark variant — mirrors the light paper-blend identity on a dark
+ * surface. Overrides only the theme-able variables; selectors/layout
+ * are untouched, and light mode (above) stays byte-identical. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --paper: #1a1612;
+    --card: #241f19;
+    --ink: #efe6d4;
+    --ink-soft: #b9ac95;
+    --red: #ef5d5a;
+    --red-ink: #ef5d5a;
+    --ok: #5fd08a;
+    --warn: #e0b35a;
+    --shadow: rgba(0, 0, 0, 0.45);
+
+    /* Warm light border replaces the ink border on dark surfaces. */
+    --card-border: rgba(240, 231, 214, 0.16);
+
+    --token-bg: #1f1a15;
+    --placeholder: #8c826e;
+    --primary-hover: #f06f6c;
+
+    /* Semantic pills, retuned for contrast on the warm-dark card. */
+    --pill-search-bg: #2b251d;
+    --pill-search-fg: #cdbfa6;
+    --pill-search-border: rgba(240, 231, 214, 0.22);
+    --pill-connected-bg: #1c2f24;
+    --pill-connected-fg: #7fd6a0;
+    --pill-connected-border: #3f7d57;
+    --pill-paired-bg: #322a18;
+    --pill-paired-fg: #e6c172;
+    --pill-paired-border: #8a6e2c;
+    --pill-down-bg: #ef5d5a;
+    --pill-down-fg: #1a1612;
+    --pill-down-border: #c4423f;
+
+    --btn-text-on-red: #fff;
+    --focus-ring: #ef5d5a;
   }
 }
