@@ -7,6 +7,7 @@
 //!   - `ajh://autopilot/<id>` with a syntactically valid id, and
 //!   - `ajh://settings/extension` (exactly — the browser-extension pairing
 //!     deep link; no id, no other settings sub-page).
+//!
 //! Everything else yields `None` (the caller then just focuses the window,
 //! navigating nowhere). Both targets are navigation-only: they focus the window
 //! and route the renderer; they carry no command/action payload.
