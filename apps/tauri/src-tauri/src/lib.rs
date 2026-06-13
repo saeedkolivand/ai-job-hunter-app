@@ -15,7 +15,6 @@ pub mod applications;
 pub mod autopilot;
 pub mod autopilot_helpers;
 pub mod autopilot_scheduler;
-pub mod browser;
 pub mod commands;
 pub mod contact_profile;
 pub mod cover_letter;
