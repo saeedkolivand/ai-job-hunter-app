@@ -1,6 +1,6 @@
 # Architecture (map + boundaries + feature ownership)
 
-Last updated: 2026-06-02
+Last updated: 2026-06-13
 
 Canonical: [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md), [`docs/architecture-rules.md`](../architecture-rules.md) (the L0–L3 rules, tested by `cargo test --test architecture`), [`docs/PATTERNS.md`](../PATTERNS.md). Use `graphify explain "<module>"` for a scoped view.
 
@@ -20,7 +20,7 @@ Business logic, processing pipelines, ATS analysis, and document generation live
 
 ## L0–L3 layers (enforced)
 
-L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints. Hard rules (CI-failing): env only in `platform/`; `reqwest::Client` only in `net/`; typed errors via `error.rs` (`AppError`/`AppResult`). See `docs/architecture-rules.md`.
+L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints. Hard rules (CI-failing): env only in `platform/`; `reqwest::Client` only in `net/`; typed errors via `error.rs` (`AppError`/`AppResult`). L1 and L3 modules return `AppResult`; lower-level helpers use `anyhow::Result` and convert at `error.rs` via `From<anyhow::Error>` impl. See `apps/tauri/src-tauri/src/error.rs` (canonical) and the enforcing test `tests/architecture.rs::r6_no_stringly_result`. Full rules: `docs/architecture-rules.md`.
 
 ## Backend modules (`apps/tauri/src-tauri/src/`)
 

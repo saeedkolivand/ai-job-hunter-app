@@ -47,9 +47,6 @@ export const SMALL_MODEL_STRATEGY: TruncationStrategy = {
   modelType: 'small',
 };
 
-/** Default strategy for resume analysis (alias for large model). */
-export const ANALYSIS_STRATEGY = LARGE_MODEL_STRATEGY;
-
 /** Strategy for resume generation (needs more context). */
 export const GENERATION_STRATEGY: TruncationStrategy = {
   maxTokens: 5000,
