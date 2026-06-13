@@ -14,6 +14,8 @@ import {
   type ThemePrefs,
 } from '@ajh/ui';
 
+import { useSystemAccent } from '@/services';
+
 const SCHEMES: { id: ColorScheme; icon: typeof Sun; labelKey: string }[] = [
   { id: 'light', icon: Sun, labelKey: 'settings.appearance.light' },
   { id: 'dark', icon: Moon, labelKey: 'settings.appearance.dark' },
@@ -44,6 +46,9 @@ const ACCENTS: { id: string; color: string; labelKey: string }[] = [
 export function AppearanceCard() {
   const { t } = useTranslation();
   const [prefs, setPrefs] = useState<ThemePrefs>(() => getThemePrefs());
+  // Only offered when the OS accent is readable (Windows/macOS); on Linux/read
+  // failure `supported` is false and the System chip is hidden (no error UI).
+  const { data: sysAccent } = useSystemAccent();
 
   const update = (patch: Partial<ThemePrefs>) => {
     const next = { ...prefs, ...patch };
@@ -112,6 +117,27 @@ export function AppearanceCard() {
               <span className="h-3 w-3 rounded-full bg-brand" />
               {t('settings.appearance.accentDefault')}
             </Button>
+            {sysAccent?.supported && (
+              <Button
+                variant="unstyled"
+                role="radio"
+                aria-checked={prefs.accentSource === 'system'}
+                aria-label={t('settings.appearance.system')}
+                title={t('settings.appearance.system')}
+                onClick={() =>
+                  update({ accentSource: 'system', accentColor: sysAccent.color ?? undefined })
+                }
+                className={cn(
+                  'flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-all focus-visible:ring-2 focus-visible:ring-brand/50',
+                  prefs.accentSource === 'system'
+                    ? 'border-brand/40 bg-brand/10 text-brand-soft'
+                    : 'border-foreground/10 text-foreground/55 hover:text-foreground/80'
+                )}
+              >
+                <Monitor size={12} />
+                {t('settings.appearance.system')}
+              </Button>
+            )}
             {ACCENTS.map(({ id, color, labelKey }) => {
               const active =
                 prefs.accentSource === 'custom' &&
