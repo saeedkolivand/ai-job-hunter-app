@@ -8,9 +8,14 @@
 //!
 //! ## Security model (layered — see [`auth`])
 //! 1. **Loopback only** — the listener binds `127.0.0.1`; no LAN/remote reach.
-//! 2. **Origin allowlist** — the WS handshake's `Origin` must be a
-//!    `chrome-extension://`/`moz-extension://` id in [`auth::ALLOWED_EXTENSION_IDS`]
-//!    (or a dev override from `platform::config::extension_dev_origins`).
+//! 2. **Origin allowlist** (defense-in-depth, not the primary boundary) — the
+//!    WS handshake's `Origin` must be an allowed extension origin: Chrome is
+//!    pinned by store id (`chrome-extension://<id>` in
+//!    [`auth::ALLOWED_EXTENSION_IDS`]); Firefox is accepted by UUID **shape**
+//!    (`moz-extension://<uuid>`), since its per-install internal UUID is
+//!    unknowable in advance — see [`auth::is_allowed_origin`]. A dev override
+//!    (`platform::config::extension_dev_origins`) admits a locally-loaded
+//!    extension. The per-frame token (3) is what actually authenticates.
 //! 3. **Per-frame token** — every envelope carries the paired secret; a mismatch
 //!    closes the socket.
 //! 4. **Size cap** — frames over [`MAX_FRAME_BYTES`] are rejected.
