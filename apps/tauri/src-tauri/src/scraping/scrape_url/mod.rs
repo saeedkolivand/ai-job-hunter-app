@@ -38,9 +38,11 @@ pub async fn resolve(url: &str) -> Result<Option<JobPosting>> {
 
 /// LinkedIn (and similar pages) render "Show more" / "Show less" toggle buttons
 /// right after the description markup; strip those trailing labels.
+static SHOW_MORE_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)(\s*(show more|show less))+\s*$").unwrap());
+
 fn clean_description(text: &str) -> String {
-    let re = regex::Regex::new(r"(?i)(\s*(show more|show less))+\s*$").unwrap();
-    re.replace(text, "").trim().to_string()
+    SHOW_MORE_RE.replace(text, "").trim().to_string()
 }
 
 // ── Greenhouse ──────────────────────────────────────────────────────────────
@@ -819,58 +821,35 @@ async fn try_personio(url: &str) -> Result<Option<JobPosting>> {
     }
     let xml = res.text().await?;
 
-    let position_re = regex::Regex::new(r"<position>(.*?)</position>").unwrap();
-    let id_re = regex::Regex::new(r"<id>(.*?)</id>").unwrap();
-    let name_re = regex::Regex::new(r"<name>(.*?)</name>").unwrap();
-    let office_re = regex::Regex::new(r"<office>(.*?)</office>").unwrap();
-    let desc_re =
-        regex::Regex::new(r"<jobDescription>\s*<value>(.*?)</value>\s*</jobDescription>").unwrap();
-
-    for position_cap in position_re.captures_iter(&xml) {
-        if let Some(position_content) = position_cap.get(1) {
-            let position_str = position_content.as_str();
-            let pos_id = id_re
-                .captures(position_str)
-                .and_then(|c| c.get(1).map(|m| m.as_str().trim()))
-                .unwrap_or("");
-
-            if pos_id == id {
-                let title = name_re
-                    .captures(position_str)
-                    .and_then(|c| c.get(1).map(|m| m.as_str().trim()))
-                    .unwrap_or("");
-                let office = office_re
-                    .captures(position_str)
-                    .and_then(|c| c.get(1).map(|m| m.as_str().trim()))
-                    .unwrap_or("");
-                let desc = desc_re
-                    .captures(position_str)
-                    .and_then(|c| {
-                        c.get(1)
-                            .map(|m| crate::scraping::http::strip_html(m.as_str().trim()))
-                    })
-                    .unwrap_or_default();
-
-                return Ok(Some(JobPosting {
-                    id: format!("personio:{}", id),
-                    external_id: Some(id.clone()),
-                    title: title.to_string(),
-                    company: company.to_string(),
-                    location: if office.is_empty() {
-                        None
-                    } else {
-                        Some(office.to_string())
-                    },
-                    url: url.to_string(),
-                    source: "personio".to_string(),
-                    description: if desc.is_empty() { None } else { Some(desc) },
-                    requirements: None,
-                    posted_at: None,
-                    captured_at: chrono::Utc::now().timestamp_millis(),
-                    extra: HashMap::new(),
-                }));
-            }
-        }
+    // Shared feed parser (regex set + capture loop) lives in the Personio board.
+    // Here we pick the single position whose id matches the URL query and map it
+    // onto this resolver's JobPosting shape (original url, personio:<id>).
+    let position = crate::scraping::boards::personio::parse_xml_feed(&xml)
+        .into_iter()
+        .find(|p| p.id == id);
+    if let Some(pos) = position {
+        return Ok(Some(JobPosting {
+            id: format!("personio:{}", id),
+            external_id: Some(id.clone()),
+            title: pos.title,
+            company: company.to_string(),
+            location: if pos.office.is_empty() {
+                None
+            } else {
+                Some(pos.office)
+            },
+            url: url.to_string(),
+            source: "personio".to_string(),
+            description: if pos.description.is_empty() {
+                None
+            } else {
+                Some(pos.description)
+            },
+            requirements: None,
+            posted_at: None,
+            captured_at: chrono::Utc::now().timestamp_millis(),
+            extra: HashMap::new(),
+        }));
     }
 
     Ok(None)

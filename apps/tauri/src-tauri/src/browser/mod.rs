@@ -22,7 +22,7 @@ impl Default for BrowserControllerOptions {
     fn default() -> Self {
         Self {
             headless: true,
-            user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36".to_string(),
+            user_agent: crate::net::http::DEFAULT_UA.to_string(),
             locale: "en-US".to_string(),
             viewport_width: 1366,
             viewport_height: 900,

@@ -8,6 +8,23 @@ use async_trait::async_trait;
 use scraper::{Html, Selector};
 use std::collections::HashSet;
 
+// Indeed job-card CSS selectors compiled once (Selector is Send + Sync).
+static IND_CARD_SEL: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("div.job_seen_beacon, td.resultContent").unwrap());
+static IND_TITLE_SEL: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("h2.jobTitle span[title], h2.jobTitle a span").unwrap());
+static IND_LINK_SEL: std::sync::LazyLock<Selector> =
+    std::sync::LazyLock::new(|| Selector::parse("h2.jobTitle a").unwrap());
+static IND_COMPANY_SEL: std::sync::LazyLock<Selector> = std::sync::LazyLock::new(|| {
+    Selector::parse("[data-testid=\"company-name\"], span.companyName").unwrap()
+});
+static IND_LOCATION_SEL: std::sync::LazyLock<Selector> = std::sync::LazyLock::new(|| {
+    Selector::parse("[data-testid=\"text-location\"], div.companyLocation").unwrap()
+});
+static IND_SNIPPET_SEL: std::sync::LazyLock<Selector> = std::sync::LazyLock::new(|| {
+    Selector::parse("div.job-snippet, div[data-testid=\"job-snippet\"]").unwrap()
+});
+
 /// Indeed has one locale per TLD. Default to .com.
 const INDEED_DOMAINS: &[(&str, &str)] = &[
     ("us", "www.indeed.com"),
@@ -133,19 +150,13 @@ impl Scraper for IndeedScraper {
 
 fn parse_indeed_page(html: &str, domain: &str, seen: &mut HashSet<String>) -> Vec<JobPosting> {
     let doc = Html::parse_document(html);
-    let card_sel = Selector::parse("div.job_seen_beacon, td.resultContent").unwrap();
-    let title_sel = Selector::parse("h2.jobTitle span[title], h2.jobTitle a span").unwrap();
-    let link_sel = Selector::parse("h2.jobTitle a").unwrap();
-    let company_sel = Selector::parse("[data-testid=\"company-name\"], span.companyName").unwrap();
-    let location_sel =
-        Selector::parse("[data-testid=\"text-location\"], div.companyLocation").unwrap();
-    let snippet_sel = Selector::parse("div.job-snippet, div[data-testid=\"job-snippet\"]").unwrap();
+    // Card/field selectors are compiled once at module level.
 
     let now = chrono::Utc::now().timestamp_millis();
     let mut out = Vec::new();
 
-    for card in doc.select(&card_sel) {
-        let link_el = match card.select(&link_sel).next() {
+    for card in doc.select(&IND_CARD_SEL) {
+        let link_el = match card.select(&IND_LINK_SEL).next() {
             Some(e) => e,
             None => continue,
         };
@@ -160,7 +171,7 @@ fn parse_indeed_page(html: &str, domain: &str, seen: &mut HashSet<String>) -> Ve
         }
 
         let title = card
-            .select(&title_sel)
+            .select(&IND_TITLE_SEL)
             .next()
             .map(|e| {
                 e.value()
@@ -173,18 +184,18 @@ fn parse_indeed_page(html: &str, domain: &str, seen: &mut HashSet<String>) -> Ve
             .to_string();
 
         let company = card
-            .select(&company_sel)
+            .select(&IND_COMPANY_SEL)
             .next()
             .map(|e| e.text().collect::<String>().trim().to_string())
             .unwrap_or_default();
 
         let location = card
-            .select(&location_sel)
+            .select(&IND_LOCATION_SEL)
             .next()
             .map(|e| e.text().collect::<String>().trim().to_string());
 
         let description = card
-            .select(&snippet_sel)
+            .select(&IND_SNIPPET_SEL)
             .next()
             .map(|e| e.text().collect::<String>().trim().to_string());
 

@@ -21,36 +21,39 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use keyring_core::Entry;
 use serde::{Deserialize, Serialize};
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 
 const SERVICE: &str = "com.ajh.tauri";
 
 /// Initialise the OS-native keyring backend. Must be called once before any
-/// `Entry` operations. Panics if the platform store cannot be opened.
-pub fn init_keyring() {
+/// `Entry` operations. Returns [`AppError::Storage`] if the platform secret
+/// store cannot be opened, so the caller can degrade gracefully instead of
+/// aborting startup.
+pub fn init_keyring() -> AppResult<()> {
     use std::collections::HashMap;
     let cfg = HashMap::new();
     #[cfg(target_os = "windows")]
     {
         use windows_native_keyring_store::Store;
-        keyring_core::set_default_store(
-            Store::new_with_configuration(&cfg).expect("Windows Credential Manager unavailable"),
-        );
+        let store = Store::new_with_configuration(&cfg)
+            .map_err(|e| AppError::Storage(format!("Windows Credential Manager unavailable: {e}")))?;
+        keyring_core::set_default_store(store);
     }
     #[cfg(target_os = "macos")]
     {
         use apple_native_keyring_store::keychain::Store;
-        keyring_core::set_default_store(
-            Store::new_with_configuration(&cfg).expect("macOS Keychain unavailable"),
-        );
+        let store = Store::new_with_configuration(&cfg)
+            .map_err(|e| AppError::Storage(format!("macOS Keychain unavailable: {e}")))?;
+        keyring_core::set_default_store(store);
     }
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     {
         use dbus_secret_service_keyring_store::Store;
-        keyring_core::set_default_store(
-            Store::new_with_configuration(&cfg).expect("Secret Service unavailable"),
-        );
+        let store = Store::new_with_configuration(&cfg)
+            .map_err(|e| AppError::Storage(format!("Secret Service unavailable: {e}")))?;
+        keyring_core::set_default_store(store);
     }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,7 +73,9 @@ pub struct CredentialStore {
 
 impl CredentialStore {
     pub fn new(data_dir: &PathBuf) -> Self {
-        std::fs::create_dir_all(data_dir).ok();
+        if let Err(e) = std::fs::create_dir_all(data_dir) {
+            log::warn!("[credentials] failed to create data dir (metadata writes may fail): {e}");
+        }
         Self {
             meta_file: data_dir.join("credential-meta.json"),
             cache: Mutex::new(MetaCache::default()),
@@ -105,7 +110,7 @@ impl CredentialStore {
                 saved_at: now_ms(),
             },
         );
-        self.save_meta(meta);
+        self.save_meta(meta)?;
         Ok(())
     }
 
@@ -117,7 +122,7 @@ impl CredentialStore {
         }
         let mut meta = self.load_meta();
         meta.remove(board_id);
-        self.save_meta(meta);
+        self.save_meta(meta)?;
         Ok(())
     }
 
@@ -155,11 +160,13 @@ impl CredentialStore {
         loaded
     }
 
-    fn save_meta(&self, meta: HashMap<String, CredentialMeta>) {
-        if let Ok(json) = serde_json::to_string_pretty(&meta) {
-            std::fs::write(&self.meta_file, json).ok();
-        }
+    fn save_meta(&self, meta: HashMap<String, CredentialMeta>) -> AppResult<()> {
+        let json = serde_json::to_string_pretty(&meta)
+            .map_err(|e| AppError::Parse(format!("serialize credential metadata: {e}")))?;
+        std::fs::write(&self.meta_file, json)
+            .map_err(|e| AppError::Storage(format!("write credential metadata: {e}")))?;
         self.cache.lock().0 = Some(meta);
+        Ok(())
     }
 }
 
