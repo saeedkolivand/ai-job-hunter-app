@@ -96,8 +96,6 @@ const genMock = {
 
 vi.mock('./useTailorGeneration', () => ({
   useTailorGeneration: () => genMock,
-  TAILOR_TEMPLATE: 'modern',
-  TAILOR_ATS_MODE: false,
 }));
 
 // ── Heavy sub-trees ───────────────────────────────────────────────────────────
