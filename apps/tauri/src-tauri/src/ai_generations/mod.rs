@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::data_store::DataStore;
-use crate::db::{run_migrations, Migration};
+use crate::db::{run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::AppResult;
 
 /// One answered application question, stored on the application record.
@@ -196,7 +196,7 @@ impl AiGenerationStore {
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
             params![
                 rec.id,
-                rec.created_at as i64,
+                ts_to_db(rec.created_at),
                 rec.candidate_name,
                 rec.job_title,
                 rec.company_name,
@@ -390,7 +390,7 @@ fn row_to_record(row: &rusqlite::Row) -> rusqlite::Result<AiGenerationRecord> {
     let answers_json: String = row.get(16)?;
     Ok(AiGenerationRecord {
         id: row.get(0)?,
-        created_at: row.get::<_, i64>(1)? as u64,
+        created_at: ts_from_db(row.get::<_, i64>(1)?),
         candidate_name: row.get(2)?,
         job_title: row.get(3)?,
         company_name: row.get(4)?,

@@ -156,8 +156,10 @@ async fn test_fetch_json_success() {
 
     let result =
         fetch_json::<TestResponse>(&mock_server.uri(), FetchOptions::default(), signal).await;
-    assert!(result.is_ok());
-    assert!(result.unwrap().is_some());
+    let parsed = result
+        .expect("fetch_json should succeed")
+        .expect("fetch_json should deserialize the response");
+    assert_eq!(parsed.message, "test");
 }
 
 #[tokio::test]
@@ -173,7 +175,7 @@ async fn test_fetch_json_invalid() {
         .mount(&mock_server)
         .await;
 
-    let result: anyhow::Result<Option<serde_json::Value>> =
+    let result: crate::error::AppResult<Option<serde_json::Value>> =
         fetch_json(&mock_server.uri(), FetchOptions::default(), signal).await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_none());

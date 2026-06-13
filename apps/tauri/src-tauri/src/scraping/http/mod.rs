@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 /// HTTP client for scrapers.
 ///
 /// - sane default headers (modern desktop UA)
@@ -8,10 +6,43 @@
 /// - opt-in JSON / HTML helpers with size caps
 use std::time::Duration;
 
-const DEFAULT_UA: &str =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+use crate::error::{AppError, AppResult};
+use crate::net::http::DEFAULT_UA;
 
 const MAX_BYTES: usize = 8 * 1024 * 1024; // 8 MB per response
+
+// ── Compiled-once regexes for HTML→text helpers ────────────────────────────────
+// Promoted from per-call `Regex::new(...).unwrap()` so each `strip_html` /
+// `html_to_text` call reuses the compiled automata (mirrors `extraction/html.rs`).
+static STRIP_SCRIPT_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)<script[\s\S]*?</script>").unwrap());
+static STRIP_STYLE_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)<style[\s\S]*?</style>").unwrap());
+static STRIP_TAG_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"<[^>]+>").unwrap());
+static STRIP_WS_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"\s+").unwrap());
+
+static TT_SCRIPT_STYLE_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"(?is)<(script|style)[\s\S]*?</(script|style)>").unwrap()
+});
+static TT_LI_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)<li[^>]*>").unwrap());
+static TT_BR_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)<br\s*/?>").unwrap());
+static TT_BLOCK_CLOSE_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"(?i)</(p|div|ul|ol|h[1-6]|tr|section|header|article)>").unwrap()
+});
+static TT_TAG_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"<[^>]+>").unwrap());
+static TT_SPACES_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"[ \t]+").unwrap());
+static TT_LINE_TRIM_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r" *\n *").unwrap());
+static TT_BLANKS_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"\n{3,}").unwrap());
+static TT_BULLET_TIGHT_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"\n{2,}•").unwrap());
 
 #[derive(Debug, Clone)]
 pub struct FetchOptions {
@@ -43,13 +74,13 @@ pub async fn fetch_text(
     url: &str,
     opts: FetchOptions,
     signal: tokio_util::sync::CancellationToken,
-) -> anyhow::Result<FetchResult> {
+) -> AppResult<FetchResult> {
     let retries = opts.retries;
-    let mut last_err: Option<anyhow::Error> = None;
+    let mut last_err: Option<AppError> = None;
 
     for attempt in 0..=retries {
         if signal.is_cancelled() {
-            return Err(anyhow::anyhow!("Request cancelled"));
+            return Err(AppError::Cancelled);
         }
 
         let client = crate::net::http::shared();
@@ -84,14 +115,14 @@ pub async fn fetch_text(
                 // Check content length if available
                 if let Some(content_length) = response.content_length() {
                     if content_length > MAX_BYTES as u64 {
-                        return Err(anyhow::anyhow!("Response too large"));
+                        return Err(AppError::Validation("Response too large".to_string()));
                     }
                 }
 
                 let text = response.text().await?;
 
                 if text.len() > MAX_BYTES {
-                    return Err(anyhow::anyhow!("Response too large"));
+                    return Err(AppError::Validation("Response too large".to_string()));
                 }
 
                 return Ok(FetchResult {
@@ -101,9 +132,9 @@ pub async fn fetch_text(
                 });
             }
             Err(e) => {
-                last_err = Some(anyhow::anyhow!(e));
+                last_err = Some(AppError::Network(e.to_string()));
                 if signal.is_cancelled() {
-                    return Err(anyhow::anyhow!("Request cancelled"));
+                    return Err(AppError::Cancelled);
                 }
                 if attempt < retries {
                     tokio::time::sleep(Duration::from_millis(300 * (attempt + 1) as u64)).await;
@@ -112,14 +143,14 @@ pub async fn fetch_text(
         }
     }
 
-    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("fetch_text failed")))
+    Err(last_err.unwrap_or_else(|| AppError::Network("fetch_text failed".to_string())))
 }
 
 pub async fn fetch_json<T: for<'de> serde::Deserialize<'de>>(
     url: &str,
     opts: FetchOptions,
     signal: tokio_util::sync::CancellationToken,
-) -> anyhow::Result<Option<T>> {
+) -> AppResult<Option<T>> {
     let res = fetch_text(
         url,
         FetchOptions {
@@ -144,20 +175,11 @@ pub fn strip_html(html: &str) -> String {
     let mut result = html.to_string();
 
     // Remove script and style tags
-    result = regex::Regex::new(r"(?i)<script[\s\S]*?</script>")
-        .unwrap()
-        .replace_all(&result, " ")
-        .to_string();
-    result = regex::Regex::new(r"(?i)<style[\s\S]*?</style>")
-        .unwrap()
-        .replace_all(&result, " ")
-        .to_string();
+    result = STRIP_SCRIPT_RE.replace_all(&result, " ").to_string();
+    result = STRIP_STYLE_RE.replace_all(&result, " ").to_string();
 
     // Remove all HTML tags
-    result = regex::Regex::new(r"<[^>]+>")
-        .unwrap()
-        .replace_all(&result, " ")
-        .to_string();
+    result = STRIP_TAG_RE.replace_all(&result, " ").to_string();
 
     // Decode HTML entities
     result = result.replace("&nbsp;", " ");
@@ -168,10 +190,7 @@ pub fn strip_html(html: &str) -> String {
     result = result.replace("&#39;", "'");
 
     // Collapse whitespace
-    result = regex::Regex::new(r"\s+")
-        .unwrap()
-        .replace_all(&result, " ")
-        .to_string();
+    result = STRIP_WS_RE.replace_all(&result, " ").to_string();
 
     result.trim().to_string()
 }
@@ -183,32 +202,17 @@ pub fn html_to_text(html: &str) -> String {
     let mut s = html.to_string();
 
     // Drop script/style blocks entirely.
-    s = regex::Regex::new(r"(?is)<(script|style)[\s\S]*?</(script|style)>")
-        .unwrap()
-        .replace_all(&s, " ")
-        .to_string();
+    s = TT_SCRIPT_STYLE_RE.replace_all(&s, " ").to_string();
 
     // List items → bullet on their own line.
-    s = regex::Regex::new(r"(?i)<li[^>]*>")
-        .unwrap()
-        .replace_all(&s, "\n• ")
-        .to_string();
+    s = TT_LI_RE.replace_all(&s, "\n• ").to_string();
     // Explicit line breaks.
-    s = regex::Regex::new(r"(?i)<br\s*/?>")
-        .unwrap()
-        .replace_all(&s, "\n")
-        .to_string();
+    s = TT_BR_RE.replace_all(&s, "\n").to_string();
     // Block-level closers → newline (li excluded; its opener already broke the line).
-    s = regex::Regex::new(r"(?i)</(p|div|ul|ol|h[1-6]|tr|section|header|article)>")
-        .unwrap()
-        .replace_all(&s, "\n")
-        .to_string();
+    s = TT_BLOCK_CLOSE_RE.replace_all(&s, "\n").to_string();
 
     // Strip any remaining tags.
-    s = regex::Regex::new(r"<[^>]+>")
-        .unwrap()
-        .replace_all(&s, "")
-        .to_string();
+    s = TT_TAG_RE.replace_all(&s, "").to_string();
 
     // Decode common entities.
     s = s
@@ -220,23 +224,11 @@ pub fn html_to_text(html: &str) -> String {
         .replace("&#39;", "'");
 
     // Collapse runs of spaces/tabs, trim each line, cap consecutive blank lines.
-    s = regex::Regex::new(r"[ \t]+")
-        .unwrap()
-        .replace_all(&s, " ")
-        .to_string();
-    s = regex::Regex::new(r" *\n *")
-        .unwrap()
-        .replace_all(&s, "\n")
-        .to_string();
-    s = regex::Regex::new(r"\n{3,}")
-        .unwrap()
-        .replace_all(&s, "\n\n")
-        .to_string();
+    s = TT_SPACES_RE.replace_all(&s, " ").to_string();
+    s = TT_LINE_TRIM_RE.replace_all(&s, "\n").to_string();
+    s = TT_BLANKS_RE.replace_all(&s, "\n\n").to_string();
     // Keep bullets tight under their heading — no blank line before a bullet.
-    s = regex::Regex::new(r"\n{2,}•")
-        .unwrap()
-        .replace_all(&s, "\n•")
-        .to_string();
+    s = TT_BULLET_TIGHT_RE.replace_all(&s, "\n•").to_string();
 
     s.trim().to_string()
 }

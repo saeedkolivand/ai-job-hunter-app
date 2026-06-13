@@ -23,7 +23,7 @@ use uuid::Uuid;
 
 use crate::ai_generations::ApplicationAnswer;
 use crate::data_store::DataStore;
-use crate::db::{run_migrations, Migration};
+use crate::db::{run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::{AppError, AppResult};
 
 /// The user-mutable lifecycle of an [`Application`].
@@ -321,7 +321,7 @@ impl ApplicationStore {
                 let app_id: Option<String> = row.get(9).unwrap_or(None);
                 Ok(GenRow {
                     id: row.get(0)?,
-                    created_at: row.get::<_, i64>(1)? as u64,
+                    created_at: ts_from_db(row.get::<_, i64>(1)?),
                     candidate: row.get(2)?,
                     title: row.get(3)?,
                     company: row.get(4)?,
@@ -394,7 +394,7 @@ impl ApplicationStore {
                     application_id: row.get(0)?,
                     from_status: row.get(1)?,
                     to_status: row.get(2)?,
-                    at: row.get::<_, i64>(3)? as u64,
+                    at: ts_from_db(row.get::<_, i64>(3)?),
                     note: row.get(4)?,
                 })
             })
@@ -582,7 +582,7 @@ impl ApplicationStore {
             let conn = self.conn.lock();
             conn.execute(
                 "UPDATE applications SET status = ?2, applied_at = ?3, updated_at = ?4 WHERE id = ?1",
-                params![id, to.as_id(), applied_at.map(|v| v as i64), now as i64],
+                params![id, to.as_id(), applied_at.map(ts_to_db), ts_to_db(now)],
             )?;
         }
         self.append_event(id, existing.status.as_id(), to.as_id(), note, now);
@@ -660,9 +660,9 @@ impl ApplicationStore {
             params![
                 app.id,
                 app.status.as_id(),
-                app.applied_at.map(|v| v as i64),
-                app.created_at as i64,
-                app.updated_at as i64,
+                app.applied_at.map(ts_to_db),
+                ts_to_db(app.created_at),
+                ts_to_db(app.updated_at),
                 app.job_url,
                 app.board,
                 app.company,
@@ -671,7 +671,7 @@ impl ApplicationStore {
                 answers_json,
                 app.brief,
                 app.notes,
-                app.next_action_at.map(|v| v as i64),
+                app.next_action_at.map(ts_to_db),
                 app.comp,
                 app.contact_name,
                 app.contact_email,
@@ -685,7 +685,7 @@ impl ApplicationStore {
         let _ = conn.execute(
             "INSERT INTO status_events (application_id, from_status, to_status, at, note)
              VALUES (?1,?2,?3,?4,?5)",
-            params![id, from, to, at as i64, note],
+            params![id, from, to, ts_to_db(at), note],
         );
     }
 }
@@ -702,9 +702,9 @@ fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
     Ok(Application {
         id: row.get(0)?,
         status: ApplicationStatus::from_id(&status_raw),
-        applied_at: row.get::<_, Option<i64>>(2)?.map(|v| v as u64),
-        created_at: row.get::<_, i64>(3)? as u64,
-        updated_at: row.get::<_, i64>(4)? as u64,
+        applied_at: row.get::<_, Option<i64>>(2)?.map(ts_from_db),
+        created_at: ts_from_db(row.get::<_, i64>(3)?),
+        updated_at: ts_from_db(row.get::<_, i64>(4)?),
         job_url: row.get(5)?,
         board: row.get(6)?,
         company: row.get(7)?,
@@ -713,7 +713,7 @@ fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
         answers: serde_json::from_str(&answers_json).unwrap_or_default(),
         brief: row.get(11)?,
         notes: row.get(12)?,
-        next_action_at: row.get::<_, Option<i64>>(13)?.map(|v| v as u64),
+        next_action_at: row.get::<_, Option<i64>>(13)?.map(ts_from_db),
         comp: row.get(14)?,
         contact_name: row.get(15)?,
         contact_email: row.get(16)?,

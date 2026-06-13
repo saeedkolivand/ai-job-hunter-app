@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use super::client::LinkedInHttpClient;
 use super::session::LinkedInSessionData;
 use crate::scraping::types::JobPosting;
@@ -7,6 +6,26 @@ use scraper::Html;
 use std::collections::HashSet;
 
 const PAGE_SIZE: usize = 25;
+
+// LinkedIn guest job-card CSS selectors compiled once (Selector is Send + Sync).
+static LI_CARD_SEL: std::sync::LazyLock<scraper::Selector> =
+    std::sync::LazyLock::new(|| scraper::Selector::parse("li").unwrap());
+static LI_LINK_SEL: std::sync::LazyLock<scraper::Selector> = std::sync::LazyLock::new(|| {
+    scraper::Selector::parse("a.base-card__full-link, a.base-search-card__link").unwrap()
+});
+static LI_URN_SEL: std::sync::LazyLock<scraper::Selector> =
+    std::sync::LazyLock::new(|| scraper::Selector::parse("[data-entity-urn]").unwrap());
+static LI_TITLE_SEL: std::sync::LazyLock<scraper::Selector> = std::sync::LazyLock::new(|| {
+    scraper::Selector::parse(".base-search-card__title, .job-card-container__title").unwrap()
+});
+static LI_COMPANY_SEL: std::sync::LazyLock<scraper::Selector> = std::sync::LazyLock::new(|| {
+    scraper::Selector::parse(".base-search-card__subtitle, .job-card-container__subtitle").unwrap()
+});
+static LI_LOCATION_SEL: std::sync::LazyLock<scraper::Selector> = std::sync::LazyLock::new(|| {
+    scraper::Selector::parse(".job-search-card__location, .job-card-container__location").unwrap()
+});
+static LI_TIME_SEL: std::sync::LazyLock<scraper::Selector> =
+    std::sync::LazyLock::new(|| scraper::Selector::parse("time").unwrap());
 
 /// Parse LinkedIn's `<time datetime="…">` attribute into a `DateTime`.
 ///
@@ -153,20 +172,7 @@ impl LinkedInJobsApiClient {
 
         let html = self.client.get_html(&url, signal).await?;
         let document = Html::parse_document(&html);
-        let selector = scraper::Selector::parse("li").unwrap();
-        let link_selector =
-            scraper::Selector::parse("a.base-card__full-link, a.base-search-card__link").unwrap();
-        let urn_selector = scraper::Selector::parse("[data-entity-urn]").unwrap();
-        let title_selector =
-            scraper::Selector::parse(".base-search-card__title, .job-card-container__title")
-                .unwrap();
-        let company_selector =
-            scraper::Selector::parse(".base-search-card__subtitle, .job-card-container__subtitle")
-                .unwrap();
-        let location_selector =
-            scraper::Selector::parse(".job-search-card__location, .job-card-container__location")
-                .unwrap();
-        let time_selector = scraper::Selector::parse("time").unwrap();
+        // Card/field selectors are compiled once at module level.
 
         let mut seen = HashSet::new();
         let mut jobs = Vec::new();
@@ -175,7 +181,7 @@ impl LinkedInJobsApiClient {
             .unwrap()
             .as_millis() as i64;
 
-        for element in document.select(&selector) {
+        for element in document.select(&LI_CARD_SEL) {
             if let Some(signal) = signal {
                 if signal.is_cancelled() {
                     break;
@@ -183,13 +189,13 @@ impl LinkedInJobsApiClient {
             }
 
             let link = element
-                .select(&link_selector)
+                .select(&LI_LINK_SEL)
                 .next()
                 .and_then(|el| el.value().attr("href"))
                 .unwrap_or("");
 
             let entity_urn = element
-                .select(&urn_selector)
+                .select(&LI_URN_SEL)
                 .next()
                 .and_then(|el| el.value().attr("data-entity-urn"));
 
@@ -207,7 +213,7 @@ impl LinkedInJobsApiClient {
             };
 
             let title = element
-                .select(&title_selector)
+                .select(&LI_TITLE_SEL)
                 .next()
                 .map(|el| el.text().collect::<String>())
                 .unwrap_or_default()
@@ -215,7 +221,7 @@ impl LinkedInJobsApiClient {
                 .to_string();
 
             let company = element
-                .select(&company_selector)
+                .select(&LI_COMPANY_SEL)
                 .next()
                 .map(|el| el.text().collect::<String>())
                 .unwrap_or_default()
@@ -223,14 +229,14 @@ impl LinkedInJobsApiClient {
                 .to_string();
 
             let location = element
-                .select(&location_selector)
+                .select(&LI_LOCATION_SEL)
                 .next()
                 .map(|el| el.text().collect::<String>())
                 .unwrap_or_default()
                 .trim()
                 .to_string();
 
-            let posted_at = element.select(&time_selector).next().and_then(|el| {
+            let posted_at = element.select(&LI_TIME_SEL).next().and_then(|el| {
                 // Prefer the ISO date in the `datetime` attribute. LinkedIn's
                 // visible text ("1 hour ago") reflects when the listing was last
                 // reposted/refreshed, not when it was originally posted — so an

@@ -1,61 +1,156 @@
 #!/usr/bin/env sh
 # Runs before `git push`.
-# Quality gate: matches CI workflow checks (lint, format, typecheck, build, tests,
-# rust clippy + fmt, architecture boundary tests, cargo-deny, cargo-machete).
+#
+# Quality gate mirroring CI, but PATH-FILTERED to the files actually being pushed
+# (the local analogue of CI's dorny/paths-filter). A docs-only or JS-only push
+# skips the Rust/cargo steps entirely — so it can't hit the ajh-tauri.exe build
+# lock — and a Rust-only push skips the JS gate. The filter groups match CI's
+# `frontend`/`rust` filters in .github/workflows/ci-pipeline.yml.
+#
+# Safety: on ANY uncertainty (no push range, detached state) it falls back to the
+# FULL gate, and cross-cutting paths (packages/**, .github/**) trip both groups.
+# Force the full gate with PREPUSH_FULL=1. CI remains the authoritative gate;
+# this is just a fast local pre-check.
+
+set -e
 
 if [ -n "$GITHUB_ACTIONS" ]; then
   exit 0
 fi
 
-# Get the git root directory
 GIT_ROOT=$(git rev-parse --show-toplevel)
 cd "$GIT_ROOT" || exit 1
 
 # Never use the turbo cache on push: a cached PASS can hide a real failure that
-# only surfaces on a clean run (e.g. a typecheck error masked by a stale cache).
-# Force every turbo task to execute so the push gate always reflects reality.
+# only surfaces on a clean run. Force every turbo task to execute.
 export TURBO_FORCE=1
 
-echo "▶ Building shared packages..."
-pnpm build:packages
+# ── Determine the changed-file set for this push ───────────────────────────────
+# Git feeds the refs being pushed on stdin, one per line:
+#   "<local_ref> <local_sha> <remote_ref> <remote_sha>"
+# Diff remote_sha..local_sha per ref; for a brand-new branch (remote all-zeros)
+# diff against the merge-base with origin/main. Any failure → FULL gate.
+ZERO=0000000000000000000000000000000000000000
+CHANGED=""
+HAVE_RANGE=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ -z "${local_sha:-}" ] || [ "$local_sha" = "$ZERO" ]; then
+    continue # nothing to push on this ref (or a branch deletion)
+  fi
+  if [ "${remote_sha:-$ZERO}" = "$ZERO" ]; then
+    base=$(git merge-base origin/main "$local_sha" 2>/dev/null || git rev-parse origin/main 2>/dev/null || true)
+    if [ -z "$base" ]; then
+      HAVE_RANGE=0
+      CHANGED=""
+      break # can't establish a base → force the full gate below
+    fi
+    range="$base..$local_sha"
+  else
+    range="$remote_sha..$local_sha"
+  fi
+  files=$(git diff --name-only "$range" 2>/dev/null || true)
+  CHANGED="$CHANGED
+$files"
+  HAVE_RANGE=1
+done
 
-echo "▶ Running ESLint strict..."
-pnpm lint:strict
-
-echo "▶ Checking formatting..."
-pnpm format
-
-echo "▶ Running TypeScript type check..."
-pnpm typecheck --force
-
-echo "▶ Running cargo check..."
-cd apps/tauri/src-tauri && cargo check --all-targets --all-features
-
-echo "▶ Running package tests..."
-cd "$GIT_ROOT" && pnpm test
-
-echo "▶ Running Rust tests (incl. architecture boundary tests)..."
-cd apps/tauri/src-tauri && cargo test --all-features
-
-echo "▶ Running Rust clippy..."
-cargo clippy --all-targets --all-features -- -D warnings
-
-echo "▶ Checking Rust formatting..."
-cargo fmt --all -- --check
-
-# Supply-chain + unused-dependency gates. CI runs these unconditionally; locally
-# they are best-effort — skipped with a hint if the tool isn't installed, so the
-# hook never blocks a dev who hasn't run the one-time `cargo install`.
-if command -v cargo-deny >/dev/null 2>&1; then
-  echo "▶ Running cargo-deny..."
-  cargo deny check
+RUST=""
+NODE=""
+LANDING=""
+if [ -n "${PREPUSH_FULL:-}" ] || [ "$HAVE_RANGE" -eq 0 ]; then
+  RUST=1
+  NODE=1
+  LANDING=1
+  if [ -n "${PREPUSH_FULL:-}" ]; then
+    echo "▶ Path filter: FULL gate (PREPUSH_FULL set)"
+  else
+    echo "▶ Path filter: FULL gate (push range undetermined)"
+  fi
 else
-  echo "⚠ cargo-deny not installed — skipping (CI enforces it). Install: cargo install cargo-deny --locked"
+  if printf '%s\n' "$CHANGED" | grep -qE '^apps/tauri/src-tauri/|(^|/)Cargo\.(toml|lock)$|\.rs$|^\.github/'; then
+    RUST=1
+  fi
+  if printf '%s\n' "$CHANGED" | grep -qE '^apps/tauri/src/|^packages/|^package\.json$|^pnpm-lock\.yaml$|^tsconfig.*\.json$|^eslint\.config\.mjs$|^vitest\.config\.ts$|^turbo\.json$|^\.github/'; then
+    NODE=1
+  fi
+  if printf '%s\n' "$CHANGED" | grep -qE '^landing/'; then
+    LANDING=1
+  fi
+  count=$(printf '%s\n' "$CHANGED" | grep -c . || true)
+  echo "▶ Path filter: NODE=${NODE:-0} RUST=${RUST:-0} LANDING=${LANDING:-0} (${count} files changed)"
+  if [ -z "$RUST" ] && [ -z "$NODE" ] && [ -z "$LANDING" ]; then
+    echo "✓ No gated paths changed — skipping the build/test gate."
+  fi
 fi
 
-if command -v cargo-machete >/dev/null 2>&1; then
-  echo "▶ Running cargo-machete..."
-  cargo machete
-else
-  echo "⚠ cargo-machete not installed — skipping (CI enforces it). Install: cargo install cargo-machete"
+# ── Node / frontend gate (CI `frontend` filter) ────────────────────────────────
+if [ -n "$NODE" ]; then
+  echo "▶ Building shared packages..."
+  pnpm build:packages
+
+  echo "▶ Running ESLint strict..."
+  pnpm lint:strict
+
+  echo "▶ Checking formatting..."
+  pnpm format:check
+
+  echo "▶ Running TypeScript type check..."
+  pnpm typecheck --force
+
+  echo "▶ Running package tests..."
+  pnpm test
 fi
+
+# ── IPC codegen drift ──────────────────────────────────────────────────────────
+# Schemas live in packages/shared (node) and the generated output in src-tauri
+# (rust), so run it whenever either group is in play.
+if [ -n "$NODE" ] || [ -n "$RUST" ]; then
+  echo "▶ Checking IPC codegen drift..."
+  pnpm gen:ipc:check
+fi
+
+# ── Landing-diagram drift ──────────────────────────────────────────────────────
+# The landing architecture/how-it-works diagrams are derived from the code, so a
+# change to the diagrammed source (node/rust) OR to the landing pages can drift.
+if [ -n "$NODE" ] || [ -n "$RUST" ] || [ -n "$LANDING" ]; then
+  echo "▶ Checking landing-diagram drift..."
+  pnpm check:landing-drift
+fi
+
+# ── Rust gate (CI `rust` filter) ───────────────────────────────────────────────
+if [ -n "$RUST" ]; then
+  cd apps/tauri/src-tauri
+
+  echo "▶ Running cargo check..."
+  cargo check --all-targets --all-features --locked
+
+  echo "▶ Running Rust tests (incl. architecture boundary tests)..."
+  cargo test --all-features --locked
+
+  echo "▶ Running Rust clippy..."
+  cargo clippy --all-targets --all-features --locked -- -D warnings
+
+  echo "▶ Checking Rust formatting..."
+  cargo fmt --all -- --check
+
+  # Supply-chain + unused-dependency gates. CI runs these unconditionally; locally
+  # they are best-effort — skipped with a hint if the tool isn't installed, so the
+  # hook never blocks a dev who hasn't run the one-time `cargo install`.
+  if command -v cargo-deny >/dev/null 2>&1; then
+    echo "▶ Running cargo-deny..."
+    cargo deny check
+  else
+    echo "⚠ cargo-deny not installed — skipping (CI enforces it). Install: cargo install cargo-deny --locked"
+  fi
+
+  if command -v cargo-machete >/dev/null 2>&1; then
+    echo "▶ Running cargo-machete..."
+    cargo machete
+  else
+    echo "⚠ cargo-machete not installed — skipping (CI enforces it). Install: cargo install cargo-machete"
+  fi
+
+  cd "$GIT_ROOT"
+fi
+
+echo "✓ Pre-push gate complete"

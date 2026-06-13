@@ -1,6 +1,6 @@
 # Architecture — AI Job Hunter
 
-Last updated: 2026-06-03
+Last updated: 2026-06-13
 
 ## High-Level Overview
 

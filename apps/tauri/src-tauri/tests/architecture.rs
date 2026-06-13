@@ -28,7 +28,6 @@ const L0: &[&str] = &[
     "data_store",
     "net",
     "platform",
-    "browser",
 ];
 const L1: &[&str] = &[
     "scraping",
