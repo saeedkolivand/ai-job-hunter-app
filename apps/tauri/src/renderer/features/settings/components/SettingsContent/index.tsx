@@ -6,6 +6,7 @@ import { AccountsSettingsTab } from '@/features/settings/components/accounts/Acc
 import { AISettingsTab } from '@/features/settings/components/ai-settings/AISettingsTab';
 import { ContactProfileTab } from '@/features/settings/components/contact/ContactProfileTab';
 import { GeneralSection } from '@/features/settings/components/general-section';
+import { AppearanceCard } from '@/features/settings/components/general-section/AppearanceCard';
 import { DeveloperPreferences } from '@/features/settings/components/preferences/DeveloperPreferences';
 import { JobLocationPreferences } from '@/features/settings/components/preferences/JobLocationPreferences';
 import { OutputTonePreferences } from '@/features/settings/components/preferences/OutputTonePreferences';
@@ -62,6 +63,7 @@ export function SettingsContent({
                 userName={userName}
               />
             )}
+            {activeSection === 'appearance' && <AppearanceCard />}
             {activeSection === 'contact' && <ContactProfileTab />}
             {activeSection === 'ai' && (
               <>

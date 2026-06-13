@@ -255,7 +255,7 @@ export function ReferralModal({ job, resume, onClose }: Props) {
               </Button>
             )}
             <Button
-              variant="glass"
+              variant="primary"
               loading={gen.generating}
               disabled={!gen.canGenerate}
               onClick={() => void gen.generate()}

@@ -42,6 +42,7 @@ export const keys = {
     metrics: ['system', 'metrics'] as const,
     checkBrowser: ['system', 'checkBrowser'] as const,
     launchAtLogin: ['system', 'launchAtLogin'] as const,
+    accent: ['system', 'accent'] as const,
   },
   jobs: { all: ['jobs'] as const, detail: (id: string) => ['jobs', id] as const },
   ai: {

@@ -122,7 +122,7 @@ export function TrackJobModal({ open, onClose }: TrackJobModalProps) {
           <Button type="button" variant="ghost" size="md" onClick={handleClose}>
             {t('applications.trackModal.cancel')}
           </Button>
-          <Button type="submit" variant="glass" size="md" loading={trackMutation.isPending}>
+          <Button type="submit" variant="primary" size="md" loading={trackMutation.isPending}>
             {t('applications.trackModal.submit')}
           </Button>
         </div>

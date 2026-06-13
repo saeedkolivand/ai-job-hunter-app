@@ -42,6 +42,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       getLocale: async () => 'en',
       setLocale: noop,
       getPlatform: noop,
+      accentColor: async () => ({ supported: false, color: null }),
       openExternal: noop,
       setPerformanceMode: noop,
       getLaunchAtLogin: async () => false,
