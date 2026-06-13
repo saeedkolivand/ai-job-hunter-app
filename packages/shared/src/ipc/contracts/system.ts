@@ -11,6 +11,13 @@ export interface SystemContract {
 
   getPlatform(): Promise<string>;
 
+  /**
+   * Best-effort OS accent color. `supported` is true only where we can read it
+   * (Windows, macOS); elsewhere `color` is null and the renderer keeps the
+   * Default accent. Used by the 'System' accent source in Appearance settings.
+   */
+  accentColor(): Promise<{ supported: boolean; color: string | null }>;
+
   openExternal(url: string): Promise<void>;
 
   setPerformanceMode(mode: 'low-memory' | 'balanced' | 'performance'): Promise<void>;
@@ -44,6 +51,7 @@ export const SYSTEM_CHANNELS = {
   getLocale: 'system:getLocale',
   setLocale: 'system:setLocale',
   getPlatform: 'system:getPlatform',
+  accentColor: 'system:accentColor',
   openExternal: 'system:openExternal',
   setPerformanceMode: 'system:setPerformanceMode',
   getLaunchAtLogin: 'system:getLaunchAtLogin',
