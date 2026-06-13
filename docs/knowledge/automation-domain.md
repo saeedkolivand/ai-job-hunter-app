@@ -1,13 +1,13 @@
 # Automation domain (scraping + apply assistant + AI provider)
 
-Last updated: 2026-06-04
+Last updated: 2026-06-13
 
 Merged knowledge for `scraping-applier-expert` and `ai-provider-expert`. Source is authoritative for board/provider counts.
 
 ## Scraping (`scraping/`)
 
 - **Registry** — `scraping/boards/mod.rs`: `SCRAPERS` + the `Scraper` trait. `ScraperMode` = Http or Browser. Adding a board = implement `Scraper` + register; never special-case outside the registry. Board count lives in the registry — don't copy it.
-- **Engine / transport** — `scraping/engine/`, `scraping/http/`, `scraping/browser` via `browser/` ([chromiumoxide][chromiumoxide]). LinkedIn-specific flow: `scraping/linkedin/`, login/session: `scraping/board_login/` (includes browser-cookie import — reads Chromium's encrypted cookie store, decrypts v10/v11, writes scraper-consumable artifacts via `import_cookies`; see `commands/boards.rs: boards_import_cookies`).
+- **Engine / transport** — `scraping/engine/`, `scraping/http/`, and reserved `browser/` ([chromiumoxide][chromiumoxide]). `BrowserController` is **dormant** — zero live callers outside tests; designed for CDP-based scraping but never wired into `SCRAPERS`. All current boards use the `scraping/http` path. Kept for future browser-automation scrapers (e.g. JS-rendering sites). LinkedIn-specific flow: `scraping/linkedin/`, login/session: `scraping/board_login/` (includes browser-cookie import — reads Chromium's encrypted cookie store, decrypts v10/v11, writes scraper-consumable artifacts via `import_cookies`; see `commands/boards.rs: boards_import_cookies`).
 - **Context** — `ScrapeContext` carries a **cancellation token** + progress/item callbacks. Honoring cancellation, bounded retries/backoff, and per-board rate limits are reliability requirements (ignoring the token or unbounded retries on a network loop = HIGH).
 - **Selector resilience** — core boards need fallback selectors; a brittle single-selector parse on a core board is HIGH (it breaks on the next site redesign).
 

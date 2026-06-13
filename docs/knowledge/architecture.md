@@ -1,6 +1,6 @@
 # Architecture (map + boundaries + feature ownership)
 
-Last updated: 2026-06-02
+Last updated: 2026-06-13
 
 Canonical: [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md), [`docs/architecture-rules.md`](../architecture-rules.md) (the L0–L3 rules, tested by `cargo test --test architecture`), [`docs/PATTERNS.md`](../PATTERNS.md). Use `graphify explain "<module>"` for a scoped view.
 
@@ -20,7 +20,7 @@ Business logic, processing pipelines, ATS analysis, and document generation live
 
 ## L0–L3 layers (enforced)
 
-L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints. Hard rules (CI-failing): env only in `platform/`; `reqwest::Client` only in `net/`; typed errors via `error.rs` (`AppError`/`AppResult`). See `docs/architecture-rules.md`.
+L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints. Hard rules (CI-failing): env only in `platform/`; `reqwest::Client` only in `net/`; typed errors via `error.rs` (`AppError`/`AppResult`). Modules returning `AppResult` include `scraping/http/`, `scraping/linkedin/client/`, `validate/`, `export/{model_docx,pdf}/`, `browser/`, and the `From<anyhow::Error>` boundary at `error.rs` (bridging remaining `anyhow`-returning code; ~29 other modules still use `anyhow::Result` internally and convert at IPC boundaries). See `docs/architecture-rules.md`.
 
 ## Backend modules (`apps/tauri/src-tauri/src/`)
 
