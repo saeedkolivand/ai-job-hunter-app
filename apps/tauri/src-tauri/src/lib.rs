@@ -401,7 +401,11 @@ pub fn run() {
                 // Linux that first-instance URL arrives on argv; on macOS the plugin
                 // surfaces it via `get_current()`. Parse both so a not-running launch
                 // (the primary case for `ajh://settings/extension`) still routes.
-                let initial = deeplink::parse_focus_target(&std::env::args().collect::<Vec<_>>())
+                let initial = deeplink::parse_focus_target(
+                    &std::env::args_os()
+                        .filter_map(|a| a.into_string().ok())
+                        .collect::<Vec<String>>(),
+                )
                     .or_else(|| {
                         app.deep_link()
                             .get_current()

@@ -1,10 +1,11 @@
 import { Check, Copy, Puzzle, RotateCcw, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, ConfirmModal, Input, SettingsSection, useNotification } from '@ajh/ui';
+import { Button, cn, ConfirmModal, Input, SettingsSection, useNotification } from '@ajh/ui';
 
 import { useExtensionBridgeStatus, useRegenerateExtensionToken } from '@/services';
+import { useUiStore } from '@/store/ui-store';
 
 export function ExtensionBridgeSection() {
   const { t } = useTranslation();
@@ -17,6 +18,28 @@ export function ExtensionBridgeSection() {
   const token = status?.token ?? '';
   const port = status?.port ?? null;
   const connected = status?.connected ?? false;
+
+  // Deep-link focus: the `ajh://settings/extension` link routes here and sets a
+  // one-shot ui-store flag. We consume it on mount / flip — scroll the token
+  // field into view, focus it (which selects, so it's copy-ready), and give it a
+  // ~1.4s ring glow. Mirrors the autopilot `focused`/`onFocusHandled` pattern.
+  const extensionTokenFocus = useUiStore((s) => s.extensionTokenFocus);
+  const setExtensionTokenFocus = useUiStore((s) => s.setExtensionTokenFocus);
+  const tokenRef = useRef<HTMLInputElement>(null);
+  const [highlight, setHighlight] = useState(false);
+
+  useEffect(() => {
+    if (!extensionTokenFocus) return;
+    const el = tokenRef.current;
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.focus();
+    }
+    setHighlight(true);
+    setExtensionTokenFocus(false);
+    const timer = setTimeout(() => setHighlight(false), 1400);
+    return () => clearTimeout(timer);
+  }, [extensionTokenFocus, setExtensionTokenFocus]);
 
   const handleCopy = async () => {
     if (!token) return;
@@ -67,11 +90,12 @@ export function ExtensionBridgeSection() {
             </label>
             <div className="flex items-center gap-2">
               <Input
+                ref={tokenRef}
                 id="extension-pairing-token"
                 readOnly
                 value={token}
                 placeholder={t('settings.accounts.extension.tokenPlaceholder')}
-                className="flex-1 font-mono text-xs"
+                className={cn('flex-1 font-mono text-xs', highlight && 'ring-2 ring-brand')}
                 onFocus={(e) => e.currentTarget.select()}
               />
               <Button

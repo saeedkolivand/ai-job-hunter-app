@@ -11,9 +11,9 @@
 //! navigating nowhere). Both targets are navigation-only: they focus the window
 //! and route the renderer; they carry no command/action payload.
 //!
-//! The OS URI scheme itself is not registered yet (a follow-up will add
-//! `tauri-plugin-deep-link`); the guard lives here first so it is in place and
-//! unit-tested before any externally-controlled URL can reach navigation.
+//! The OS URI scheme is registered (`tauri-plugin-deep-link`: `init()` +
+//! `register_all()` in `lib.rs`); this guard validates every incoming URL/argv
+//! against the allowlist before any navigation, on every delivery path.
 
 /// A validated, allowlisted deep-link target.
 #[derive(Debug, Clone, PartialEq, Eq)]
