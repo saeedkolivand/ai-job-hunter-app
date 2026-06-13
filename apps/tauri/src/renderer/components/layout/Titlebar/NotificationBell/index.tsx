@@ -62,7 +62,11 @@ export function NotificationBell() {
       <Button
         variant="ghost"
         size="sm"
-        className="app-no-drag relative"
+        className={`app-no-drag relative border-transparent bg-transparent hover:border-transparent hover:bg-white/[0.06] ${
+          unreadCount > 0
+            ? 'text-brand hover:text-brand'
+            : 'text-foreground/70 hover:text-foreground'
+        }`}
         aria-label={t('notifications.bell.aria')}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
