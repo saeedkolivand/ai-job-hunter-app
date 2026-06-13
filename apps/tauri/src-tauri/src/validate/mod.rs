@@ -17,7 +17,7 @@
 use std::io::Read;
 use std::sync::LazyLock;
 
-use anyhow::Result;
+use crate::error::{AppError, AppResult};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -89,8 +89,8 @@ fn has_critical(issues: &[ExportIssue]) -> bool {
 /// needed. TXT has no layout, so it is returned unvalidated.
 pub fn validate_and_fix(
     mut request: ExportRequest,
-    generate: impl Fn(&ExportRequest) -> Result<Vec<u8>>,
-) -> Result<(Vec<u8>, ExportReport)> {
+    generate: impl Fn(&ExportRequest) -> AppResult<Vec<u8>>,
+) -> AppResult<(Vec<u8>, ExportReport)> {
     let mut bytes = generate(&request)?;
 
     if matches!(request.format, ExportFormat::Txt) {
@@ -511,14 +511,19 @@ fn normalize(s: &str) -> String {
         .to_lowercase()
 }
 
-fn extract_pdf_text(bytes: &[u8]) -> Result<String> {
-    pdf_extract::extract_text_from_mem(bytes).map_err(|e| anyhow::anyhow!("pdf extract: {e}"))
+fn extract_pdf_text(bytes: &[u8]) -> AppResult<String> {
+    pdf_extract::extract_text_from_mem(bytes)
+        .map_err(|e| AppError::Parse(format!("pdf extract: {e}")))
 }
 
-fn extract_docx_text(bytes: &[u8]) -> Result<String> {
-    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
+fn extract_docx_text(bytes: &[u8]) -> AppResult<String> {
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes))
+        .map_err(|e| AppError::Parse(format!("docx open: {e}")))?;
     let mut xml = String::new();
-    zip.by_name("word/document.xml")?.read_to_string(&mut xml)?;
+    zip.by_name("word/document.xml")
+        .map_err(|e| AppError::Parse(format!("docx read entry: {e}")))?
+        .read_to_string(&mut xml)
+        .map_err(|e| AppError::Parse(format!("docx read xml: {e}")))?;
     Ok(strip_xml_tags(&xml))
 }
 

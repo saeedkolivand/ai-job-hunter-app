@@ -173,7 +173,7 @@ async fn test_fetch_json_invalid() {
         .mount(&mock_server)
         .await;
 
-    let result: anyhow::Result<Option<serde_json::Value>> =
+    let result: crate::error::AppResult<Option<serde_json::Value>> =
         fetch_json(&mock_server.uri(), FetchOptions::default(), signal).await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_none());

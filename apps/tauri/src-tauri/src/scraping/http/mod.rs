@@ -8,6 +8,7 @@
 /// - opt-in JSON / HTML helpers with size caps
 use std::time::Duration;
 
+use crate::error::{AppError, AppResult};
 use crate::net::http::DEFAULT_UA;
 
 const MAX_BYTES: usize = 8 * 1024 * 1024; // 8 MB per response
@@ -75,13 +76,13 @@ pub async fn fetch_text(
     url: &str,
     opts: FetchOptions,
     signal: tokio_util::sync::CancellationToken,
-) -> anyhow::Result<FetchResult> {
+) -> AppResult<FetchResult> {
     let retries = opts.retries;
-    let mut last_err: Option<anyhow::Error> = None;
+    let mut last_err: Option<AppError> = None;
 
     for attempt in 0..=retries {
         if signal.is_cancelled() {
-            return Err(anyhow::anyhow!("Request cancelled"));
+            return Err(AppError::Cancelled);
         }
 
         let client = crate::net::http::shared();
@@ -116,14 +117,14 @@ pub async fn fetch_text(
                 // Check content length if available
                 if let Some(content_length) = response.content_length() {
                     if content_length > MAX_BYTES as u64 {
-                        return Err(anyhow::anyhow!("Response too large"));
+                        return Err(AppError::Validation("Response too large".to_string()));
                     }
                 }
 
                 let text = response.text().await?;
 
                 if text.len() > MAX_BYTES {
-                    return Err(anyhow::anyhow!("Response too large"));
+                    return Err(AppError::Validation("Response too large".to_string()));
                 }
 
                 return Ok(FetchResult {
@@ -133,9 +134,9 @@ pub async fn fetch_text(
                 });
             }
             Err(e) => {
-                last_err = Some(anyhow::anyhow!(e));
+                last_err = Some(AppError::Network(e.to_string()));
                 if signal.is_cancelled() {
-                    return Err(anyhow::anyhow!("Request cancelled"));
+                    return Err(AppError::Cancelled);
                 }
                 if attempt < retries {
                     tokio::time::sleep(Duration::from_millis(300 * (attempt + 1) as u64)).await;
@@ -144,14 +145,14 @@ pub async fn fetch_text(
         }
     }
 
-    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("fetch_text failed")))
+    Err(last_err.unwrap_or_else(|| AppError::Network("fetch_text failed".to_string())))
 }
 
 pub async fn fetch_json<T: for<'de> serde::Deserialize<'de>>(
     url: &str,
     opts: FetchOptions,
     signal: tokio_util::sync::CancellationToken,
-) -> anyhow::Result<Option<T>> {
+) -> AppResult<Option<T>> {
     let res = fetch_text(
         url,
         FetchOptions {

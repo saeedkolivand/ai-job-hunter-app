@@ -9,6 +9,8 @@ use futures::StreamExt;
 /// applies sensible anti-bot defaults, and supports clean shutdown.
 use std::sync::Arc;
 
+use crate::error::{AppError, AppResult};
+
 #[derive(Clone)]
 pub struct BrowserControllerOptions {
     pub headless: bool,
@@ -43,7 +45,7 @@ impl BrowserController {
         }
     }
 
-    pub async fn ensure(&mut self) -> Result<Arc<Browser>, Box<dyn std::error::Error>> {
+    pub async fn ensure(&mut self) -> AppResult<Arc<Browser>> {
         if let Some(ref browser) = self.browser {
             return Ok(browser.clone());
         }
@@ -55,9 +57,12 @@ impl BrowserController {
             .arg("--no-default-browser-check")
             .arg("--disable-features=IsolateOrigins,site-per-process")
             .arg(format!("--user-agent={}", self.opts.user_agent).as_str())
-            .build()?;
+            .build()
+            .map_err(|e| AppError::Network(format!("browser config build failed: {e}")))?;
 
-        let (browser, mut handler) = Browser::launch(config).await?;
+        let (browser, mut handler) = Browser::launch(config)
+            .await
+            .map_err(|e| AppError::Network(format!("browser launch failed: {e}")))?;
         let browser = Arc::new(browser);
 
         // Spawn the handler in the background
@@ -73,19 +78,20 @@ impl BrowserController {
         Ok(browser)
     }
 
-    pub async fn with_page<T, F>(&mut self, f: F) -> Result<T, Box<dyn std::error::Error>>
+    pub async fn with_page<T, F>(&mut self, f: F) -> AppResult<T>
     where
-        F: FnOnce(
-            Page,
-        )
-            -> futures::future::BoxFuture<'static, Result<T, Box<dyn std::error::Error>>>,
+        F: FnOnce(Page) -> futures::future::BoxFuture<'static, AppResult<T>>,
     {
         let browser = self.ensure().await?;
-        let page = browser.new_page("about:blank").await?;
+        let page = browser
+            .new_page("about:blank")
+            .await
+            .map_err(|e| AppError::Network(format!("browser new page failed: {e}")))?;
 
         // Set anti-detection headers
         page.evaluate("Object.defineProperty(navigator, 'webdriver', { get: () => undefined })")
-            .await?;
+            .await
+            .map_err(|e| AppError::Network(format!("browser evaluate failed: {e}")))?;
 
         let result = f(page).await;
 
@@ -95,11 +101,14 @@ impl BrowserController {
         result
     }
 
-    pub async fn close(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn close(&mut self) -> AppResult<()> {
         if let Some(browser) = self.browser.take() {
             // Arc::try_unwrap to get the original Browser back
             if let Ok(mut browser) = Arc::try_unwrap(browser) {
-                browser.close().await?;
+                browser
+                    .close()
+                    .await
+                    .map_err(|e| AppError::Network(format!("browser close failed: {e}")))?;
                 log::warn!("[browser] chromium closed");
             }
         }

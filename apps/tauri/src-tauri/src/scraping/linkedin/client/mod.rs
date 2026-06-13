@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use super::rate_limiter::RateLimiter;
 use super::session::LinkedInSessionData;
-use anyhow::Result;
+use crate::error::{AppError, AppResult};
 use flate2::read::GzDecoder;
 use reqwest::Client;
 use std::io::Read;
@@ -32,7 +32,7 @@ impl LinkedInHttpClient {
         self.session_data = Some(session_data);
     }
 
-    fn get_default_headers(&self) -> Result<reqwest::header::HeaderMap> {
+    fn get_default_headers(&self) -> AppResult<reqwest::header::HeaderMap> {
         use reqwest::header::HeaderValue;
 
         let mut headers = reqwest::header::HeaderMap::new();
@@ -41,7 +41,7 @@ impl LinkedInHttpClient {
             reqwest::header::USER_AGENT,
             self.user_agent
                 .parse()
-                .map_err(|_| anyhow::anyhow!("invalid user-agent header"))?,
+                .map_err(|_| AppError::Config("invalid user-agent header".to_string()))?,
         );
         // Static literals cannot fail — `from_static` is infallible.
         headers.insert(
@@ -87,14 +87,14 @@ impl LinkedInHttpClient {
                 reqwest::header::COOKIE,
                 cookie_value
                     .parse()
-                    .map_err(|_| anyhow::anyhow!("invalid session cookie header"))?,
+                    .map_err(|_| AppError::Config("invalid session cookie header".to_string()))?,
             );
 
             // Add CSRF token if available
             if let Some(ref csrf) = session.csrf_token {
                 let csrf_value: HeaderValue = csrf
                     .parse()
-                    .map_err(|_| anyhow::anyhow!("invalid CSRF token header"))?;
+                    .map_err(|_| AppError::Config("invalid CSRF token header".to_string()))?;
                 headers.insert("X-CSRF-Token", csrf_value.clone());
                 headers.insert("csrf-token", csrf_value);
             }
@@ -107,10 +107,10 @@ impl LinkedInHttpClient {
         &self,
         url: &str,
         signal: Option<&tokio_util::sync::CancellationToken>,
-    ) -> Result<T> {
+    ) -> AppResult<T> {
         if let Some(signal) = signal {
             if signal.is_cancelled() {
-                return Err(anyhow::anyhow!("Request aborted"));
+                return Err(AppError::Cancelled);
             }
         }
 
@@ -121,7 +121,7 @@ impl LinkedInHttpClient {
 
         let status = response.status();
         if !status.is_success() {
-            return Err(anyhow::anyhow!("HTTP {}: Request failed", status));
+            return Err(AppError::Network(format!("HTTP {status}: Request failed")));
         }
 
         let bytes = response.bytes().await?;
@@ -129,10 +129,14 @@ impl LinkedInHttpClient {
             // Gzip magic number
             let mut decoder = GzDecoder::new(&bytes[..]);
             let mut decompressed = Vec::new();
-            decoder.read_to_end(&mut decompressed)?;
-            String::from_utf8(decompressed)?
+            decoder
+                .read_to_end(&mut decompressed)
+                .map_err(|e| AppError::Parse(format!("gzip decode failed: {e}")))?;
+            String::from_utf8(decompressed)
+                .map_err(|e| AppError::Parse(format!("response was not valid UTF-8: {e}")))?
         } else {
-            String::from_utf8(bytes.to_vec())?
+            String::from_utf8(bytes.to_vec())
+                .map_err(|e| AppError::Parse(format!("response was not valid UTF-8: {e}")))?
         };
 
         self.rate_limiter.record_request().await;
@@ -143,10 +147,10 @@ impl LinkedInHttpClient {
         &self,
         url: &str,
         signal: Option<&tokio_util::sync::CancellationToken>,
-    ) -> Result<String> {
+    ) -> AppResult<String> {
         if let Some(signal) = signal {
             if signal.is_cancelled() {
-                return Err(anyhow::anyhow!("Request aborted"));
+                return Err(AppError::Cancelled);
             }
         }
 
@@ -162,7 +166,7 @@ impl LinkedInHttpClient {
                 .text()
                 .await
                 .unwrap_or_else(|_| String::from("<no body>"));
-            return Err(anyhow::anyhow!("HTTP {}: Request failed", status));
+            return Err(AppError::Network(format!("HTTP {status}: Request failed")));
         }
 
         let bytes = response.bytes().await?;
@@ -170,10 +174,14 @@ impl LinkedInHttpClient {
             // Gzip magic number
             let mut decoder = GzDecoder::new(&bytes[..]);
             let mut decompressed = Vec::new();
-            decoder.read_to_end(&mut decompressed)?;
-            String::from_utf8(decompressed)?
+            decoder
+                .read_to_end(&mut decompressed)
+                .map_err(|e| AppError::Parse(format!("gzip decode failed: {e}")))?;
+            String::from_utf8(decompressed)
+                .map_err(|e| AppError::Parse(format!("response was not valid UTF-8: {e}")))?
         } else {
-            String::from_utf8(bytes.to_vec())?
+            String::from_utf8(bytes.to_vec())
+                .map_err(|e| AppError::Parse(format!("response was not valid UTF-8: {e}")))?
         };
 
         self.rate_limiter.record_request().await;

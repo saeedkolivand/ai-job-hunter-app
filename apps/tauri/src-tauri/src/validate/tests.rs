@@ -165,7 +165,8 @@ fn single_column_pdf_is_not_blocked() {
 fn resume_docx_is_not_blocked() {
     let (bytes, report) =
         validate_and_fix(req(ExportFormat::Docx, TemplateId::Modern, false), |r| {
-            crate::export::docx::generate_docx(r)
+            // `generate_docx` is still on `anyhow::Result`; bridge to the typed error.
+            crate::export::docx::generate_docx(r).map_err(crate::error::AppError::from)
         })
         .expect("docx export");
     assert!(!bytes.is_empty());

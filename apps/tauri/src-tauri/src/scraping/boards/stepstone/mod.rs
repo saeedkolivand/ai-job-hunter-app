@@ -114,7 +114,7 @@ impl Scraper for StepStoneScraper {
             .await
             {
                 Ok(r) => r,
-                Err(e) if out.is_empty() => return Err(e),
+                Err(e) if out.is_empty() => return Err(e.into()),
                 Err(e) => {
                     log::warn!(
                         "[stepstone] page {p} failed: {e}; returning {} collected",
