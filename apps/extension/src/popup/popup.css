@@ -1,15 +1,34 @@
+/*
+ * Popup theme — "tasteful paper blend" of the landing-page brand.
+ *
+ * Paper/ink/red identity (landing/index.html :root) applied to a small, readable
+ * card. The Patrick Hand display font is bundled LOCALLY (no remote fonts — the
+ * store forbids remotely-hosted resources) and used ONLY on the title; every
+ * functional/small string stays a clean system sans for legibility + AA contrast.
+ */
+
+@font-face {
+  font-family: 'Patrick Hand';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  /* Relative url() → Vite emits the woff2 as a build asset next to popup.css. */
+  src: url('../fonts/patrick-hand-latin.woff2') format('woff2');
+}
+
 :root {
-  color-scheme: light dark;
-  --bg: #0f1117;
-  --surface: #181b24;
-  --text: #e8eaf0;
-  --muted: #9aa3b2;
-  --accent: #6d8bff;
-  --accent-text: #0b1020;
-  --ok: #3ecf8e;
-  --warn: #f5b041;
-  --err: #ff6b6b;
-  --border: #272b36;
+  color-scheme: light;
+  --paper: #f4ecdc;
+  --card: #fffdf6;
+  --ink: #1c1812;
+  --ink-soft: #4a4332;
+  --red: #e24b4a;
+  --red-ink: #b5302f;
+  --ok: #2f7d4f;
+  --warn: #9a6a12;
+  --shadow: rgba(28, 24, 18, 0.16);
+  --hand: 'Patrick Hand', 'Segoe Print', cursive;
+  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
 * {
@@ -18,72 +37,112 @@
 
 body {
   margin: 0;
-  width: 320px;
-  font:
-    13px/1.45 system-ui,
-    -apple-system,
-    Segoe UI,
-    Roboto,
-    sans-serif;
-  background: var(--bg);
-  color: var(--text);
+  width: 360px;
+  font: 13px/1.45 var(--sans);
+  /* Light paper backdrop behind the card. */
+  background: var(--paper);
+  color: var(--ink);
 }
 
 .app {
-  padding: 14px;
+  margin: 10px;
+  padding: 14px 16px 16px;
+  /* Hand-drawn card: cream fill, ink border, wonky radius + offset shadow. */
+  background: var(--card);
+  border: 2px solid var(--ink);
+  border-radius: 16px 11px 18px 9px / 9px 17px 11px 16px;
+  box-shadow: 4px 5px 0 var(--shadow);
 }
 
 .head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 10px;
+  margin-bottom: 14px;
 }
 
 .title {
+  position: relative;
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.2px;
+  font-family: var(--hand);
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.3px;
+  color: var(--ink);
+}
+
+/* Red scrawl underline accent under the title (landing .ul vibe). */
+.title__ul {
+  position: absolute;
+  left: -2%;
+  right: -2%;
+  bottom: -5px;
+  height: 6px;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.title__ul path {
+  fill: none;
+  stroke: var(--red);
+  stroke-width: 3.6;
+  stroke-linecap: round;
 }
 
 .pill {
+  flex: none;
+  font-family: var(--sans);
   font-size: 11px;
-  padding: 3px 8px;
+  font-weight: 600;
+  padding: 3px 9px;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  color: var(--muted);
+  border: 1.5px solid var(--ink);
+  background: var(--card);
+  color: var(--ink);
   white-space: nowrap;
 }
 
-.pill--connected {
-  color: var(--ok);
-  border-color: var(--ok);
+.pill--searching {
+  color: var(--ink-soft);
+  border-color: var(--ink-soft);
+  background: #f1e9d7;
 }
 
-.pill--searching {
-  color: var(--muted);
+.pill--connected {
+  color: #1e5e3a;
+  border-color: #2f7d4f;
+  background: #e4f2e7;
 }
 
 .pill--not_paired {
-  color: var(--warn);
-  border-color: var(--warn);
+  color: #7a520c;
+  border-color: #9a6a12;
+  background: #f6ecd0;
 }
 
 .pill--app_not_running {
-  color: var(--err);
-  border-color: var(--err);
+  color: #fff;
+  border-color: var(--red-ink);
+  background: var(--red);
 }
 
 .view {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 11px;
 }
 
 .hint {
   margin: 0;
-  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.hint strong {
+  color: var(--ink);
 }
 
 .actions {
@@ -94,84 +153,125 @@ body {
 .btn {
   flex: 1;
   appearance: none;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  padding: 9px 10px;
-  border-radius: 8px;
+  font-family: var(--sans);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
+  /* Secondary: cream/paper bg, ink border, ink text, wonky radius. */
+  border: 2px solid var(--ink);
+  background: var(--card);
+  color: var(--ink);
+  padding: 9px 10px;
+  border-radius: 11px 8px 12px 7px / 7px 12px 8px 11px;
+  box-shadow: 3px 3px 0 var(--shadow);
   cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    background 0.12s ease;
 }
 
 .btn:hover:not(:disabled) {
-  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 4px 5px 0 var(--shadow);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 1px 1px 0 var(--shadow);
 }
 
 .btn:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
 .btn--primary {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: var(--accent);
+  /* Primary: red bg, white text (landing .cta, recoloured red). */
+  background: var(--red);
+  color: #fff;
+  border-color: var(--red-ink);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: #e8504f;
 }
 
 .check {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-soft);
   user-select: none;
+}
+
+.check input {
+  accent-color: var(--red);
+  width: 15px;
+  height: 15px;
 }
 
 .token {
   width: 100%;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  padding: 9px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  padding: 9px 11px;
+  border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
+  /* Dashed ink border = hand-drawn touch; cream fill, readable placeholder. */
+  border: 2px dashed var(--ink);
+  background: #fffefb;
+  color: var(--ink);
+}
+
+.token::placeholder {
+  color: #8a8270;
 }
 
 .token:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+  border-style: solid;
 }
 
 .msg {
   margin: 0;
   min-height: 16px;
+  font-family: var(--sans);
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ink-soft);
 }
 
 .msg--ok {
   color: var(--ok);
+  font-weight: 600;
 }
 
 .msg--err {
-  color: var(--err);
+  color: var(--red-ink);
+  font-weight: 600;
 }
 
 .link {
   align-self: flex-start;
   background: none;
   border: none;
-  color: var(--muted);
+  font-family: var(--sans);
+  color: var(--ink-soft);
   font-size: 12px;
   text-decoration: underline;
+  text-underline-offset: 2px;
   cursor: pointer;
   padding: 0;
 }
 
+.link:hover {
+  color: var(--ink);
+}
+
 .empty {
   text-align: center;
-  padding: 10px 4px;
+  padding: 8px 4px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -179,10 +279,35 @@ body {
 
 .empty__title {
   margin: 0;
-  font-weight: 600;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .empty__body {
   margin: 0;
-  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.empty .btn {
+  flex: none;
+  align-self: center;
+  min-width: 120px;
+}
+
+/* Keyboard a11y: a visible focus ring on every interactive control. */
+.btn:focus-visible,
+.link:focus-visible,
+.check input:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn {
+    transition: none;
+  }
 }
