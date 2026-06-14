@@ -291,6 +291,7 @@
       "languageAlignment": "Sprache"
     },
     "verdict": "Endurteil",
+    "notScored": "Nicht bewertet",
     "recruiterView": "Sichtweise des Personalers —",
     "mode": {
       "label": "Dokumenttyp",
@@ -712,7 +713,8 @@
       "removeFailed": "Entfernen fehlgeschlagen",
       "setDefault": "Als Standard setzen",
       "download": "Lebenslauf herunterladen",
-      "downloaded": "Lebenslauf heruntergeladen"
+      "downloaded": "Lebenslauf heruntergeladen",
+      "downloadFailed": "Lebenslauf konnte nicht heruntergeladen werden"
     },
     "update": {
       "title": "Updates",

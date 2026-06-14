@@ -1,5 +1,13 @@
 /** Resume-analysis result type + JSON schema strings (compact / full). */
 
+/**
+ * A score the model was asked to produce. `null` is the explicit "not scored"
+ * sentinel — the model omitted or garbled the value, so we must NOT invent a
+ * confident midpoint (the old behaviour silently returned 50). Valid values are
+ * clamped to 0–100.
+ */
+export type AnalysisScore = number | null;
+
 export interface AnalysisResult {
   detectedLanguages: {
     resume: string;
@@ -7,11 +15,11 @@ export interface AnalysisResult {
     mismatch: boolean;
   };
   scores: {
-    ats: number; // 0-100
-    jobMatch: number; // 0-100
-    languageAlignment: number; // 0-100
-    readability: number; // 0-100
-    keywordCoverage: number; // 0-100
+    ats: AnalysisScore; // 0-100 or null when not scored
+    jobMatch: AnalysisScore; // 0-100 or null when not scored
+    languageAlignment: AnalysisScore; // 0-100 or null when not scored
+    readability: AnalysisScore; // 0-100 or null when not scored
+    keywordCoverage: AnalysisScore; // 0-100 or null when not scored
   };
   summary: {
     strengths: string[];
@@ -27,11 +35,11 @@ export interface AnalysisResult {
     category: 'keyword' | 'skill' | 'format' | 'language' | 'experience';
   }>;
   sectionAnalysis: {
-    summary: { score: number; feedback: string };
-    experience: { score: number; feedback: string };
-    skills: { score: number; feedback: string };
-    education: { score: number; feedback: string };
-    formatting: { score: number; feedback: string };
+    summary: { score: AnalysisScore; feedback: string };
+    experience: { score: AnalysisScore; feedback: string };
+    skills: { score: AnalysisScore; feedback: string };
+    education: { score: AnalysisScore; feedback: string };
+    formatting: { score: AnalysisScore; feedback: string };
   };
   rewrites: Array<{
     section: string;

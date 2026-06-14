@@ -24,8 +24,7 @@ import { useFormatRelativeTime } from '@/features/jobs/hooks/useFormatRelativeTi
 import { useScraping } from '@/features/jobs/hooks/useScraping';
 import { MatchScoresProvider } from '@/features/jobs/providers';
 import type { JobEvent, Posting } from '@/features/jobs/types';
-import { useAppClient } from '@/providers/AppClientProvider';
-import { useClearPostings, useJobEvents, usePostings } from '@/services';
+import { useClearPostings, useGeocodeSuggest, useJobEvents, usePostings } from '@/services';
 import { useSessionStore } from '@/store/session-store';
 
 export function JobsPage() {
@@ -33,7 +32,7 @@ export function JobsPage() {
 
   const formatRelativeTime = useFormatRelativeTime(t);
 
-  const api = useAppClient();
+  const geocodeSuggest = useGeocodeSuggest();
   const notify = useNotification();
   const { data: postingsData = [] } = usePostings();
   const postings = postingsData as Posting[];
@@ -246,7 +245,7 @@ export function JobsPage() {
             onCancel={cancelScrape}
             onConnect={handleInlineConnect}
             onDisconnect={handleInlineDisconnect}
-            onGeocode={(q) => api.geocode.suggest(q)}
+            onGeocode={geocodeSuggest}
           />
         </div>
 

@@ -20,13 +20,20 @@ export function AnalysisSectionAnalysis({ result, t }: AnalysisSectionAnalysisPr
       </div>
       <div className="space-y-3">
         {(
-          Object.entries(result.sectionAnalysis) as [string, { score: number; feedback: string }][]
+          Object.entries(result.sectionAnalysis) as [
+            string,
+            { score: number | null; feedback: string },
+          ][]
         ).map(([key, sec]) => {
-          const { color } = scoreLabel(sec.score);
+          // null score = "not scored": show the placeholder, not a fabricated number.
+          const scored = sec.score !== null;
+          const color = scored ? scoreLabel(sec.score).color : 'text-foreground/40';
           return (
             <div key={key} className="grid grid-cols-[80px_40px_1fr] items-center gap-3">
               <div className="text-xs capitalize text-foreground/55">{key}</div>
-              <div className={cn('text-sm font-semibold tabular-nums', color)}>{sec.score}</div>
+              <div className={cn('text-sm font-semibold tabular-nums', color)}>
+                {scored ? sec.score : '—'}
+              </div>
               <div className="text-xs text-foreground/45 leading-snug">{sec.feedback}</div>
             </div>
           );

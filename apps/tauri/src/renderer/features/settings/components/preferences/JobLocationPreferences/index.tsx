@@ -7,6 +7,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, GlassCard, Input, transition } from '@ajh/ui';
 
 import { useJobPreferences, useSetJobPreferences } from '@/services';
+import { usePreferencesStore, useRecentLocations } from '@/store/preferences-store';
 
 const COMMON_LOCATIONS = [
   'San Francisco, CA',
@@ -25,7 +26,9 @@ export function JobLocationPreferences() {
   const setJobPreferences = useSetJobPreferences();
   const [inputValue, setInputValue] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [recentLocations, setRecentLocations] = useState<string[]>([]);
+  // Persisted to the preferences store so "Recent" survives tab switches/restarts.
+  const recentLocations = useRecentLocations();
+  const addRecentLocation = usePreferencesStore((s) => s.addRecentLocation);
   const inputRef = useRef<HTMLInputElement>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{
     top: number;
@@ -45,10 +48,8 @@ export function JobLocationPreferences() {
     setInputValue('');
     setShowSuggestions(false);
 
-    // Add to recent locations
-    if (!recentLocations.includes(loc)) {
-      setRecentLocations([loc, ...recentLocations.slice(0, 4)]);
-    }
+    // Persist to recent locations (dedup + cap handled by the store action).
+    addRecentLocation(loc);
   };
 
   const handleRemoveLocation = () => {

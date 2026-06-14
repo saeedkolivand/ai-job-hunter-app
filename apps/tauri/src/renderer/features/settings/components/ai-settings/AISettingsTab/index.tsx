@@ -4,6 +4,7 @@ import { useTranslation } from '@ajh/translations';
 import { GlassCard, transition } from '@ajh/ui';
 
 import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
+import { useDebugMode } from '@/store/preferences-store';
 
 import { ActiveProviderSwitcher } from '../ActiveProviderSwitcher';
 import { CompanyResearchSettings } from '../CompanyResearchSettings';
@@ -16,6 +17,9 @@ import { useProviderKeys } from './useProviderKeys';
 
 export function AISettingsTab() {
   const { t } = useTranslation();
+  // Debug-only affordances (e.g. the routing badge) appear only when the
+  // developer "debug mode" toggle is on — otherwise the toggle was cosmetic (H14).
+  const debugMode = useDebugMode();
   const {
     activeProvider,
     setActiveProvider,
@@ -61,8 +65,9 @@ export function AISettingsTab() {
         onSetActive={setActiveProvider}
       />
 
-      {/* Routing debug — shows exactly where AI requests will go. */}
-      <ProviderDebugBadge />
+      {/* Routing debug — shows exactly where AI requests will go. Gated behind
+          the developer debug-mode toggle (Settings → Developer). */}
+      {debugMode && <ProviderDebugBadge />}
 
       {/* Provider list */}
       <GlassCard>

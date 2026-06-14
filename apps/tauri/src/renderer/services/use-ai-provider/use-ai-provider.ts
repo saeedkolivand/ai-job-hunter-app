@@ -49,6 +49,23 @@ export const useListProviderModels = (provider: string, enabled = true, baseUrl?
   });
 };
 
+/**
+ * One-shot provider-model fetch (e.g. to verify a key right after saving it),
+ * routed through the service layer rather than calling `api.ai.*` directly.
+ * Primes the matching `useListProviderModels` cache on success.
+ */
+export const useListProviderModelsLazy = () => {
+  const api = useAppClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ provider, baseUrl }: { provider: string; baseUrl?: string }) =>
+      api.ai.listProviderModels({ provider, baseUrl }),
+    onSuccess: (models, { provider, baseUrl }) => {
+      qc.setQueryData([...keys.ai.models, 'provider-models', provider, baseUrl ?? ''], models);
+    },
+  });
+};
+
 export const useTestProviderKey = () => {
   const api = useAppClient();
   return useMutation({

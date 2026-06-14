@@ -291,6 +291,7 @@
       "languageAlignment": "Language"
     },
     "verdict": "Final Verdict",
+    "notScored": "Not scored",
     "recruiterView": "Recruiter's view —",
     "mode": {
       "label": "Document type",
@@ -742,7 +743,8 @@
       "removeFailed": "Failed to remove resume",
       "setDefault": "Set as default",
       "download": "Download resume",
-      "downloaded": "Resume downloaded"
+      "downloaded": "Resume downloaded",
+      "downloadFailed": "Failed to download resume"
     },
     "update": {
       "title": "Updates",
