@@ -27,7 +27,8 @@ export interface ActionMenuProps {
   className?: string;
 }
 
-const MENU_WIDTH = 176;
+const MENU_MIN_WIDTH = 176;
+const MENU_MAX_WIDTH = 300;
 
 /**
  * Overflow "3-dots" action menu (#32, #46). A small icon trigger opens a
@@ -42,7 +43,9 @@ export function ActionMenu({
   className,
 }: ActionMenuProps) {
   const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const [position, setPosition] = useState<{ top: number; left?: number; right?: number }>({
+    top: 0,
+  });
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useFocusTrap(open);
 
@@ -50,11 +53,14 @@ export function ActionMenu({
     if (!open || !triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
     const margin = 8;
-    const left =
-      align === 'end'
-        ? Math.max(margin, rect.right - MENU_WIDTH)
-        : Math.min(rect.left, window.innerWidth - MENU_WIDTH - margin);
-    setPosition({ top: rect.bottom + 6, left });
+    if (align === 'end') {
+      setPosition({
+        top: rect.bottom + 6,
+        right: Math.max(margin, window.innerWidth - rect.right),
+      });
+    } else {
+      setPosition({ top: rect.bottom + 6, left: Math.max(margin, rect.left) });
+    }
   }, [open, align]);
 
   useEffect(() => {
@@ -111,8 +117,12 @@ export function ActionMenu({
               style={{
                 position: 'fixed',
                 top: position.top,
-                left: position.left,
-                width: MENU_WIDTH,
+                ...(position.right !== undefined
+                  ? { right: position.right }
+                  : { left: position.left }),
+                width: 'max-content',
+                minWidth: MENU_MIN_WIDTH,
+                maxWidth: MENU_MAX_WIDTH,
                 zIndex: 9999,
               }}
               className="dropdown-surface overflow-hidden rounded-xl p-1"
@@ -131,12 +141,12 @@ export function ActionMenu({
                     'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors',
                     'disabled:pointer-events-none disabled:opacity-45',
                     item.destructive
-                      ? 'text-action-delete hover:bg-action-delete/10'
+                      ? 'text-red-400 hover:bg-red-400/10'
                       : 'text-foreground/75 hover:bg-white/[0.06] hover:text-foreground'
                   )}
                 >
                   {item.icon && <span className="shrink-0">{item.icon}</span>}
-                  <span className="truncate">{item.label}</span>
+                  <span className="min-w-0 truncate">{item.label}</span>
                 </button>
               ))}
             </motion.div>

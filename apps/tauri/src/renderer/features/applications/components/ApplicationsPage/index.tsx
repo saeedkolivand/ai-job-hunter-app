@@ -91,7 +91,7 @@ export function ApplicationsPage() {
         placeholder={t('applications.filterPlaceholder')}
         className="w-40 text-xs text-foreground/75 placeholder:text-foreground/30"
         variant="default"
-        wrapperClassName="h-7"
+        wrapperClassName="h-8"
         allowClear
       />
       <Button variant="primary" onClick={() => setTrackOpen(true)}>

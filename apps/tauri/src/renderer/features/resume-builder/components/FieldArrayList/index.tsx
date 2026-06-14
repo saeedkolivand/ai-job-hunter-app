@@ -71,7 +71,7 @@ export function FieldArrayList<T extends FieldArrayRow>({
             onClick={() => onRemove(index)}
             variant="ghost"
             aria-label={removeLabel}
-            className="absolute right-2 top-2 h-8 w-8 p-0 text-foreground/40 hover:text-action-delete"
+            className="absolute right-2 top-2 h-8 w-8 p-0 text-foreground/40 hover:text-red-400"
           >
             <Trash2 size={14} />
           </Button>
