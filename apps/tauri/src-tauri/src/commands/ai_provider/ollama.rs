@@ -6,16 +6,15 @@
 //! codebase.
 
 use async_trait::async_trait;
-use parking_lot::Mutex;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::commands::ai::get_provider_key;
 use crate::error::{AppError, AppResult};
-use crate::events::{emit_event, AiStreamChunk, JobEvent, AI_STREAM, JOBS_EVENT};
-use crate::jobs::JobTracker;
+use crate::events::{emit_event, JobEvent, JOBS_EVENT};
 
 use super::research::{self, SearchResult};
+use super::stream::{stream_response, StreamPiece};
 use super::{
     AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace, TokenParam,
 };
@@ -90,12 +89,13 @@ impl AiProvider for OllamaClient {
         }
         body["keep_alive"] = json!(crate::performance::ollama_keep_alive());
 
-        let resp = match crate::net::http::shared()
-            .post(&endpoint)
-            .timeout(std::time::Duration::from_secs(300))
-            .json(&body)
-            .send()
-            .await
+        let resp = match super::retry::send_with_retry(|| {
+            crate::net::http::shared()
+                .post(&endpoint)
+                .timeout(std::time::Duration::from_secs(300))
+                .json(&body)
+        })
+        .await
         {
             Ok(r) => r,
             Err(e) => {
@@ -221,13 +221,15 @@ pub async fn embed_with(model: &str, text: &str) -> AppResult<Vec<f64>> {
     // Char-boundary-safe truncation (avoids panics on multi-byte input).
     let truncated: String = text.chars().take(8000).collect();
     let body = json!({ "model": model, "prompt": truncated, "keep_alive": crate::performance::ollama_keep_alive() });
-    let resp = crate::net::http::shared()
-        .post(format!("{}/api/embeddings", host()))
-        .timeout(std::time::Duration::from_secs(15))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Ollama unreachable: {e}"))?;
+    let endpoint = format!("{}/api/embeddings", host());
+    let resp = super::retry::send_with_retry(|| {
+        crate::net::http::shared()
+            .post(&endpoint)
+            .timeout(std::time::Duration::from_secs(15))
+            .json(&body)
+    })
+    .await
+    .map_err(|e| format!("Ollama unreachable: {e}"))?;
     let status = resp.status();
     if !status.is_success() {
         let body_text = resp.text().await.unwrap_or_default();
@@ -478,6 +480,51 @@ pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
 
 // ── Chat streaming ──────────────────────────────────────────────────────────────
 
+/// Drain complete newline-delimited JSON objects from the accumulated stream
+/// buffer into [`StreamPiece`]s, leaving any partial trailing line for the next
+/// chunk. Each object carries an optional `message.thinking` (structured
+/// reasoning from DeepSeek-R1/Qwen3) and `message.content` answer text; the
+/// object with `done: true` yields a terminal sentinel carrying the final content
+/// delta. Pure + unit-tested; this is Ollama's `parse` closure, so its NDJSON
+/// framing lives here only.
+fn parse_ollama_frames(buf: &mut String) -> Vec<StreamPiece> {
+    let mut out = Vec::new();
+    while let Some(nl) = buf.find('\n') {
+        let line = buf[..nl].trim().to_string();
+        *buf = buf[nl + 1..].to_string();
+        if line.is_empty() {
+            continue;
+        }
+        let event: Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let message = event.get("message");
+        let delta = message
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+            .unwrap_or("");
+        let thinking = message
+            .and_then(|m| m.get("thinking"))
+            .and_then(|t| t.as_str())
+            .unwrap_or("");
+        let done = event.get("done").and_then(|d| d.as_bool()).unwrap_or(false);
+        if !thinking.is_empty() {
+            out.push(StreamPiece::thinking(thinking));
+        }
+        if done {
+            // Final object — carry its content on the terminal sentinel so the
+            // shared loop emits it then completes (matches the original framing).
+            out.push(StreamPiece::done(delta));
+            return out;
+        }
+        if !delta.is_empty() {
+            out.push(StreamPiece::text(delta));
+        }
+    }
+    out
+}
+
 async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> AppResult<()> {
     let base = host();
     let endpoint = format!("{base}/api/chat");
@@ -516,7 +563,7 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
         .send()
         .await;
 
-    let mut response = match response {
+    let response = match response {
         Ok(r) => r,
         Err(e) => {
             trace.end(None, false);
@@ -531,104 +578,62 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
         return Err(AppError::Provider(format!("Ollama {status}: {body_text}")));
     }
 
-    let mut line_buf = String::new();
-    loop {
-        if let Some(job) = app.state::<Mutex<JobTracker>>().lock().get(job_id) {
-            if job.status == crate::jobs::JobStatus::Cancelled {
-                let _ = response.error_for_status_ref();
-                trace.end(Some(status.as_u16()), false);
-                return Err(AppError::Message("Job cancelled".to_string()));
-            }
-        }
-
-        match response.chunk().await {
-            Ok(Some(bytes)) => {
-                line_buf.push_str(&String::from_utf8_lossy(&bytes));
-                while let Some(nl) = line_buf.find('\n') {
-                    let line = line_buf[..nl].trim().to_string();
-                    line_buf = line_buf[nl + 1..].to_string();
-                    if line.is_empty() {
-                        continue;
-                    }
-                    let event: Value = match serde_json::from_str(&line) {
-                        Ok(v) => v,
-                        Err(_) => continue,
-                    };
-                    let message = event.get("message");
-                    let delta = message
-                        .and_then(|m| m.get("content"))
-                        .and_then(|c| c.as_str())
-                        .unwrap_or("");
-                    // Structured reasoning from thinking models (DeepSeek-R1, Qwen3)
-                    // when the server populates `message.thinking`. Models that instead
-                    // embed <think>…</think> in `content` are split renderer-side. We do
-                    // not force Ollama's `think` flag here — it 400s on non-thinking
-                    // models, so capability-gated enablement rides with the /api/show
-                    // work (Part A).
-                    let thinking = message
-                        .and_then(|m| m.get("thinking"))
-                        .and_then(|t| t.as_str())
-                        .unwrap_or("");
-                    let done = event.get("done").and_then(|d| d.as_bool()).unwrap_or(false);
-                    if !thinking.is_empty() {
-                        emit_event(
-                            app,
-                            AI_STREAM,
-                            AiStreamChunk {
-                                job_id: job_id.to_string(),
-                                delta: thinking.to_string(),
-                                done: false,
-                                error: None,
-                                thinking: Some(true),
-                            },
-                        );
-                    }
-                    emit_event(
-                        app,
-                        AI_STREAM,
-                        AiStreamChunk {
-                            job_id: job_id.to_string(),
-                            delta: delta.to_string(),
-                            done,
-                            error: None,
-                            thinking: None,
-                        },
-                    );
-                    if done {
-                        crate::commands::jobs::job_complete(app, job_id, json!({ "done": true }));
-                        trace.end(Some(status.as_u16()), true);
-                        return Ok(());
-                    }
-                }
-            }
-            Ok(None) => break,
-            Err(e) => {
-                trace.end(Some(status.as_u16()), false);
-                return Err(AppError::Network(format!("Stream error: {e}")));
-            }
-        }
-    }
-
-    emit_event(
+    // The shared loop owns cancel-check + chunk read + emit + complete; the closure
+    // is the only Ollama-specific part (newline-delimited JSON framing). Structured
+    // reasoning from thinking models rides on `message.thinking`; models that embed
+    // <think>…</think> in `content` are split renderer-side. We do not force Ollama's
+    // `think` flag here — it 400s on non-thinking models.
+    stream_response(
         app,
-        AI_STREAM,
-        AiStreamChunk {
-            job_id: job_id.to_string(),
-            delta: String::new(),
-            done: true,
-            error: None,
-            thinking: None,
-        },
-    );
-    crate::commands::jobs::job_complete(app, job_id, json!({ "done": true }));
-    trace.end(Some(status.as_u16()), true);
-    Ok(())
+        job_id,
+        &trace,
+        response,
+        status.as_u16(),
+        parse_ollama_frames,
+    )
+    .await
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_show, parse_web_search};
+    use super::{normalize_show, parse_ollama_frames, parse_web_search, StreamPiece};
     use serde_json::json;
+
+    #[test]
+    fn parse_ollama_frames_splits_thinking_and_content() {
+        let mut buf = String::from(
+            "{\"message\":{\"thinking\":\"hmm\"},\"done\":false}\n\
+             {\"message\":{\"content\":\"hello\"},\"done\":false}\n",
+        );
+        let pieces = parse_ollama_frames(&mut buf);
+        assert_eq!(
+            pieces,
+            vec![StreamPiece::thinking("hmm"), StreamPiece::text("hello")]
+        );
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn parse_ollama_frames_done_carries_final_content() {
+        // The `done:true` object becomes a sentinel carrying its final content.
+        let mut buf = String::from("{\"message\":{\"content\":\"end\"},\"done\":true}\n");
+        assert_eq!(parse_ollama_frames(&mut buf), vec![StreamPiece::done("end")]);
+    }
+
+    #[test]
+    fn parse_ollama_frames_buffers_partial_line() {
+        // A partial trailing JSON line is left for the next chunk.
+        let mut buf = String::from("{\"message\":{\"content\":\"hi\"},\"done\":false}\n{\"mess");
+        let pieces = parse_ollama_frames(&mut buf);
+        assert_eq!(pieces, vec![StreamPiece::text("hi")]);
+        assert_eq!(buf, "{\"mess");
+    }
+
+    #[test]
+    fn parse_ollama_frames_skips_blank_and_unparseable_lines() {
+        let mut buf = String::from("\nnot-json\n");
+        assert!(parse_ollama_frames(&mut buf).is_empty());
+    }
 
     #[test]
     fn parse_web_search_maps_results_and_caps_limit() {

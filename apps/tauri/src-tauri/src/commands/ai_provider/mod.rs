@@ -25,6 +25,8 @@ pub mod ollama; // pub: its Ollama-only helpers back the local model list / heal
 mod ollama_cloud;
 mod openai;
 mod research; // shared company-research prompt spec + helpers used by every `research()`
+mod retry; // bounded exponential backoff for the non-streaming complete/embed paths
+mod stream; // shared streaming loop (cancel-check + chunk read + emit + complete) for cloud adapters
 
 use anthropic::AnthropicClient;
 use cli_agent::CliAgentClient;

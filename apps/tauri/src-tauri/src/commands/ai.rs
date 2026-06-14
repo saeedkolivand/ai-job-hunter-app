@@ -370,7 +370,12 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
         let mut done = 0u32;
         let mut failed = 0u32;
 
-        for doc in docs {
+        // Re-embed with bounded concurrency: each document is one HTTP round-trip,
+        // so a small fan-out keeps the provider busy without overwhelming it (or
+        // hammering a rate limit). Cancellation is honored between chunks; store
+        // writes (sync) stay serialized to avoid lock contention.
+        const REEMBED_CONCURRENCY: usize = 4;
+        for chunk in docs.chunks(REEMBED_CONCURRENCY) {
             let cancelled = app_clone
                 .state::<Mutex<JobTracker>>()
                 .lock()
@@ -381,14 +386,25 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
                 break;
             }
 
-            match crate::documents::embed(&app_clone, &doc.text).await {
-                Some(ev) => {
-                    let store = app_clone.state::<DocumentStore>();
-                    let _ = store.upsert_vector(&doc.id, &ev);
-                    let _ = store.set_indexed(&doc.id);
-                    done += 1;
+            // Embed this chunk's documents concurrently, preserving order so each
+            // result pairs with its document id.
+            let embeds = futures::future::join_all(
+                chunk
+                    .iter()
+                    .map(|doc| crate::documents::embed(&app_clone, &doc.text)),
+            )
+            .await;
+
+            for (doc, ev) in chunk.iter().zip(embeds) {
+                match ev {
+                    Some(ev) => {
+                        let store = app_clone.state::<DocumentStore>();
+                        let _ = store.upsert_vector(&doc.id, &ev);
+                        let _ = store.set_indexed(&doc.id);
+                        done += 1;
+                    }
+                    None => failed += 1,
                 }
-                None => failed += 1,
             }
 
             emit_event(

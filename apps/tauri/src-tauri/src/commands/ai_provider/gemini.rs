@@ -1,17 +1,16 @@
 //! Google Gemini provider — generateContent (streaming) API.
 
 use async_trait::async_trait;
-use parking_lot::Mutex;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::commands::ai::get_provider_key;
-use crate::events::{emit_event, AiStreamChunk, AI_STREAM};
-use crate::jobs::JobTracker;
 
 use crate::error::{AppError, AppResult};
 
 use super::research;
+use super::retry::send_with_retry;
+use super::stream::{stream_response, StreamPiece};
 use super::{
     friendly_api_error, AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace,
     TokenParam,
@@ -72,6 +71,82 @@ fn parse_gemini_parts(event: &Value) -> Vec<(bool, &str)> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Brace-depth scanner state carried across chunk boundaries while reading
+/// Gemini's streamed JSON **array** for complete top-level objects. `pending`
+/// holds the bytes of the current (possibly partial) object accumulated so far;
+/// `depth`/`in_string`/`escape` track where we are inside it. Array punctuation
+/// (`[`, `,`, `]`, whitespace) seen at depth 0 before an object's opening `{` is
+/// dropped, exactly as the original inline scanner did via its `trim_start`
+/// `starts_with('{')` guard.
+#[derive(Debug, Default)]
+struct GeminiScanner {
+    pending: String,
+    depth: i32,
+    in_string: bool,
+    escape: bool,
+}
+
+/// Feed the freshly-arrived chunk in `buf` through the [`GeminiScanner`], emitting
+/// a [`StreamPiece`] per non-empty `parts[].text` of every complete top-level
+/// object. The caller pushes the new chunk into `buf`; this consumes it entirely
+/// (leaving `buf` empty) and stashes any partial trailing object in `state.pending`
+/// for the next chunk. Gemini has no in-band done sentinel — the stream ends with
+/// the HTTP body — so this never yields a `done` piece (the shared loop completes
+/// on end-of-body).
+///
+/// Behavior matches the original inline char scanner: an object is recognized when
+/// brace depth returns to 0 *and* the accumulated text trims to something starting
+/// with `{`; on a successful parse the accumulator is cleared and scanning
+/// continues with the rest of the chunk. Pure + unit-tested; this is Gemini's
+/// `parse` closure, so its JSON-array framing lives here only.
+fn parse_gemini_frames(buf: &mut String, state: &mut GeminiScanner) -> Vec<StreamPiece> {
+    let mut out = Vec::new();
+    let chunk = std::mem::take(buf);
+    for ch in chunk.chars() {
+        if state.escape {
+            state.escape = false;
+            state.pending.push(ch);
+            continue;
+        }
+        if ch == '\\' && state.in_string {
+            state.escape = true;
+            state.pending.push(ch);
+            continue;
+        }
+        if ch == '"' {
+            state.in_string = !state.in_string;
+        }
+        if !state.in_string {
+            if ch == '{' {
+                state.depth += 1;
+            } else if ch == '}' {
+                state.depth -= 1;
+            }
+        }
+        state.pending.push(ch);
+
+        if state.depth == 0
+            && state.pending.trim_start().starts_with('{')
+            && !state.pending.trim().is_empty()
+        {
+            if let Ok(event) = serde_json::from_str::<Value>(state.pending.trim()) {
+                for (thought, text) in parse_gemini_parts(&event) {
+                    if text.is_empty() {
+                        continue;
+                    }
+                    out.push(if thought {
+                        StreamPiece::thinking(text)
+                    } else {
+                        StreamPiece::text(text)
+                    });
+                }
+            }
+            state.pending.clear();
+        }
+    }
+    out
 }
 
 pub struct GeminiClient;
@@ -149,7 +224,7 @@ impl AiProvider for GeminiClient {
             .send()
             .await;
 
-        let mut response = match response {
+        let response = match response {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
@@ -164,91 +239,16 @@ impl AiProvider for GeminiClient {
             return Err(friendly_api_error(ProviderId::Gemini, status, &body_text));
         }
 
-        // Gemini streams a JSON array; parse complete top-level objects as they arrive.
-        let mut buf = String::new();
-        let mut depth: i32 = 0;
-        let mut in_string = false;
-        let mut escape = false;
-        loop {
-            if let Some(job) = app.state::<Mutex<JobTracker>>().lock().get(job_id) {
-                if job.status == crate::jobs::JobStatus::Cancelled {
-                    drop(response);
-                    trace.end(Some(status.as_u16()), false);
-                    return Err(AppError::Message("Job cancelled".to_string()));
-                }
-            }
-
-            match response.chunk().await {
-                Ok(Some(bytes)) => {
-                    let chunk = String::from_utf8_lossy(&bytes).to_string();
-                    for ch in chunk.chars() {
-                        if escape {
-                            escape = false;
-                            buf.push(ch);
-                            continue;
-                        }
-                        if ch == '\\' && in_string {
-                            escape = true;
-                            buf.push(ch);
-                            continue;
-                        }
-                        if ch == '"' {
-                            in_string = !in_string;
-                        }
-                        if !in_string {
-                            if ch == '{' {
-                                depth += 1;
-                            } else if ch == '}' {
-                                depth -= 1;
-                            }
-                        }
-                        buf.push(ch);
-
-                        if depth == 0 && buf.trim_start().starts_with('{') && !buf.trim().is_empty()
-                        {
-                            if let Ok(event) = serde_json::from_str::<Value>(buf.trim()) {
-                                // Split every part: `thought` parts stream as reasoning,
-                                // the rest as the normal answer.
-                                for (thought, text) in parse_gemini_parts(&event) {
-                                    if text.is_empty() {
-                                        continue;
-                                    }
-                                    let chunk = AiStreamChunk {
-                                        job_id: job_id.to_string(),
-                                        delta: text.to_string(),
-                                        done: false,
-                                        error: None,
-                                        thinking: if thought { Some(true) } else { None },
-                                    };
-                                    emit_event(app, AI_STREAM, chunk);
-                                }
-                            }
-                            buf.clear();
-                        }
-                    }
-                }
-                Ok(None) => break,
-                Err(e) => {
-                    trace.end(Some(status.as_u16()), false);
-                    return Err(AppError::Network(format!("Stream error: {e}")));
-                }
-            }
-        }
-
-        emit_event(
-            app,
-            AI_STREAM,
-            AiStreamChunk {
-                job_id: job_id.to_string(),
-                delta: String::new(),
-                done: true,
-                error: None,
-                thinking: None,
-            },
-        );
-        crate::commands::jobs::job_complete(app, job_id, json!({ "done": true }));
-        trace.end(Some(status.as_u16()), true);
-        Ok(())
+        // The shared loop owns cancel-check + chunk read + emit + complete; the
+        // closure is the only Gemini-specific part — it scans the streamed JSON
+        // array for complete top-level objects (`state` carries brace depth across
+        // chunk boundaries). Gemini has no in-band done sentinel, so the loop
+        // completes on end-of-body.
+        let mut state = GeminiScanner::default();
+        stream_response(app, job_id, &trace, response, status.as_u16(), move |buf| {
+            parse_gemini_frames(buf, &mut state)
+        })
+        .await
     }
 
     async fn complete(
@@ -273,12 +273,13 @@ impl AiProvider for GeminiClient {
         }
 
         let url = format!("{BASE}{endpoint_label}?key={api_key}");
-        let resp = crate::net::http::shared()
-            .post(&url)
-            .timeout(std::time::Duration::from_secs(120))
-            .json(&body)
-            .send()
-            .await;
+        let resp = send_with_retry(|| {
+            crate::net::http::shared()
+                .post(&url)
+                .timeout(std::time::Duration::from_secs(120))
+                .json(&body)
+        })
+        .await;
         let resp = match resp {
             Ok(r) => r,
             Err(e) => {
@@ -374,13 +375,14 @@ impl AiProvider for GeminiClient {
             "content": { "parts": [{ "text": text }] },
         });
         let url = format!("{BASE}{endpoint_label}?key={api_key}");
-        let resp = crate::net::http::shared()
-            .post(&url)
-            .timeout(std::time::Duration::from_secs(30))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| format!("Gemini unreachable: {e}"))?;
+        let resp = send_with_retry(|| {
+            crate::net::http::shared()
+                .post(&url)
+                .timeout(std::time::Duration::from_secs(30))
+                .json(&body)
+        })
+        .await
+        .map_err(|e| format!("Gemini unreachable: {e}"))?;
         let status = resp.status();
         if !status.is_success() {
             let body_text = resp.text().await.unwrap_or_default();
@@ -449,7 +451,10 @@ impl AiProvider for GeminiClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{gemini_supports_thinking, join_parts_text, parse_gemini_parts};
+    use super::{
+        gemini_supports_thinking, join_parts_text, parse_gemini_frames, parse_gemini_parts,
+        GeminiScanner, StreamPiece,
+    };
     use serde_json::json;
 
     #[test]
@@ -502,5 +507,49 @@ mod tests {
     fn parse_parts_empty_without_candidates() {
         assert!(parse_gemini_parts(&json!({})).is_empty());
         assert!(parse_gemini_parts(&json!({ "candidates": [] })).is_empty());
+    }
+
+    #[test]
+    fn frames_parse_a_single_object_to_pieces() {
+        // A self-contained object (no array wrapper) — the scanner finds it when
+        // depth returns to 0 and the accumulated text starts with `{`.
+        let obj = r#"{"candidates":[{"content":{"parts":[{"text":"reasoning","thought":true},{"text":"answer"}]}}]}"#;
+        let mut state = GeminiScanner::default();
+        let mut buf = String::from(obj);
+        let pieces = parse_gemini_frames(&mut buf, &mut state);
+        assert_eq!(
+            pieces,
+            vec![StreamPiece::thinking("reasoning"), StreamPiece::text("answer")]
+        );
+        // The buffer is fully consumed and no partial object remains.
+        assert!(buf.is_empty());
+        assert!(state.pending.is_empty());
+    }
+
+    #[test]
+    fn frames_reassemble_object_split_across_chunks() {
+        // An object delivered in two chunks is buffered in `state.pending` until
+        // complete, then emitted exactly once.
+        let mut state = GeminiScanner::default();
+        let mut buf = String::from(r#"{"candidates":[{"content":{"parts":[{"text":"hel"#);
+        assert!(parse_gemini_frames(&mut buf, &mut state).is_empty());
+        assert!(!state.pending.is_empty());
+        buf.push_str(r#"lo"}]}}]}"#);
+        assert_eq!(
+            parse_gemini_frames(&mut buf, &mut state),
+            vec![StreamPiece::text("hello")]
+        );
+    }
+
+    #[test]
+    fn frames_handle_braces_inside_strings() {
+        // Braces inside a string value must not move the depth counter.
+        let obj = r#"{"candidates":[{"content":{"parts":[{"text":"a } b { c"}]}}]}"#;
+        let mut state = GeminiScanner::default();
+        let mut buf = String::from(obj);
+        assert_eq!(
+            parse_gemini_frames(&mut buf, &mut state),
+            vec![StreamPiece::text("a } b { c")]
+        );
     }
 }
