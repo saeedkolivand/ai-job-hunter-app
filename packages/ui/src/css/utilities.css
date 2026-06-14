@@ -308,86 +308,137 @@
  * as a base style, the blurred layer is cached and only its transform moves on
  * the GPU, so the backdrop stays smooth on macOS, Windows, and Linux alike.
  */
+/*
+ * MOTION: each blob traces a SEAMLESS, CLOSED drift — `0%` and `100%` are the
+ * identical transform, so `... infinite` never snaps the layer back to a
+ * different start position (the old open `-30vw → 130vw` ramps jumped 160vw at
+ * every loop boundary, which read as a jarring bounce/twitch). The intermediate
+ * stops trace a gentle four-point wander, and the `.animate-*` classes drive
+ * these with `ease-in-out` so every direction change eases through zero velocity
+ * instead of a hard angular reversal. Result: a calm, continuous aurora drift.
+ */
 @keyframes aurora-1 {
   0% {
-    transform: translate3d(-30vw, 0, 0);
+    transform: translate3d(-10vw, 0, 0);
+  }
+  25% {
+    transform: translate3d(8vw, 8vh, 0);
   }
   50% {
-    transform: translate3d(30vw, 15vh, 0);
+    transform: translate3d(20vw, 2vh, 0);
+  }
+  75% {
+    transform: translate3d(4vw, 10vh, 0);
   }
   100% {
-    transform: translate3d(130vw, 0, 0);
+    transform: translate3d(-10vw, 0, 0);
   }
 }
 @keyframes aurora-2 {
   0% {
-    transform: translate3d(130vw, 0, 0);
+    transform: translate3d(40vw, 4vh, 0);
+  }
+  25% {
+    transform: translate3d(22vw, -8vh, 0);
   }
   50% {
-    transform: translate3d(-30vw, -15vh, 0);
+    transform: translate3d(10vw, -2vh, 0);
+  }
+  75% {
+    transform: translate3d(26vw, -12vh, 0);
   }
   100% {
-    transform: translate3d(-30vw, 0, 0);
+    transform: translate3d(40vw, 4vh, 0);
   }
 }
 @keyframes aurora-3 {
   0% {
-    transform: translate3d(-25vw, 10vh, 0);
+    transform: translate3d(25vw, 10vh, 0);
+  }
+  25% {
+    transform: translate3d(42vw, 0, 0);
   }
   50% {
-    transform: translate3d(50vw, -10vh, 0);
+    transform: translate3d(50vw, 8vh, 0);
+  }
+  75% {
+    transform: translate3d(38vw, 14vh, 0);
   }
   100% {
-    transform: translate3d(125vw, 10vh, 0);
+    transform: translate3d(25vw, 10vh, 0);
   }
 }
 @keyframes aurora-4 {
   0% {
-    transform: translate3d(125vw, -10vh, 0);
+    transform: translate3d(55vw, -10vh, 0);
+  }
+  25% {
+    transform: translate3d(40vw, 2vh, 0);
   }
   50% {
-    transform: translate3d(-50vw, 10vh, 0);
+    transform: translate3d(30vw, -4vh, 0);
+  }
+  75% {
+    transform: translate3d(44vw, 6vh, 0);
   }
   100% {
-    transform: translate3d(-25vw, -10vh, 0);
+    transform: translate3d(55vw, -10vh, 0);
   }
 }
 @keyframes nebula-1 {
   0% {
-    transform: translate3d(-20vw, 0, 0);
+    transform: translate3d(-5vw, 0, 0);
+  }
+  25% {
+    transform: translate3d(12vw, 12vh, 0);
   }
   50% {
-    transform: translate3d(40vw, 20vh, 0);
+    transform: translate3d(22vw, 4vh, 0);
+  }
+  75% {
+    transform: translate3d(8vw, 14vh, 0);
   }
   100% {
-    transform: translate3d(120vw, 0, 0);
+    transform: translate3d(-5vw, 0, 0);
   }
 }
 @keyframes nebula-2 {
   0% {
-    transform: translate3d(120vw, 0, 0);
+    transform: translate3d(35vw, 0, 0);
+  }
+  25% {
+    transform: translate3d(18vw, -12vh, 0);
   }
   50% {
-    transform: translate3d(-40vw, -20vh, 0);
+    transform: translate3d(8vw, -4vh, 0);
+  }
+  75% {
+    transform: translate3d(22vw, -14vh, 0);
   }
   100% {
-    transform: translate3d(-20vw, 0, 0);
+    transform: translate3d(35vw, 0, 0);
   }
 }
 @keyframes nebula-3 {
   0% {
-    transform: translate3d(-18vw, -5vh, 0);
+    transform: translate3d(-8vw, -5vh, 0);
+  }
+  50% {
+    transform: translate3d(16vw, 3vh, 0);
   }
   100% {
-    transform: translate3d(118vw, -5vh, 0);
+    transform: translate3d(-8vw, -5vh, 0);
   }
 }
 @keyframes nebula-4 {
   0% {
-    transform: translate3d(118vw, 5vh, 0);
+    transform: translate3d(30vw, 5vh, 0);
+  }
+  50% {
+    transform: translate3d(8vw, -3vh, 0);
   }
   100% {
-    transform: translate3d(-18vw, 5vh, 0);
+    transform: translate3d(30vw, 5vh, 0);
   }
 }
 @keyframes streak-1 {
@@ -435,44 +486,51 @@
   }
 }
 
+/*
+ * MOTION: closed-loop keyframes (above) driven with `ease-in-out` so each
+ * direction change at a keyframe stop eases through zero velocity — a smooth,
+ * organic drift with no hard snap-back at the loop boundary. The long
+ * (multi-tens-of-seconds) durations + negative delays keep the layers
+ * desynchronized and the overall motion slow and calm.
+ */
 .animate-aurora-1 {
   filter: blur(120px);
-  animation: aurora-1 90s linear infinite;
+  animation: aurora-1 90s ease-in-out infinite;
   animation-delay: -10s;
 }
 .animate-aurora-2 {
   filter: blur(140px);
-  animation: aurora-2 95s linear infinite;
+  animation: aurora-2 95s ease-in-out infinite;
   animation-delay: -48s;
 }
 .animate-aurora-3 {
   filter: blur(120px);
-  animation: aurora-3 85s linear infinite;
+  animation: aurora-3 85s ease-in-out infinite;
   animation-delay: -22s;
 }
 .animate-aurora-4 {
   filter: blur(130px);
-  animation: aurora-4 100s linear infinite;
+  animation: aurora-4 100s ease-in-out infinite;
   animation-delay: -65s;
 }
 .animate-nebula-1 {
   filter: blur(80px);
-  animation: nebula-1 70s linear infinite;
+  animation: nebula-1 70s ease-in-out infinite;
   animation-delay: -18s;
 }
 .animate-nebula-2 {
   filter: blur(80px);
-  animation: nebula-2 75s linear infinite;
+  animation: nebula-2 75s ease-in-out infinite;
   animation-delay: -50s;
 }
 .animate-nebula-3 {
   filter: blur(70px);
-  animation: nebula-3 65s linear infinite;
+  animation: nebula-3 65s ease-in-out infinite;
   animation-delay: -30s;
 }
 .animate-nebula-4 {
   filter: blur(70px);
-  animation: nebula-4 68s linear infinite;
+  animation: nebula-4 68s ease-in-out infinite;
   animation-delay: -42s;
 }
 .animate-streak-1 {
