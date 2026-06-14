@@ -61,18 +61,18 @@ export interface AnalysisResult {
 // caps list lengths, keeps full sectionAnalysis structure so the UI still works.
 export const SCHEMA_COMPACT = `{
   "detectedLanguages": { "resume": "string", "jobAd": "string", "mismatch": boolean },
-  "scores": { "ats": 0-100, "jobMatch": 0-100, "languageAlignment": 0-100, "readability": 0-100, "keywordCoverage": 0-100 },
+  "scores": { "ats": "0-100|null", "jobMatch": "0-100|null", "languageAlignment": "0-100|null", "readability": "0-100|null", "keywordCoverage": "0-100|null" },
   "summary": { "strengths": ["string (max 3)"], "weaknesses": ["string (max 3)"], "overallAssessment": "string" },
   "missingKeywords": ["string (max 8)"],
   "matchedSkills": ["string (max 8)"],
   "missingSkills": ["string (max 5)"],
   "recommendations": [{ "priority": "high|medium|low", "text": "string", "category": "keyword|skill|format|language|experience" }],
   "sectionAnalysis": {
-    "summary":    { "score": 0-100, "feedback": "string" },
-    "experience": { "score": 0-100, "feedback": "string" },
-    "skills":     { "score": 0-100, "feedback": "string" },
-    "education":  { "score": 0-100, "feedback": "string" },
-    "formatting": { "score": 0-100, "feedback": "string" }
+    "summary":    { "score": "0-100|null", "feedback": "string" },
+    "experience": { "score": "0-100|null", "feedback": "string" },
+    "skills":     { "score": "0-100|null", "feedback": "string" },
+    "education":  { "score": "0-100|null", "feedback": "string" },
+    "formatting": { "score": "0-100|null", "feedback": "string" }
   },
   "rewrites": [],
   "languageRecommendations": ["string (max 2)"],
@@ -83,18 +83,18 @@ export const SCHEMA_COMPACT = `{
 
 export const SCHEMA = `{
   "detectedLanguages": { "resume": "string", "jobAd": "string", "mismatch": boolean },
-  "scores": { "ats": 0-100, "jobMatch": 0-100, "languageAlignment": 0-100, "readability": 0-100, "keywordCoverage": 0-100 },
+  "scores": { "ats": "0-100|null", "jobMatch": "0-100|null", "languageAlignment": "0-100|null", "readability": "0-100|null", "keywordCoverage": "0-100|null" },
   "summary": { "strengths": ["string"], "weaknesses": ["string"], "overallAssessment": "string" },
   "missingKeywords": ["string"],
   "matchedSkills": ["string"],
   "missingSkills": ["string"],
   "recommendations": [{ "priority": "high|medium|low", "text": "string", "category": "keyword|skill|format|language|experience" }],
   "sectionAnalysis": {
-    "summary":    { "score": 0-100, "feedback": "string" },
-    "experience": { "score": 0-100, "feedback": "string" },
-    "skills":     { "score": 0-100, "feedback": "string" },
-    "education":  { "score": 0-100, "feedback": "string" },
-    "formatting": { "score": 0-100, "feedback": "string" }
+    "summary":    { "score": "0-100|null", "feedback": "string" },
+    "experience": { "score": "0-100|null", "feedback": "string" },
+    "skills":     { "score": "0-100|null", "feedback": "string" },
+    "education":  { "score": "0-100|null", "feedback": "string" },
+    "formatting": { "score": "0-100|null", "feedback": "string" }
   },
   "rewrites": [{ "section": "string", "original": "string", "improved": "string", "reason": "string" }],
   "languageRecommendations": ["string"],

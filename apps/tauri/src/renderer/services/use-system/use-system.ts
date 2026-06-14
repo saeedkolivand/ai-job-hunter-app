@@ -192,9 +192,11 @@ export const useAccentEvents = () => {
     // invalidation and the window-focus refetch). `reapplySystemAccent` no-ops
     // unless the source is 'system' and the hex actually changed.
     const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      // Match on the queryKey array, not `queryHash`: the hash format is a
+      // React Query internal that could change and silently break the re-apply.
       if (
         event.type === 'updated' &&
-        event.query.queryHash === JSON.stringify(keys.system.accent) &&
+        JSON.stringify(event.query.queryKey) === JSON.stringify(keys.system.accent) &&
         event.query.state.status === 'success'
       ) {
         const data = event.query.state.data as { color?: string | null } | undefined;

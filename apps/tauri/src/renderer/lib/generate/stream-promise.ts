@@ -73,7 +73,7 @@ export function awaitAiStream(
   // generation.ts but was MISSING in resume-ai.ts — it is now enforced for
   // both callers.
   if (signal?.aborted) {
-    void api.jobs.cancel(jobId);
+    void api.jobs.cancel(jobId).catch(() => {});
     return Promise.reject(new Error('Generation cancelled'));
   }
 
@@ -137,19 +137,23 @@ export function awaitAiStream(
     if (signal) {
       abortListener = () => {
         off();
-        void api.jobs.cancel(jobId);
+        void api.jobs.cancel(jobId).catch(() => {});
         cleanup();
         reject(new Error('Generation cancelled'));
       };
       signal.addEventListener('abort', abortListener);
     }
 
-    // Timeout safety — local LLMs can be slow; cloud calls can queue.
+    // Timeout safety — local LLMs can be slow; cloud calls can queue. On
+    // timeout we FAIL the run (never persist truncated output as success) and
+    // cancel the backend job so the server-side slot is freed instead of left
+    // occupied until the job finishes on its own.
     timeoutId = setTimeout(() => {
       off();
+      void api.jobs.cancel(jobId).catch(() => {});
       splitter.flush();
       cleanup();
-      resolve(buffer);
+      reject(new Error('Generation timed out. Please try again.'));
     }, timeoutMs);
 
     // Job-status poll — fallback for a missed `done` event (empty final delta).

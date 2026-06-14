@@ -23,9 +23,12 @@ function extractJSON(raw: string): string | null {
  * a fabricated midpoint.
  */
 function clampScore(v: unknown, min = 0, max = 100): AnalysisScore {
-  if (v === null || v === undefined || v === '') return null;
+  if (v === null || v === undefined) return null;
+  // Blank / whitespace-only strings are "not scored" — without the trim, a
+  // value like `' '` would slip past the `=== ''` check and coerce to 0.
+  if (typeof v === 'string' && v.trim().length === 0) return null;
   const n = typeof v === 'number' ? v : Number(v);
-  if (isNaN(n)) return null;
+  if (!Number.isFinite(n)) return null;
   return Math.max(min, Math.min(max, Math.round(n)));
 }
 
