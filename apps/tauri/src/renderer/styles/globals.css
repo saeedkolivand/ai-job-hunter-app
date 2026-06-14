@@ -40,7 +40,8 @@ html[data-color-scheme='light'] #root {
 html[data-color-scheme='light'] body {
   background: radial-gradient(ellipse at 50% 0%, #eceef5 0%, #e4e7ef 55%, #dce0ea 100%);
 }
-html[data-color-scheme='light'][data-performance-mode='low-memory'] body {
+html[data-color-scheme='light'][data-perf-blur='reduced'] body,
+html[data-color-scheme='light'][data-perf-blur='off'] body {
   background: #e4e7ef;
 }
 
@@ -65,7 +66,8 @@ html[data-color-scheme='light'][data-performance-mode='low-memory'] body {
 body.modal-blur-active #root {
   filter: blur(8px);
 }
-html[data-performance-mode='low-memory'] body.modal-blur-active #root,
+html[data-perf-blur='reduced'] body.modal-blur-active #root,
+html[data-perf-blur='off'] body.modal-blur-active #root,
 [data-reduce-transparency] body.modal-blur-active #root {
   filter: none;
 }
@@ -86,9 +88,12 @@ html[data-color-scheme='light'] .onboarding-glass-modal {
     inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
-/* ── Low-memory mode ─────────────────────────────────────────────────────── */
-/* Reduces GPU-heavy effects when the user selects Low Memory performance mode. */
-html[data-performance-mode='low-memory'] {
+/* ── Reduced-blur tier (data-perf-blur='reduced') ────────────────────────────── */
+/* Reduces GPU-heavy effects. The low-memory preset resolves to blur:'reduced',
+   so these rules reproduce the historical low-memory look. The 'off' tier below
+   inherits these and pushes the blur scale to zero. */
+html[data-perf-blur='reduced'],
+html[data-perf-blur='off'] {
   /* Collapse blur scale — halved from defaults, matching reduced-glass theme. */
   --blur-xs: 4px;
   --blur-sm: 6px;
@@ -98,15 +103,51 @@ html[data-performance-mode='low-memory'] {
   --blur-2xl: 16px;
   --blur-3xl: 24px;
 }
-html[data-performance-mode='low-memory'] body {
+html[data-perf-blur='reduced'] body,
+html[data-perf-blur='off'] body {
   /* Remove expensive radial gradient — flat colour is composited cheaply. */
   background: #15151a;
 }
 
-/* ── Dropdown low-memory mode ────────────────────────────────────────────────── */
-/* Reduce backdrop-blur on dropdowns when in low-memory mode. */
-html[data-performance-mode='low-memory'] [role='listbox'] {
+/* ── Off tier (data-perf-blur='off') ─────────────────────────────────────────── */
+/* Strongest reduction: zero the blur scale and disable backdrop-filters so no
+   surface composites a backdrop blur at all. */
+html[data-perf-blur='off'] {
+  --blur-xs: 0px;
+  --blur-sm: 0px;
+  --blur-md: 0px;
+  --blur-lg: 0px;
+  --blur-xl: 0px;
+  --blur-2xl: 0px;
+  --blur-3xl: 0px;
+}
+html[data-perf-blur='off'] .glass,
+html[data-perf-blur='off'] .glass-card,
+html[data-perf-blur='off'] .glass-surface,
+html[data-perf-blur='off'] .glass-elevated,
+html[data-perf-blur='off'] .glass-dropdown,
+html[data-perf-blur='off'] .glass-modal,
+html[data-perf-blur='off'] [role='listbox'] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ── Dropdown reduced-blur ──────────────────────────────────────────────────── */
+/* Reduce backdrop-blur on dropdowns at the reduced tier (the 'off' rule above
+   removes it entirely). */
+html[data-perf-blur='reduced'] [role='listbox'] {
   backdrop-filter: blur(8px) !important;
+}
+
+/* ── Animations off (data-perf-animations='off') ─────────────────────────────── */
+/* Neutralize the aurora/nebula keyframe loops — mirrors the reduced-motion
+   media query, but driven by the resolved performance profile. */
+html[data-perf-animations='off'] .animate-aurora-1,
+html[data-perf-animations='off'] .animate-aurora-2,
+html[data-perf-animations='off'] .animate-aurora-3,
+html[data-perf-animations='off'] .animate-nebula-1,
+html[data-perf-animations='off'] .animate-nebula-2 {
+  animation: none !important;
 }
 
 /* ── Window drag regions (Electron + Tauri) ──────────────────────────────── */

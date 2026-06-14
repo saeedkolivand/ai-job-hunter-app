@@ -350,7 +350,7 @@ OCR runs off the UI thread; text chunking, embedding, and document extraction ru
 
 ### Performance mode
 
-The app detects available memory and CPU cores via `sysinfo` (Rust) and offers tiers that scale worker threads and batch size — a low tier for older or background use, a balanced default, and a performance tier for desktop workstations.
+The app offers three backend tiers (low-memory, balanced, performance) + a custom mode where users tune per-element visuals and backend knobs independently. The frontend resolves a `PerformanceProfile` to a concrete `PerformanceBackendConfig` IPC payload. The backend holds a process-global `OnceLock<ArcSwap<PerformanceConfig>>` (L0 module) that subsystems read without requiring an AppHandle — this pattern enables the Ollama embed builder (a free function) to query the live keep-alive setting. Three backend knobs are now real: (1) scraper concurrency threaded to `ScraperEngine::set_concurrency(n)`, (2) Ollama keep-alive (seconds) flowing into model/chat/embeddings request bodies, (3) cache TTL + row-cap bounding on match-scores and posting-vectors tables. Tier values and custom overrides are resolved in one place (`resolveBackendConfig` in preferences-schema.ts); the backend never branches on mode string. See ADR-019 for full architecture and tier definitions.
 
 ### Streaming rendering
 

@@ -88,6 +88,7 @@ impl AiProvider for OllamaClient {
         if let Some(t) = temperature {
             body["options"] = json!({ "temperature": t });
         }
+        body["keep_alive"] = json!(crate::performance::ollama_keep_alive());
 
         let resp = match crate::net::http::shared()
             .post(&endpoint)
@@ -219,7 +220,7 @@ pub async fn reachable_model() -> (bool, Option<String>) {
 pub async fn embed_with(model: &str, text: &str) -> AppResult<Vec<f64>> {
     // Char-boundary-safe truncation (avoids panics on multi-byte input).
     let truncated: String = text.chars().take(8000).collect();
-    let body = json!({ "model": model, "prompt": truncated });
+    let body = json!({ "model": model, "prompt": truncated, "keep_alive": crate::performance::ollama_keep_alive() });
     let resp = crate::net::http::shared()
         .post(format!("{}/api/embeddings", host()))
         .timeout(std::time::Duration::from_secs(15))
@@ -506,6 +507,7 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
     if !options.is_empty() {
         body["options"] = Value::Object(options);
     }
+    body["keep_alive"] = json!(crate::performance::ollama_keep_alive());
 
     let response = crate::net::http::shared()
         .post(&endpoint)

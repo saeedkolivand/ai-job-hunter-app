@@ -22,20 +22,12 @@ fn test_health() {
 }
 
 #[test]
-fn test_performance_mode() {
+fn test_set_concurrency() {
     let engine = ScraperEngine::new();
-
-    // Default mode should have semaphore limit of 2
-    engine.set_performance_mode("default");
-
-    // Low memory mode
-    engine.set_performance_mode("low-memory");
-
-    // Performance mode
-    engine.set_performance_mode("performance");
-
-    // Unknown mode should use default
-    engine.set_performance_mode("unknown");
+    engine.set_concurrency(1); // low-memory tier
+    engine.set_concurrency(2); // balanced
+    engine.set_concurrency(4); // performance
+    engine.set_concurrency(0); // clamps to >= 1, must not panic
 }
 
 #[tokio::test]
