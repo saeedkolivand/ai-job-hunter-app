@@ -67,3 +67,58 @@ export function readableForeground(hex: string): string | null {
   if (!rgb) return null;
   return luminance(rgb) > 0.55 ? '#1d1d1f' : '#ffffff';
 }
+
+/**
+ * Accent gradient math
+ * ─────────────────────────────────────────────────────────────────────────
+ * Hue rotation lets a single accent hex spawn a coherent two-tone gradient
+ * end: rotate the hue, keep saturation + lightness, and the pair reads as the
+ * same family. Used by the theme engine to auto-derive --color-brand-2 when a
+ * preset/custom accent ships no hand-tuned second hex.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+
+/** RGB → HSL. h in degrees 0..360, s/l in 0..1. */
+function rgbToHsl(c: Rgb): { h: number; s: number; l: number } {
+  const r = c.r / 255;
+  const g = c.g / 255;
+  const b = c.b / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d === 0) return { h: 0, s: 0, l };
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h: number;
+  if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return { h: h * 60, s, l };
+}
+
+/** HSL → RGB. h in degrees, s/l in 0..1. */
+function hslToRgb(h: number, s: number, l: number): Rgb {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const hp = (((h % 360) + 360) % 360) / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  // hp ∈ [0, 6) after normalization, so the sextant chain is exhaustive.
+  const sextant = (): [number, number, number] => {
+    if (hp < 1) return [c, x, 0];
+    if (hp < 2) return [x, c, 0];
+    if (hp < 3) return [0, c, x];
+    if (hp < 4) return [0, x, c];
+    if (hp < 5) return [x, 0, c];
+    return [c, 0, x];
+  };
+  const [r1, g1, b1] = sextant();
+  const m = l - c / 2;
+  return { r: (r1 + m) * 255, g: (g1 + m) * 255, b: (b1 + m) * 255 };
+}
+
+/** Rotate a hex's hue by `deg` (keeps S + L); null on invalid input. */
+export function rotateHueHex(hex: string, deg: number): string | null {
+  const rgb = parseHex(hex);
+  if (!rgb) return null;
+  const { h, s, l } = rgbToHsl(rgb);
+  return toHex(hslToRgb(h + deg, s, l));
+}

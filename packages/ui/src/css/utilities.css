@@ -41,7 +41,7 @@
 
 /* ── Cinematic gradient text ─────────────────────────────────────────────── */
 .text-gradient {
-  background: linear-gradient(135deg, #fff 0%, #a855f7 50%, #6366f1 100%);
+  background: linear-gradient(135deg, #fff 0%, var(--color-brand) 50%, var(--color-brand-2) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -121,18 +121,26 @@
 
 /* ── Tonal glass variants ────────────────────────────────────────────────── */
 .glass-violet {
-  background: linear-gradient(135deg, rgba(168, 139, 250, 0.08) 0%, rgba(99, 102, 241, 0.04) 100%);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-brand) 8%, transparent) 0%,
+    color-mix(in srgb, var(--color-brand-2) 4%, transparent) 100%
+  );
   backdrop-filter: blur(var(--blur-md)) saturate(var(--sat-high));
   -webkit-backdrop-filter: blur(var(--blur-md)) saturate(var(--sat-high));
-  border: 1px solid rgba(196, 181, 253, 0.1);
+  border: 1px solid color-mix(in srgb, var(--color-brand-soft) 10%, transparent);
   border-radius: var(--radius);
   box-shadow: var(--shadow-2xl), var(--glow-brand-md);
 }
 .glass-indigo {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(59, 130, 246, 0.04) 100%);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-brand-2) 8%, transparent) 0%,
+    color-mix(in srgb, var(--color-brand-2-soft) 4%, transparent) 100%
+  );
   backdrop-filter: blur(var(--blur-md)) saturate(var(--sat-high));
   -webkit-backdrop-filter: blur(var(--blur-md)) saturate(var(--sat-high));
-  border: 1px solid rgba(165, 180, 252, 0.1);
+  border: 1px solid color-mix(in srgb, var(--color-brand-2-soft) 10%, transparent);
   border-radius: var(--radius);
   box-shadow: var(--shadow-2xl), var(--glow-blue-md);
 }
@@ -190,7 +198,7 @@
   position: absolute;
   inset: 0;
   border-radius: var(--radius);
-  background: linear-gradient(45deg, #a855f7, #6366f1, #a855f7);
+  background: linear-gradient(45deg, var(--color-brand), var(--color-brand-2), var(--color-brand));
   z-index: -1;
   animation: gradient-rotate 3s linear infinite;
 }
@@ -701,7 +709,12 @@ html[data-text-scale='large'] {
   background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.85), transparent);
 }
 [data-color-scheme='light'] .text-gradient {
-  background: linear-gradient(135deg, #1e1b2e 0%, #7c3aed 50%, #4f46e5 100%);
+  background: linear-gradient(
+    135deg,
+    #1e1b2e 0%,
+    var(--color-brand) 50%,
+    var(--color-brand-2) 100%
+  );
   -webkit-background-clip: text;
   background-clip: text;
 }
