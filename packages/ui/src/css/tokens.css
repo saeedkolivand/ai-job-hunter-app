@@ -49,6 +49,12 @@
   --color-brand-2: #6366f1;
   --color-brand-2-soft: #818cf8;
   --color-brand-dim: color-mix(in srgb, var(--color-brand) 15%, transparent);
+  /* Un-overridden BASE brand pair — the SAME shipped default values, but the
+     runtime accent applier (theme.ts `applyAccent` / ACCENT_VARS) never touches
+     these. The Settings "Default" accent swatch reads these so it always shows
+     the true shipped default even while a custom/system accent is active. */
+  --color-brand-base: #a855f7;
+  --color-brand-2-base: #6366f1;
 
   /* Native macOS font (San Francisco) where it exists — it can't be bundled, so
      it only appears on real macOS via the OS; everyone else gets bundled Inter.
@@ -309,6 +315,11 @@
   --color-brand-2: #4f46e5;
   --color-brand-2-soft: #6366f1;
   --color-brand-dim: color-mix(in srgb, var(--color-brand) 12%, transparent);
+  /* Un-overridden BASE brand pair for light (mirrors the @theme dark defaults):
+     the SAME shipped light-scheme values, never touched by the runtime accent
+     applier. The Settings "Default" accent swatch reads these. */
+  --color-brand-base: #7c3aed;
+  --color-brand-2-base: #4f46e5;
   --color-primary: oklch(50% 58% 285);
   --color-primary-foreground: oklch(99% 0.15% 270);
   --color-accent: oklch(50% 58% 285);
