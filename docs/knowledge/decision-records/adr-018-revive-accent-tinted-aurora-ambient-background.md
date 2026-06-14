@@ -26,15 +26,15 @@ All layers reference `--color-brand` / `--color-brand-2` via `color-mix` in CSS 
 
 ### Performance mode gating
 
-- **`low-memory`** — renders nothing; the aurora component returns null.
-- **`balanced`** — one nebula, cursor glow only; no parallax or streaming animations.
-- **`performance`** — adds a second nebula; cursor glow applies transform-only keyframes (no JavaScript loop).
+- **`low-memory`** — renders nothing; the component returns null.
+- **`balanced`** — renders one nebula + cursor glow RAF loop; no second nebula.
+- **`performance`** — adds a second nebula; cursor glow RAF loop is active in both modes.
 
-The cursor glow's RAF loop is paused when the tab is hidden (`visibilitychange` listener) to avoid frame burn on background tabs.
+All aurora/nebula animation uses transform-only CSS keyframes (no layout thrashing). The cursor glow's RAF loop is paused when the tab is hidden (`visibilitychange` listener) to avoid frame burn on background tabs.
 
 ### Accessibility
 
-- All animation is disabled under `prefers-reduced-motion` CSS media query.
+- Under `prefers-reduced-motion`, the CSS aurora/nebula keyframes are disabled via `@media (prefers-reduced-motion: reduce)` in `utilities.css`, and the cursor-glow RAF loop is skipped in JS (the glow is painted once, static, at viewport center).
 - Cursor glow position is seeded to viewport center on init, so blob doesn't slide in from (0,0) on first paint.
 
 ### Implementation

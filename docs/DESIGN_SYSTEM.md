@@ -172,15 +172,15 @@ A **single-source, user-customizable accent** system colllapses brand-color frag
 **Single point of derivation** — `--color-brand` in `packages/ui/src/css/tokens.css` is the sole accent. All derived colors compute from it at paint time:
 
 - **`--color-brand-soft`** — a lighter step for secondary accent text/icons (28% whiter on dark schemes, 16% on light to account for canvas contrast).
-- **`--color-brand-2` / `--color-brand-2-soft`** — gradient-end hue and its lighter variant, derived at runtime by `applyAccent()` in `packages/ui/src/lib/theme.ts`. Hand-tuned per preset (e.g. blue #007aff→#22d3ee), or auto-rotated via `rotateHueHex(color, -30)` for system/custom accents. Static default values (violet→indigo) are shipped in tokens.css and cleared for `accentSource:'default'`. The `ThemePrefs.accentColor2` optional field allows preset overrides.
-- **`--color-brand-dim`** — a darker tone for disabled/subtle states (derived via CSS `color-mix(–10%)`).
+- **`--color-brand-2` / `--color-brand-2-soft`** — gradient-end hue and its lighter variant. Hand-tuned per preset (e.g. blue #007aff→#22d3ee) or auto-derived via `rotateHueHex()` in `packages/ui/src/lib/color.ts` for system/custom accents. Derived at runtime by `applyAccent()` in `packages/ui/src/lib/theme.ts`; see `ThemePrefs.accentColor2` for preset overrides.
+- **`--color-brand-dim`** — a darker tone for disabled/subtle states.
 - **`--color-action-primary`** — alias for brand (the signature CTA color); semantic, never diverges.
 - **`ring-brand`** — the focus ring (2px brand outline on focus-visible buttons/inputs).
-- **Brand glows and gradients** (`.text-gradient`, `.gradient-border`, `.glass-violet`, `.glass-indigo`, aurora ribbons/nebulae) — all derive via `color-mix` in `utilities.css` or inline CSS, referencing `var(--color-brand)` / `var(--color-brand-2)`, so they auto-adjust with the accent.
+- **Brand glows and gradients** (`.text-gradient`, `.gradient-border`, `.glass-violet`, `.glass-indigo`, aurora ribbons/nebulae) — all reference `var(--color-brand)` / `var(--color-brand-2)` via `color-mix` in `utilities.css` or inline CSS, so they auto-adjust with the accent.
 
-**Auto-contrast for legibility** — `--color-action-foreground` is computed at runtime by `applyAccent()` in `packages/ui/src/lib/theme.ts` using `readableForeground()` from `packages/ui/src/lib/color.ts`. The function applies WCAG luminance (`> 0.55 → dark label; ≤ 0.55 → white label`) so filled primary CTAs remain readable on any accent (pale lavender accents get `#1d1d1f` labels; deep indigo accents get `#ffffff`).
+**Auto-contrast for legibility** — `--color-action-foreground` is computed by `readableForeground()` from `packages/ui/src/lib/color.ts`, applied at runtime by `applyAccent()` in `packages/ui/src/lib/theme.ts`. So filled primary CTAs remain readable on any accent.
 
-**Runtime applier** — `applyAccent(root, prefs, scheme)` writes the five accent vars (`--color-brand`, `--color-brand-soft`, `--color-brand-2`, `--color-brand-2-soft`, `--color-action-foreground`) to `<html>.style` before paint, or clears them for `'default'`. The applier derives `color2` via `prefs.accentColor2 ?? rotateHueHex(color, -30)` (with helper `rotateHueHex()` from `packages/ui/src/lib/color.ts` performing HSL hue rotation), recalculates both soft steps per-canvas, and auto-contrasts the foreground label color. The applier is idempotent and re-runs on scheme changes (light/dark swap). Applied via `restoreTheme()` on init and `applyThemeAnimated()` on user change.
+**Runtime applier** — `applyAccent()` in `packages/ui/src/lib/theme.ts` writes the five accent vars to `<html>.style` before paint, or clears them for `'default'`. It is idempotent and re-runs on scheme changes (light/dark swap). See `ACCENT_VARS` in theme.ts for the full list.
 
 **User picker** — Settings → Appearance card (`apps/tauri/src/renderer/features/settings/components/general-section/AppearanceCard.tsx`) offers:
 
