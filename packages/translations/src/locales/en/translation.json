@@ -2369,6 +2369,28 @@
       "candidatePlaceholder": "Your name",
       "cancel": "Cancel",
       "submit": "Track"
+    },
+    "detail": {
+      "back": "Back to applications",
+      "openAria": "Open {{title}}",
+      "statusTitle": "Status",
+      "timelineTitle": "Timeline",
+      "timelineEmpty": "No status history yet.",
+      "created": "Created",
+      "fieldsTitle": "Details",
+      "notesLabel": "Notes",
+      "contactNameLabel": "Contact name",
+      "contactEmailLabel": "Contact email",
+      "compLabel": "Compensation",
+      "nextActionLabel": "Next action reminder",
+      "briefTitle": "Company brief",
+      "answersTitle": "Application answers",
+      "documentsTitle": "Documents",
+      "noDocuments": "No documents yet",
+      "noDocumentsDesc": "Generate a tailored resume and cover letter for this application.",
+      "generateDocs": "Generate documents",
+      "notFound": "Application not found",
+      "notFoundDesc": "This application may have been removed."
     }
   },
   "notifications": {

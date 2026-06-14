@@ -39,7 +39,7 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-vi.mock('@/routes/applications', () => ({
+vi.mock('@/routes/applications.index', () => ({
   Route: {
     useSearch: () => currentSearch,
   },

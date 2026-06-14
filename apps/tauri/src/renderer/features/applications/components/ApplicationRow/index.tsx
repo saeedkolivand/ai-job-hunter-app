@@ -1,5 +1,6 @@
 import { Clock, ExternalLink, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 
 import { type Application, APPLICATION_STAGES } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
@@ -18,6 +19,7 @@ const STATUS_OPTIONS = APPLICATION_STAGES.map((s) => ({ value: s.id, label: s.id
 
 export function ApplicationRow({ application, highlighted = false }: ApplicationRowProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const setStatus = useSetApplicationStatus();
   const remove = useRemoveApplication();
   const openExternal = useOpenExternal();
@@ -49,6 +51,17 @@ export function ApplicationRow({ application, highlighted = false }: Application
     setDeleteOpen(false);
   };
 
+  const openDetail = () => {
+    void navigate({ to: '/applications/$id', params: { id: application.id } });
+  };
+
+  const onRowKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openDetail();
+    }
+  };
+
   const stageOptions = STATUS_OPTIONS.map((o) => ({
     value: o.value,
     label: t(`applications.status.${o.value}` as const),
@@ -58,8 +71,15 @@ export function ApplicationRow({ application, highlighted = false }: Application
     <>
       <div
         ref={rowRef}
+        role="button"
+        tabIndex={0}
+        aria-label={t('applications.detail.openAria', {
+          title: application.title || t('applications.row.noTitle'),
+        })}
+        onClick={openDetail}
+        onKeyDown={onRowKey}
         className={cn(
-          'surface-card flex items-center gap-4 rounded-xl px-4 py-3 transition-colors hover:bg-foreground/[0.03]',
+          'surface-card flex cursor-pointer items-center gap-4 rounded-xl px-4 py-3 transition-colors hover:bg-foreground/[0.03]',
           highlighted && 'ring-2 ring-brand/60'
         )}
       >
@@ -102,7 +122,9 @@ export function ApplicationRow({ application, highlighted = false }: Application
         <div
           className="shrink-0"
           onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+          }}
           role="presentation"
         >
           <Dropdown
@@ -113,32 +135,40 @@ export function ApplicationRow({ application, highlighted = false }: Application
           />
         </div>
 
-        {/* Actions */}
-        <ActionMenu
-          label={t('applications.row.actions')}
-          items={[
-            ...(/^https?:\/\//i.test(application.jobUrl ?? '')
-              ? [
-                  {
-                    label: t('applications.row.openUrl'),
-                    icon: <ExternalLink size={14} />,
-                    onSelect: () => openExternal.mutate(application.jobUrl),
-                  },
-                ]
-              : []),
-            {
-              label: t('applications.row.deleteKeepDocs'),
-              icon: <Trash2 size={14} />,
-              onSelect: () => handleDelete(true),
-            },
-            {
-              label: t('applications.row.deleteAll'),
-              icon: <Trash2 size={14} />,
-              destructive: true,
-              onSelect: () => handleDelete(false),
-            },
-          ]}
-        />
+        {/* Actions — stop propagation so opening the menu / deleting doesn't navigate. */}
+        <div
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+          }}
+          role="presentation"
+        >
+          <ActionMenu
+            label={t('applications.row.actions')}
+            items={[
+              ...(/^https?:\/\//i.test(application.jobUrl ?? '')
+                ? [
+                    {
+                      label: t('applications.row.openUrl'),
+                      icon: <ExternalLink size={14} />,
+                      onSelect: () => openExternal.mutate(application.jobUrl),
+                    },
+                  ]
+                : []),
+              {
+                label: t('applications.row.deleteKeepDocs'),
+                icon: <Trash2 size={14} />,
+                onSelect: () => handleDelete(true),
+              },
+              {
+                label: t('applications.row.deleteAll'),
+                icon: <Trash2 size={14} />,
+                destructive: true,
+                onSelect: () => handleDelete(false),
+              },
+            ]}
+          />
+        </div>
       </div>
 
       <ConfirmModal

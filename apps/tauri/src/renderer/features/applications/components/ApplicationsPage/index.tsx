@@ -10,7 +10,7 @@ import { Button, EmptyState, ErrorState, Input, RowSkeleton, transition } from '
 import { PageShell } from '@/components/layout/PageShell';
 import { ApplicationRow } from '@/features/applications/components/ApplicationRow';
 import { TrackJobModal } from '@/features/applications/components/TrackJobModal';
-import { Route } from '@/routes/applications';
+import { Route } from '@/routes/applications.index';
 import { useApplications } from '@/services/use-applications';
 import { useSessionStore } from '@/store/session-store';
 

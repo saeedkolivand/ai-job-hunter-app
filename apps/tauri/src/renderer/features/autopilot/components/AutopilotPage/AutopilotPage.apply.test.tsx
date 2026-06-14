@@ -1,19 +1,23 @@
 /**
- * AutopilotPage — ?focus deep-link consumption (Priority 4)
+ * AutopilotPage — Apply navigation
+ *
+ * The apply flow is now a real route (`/autopilot/apply`), not an in-body view
+ * swap. Clicking "Apply" on a found job must (1) write the apply target into the
+ * session store and (2) navigate to `/autopilot/apply` — it must NOT render
+ * ApplyPage inline.
  *
  * Strategy:
- *  - Effect-level test: stub every heavy sub-component (AutopilotCard, CreationWizard,
- *    ApplyPage, EmptyState, useAutopilotRun) so the page renders cheaply.
- *  - `useSearch` backed by a mutable variable so we can set it per-test.
- *  - `useAutopilots` + `useInvalidateAutopilots` are controlled mocks.
- *  - Assert: with `?focus=<id>`, `setAutopilot({ focusedId: focus })` is called
- *    (observed via session-store) and navigate({to:'/autopilot',search:{},replace:true})
- *    is called to clear the param.
+ *  - `AutopilotCard` is stubbed to expose an "apply" button that calls its
+ *    `onApply(job)` prop, so we can trigger the handler without the real card.
+ *  - `useAutopilots` returns one autopilot so a card renders.
+ *  - `useNavigate` and the real session store are observed.
  */
 
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
+
+import type { Autopilot, AutopilotFoundJob } from '@ajh/shared';
 
 import { useSessionStore } from '@/store/session-store';
 
@@ -27,7 +31,6 @@ vi.mock('@ajh/translations', () => ({
 
 // ── Router ────────────────────────────────────────────────────────────────────
 
-let currentSearch: Record<string, string | undefined> = {};
 const mockNavigate = vi.fn();
 
 vi.mock('@tanstack/react-router', () => ({
@@ -35,34 +38,48 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 vi.mock('@/routes/autopilot.index', () => ({
-  Route: { useSearch: () => currentSearch },
+  Route: { useSearch: () => ({}) },
 }));
 
 // ── Services ──────────────────────────────────────────────────────────────────
 
-const mockInvalidateAutopilots = vi.fn();
+const JOB = {
+  title: 'Senior Engineer',
+  company: 'Acme',
+  url: 'https://acme.com/jobs/42',
+  description: 'Build cool things.',
+  score: 85,
+  foundAt: Date.now(),
+} as unknown as AutopilotFoundJob;
+
+const AUTOPILOT = {
+  _id: 'ap-1',
+  resumeText: 'base resume',
+  target: { board: 'linkedin' },
+} as unknown as Autopilot;
 
 vi.mock('@/services', async (importOriginal) => {
   const orig = await importOriginal();
   return {
     ...(orig as object),
-    useAutopilots: () => ({ data: [], isLoading: false }),
-    useInvalidateAutopilots: () => mockInvalidateAutopilots,
+    useAutopilots: () => ({ data: [AUTOPILOT], isLoading: false }),
+    useInvalidateAutopilots: () => vi.fn(),
   };
 });
 
 // ── Heavy sub-component stubs ─────────────────────────────────────────────────
+// AutopilotCard is stubbed to expose an "apply" trigger wired to its onApply prop.
 
 vi.mock('@/features/autopilot/components/AutopilotCard', () => ({
-  AutopilotCard: () => <div data-testid="autopilot-card" />,
+  AutopilotCard: ({ onApply }: { onApply: (job: AutopilotFoundJob) => void }) => (
+    <div data-testid="card-apply" onClick={() => onApply(JOB)}>
+      apply
+    </div>
+  ),
 }));
 
 vi.mock('@/features/autopilot/components/CreationWizard', () => ({
   CreationWizard: () => <div data-testid="creation-wizard" />,
-}));
-
-vi.mock('@/features/autopilot/components/ApplyPage', () => ({
-  ApplyPage: () => <div data-testid="apply-page" />,
 }));
 
 vi.mock('@/features/autopilot/components/EmptyState', () => ({
@@ -91,63 +108,50 @@ vi.mock('@/components/layout/PageTransition', () => ({
 
 beforeEach(() => {
   useSessionStore.setState((s) => ({
-    autopilot: { ...s.autopilot, focusedId: null, creating: false },
+    autopilot: {
+      ...s.autopilot,
+      apply: null,
+      applyWizardStep: 5,
+      applyWizardForm: { resume: 'stale' } as never,
+      creating: false,
+      focusedId: null,
+    },
   }));
   mockNavigate.mockReset();
-  mockInvalidateAutopilots.mockReset();
-  currentSearch = {};
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
-describe('AutopilotPage — ?focus consumption', () => {
-  it('sets autopilot.focusedId in session store when ?focus is present', async () => {
-    currentSearch = { focus: 'ap-42' };
-
+describe('AutopilotPage — Apply navigation', () => {
+  it('clicking Apply sets the apply target and resets the wizard slice in the store', async () => {
     await act(async () => {
       render(<AutopilotPage />);
+    });
+
+    await act(async () => {
+      screen.getByTestId('card-apply').click();
     });
 
     const { autopilot } = useSessionStore.getState();
-    expect(autopilot.focusedId).toBe('ap-42');
+    expect(autopilot.apply).toEqual({ job: JOB, resumeText: 'base resume', board: 'linkedin' });
+    expect(autopilot.applyWizardStep).toBe(0);
+    expect(autopilot.applyWizardForm).toBeNull();
   });
 
-  it('clears the ?focus URL param via navigate({to:/autopilot,search:{},replace:true})', async () => {
-    currentSearch = { focus: 'ap-42' };
-
+  it('clicking Apply navigates to /autopilot/apply (no inline ApplyPage)', async () => {
     await act(async () => {
       render(<AutopilotPage />);
     });
 
-    expect(mockNavigate).toHaveBeenCalledWith(
-      expect.objectContaining({ to: '/autopilot', search: {}, replace: true })
-    );
-  });
-
-  it('calls useInvalidateAutopilots() to refresh the list when ?focus is set', async () => {
-    currentSearch = { focus: 'ap-42' };
-
     await act(async () => {
-      render(<AutopilotPage />);
+      screen.getByTestId('card-apply').click();
     });
 
-    expect(mockInvalidateAutopilots).toHaveBeenCalledTimes(1);
-  });
-
-  it('does nothing when ?focus is absent', async () => {
-    currentSearch = {};
-
-    await act(async () => {
-      render(<AutopilotPage />);
-    });
-
-    expect(mockNavigate).not.toHaveBeenCalled();
-    expect(mockInvalidateAutopilots).not.toHaveBeenCalled();
-    const { autopilot } = useSessionStore.getState();
-    expect(autopilot.focusedId).toBeNull();
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/autopilot/apply' });
+    // The list body stays — ApplyPage is no longer rendered inline by this page.
+    expect(screen.queryByTestId('apply-page')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-apply')).toBeInTheDocument();
   });
 });

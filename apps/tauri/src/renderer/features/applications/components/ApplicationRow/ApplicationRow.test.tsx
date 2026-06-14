@@ -32,6 +32,14 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+// ── Router — render standalone (no RouterProvider) ────────────────────────────
+
+const mockNavigate = vi.fn();
+
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mockNavigate,
+}));
+
 // ── Service hooks ─────────────────────────────────────────────────────────────
 
 const mockSetStatusMutateAsync = vi.fn().mockResolvedValue(undefined);
@@ -83,6 +91,7 @@ beforeEach(() => {
   mockSetStatusMutateAsync.mockClear();
   mockRemoveMutateAsync.mockClear();
   mockOpenExternalMutate.mockClear();
+  mockNavigate.mockClear();
 });
 
 // ── Gap 5: status-change Dropdown calls setStatus mutation ──────────────
@@ -254,6 +263,81 @@ describe('ApplicationRow — delete flow', () => {
 
     expect(mockRemoveMutateAsync).toHaveBeenCalledTimes(1);
     expect(mockRemoveMutateAsync).toHaveBeenCalledWith({ id: 'app-del-2', keepDocuments: false });
+  });
+});
+
+// ── Row navigation — clicking the row body navigates to the detail route ───────
+
+describe('ApplicationRow — row navigation', () => {
+  it('clicking the row body navigates to the detail route', () => {
+    const app = makeApp({ id: 'app-nav-1' });
+    render(<ApplicationRow application={app} />);
+
+    // The row itself has role="button" and an aria-label set via t(), which
+    // returns the key string (t returns (key) => key). The label is
+    // 'applications.detail.openAria' because the mock ignores interpolation params.
+    const rowButton = screen.getByRole('button', { name: 'applications.detail.openAria' });
+    fireEvent.click(rowButton);
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/applications/$id',
+      params: { id: 'app-nav-1' },
+    });
+  });
+
+  it('clicking the actions (3-dots) menu does NOT navigate', () => {
+    const app = makeApp({ id: 'app-nav-2' });
+    render(<ApplicationRow application={app} />);
+
+    // The ActionMenu trigger is wrapped in a stopPropagation div — clicks on
+    // it must not bubble to the row's openDetail handler.
+    const actionsBtn = screen.getByRole('button', { name: 'applications.row.actions' });
+    fireEvent.click(actionsBtn);
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('clicking the status Dropdown does NOT navigate', () => {
+    const app = makeApp({ id: 'app-nav-5', status: 'applied' });
+    render(<ApplicationRow application={app} />);
+
+    // The status Dropdown trigger is wrapped in a stopPropagation div — clicks
+    // on it must not bubble to the row's openDetail handler.
+    const trigger = screen.getByRole('button', {
+      name: /applications\.status\.applied/i,
+    });
+    fireEvent.click(trigger);
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('pressing Enter on the row navigates to the detail route', () => {
+    const app = makeApp({ id: 'app-nav-3' });
+    render(<ApplicationRow application={app} />);
+
+    const rowButton = screen.getByRole('button', { name: 'applications.detail.openAria' });
+    fireEvent.keyDown(rowButton, { key: 'Enter' });
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/applications/$id',
+      params: { id: 'app-nav-3' },
+    });
+  });
+
+  it('pressing Space on the row navigates to the detail route', () => {
+    const app = makeApp({ id: 'app-nav-4' });
+    render(<ApplicationRow application={app} />);
+
+    const rowButton = screen.getByRole('button', { name: 'applications.detail.openAria' });
+    fireEvent.keyDown(rowButton, { key: ' ' });
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/applications/$id',
+      params: { id: 'app-nav-4' },
+    });
   });
 });
 

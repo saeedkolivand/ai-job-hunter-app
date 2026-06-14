@@ -16,7 +16,7 @@ import {
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
-import { GenerationCard } from '@/features/resumes/components/GenerationCard';
+import { GenerationCard } from '@/features/documents/components/GenerationCard';
 import { InteractionRow } from '@/features/resumes/components/InteractionRow';
 import { DOC_TABS, type DocTab, type Interaction } from '@/features/resumes/constants';
 import { useAiGenerations, useRemoveAiGenerationsBulk } from '@/services/use-ai-generations';

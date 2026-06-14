@@ -2329,6 +2329,28 @@
       "candidatePlaceholder": "Dein Name",
       "cancel": "Abbrechen",
       "submit": "Tracken"
+    },
+    "detail": {
+      "back": "Zurück zu Bewerbungen",
+      "openAria": "{{title}} öffnen",
+      "statusTitle": "Status",
+      "timelineTitle": "Verlauf",
+      "timelineEmpty": "Noch kein Statusverlauf.",
+      "created": "Erstellt",
+      "fieldsTitle": "Details",
+      "notesLabel": "Notizen",
+      "contactNameLabel": "Ansprechpartner",
+      "contactEmailLabel": "Kontakt-E-Mail",
+      "compLabel": "Vergütung",
+      "nextActionLabel": "Erinnerung für nächste Aktion",
+      "briefTitle": "Unternehmens-Briefing",
+      "answersTitle": "Bewerbungsantworten",
+      "documentsTitle": "Dokumente",
+      "noDocuments": "Noch keine Dokumente",
+      "noDocumentsDesc": "Erstelle einen passgenauen Lebenslauf und ein Anschreiben für diese Bewerbung.",
+      "generateDocs": "Dokumente erstellen",
+      "notFound": "Bewerbung nicht gefunden",
+      "notFoundDesc": "Diese Bewerbung wurde möglicherweise entfernt."
     }
   },
   "notifications": {

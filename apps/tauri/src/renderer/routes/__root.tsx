@@ -21,6 +21,7 @@ import { UpdateBanner } from '@/components/ui/UpdateBanner';
 import { OnboardingWizard } from '@/features/onboarding/OnboardingWizard';
 import { useAutopilotFocusNavigation } from '@/hooks/use-autopilot-focus-navigation';
 import { useMenuNavigation } from '@/hooks/use-menu-navigation';
+import { installUnknownPathRedirect } from '@/lib/router-guard';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { CapabilityProvider } from '@/providers/CapabilityProvider';
 import {
@@ -165,17 +166,8 @@ function RootLayout() {
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, []);
 
-  // Redirect unknown paths to home instead of showing a blank screen.
-  useEffect(() => {
-    return router.subscribe('onResolved', ({ toLocation }) => {
-      const known = (router.routesByPath as unknown as Record<string, unknown>)[
-        toLocation.pathname
-      ];
-      if (toLocation.pathname !== '/' && !known) {
-        void router.navigate({ to: '/', replace: true });
-      }
-    });
-  }, [router]);
+  // Redirect genuinely-unknown paths to home (matched dynamic/param routes are kept).
+  useEffect(() => installUnknownPathRedirect(router), [router]);
 
   return (
     <NotificationProvider>
