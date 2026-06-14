@@ -14,7 +14,6 @@ import {
   buildInterviewResumePrompt,
   type InterviewAnswers,
 } from '@ajh/prompts/builder';
-import { getModelTier } from '@ajh/prompts/context-manager';
 import {
   buildApplicationAnswerPrompt,
   buildApplicationAnswerSystemPrompt,
@@ -42,18 +41,17 @@ import { usePreferencesStore } from '@/store/preferences-store';
 
 import { getClient } from '../../app-client';
 import { safeLocale } from '../locales';
-import { createThinkSplitter } from '../think-split';
+import {
+  buildProviderProfile,
+  resolveActiveProvider,
+  resolveEffectiveTier,
+} from '../provider-context';
+import { awaitAiStream } from '../stream-promise';
 
-type ModelTier = 'large' | 'medium' | 'small';
+export type { GenerationMeta, GenerationMode };
+export { MODES } from '@ajh/prompts/generate';
 
-function effectiveTier(model: string, provider: string): ModelTier {
-  const { promptQuality } = usePreferencesStore.getState();
-  // Cloud providers always get the full prompt
-  if (provider !== 'ollama') return 'large';
-  if (promptQuality === 'full') return 'large';
-  if (promptQuality === 'compact') return 'small';
-  return getModelTier(model);
-}
+// ─── LLM helpers ─────────────────────────────────────────────────────────────
 
 /** One generation step that can carry its own per-model temperature override. */
 type TemperatureStep = 'analysis' | 'resume' | 'cover' | 'answers' | 'referral';
@@ -74,11 +72,6 @@ function resolveTemperature(step: TemperatureStep, stepDefault: number): number 
   return override ?? stepDefault;
 }
 
-export type { GenerationMeta, GenerationMode };
-export { MODES } from '@ajh/prompts/generate';
-
-// ─── LLM helpers ─────────────────────────────────────────────────────────────
-
 async function streamGenerate(
   model: string,
   system: string,
@@ -90,11 +83,7 @@ async function streamGenerate(
   onThinking?: (tok: string) => void
 ): Promise<string> {
   const api = getClient();
-  const storeState = usePreferencesStore.getState();
-  const providerConfig = storeState.aiProviderConfig;
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
-  const providerSettings = providerConfig?.providers?.[activeProvider];
-  const activeModel = providerSettings?.model || model;
+  const { activeProvider, providerSettings, activeModel } = resolveActiveProvider(model);
   // Per-model generation limits are local (Ollama) only — cloud/CLI providers
   // ignore them, and the backend only applies num_predict/num_ctx for Ollama.
   const localLimits =
@@ -122,110 +111,7 @@ async function streamGenerate(
     contextWindow: localLimits?.contextWindow,
   });
 
-  // A cancel that landed while the pipeline request was in flight is missed by the
-  // post-registration abort listener below (the signal is already aborted by the
-  // time we attach it). Honor it here so the run rejects instead of streaming on.
-  if (signal?.aborted) {
-    void api.jobs.cancel(res.jobId);
-    throw new Error('Generation cancelled');
-  }
-
-  const jobId = res.jobId;
-  let buffer = '';
-
-  // Local reasoning models embed <think>…</think> inline; the shared splitter
-  // separates that reasoning from the answer. Cloud providers instead flag
-  // reasoning structurally (the `thinking` chunk flag handled below).
-  const splitter = createThinkSplitter(
-    (text) => {
-      buffer += text;
-      onToken(text);
-    },
-    (text) => onThinking?.(text)
-  );
-
-  return new Promise((resolve, reject) => {
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    let poll: ReturnType<typeof setInterval> | null = null;
-    let abortListener: (() => void) | null = null;
-
-    const cleanup = () => {
-      if (timeoutId !== null) clearTimeout(timeoutId);
-      if (poll !== null) clearInterval(poll);
-      if (abortListener && signal) signal.removeEventListener('abort', abortListener);
-    };
-
-    const off = api.ai.onStream((chunk: unknown) => {
-      const c = chunk as {
-        jobId: string;
-        delta: string;
-        done: boolean;
-        error?: { code: string; message: string };
-        thinking?: boolean;
-      };
-      if (c.jobId !== jobId) return;
-      if (c.error) {
-        off();
-        cleanup();
-        reject(new Error(c.error.message));
-        return;
-      }
-      if (c.delta) {
-        if (c.thinking) {
-          // Provider-flagged reasoning (Anthropic, and now OpenAI/Gemini/Ollama
-          // via the normalized `thinking` chunk flag).
-          onThinking?.(c.delta);
-        } else {
-          // Local models embed reasoning inline as <think>…</think>.
-          splitter.push(c.delta);
-        }
-      }
-      if (c.done) {
-        splitter.flush();
-        off();
-        cleanup();
-        resolve(buffer);
-      }
-    });
-
-    // Handle abort signal
-    if (signal) {
-      abortListener = () => {
-        off();
-        void api.jobs.cancel(jobId);
-        cleanup();
-        reject(new Error('Generation cancelled'));
-      };
-      signal.addEventListener('abort', abortListener);
-    }
-
-    timeoutId = setTimeout(
-      () => {
-        off();
-        cleanup();
-        resolve(buffer);
-      },
-      5 * 60 * 1000
-    );
-
-    poll = setInterval(() => {
-      void (async () => {
-        const job = (await api.jobs.get(jobId).catch(() => null)) as {
-          status: string;
-        } | null;
-        if (job?.status === 'failed' || job?.status === 'cancelled') {
-          off();
-          cleanup();
-          reject(new Error(`Generation ${job.status}. Please try again.`));
-        }
-        if (job?.status === 'completed') {
-          off();
-          cleanup();
-          resolve(buffer);
-        }
-      })();
-    }, 3_000);
-  });
+  return awaitAiStream(api, res.jobId, { onToken, onThinking, signal });
 }
 
 // ─── Generation steps ─────────────────────────────────────────────────────────
@@ -239,12 +125,9 @@ export async function extractMetadata(
   // Detect languages client-side
   const clientSideDetection = detectLanguages(resume, jobAd);
 
-  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
-  const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
-  const tier = effectiveTier(activeModel, activeProvider);
+  const profile = buildProviderProfile(model);
 
-  const { system, user } = buildMetadataPrompt(resume, jobAd, tier);
+  const { system, user } = buildMetadataPrompt(resume, jobAd, profile);
   try {
     // Analysis carries its own per-model temperature override (user's chosen design).
     const raw = await streamGenerate(
@@ -295,13 +178,10 @@ export async function generateResume(
   signal?: AbortSignal,
   onThinking?: (tok: string) => void
 ): Promise<string> {
-  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
-  const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
-  const tier = effectiveTier(activeModel, activeProvider);
+  const profile = buildProviderProfile(model);
 
-  const system = buildResumeSystemPrompt(mode, tier);
-  const user = buildResumePrompt(resume, jobAd, meta, mode, tier);
+  const system = buildResumeSystemPrompt(mode, profile);
+  const user = buildResumePrompt(resume, jobAd, meta, mode, profile);
   const raw = await streamGenerate(
     model,
     system,
@@ -339,12 +219,9 @@ export async function synthesizeResume(
   signal?: AbortSignal,
   onThinking?: (tok: string) => void
 ): Promise<string> {
-  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
-  const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
-  const tier = effectiveTier(activeModel, activeProvider);
+  const profile = buildProviderProfile(model);
 
-  const system = buildBuilderSystemPrompt(tier);
+  const system = buildBuilderSystemPrompt(profile);
   const user = buildInterviewResumePrompt(answers, meta);
   const raw = await streamGenerate(
     model,
@@ -372,9 +249,7 @@ export async function researchCompany(
   company?: string
 ): Promise<string> {
   try {
-    const providerConfig = usePreferencesStore.getState().aiProviderConfig;
-    const activeProvider = providerConfig?.activeProvider ?? 'ollama';
-    const providerSettings = providerConfig?.providers?.[activeProvider];
+    const { activeProvider, providerSettings } = resolveActiveProvider(model);
     const res = await getClient().ai.researchCompany({
       jobAd,
       // The AI-extracted company name is far more reliable than the backend's
@@ -410,10 +285,9 @@ export async function generateCoverLetter(
   onThinking?: (tok: string) => void,
   opts?: { researchCompany?: boolean; market?: string }
 ): Promise<{ text: string; companyBrief: string }> {
-  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
-  const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
-  const tier = effectiveTier(activeModel, activeProvider);
+  const { activeModel, activeProvider } = resolveActiveProvider(model);
+  const tier = resolveEffectiveTier(activeModel, activeProvider);
+  const profile = buildProviderProfile(model);
 
   // Opt-in: fetch a company brief and fold it into the prompt's fit paragraph.
   const companyBrief = opts?.researchCompany
@@ -432,13 +306,13 @@ export async function generateCoverLetter(
   // expects them (e.g. DACH); never fabricated. From the global settings store.
   const applicant = usePreferencesStore.getState().applicant;
 
-  const system = buildCoverLetterSystemPrompt(mode, tier);
+  const system = buildCoverLetterSystemPrompt(mode, profile);
   const user = buildCoverLetterPrompt(
     resume,
     jobAd,
     meta,
     mode,
-    tier,
+    profile,
     companyBrief,
     market,
     applicant
@@ -482,10 +356,7 @@ export async function generateApplicationAnswer(params: {
   onToken?: (tok: string) => void;
 }): Promise<string> {
   const { question, resume, jobAd, meta, model, companyBrief = '', signal, onToken } = params;
-  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
-  const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
-  const tier = effectiveTier(activeModel, activeProvider);
+  const profile = buildProviderProfile(model);
 
   // Market drives the answer's register; applicant prefs answer logistics
   // questions (salary/start date/notice/remote) honestly without fabrication.
@@ -502,7 +373,7 @@ export async function generateApplicationAnswer(params: {
     jobAd,
     meta,
     companyBrief,
-    target: tier,
+    target: profile,
     market,
     applicant,
   });
@@ -552,14 +423,11 @@ export async function rewriteSelection(params: {
     onToken,
     signal,
   } = params;
-  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
-  const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
-  const tier = effectiveTier(activeModel, activeProvider);
+  const profile = buildProviderProfile(model);
 
   const { system, user } = buildRewritePrompt(
     { selection, instruction, before, after, docType },
-    tier
+    profile
   );
   const raw = await streamGenerate(model, system, user, onToken ?? (() => {}), 0.3, locale, signal);
   return extractPlainText(raw);
@@ -603,14 +471,11 @@ export async function generateReferral(params: {
     onToken,
     signal,
   } = params;
-  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
-  const activeModel = providerConfig?.providers?.[activeProvider]?.model || model;
-  const tier = effectiveTier(activeModel, activeProvider);
+  const profile = buildProviderProfile(model);
 
   const { system, user } = buildReferralPrompt(
     { personName, personRole, companyName, jobTitle, resume, format, charLimit },
-    tier
+    profile
   );
   const raw = await streamGenerate(
     model,
