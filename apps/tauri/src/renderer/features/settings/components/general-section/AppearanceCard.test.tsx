@@ -20,12 +20,14 @@
  * Robustness notes:
  *  - All DOM queries are scoped to the `container` returned by `render()` to
  *    prevent interaction with parallel tests that share the global `document`.
- *  - Raw `getAttribute('style')` is used instead of `.style.background` everywhere
- *    so that jsdom CSSOM re-serialization (which can normalise hex → rgb or drop
- *    the value depending on parse order) never affects our assertions.
- *  - `getSwatchButtons` filters to buttons whose raw style attribute contains BOTH
- *    `linear-gradient(` AND a `#` hex stop, which excludes the Default chip's
- *    `<span>` (CSS-var gradient, no `#`) and any other non-hex-gradient elements.
+ *  - Swatch detection uses the `data-accent-color` attribute (CSS-independent),
+ *    so it is immune to jsdom CSSOM rejecting/normalising hex gradient values.
+ *    The two accent hex stops are read from `data-accent-color` /
+ *    `data-accent-color2` rather than parsing the inline `style` string.
+ *  - The Default chip's colour dot is located via `data-testid="default-accent-dot"`,
+ *    so finding it no longer depends on matching its style content. Its CSS-var
+ *    gradient style is then asserted directly (these `getAttribute('style')`
+ *    checks still work in jsdom).
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -82,20 +84,15 @@ const applyThemeAnimatedSpy = vi.mocked(AjhUiModule.applyThemeAnimated);
 
 /**
  * All preset accent swatch buttons within `root`: the ones rendered by the
- * ACCENTS array in AppearanceCard. Identified by their raw inline style
- * attribute containing BOTH `linear-gradient(` AND a `#` hex stop — this
- * reliably excludes the Default chip's `<span>` (which uses CSS vars, no `#`)
- * and any buttons without a gradient style at all.
+ * ACCENTS array in AppearanceCard. The preset swatch buttons carry a stable
+ * `data-accent-color` attribute, so we select them by that attribute alone.
  *
- * Using `getAttribute('style')` instead of `.style.background` avoids jsdom
- * CSSOM re-serialization, which can normalize hex stops to `rgb(...)` or drop
- * the value entirely depending on parse/run order across the full test suite.
+ * The Default-dot `<span>` and the System chip have no `data-accent-color`,
+ * so this query is robust and CSS-independent — it does not depend on jsdom
+ * CSSOM parsing the inline gradient style.
  */
 function getSwatchButtons(root: HTMLElement): HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>('button')).filter((btn) => {
-    const rawStyle = btn.getAttribute('style') ?? '';
-    return rawStyle.includes('linear-gradient(') && rawStyle.includes('#');
-  });
+  return Array.from(root.querySelectorAll<HTMLElement>('button[data-accent-color]'));
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -107,23 +104,21 @@ describe('AppearanceCard — preset accent swatches', () => {
     expect(getSwatchButtons(container)).toHaveLength(8);
   });
 
-  it('every preset swatch carries a linear-gradient background, not a flat color', () => {
+  it('every preset swatch exposes two distinct hex accent colors (a real two-tone, not a flat color)', () => {
     const { container } = render(<AppearanceCard />);
     const swatches = getSwatchButtons(container);
     expect(swatches.length).toBeGreaterThan(0);
     for (const btn of swatches) {
-      expect(btn.getAttribute('style') ?? '').toContain('linear-gradient(');
+      expect(btn.getAttribute('data-accent-color')).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(btn.getAttribute('data-accent-color2')).toMatch(/^#[0-9a-fA-F]{6}$/);
     }
   });
 
   it('the Default chip colour dot uses the CSS-var gradient (var(--color-brand) … var(--color-brand-2))', () => {
     const { container } = render(<AppearanceCard />);
-    // The Default chip contains a <span> whose background is the CSS-var gradient.
-    const dots = Array.from(container.querySelectorAll<HTMLElement>('span')).filter((el) =>
-      (el.getAttribute('style') ?? '').includes('var(--color-brand)')
-    );
-    expect(dots.length).toBeGreaterThanOrEqual(1);
-    const dot = dots[0];
+    // The Default chip contains a <span> tagged with a stable test id; locating it
+    // by `data-testid` keeps element detection CSS-independent (no style matching).
+    const dot = container.querySelector<HTMLElement>('[data-testid="default-accent-dot"]');
     if (!dot) throw new Error('expected default chip dot with CSS-var gradient background');
     const dotStyle = dot.getAttribute('style') ?? '';
     expect(dotStyle).toContain('var(--color-brand)');
@@ -162,19 +157,17 @@ describe('AppearanceCard — preset accent swatches', () => {
     const { container } = render(<AppearanceCard />);
     const swatches = getSwatchButtons(container);
     for (const btn of swatches) {
-      // Read the raw style attribute — not the CSSOM — to avoid jsdom re-serialization
-      // converting hex stops to rgb() or dropping the value under parallel test runs.
-      const rawStyle = btn.getAttribute('style') ?? '';
-      // Extract the two hex values from `linear-gradient(135deg, #xxxxxx, #yyyyyy)`.
-      const matches = rawStyle.match(/#[0-9a-fA-F]{6}/g);
-      expect(matches).not.toBeNull();
-      if (!matches) throw new Error(`Expected hex matches in gradient: ${rawStyle}`);
-      expect(matches.length).toBe(2);
+      // Read the two stops from the stable data attributes — CSS-independent, so
+      // jsdom CSSOM rejecting/normalising the inline gradient never affects this.
+      const color = btn.getAttribute('data-accent-color');
+      const color2 = btn.getAttribute('data-accent-color2');
+      if (!color || !color2) {
+        throw new Error('expected both data-accent-color and data-accent-color2 on swatch');
+      }
+      expect(color).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(color2).toMatch(/^#[0-9a-fA-F]{6}$/);
       // The two stops must differ — the gradient is genuinely two-tone.
-      const stop1 = matches[0];
-      const stop2 = matches[1];
-      if (!stop1 || !stop2) throw new Error(`Expected two hex stops in gradient: ${rawStyle}`);
-      expect(stop1.toLowerCase()).not.toBe(stop2.toLowerCase());
+      expect(color.toLowerCase()).not.toBe(color2.toLowerCase());
     }
   });
 });

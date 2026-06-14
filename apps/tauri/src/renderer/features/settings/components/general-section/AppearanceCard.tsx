@@ -135,6 +135,7 @@ export function AppearanceCard() {
               )}
             >
               <span
+                data-testid="default-accent-dot"
                 className="h-3 w-3 rounded-full"
                 style={{
                   background: 'linear-gradient(135deg, var(--color-brand), var(--color-brand-2))',
@@ -182,6 +183,8 @@ export function AppearanceCard() {
                     'h-7 w-7 rounded-full border-2 transition-transform focus-visible:ring-2 focus-visible:ring-brand/50',
                     active ? 'scale-110 border-foreground/70' : 'border-transparent hover:scale-105'
                   )}
+                  data-accent-color={color}
+                  data-accent-color2={color2}
                   style={{ background: `linear-gradient(135deg, ${color}, ${color2})` }}
                 />
               );
