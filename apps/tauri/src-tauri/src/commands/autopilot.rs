@@ -179,18 +179,29 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     );
 
     // Snapshot each posting, scored 0–100 against the resume when one is set, then
-    // sorted highest-first. Autopilot is a discovery agent: a run only finds, ranks,
+    // sorted highest-first. The score is the keyword-coverage match % — the SAME
+    // embedding-free kernel as the Jobs page's ATS sub-score (NOT the Jobs
+    // *combined* %), so the headless scheduler never makes an embedding/API call.
+    // Autopilot is a discovery agent: a run only finds, ranks by keyword coverage,
     // and saves results — the user applies with the tailoring assistant.
     let resume = autopilot.resume_text.as_deref().unwrap_or("");
     let found_at = now_ms();
     let mut found_jobs: Vec<FoundJob> = postings
         .iter()
         .map(|p| {
-            let score = match &p.description {
-                Some(desc) if !resume.is_empty() && !desc.is_empty() => {
-                    Some(simple_similarity(resume, desc))
-                }
-                _ => None,
+            // Keyword-coverage match %: share of the JD's keywords present in the
+            // résumé, scored over the SAME blob as `commands::match_resume`
+            // (title + description + requirements via `posting_text_blob`).
+            // Embedding-free.
+            let score = if resume.is_empty() {
+                None
+            } else {
+                crate::documents::keywords::posting_text_blob(
+                    &p.title,
+                    p.description.as_deref(),
+                    p.requirements.as_deref(),
+                )
+                .map(|blob| crate::documents::keywords::coverage_score(resume, &blob))
             };
             FoundJob {
                 title: p.title.clone(),
@@ -207,7 +218,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         })
         .collect();
 
-    // Highest score first; unscored postings sort to the end.
+    // Highest keyword-coverage match first; unscored postings sort to the end.
     found_jobs.sort_by(|a, b| {
         b.score
             .unwrap_or(-1.0)
@@ -218,9 +229,11 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     let scored_count = found_jobs.iter().filter(|f| f.score.is_some()).count();
 
     // Honour the autopilot's minimum match score: drop postings we *could*
-    // score that fell below the bar. Unscored postings (no resume set, or no
-    // description to compare) are always kept — the threshold only filters jobs
-    // we were actually able to rank. Until now `minMatchScore` was dead config.
+    // score that fell below the bar. The bar is compared against the
+    // keyword-coverage match % (same kernel as the Jobs ATS sub-score), not the
+    // Jobs combined %. Unscored postings (no resume set, or no description to
+    // compare) are always kept — the threshold only filters jobs we were actually
+    // able to rank. Until now `minMatchScore` was dead config.
     let threshold = filter.min_match_score;
     found_jobs.retain(|j| passes_min_score(j, threshold));
     let kept = found_jobs.len();
@@ -231,7 +244,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         &job_id,
         "rank_done",
         &format!(
-            "Scored {scored_count}/{total_found}; kept {kept} at or above {threshold:.0}% (dropped {dropped})"
+            "Keyword-matched {scored_count}/{total_found}; kept {kept} at or above {threshold:.0}% coverage (dropped {dropped})"
         ),
     );
 
@@ -330,41 +343,13 @@ fn matches_keyword_filters(posting: &JobPosting, filter: &AutopilotFilter) -> bo
     true
 }
 
-/// Whether a found job clears the autopilot's `min_match_score`. Postings we
-/// could not score (no resume set, or no description to compare against) carry
-/// no score and are always kept — the threshold only gates rankable jobs.
+/// Whether a found job clears the autopilot's `min_match_score`. The score being
+/// gated is the keyword-coverage match % (the shared embedding-free kernel from
+/// `commands::match_resume`). Postings we could not score (no resume set, or no
+/// description to compare against) carry no score and are always kept — the
+/// threshold only gates rankable jobs.
 fn passes_min_score(job: &FoundJob, min_match_score: f64) -> bool {
     job.score.is_none_or(|s| s >= min_match_score)
-}
-
-/// Word-overlap (Jaccard) similarity of a resume and a job description, scaled to
-/// **0–100** to match the UI's percentage display and the `minMatchScore` range.
-fn simple_similarity(resume: &str, description: &str) -> f64 {
-    let resume_lower = resume.to_lowercase();
-    let desc_lower = description.to_lowercase();
-
-    let resume_words: std::collections::HashSet<&str> = resume_lower
-        .split_whitespace()
-        .filter(|w| w.len() > 3)
-        .collect();
-
-    let desc_words: std::collections::HashSet<&str> = desc_lower
-        .split_whitespace()
-        .filter(|w| w.len() > 3)
-        .collect();
-
-    if resume_words.is_empty() || desc_words.is_empty() {
-        return 0.0;
-    }
-
-    let intersection = resume_words.intersection(&desc_words).count();
-    let union = resume_words.union(&desc_words).count();
-
-    if union == 0 {
-        0.0
-    } else {
-        ((intersection as f64) / (union as f64) * 100.0).round()
-    }
 }
 
 #[cfg(test)]
@@ -439,15 +424,28 @@ mod tests {
         ));
     }
 
+    // Autopilot now ranks with the shared keyword-coverage kernel
+    // (`documents::keywords::coverage_score`) — the same embedding-free ATS
+    // sub-score the Jobs page uses — instead of the deleted Jaccard
+    // `simple_similarity`. A résumé covering all the JD's keywords scores high; an
+    // unrelated résumé scores 0; partial overlap lands strictly in between.
     #[test]
-    fn similarity_is_scaled_0_to_100() {
+    fn ranking_uses_shared_keyword_coverage_kernel() {
+        use crate::documents::keywords::coverage_score;
+
+        // resume = description (all JD keywords covered) → full coverage.
         assert_eq!(
-            simple_similarity("rust kubernetes docker", "rust kubernetes docker"),
+            coverage_score("rust kubernetes docker", "rust kubernetes docker"),
             100.0
         );
-        assert_eq!(simple_similarity("rust", "java"), 0.0);
-        let partial = simple_similarity("rust kubernetes", "rust docker");
-        assert!(partial > 0.0 && partial < 100.0);
+        // No overlapping keywords → 0.
+        assert_eq!(coverage_score("rust", "java"), 0.0);
+        // Résumé covers only part of the JD's keywords → strictly between.
+        let partial = coverage_score("rust kubernetes", "rust kubernetes docker terraform");
+        assert!(
+            partial > 0.0 && partial < 100.0,
+            "partial coverage must be strictly between 0 and 100; got {partial}"
+        );
     }
 
     fn found(score: Option<f64>) -> FoundJob {

@@ -471,15 +471,17 @@ principles and how each is enforced:
 **Module ownership** — each cross-cutting concern has exactly **one** owner; no
 other module may reconstruct its logic:
 
-| Concern                              | Sole owner              | Use instead of rolling your own                                                                                                  |
-| ------------------------------------ | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| env vars, data dir, filesystem paths | `platform::config`      | `platform::config::data_dir()` — never read `AJH_DATA_DIR` or rebuild `~/.ajh` yourself                                          |
-| AI provider routing + capabilities   | `commands::ai_provider` | `resolve(ProviderId, ..)`                                                                                                        |
-| HTTP clients (TLS, pool, user-agent) | `net::http`             | `net::http::shared()` + per-request `.timeout()`, or `build_client()` for a cookie jar — never `reqwest::Client::new/builder`    |
-| timed/structured trace spans         | `observability::Span`   | `Span::begin(target, fields)` + `end`/`end_with` — never reimplement begin/elapsed/end logging (RequestTrace/StageTrace wrap it) |
-| job board scrapers                   | `scraping::boards`      | register in the `SCRAPERS` list — dispatch + catalog derive from it via the trait; never a parallel match + hardcoded array      |
-| error types                          | `error::AppError`       | return `AppResult<T>` from fallible internals — never `Result<_, String>` (domain enums like `ExtractionError` add `From`)       |
-| workflow orchestration               | `pipeline`              | compose `Stage`/`Pipeline`                                                                                                       |
+| Concern                              | Sole owner              | Use instead of rolling your own                                                                                                   |
+| ------------------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| env vars, data dir, filesystem paths | `platform::config`      | `platform::config::data_dir()` — never read `AJH_DATA_DIR` or rebuild `~/.ajh` yourself                                           |
+| SQLite connections + WAL policy      | `db::open`              | `db::open(&path)` — never `Connection::open()` directly; sets busy_timeout + WAL                                                  |
+| AI provider routing + capabilities   | `commands::ai_provider` | `resolve(ProviderId, ..)`                                                                                                         |
+| HTTP clients (TLS, pool, user-agent) | `net::http`             | `net::http::shared()` + per-request `.timeout()`, or `build_client()` for a cookie jar — never `reqwest::Client::new/builder`     |
+| timed/structured trace spans         | `observability::Span`   | `Span::begin(target, fields)` + `end`/`end_with` — never reimplement begin/elapsed/end logging (RequestTrace/StageTrace wrap it)  |
+| job board scrapers                   | `scraping::boards`      | register in the `SCRAPERS` list — dispatch + catalog derive from it via the trait; never a parallel match + hardcoded array       |
+| error types                          | `error::AppError`       | return `AppResult<T>` from fallible internals — never `Result<_, String>` (domain enums like `ExtractionError` add `From`)        |
+| anti-abuse rate + concurrency        | `limits`                | apply `RateLimited` error on `ai_generate`/`scrape_*` commands via the limiter; per-provider daily ceiling + concurrent-op bounds |
+| workflow orchestration               | `pipeline`              | compose `Stage`/`Pipeline`                                                                                                        |
 
 **Adding capability is uniform** — one implementation file + one registration:
 
@@ -496,6 +498,70 @@ See [architecture-rules.md](architecture-rules.md) (the formal contract, rules R
 from). Among what it enforces: `#[tauri::command]` only in the shell layer; no Tauri below
 it; `std::env::var` only in `platform/**`; `reqwest::Client::new/builder` only in
 `net/http.rs`; no `Result<_, String>` outside `error.rs`; and no upward cross-layer imports.
+
+---
+
+## 14. Database Transactions & Atomicity (Rust core)
+
+All multi-step SQLite operations must be wrapped in transactions to prevent partial writes and corruption on crash.
+
+**Open connections via `db::open(path)` (defined in `src/db.rs`), never `Connection::open()`:**
+
+```rust
+// ✅ correct
+let conn = db::open(&path)?;
+
+// ❌ wrong
+let conn = Connection::open(&path)?;
+```
+
+`db::open` ensures:
+
+- WAL mode (`PRAGMA journal_mode = WAL`) for durability + fast reads during writes
+- 5-second busy timeout (`PRAGMA busy_timeout = 5000`) to avoid "database is locked" on concurrent access
+- Consistent policy across the codebase
+
+**Wrap multi-step operations in transactions:**
+
+```rust
+// ✅ atomic import
+let tx = conn.transaction()?;
+{
+    // pre-validate all data
+    // clear table
+    tx.execute("DELETE FROM applications", [])?;
+    // re-populate
+    for app in &data {
+        tx.execute("INSERT INTO applications ...", [...])?;
+    }
+}
+tx.commit()?;
+
+// ✅ atomic status + history
+let tx = conn.transaction()?;
+tx.execute("UPDATE run SET status = ?1", params![status])?;
+tx.execute("INSERT INTO run_history ...", params![...])?;
+tx.commit()?;
+```
+
+This pattern applies to:
+
+- `ai_generations::import` (clear + repopulate)
+- `applications::import` (clear + repopulate)
+- Any status-write that also records a history event
+- Migrations (body + `PRAGMA user_version` bump)
+
+**Map SQLite errors to `AppError::Storage`:**
+
+```rust
+// ✅ correct
+let conn = db::open(&path).map_err(|e| AppError::Storage(e.to_string()))?;
+
+// ❌ wrong
+let conn = Connection::open(&path).map_err(|e| format!("db error: {}", e))?;
+```
+
+See ADR-022 for the full rationale.
 
 ---
 

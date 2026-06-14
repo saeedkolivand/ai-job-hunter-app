@@ -531,7 +531,7 @@ jobs:
           set -o pipefail
           # --no-report runs the suite via nextest (the pass/fail gate) and records
           # raw coverage data without formatting a report yet.
-          cargo llvm-cov nextest --no-report --all-features 2>&1 | tee rust-test-output.txt
+          cargo llvm-cov nextest --no-report --all-features --locked 2>&1 | tee rust-test-output.txt
           echo "::endgroup::"
 
       # Coverage reporting only — never gates the build (test pass/fail is owned

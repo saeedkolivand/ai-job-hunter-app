@@ -30,15 +30,7 @@ export type BrowserTarget = 'chrome' | 'firefox';
  * `auth.rs::ALLOWED_EXTENSION_IDS` exactly. (The Chrome CWS id is still assigned
  * at publish — see below.)
  */
-export const FIREFOX_EXTENSION_ID = 'job-importer@aijobhunter.app';
-
-/**
- * Chrome Web Store id is assigned by the store at publish time and cannot be
- * forced from the manifest. The desktop allowlist carries the matching
- * placeholder (`aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`). TODO(bridge): when the real
- * CWS id is known, set it in auth.rs (the manifest needs no id field for Chrome).
- */
-export const CHROME_EXTENSION_ID_PLACEHOLDER = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const FIREFOX_EXTENSION_ID = 'job-importer@aijobhunter.app';
 
 /**
  * Loopback-only host permission. The background worker opens

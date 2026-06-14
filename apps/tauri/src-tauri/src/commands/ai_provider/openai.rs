@@ -3,17 +3,16 @@
 //! `ProviderId` and an optional base URL.
 
 use async_trait::async_trait;
-use parking_lot::Mutex;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::commands::ai::get_provider_key;
-use crate::jobs::JobTracker;
 
 use crate::error::{AppError, AppResult};
-use crate::events::{emit_event, AiStreamChunk, AI_STREAM};
 
 use super::research;
+use super::retry::send_with_retry;
+use super::stream::{stream_response, StreamPiece};
 use super::{
     friendly_api_error, AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace,
     TokenParam,
@@ -90,6 +89,40 @@ fn parse_openai_delta(event: &Value) -> (&str, &str) {
         .and_then(|c| c.as_str())
         .unwrap_or("");
     (reasoning, content)
+}
+
+/// Drain complete `data:`-prefixed SSE lines from the accumulated stream buffer
+/// into [`StreamPiece`]s, leaving any partial trailing line for the next chunk.
+/// `data: [DONE]` yields a terminal sentinel; other lines split into reasoning +
+/// content via [`parse_openai_delta`]. Pure + unit-tested; this is the `parse`
+/// closure handed to [`stream_response`], so OpenAI's SSE framing lives here only.
+fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
+    let mut out = Vec::new();
+    while let Some(nl) = buf.find('\n') {
+        let line = buf[..nl].trim().to_string();
+        *buf = buf[nl + 1..].to_string();
+
+        let data = match line.strip_prefix("data: ") {
+            Some(d) => d.trim(),
+            None => continue,
+        };
+        if data == "[DONE]" {
+            out.push(StreamPiece::done(""));
+            return out;
+        }
+        let event: Value = match serde_json::from_str(data) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let (reasoning, delta) = parse_openai_delta(&event);
+        if !reasoning.is_empty() {
+            out.push(StreamPiece::thinking(reasoning));
+        }
+        if !delta.is_empty() {
+            out.push(StreamPiece::text(delta));
+        }
+    }
+    out
 }
 
 pub struct OpenAiClient {
@@ -175,7 +208,7 @@ impl AiProvider for OpenAiClient {
             .send()
             .await;
 
-        let mut response = match response {
+        let response = match response {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
@@ -193,102 +226,17 @@ impl AiProvider for OpenAiClient {
             return Err(friendly_api_error(self.id, status, &body_text));
         }
 
-        let mut line_buf = String::new();
-        loop {
-            if let Some(job) = app.state::<Mutex<JobTracker>>().lock().get(job_id) {
-                if job.status == crate::jobs::JobStatus::Cancelled {
-                    drop(response);
-                    trace.end(Some(status.as_u16()), false);
-                    return Err(AppError::Message("Job cancelled".to_string()));
-                }
-            }
-
-            match response.chunk().await {
-                Ok(Some(bytes)) => {
-                    line_buf.push_str(&String::from_utf8_lossy(&bytes));
-                    while let Some(nl) = line_buf.find('\n') {
-                        let line = line_buf[..nl].trim().to_string();
-                        line_buf = line_buf[nl + 1..].to_string();
-
-                        let data = match line.strip_prefix("data: ") {
-                            Some(d) => d.trim(),
-                            None => continue,
-                        };
-                        if data == "[DONE]" {
-                            emit_event(
-                                app,
-                                AI_STREAM,
-                                AiStreamChunk {
-                                    job_id: job_id.to_string(),
-                                    delta: String::new(),
-                                    done: true,
-                                    error: None,
-                                    thinking: None,
-                                },
-                            );
-                            crate::commands::jobs::job_complete(
-                                app,
-                                job_id,
-                                json!({ "done": true }),
-                            );
-                            trace.end(Some(status.as_u16()), true);
-                            return Ok(());
-                        }
-                        let event: Value = match serde_json::from_str(data) {
-                            Ok(v) => v,
-                            Err(_) => continue,
-                        };
-                        let (reasoning, delta) = parse_openai_delta(&event);
-                        if !reasoning.is_empty() {
-                            emit_event(
-                                app,
-                                AI_STREAM,
-                                AiStreamChunk {
-                                    job_id: job_id.to_string(),
-                                    delta: reasoning.to_string(),
-                                    done: false,
-                                    error: None,
-                                    thinking: Some(true),
-                                },
-                            );
-                        }
-                        if !delta.is_empty() {
-                            emit_event(
-                                app,
-                                AI_STREAM,
-                                AiStreamChunk {
-                                    job_id: job_id.to_string(),
-                                    delta: delta.to_string(),
-                                    done: false,
-                                    error: None,
-                                    thinking: None,
-                                },
-                            );
-                        }
-                    }
-                }
-                Ok(None) => break,
-                Err(e) => {
-                    trace.end(Some(status.as_u16()), false);
-                    return Err(AppError::Network(format!("Stream error: {e}")));
-                }
-            }
-        }
-
-        emit_event(
+        // The shared loop owns cancel-check + chunk read + emit + complete; this
+        // closure is the only OpenAI-specific part (its `data:`-prefixed SSE framing).
+        stream_response(
             app,
-            AI_STREAM,
-            AiStreamChunk {
-                job_id: job_id.to_string(),
-                delta: String::new(),
-                done: true,
-                error: None,
-                thinking: None,
-            },
-        );
-        crate::commands::jobs::job_complete(app, job_id, json!({ "done": true }));
-        trace.end(Some(status.as_u16()), true);
-        Ok(())
+            job_id,
+            &trace,
+            response,
+            status.as_u16(),
+            parse_openai_frames,
+        )
+        .await
     }
 
     async fn complete(
@@ -316,13 +264,14 @@ impl AiProvider for OpenAiClient {
             body["temperature"] = json!(temperature.unwrap_or(0.7));
         }
 
-        let resp = crate::net::http::shared()
-            .post(&endpoint)
-            .timeout(std::time::Duration::from_secs(120))
-            .bearer_auth(&api_key)
-            .json(&body)
-            .send()
-            .await;
+        let resp = send_with_retry(|| {
+            crate::net::http::shared()
+                .post(&endpoint)
+                .timeout(std::time::Duration::from_secs(120))
+                .bearer_auth(&api_key)
+                .json(&body)
+        })
+        .await;
         let resp = match resp {
             Ok(r) => r,
             Err(e) => {
@@ -421,14 +370,16 @@ impl AiProvider for OpenAiClient {
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
         let endpoint = format!("{}/embeddings", self.base_url);
         let trace = RequestTrace::begin(self.id, model, "/embeddings", &self.base_url, false);
-        let resp = crate::net::http::shared()
-            .post(&endpoint)
-            .timeout(std::time::Duration::from_secs(30))
-            .bearer_auth(&api_key)
-            .json(&json!({ "model": model, "input": text }))
-            .send()
-            .await
-            .map_err(|e| format!("{} unreachable: {e}", self.id.as_str()))?;
+        let body = json!({ "model": model, "input": text });
+        let resp = send_with_retry(|| {
+            crate::net::http::shared()
+                .post(&endpoint)
+                .timeout(std::time::Duration::from_secs(30))
+                .bearer_auth(&api_key)
+                .json(&body)
+        })
+        .await
+        .map_err(|e| format!("{} unreachable: {e}", self.id.as_str()))?;
         let status = resp.status();
         if !status.is_success() {
             let body_text = resp.text().await.unwrap_or_default();
@@ -508,7 +459,10 @@ impl AiProvider for OpenAiClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_reasoning_model, join_responses_text, parse_openai_delta, should_list_model};
+    use super::{
+        is_reasoning_model, join_responses_text, parse_openai_delta, parse_openai_frames,
+        should_list_model,
+    };
     use crate::commands::ai_provider::ProviderId;
     use serde_json::json;
 
@@ -599,5 +553,45 @@ mod tests {
             parse_openai_delta(&json!({ "choices": [{ "delta": {} }] })),
             ("", "")
         );
+    }
+
+    #[test]
+    fn parse_frames_splits_sse_lines_into_pieces() {
+        use super::StreamPiece;
+        // Two complete data lines (reasoning then content) + a partial trailing line.
+        let mut buf = String::from(
+            "data: {\"choices\":[{\"delta\":{\"reasoning\":\"think\"}}]}\n\
+             data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\
+             data: {\"choices\":[{\"delta\":{\"con",
+        );
+        let pieces = parse_openai_frames(&mut buf);
+        assert_eq!(
+            pieces,
+            vec![StreamPiece::thinking("think"), StreamPiece::text("hello")]
+        );
+        // The incomplete final line is left buffered for the next chunk.
+        assert!(buf.starts_with("data: {\"choices\""));
+        assert!(!buf.contains('\n'));
+    }
+
+    #[test]
+    fn parse_frames_emits_done_sentinel_on_done_marker() {
+        use super::StreamPiece;
+        let mut buf = String::from(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"last\"}}]}\n\
+             data: [DONE]\n",
+        );
+        let pieces = parse_openai_frames(&mut buf);
+        assert_eq!(
+            pieces,
+            vec![StreamPiece::text("last"), StreamPiece::done("")]
+        );
+    }
+
+    #[test]
+    fn parse_frames_skips_non_data_and_unparseable_lines() {
+        // Comment/keepalive lines and malformed JSON are ignored, not errors.
+        let mut buf = String::from(": keepalive\ndata: not-json\n\n");
+        assert!(parse_openai_frames(&mut buf).is_empty());
     }
 }

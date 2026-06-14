@@ -10,16 +10,19 @@ import { keys } from '../query-client';
  * Live view of the local extension-bridge status (bound port, whether a browser
  * is paired, and the current pairing token).
  *
- * Polls every 5s: the bridge does not emit a dedicated connect/disconnect event
+ * Polls every 30s: the bridge does not emit a dedicated connect/disconnect event
  * to the renderer (only `applications:changed` on a successful import), so a
  * modest interval is the lightest way to keep the connection indicator fresh.
+ * 30s (not 5s) because this query mounts app-globally — the indicator is a
+ * status hint, not a real-time signal, so a slower cadence trims background work
+ * without a perceptible staleness cost.
  */
 export const useExtensionBridgeStatus = () => {
   const api = useAppClient();
   return useQuery<ExtensionBridgeStatus>({
     queryKey: keys.extensionBridge.status,
     queryFn: () => api.extensionBridge.status(),
-    refetchInterval: 5_000,
+    refetchInterval: 30_000,
   });
 };
 

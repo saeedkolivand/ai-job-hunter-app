@@ -15,6 +15,8 @@
 //! `/photo.png` are ever served.  Everything else remains NotFound to prevent
 //! unintended network/disk probes.
 
+use std::sync::LazyLock;
+
 use typst::diag::{FileError, FileResult};
 use typst::foundations::{Bytes, Datetime};
 use typst::syntax::{FileId, Source, VirtualPath};
@@ -39,59 +41,58 @@ const DATA_PATH: &str = "/data.json";
 /// `image("photo.png", …)`.  Only served when the caller supplies photo bytes.
 pub(super) const PHOTO_PATH: &str = "/photo.png";
 
-/// Collected font data loaded once from the bundled TTF bytes.
+/// Collected font data parsed once at first use from the bundled TTF bytes.
 ///
 /// Includes all four Carlito faces (regular/bold/italic/bold-italic),
 /// both Inter weights (regular/bold), Source Serif 4 (regular/bold/italic),
-/// and Manrope (regular/bold) so templates have serif/sans choices.
+/// and Manrope (regular/bold) — 11 faces total, one for each `FontFamily`
+/// variant used by the active templates. Fonts are compiled into the binary
+/// via `include_bytes!` and live for `'static`, making `Font` values cheap
+/// to clone across render calls.
 struct LoadedFonts {
     fonts: Vec<Font>,
     book: LazyHash<FontBook>,
 }
 
-impl LoadedFonts {
-    fn load() -> Self {
-        // Phase 1a: full font set — Carlito (4 faces) + Inter (2) +
-        // Source Serif 4 (3) + Manrope (2) = 11 faces.
-        // Fonts are compiled into the binary via `include_bytes!`.
-        let raw: &[&[u8]] = &[
-            // Carlito — Calibri-metric-compatible, OFL-1.1
-            include_bytes!("../../../fonts/carlito_regular.ttf"),
-            include_bytes!("../../../fonts/carlito_bold.ttf"),
-            include_bytes!("../../../fonts/carlito_italic.ttf"),
-            include_bytes!("../../../fonts/carlito_bolditalic.ttf"),
-            // Inter — good Unicode / Cyrillic coverage
-            include_bytes!("../../../fonts/inter_regular.ttf"),
-            include_bytes!("../../../fonts/inter_bold.ttf"),
-            // Source Serif 4 — editorial / academic serif
-            include_bytes!("../../../fonts/source_serif4_regular.ttf"),
-            include_bytes!("../../../fonts/source_serif4_bold.ttf"),
-            include_bytes!("../../../fonts/source_serif4_italic.ttf"),
-            // Manrope — Swiss Minimal template
-            include_bytes!("../../../fonts/manrope_regular.ttf"),
-            include_bytes!("../../../fonts/manrope_bold.ttf"),
-            // JetBrains Mono — Mono Technical template
-            include_bytes!("../../../fonts/jetbrains_mono_regular.ttf"),
-            include_bytes!("../../../fonts/jetbrains_mono_bold.ttf"),
-            // Playfair Display — Refined Executive template
-            include_bytes!("../../../fonts/playfair_display_regular.ttf"),
-            include_bytes!("../../../fonts/playfair_display_bold.ttf"),
-        ];
+/// Process-wide singleton: fonts are parsed exactly once and reused by every
+/// [`ResumeWorld`]. `Font` is `Clone` + cheaply reference-counted internally;
+/// `FontBook` is wrapped in `LazyHash` as the `World` trait requires.
+static LOADED_FONTS: LazyLock<LoadedFonts> = LazyLock::new(|| {
+    // Full font set — Carlito (4 faces) + Inter (2) + Source Serif 4 (3) +
+    // Manrope (2) = 11 faces. Only families referenced by `FontFamily` variants
+    // used in active templates are included; removed templates' fonts are not
+    // bundled here.
+    let raw: &[&[u8]] = &[
+        // Carlito — Calibri-metric-compatible, OFL-1.1
+        include_bytes!("../../../fonts/carlito_regular.ttf"),
+        include_bytes!("../../../fonts/carlito_bold.ttf"),
+        include_bytes!("../../../fonts/carlito_italic.ttf"),
+        include_bytes!("../../../fonts/carlito_bolditalic.ttf"),
+        // Inter — good Unicode / Cyrillic coverage
+        include_bytes!("../../../fonts/inter_regular.ttf"),
+        include_bytes!("../../../fonts/inter_bold.ttf"),
+        // Source Serif 4 — editorial / academic serif
+        include_bytes!("../../../fonts/source_serif4_regular.ttf"),
+        include_bytes!("../../../fonts/source_serif4_bold.ttf"),
+        include_bytes!("../../../fonts/source_serif4_italic.ttf"),
+        // Manrope — Swiss Minimal template
+        include_bytes!("../../../fonts/manrope_regular.ttf"),
+        include_bytes!("../../../fonts/manrope_bold.ttf"),
+    ];
 
-        let mut fonts: Vec<Font> = Vec::new();
+    let mut fonts: Vec<Font> = Vec::new();
 
-        for &bytes in raw {
-            let b = Bytes::new(bytes);
-            // Font::iter handles TTC collections (returns one Font per face).
-            for font in Font::iter(b) {
-                fonts.push(font);
-            }
+    for &bytes in raw {
+        let b = Bytes::new(bytes);
+        // Font::iter handles TTC collections (returns one Font per face).
+        for font in Font::iter(b) {
+            fonts.push(font);
         }
-
-        let book = LazyHash::new(FontBook::from_fonts(&fonts));
-        Self { fonts, book }
     }
-}
+
+    let book = LazyHash::new(FontBook::from_fonts(&fonts));
+    LoadedFonts { fonts, book }
+});
 
 /// In-memory Typst world for resume/cover-letter rendering.
 ///
@@ -109,7 +110,6 @@ impl LoadedFonts {
 /// else returns `NotFound`.
 pub struct ResumeWorld {
     library: LazyHash<Library>,
-    loaded: LoadedFonts,
     main_id: FileId,
     main_source: Source,
     /// Optional in-memory data.json bytes served to the template.
@@ -150,12 +150,12 @@ impl ResumeWorld {
         let data_bytes = data_json.map(Bytes::new);
         let photo_id = FileId::new(None, VirtualPath::new(PHOTO_PATH));
         let photo_bytes = photo_png.map(Bytes::new);
-        let loaded = LoadedFonts::load();
+        // Force the font set to load (parsed once per process; subsequent ResumeWorld constructions reuse it).
+        let _ = &*LOADED_FONTS;
         let library = LazyHash::new(Library::default());
 
         Self {
             library,
-            loaded,
             main_id,
             main_source,
             data_id,
@@ -172,7 +172,7 @@ impl World for ResumeWorld {
     }
 
     fn book(&self) -> &LazyHash<FontBook> {
-        &self.loaded.book
+        &LOADED_FONTS.book
     }
 
     fn main(&self) -> FileId {
@@ -204,7 +204,7 @@ impl World for ResumeWorld {
     }
 
     fn font(&self, index: usize) -> Option<Font> {
-        self.loaded.fonts.get(index).cloned()
+        LOADED_FONTS.fonts.get(index).cloned()
     }
 
     fn today(&self, _offset: Option<i64>) -> Option<Datetime> {

@@ -40,6 +40,7 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
             })
             .collect(),
         company_brief: req.company_brief,
+        application_id: None,
     };
 
     // ADR 0001: the Application aggregate is the source of truth for status +

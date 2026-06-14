@@ -619,6 +619,63 @@ fn norm_url_no_host_scheme_only_yields_conflict() {
     assert_eq!(c.suggested, "https://");
 }
 
+// ── apply_to_header — name fallback ──────────────────────────────────────────
+
+/// When `header.name` is blank, `apply_to_header` fills it from `full_name` so
+/// a profile-edited name is not silently dropped during export without generation
+/// metadata (the "H6 — full_name never rendered" regression).
+#[test]
+fn apply_to_header_fills_blank_name_from_full_name() {
+    use crate::export::types::DocumentType;
+    use crate::model::document::DocumentModel;
+
+    let profile = ContactProfile {
+        full_name: Some("Jordan Lee".into()),
+        email: Some("jordan@example.com".into()),
+        ..Default::default()
+    };
+
+    let mut model = DocumentModel::new(DocumentType::Resume);
+    // Simulate a header that arrived with no name (blank).
+    model.header.name = String::new();
+
+    profile.apply_to_header(&mut model.header, "en");
+
+    assert_eq!(
+        model.header.name, "Jordan Lee",
+        "blank header.name must be filled from profile.full_name"
+    );
+    // Contact line is also set.
+    assert!(
+        !model.header.contact.is_empty(),
+        "contact rich text must be set from profile"
+    );
+}
+
+/// When `header.name` is already set, `apply_to_header` must not overwrite it —
+/// the generation metadata name takes precedence over the profile name.
+#[test]
+fn apply_to_header_does_not_overwrite_existing_name() {
+    use crate::export::types::DocumentType;
+    use crate::model::document::DocumentModel;
+
+    let profile = ContactProfile {
+        full_name: Some("Jordan Lee".into()),
+        email: Some("jordan@example.com".into()),
+        ..Default::default()
+    };
+
+    let mut model = DocumentModel::new(DocumentType::Resume);
+    model.header.name = "Alex Carter".to_string();
+
+    profile.apply_to_header(&mut model.header, "en");
+
+    assert_eq!(
+        model.header.name, "Alex Carter",
+        "an already-populated header.name must never be overwritten"
+    );
+}
+
 /// extra_links differences are never reported as conflicts.
 #[test]
 fn no_conflict_for_extra_links() {

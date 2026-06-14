@@ -4,19 +4,8 @@ import { useTranslation } from '@ajh/translations';
 import { Button, cn, GlassCard } from '@ajh/ui';
 
 import { type Interaction, INTERACTION_TYPES } from '@/features/resumes/constants';
+import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
 import { useOpenExternal } from '@/services/use-system';
-
-function formatRelative(ts: number, t: ReturnType<typeof useTranslation>['t']): string {
-  const diff = Date.now() - ts;
-  const m = Math.floor(diff / 60000);
-  const h = Math.floor(m / 60);
-  const d = Math.floor(h / 24);
-  if (m < 1) return t('resumes.relativeTime.justNow');
-  if (m < 60) return t('resumes.relativeTime.minutesAgo', { m });
-  if (h < 24) return t('resumes.relativeTime.hoursAgo', { h });
-  if (d < 7) return t('resumes.relativeTime.daysAgo', { d });
-  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
 
 interface InteractionRowProps {
   row: Interaction;
@@ -24,6 +13,7 @@ interface InteractionRowProps {
 
 export function InteractionRow({ row }: InteractionRowProps) {
   const { t } = useTranslation();
+  const formatRelative = useFormatRelativeTime(t, 'resumes.relativeTime');
   const openExternal = useOpenExternal();
 
   // Self-describing: the Activity feed mixes applied / viewed / bookmarked in one
@@ -64,7 +54,7 @@ export function InteractionRow({ row }: InteractionRowProps) {
             </span>
           )}
           <span className="flex items-center gap-1 text-foreground/35">
-            <Clock size={10} /> {formatRelative(row.timestamp, t)}
+            <Clock size={10} /> {formatRelative(row.timestamp)}
           </span>
           <span className="text-foreground/30">{row.source}</span>
         </div>

@@ -31,6 +31,7 @@ pub mod extraction;
 pub mod ipc_contracts;
 pub mod job_preferences;
 pub mod jobs;
+pub mod limits;
 pub mod locale;
 pub mod model;
 pub mod net;
@@ -506,6 +507,11 @@ pub fn run() {
             );
             app.manage(Mutex::new(UpdaterState::default()));
             app.manage(std::sync::Arc::new(ScraperEngine::new()));
+            // In-memory anti-abuse limiter (rate + concurrency + per-provider daily
+            // ceiling) for the expensive commands `ai_generate`, `scrape_board`, and
+            // `scrape_url`. Process-local; resets on restart. Not in the reset
+            // registry — it holds no user data, only transient counters.
+            app.manage(std::sync::Arc::new(limits::Limiter::new()));
             // Live performance config (balanced default). Updated by system_set_performance_mode.
             crate::performance::set(crate::performance::PerformanceConfig::default());
             app.manage(commands::translation::TranslationCache::new());
@@ -529,6 +535,16 @@ pub fn run() {
                 Ok(cache) => manage_resettable(app, &mut reset_registry, "cache", cache),
                 Err(e) => log::warn!("[setup] pipeline cache failed to open (non-fatal): {e}"),
             }
+
+            // Guard: the registry must contain exactly the labels the
+            // completeness test pins (`MANAGE_RESETTABLE_LABELS`) before the
+            // bridge/notification stores register their own labels. A forgotten
+            // `manage_resettable` above trips this in debug builds.
+            debug_assert_eq!(
+                reset_registry.labels(),
+                commands::privacy::MANAGE_RESETTABLE_LABELS.to_vec(),
+                "manage_resettable registrations drifted from MANAGE_RESETTABLE_LABELS"
+            );
 
             // Browser-extension bridge (Feature 2): manage the pairing-token state
             // (+ register its factory-reset token rotation). The loopback WS server
@@ -578,6 +594,13 @@ pub fn run() {
             // forget on the tokio runtime; a bind failure logs + disables the
             // bridge and never blocks boot. `BridgeState` was managed above.
             extension_bridge::start(handle.clone());
+
+            // Watch the OS accent color (Windows): on a personalization accent
+            // change, emit `system:accentChanged` so the renderer re-pulls the
+            // color and re-applies the theme live. The watcher parks its WinRT
+            // subscription in managed state to stay alive. No-op off Windows;
+            // there the renderer's window-focus refetch covers it. Best-effort.
+            platform::accent_watcher::start(handle);
 
             Ok(())
         })
@@ -633,13 +656,6 @@ pub fn run() {
             commands::documents::documents_recommend_template,
             commands::documents::documents_remove,
             commands::documents::documents_set_default,
-            commands::documents::documents_embed_text,
-            commands::documents::documents_set_indexed,
-            commands::documents::documents_upsert_vector,
-            commands::documents::documents_get_vector,
-            commands::documents::documents_all_vectors,
-            commands::documents::documents_cosine_similarity,
-            commands::documents::documents_strip_extension,
             // job preferences
             commands::job_preferences::job_preferences_get,
             commands::job_preferences::job_preferences_set,
@@ -666,12 +682,6 @@ pub fn run() {
             // credentials (board-login CRUD removed — sessions auth via boards.*)
             commands::credentials::credentials_available,
             // boards
-            commands::boards::boards_get_config,
-            commands::boards::boards_list_configs,
-            commands::boards::boards_test_auth_url,
-            commands::boards::boards_get_login_config,
-            commands::boards::boards_get_disable_passkey_script,
-            commands::boards::boards_list_browser_helpers,
             commands::boards::boards_login_with_browser,
             commands::boards::boards_import_cookies,
             commands::boards::boards_logout,

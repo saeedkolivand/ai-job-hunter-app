@@ -10,7 +10,7 @@ const HOSTS: &[&str] = &["jobs.personio.de", "jobs.personio.com"];
 // single-URL resolver (scrape_url::try_personio), so parsing lives here once.
 // Each caller still builds its own JobPosting (different id/url/posted_at shape).
 static POSITION_RE: std::sync::LazyLock<regex::Regex> =
-    std::sync::LazyLock::new(|| regex::Regex::new(r"<position>(.*?)</position>").unwrap());
+    std::sync::LazyLock::new(|| regex::Regex::new(r"(?s)<position>(.*?)</position>").unwrap());
 static ID_RE: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r"<id>(.*?)</id>").unwrap());
 static NAME_RE: std::sync::LazyLock<regex::Regex> =
@@ -18,7 +18,7 @@ static NAME_RE: std::sync::LazyLock<regex::Regex> =
 static OFFICE_RE: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r"<office>(.*?)</office>").unwrap());
 static DESC_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new(r"<jobDescription>\s*<value>(.*?)</value>\s*</jobDescription>").unwrap()
+    regex::Regex::new(r"(?s)<jobDescription>\s*<value>(.*?)</value>\s*</jobDescription>").unwrap()
 });
 static CREATED_RE: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r"<createdAt>(.*?)</createdAt>").unwrap());

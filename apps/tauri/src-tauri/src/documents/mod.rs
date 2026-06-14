@@ -51,6 +51,30 @@ pub(crate) fn embedding_space_changed(old: &EmbeddingConfig, new: &EmbeddingConf
     old != new
 }
 
+/// Fill the `dim` of legacy vectors (rows added before space metadata existed,
+/// stored with `dim = 0`) from their actual JSON length. A `Migration::up`, so it
+/// runs exactly once under the `user_version` gate (previously: on every `open()`).
+/// Idempotent — only `dim = 0` rows are touched — and runs inside the migration
+/// transaction (`conn` is the migration's transaction handle).
+fn backfill_vector_dims(conn: &Connection) -> rusqlite::Result<()> {
+    let rows: Vec<(String, String)> = {
+        let mut stmt = conn.prepare("SELECT doc_id, vector FROM vectors WHERE dim = 0")?;
+        let mapped = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        mapped.filter_map(|r| r.ok()).collect()
+    };
+    for (doc_id, json) in rows {
+        if let Ok(v) = serde_json::from_str::<Vec<f64>>(&json) {
+            conn.execute(
+                "UPDATE vectors SET dim = ?1 WHERE doc_id = ?2",
+                params![v.len() as i64, doc_id],
+            )?;
+        }
+    }
+    Ok(())
+}
+
 /// Full cache key for the `match_scores` result cache (the table PK). Borrowed
 /// fields keep it allocation-free at the call site; passed by reference to the
 /// store methods. Grouped into a struct because 7 positional args read poorly.
@@ -92,6 +116,14 @@ pub struct DocumentRecord {
 
 pub struct DocumentStore {
     conn: Mutex<Connection>,
+    /// Monotonic count of `upsert_posting_vector` writes, used to amortize the
+    /// posting-vector cache prune onto a cheap cadence (every
+    /// [`Self::POSTING_PRUNE_EVERY`] writes) instead of running two DELETEs under
+    /// the held connection lock on *every* write. A re-embed (`ai_reembed_all`)
+    /// upserts hundreds of postings back-to-back, so the old per-write prune was
+    /// pure overhead — the cache can briefly exceed its bound between prunes,
+    /// which is fine for a best-effort cache.
+    posting_writes: std::sync::atomic::AtomicU64,
 }
 
 impl DocumentStore {
@@ -238,45 +270,36 @@ impl DocumentStore {
                 )
             },
         },
+        Migration {
+            // One-time `dim` backfill for legacy vectors (rows added before the
+            // space metadata existed, stored with `dim = 0`), filling each from its
+            // actual JSON length. Previously this scanned on EVERY `open()`; folding
+            // it into a `user_version`-gated migration makes it run exactly once.
+            // Idempotent (only touches `dim = 0` rows) and runs inside the migration
+            // transaction.
+            name: "backfill_vector_dims",
+            up: backfill_vector_dims,
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
-        std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(data_dir)?;
         let path = data_dir.join("documents.db");
-        let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-        run_migrations(&conn, Self::MIGRATIONS)?;
-        let store = Self {
+        let mut conn = crate::db::open(&path)?;
+        // The legacy `dim` backfill now runs as a one-time, `user_version`-gated
+        // migration (see `backfill_vector_dims` migration above) instead of on
+        // every `open()`.
+        run_migrations(&mut conn, Self::MIGRATIONS)?;
+        Ok(Self {
             conn: Mutex::new(conn),
-        };
-        store.backfill_vector_dims();
-        Ok(store)
+            posting_writes: std::sync::atomic::AtomicU64::new(0),
+        })
     }
 
-    /// Fill the `dim` of legacy vectors (rows added before space metadata existed,
-    /// stored with `dim = 0`) from their actual JSON length. One-time, idempotent.
-    fn backfill_vector_dims(&self) {
-        let conn = self.conn.lock();
-        let rows: Vec<(String, String)> = conn
-            .prepare("SELECT doc_id, vector FROM vectors WHERE dim = 0")
-            .ok()
-            .and_then(|mut stmt| {
-                stmt.query_map([], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                })
-                .ok()
-                .map(|rows| rows.filter_map(|r| r.ok()).collect())
-            })
-            .unwrap_or_default();
-        for (doc_id, json) in rows {
-            if let Ok(v) = serde_json::from_str::<Vec<f64>>(&json) {
-                conn.execute(
-                    "UPDATE vectors SET dim = ?1 WHERE doc_id = ?2",
-                    params![v.len() as i64, doc_id],
-                )
-                .ok();
-            }
-        }
-    }
+    /// Prune the posting-vector cache once per this many writes (see
+    /// [`DocumentStore::posting_writes`]). 64 keeps re-embed batches (hundreds of
+    /// upserts) cheap while still bounding the cache regularly under steady use.
+    const POSTING_PRUNE_EVERY: u64 = 64;
 
     pub fn clear_all(&self) {
         let conn = self.conn.lock();
@@ -450,44 +473,6 @@ impl DocumentStore {
         })
     }
 
-    pub fn all_vectors(&self) -> Vec<(String, EmbeddingVector)> {
-        let conn = self.conn.lock();
-        conn.prepare("SELECT doc_id, vector, provider, model, dim FROM vectors")
-            .ok()
-            .and_then(|mut stmt| {
-                stmt.query_map([], |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, String>(3)?,
-                        row.get::<_, i64>(4)?,
-                    ))
-                })
-                .ok()
-                .map(|rows| {
-                    rows.filter_map(|r| r.ok())
-                        .filter_map(|(id, json, provider, model, dim)| {
-                            serde_json::from_str::<Vec<f64>>(&json).ok().map(|values| {
-                                (
-                                    id,
-                                    EmbeddingVector {
-                                        values,
-                                        space: EmbeddingSpace {
-                                            provider,
-                                            model,
-                                            dim: dim as usize,
-                                        },
-                                    },
-                                )
-                            })
-                        })
-                        .collect()
-                })
-            })
-            .unwrap_or_default()
-    }
-
     // ── Posting-vector cache (translation-aware job embeddings) ───────────────
     //
     // A persisted, single-row-per-job cache of the job-text embedding. Distinct
@@ -562,14 +547,24 @@ impl DocumentStore {
             ],
         )
         .map_err(|e| e.to_string())?;
-        // Lazy per-write eviction, reusing the held lock (must NOT re-lock).
-        let cfg = crate::performance::current();
-        Self::prune_table_locked(
-            &conn,
-            "posting_vectors",
-            cfg.cache_ttl_secs,
-            cfg.cache_max_rows,
-        );
+        // Amortized eviction: prune only once per `POSTING_PRUNE_EVERY` writes,
+        // reusing the held lock (must NOT re-lock). A re-embed upserts hundreds of
+        // postings back-to-back, so the previous per-write prune ran two DELETEs
+        // on every call for no benefit; the cache may briefly exceed its bound
+        // between prunes, which is fine for a best-effort cache.
+        let n = self
+            .posting_writes
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
+        if n.is_multiple_of(Self::POSTING_PRUNE_EVERY) {
+            let cfg = crate::performance::current();
+            Self::prune_table_locked(
+                &conn,
+                "posting_vectors",
+                cfg.cache_ttl_secs,
+                cfg.cache_max_rows,
+            );
+        }
         Ok(())
     }
 
@@ -702,6 +697,22 @@ impl DocumentStore {
         conn.execute("DELETE FROM match_scores", [])
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    /// Count of stored vectors in one embedding space, by SQL `COUNT(*)` — never
+    /// deserializes the float-array blobs. Powers `ai_embedding_status`'s
+    /// indexed-in-active-space figure (the old path loaded every vector via a
+    /// full vector scan just to count the matching ones). Matches the same
+    /// provider+model identity as [`EmbeddingConfig::matches`].
+    pub fn count_vectors_in_space(&self, provider: &str, model: &str) -> usize {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT COUNT(*) FROM vectors WHERE provider = ?1 AND model = ?2",
+            params![provider, model],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|n| n as usize)
+        .unwrap_or(0)
     }
 
     /// Count of stored vectors grouped by embedding space (for the status panel).
@@ -851,15 +862,6 @@ pub async fn posting_vector_or_embed(
     Some(v)
 }
 
-// ── Cosine similarity ─────────────────────────────────────────────────────────
-
-/// Raw cosine over two same-length vectors. Prefer
-/// [`crate::commands::ai_provider::compare`] for stored vectors, which also
-/// verifies both share an embedding space.
-pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
-    crate::commands::ai_provider::cosine(a, b)
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Millisecond cutoff for a read-side TTL miss from the live performance config.
@@ -881,13 +883,6 @@ pub fn now_ms() -> u64 {
 pub fn make_doc_id() -> String {
     use uuid::Uuid;
     format!("doc-{}-{}", now_ms(), &Uuid::new_v4().to_string()[..8])
-}
-
-pub fn strip_extension(name: &str) -> String {
-    match name.rsplit_once('.') {
-        Some((base, _)) if !base.is_empty() => base.to_string(),
-        _ => name.to_string(),
-    }
 }
 
 impl DataStore for DocumentStore {

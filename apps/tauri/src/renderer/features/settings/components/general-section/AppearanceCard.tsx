@@ -138,7 +138,11 @@ export function AppearanceCard() {
                 data-testid="default-accent-dot"
                 className="h-3 w-3 rounded-full"
                 style={{
-                  background: 'linear-gradient(135deg, var(--color-brand), var(--color-brand-2))',
+                  // BASE brand tokens (never overridden by the runtime accent
+                  // applier) so the Default dot always shows the true shipped
+                  // default, even while a custom/system accent is active.
+                  background:
+                    'linear-gradient(135deg, var(--color-brand-base), var(--color-brand-2-base))',
                 }}
               />
               {t('settings.appearance.accentDefault')}

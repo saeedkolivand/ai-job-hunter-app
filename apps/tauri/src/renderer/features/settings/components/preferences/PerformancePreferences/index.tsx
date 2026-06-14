@@ -1,6 +1,7 @@
-import { Cpu, Gauge, type LucideIcon, SlidersHorizontal, Zap } from 'lucide-react';
+import { Cpu, Gauge, Info, type LucideIcon, SlidersHorizontal, Zap } from 'lucide-react';
 import { motion } from 'motion/react';
 
+import { type TFunction, useTranslation } from '@ajh/translations';
 import { cn, Dropdown, GlassCard, SectionLabel, Switch, transition } from '@ajh/ui';
 
 import {
@@ -16,73 +17,62 @@ import {
   useResolvedPerformanceProfile,
 } from '@/store/preferences-store';
 
-const PERFORMANCE_OPTIONS: {
-  value: PerformanceMode;
-  label: string;
-  icon: LucideIcon;
-  description: string;
-  details: string[];
-}[] = [
-  {
-    value: 'low-memory',
-    label: 'Low Memory',
-    icon: Cpu,
-    description: 'Optimized for older hardware',
-    details: ['Reduced blur intensity', 'Aggressive model unloading', 'Lower concurrency'],
-  },
-  {
-    value: 'balanced',
-    label: 'Balanced',
-    icon: Gauge,
-    description: 'Best performance for most systems',
-    details: [
-      'Default optimized behavior',
-      'Smooth animations',
-      'Efficient caching',
-      'Balanced concurrency',
-    ],
-  },
-  {
-    value: 'performance',
-    label: 'Performance',
-    icon: Zap,
-    description: 'Maximum speed on capable hardware',
-    details: ['Higher concurrency', 'Richer visuals', 'Aggressive caching', 'Full animations'],
-  },
-  {
-    value: 'custom',
-    label: 'Custom',
-    icon: SlidersHorizontal,
-    description: 'Fine-tune every element',
-    details: ['Per-effect visual toggles', 'Manual backend tiers', 'Tailored to your machine'],
-  },
+/** Mode cards, in display order. Labels/copy resolved from i18n at render. */
+const PERFORMANCE_MODE_META: { value: PerformanceMode; icon: LucideIcon; i18nKey: string }[] = [
+  { value: 'low-memory', icon: Cpu, i18nKey: 'lowMemory' },
+  { value: 'balanced', icon: Gauge, i18nKey: 'balanced' },
+  { value: 'performance', icon: Zap, i18nKey: 'performance' },
+  { value: 'custom', icon: SlidersHorizontal, i18nKey: 'custom' },
 ];
 
-const BLUR_OPTIONS: { value: BlurTier; label: string }[] = [
-  { value: 'full', label: 'Full' },
-  { value: 'reduced', label: 'Reduced' },
-  { value: 'off', label: 'Off' },
-];
+const BLUR_TIERS: BlurTier[] = ['full', 'reduced', 'off'];
+/** The three generic backend dropdowns share the same tier order. */
+const BACKEND_TIERS: PerfTier[] = ['low', 'balanced', 'high'];
+/** The three backend knobs, in display order. */
+const BACKEND_KNOBS = ['concurrency', 'keepAlive', 'cache'] as const;
+type BackendKnob = (typeof BACKEND_KNOBS)[number];
 
-const CONCURRENCY_OPTIONS: { value: PerfTier; label: string }[] = [
-  { value: 'low', label: 'Low' },
-  { value: 'balanced', label: 'Balanced' },
-  { value: 'high', label: 'High' },
-];
+/**
+ * Maps each backend knob to the resolved profile field it edits. Keeps the
+ * generic render loop (below) decoupled from the concrete profile shape.
+ */
+const KNOB_FIELD: Record<BackendKnob, keyof PerformanceProfile['backend']> = {
+  concurrency: 'concurrency',
+  keepAlive: 'keepAlive',
+  cache: 'cache',
+};
 
-const KEEP_ALIVE_OPTIONS: { value: PerfTier; label: string }[] = [
-  { value: 'low', label: 'Unload immediately' },
-  { value: 'balanced', label: 'Balanced' },
-  { value: 'high', label: 'Keep warm' },
-];
-
-const CACHE_OPTIONS: { value: PerfTier; label: string }[] = [
-  { value: 'low', label: 'Minimal' },
-  { value: 'balanced', label: 'Balanced' },
-  { value: 'high', label: 'Generous' },
-];
+/**
+ * Per-tier "what this actually does" copy for one backend knob. Surfaces the
+ * concrete values the renderer pushes over IPC (see `resolveBackendConfig` in
+ * preferences-schema.ts): concurrency 1/2/4 workers, keep-alive 0/300/1800s,
+ * cache 250/2000/unlimited rows at 1d/7d/no-expiry. Shown as helper text for the
+ * selected tier plus a hover popover listing all three.
+ */
+function BackendOptionInfo({ t, knob }: { t: TFunction; knob: BackendKnob }) {
+  const base = `settings.performanceMode.backend.${knob}`;
+  return (
+    <div className="relative group shrink-0">
+      <Info
+        size={12}
+        className="text-foreground/30 cursor-help transition-colors group-hover:text-foreground/60"
+      />
+      <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border border-white/[0.1] bg-black/95 p-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 shadow-2xl">
+        <p className="mb-2 text-[11px] leading-relaxed text-foreground/70">{t(`${base}.info`)}</p>
+        <ul className="space-y-1">
+          {BACKEND_TIERS.map((tier) => (
+            <li key={tier} className="text-[11px] leading-snug text-foreground/50">
+              {t(`${base}.details.${tier}`)}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
 
 export function PerformancePreferences() {
+  const { t } = useTranslation();
   const performanceMode = usePerformanceMode();
   const profile = useResolvedPerformanceProfile();
   const setPerformanceMode = usePreferencesStore((s) => s.setPerformanceMode);
@@ -106,18 +96,23 @@ export function PerformancePreferences() {
     setCustomPerformance({ ...profile, backend: { ...profile.backend, ...patch } });
   };
 
+  const blurOptions = BLUR_TIERS.map((tier) => ({
+    value: tier,
+    label: t(`settings.performanceMode.visual.blur.options.${tier}`),
+  }));
+
   return (
     <GlassCard>
       <div className="mb-4">
-        <SectionLabel>Performance Mode</SectionLabel>
+        <SectionLabel>{t('settings.performanceMode.heading')}</SectionLabel>
       </div>
-      <p className="mb-4 text-sm text-foreground/55">
-        Optimize application performance based on your hardware capabilities.
-      </p>
+      <p className="mb-4 text-sm text-foreground/55">{t('settings.performanceMode.subheading')}</p>
       <div className="grid gap-3">
-        {PERFORMANCE_OPTIONS.map((opt) => {
+        {PERFORMANCE_MODE_META.map((opt) => {
           const Icon = opt.icon;
           const isSelected = performanceMode === opt.value;
+          const base = `settings.performanceMode.options.${opt.i18nKey}`;
+          const details = t(`${base}.details`, { returnObjects: true }) as string[];
           return (
             <motion.button
               key={opt.value}
@@ -151,11 +146,11 @@ export function PerformancePreferences() {
                     isSelected ? 'text-foreground' : 'text-foreground/70'
                   )}
                 >
-                  {opt.label}
+                  {t(`${base}.label`)}
                 </div>
-                <div className="mb-2 text-sm text-foreground/40">{opt.description}</div>
+                <div className="mb-2 text-sm text-foreground/40">{t(`${base}.description`)}</div>
                 <ul className="space-y-1">
-                  {opt.details.map((d) => (
+                  {details.map((d) => (
                     <li key={d} className="text-xs text-foreground/30">
                       • {d}
                     </li>
@@ -178,44 +173,44 @@ export function PerformancePreferences() {
         <div className="mt-5 space-y-5 rounded-xl border border-white/10 bg-white/5 p-4">
           {/* Visual */}
           <div className="space-y-3">
-            <SectionLabel>Visual</SectionLabel>
+            <SectionLabel>{t('settings.performanceMode.visual.heading')}</SectionLabel>
             <Switch
-              label="Aurora ribbons"
-              description="Slow, wide hue-rotating background blobs"
+              label={t('settings.performanceMode.visual.aurora.label')}
+              description={t('settings.performanceMode.visual.aurora.description')}
               checked={profile.visual.aurora}
               onCheckedChange={(next) => patchVisual({ aurora: next })}
             />
             <Switch
-              label="Nebulae"
-              description="Medium accent blobs layered over the aurora"
+              label={t('settings.performanceMode.visual.nebula.label')}
+              description={t('settings.performanceMode.visual.nebula.description')}
               checked={profile.visual.nebula}
               onCheckedChange={(next) => patchVisual({ nebula: next })}
             />
             <Switch
-              label="Cursor glow"
-              description="A soft glow that trails the pointer"
+              label={t('settings.performanceMode.visual.cursorGlow.label')}
+              description={t('settings.performanceMode.visual.cursorGlow.description')}
               checked={profile.visual.cursorGlow}
               onCheckedChange={(next) => patchVisual({ cursorGlow: next })}
             />
             <Switch
-              label="Rich animations"
-              description="Animate the aurora and nebula layers"
+              label={t('settings.performanceMode.visual.animations.label')}
+              description={t('settings.performanceMode.visual.animations.description')}
               checked={profile.visual.animations}
               onCheckedChange={(next) => patchVisual({ animations: next })}
             />
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
                 <label htmlFor="perf-blur" className="text-xs font-medium text-foreground/80">
-                  Backdrop blur
+                  {t('settings.performanceMode.visual.blur.label')}
                 </label>
                 <div className="text-[11px] text-foreground/45">
-                  Frosted-glass intensity across surfaces
+                  {t('settings.performanceMode.visual.blur.description')}
                 </div>
               </div>
               <div className="w-44 shrink-0">
                 <Dropdown
                   id="perf-blur"
-                  options={BLUR_OPTIONS}
+                  options={blurOptions}
                   value={profile.visual.blur}
                   onChange={(v) => patchVisual({ blur: v as BlurTier })}
                 />
@@ -225,60 +220,46 @@ export function PerformancePreferences() {
 
           {/* Backend */}
           <div className="space-y-3">
-            <SectionLabel>Backend</SectionLabel>
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <label
-                  htmlFor="perf-concurrency"
-                  className="text-xs font-medium text-foreground/80"
-                >
-                  Concurrency
-                </label>
-                <div className="text-[11px] text-foreground/45">Parallel background workers</div>
-              </div>
-              <div className="w-44 shrink-0">
-                <Dropdown
-                  id="perf-concurrency"
-                  options={CONCURRENCY_OPTIONS}
-                  value={profile.backend.concurrency}
-                  onChange={(v) => patchBackend({ concurrency: v as PerfTier })}
-                />
-              </div>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <label htmlFor="perf-keep-alive" className="text-xs font-medium text-foreground/80">
-                  Model keep-alive
-                </label>
-                <div className="text-[11px] text-foreground/45">
-                  How long idle models stay loaded
+            <SectionLabel>{t('settings.performanceMode.backend.heading')}</SectionLabel>
+            {BACKEND_KNOBS.map((knob) => {
+              const base = `settings.performanceMode.backend.${knob}`;
+              const field = KNOB_FIELD[knob];
+              const selectedTier = profile.backend[field];
+              const id = `perf-${knob === 'keepAlive' ? 'keep-alive' : knob}`;
+              const options = BACKEND_TIERS.map((tier) => ({
+                value: tier,
+                label: t(`${base}.options.${tier}`),
+              }));
+              return (
+                <div key={knob} className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <label htmlFor={id} className="text-xs font-medium text-foreground/80">
+                          {t(`${base}.label`)}
+                        </label>
+                        <BackendOptionInfo t={t} knob={knob} />
+                      </div>
+                      <div className="text-[11px] text-foreground/45">
+                        {t(`${base}.description`)}
+                      </div>
+                    </div>
+                    <div className="w-44 shrink-0">
+                      <Dropdown
+                        id={id}
+                        options={options}
+                        value={selectedTier}
+                        onChange={(v) => patchBackend({ [field]: v as PerfTier })}
+                      />
+                    </div>
+                  </div>
+                  {/* Concrete effect of the currently-selected tier. */}
+                  <div className="text-[11px] text-foreground/35">
+                    {t(`${base}.details.${selectedTier}`)}
+                  </div>
                 </div>
-              </div>
-              <div className="w-44 shrink-0">
-                <Dropdown
-                  id="perf-keep-alive"
-                  options={KEEP_ALIVE_OPTIONS}
-                  value={profile.backend.keepAlive}
-                  onChange={(v) => patchBackend({ keepAlive: v as PerfTier })}
-                />
-              </div>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <label htmlFor="perf-cache" className="text-xs font-medium text-foreground/80">
-                  Cache
-                </label>
-                <div className="text-[11px] text-foreground/45">Cached result retention</div>
-              </div>
-              <div className="w-44 shrink-0">
-                <Dropdown
-                  id="perf-cache"
-                  options={CACHE_OPTIONS}
-                  value={profile.backend.cache}
-                  onChange={(v) => patchBackend({ cache: v as PerfTier })}
-                />
-              </div>
-            </div>
+              );
+            })}
           </div>
         </div>
       )}

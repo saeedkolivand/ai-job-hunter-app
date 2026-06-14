@@ -291,6 +291,7 @@
       "languageAlignment": "Language"
     },
     "verdict": "Final Verdict",
+    "notScored": "Not scored",
     "recruiterView": "Recruiter's view —",
     "mode": {
       "label": "Document type",
@@ -742,7 +743,8 @@
       "removeFailed": "Failed to remove resume",
       "setDefault": "Set as default",
       "download": "Download resume",
-      "downloaded": "Resume downloaded"
+      "downloaded": "Resume downloaded",
+      "downloadFailed": "Failed to download resume"
     },
     "update": {
       "title": "Updates",
@@ -762,6 +764,147 @@
       "loadingChangelog": "Loading changelog…",
       "changelogError": "Couldn't load the changelog.",
       "changelogEmpty": "No releases found."
+    },
+    "performanceMode": {
+      "heading": "Performance Mode",
+      "subheading": "Optimize application performance based on your hardware capabilities.",
+      "options": {
+        "lowMemory": {
+          "label": "Low Memory",
+          "description": "Optimized for older hardware",
+          "details": ["Reduced blur intensity", "Aggressive model unloading", "Lower concurrency"]
+        },
+        "balanced": {
+          "label": "Balanced",
+          "description": "Best performance for most systems",
+          "details": [
+            "Default optimized behavior",
+            "Smooth animations",
+            "Efficient caching",
+            "Balanced concurrency"
+          ]
+        },
+        "performance": {
+          "label": "Performance",
+          "description": "Maximum speed on capable hardware",
+          "details": [
+            "Higher concurrency",
+            "Richer visuals",
+            "Aggressive caching",
+            "Full animations"
+          ]
+        },
+        "custom": {
+          "label": "Custom",
+          "description": "Fine-tune every element",
+          "details": [
+            "Per-effect visual toggles",
+            "Manual backend tiers",
+            "Tailored to your machine"
+          ]
+        }
+      },
+      "visual": {
+        "heading": "Visual",
+        "aurora": {
+          "label": "Aurora ribbons",
+          "description": "Slow, wide hue-rotating background blobs"
+        },
+        "nebula": {
+          "label": "Nebulae",
+          "description": "Medium accent blobs layered over the aurora"
+        },
+        "cursorGlow": {
+          "label": "Cursor glow",
+          "description": "A soft glow that trails the pointer"
+        },
+        "animations": {
+          "label": "Rich animations",
+          "description": "Animate the aurora and nebula layers"
+        },
+        "blur": {
+          "label": "Backdrop blur",
+          "description": "Frosted-glass intensity across surfaces",
+          "options": {
+            "full": "Full",
+            "reduced": "Reduced",
+            "off": "Off"
+          }
+        }
+      },
+      "backend": {
+        "heading": "Backend",
+        "infoLabel": "What does this do?",
+        "concurrency": {
+          "label": "Concurrency",
+          "description": "Parallel background workers",
+          "info": "How many background jobs (scraping, AI, embeddings) run at once. Higher uses more CPU and memory; lower keeps the machine responsive.",
+          "options": {
+            "low": "Low",
+            "balanced": "Balanced",
+            "high": "High"
+          },
+          "details": {
+            "low": "Low — 1 worker (one job at a time)",
+            "balanced": "Balanced — 2 parallel workers",
+            "high": "High — 4 parallel workers"
+          }
+        },
+        "keepAlive": {
+          "label": "Model keep-alive",
+          "description": "How long idle models stay loaded",
+          "info": "How long a local model stays in memory after its last use. Keeping it warm makes the next request instant but holds RAM/VRAM; unloading frees memory at the cost of a reload.",
+          "options": {
+            "low": "Unload immediately",
+            "balanced": "Balanced",
+            "high": "Keep warm"
+          },
+          "details": {
+            "low": "Unload immediately — models leave memory as soon as a request finishes",
+            "balanced": "Balanced — models unload after 5 min idle",
+            "high": "Keep warm — models stay loaded for 30 min idle"
+          }
+        },
+        "cache": {
+          "label": "Cache",
+          "description": "Cached result retention",
+          "info": "How much cached AI/scrape output is kept on disk. Generous caching avoids repeat work; minimal caching reclaims disk and prunes old rows sooner.",
+          "options": {
+            "low": "Minimal",
+            "balanced": "Balanced",
+            "high": "Generous"
+          },
+          "details": {
+            "low": "Minimal — keeps 250 rows, expires after 1 day",
+            "balanced": "Balanced — keeps 2,000 rows, expires after 7 days",
+            "high": "Generous — unlimited rows, no expiry"
+          }
+        }
+      }
+    },
+    "embeddings": {
+      "heading": "Embeddings",
+      "description": "Powers résumé ↔ job matching and semantic search. Each vector is tagged with the model that produced it; changing the model rebuilds the index so incompatible vectors are never mixed.",
+      "provider": "Provider",
+      "model": "Model",
+      "baseUrl": "Base URL",
+      "baseUrlPlaceholder": "https://api.example.com/v1",
+      "modelPlaceholder": "embedding model",
+      "cloudCostAdvisory": "Cloud embedding providers charge per token indexed and per score computed. For unlimited free embeddings, run Ollama locally with",
+      "apply": "Apply",
+      "applied": "Embedding model updated. Re-index documents to rebuild the index.",
+      "applyFailed": "Failed to update the embedding model.",
+      "activeLabel": "Active:",
+      "indexed": "{{indexed}}/{{total}} indexed",
+      "staleOne": "{{count}} document needs re-indexing for the active model.",
+      "staleOther": "{{count}} documents need re-indexing for the active model.",
+      "reindex": "Re-index documents",
+      "reindexing": "Re-indexing…",
+      "reindexStarted": "Re-indexing documents…",
+      "reindexComplete": "Re-indexing complete.",
+      "reindexIncomplete": "Re-indexing did not finish.",
+      "semanticScoring": "Semantic scoring",
+      "semanticScoringDesc": "Uses embeddings for deeper match quality. Disable for faster keyword-only scoring."
     }
   },
   "contactPrompt": {
@@ -773,6 +916,8 @@
   "aiGenerate": {
     "title": "AI Generate",
     "subtitle": "Upload your resume and target job ad to generate tailored, ATS-optimized documents.",
+    "thinking": "Thinking…",
+    "reasoningComplete": "Reasoning complete",
     "research": {
       "label": "Research the company",
       "hint": "Adds a short web brief to the cover letter, using your AI provider's own web search. Best-effort.",
@@ -1452,7 +1597,9 @@
       "justNow": "Just now",
       "minutesAgo": "{{m}}m ago",
       "hoursAgo": "{{h}}h ago",
-      "daysAgo": "{{d}}d ago"
+      "daysAgo": "{{d}}d ago",
+      "weeksAgo": "{{w}}w ago",
+      "monthsAgo": "{{m}}mo ago"
     },
     "filterPlaceholder": "Search by title or company...",
     "noResults": "No results found",

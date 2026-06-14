@@ -1,17 +1,16 @@
 //! Anthropic provider — Messages API only.
 
 use async_trait::async_trait;
-use parking_lot::Mutex;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::commands::ai::get_provider_key;
-use crate::events::{emit_event, AiStreamChunk, AI_STREAM};
-use crate::jobs::JobTracker;
 
 use crate::error::{AppError, AppResult};
 
 use super::research;
+use super::retry::send_with_retry;
+use super::stream::{stream_response, StreamPiece};
 use super::{
     friendly_api_error, AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace,
     TokenParam,
@@ -19,6 +18,26 @@ use super::{
 
 const BASE: &str = "https://api.anthropic.com/v1";
 const VERSION: &str = "2023-06-01";
+
+/// Whether a model should be sent the `thinking` block (extended thinking).
+///
+/// Anthropic's extended-thinking mode forces `temperature=1.0` and consumes extra
+/// output tokens; a model that does **not** support it answers a `thinking`
+/// request with a 400. Only the Claude 3.7+ / 4.x families support it, so gate on
+/// the model id (mirrors [`gemini_supports_thinking`](super::gemini)). Older 3.0–
+/// 3.5 models and any explicitly-tagged non-thinking name are excluded. Unknown
+/// future names default to **off** — a graceful miss (no thinking) is always safe;
+/// a wrongful `thinking` request 400s the whole generation.
+fn anthropic_supports_thinking(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    // Claude 3.7 (the first extended-thinking model) and the 4.x families.
+    m.contains("claude-3-7")
+        || m.contains("claude-3.7")
+        || m.contains("claude-4")
+        || m.contains("claude-opus-4")
+        || m.contains("claude-sonnet-4")
+        || m.contains("claude-haiku-4")
+}
 
 /// Concatenate every `type:"text"` block in an Anthropic Messages `content` array
 /// into one string (web-search responses interleave `server_tool_use` /
@@ -35,6 +54,65 @@ fn join_text_blocks(data: &Value) -> String {
                 .join("")
         })
         .unwrap_or_default()
+}
+
+/// Drain complete SSE lines from the accumulated stream buffer into
+/// [`StreamPiece`]s. Anthropic emits paired `event:`/`data:` lines; we track the
+/// most recent `event:` in `last_event` (carried across chunk boundaries by the
+/// caller). `message_stop` (by event name or embedded `type`) yields a terminal
+/// sentinel; `thinking_delta` / `text_delta` map to reasoning / answer pieces.
+/// Pure + unit-tested; this is the OpenAI-style `parse` closure for Anthropic, so
+/// its SSE framing lives here only.
+fn parse_anthropic_frames(buf: &mut String, last_event: &mut String) -> Vec<StreamPiece> {
+    let mut out = Vec::new();
+    while let Some(nl) = buf.find('\n') {
+        let line = buf[..nl].trim().to_string();
+        *buf = buf[nl + 1..].to_string();
+
+        if let Some(event) = line.strip_prefix("event: ") {
+            *last_event = event.trim().to_string();
+            continue;
+        }
+        let data = match line.strip_prefix("data: ") {
+            Some(d) => d.trim(),
+            None => continue,
+        };
+        if last_event == "message_stop" || data.contains("\"type\":\"message_stop\"") {
+            out.push(StreamPiece::done(""));
+            return out;
+        }
+        let event: Value = match serde_json::from_str(data) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let delta_obj = event.get("delta");
+        let delta_type = delta_obj
+            .and_then(|d| d.get("type"))
+            .and_then(|t| t.as_str())
+            .unwrap_or("");
+        match delta_type {
+            "thinking_delta" => {
+                let thinking = delta_obj
+                    .and_then(|d| d.get("thinking"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
+                if !thinking.is_empty() {
+                    out.push(StreamPiece::thinking(thinking));
+                }
+            }
+            "text_delta" => {
+                let text = delta_obj
+                    .and_then(|d| d.get("text"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
+                if !text.is_empty() {
+                    out.push(StreamPiece::text(text));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 pub struct AnthropicClient;
@@ -86,8 +164,11 @@ impl AiProvider for AnthropicClient {
             .map(|m| json!({ "role": m.role, "content": m.content }))
             .collect();
 
-        // Extended thinking for balanced effort and above; requires temperature=1.
-        let thinking_budget = if max_tokens >= 2048 {
+        // Extended thinking for balanced effort and above — but ONLY on models that
+        // support it. Enabling it forces temperature=1 and spends extra output
+        // tokens; an unsupported model 400s on a `thinking` block, so we gate on the
+        // model id. A caller can opt out by selecting a non-thinking model.
+        let thinking_budget = if max_tokens >= 2048 && anthropic_supports_thinking(&req.model) {
             max_tokens / 2
         } else {
             0
@@ -117,7 +198,7 @@ impl AiProvider for AnthropicClient {
             .send()
             .await;
 
-        let mut response = match response {
+        let response = match response {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
@@ -136,128 +217,14 @@ impl AiProvider for AnthropicClient {
             ));
         }
 
-        let mut line_buf = String::new();
+        // The shared loop owns cancel-check + chunk read + emit + complete; the
+        // closure is the only Anthropic-specific part (paired `event:`/`data:` SSE
+        // framing, with `last_event` carried across chunks).
         let mut last_event = String::new();
-        loop {
-            if let Some(job) = app.state::<Mutex<JobTracker>>().lock().get(job_id) {
-                if job.status == crate::jobs::JobStatus::Cancelled {
-                    drop(response);
-                    trace.end(Some(status.as_u16()), false);
-                    return Err(AppError::Message("Job cancelled".to_string()));
-                }
-            }
-
-            match response.chunk().await {
-                Ok(Some(bytes)) => {
-                    line_buf.push_str(&String::from_utf8_lossy(&bytes));
-                    while let Some(nl) = line_buf.find('\n') {
-                        let line = line_buf[..nl].trim().to_string();
-                        line_buf = line_buf[nl + 1..].to_string();
-
-                        if let Some(event) = line.strip_prefix("event: ") {
-                            last_event = event.trim().to_string();
-                            continue;
-                        }
-                        let data = match line.strip_prefix("data: ") {
-                            Some(d) => d.trim(),
-                            None => continue,
-                        };
-                        if last_event == "message_stop"
-                            || data.contains("\"type\":\"message_stop\"")
-                        {
-                            emit_event(
-                                app,
-                                AI_STREAM,
-                                AiStreamChunk {
-                                    job_id: job_id.to_string(),
-                                    delta: String::new(),
-                                    done: true,
-                                    error: None,
-                                    thinking: None,
-                                },
-                            );
-                            crate::commands::jobs::job_complete(
-                                app,
-                                job_id,
-                                json!({ "done": true }),
-                            );
-                            trace.end(Some(status.as_u16()), true);
-                            return Ok(());
-                        }
-                        let event: Value = match serde_json::from_str(data) {
-                            Ok(v) => v,
-                            Err(_) => continue,
-                        };
-                        let delta_obj = event.get("delta");
-                        let delta_type = delta_obj
-                            .and_then(|d| d.get("type"))
-                            .and_then(|t| t.as_str())
-                            .unwrap_or("");
-                        match delta_type {
-                            "thinking_delta" => {
-                                let thinking = delta_obj
-                                    .and_then(|d| d.get("thinking"))
-                                    .and_then(|t| t.as_str())
-                                    .unwrap_or("");
-                                if !thinking.is_empty() {
-                                    emit_event(
-                                        app,
-                                        AI_STREAM,
-                                        AiStreamChunk {
-                                            job_id: job_id.to_string(),
-                                            delta: thinking.to_string(),
-                                            done: false,
-                                            error: None,
-                                            thinking: Some(true),
-                                        },
-                                    );
-                                }
-                            }
-                            "text_delta" => {
-                                let text = delta_obj
-                                    .and_then(|d| d.get("text"))
-                                    .and_then(|t| t.as_str())
-                                    .unwrap_or("");
-                                if !text.is_empty() {
-                                    emit_event(
-                                        app,
-                                        AI_STREAM,
-                                        AiStreamChunk {
-                                            job_id: job_id.to_string(),
-                                            delta: text.to_string(),
-                                            done: false,
-                                            error: None,
-                                            thinking: None,
-                                        },
-                                    );
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                Ok(None) => break,
-                Err(e) => {
-                    trace.end(Some(status.as_u16()), false);
-                    return Err(AppError::Network(format!("Stream error: {e}")));
-                }
-            }
-        }
-
-        emit_event(
-            app,
-            AI_STREAM,
-            AiStreamChunk {
-                job_id: job_id.to_string(),
-                delta: String::new(),
-                done: true,
-                error: None,
-                thinking: None,
-            },
-        );
-        crate::commands::jobs::job_complete(app, job_id, json!({ "done": true }));
-        trace.end(Some(status.as_u16()), true);
-        Ok(())
+        stream_response(app, job_id, &trace, response, status.as_u16(), move |buf| {
+            parse_anthropic_frames(buf, &mut last_event)
+        })
+        .await
     }
 
     async fn complete(
@@ -282,14 +249,15 @@ impl AiProvider for AnthropicClient {
             body["system"] = json!(system);
         }
 
-        let resp = crate::net::http::shared()
-            .post(&endpoint)
-            .timeout(std::time::Duration::from_secs(120))
-            .header("x-api-key", &api_key)
-            .header("anthropic-version", VERSION)
-            .json(&body)
-            .send()
-            .await;
+        let resp = send_with_retry(|| {
+            crate::net::http::shared()
+                .post(&endpoint)
+                .timeout(std::time::Duration::from_secs(120))
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", VERSION)
+                .json(&body)
+        })
+        .await;
         let resp = match resp {
             Ok(r) => r,
             Err(e) => {
@@ -426,23 +394,20 @@ impl AiProvider for AnthropicClient {
     async fn test_key(&self, app: &AppHandle) -> AppResult<()> {
         let api_key = get_provider_key(app, self.id().credential_key())
             .ok_or_else(|| AppError::Config("No API key found".to_string()))?;
+        // Liveness probe via `GET /v1/models` (the same endpoint `list_models`
+        // uses). A key-only authenticated GET avoids pinning a specific chat model
+        // snapshot — the old probe hardcoded `claude-3-haiku-20240307`, so key
+        // validation would have broken the day that snapshot is retired.
         let client = crate::net::http::shared();
         let resp = client
-            .post(format!("{BASE}/messages"))
+            .get(format!("{BASE}/models"))
             .header("x-api-key", &api_key)
             .header("anthropic-version", VERSION)
-            .header("content-type", "application/json")
             .timeout(std::time::Duration::from_secs(10))
-            .json(&json!({
-                "model": "claude-3-haiku-20240307",
-                "max_tokens": 1,
-                "messages": [{ "role": "user", "content": "test" }]
-            }))
             .send()
             .await
             .map_err(|e| format!("Request failed: {e}"))?;
-        // 400 means the key is valid but our minimal request was rejected.
-        if resp.status().is_success() || resp.status() == 400 {
+        if resp.status().is_success() {
             Ok(())
         } else {
             Err(AppError::Provider(format!(
@@ -455,8 +420,84 @@ impl AiProvider for AnthropicClient {
 
 #[cfg(test)]
 mod tests {
-    use super::join_text_blocks;
+    use super::{
+        anthropic_supports_thinking, join_text_blocks, parse_anthropic_frames, StreamPiece,
+    };
     use serde_json::json;
+
+    #[test]
+    fn thinking_gate_enables_only_extended_thinking_models() {
+        for m in [
+            "claude-3-7-sonnet-20250219",
+            "claude-3.7-sonnet",
+            "claude-opus-4-20250514",
+            "claude-sonnet-4-5",
+            "claude-haiku-4",
+        ] {
+            assert!(anthropic_supports_thinking(m), "{m} should enable thinking");
+        }
+        // Pre-3.7 models 400 on a `thinking` block — must stay off.
+        for m in [
+            "claude-3-haiku-20240307",
+            "claude-3-5-sonnet-20241022",
+            "claude-3-opus-20240229",
+            "claude-2.1",
+        ] {
+            assert!(
+                !anthropic_supports_thinking(m),
+                "{m} must not request thinking (it 400s)"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_frames_splits_thinking_and_text_deltas() {
+        let mut last = String::new();
+        let mut buf = String::from(
+            "event: content_block_delta\n\
+             data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"hmm\"}}\n\
+             event: content_block_delta\n\
+             data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n",
+        );
+        let pieces = parse_anthropic_frames(&mut buf, &mut last);
+        assert_eq!(
+            pieces,
+            vec![StreamPiece::thinking("hmm"), StreamPiece::text("hi")]
+        );
+    }
+
+    #[test]
+    fn parse_frames_done_on_message_stop_event() {
+        let mut last = String::new();
+        let mut buf = String::from("event: message_stop\ndata: {\"type\":\"message_stop\"}\n");
+        assert_eq!(
+            parse_anthropic_frames(&mut buf, &mut last),
+            vec![StreamPiece::done("")]
+        );
+    }
+
+    #[test]
+    fn parse_frames_done_when_event_line_split_across_chunks() {
+        // The `event:` line arrives in one chunk, the `data:` in the next — the
+        // caller carries `last_event`, so message_stop is still detected.
+        let mut last = String::new();
+        let mut buf = String::from("event: message_stop\n");
+        assert!(parse_anthropic_frames(&mut buf, &mut last).is_empty());
+        assert_eq!(last, "message_stop");
+        buf.push_str("data: {}\n");
+        assert_eq!(
+            parse_anthropic_frames(&mut buf, &mut last),
+            vec![StreamPiece::done("")]
+        );
+    }
+
+    #[test]
+    fn parse_frames_leaves_partial_trailing_line_buffered() {
+        let mut last = String::new();
+        let mut buf = String::from("data: {\"type\":\"content_block_de");
+        assert!(parse_anthropic_frames(&mut buf, &mut last).is_empty());
+        assert_eq!(buf, "data: {\"type\":\"content_block_de");
+    }
 
     #[test]
     fn join_text_blocks_concatenates_only_text_blocks() {

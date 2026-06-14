@@ -1,6 +1,6 @@
 /** Output validator + JSON repair for the analysis result. */
 
-import type { AnalysisResult } from './schema.js';
+import type { AnalysisResult, AnalysisScore } from './schema.js';
 
 function extractJSON(raw: string): string | null {
   const trimmed = raw.trim();
@@ -16,9 +16,19 @@ function extractJSON(raw: string): string | null {
   return null;
 }
 
-function clamp(v: unknown, min = 0, max = 100): number {
+/**
+ * Coerce a model-provided score to a clamped 0–100 integer, or `null` when the
+ * value is missing/garbled. Returning `null` (instead of a confident 50) keeps
+ * the result honest — the UI renders an explicit "Not scored" state rather than
+ * a fabricated midpoint.
+ */
+function clampScore(v: unknown, min = 0, max = 100): AnalysisScore {
+  if (v === null || v === undefined) return null;
+  // Blank / whitespace-only strings are "not scored" — without the trim, a
+  // value like `' '` would slip past the `=== ''` check and coerce to 0.
+  if (typeof v === 'string' && v.trim().length === 0) return null;
   const n = typeof v === 'number' ? v : Number(v);
-  if (isNaN(n)) return 50;
+  if (!Number.isFinite(n)) return null;
   return Math.max(min, Math.min(max, Math.round(n)));
 }
 
@@ -55,7 +65,7 @@ export function validateAndRepair(raw: string): AnalysisResult | null {
   const sectionFor = (key: string): AnalysisResult['sectionAnalysis']['summary'] => {
     const s = (secAn[key] as Record<string, unknown>) ?? {};
     return {
-      score: clamp(s.score),
+      score: clampScore(s.score),
       feedback: ensureString(s.feedback, 'No feedback provided.'),
     };
   };
@@ -109,11 +119,11 @@ export function validateAndRepair(raw: string): AnalysisResult | null {
       mismatch: langs.mismatch === true || langs.resume !== langs.jobAd,
     },
     scores: {
-      ats: clamp(scores.ats),
-      jobMatch: clamp(scores.jobMatch),
-      languageAlignment: clamp(scores.languageAlignment),
-      readability: clamp(scores.readability),
-      keywordCoverage: clamp(scores.keywordCoverage),
+      ats: clampScore(scores.ats),
+      jobMatch: clampScore(scores.jobMatch),
+      languageAlignment: clampScore(scores.languageAlignment),
+      readability: clampScore(scores.readability),
+      keywordCoverage: clampScore(scores.keywordCoverage),
     },
     summary: {
       strengths: ensureArray(summary.strengths)

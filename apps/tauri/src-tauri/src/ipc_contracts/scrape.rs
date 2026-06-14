@@ -25,6 +25,20 @@ pub struct ScrapeBoardRequest {
     pub longitude: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub radius_km: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub job_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub work_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub experience_level: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub easy_apply: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actively_hiring: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verified: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

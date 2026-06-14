@@ -34,6 +34,7 @@ describe('EVENT_CHANNELS', () => {
       'notifications',
       'scrape',
       'shortcuts',
+      'system',
       'updater',
     ]);
   });
@@ -83,6 +84,8 @@ describe('EVENT_CHANNELS', () => {
       'boards:login-status',
       // no Rust emit — frontend/global-shortcut only.
       'shortcut:command-palette',
+      // Windows accent-change push (WinRT UISettings::ColorValuesChanged).
+      'system:accentChanged',
     ];
     const eventChannels = flattenEventChannels().sort();
     expect((appEventKeys as string[]).slice().sort()).toEqual(eventChannels);

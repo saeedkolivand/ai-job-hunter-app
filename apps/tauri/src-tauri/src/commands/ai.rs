@@ -38,6 +38,23 @@ pub async fn ai_generate(app: AppHandle, req: AiGenerateRequest) -> Value {
         json!({ "jobId": job_id })
     };
 
+    // 0. Anti-abuse: rate + concurrency cap. Rejected before any provider work so
+    // a looping/XSS'd renderer can't drive unbounded paid-API spend. The guard is
+    // held for the lifetime of the streamed generation (moved into the task), so
+    // the in-flight slot is released exactly when generation finishes.
+    let limiter = app
+        .state::<std::sync::Arc<crate::limits::Limiter>>()
+        .inner()
+        .clone();
+    let guard = match limiter.acquire(
+        "ai_generate",
+        crate::limits::AI_GENERATE_RATE_MAX,
+        crate::limits::AI_GENERATE_CONCURRENCY_MAX,
+    ) {
+        Ok(g) => g,
+        Err(e) => return fail(&app, &job_id, e.to_string()),
+    };
+
     // 1. Provider must be present.
     let provider_str = match req.provider.as_deref() {
         Some(p) if !p.trim().is_empty() => p.to_string(),
@@ -59,6 +76,13 @@ pub async fn ai_generate(app: AppHandle, req: AiGenerateRequest) -> Value {
         return fail(&app, &job_id, e.to_string());
     }
 
+    // 4. Per-provider daily request ceiling — a coarse runaway-cost backstop.
+    if let Err(e) =
+        limiter.charge_provider_daily(provider_id.as_str(), crate::limits::PROVIDER_DAILY_MAX)
+    {
+        return fail(&app, &job_id, e.to_string());
+    }
+
     log::info!(
         "[ai] dispatch provider={} model={}",
         provider_id.as_str(),
@@ -69,6 +93,8 @@ pub async fn ai_generate(app: AppHandle, req: AiGenerateRequest) -> Value {
     let app_clone = app.clone();
     let base_url = req.base_url.clone();
     tauri::async_runtime::spawn(async move {
+        // Hold the concurrency guard for the whole stream; dropped here on completion.
+        let _guard = guard;
         let provider = resolve(provider_id, base_url);
         if let Err(e) = provider.chat_stream(&app_clone, &job_id_clone, &req).await {
             let msg = e.to_string();
@@ -254,11 +280,9 @@ pub async fn ai_embedding_status(app: AppHandle) -> Value {
     let store = app.state::<DocumentStore>();
     let cfg = store.embedding_config();
     let total_docs = store.list().len();
-    let indexed_in_active = store
-        .all_vectors()
-        .iter()
-        .filter(|(_, ev)| cfg.matches(&ev.space))
-        .count();
+    // SQL COUNT in the active space — never deserializes the vector blobs (the old
+    // path loaded every vector via a full vector scan just to count the matching ones).
+    let indexed_in_active = store.count_vectors_in_space(&cfg.provider, &cfg.model);
     let spaces: Vec<Value> = store
         .vector_space_counts()
         .into_iter()
@@ -370,7 +394,13 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
         let mut done = 0u32;
         let mut failed = 0u32;
 
-        for doc in docs {
+        // Re-embed with bounded concurrency: each document is one HTTP round-trip,
+        // so a small fan-out keeps the provider busy without overwhelming it (or
+        // hammering a rate limit). Cancellation is honored between chunks; store
+        // writes (sync) stay serialized to avoid lock contention.
+        const REEMBED_CONCURRENCY: usize = 4;
+        let mut was_cancelled = false;
+        for chunk in docs.chunks(REEMBED_CONCURRENCY) {
             let cancelled = app_clone
                 .state::<Mutex<JobTracker>>()
                 .lock()
@@ -378,17 +408,36 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
                 .map(|j| j.status == JobStatus::Cancelled)
                 .unwrap_or(false);
             if cancelled {
+                was_cancelled = true;
                 break;
             }
 
-            match crate::documents::embed(&app_clone, &doc.text).await {
-                Some(ev) => {
-                    let store = app_clone.state::<DocumentStore>();
-                    let _ = store.upsert_vector(&doc.id, &ev);
-                    let _ = store.set_indexed(&doc.id);
-                    done += 1;
+            // Embed this chunk's documents concurrently, preserving order so each
+            // result pairs with its document id.
+            let embeds = futures::future::join_all(
+                chunk
+                    .iter()
+                    .map(|doc| crate::documents::embed(&app_clone, &doc.text)),
+            )
+            .await;
+
+            for (doc, ev) in chunk.iter().zip(embeds) {
+                match ev {
+                    Some(ev) => {
+                        let store = app_clone.state::<DocumentStore>();
+                        match store
+                            .upsert_vector(&doc.id, &ev)
+                            .and_then(|_| store.set_indexed(&doc.id))
+                        {
+                            Ok(()) => done += 1,
+                            Err(e) => {
+                                log::warn!("reembed write failed for {}: {e}", doc.id);
+                                failed += 1;
+                            }
+                        }
+                    }
+                    None => failed += 1,
                 }
-                None => failed += 1,
             }
 
             emit_event(
@@ -401,6 +450,12 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
                     ts: crate::documents::now_ms() as i64,
                 },
             );
+        }
+
+        // A user-cancelled job is already in Cancelled status; calling
+        // job_complete would overwrite it with Completed. Bail with partial counts.
+        if was_cancelled {
+            return;
         }
 
         crate::commands::jobs::job_complete(

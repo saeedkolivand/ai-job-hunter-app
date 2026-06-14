@@ -29,6 +29,8 @@ const L0: &[&str] = &[
     "data_store",
     "net",
     "platform",
+    // Process-local anti-abuse limiter (in-memory rate/concurrency); depends only on `error`.
+    "limits",
 ];
 const L1: &[&str] = &[
     "scraping",
@@ -259,6 +261,7 @@ const R2_ALLOW: &[&str] = &[
     "documents/mod.rs",
     "pipeline/mod.rs",
     "platform/config.rs", // sole owner: resolves the data dir from the AppHandle at bootstrap
+    "platform/accent_watcher.rs", // Windows live-accent watcher: holds the AppHandle + emits SYSTEM_ACCENT_CHANGED from the WinRT ColorValuesChanged callback (bootstrap shell-reach, like platform/config.rs). TODO(arch): inject an emitter port.
 ];
 
 const TAURI_MARKERS: &[&str] = &["tauri::", "tauri_plugin", "AppHandle", ".emit("];
@@ -417,12 +420,14 @@ const R7_ALLOW: &[(&str, &str)] = &[
     ("pipeline", "commands"),
     ("documents", "commands"),
     ("postings", "commands"),
-    ("autopilot_helpers", "commands"),
     ("autopilot_scheduler", "commands"),
     // Centralized event emit: autopilot_helpers (L2) streams scrape progress via
     // the L3 `events` helper (crate::events::emit_event + channel consts), the same
     // shell-reach it already has for `commands`. R2 likewise allowlists this file.
     ("autopilot_helpers", "events"),
+    // accent_watcher (L0 platform) emits via the L3 events helper; same shell-reach as
+    // autopilot_helpers->events. TODO(arch): emitter port.
+    ("platform", "events"),
 ];
 
 #[test]

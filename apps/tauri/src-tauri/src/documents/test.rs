@@ -215,18 +215,6 @@ fn test_get_vector() {
 }
 
 #[test]
-fn test_all_vectors() {
-    let temp_dir = TempDir::new().unwrap();
-    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
-
-    store.upsert_vector("doc-1", &ev(vec![0.1, 0.2])).unwrap();
-    store.upsert_vector("doc-2", &ev(vec![0.3, 0.4])).unwrap();
-
-    let vectors = store.all_vectors();
-    assert_eq!(vectors.len(), 2);
-}
-
-#[test]
 fn test_extract_text_plain() {
     let result = crate::extraction::route("test.txt", b"Hello, World!").unwrap();
     assert_eq!(result.text, "Hello, World!");
@@ -242,34 +230,6 @@ fn test_extract_text_markdown() {
 fn test_extract_text_unsupported() {
     let result = crate::extraction::route("test.xyz", b"content");
     assert!(result.is_err());
-}
-
-#[test]
-fn test_cosine_similarity() {
-    let a = vec![1.0, 2.0, 3.0];
-    let b = vec![1.0, 2.0, 3.0];
-    let sim = cosine_similarity(&a, &b);
-    assert!((sim - 1.0).abs() < 0.001);
-}
-
-#[test]
-fn test_cosine_similarity_orthogonal() {
-    let a = vec![1.0, 0.0];
-    let b = vec![0.0, 1.0];
-    let sim = cosine_similarity(&a, &b);
-    assert!((sim - 0.0).abs() < 0.001);
-}
-
-#[test]
-fn test_cosine_similarity_edge_cases() {
-    // Empty vectors
-    assert_eq!(cosine_similarity(&[], &[]), 0.0);
-
-    // Mismatched lengths
-    assert_eq!(cosine_similarity(&[1.0], &[1.0, 2.0]), 0.0);
-
-    // Zero vectors
-    assert_eq!(cosine_similarity(&[0.0, 0.0], &[1.0, 1.0]), 0.0);
 }
 
 // Verify that keywords_json survives an insert → list → get round-trip without

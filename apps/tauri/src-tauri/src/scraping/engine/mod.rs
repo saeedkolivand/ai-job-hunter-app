@@ -138,16 +138,6 @@ impl ScraperEngine {
     pub fn set_concurrency(&self, n: usize) {
         self.semaphore.store(Arc::new(Semaphore::new(n.max(1))));
     }
-
-    /// Cancel every in-flight job. Called on app exit.
-    #[allow(dead_code)]
-    pub async fn shutdown(&self) {
-        let mut jobs = self.jobs.lock().await;
-        for token in jobs.values() {
-            token.cancel();
-        }
-        jobs.clear();
-    }
 }
 
 impl Default for ScraperEngine {

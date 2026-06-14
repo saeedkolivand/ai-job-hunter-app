@@ -75,5 +75,3 @@ export function CapabilityProvider({ children }: CapabilityProviderProps) {
 // ── Consumer hooks ────────────────────────────────────────────────────────────
 
 export const useCapabilities = () => useContext(CapabilityContext);
-
-export const useAICapability = () => useContext(CapabilityContext).ai;

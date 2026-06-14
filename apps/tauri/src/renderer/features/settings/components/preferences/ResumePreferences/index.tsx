@@ -9,6 +9,7 @@ import { Button, cn, GlassCard, transition, useNotification } from '@ajh/ui';
 import { ContactConflictModal } from '@/components/contact/ContactConflictModal';
 import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
+import { exportTXT } from '@/lib/generate';
 import { useDocuments, useRemoveDocument, useSetDefaultDocument } from '@/services';
 
 export function ResumePreferences() {
@@ -95,23 +96,18 @@ export function ResumePreferences() {
   const handleDownload = (doc: DocumentRecord) => {
     const rawDoc = rawDocs.find((d) => d._id === doc.id);
     const text = (rawDoc as { text?: string })?.text || '';
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${doc.title.replace(/\.[^/.]+$/, '')}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    notify.success({ message: t('settings.resume.downloaded') });
-  };
-
-  const _formatFileSize = (bytes?: number) => {
-    if (!bytes) return '';
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    // Use the app's shared text-export util (validates, strips markdown, handles
+    // the blob/anchor/revoke). Limitation: only the stored plain text is
+    // available here, so the export is .txt — the original PDF/DOCX bytes aren't
+    // persisted for re-download.
+    try {
+      exportTXT(text, `${doc.title.replace(/\.[^/.]+$/, '')}.txt`);
+      notify.success({ message: t('settings.resume.downloaded') });
+    } catch (err) {
+      notify.error({
+        message: err instanceof Error ? err.message : t('settings.resume.downloadFailed'),
+      });
+    }
   };
 
   return (

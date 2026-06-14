@@ -291,6 +291,7 @@
       "languageAlignment": "Sprache"
     },
     "verdict": "Endurteil",
+    "notScored": "Nicht bewertet",
     "recruiterView": "Sichtweise des Personalers —",
     "mode": {
       "label": "Dokumenttyp",
@@ -712,7 +713,8 @@
       "removeFailed": "Entfernen fehlgeschlagen",
       "setDefault": "Als Standard setzen",
       "download": "Lebenslauf herunterladen",
-      "downloaded": "Lebenslauf heruntergeladen"
+      "downloaded": "Lebenslauf heruntergeladen",
+      "downloadFailed": "Lebenslauf konnte nicht heruntergeladen werden"
     },
     "update": {
       "title": "Updates",
@@ -732,6 +734,151 @@
       "loadingChangelog": "Änderungsprotokoll wird geladen…",
       "changelogError": "Änderungsprotokoll konnte nicht geladen werden.",
       "changelogEmpty": "Keine Releases gefunden."
+    },
+    "performanceMode": {
+      "heading": "Leistungsmodus",
+      "subheading": "Optimieren Sie die Anwendungsleistung anhand Ihrer Hardware.",
+      "options": {
+        "lowMemory": {
+          "label": "Geringer Speicher",
+          "description": "Optimiert für ältere Hardware",
+          "details": [
+            "Reduzierte Unschärfe",
+            "Aggressives Entladen von Modellen",
+            "Geringere Parallelität"
+          ]
+        },
+        "balanced": {
+          "label": "Ausgewogen",
+          "description": "Beste Leistung für die meisten Systeme",
+          "details": [
+            "Standardmäßig optimiertes Verhalten",
+            "Flüssige Animationen",
+            "Effizientes Caching",
+            "Ausgewogene Parallelität"
+          ]
+        },
+        "performance": {
+          "label": "Leistung",
+          "description": "Maximale Geschwindigkeit auf leistungsfähiger Hardware",
+          "details": [
+            "Höhere Parallelität",
+            "Reichhaltigere Optik",
+            "Aggressives Caching",
+            "Vollständige Animationen"
+          ]
+        },
+        "custom": {
+          "label": "Benutzerdefiniert",
+          "description": "Jedes Element fein abstimmen",
+          "details": [
+            "Visuelle Schalter pro Effekt",
+            "Manuelle Backend-Stufen",
+            "Auf Ihren Rechner zugeschnitten"
+          ]
+        }
+      },
+      "visual": {
+        "heading": "Optik",
+        "aurora": {
+          "label": "Aurora-Bänder",
+          "description": "Langsame, breite, farbrotierende Hintergrund-Blobs"
+        },
+        "nebula": {
+          "label": "Nebel",
+          "description": "Mittlere Akzent-Blobs über der Aurora"
+        },
+        "cursorGlow": {
+          "label": "Cursor-Schein",
+          "description": "Ein sanftes Leuchten, das dem Zeiger folgt"
+        },
+        "animations": {
+          "label": "Reichhaltige Animationen",
+          "description": "Aurora- und Nebel-Schichten animieren"
+        },
+        "blur": {
+          "label": "Hintergrund-Unschärfe",
+          "description": "Milchglas-Intensität über alle Flächen",
+          "options": {
+            "full": "Voll",
+            "reduced": "Reduziert",
+            "off": "Aus"
+          }
+        }
+      },
+      "backend": {
+        "heading": "Backend",
+        "infoLabel": "Was bewirkt das?",
+        "concurrency": {
+          "label": "Parallelität",
+          "description": "Parallele Hintergrund-Worker",
+          "info": "Wie viele Hintergrundaufgaben (Scraping, KI, Embeddings) gleichzeitig laufen. Höher nutzt mehr CPU und Speicher; niedriger hält den Rechner reaktionsfähig.",
+          "options": {
+            "low": "Niedrig",
+            "balanced": "Ausgewogen",
+            "high": "Hoch"
+          },
+          "details": {
+            "low": "Niedrig — 1 Worker (eine Aufgabe gleichzeitig)",
+            "balanced": "Ausgewogen — 2 parallele Worker",
+            "high": "Hoch — 4 parallele Worker"
+          }
+        },
+        "keepAlive": {
+          "label": "Modell-Bereithaltung",
+          "description": "Wie lange inaktive Modelle geladen bleiben",
+          "info": "Wie lange ein lokales Modell nach der letzten Nutzung im Speicher bleibt. Warmhalten macht die nächste Anfrage sofort verfügbar, belegt aber RAM/VRAM; Entladen gibt Speicher frei, kostet aber ein erneutes Laden.",
+          "options": {
+            "low": "Sofort entladen",
+            "balanced": "Ausgewogen",
+            "high": "Warmhalten"
+          },
+          "details": {
+            "low": "Sofort entladen — Modelle verlassen den Speicher, sobald eine Anfrage abgeschlossen ist",
+            "balanced": "Ausgewogen — Modelle entladen nach 5 Min. Inaktivität",
+            "high": "Warmhalten — Modelle bleiben 30 Min. inaktiv geladen"
+          }
+        },
+        "cache": {
+          "label": "Cache",
+          "description": "Aufbewahrung zwischengespeicherter Ergebnisse",
+          "info": "Wie viel zwischengespeicherte KI-/Scrape-Ausgabe auf der Festplatte bleibt. Großzügiges Caching vermeidet Doppelarbeit; minimales Caching gibt Speicherplatz frei und löscht alte Einträge früher.",
+          "options": {
+            "low": "Minimal",
+            "balanced": "Ausgewogen",
+            "high": "Großzügig"
+          },
+          "details": {
+            "low": "Minimal — behält 250 Einträge, läuft nach 1 Tag ab",
+            "balanced": "Ausgewogen — behält 2.000 Einträge, läuft nach 7 Tagen ab",
+            "high": "Großzügig — unbegrenzte Einträge, kein Ablauf"
+          }
+        }
+      }
+    },
+    "embeddings": {
+      "heading": "Embeddings",
+      "description": "Steuert den Abgleich Lebenslauf ↔ Job und die semantische Suche. Jeder Vektor ist mit dem erzeugenden Modell markiert; ein Modellwechsel baut den Index neu auf, damit inkompatible Vektoren nie vermischt werden.",
+      "provider": "Anbieter",
+      "model": "Modell",
+      "baseUrl": "Basis-URL",
+      "baseUrlPlaceholder": "https://api.example.com/v1",
+      "modelPlaceholder": "Embedding-Modell",
+      "cloudCostAdvisory": "Cloud-Embedding-Anbieter berechnen pro indiziertem Token und pro berechnetem Score. Für unbegrenzte kostenlose Embeddings führen Sie Ollama lokal aus mit",
+      "apply": "Übernehmen",
+      "applied": "Embedding-Modell aktualisiert. Indizieren Sie die Dokumente neu, um den Index neu aufzubauen.",
+      "applyFailed": "Embedding-Modell konnte nicht aktualisiert werden.",
+      "activeLabel": "Aktiv:",
+      "indexed": "{{indexed}}/{{total}} indiziert",
+      "staleOne": "{{count}} Dokument muss für das aktive Modell neu indiziert werden.",
+      "staleOther": "{{count}} Dokumente müssen für das aktive Modell neu indiziert werden.",
+      "reindex": "Dokumente neu indizieren",
+      "reindexing": "Neuindizierung…",
+      "reindexStarted": "Dokumente werden neu indiziert…",
+      "reindexComplete": "Neuindizierung abgeschlossen.",
+      "reindexIncomplete": "Neuindizierung nicht abgeschlossen.",
+      "semanticScoring": "Semantische Bewertung",
+      "semanticScoringDesc": "Nutzt Embeddings für höhere Abgleichqualität. Deaktivieren für schnellere reine Stichwortbewertung."
     }
   },
   "contactPrompt": {
@@ -743,6 +890,8 @@
   "aiGenerate": {
     "title": "KI-Generierung",
     "subtitle": "Laden Sie Ihren Lebenslauf und die Stellenanzeige hoch, um maßgeschneiderte, ATS-optimierte Dokumente zu erstellen.",
+    "thinking": "Denkt nach…",
+    "reasoningComplete": "Schlussfolgerung abgeschlossen",
     "research": {
       "label": "Unternehmen recherchieren",
       "hint": "Fügt dem Anschreiben eine kurze Web-Zusammenfassung hinzu — über die eigene Websuche Ihres KI-Anbieters. Nach bestem Bemühen.",
@@ -1422,7 +1571,9 @@
       "justNow": "Gerade eben",
       "minutesAgo": "vor {{m}} Min.",
       "hoursAgo": "vor {{h}} Std.",
-      "daysAgo": "vor {{d}} T."
+      "daysAgo": "vor {{d}} T.",
+      "weeksAgo": "vor {{w}} Wo.",
+      "monthsAgo": "vor {{m}} Mo."
     },
     "filterPlaceholder": "Nach Titel oder Unternehmen suchen...",
     "noResults": "Keine Ergebnisse gefunden",

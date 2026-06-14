@@ -103,54 +103,6 @@ fn test_auth_status_serialization() {
 }
 
 #[test]
-fn test_to_cookie_params_empty() {
-    let params = to_cookie_params(&[]);
-    assert!(params.is_empty());
-}
-
-#[test]
-fn test_to_cookie_params_single() {
-    let cookies = vec![StoredCookie {
-        name: "test".to_string(),
-        value: "value".to_string(),
-        domain: "example.com".to_string(),
-        path: "/".to_string(),
-        expires: None,
-        http_only: false,
-        secure: false,
-    }];
-    let params = to_cookie_params(&cookies);
-    assert_eq!(params.len(), 1);
-    assert_eq!(params[0].name, "test");
-}
-
-#[test]
-fn test_to_cookie_params_multiple() {
-    let cookies = vec![
-        StoredCookie {
-            name: "cookie1".to_string(),
-            value: "value1".to_string(),
-            domain: "example.com".to_string(),
-            path: "/".to_string(),
-            expires: None,
-            http_only: false,
-            secure: false,
-        },
-        StoredCookie {
-            name: "cookie2".to_string(),
-            value: "value2".to_string(),
-            domain: "example.com".to_string(),
-            path: "/".to_string(),
-            expires: None,
-            http_only: true,
-            secure: true,
-        },
-    ];
-    let params = to_cookie_params(&cookies);
-    assert_eq!(params.len(), 2);
-}
-
-#[test]
 fn test_get_config_xing() {
     let config = get_config("xing");
     assert!(config.is_some());

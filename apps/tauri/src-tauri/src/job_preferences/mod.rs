@@ -62,10 +62,10 @@ impl JobPreferencesStore {
     }];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
-        std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(data_dir)?;
         let path = data_dir.join("job_preferences.db");
-        let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-        run_migrations(&conn, Self::MIGRATIONS)?;
+        let mut conn = crate::db::open(&path)?;
+        run_migrations(&mut conn, Self::MIGRATIONS)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })

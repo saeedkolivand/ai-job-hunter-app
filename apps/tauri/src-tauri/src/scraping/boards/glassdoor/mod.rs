@@ -1,6 +1,8 @@
-#![allow(dead_code)]
-
-/// Glassdoor — browser-based scraper (requires JavaScript rendering)
+/// Glassdoor — browser-based scraper (requires JavaScript rendering).
+///
+/// BEST-EFFORT ANONYMOUS: launches a browser with no cookies or auth.
+/// Glassdoor frequently bot-blocks anonymous sessions with sign-in or
+/// captcha walls. Full login-wiring is out of scope for this scraper.
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use chromiumoxide::browser::{Browser, BrowserConfig};
@@ -41,6 +43,7 @@ impl Scraper for GlassdoorScraper {
     ) -> anyhow::Result<Vec<JobPosting>> {
         let max_pages = input.pages.clamp(1, 10);
         let query = urlencoding::encode(&input.query);
+        let loc = urlencoding::encode(input.location.as_deref().unwrap_or(""));
 
         let (mut browser, mut handler) = Browser::launch(
             BrowserConfig::builder()
@@ -68,13 +71,13 @@ impl Scraper for GlassdoorScraper {
 
             let url = if p == 1 {
                 format!(
-                    "https://www.glassdoor.com/Job/jobs.htm?sc.keyword={}&locT=C&locId=&jobType=&fromAge=-1&minSalary=0&includeNoSalaryJobs=true&radius=0&cityId=-1&minRating=0.0&industryId=-1&sgocId=-1&seniorityType=&companyId=-1&employerSizes=0&applicationType=0&remoteWorkType=0",
-                    query
+                    "https://www.glassdoor.com/Job/jobs.htm?sc.keyword={}&locT=C&locId=&locKeyword={}&jobType=&fromAge=-1&minSalary=0&includeNoSalaryJobs=true&radius=0&cityId=-1&minRating=0.0&industryId=-1&sgocId=-1&seniorityType=&companyId=-1&employerSizes=0&applicationType=0&remoteWorkType=0",
+                    query, loc
                 )
             } else {
                 format!(
-                    "https://www.glassdoor.com/Job/jobs.htm?sc.keyword={}&locT=C&locId=&jobType=&fromAge=-1&minSalary=0&includeNoSalaryJobs=true&radius=0&cityId=-1&minRating=0.0&industryId=-1&sgocId=-1&seniorityType=&companyId=-1&employerSizes=0&applicationType=0&remoteWorkType=0&p={}",
-                    query, p
+                    "https://www.glassdoor.com/Job/jobs.htm?sc.keyword={}&locT=C&locId=&locKeyword={}&jobType=&fromAge=-1&minSalary=0&includeNoSalaryJobs=true&radius=0&cityId=-1&minRating=0.0&industryId=-1&sgocId=-1&seniorityType=&companyId=-1&employerSizes=0&applicationType=0&remoteWorkType=0&p={}",
+                    query, loc, p
                 )
             };
 
@@ -104,6 +107,7 @@ impl Scraper for GlassdoorScraper {
                 let doc = Html::parse_document(&html);
 
                 // Glassdoor job card selectors (compiled once at module level)
+                let mut page_card_count = 0usize;
 
                 for card in doc.select(&GD_CARD_SEL) {
                     if ctx.signal.is_cancelled() {
@@ -149,13 +153,25 @@ impl Scraper for GlassdoorScraper {
                         continue;
                     }
 
-                    // Extract job ID from URL
+                    // Stable external id: prefer jobListingId from the URL; if
+                    // absent, fall back to a hash of the job URL so cards don't
+                    // collide on a bare "glassdoor-" id. Skip if we still can't
+                    // derive anything stable.
                     let external_id = url
                         .split("jobListingId=")
                         .nth(1)
                         .and_then(|s| s.split('&').next())
-                        .unwrap_or("")
-                        .to_string();
+                        .map(|s| s.to_string())
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_else(|| {
+                            use std::hash::{Hash, Hasher};
+                            let mut h = std::collections::hash_map::DefaultHasher::new();
+                            url.hash(&mut h);
+                            format!("u{:x}", h.finish())
+                        });
+                    if external_id.is_empty() {
+                        continue;
+                    }
 
                     let posting = JobPosting {
                         id: format!("glassdoor-{}", external_id),
@@ -176,6 +192,25 @@ impl Scraper for GlassdoorScraper {
                         cb(posting.clone());
                     }
                     results.push(posting);
+                    page_card_count += 1;
+                }
+
+                if page_card_count == 0 {
+                    let lower = html.to_lowercase();
+                    let walled = lower.contains("captcha")
+                        || lower.contains("verify you are human")
+                        || lower.contains("sign in")
+                        || lower.contains("log in to continue");
+                    if walled {
+                        log::warn!(
+                            "[glassdoor] page {p} returned no cards behind a sign-in/captcha wall;                              this board is best-effort-anonymous and is likely bot-blocked"
+                        );
+                    } else {
+                        log::warn!(
+                            "[glassdoor] page {p} parsed zero job cards (selectors may have changed)"
+                        );
+                    }
+                    break;
                 }
             } // doc is dropped here
 

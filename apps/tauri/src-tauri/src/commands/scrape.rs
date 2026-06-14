@@ -55,6 +55,23 @@ fn uuid_v4() -> String {
 #[tauri::command]
 pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
     let job_id = uuid_v4();
+
+    // Anti-abuse: rate + concurrency cap. Rejected before a job is created so a
+    // looping/XSS'd renderer can't drive unbounded scrape traffic. The guard is
+    // moved into the spawned task and dropped when the scrape finishes.
+    let limiter = app
+        .state::<std::sync::Arc<crate::limits::Limiter>>()
+        .inner()
+        .clone();
+    let guard = match limiter.acquire(
+        "scrape_board",
+        crate::limits::SCRAPE_RATE_MAX,
+        crate::limits::SCRAPE_CONCURRENCY_MAX,
+    ) {
+        Ok(g) => g,
+        Err(e) => return json!({ "error": e.to_string() }),
+    };
+
     crate::commands::jobs::job_start(&app, &job_id, "scrape.board");
 
     let engine = app.state::<std::sync::Arc<ScraperEngine>>().inner().clone();
@@ -63,13 +80,17 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
         location: req.location.clone(),
         pages: req.pages,
         date_filter: req.date_filter.clone(),
-        job_type: None,
-        work_type: None,
-        experience_level: None,
-        easy_apply: None,
-        actively_hiring: None,
-        verified: None,
-        sort_by: None,
+        // Structured search filters from the IPC request (ScrapeBoardRequestSchema
+        // in packages/shared). Optional, so absent fields stay None; LinkedIn's
+        // search_paginated honors them and other boards ignore them. UI controls
+        // for these are a follow-up — only the contract + propagation exist today.
+        job_type: req.job_type.clone(),
+        work_type: req.work_type.clone(),
+        experience_level: req.experience_level.clone(),
+        easy_apply: req.easy_apply,
+        actively_hiring: req.actively_hiring,
+        verified: req.verified,
+        sort_by: req.sort_by.clone(),
         locale: req.locale.clone(),
         country_code: req.country_code.clone(),
         latitude: req.latitude,
@@ -116,6 +137,8 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
     let app_clone = app.clone();
     let job_id_clone = job_id.clone();
     tokio::spawn(async move {
+        // Hold the concurrency guard for the whole scrape; dropped on completion.
+        let _guard = guard;
         let result = engine
             .scrape_board(
                 &board,
@@ -152,12 +175,29 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
         return json!({ "error": "url is required" });
     }
 
+    // Anti-abuse: rate + concurrency cap (shares the scrape budget knobs). Checked
+    // after the cheap empty-url guard so an invalid call costs no slot.
+    let limiter = app
+        .state::<std::sync::Arc<crate::limits::Limiter>>()
+        .inner()
+        .clone();
+    let guard = match limiter.acquire(
+        "scrape_url",
+        crate::limits::SCRAPE_RATE_MAX,
+        crate::limits::SCRAPE_CONCURRENCY_MAX,
+    ) {
+        Ok(g) => g,
+        Err(e) => return json!({ "error": e.to_string() }),
+    };
+
     let job_id = uuid_v4();
     crate::commands::jobs::job_start(&app, &job_id, "scrape.url");
 
     let app_clone = app.clone();
     let job_id_clone = job_id.clone();
     tokio::spawn(async move {
+        // Hold the concurrency guard for the whole resolve; dropped on completion.
+        let _guard = guard;
         let result = crate::scraping::scrape_url::resolve(&url).await;
 
         match result {
@@ -224,10 +264,24 @@ pub fn scrape_persist_job(app: AppHandle, req: ScrapePersistJobRequest) -> Value
 /// Synchronous request/response — used to fetch a description on demand for
 /// boards whose list scrape omits it (LinkedIn, Glassdoor, etc.).
 #[tauri::command]
-pub async fn scrape_resolve_url(url: String) -> Value {
+pub async fn scrape_resolve_url(app: AppHandle, url: String) -> Value {
     if url.is_empty() {
         return json!(null);
     }
+    // Anti-abuse: same rate + concurrency budget as the other scrape commands so a
+    // looping/XSS'd renderer can't bypass the cap by hammering resolve directly.
+    let limiter = app
+        .state::<std::sync::Arc<crate::limits::Limiter>>()
+        .inner()
+        .clone();
+    let _guard = match limiter.acquire(
+        "scrape_url",
+        crate::limits::SCRAPE_RATE_MAX,
+        crate::limits::SCRAPE_CONCURRENCY_MAX,
+    ) {
+        Ok(g) => g,
+        Err(_) => return json!(null),
+    };
     match crate::scraping::scrape_url::resolve(&url).await {
         Ok(Some(posting)) => serde_json::to_value(&posting).unwrap_or(json!(null)),
         _ => json!(null),

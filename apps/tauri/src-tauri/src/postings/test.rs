@@ -1,3 +1,5 @@
+use tempfile::TempDir;
+
 use super::*;
 
 #[test]
@@ -43,15 +45,16 @@ fn test_interaction_record_serialization() {
 
 #[test]
 fn test_interaction_store_new() {
-    let data_dir = std::path::PathBuf::from("/tmp/test_data_new");
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().to_path_buf();
     let store = InteractionStore::new(&data_dir);
     assert!(store.data_file.ends_with("interactions.json"));
 }
 
 #[test]
 fn test_interaction_store_list_no_filter() {
-    let data_dir = std::path::PathBuf::from("/tmp/test_data_list");
-    let _ = std::fs::remove_dir_all(&data_dir);
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().to_path_buf();
     let mut store = InteractionStore::new(&data_dir);
     let records = store.list(None);
     assert!(records.is_empty());
@@ -59,8 +62,8 @@ fn test_interaction_store_list_no_filter() {
 
 #[test]
 fn test_interaction_store_list_with_filter() {
-    let data_dir = std::path::PathBuf::from("/tmp/test_data_filter");
-    let _ = std::fs::remove_dir_all(&data_dir);
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().to_path_buf();
     let mut store = InteractionStore::new(&data_dir);
     let record = InteractionRecord {
         job_id: "job-1".to_string(),
@@ -81,8 +84,8 @@ fn test_interaction_store_list_with_filter() {
 
 #[test]
 fn test_interaction_store_upsert_new() {
-    let data_dir = std::path::PathBuf::from("/tmp/test_data_upsert_new");
-    let _ = std::fs::remove_dir_all(&data_dir);
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().to_path_buf();
     let mut store = InteractionStore::new(&data_dir);
     let record = InteractionRecord {
         job_id: "job-1".to_string(),
@@ -101,8 +104,8 @@ fn test_interaction_store_upsert_new() {
 
 #[test]
 fn test_interaction_store_upsert_update() {
-    let data_dir = std::path::PathBuf::from("/tmp/test_data_upsert_update");
-    let _ = std::fs::remove_dir_all(&data_dir);
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().to_path_buf();
     let mut store = InteractionStore::new(&data_dir);
     let mut record = InteractionRecord {
         job_id: "job-1".to_string(),
@@ -124,8 +127,8 @@ fn test_interaction_store_upsert_update() {
 
 #[test]
 fn test_interaction_store_clear_all() {
-    let data_dir = std::path::PathBuf::from("/tmp/test_data_clear");
-    let _ = std::fs::remove_dir_all(&data_dir);
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().to_path_buf();
     let mut store = InteractionStore::new(&data_dir);
     let record = InteractionRecord {
         job_id: "job-1".to_string(),
@@ -145,8 +148,8 @@ fn test_interaction_store_clear_all() {
 
 #[test]
 fn test_interaction_store_export_all() {
-    let data_dir = std::path::PathBuf::from("/tmp/test_data_export");
-    let _ = std::fs::remove_dir_all(&data_dir);
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().to_path_buf();
     let mut store = InteractionStore::new(&data_dir);
     let record = InteractionRecord {
         job_id: "job-1".to_string(),
@@ -165,8 +168,8 @@ fn test_interaction_store_export_all() {
 
 #[test]
 fn test_interaction_store_import_bundle() {
-    let data_dir = std::path::PathBuf::from("/tmp/test_data_import");
-    let _ = std::fs::remove_dir_all(&data_dir);
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().to_path_buf();
     let mut store = InteractionStore::new(&data_dir);
     let records = vec![InteractionRecord {
         job_id: "job-1".to_string(),
