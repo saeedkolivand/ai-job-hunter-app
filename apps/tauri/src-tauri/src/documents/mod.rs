@@ -564,7 +564,12 @@ impl DocumentStore {
         .map_err(|e| e.to_string())?;
         // Lazy per-write eviction, reusing the held lock (must NOT re-lock).
         let cfg = crate::performance::current();
-        Self::prune_table_locked(&conn, "posting_vectors", cfg.cache_ttl_secs, cfg.cache_max_rows);
+        Self::prune_table_locked(
+            &conn,
+            "posting_vectors",
+            cfg.cache_ttl_secs,
+            cfg.cache_max_rows,
+        );
         Ok(())
     }
 
@@ -682,7 +687,12 @@ impl DocumentStore {
         .map_err(|e| e.to_string())?;
         // Lazy per-write eviction, reusing the held lock (must NOT re-lock).
         let cfg = crate::performance::current();
-        Self::prune_table_locked(&conn, "match_scores", cfg.cache_ttl_secs, cfg.cache_max_rows);
+        Self::prune_table_locked(
+            &conn,
+            "match_scores",
+            cfg.cache_ttl_secs,
+            cfg.cache_max_rows,
+        );
         Ok(())
     }
 

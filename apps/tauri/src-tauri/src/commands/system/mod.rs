@@ -175,7 +175,10 @@ pub struct PerformanceBackendConfig {
 }
 
 #[tauri::command]
-pub async fn system_set_performance_mode(app: AppHandle, config: PerformanceBackendConfig) -> Value {
+pub async fn system_set_performance_mode(
+    app: AppHandle,
+    config: PerformanceBackendConfig,
+) -> Value {
     // Concurrency → scraper engine semaphore. Clamp at the trust boundary so a
     // buggy renderer can't request a huge semaphore (upper) or a zero one (lower,
     // also guarded by set_concurrency's .max(1)).

@@ -861,14 +861,21 @@ fn prune_caches_row_cap_keeps_newest_match_scores() {
         .unwrap();
     }
 
-    assert_eq!(count_table(&store, "match_scores"), 5, "5 rows before prune");
+    assert_eq!(
+        count_table(&store, "match_scores"),
+        5,
+        "5 rows before prune"
+    );
 
     // cap_param=2: DELETE WHERE created_at < (row at OFFSET 2 DESC) = ts2.
     // Deletes ts1 and ts0.  Keeps ts4, ts3, ts2 → 3 rows.
     store.prune_caches(None, Some(2));
 
     let remaining = count_table(&store, "match_scores");
-    assert_eq!(remaining, 3, "after prune(cap=2): 3 rows remain (OFFSET 2 semantics)");
+    assert_eq!(
+        remaining, 3,
+        "after prune(cap=2): 3 rows remain (OFFSET 2 semantics)"
+    );
 
     // The two oldest (job-0, job-1) must be evicted; job-2/3/4 must remain.
     {
@@ -937,7 +944,11 @@ fn prune_caches_row_cap_keeps_newest_posting_vectors() {
     // Deleted: ts1, ts0.  Keeps: ts3, ts2 → 2 rows.
     store.prune_caches(None, Some(1));
 
-    assert_eq!(count_table(&store, "posting_vectors"), 2, "cap=1 → 2 rows remain");
+    assert_eq!(
+        count_table(&store, "posting_vectors"),
+        2,
+        "cap=1 → 2 rows remain"
+    );
 
     // pv-row-0 and pv-row-1 (oldest two) must be evicted.
     for &gone in &["pv-row-0", "pv-row-1"] {
@@ -1171,7 +1182,11 @@ fn prune_caches_cap_zero_keeps_exactly_the_single_newest_row() {
         .unwrap();
     }
 
-    assert_eq!(count_table(&store, "match_scores"), 3, "3 rows before prune");
+    assert_eq!(
+        count_table(&store, "match_scores"),
+        3,
+        "3 rows before prune"
+    );
 
     // cap=0: OFFSET 0 → pivot is the newest row (ts+2000).
     // DELETE WHERE created_at < pivot removes the two older rows.
@@ -1277,7 +1292,11 @@ fn prune_caches_cap_with_tied_timestamps_retains_newest_and_at_least_bound() {
         .unwrap();
     }
 
-    assert_eq!(count_table(&store, "match_scores"), 3, "3 rows before prune");
+    assert_eq!(
+        count_table(&store, "match_scores"),
+        3,
+        "3 rows before prune"
+    );
 
     // prune(cap=1): OFFSET 1 DESC picks the 2nd-newest row as pivot.
     // With 3 rows sorted DESC by created_at: new_ts, old_ts, old_ts
