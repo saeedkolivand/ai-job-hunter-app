@@ -324,10 +324,8 @@ mod tests {
     #[test]
     fn job_preferences_store_reset_nullifies_all_fields() {
         let dir = TempDir::new().unwrap();
-        let store = crate::job_preferences::JobPreferencesStore::open(
-            &dir.path().to_path_buf(),
-        )
-        .unwrap();
+        let store =
+            crate::job_preferences::JobPreferencesStore::open(&dir.path().to_path_buf()).unwrap();
         store
             .set(&crate::job_preferences::JobPreferences {
                 location: Some("Berlin".into()),
@@ -377,12 +375,12 @@ mod tests {
     #[test]
     fn contact_profile_store_reset_yields_default_empty_profile() {
         let dir = TempDir::new().unwrap();
-        let store = crate::contact_profile::ContactProfileStore::open(
-            &dir.path().to_path_buf(),
-        )
-        .unwrap();
-        let mut profile = crate::contact_profile::ContactProfile::default();
-        profile.email = Some("jane@acme.com".into());
+        let store =
+            crate::contact_profile::ContactProfileStore::open(&dir.path().to_path_buf()).unwrap();
+        let profile = crate::contact_profile::ContactProfile {
+            email: Some("jane@acme.com".into()),
+            ..Default::default()
+        };
         store.set(&profile).unwrap();
         assert!(
             store.get().email.is_some(),

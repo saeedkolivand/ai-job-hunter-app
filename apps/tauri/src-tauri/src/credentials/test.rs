@@ -178,7 +178,11 @@ fn clear_all_removes_all_metadata_entries() {
             ("xing", "alice@example.com", 3_000),
         ],
     );
-    assert_eq!(store.list().len(), 3, "precondition: three metadata entries");
+    assert_eq!(
+        store.list().len(),
+        3,
+        "precondition: three metadata entries"
+    );
 
     store.clear_all().unwrap();
 

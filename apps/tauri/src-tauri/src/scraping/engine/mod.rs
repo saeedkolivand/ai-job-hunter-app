@@ -138,7 +138,6 @@ impl ScraperEngine {
     pub fn set_concurrency(&self, n: usize) {
         self.semaphore.store(Arc::new(Semaphore::new(n.max(1))));
     }
-
 }
 
 impl Default for ScraperEngine {

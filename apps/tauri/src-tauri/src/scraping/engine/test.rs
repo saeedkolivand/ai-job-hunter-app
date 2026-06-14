@@ -59,4 +59,3 @@ async fn cancel_reaches_a_pre_registered_token() {
     engine.cancel("run-1").await;
     assert!(token.is_cancelled());
 }
-

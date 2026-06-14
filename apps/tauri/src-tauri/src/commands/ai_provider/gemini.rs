@@ -519,7 +519,10 @@ mod tests {
         let pieces = parse_gemini_frames(&mut buf, &mut state);
         assert_eq!(
             pieces,
-            vec![StreamPiece::thinking("reasoning"), StreamPiece::text("answer")]
+            vec![
+                StreamPiece::thinking("reasoning"),
+                StreamPiece::text("answer")
+            ]
         );
         // The buffer is fully consumed and no partial object remains.
         assert!(buf.is_empty());

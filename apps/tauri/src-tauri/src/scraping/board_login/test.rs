@@ -102,9 +102,6 @@ fn test_auth_status_serialization() {
     assert!(json.is_ok());
 }
 
-
-
-
 #[test]
 fn test_get_config_xing() {
     let config = get_config("xing");

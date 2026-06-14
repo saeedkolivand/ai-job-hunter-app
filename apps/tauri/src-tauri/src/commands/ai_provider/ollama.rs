@@ -617,7 +617,10 @@ mod tests {
     fn parse_ollama_frames_done_carries_final_content() {
         // The `done:true` object becomes a sentinel carrying its final content.
         let mut buf = String::from("{\"message\":{\"content\":\"end\"},\"done\":true}\n");
-        assert_eq!(parse_ollama_frames(&mut buf), vec![StreamPiece::done("end")]);
+        assert_eq!(
+            parse_ollama_frames(&mut buf),
+            vec![StreamPiece::done("end")]
+        );
     }
 
     #[test]

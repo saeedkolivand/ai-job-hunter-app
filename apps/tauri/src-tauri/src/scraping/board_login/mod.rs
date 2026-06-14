@@ -418,7 +418,6 @@ pub fn build_authed_client(app_data_dir: &Path, board_id: &str) -> Result<reqwes
     .map_err(|e| anyhow!("reqwest client build failed: {e}"))
 }
 
-
 pub const DISABLE_PASSKEY_SCRIPT: &str = r#"
 (function () {
   try {

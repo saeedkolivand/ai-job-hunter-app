@@ -118,13 +118,13 @@ where
 
 #[cfg(test)]
 mod retry_loop_tests {
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Arc;
 
     use wiremock::matchers::method;
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use super::{MAX_ATTEMPTS, send_with_retry};
+    use super::{send_with_retry, MAX_ATTEMPTS};
 
     /// Spin up a wiremock server that serves the given status codes in FIFO order
     /// and drive `send_with_retry` once.  Returns (call_count, is_ok).
@@ -182,8 +182,14 @@ mod retry_loop_tests {
     async fn retry_loop_does_not_retry_terminal_4xx() {
         // A 400 is terminal; one call, no retry.
         let (calls, is_ok) = run_retry(vec![400]).await;
-        assert_eq!(calls, 1, "terminal 400 must not be retried; got {calls} calls");
-        assert!(is_ok, "400 response must be returned as Ok (not a transport Err)");
+        assert_eq!(
+            calls, 1,
+            "terminal 400 must not be retried; got {calls} calls"
+        );
+        assert!(
+            is_ok,
+            "400 response must be returned as Ok (not a transport Err)"
+        );
     }
 
     #[tokio::test]

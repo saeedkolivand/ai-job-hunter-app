@@ -525,7 +525,14 @@ impl ApplicationStore {
             let tx = guard.transaction()?;
             Self::write_row_conn(&tx, &app)?;
             if status != existing.status {
-                Self::append_event_conn(&tx, &app.id, existing.status.as_id(), status.as_id(), "", now);
+                Self::append_event_conn(
+                    &tx,
+                    &app.id,
+                    existing.status.as_id(),
+                    status.as_id(),
+                    "",
+                    now,
+                );
             }
             tx.commit()?;
             return Ok(app.id);
@@ -864,7 +871,14 @@ impl DataStore for ApplicationStore {
         for app in &apps {
             Self::write_row_conn(&tx, app)?;
             // Seed one event so an imported Application still carries a history row.
-            Self::append_event_conn(&tx, &app.id, "", app.status.as_id(), "imported", app.updated_at);
+            Self::append_event_conn(
+                &tx,
+                &app.id,
+                "",
+                app.status.as_id(),
+                "imported",
+                app.updated_at,
+            );
         }
         tx.commit()?;
         Ok(apps.len())

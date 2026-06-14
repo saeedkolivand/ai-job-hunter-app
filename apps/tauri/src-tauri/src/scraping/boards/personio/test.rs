@@ -45,7 +45,9 @@ Work with great people.</value>
 </position>"#;
 
     let mut caps = POSITION_RE.captures_iter(xml);
-    let cap = caps.next().expect("POSITION_RE must match a position block");
+    let cap = caps
+        .next()
+        .expect("POSITION_RE must match a position block");
     let block = cap.get(1).expect("group 1 must be present").as_str();
 
     assert!(

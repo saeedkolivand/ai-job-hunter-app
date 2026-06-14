@@ -926,7 +926,9 @@ fn application_import_malformed_later_record_rolls_back_prior_data() {
     let store = ApplicationStore::open(dir.path()).unwrap();
 
     // Seed with a known application.
-    let prior_id = store.track_manual("", "", &meta("Prior Corp", "Prior Role")).unwrap();
+    let prior_id = store
+        .track_manual("", "", &meta("Prior Corp", "Prior Role"))
+        .unwrap();
     let prior_count = store.list().len();
     assert_eq!(prior_count, 1, "precondition: one prior record");
 
@@ -986,7 +988,9 @@ fn application_import_all_valid_records_replaces_prior_data() {
     let dir = TempDir::new().unwrap();
     let store = ApplicationStore::open(dir.path()).unwrap();
 
-    store.track_manual("", "", &meta("Old Corp", "Old Role")).unwrap();
+    store
+        .track_manual("", "", &meta("Old Corp", "Old Role"))
+        .unwrap();
     assert_eq!(store.list().len(), 1, "precondition: one prior record");
 
     let bundle = serde_json::json!([

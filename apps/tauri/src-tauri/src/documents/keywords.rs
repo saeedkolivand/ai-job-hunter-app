@@ -238,8 +238,7 @@ pub fn display_forms(job_text: &str, stemmer: &Stemmer) -> HashMap<String, Strin
 /// back to the stem itself if no mapping exists (should not happen, since the
 /// map is keyed on the same JD keyword set). Order is preserved.
 pub fn readable_gaps(gaps: &[String], display: &HashMap<String, String>) -> Vec<String> {
-    gaps
-        .iter()
+    gaps.iter()
         .map(|g| display.get(g).cloned().unwrap_or_else(|| g.clone()))
         .collect()
 }
@@ -513,7 +512,8 @@ mod test {
         let resume = "rust developer with docker";
         let job = "rust kubernetes docker terraform";
         let stemmer = make_stemmer(job);
-        let (kernel, _gaps) = keyword_coverage(&keywords(job, &stemmer), &keywords(resume, &stemmer));
+        let (kernel, _gaps) =
+            keyword_coverage(&keywords(job, &stemmer), &keywords(resume, &stemmer));
         assert_eq!(coverage_score(resume, job), kernel);
     }
 

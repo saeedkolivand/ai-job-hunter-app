@@ -385,7 +385,7 @@ mod test {
     // Snowball stems "kubernet"/"develop". Mirrors `score_one`'s gap pipeline.
     #[test]
     fn gaps_are_surfaced_in_readable_unstemmed_form() {
-        use crate::documents::keywords::{display_forms, readable_gaps, make_stemmer};
+        use crate::documents::keywords::{display_forms, make_stemmer, readable_gaps};
 
         let job_text = "kubernetes developer building scalable services";
         let stemmer = make_stemmer(job_text);
@@ -527,19 +527,31 @@ mod test {
         let ats = 60.0_f64;
         let combined = (0.6 * semantic + 0.4 * ats).round();
         // 0.6 * 80 + 0.4 * 60 = 48 + 24 = 72 → rounded = 72
-        assert_eq!(combined, 72.0, "combined must be round(0.6*80 + 0.4*60) = 72");
+        assert_eq!(
+            combined, 72.0,
+            "combined must be round(0.6*80 + 0.4*60) = 72"
+        );
 
         // Verify a different pair to guard against accidental integer short-circuit.
         let semantic2 = 75.0_f64;
         let ats2 = 50.0_f64;
         let combined2 = (0.6 * semantic2 + 0.4 * ats2).round();
         // 0.6 * 75 + 0.4 * 50 = 45 + 20 = 65 → rounded = 65
-        assert_eq!(combined2, 65.0, "combined must be round(0.6*75 + 0.4*50) = 65");
+        assert_eq!(
+            combined2, 65.0,
+            "combined must be round(0.6*75 + 0.4*50) = 65"
+        );
 
         // When semantic and ats differ, combined must differ from BOTH so we can
         // distinguish it from an accidental identity (combined == ats).
-        assert_ne!(combined, ats, "combined must differ from ats (weights are 0.6/0.4)");
-        assert_ne!(combined, semantic, "combined must differ from semantic (weights are 0.6/0.4)");
+        assert_ne!(
+            combined, ats,
+            "combined must differ from ats (weights are 0.6/0.4)"
+        );
+        assert_ne!(
+            combined, semantic,
+            "combined must differ from semantic (weights are 0.6/0.4)"
+        );
     }
 
     // A6 — Degrade path: when the semantic vector is unavailable (`job_vec.is_none()`),

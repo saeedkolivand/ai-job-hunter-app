@@ -14,8 +14,10 @@ static XING_CARD_SEL: std::sync::LazyLock<Selector> = std::sync::LazyLock::new(|
 });
 static XING_LINK_SEL: std::sync::LazyLock<Selector> =
     std::sync::LazyLock::new(|| Selector::parse("a[href*=\"/jobs/\"]").unwrap());
-static XING_TITLE_SEL: std::sync::LazyLock<Selector> =
-    std::sync::LazyLock::new(|| Selector::parse("[data-testid=\"job-title\"], h2.job-teaser__title, h2[class*=\"title\"]").unwrap());
+static XING_TITLE_SEL: std::sync::LazyLock<Selector> = std::sync::LazyLock::new(|| {
+    Selector::parse("[data-testid=\"job-title\"], h2.job-teaser__title, h2[class*=\"title\"]")
+        .unwrap()
+});
 static XING_COMPANY_SEL: std::sync::LazyLock<Selector> = std::sync::LazyLock::new(|| {
     Selector::parse("[data-testid=\"job-company-name\"], .companyName, p.company").unwrap()
 });

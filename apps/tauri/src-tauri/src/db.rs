@@ -265,7 +265,10 @@ mod open_and_migration_tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 1, "user_version must still be 1 after idempotent re-run");
+        assert_eq!(
+            version, 1,
+            "user_version must still be 1 after idempotent re-run"
+        );
     }
 }
 

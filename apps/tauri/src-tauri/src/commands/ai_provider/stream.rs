@@ -390,7 +390,10 @@ mod tests {
     #[test]
     fn read_error_surfaces_and_stops() {
         let acts = run(
-            vec![Ok(Some(b"a\n".to_vec())), Err(AppError::Message("boom".to_string()))],
+            vec![
+                Ok(Some(b"a\n".to_vec())),
+                Err(AppError::Message("boom".to_string())),
+            ],
             None,
             line_parser,
         );
