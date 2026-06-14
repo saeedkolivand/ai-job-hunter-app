@@ -17,14 +17,15 @@
 /// (`job-importer@aijobhunter.app`, in `apps/extension/src/manifest.ts`) never
 /// appears as an origin and is intentionally absent from this list.
 ///
-/// **TODO(bridge): the Chrome Web Store id is still a placeholder** — it is
-/// assigned at publish time, so until the extension is published no Chrome
-/// production origin matches and only the dev override
-/// (`platform::config::extension_dev_origins`) admits a local Chrome extension.
+/// The published Chrome Web Store id is now pinned below. The Chrome
+/// `chrome-extension://` host IS the stable Web Store id, so the production
+/// origin matches by exact id; the dev override
+/// (`platform::config::extension_dev_origins`) still admits a local Chrome
+/// extension during development.
 /// Each id is matched as `chrome-extension://<id>` (Chrome only).
 pub const ALLOWED_EXTENSION_IDS: &[&str] = &[
-    // Chrome Web Store id (32 lowercase a–p chars) — PLACEHOLDER (set at publish).
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    // Published Chrome Web Store id (32 lowercase a–p chars).
+    "oaoekkgkhmgdfnpmfkpphgiikliaicll",
 ];
 
 /// Whether a handshake `Origin` is an allowed extension origin.
@@ -134,8 +135,9 @@ mod tests {
 
     #[test]
     fn allows_known_chrome_id() {
-        let origin = format!("chrome-extension://{}", ALLOWED_EXTENSION_IDS[0]);
-        assert!(is_allowed_origin(&origin, &[]));
+        // The published Chrome Web Store id must be an allowed origin.
+        let origin = "chrome-extension://oaoekkgkhmgdfnpmfkpphgiikliaicll";
+        assert!(is_allowed_origin(origin, &[]));
     }
 
     #[test]
