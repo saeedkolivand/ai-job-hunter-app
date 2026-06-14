@@ -1,7 +1,43 @@
 import { z } from 'zod';
 
-// Performance modes
-export const PerformanceModeSchema = z.enum(['low-memory', 'balanced', 'performance']);
+import type { PerformanceBackendConfig } from '@ajh/shared';
+
+// Performance modes. `custom` resolves to the user-edited `customPerformance`
+// profile; the other three resolve to the fixed presets below.
+export const PerformanceModeSchema = z.enum(['low-memory', 'balanced', 'performance', 'custom']);
+
+// Backdrop-blur tier and generic backend tier used by the resolved profile.
+/**
+ * Backdrop-blur tier. The `'off'` tier is reachable ONLY via a custom profile —
+ * the three presets use `'full'` (balanced/performance) or `'reduced'` (low-memory).
+ */
+export const BlurTierSchema = z.enum(['full', 'reduced', 'off']);
+export const PerfTierSchema = z.enum(['low', 'balanced', 'high']);
+
+// Resolved performance profile — the single shape every consumer reads. Presets
+// resolve to this; `custom` mode stores one of these directly under
+// `customPerformance`.
+export const PerformanceProfileSchema = z.object({
+  visual: z.object({
+    aurora: z.boolean(),
+    nebula: z.boolean(),
+    // Preset-only: the `performance` preset's second nebula. NOT surfaced in the
+    // custom UI; custom profiles keep it false.
+    richNebula: z.boolean().default(false),
+    cursorGlow: z.boolean(),
+    blur: BlurTierSchema,
+    animations: z.boolean(),
+  }),
+  backend: z.object({
+    concurrency: PerfTierSchema,
+    keepAlive: PerfTierSchema,
+    cache: PerfTierSchema,
+  }),
+});
+
+export type PerformanceProfile = z.infer<typeof PerformanceProfileSchema>;
+export type BlurTier = z.infer<typeof BlurTierSchema>;
+export type PerfTier = z.infer<typeof PerfTierSchema>;
 
 // Prompt quality — controls which prompt variant is sent to the model
 // auto    = detect from model tier (default, safe for all providers)
@@ -124,6 +160,10 @@ export const PreferencesSchema = z.object({
   // Performance Preferences
   performanceMode: PerformanceModeSchema.default('balanced'),
 
+  // User-edited profile used when performanceMode === 'custom'. Seeded from the
+  // balanced preset the first time the user picks the Custom card.
+  customPerformance: PerformanceProfileSchema.optional(),
+
   // Prompt quality — which prompt variant to send to the AI model
   promptQuality: PromptQualitySchema.default('auto'),
 
@@ -151,6 +191,98 @@ export const PreferencesSchema = z.object({
 
 export type Preferences = z.infer<typeof PreferencesSchema>;
 export type PerformanceMode = z.infer<typeof PerformanceModeSchema>;
+
+// ── Performance presets & resolvers ─────────────────────────────────────────
+
+/**
+ * Fixed profiles for the three preset modes. These reproduce the historical
+ * behavior exactly (low-memory = renders nothing + reduced blur + no animations;
+ * balanced = aurora + 1 nebula + cursor glow; performance = + 2nd nebula).
+ */
+export const PERFORMANCE_PRESETS: Record<
+  'low-memory' | 'balanced' | 'performance',
+  PerformanceProfile
+> = {
+  'low-memory': {
+    visual: {
+      aurora: false,
+      nebula: false,
+      richNebula: false,
+      cursorGlow: false,
+      blur: 'reduced',
+      animations: false,
+    },
+    backend: { concurrency: 'low', keepAlive: 'low', cache: 'low' },
+  },
+  balanced: {
+    visual: {
+      aurora: true,
+      nebula: true,
+      richNebula: false,
+      cursorGlow: true,
+      blur: 'full',
+      animations: true,
+    },
+    backend: { concurrency: 'balanced', keepAlive: 'balanced', cache: 'balanced' },
+  },
+  performance: {
+    visual: {
+      aurora: true,
+      nebula: true,
+      richNebula: true,
+      cursorGlow: true,
+      blur: 'full',
+      animations: true,
+    },
+    backend: { concurrency: 'high', keepAlive: 'high', cache: 'high' },
+  },
+};
+
+/**
+ * Resolve the active mode + optional custom profile into a single profile.
+ * `custom` falls back to the balanced preset until the user has seeded a custom
+ * profile (defensive — the UI seeds it on first selection).
+ */
+export function resolveProfile(
+  prefs: Pick<Preferences, 'performanceMode' | 'customPerformance'>
+): PerformanceProfile {
+  if (prefs.performanceMode === 'custom') {
+    return prefs.customPerformance ?? PERFORMANCE_PRESETS.balanced;
+  }
+  return PERFORMANCE_PRESETS[prefs.performanceMode];
+}
+
+// Tier→number tables for the backend IPC payload. cache 'low' = minimal,
+// 'balanced' = balanced, 'high' = generous (no expiry / unbounded rows).
+const CONCURRENCY_BY_TIER: Record<PerfTier, number> = { low: 1, balanced: 2, high: 4 };
+const KEEP_ALIVE_SECS_BY_TIER: Record<PerfTier, number> = { low: 0, balanced: 300, high: 1800 };
+const CACHE_TTL_SECS_BY_TIER: Record<PerfTier, number | null> = {
+  low: 86400,
+  balanced: 604800,
+  high: null,
+};
+const CACHE_MAX_ROWS_BY_TIER: Record<PerfTier, number | null> = {
+  low: 250,
+  balanced: 2000,
+  high: null,
+};
+
+/**
+ * Resolve a profile's backend tiers into the concrete `PerformanceBackendConfig`
+ * pushed over IPC to the Rust shell. Pure — no side effects.
+ */
+export function resolveBackendConfig(
+  mode: PerformanceMode,
+  profile: PerformanceProfile
+): PerformanceBackendConfig {
+  return {
+    mode,
+    concurrency: CONCURRENCY_BY_TIER[profile.backend.concurrency],
+    keepAliveSecs: KEEP_ALIVE_SECS_BY_TIER[profile.backend.keepAlive],
+    cacheTtlSecs: CACHE_TTL_SECS_BY_TIER[profile.backend.cache],
+    cacheMaxRows: CACHE_MAX_ROWS_BY_TIER[profile.backend.cache],
+  };
+}
 export type PromptQuality = z.infer<typeof PromptQualitySchema>;
 export type OutputTone = z.infer<typeof OutputToneSchema>;
 export type AIModelPreference = z.infer<typeof AIModelPreferenceSchema>;

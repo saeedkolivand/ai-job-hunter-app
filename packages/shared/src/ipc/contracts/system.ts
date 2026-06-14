@@ -1,4 +1,9 @@
-import type { AppMetrics, Locale, RuntimeHealth } from '../../types/index.js';
+import type {
+  AppMetrics,
+  Locale,
+  PerformanceBackendConfig,
+  RuntimeHealth,
+} from '../../types/index.js';
 
 export interface SystemContract {
   health(): Promise<RuntimeHealth>;
@@ -20,7 +25,7 @@ export interface SystemContract {
 
   openExternal(url: string): Promise<void>;
 
-  setPerformanceMode(mode: 'low-memory' | 'balanced' | 'performance'): Promise<void>;
+  setPerformanceMode(config: PerformanceBackendConfig): Promise<void>;
 
   /** Whether the app is registered to launch at login (default off). */
   getLaunchAtLogin(): Promise<boolean>;

@@ -1,12 +1,14 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-import type {
-  AiProvider,
-  LocalModelLimits,
-  PerProviderSettings,
-  Preferences,
-  PromptQuality,
+import {
+  type AiProvider,
+  type LocalModelLimits,
+  type PerformanceProfile,
+  type PerProviderSettings,
+  type Preferences,
+  type PromptQuality,
+  resolveProfile,
 } from '../preferences-schema';
 
 // Migration function to handle version updates
@@ -73,6 +75,11 @@ interface PreferencesActions {
   setResume: (resume: Preferences['resume']) => void;
   setApplicant: (applicant: Preferences['applicant']) => void;
   setPerformanceMode: (performanceMode: Preferences['performanceMode']) => void;
+  /**
+   * Replace the custom performance profile (full-object set). The custom UI
+   * computes the merged profile before calling, so this is a straight assignment.
+   */
+  setCustomPerformance: (profile: PerformanceProfile) => void;
   setPromptQuality: (promptQuality: PromptQuality) => void;
   setDebugMode: (enabled: boolean) => void;
   setSemanticScoring: (enabled: boolean) => void;
@@ -196,6 +203,13 @@ export const usePreferencesStore = create<PreferencesStore>()(
           lastUpdated: new Date().toISOString(),
         })),
 
+      setCustomPerformance: (customPerformance: PerformanceProfile) =>
+        set((state) => ({
+          ...state,
+          customPerformance,
+          lastUpdated: new Date().toISOString(),
+        })),
+
       setPromptQuality: (promptQuality: PromptQuality) =>
         set((state) => ({
           ...state,
@@ -262,6 +276,14 @@ export const useContactPromptSeen = () =>
   usePreferencesStore((state) => state.contactPromptSeen ?? false);
 export const useApplicant = () => usePreferencesStore((state) => state.applicant);
 export const usePerformanceMode = () => usePreferencesStore((state) => state.performanceMode);
+// Resolved profile (preset or custom). Equals `customPerformance` in custom mode.
+export const useResolvedPerformanceProfile = (): PerformanceProfile =>
+  usePreferencesStore((state) =>
+    resolveProfile({
+      performanceMode: state.performanceMode,
+      customPerformance: state.customPerformance,
+    })
+  );
 export const usePromptQuality = () => usePreferencesStore((state) => state.promptQuality ?? 'auto');
 export const useDebugMode = () => usePreferencesStore((state) => state.debugMode ?? false);
 export const useSemanticScoring = () =>

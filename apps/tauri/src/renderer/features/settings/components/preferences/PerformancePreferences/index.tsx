@@ -1,10 +1,20 @@
-import { Cpu, Gauge, type LucideIcon, Zap } from 'lucide-react';
+import { Cpu, Gauge, type LucideIcon, SlidersHorizontal, Zap } from 'lucide-react';
 import { motion } from 'motion/react';
 
-import { cn, GlassCard, SectionLabel, transition } from '@ajh/ui';
+import { cn, Dropdown, GlassCard, SectionLabel, Switch, transition } from '@ajh/ui';
 
-import type { PerformanceMode } from '@/store/preferences-schema';
-import { usePerformanceMode, usePreferencesStore } from '@/store/preferences-store';
+import {
+  type BlurTier,
+  PERFORMANCE_PRESETS,
+  type PerformanceMode,
+  type PerformanceProfile,
+  type PerfTier,
+} from '@/store/preferences-schema';
+import {
+  usePerformanceMode,
+  usePreferencesStore,
+  useResolvedPerformanceProfile,
+} from '@/store/preferences-store';
 
 const PERFORMANCE_OPTIONS: {
   value: PerformanceMode;
@@ -39,11 +49,62 @@ const PERFORMANCE_OPTIONS: {
     description: 'Maximum speed on capable hardware',
     details: ['Higher concurrency', 'Richer visuals', 'Aggressive caching', 'Full animations'],
   },
+  {
+    value: 'custom',
+    label: 'Custom',
+    icon: SlidersHorizontal,
+    description: 'Fine-tune every element',
+    details: ['Per-effect visual toggles', 'Manual backend tiers', 'Tailored to your machine'],
+  },
+];
+
+const BLUR_OPTIONS: { value: BlurTier; label: string }[] = [
+  { value: 'full', label: 'Full' },
+  { value: 'reduced', label: 'Reduced' },
+  { value: 'off', label: 'Off' },
+];
+
+const CONCURRENCY_OPTIONS: { value: PerfTier; label: string }[] = [
+  { value: 'low', label: 'Low' },
+  { value: 'balanced', label: 'Balanced' },
+  { value: 'high', label: 'High' },
+];
+
+const KEEP_ALIVE_OPTIONS: { value: PerfTier; label: string }[] = [
+  { value: 'low', label: 'Unload immediately' },
+  { value: 'balanced', label: 'Balanced' },
+  { value: 'high', label: 'Keep warm' },
+];
+
+const CACHE_OPTIONS: { value: PerfTier; label: string }[] = [
+  { value: 'low', label: 'Minimal' },
+  { value: 'balanced', label: 'Balanced' },
+  { value: 'high', label: 'Generous' },
 ];
 
 export function PerformancePreferences() {
   const performanceMode = usePerformanceMode();
+  const profile = useResolvedPerformanceProfile();
   const setPerformanceMode = usePreferencesStore((s) => s.setPerformanceMode);
+  const setCustomPerformance = usePreferencesStore((s) => s.setCustomPerformance);
+  const customPerformance = usePreferencesStore((s) => s.customPerformance);
+
+  const selectMode = (value: PerformanceMode) => {
+    setPerformanceMode(value);
+    // Seed the custom profile from the balanced preset the first time the user
+    // picks Custom, so the sub-panel controls have a concrete profile to edit.
+    if (value === 'custom' && !customPerformance) {
+      setCustomPerformance(structuredClone(PERFORMANCE_PRESETS.balanced));
+    }
+  };
+
+  // Apply a single visual change on top of the current (custom) profile.
+  const patchVisual = (patch: Partial<PerformanceProfile['visual']>) => {
+    setCustomPerformance({ ...profile, visual: { ...profile.visual, ...patch } });
+  };
+  const patchBackend = (patch: Partial<PerformanceProfile['backend']>) => {
+    setCustomPerformance({ ...profile, backend: { ...profile.backend, ...patch } });
+  };
 
   return (
     <GlassCard>
@@ -61,7 +122,7 @@ export function PerformancePreferences() {
             <motion.button
               key={opt.value}
               type="button"
-              onClick={() => setPerformanceMode(opt.value)}
+              onClick={() => selectMode(opt.value)}
               className={cn(
                 'relative flex items-start gap-4 rounded-xl border p-4 text-left transition-all duration-150',
                 isSelected
@@ -112,6 +173,115 @@ export function PerformancePreferences() {
           );
         })}
       </div>
+
+      {performanceMode === 'custom' && (
+        <div className="mt-5 space-y-5 rounded-xl border border-white/10 bg-white/5 p-4">
+          {/* Visual */}
+          <div className="space-y-3">
+            <SectionLabel>Visual</SectionLabel>
+            <Switch
+              label="Aurora ribbons"
+              description="Slow, wide hue-rotating background blobs"
+              checked={profile.visual.aurora}
+              onCheckedChange={(next) => patchVisual({ aurora: next })}
+            />
+            <Switch
+              label="Nebulae"
+              description="Medium accent blobs layered over the aurora"
+              checked={profile.visual.nebula}
+              onCheckedChange={(next) => patchVisual({ nebula: next })}
+            />
+            <Switch
+              label="Cursor glow"
+              description="A soft glow that trails the pointer"
+              checked={profile.visual.cursorGlow}
+              onCheckedChange={(next) => patchVisual({ cursorGlow: next })}
+            />
+            <Switch
+              label="Rich animations"
+              description="Animate the aurora and nebula layers"
+              checked={profile.visual.animations}
+              onCheckedChange={(next) => patchVisual({ animations: next })}
+            />
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <label htmlFor="perf-blur" className="text-xs font-medium text-foreground/80">
+                  Backdrop blur
+                </label>
+                <div className="text-[11px] text-foreground/45">
+                  Frosted-glass intensity across surfaces
+                </div>
+              </div>
+              <div className="w-44 shrink-0">
+                <Dropdown
+                  id="perf-blur"
+                  options={BLUR_OPTIONS}
+                  value={profile.visual.blur}
+                  onChange={(v) => patchVisual({ blur: v as BlurTier })}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Backend */}
+          <div className="space-y-3">
+            <SectionLabel>Backend</SectionLabel>
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <label
+                  htmlFor="perf-concurrency"
+                  className="text-xs font-medium text-foreground/80"
+                >
+                  Concurrency
+                </label>
+                <div className="text-[11px] text-foreground/45">Parallel background workers</div>
+              </div>
+              <div className="w-44 shrink-0">
+                <Dropdown
+                  id="perf-concurrency"
+                  options={CONCURRENCY_OPTIONS}
+                  value={profile.backend.concurrency}
+                  onChange={(v) => patchBackend({ concurrency: v as PerfTier })}
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <label htmlFor="perf-keep-alive" className="text-xs font-medium text-foreground/80">
+                  Model keep-alive
+                </label>
+                <div className="text-[11px] text-foreground/45">
+                  How long idle models stay loaded
+                </div>
+              </div>
+              <div className="w-44 shrink-0">
+                <Dropdown
+                  id="perf-keep-alive"
+                  options={KEEP_ALIVE_OPTIONS}
+                  value={profile.backend.keepAlive}
+                  onChange={(v) => patchBackend({ keepAlive: v as PerfTier })}
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <label htmlFor="perf-cache" className="text-xs font-medium text-foreground/80">
+                  Cache
+                </label>
+                <div className="text-[11px] text-foreground/45">Cached result retention</div>
+              </div>
+              <div className="w-44 shrink-0">
+                <Dropdown
+                  id="perf-cache"
+                  options={CACHE_OPTIONS}
+                  value={profile.backend.cache}
+                  onChange={(v) => patchBackend({ cache: v as PerfTier })}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </GlassCard>
   );
 }

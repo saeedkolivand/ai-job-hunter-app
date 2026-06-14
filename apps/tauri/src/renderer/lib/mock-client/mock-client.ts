@@ -44,6 +44,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       getPlatform: noop,
       accentColor: async () => ({ supported: false, color: null }),
       openExternal: noop,
+      // Accepts the resolved PerformanceBackendConfig; no-op stub for tests.
       setPerformanceMode: noop,
       getLaunchAtLogin: async () => false,
       setLaunchAtLogin: async (enabled: boolean) => enabled,
