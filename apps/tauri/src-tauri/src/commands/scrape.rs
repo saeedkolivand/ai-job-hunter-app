@@ -63,6 +63,14 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
         location: req.location.clone(),
         pages: req.pages,
         date_filter: req.date_filter.clone(),
+        // These structured filters (job_type/work_type/experience_level/
+        // easy_apply/actively_hiring/verified/sort_by) are consumed by
+        // LinkedIn's search_paginated, but the ScrapeBoardRequest IPC
+        // contract does not yet carry them (see ScrapeBoardRequestSchema in
+        // packages/shared/src/schemas/index.ts -- the generated Rust struct in
+        // ipc_contracts/scrape.rs has no such fields). Until the schema adds
+        // them they stay None; wiring them through requires a TS-side schema
+        // change + pnpm gen:ipc regen, out of scope for this Rust-only pass.
         job_type: None,
         work_type: None,
         experience_level: None,

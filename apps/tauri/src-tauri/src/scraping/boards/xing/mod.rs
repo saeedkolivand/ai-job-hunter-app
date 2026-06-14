@@ -15,7 +15,7 @@ static XING_CARD_SEL: std::sync::LazyLock<Selector> = std::sync::LazyLock::new(|
 static XING_LINK_SEL: std::sync::LazyLock<Selector> =
     std::sync::LazyLock::new(|| Selector::parse("a[href*=\"/jobs/\"]").unwrap());
 static XING_TITLE_SEL: std::sync::LazyLock<Selector> =
-    std::sync::LazyLock::new(|| Selector::parse("h2, [data-testid=\"job-title\"]").unwrap());
+    std::sync::LazyLock::new(|| Selector::parse("[data-testid=\"job-title\"], h2.job-teaser__title, h2[class*=\"title\"]").unwrap());
 static XING_COMPANY_SEL: std::sync::LazyLock<Selector> = std::sync::LazyLock::new(|| {
     Selector::parse("[data-testid=\"job-company-name\"], .companyName, p.company").unwrap()
 });
@@ -146,6 +146,10 @@ fn parse_xing_page(html: &str, seen: &mut HashSet<String>) -> Vec<JobPosting> {
             .select(&XING_LOCATION_SEL)
             .next()
             .map(|e| e.text().collect::<String>().trim().to_string());
+
+        if title.is_empty() {
+            continue;
+        }
 
         let abs_url = if href.starts_with("http") {
             href.to_string()

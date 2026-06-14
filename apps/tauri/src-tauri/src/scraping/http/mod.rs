@@ -167,7 +167,13 @@ pub async fn fetch_json<T: for<'de> serde::Deserialize<'de>>(
 
     match serde_json::from_str::<T>(&res.text) {
         Ok(value) => Ok(Some(value)),
-        Err(_) => Ok(None),
+        Err(e) => {
+            let preview: String = res.text.chars().take(200).collect();
+            log::debug!(
+                "[scraping::http] fetch_json parse failure for {url} ({e}); body[..200]={preview:?}"
+            );
+            Ok(None)
+        }
     }
 }
 

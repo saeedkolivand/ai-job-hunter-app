@@ -17,7 +17,6 @@ pub use import::{import_cookies, ImportOutcome};
 
 use anyhow::{anyhow, Result};
 use chromiumoxide::browser::{Browser, BrowserConfig};
-use chromiumoxide::cdp::browser_protocol::network::CookieParam;
 use chromiumoxide::Page;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -419,21 +418,6 @@ pub fn build_authed_client(app_data_dir: &Path, board_id: &str) -> Result<reqwes
     .map_err(|e| anyhow!("reqwest client build failed: {e}"))
 }
 
-/// Convenience: build cookie param vec for chromiumoxide page restoration.
-#[allow(dead_code)]
-pub fn to_cookie_params(cookies: &[StoredCookie]) -> Vec<CookieParam> {
-    cookies
-        .iter()
-        .map(|c| {
-            let mut p = CookieParam::new(c.name.clone(), c.value.clone());
-            p.domain = Some(c.domain.clone());
-            p.path = Some(c.path.clone());
-            p.http_only = Some(c.http_only);
-            p.secure = Some(c.secure);
-            p
-        })
-        .collect()
-}
 
 pub const DISABLE_PASSKEY_SCRIPT: &str = r#"
 (function () {
