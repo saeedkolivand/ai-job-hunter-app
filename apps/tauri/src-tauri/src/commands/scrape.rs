@@ -80,21 +80,17 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
         location: req.location.clone(),
         pages: req.pages,
         date_filter: req.date_filter.clone(),
-        // These structured filters (job_type/work_type/experience_level/
-        // easy_apply/actively_hiring/verified/sort_by) are consumed by
-        // LinkedIn's search_paginated, but the ScrapeBoardRequest IPC
-        // contract does not yet carry them (see ScrapeBoardRequestSchema in
-        // packages/shared/src/schemas/index.ts -- the generated Rust struct in
-        // ipc_contracts/scrape.rs has no such fields). Until the schema adds
-        // them they stay None; wiring them through requires a TS-side schema
-        // change + pnpm gen:ipc regen, out of scope for this Rust-only pass.
-        job_type: None,
-        work_type: None,
-        experience_level: None,
-        easy_apply: None,
-        actively_hiring: None,
-        verified: None,
-        sort_by: None,
+        // Structured search filters from the IPC request (ScrapeBoardRequestSchema
+        // in packages/shared). Optional, so absent fields stay None; LinkedIn's
+        // search_paginated honors them and other boards ignore them. UI controls
+        // for these are a follow-up — only the contract + propagation exist today.
+        job_type: req.job_type.clone(),
+        work_type: req.work_type.clone(),
+        experience_level: req.experience_level.clone(),
+        easy_apply: req.easy_apply,
+        actively_hiring: req.actively_hiring,
+        verified: req.verified,
+        sort_by: req.sort_by.clone(),
         locale: req.locale.clone(),
         country_code: req.country_code.clone(),
         latitude: req.latitude,

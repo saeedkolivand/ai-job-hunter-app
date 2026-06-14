@@ -516,6 +516,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn cosine_identical_vectors_is_one() {
+        let a = vec![1.0, 2.0, 3.0];
+        assert!((cosine(&a, &a) - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn cosine_orthogonal_vectors_is_zero() {
+        assert!((cosine(&[1.0, 0.0], &[0.0, 1.0]) - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn cosine_edge_cases_return_zero() {
+        // Empty vectors, mismatched lengths, and zero vectors all yield 0.0.
+        assert_eq!(cosine(&[], &[]), 0.0);
+        assert_eq!(cosine(&[1.0], &[1.0, 2.0]), 0.0);
+        assert_eq!(cosine(&[0.0, 0.0], &[1.0, 1.0]), 0.0);
+    }
+
+    #[test]
     fn provider_id_round_trips() {
         for id in [
             ProviderId::Ollama,

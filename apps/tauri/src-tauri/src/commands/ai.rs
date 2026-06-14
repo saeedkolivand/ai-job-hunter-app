@@ -281,7 +281,7 @@ pub async fn ai_embedding_status(app: AppHandle) -> Value {
     let cfg = store.embedding_config();
     let total_docs = store.list().len();
     // SQL COUNT in the active space — never deserializes the vector blobs (the old
-    // path loaded every vector via `all_vectors()` just to count the matching ones).
+    // path loaded every vector via a full vector scan just to count the matching ones).
     let indexed_in_active = store.count_vectors_in_space(&cfg.provider, &cfg.model);
     let spaces: Vec<Value> = store
         .vector_space_counts()

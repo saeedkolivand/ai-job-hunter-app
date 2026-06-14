@@ -646,13 +646,6 @@ pub fn run() {
             commands::documents::documents_recommend_template,
             commands::documents::documents_remove,
             commands::documents::documents_set_default,
-            commands::documents::documents_embed_text,
-            commands::documents::documents_set_indexed,
-            commands::documents::documents_upsert_vector,
-            commands::documents::documents_get_vector,
-            commands::documents::documents_all_vectors,
-            commands::documents::documents_cosine_similarity,
-            commands::documents::documents_strip_extension,
             // job preferences
             commands::job_preferences::job_preferences_get,
             commands::job_preferences::job_preferences_set,
@@ -679,12 +672,6 @@ pub fn run() {
             // credentials (board-login CRUD removed — sessions auth via boards.*)
             commands::credentials::credentials_available,
             // boards
-            commands::boards::boards_get_config,
-            commands::boards::boards_list_configs,
-            commands::boards::boards_test_auth_url,
-            commands::boards::boards_get_login_config,
-            commands::boards::boards_get_disable_passkey_script,
-            commands::boards::boards_list_browser_helpers,
             commands::boards::boards_login_with_browser,
             commands::boards::boards_import_cookies,
             commands::boards::boards_logout,

@@ -1,4 +1,3 @@
-use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
@@ -6,24 +5,6 @@ use crate::documents::keywords::keywords_normalized;
 
 // DocumentsImportRequest is generated from DocumentImportRequestSchema by `pnpm gen:ipc`.
 pub use crate::ipc_contracts::documents::DocumentsImportRequest;
-
-#[derive(Debug, Deserialize)]
-pub struct DocumentsEmbedTextRequest {
-    pub text: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DocumentsUpsertVectorRequest {
-    pub doc_id: String,
-    pub vector: Vec<f64>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct DocumentsCosineRequest {
-    pub a: Vec<f64>,
-    pub b: Vec<f64>,
-}
 
 #[tauri::command]
 pub async fn documents_list(app: AppHandle) -> Value {
@@ -158,83 +139,4 @@ pub async fn documents_set_default(app: AppHandle, id: String) -> Value {
         Ok(()) => json!({ "success": true }),
         Err(e) => json!({ "error": e.to_string() }),
     }
-}
-
-#[tauri::command]
-pub async fn documents_embed_text(app: AppHandle, req: DocumentsEmbedTextRequest) -> Value {
-    match crate::documents::embed(&app, &req.text).await {
-        Some(ev) => json!({
-            "vector": ev.values,
-            "space": { "provider": ev.space.provider, "model": ev.space.model, "dim": ev.space.dim },
-        }),
-        None => json!({ "error": "embedding failed" }),
-    }
-}
-
-#[tauri::command]
-pub fn documents_set_indexed(app: AppHandle, id: String) -> Value {
-    let store = app.state::<crate::documents::DocumentStore>();
-    match store.set_indexed(&id) {
-        Ok(()) => json!({ "success": true }),
-        Err(e) => json!({ "error": e.to_string() }),
-    }
-}
-
-#[tauri::command]
-pub fn documents_upsert_vector(app: AppHandle, req: DocumentsUpsertVectorRequest) -> Value {
-    let store = app.state::<crate::documents::DocumentStore>();
-    // Externally-supplied vectors are tagged with the active embedding space.
-    let cfg = store.embedding_config();
-    let ev = crate::commands::ai_provider::EmbeddingVector {
-        space: crate::commands::ai_provider::EmbeddingSpace {
-            provider: cfg.provider,
-            model: cfg.model,
-            dim: req.vector.len(),
-        },
-        values: req.vector,
-    };
-    match store.upsert_vector(&req.doc_id, &ev) {
-        Ok(()) => json!({ "success": true }),
-        Err(e) => json!({ "error": e.to_string() }),
-    }
-}
-
-#[tauri::command]
-pub fn documents_get_vector(app: AppHandle, doc_id: String) -> Value {
-    let store = app.state::<crate::documents::DocumentStore>();
-    match store.get_vector(&doc_id) {
-        Some(ev) => json!({
-            "vector": ev.values,
-            "space": { "provider": ev.space.provider, "model": ev.space.model, "dim": ev.space.dim },
-        }),
-        None => json!(null),
-    }
-}
-
-#[tauri::command]
-pub fn documents_all_vectors(app: AppHandle) -> Value {
-    let store = app.state::<crate::documents::DocumentStore>();
-    let out: Vec<Value> = store
-        .all_vectors()
-        .into_iter()
-        .map(|(id, ev)| {
-            json!({
-                "docId": id,
-                "vector": ev.values,
-                "space": { "provider": ev.space.provider, "model": ev.space.model, "dim": ev.space.dim },
-            })
-        })
-        .collect();
-    json!(out)
-}
-
-#[tauri::command]
-pub fn documents_cosine_similarity(req: DocumentsCosineRequest) -> Value {
-    let similarity = crate::documents::cosine_similarity(&req.a, &req.b);
-    json!({ "similarity": similarity })
-}
-
-#[tauri::command]
-pub fn documents_strip_extension(name: String) -> Value {
-    json!({ "stripped": crate::documents::strip_extension(&name) })
 }

@@ -473,44 +473,6 @@ impl DocumentStore {
         })
     }
 
-    pub fn all_vectors(&self) -> Vec<(String, EmbeddingVector)> {
-        let conn = self.conn.lock();
-        conn.prepare("SELECT doc_id, vector, provider, model, dim FROM vectors")
-            .ok()
-            .and_then(|mut stmt| {
-                stmt.query_map([], |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, String>(3)?,
-                        row.get::<_, i64>(4)?,
-                    ))
-                })
-                .ok()
-                .map(|rows| {
-                    rows.filter_map(|r| r.ok())
-                        .filter_map(|(id, json, provider, model, dim)| {
-                            serde_json::from_str::<Vec<f64>>(&json).ok().map(|values| {
-                                (
-                                    id,
-                                    EmbeddingVector {
-                                        values,
-                                        space: EmbeddingSpace {
-                                            provider,
-                                            model,
-                                            dim: dim as usize,
-                                        },
-                                    },
-                                )
-                            })
-                        })
-                        .collect()
-                })
-            })
-            .unwrap_or_default()
-    }
-
     // ── Posting-vector cache (translation-aware job embeddings) ───────────────
     //
     // A persisted, single-row-per-job cache of the job-text embedding. Distinct
@@ -739,8 +701,8 @@ impl DocumentStore {
 
     /// Count of stored vectors in one embedding space, by SQL `COUNT(*)` — never
     /// deserializes the float-array blobs. Powers `ai_embedding_status`'s
-    /// indexed-in-active-space figure (the old path loaded every vector via
-    /// `all_vectors()` just to count the matching ones). Matches the same
+    /// indexed-in-active-space figure (the old path loaded every vector via a
+    /// full vector scan just to count the matching ones). Matches the same
     /// provider+model identity as [`EmbeddingConfig::matches`].
     pub fn count_vectors_in_space(&self, provider: &str, model: &str) -> usize {
         let conn = self.conn.lock();
@@ -900,15 +862,6 @@ pub async fn posting_vector_or_embed(
     Some(v)
 }
 
-// ── Cosine similarity ─────────────────────────────────────────────────────────
-
-/// Raw cosine over two same-length vectors. Prefer
-/// [`crate::commands::ai_provider::compare`] for stored vectors, which also
-/// verifies both share an embedding space.
-pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
-    crate::commands::ai_provider::cosine(a, b)
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Millisecond cutoff for a read-side TTL miss from the live performance config.
@@ -930,13 +883,6 @@ pub fn now_ms() -> u64 {
 pub fn make_doc_id() -> String {
     use uuid::Uuid;
     format!("doc-{}-{}", now_ms(), &Uuid::new_v4().to_string()[..8])
-}
-
-pub fn strip_extension(name: &str) -> String {
-    match name.rsplit_once('.') {
-        Some((base, _)) if !base.is_empty() => base.to_string(),
-        _ => name.to_string(),
-    }
 }
 
 impl DataStore for DocumentStore {

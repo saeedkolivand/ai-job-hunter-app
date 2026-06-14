@@ -56,7 +56,6 @@ export const AiGenerateRequestSchema = z.object({
    * silently truncated without this. Ignored by cloud/CLI providers.
    */
   contextWindow: z.number().int().min(512).max(131072).optional(),
-  stream: z.boolean().optional(),
   /**
    * AI backend — 'ollama' (default), 'openai', 'openai-compatible', 'anthropic',
    * 'gemini', or a CLI agent ('claude-code', …). Validated server-side.
@@ -140,6 +139,19 @@ export const ScrapeBoardRequestSchema = z.object({
   latitude: z.number().optional(),
   longitude: z.number().optional(),
   radiusKm: z.number().int().min(0).max(200).optional(),
+  // Structured search filters consumed by LinkedIn's `search_paginated` (and
+  // ignored by boards without such filters). Free-text codes so new LinkedIn
+  // filter values work without a schema change; validated server-side.
+  // `jobType`: 'F' (Full-time), 'P' (Part-time), 'C' (Contract), … ;
+  // `workType`: '1' (On-site), '2' (Remote), '3' (Hybrid);
+  // `sortBy`: 'DD' (Date Descending), 'R' (Relevance).
+  jobType: z.string().optional(),
+  workType: z.string().optional(),
+  experienceLevel: z.string().optional(),
+  easyApply: z.boolean().optional(),
+  activelyHiring: z.boolean().optional(),
+  verified: z.boolean().optional(),
+  sortBy: z.string().optional(),
 });
 
 export const ScrapeUrlRequestSchema = z.object({
