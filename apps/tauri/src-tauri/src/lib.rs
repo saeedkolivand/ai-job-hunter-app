@@ -579,6 +579,13 @@ pub fn run() {
             // bridge and never blocks boot. `BridgeState` was managed above.
             extension_bridge::start(handle.clone());
 
+            // Watch the OS accent color (Windows): on a personalization accent
+            // change, emit `system:accentChanged` so the renderer re-pulls the
+            // color and re-applies the theme live. The watcher parks its WinRT
+            // subscription in managed state to stay alive. No-op off Windows;
+            // there the renderer's window-focus refetch covers it. Best-effort.
+            platform::accent_watcher::start(handle);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
