@@ -33,8 +33,8 @@ impl KvCache {
 
     pub fn open(data_dir: &Path) -> AppResult<Self> {
         let path = data_dir.join("pipeline_cache.db");
-        let conn = Connection::open(&path).map_err(|e| format!("kv cache open: {e}"))?;
-        run_migrations(&conn, Self::MIGRATIONS)?;
+        let mut conn = crate::db::open(&path)?;
+        run_migrations(&mut conn, Self::MIGRATIONS)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })

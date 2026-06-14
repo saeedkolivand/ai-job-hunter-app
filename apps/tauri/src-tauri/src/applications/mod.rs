@@ -246,8 +246,8 @@ impl ApplicationStore {
     pub fn open(data_dir: &Path) -> AppResult<Self> {
         std::fs::create_dir_all(data_dir)?;
         let path = data_dir.join("applications.db");
-        let conn = Connection::open(&path)?;
-        run_migrations(&conn, Self::MIGRATIONS)?;
+        let mut conn = crate::db::open(&path)?;
+        run_migrations(&mut conn, Self::MIGRATIONS)?;
         let store = Self {
             conn: Mutex::new(conn),
         };
@@ -285,7 +285,7 @@ impl ApplicationStore {
         if !gen_path.exists() {
             return Ok(()); // fresh install — nothing to migrate
         }
-        let gen_conn = Connection::open(&gen_path)?;
+        let gen_conn = crate::db::open(&gen_path)?;
 
         // Step 1: add the FK column + index if absent (idempotent guard).
         if !crate::db::column_exists(&gen_conn, "ai_generations", "application_id") {
@@ -518,10 +518,16 @@ impl ApplicationStore {
                 contact_name: existing.contact_name.clone(),
                 contact_email: existing.contact_email.clone(),
             };
-            self.write_row(&app)?;
+            // Row write + the (conditional) status event in ONE transaction so an
+            // upsert that changes status can never persist the row without its
+            // history event. `.transaction()` needs `&mut Connection`.
+            let mut guard = self.conn.lock();
+            let tx = guard.transaction()?;
+            Self::write_row_conn(&tx, &app)?;
             if status != existing.status {
-                self.append_event(&app.id, existing.status.as_id(), status.as_id(), "", now);
+                Self::append_event_conn(&tx, &app.id, existing.status.as_id(), status.as_id(), "", now);
             }
+            tx.commit()?;
             return Ok(app.id);
         }
 
@@ -550,8 +556,12 @@ impl ApplicationStore {
             contact_name: String::new(),
             contact_email: String::new(),
         };
-        self.write_row(&app)?;
-        self.append_event(&app.id, "", status.as_id(), "", now);
+        // New Application: the row + its seed status event in ONE transaction.
+        let mut guard = self.conn.lock();
+        let tx = guard.transaction()?;
+        Self::write_row_conn(&tx, &app)?;
+        Self::append_event_conn(&tx, &app.id, "", status.as_id(), "", now);
+        tx.commit()?;
         Ok(app.id)
     }
 
@@ -578,14 +588,22 @@ impl ApplicationStore {
         } else {
             existing.applied_at
         };
-        {
-            let conn = self.conn.lock();
-            conn.execute(
-                "UPDATE applications SET status = ?2, applied_at = ?3, updated_at = ?4 WHERE id = ?1",
-                params![id, to.as_id(), applied_at.map(ts_to_db), ts_to_db(now)],
-            )?;
-        }
-        self.append_event(id, existing.status.as_id(), to.as_id(), note, now);
+        // The row UPDATE and its append-only status event must land together or
+        // not at all — otherwise a crash between them leaves the status changed
+        // with no history row (or vice-versa). One transaction; `.transaction()`
+        // needs `&mut Connection`, so call on `&mut *guard`.
+        let mut guard = self.conn.lock();
+        let tx = guard.transaction()?;
+        tx.execute(
+            "UPDATE applications SET status = ?2, applied_at = ?3, updated_at = ?4 WHERE id = ?1",
+            params![id, to.as_id(), applied_at.map(ts_to_db), ts_to_db(now)],
+        )?;
+        tx.execute(
+            "INSERT INTO status_events (application_id, from_status, to_status, at, note)
+             VALUES (?1,?2,?3,?4,?5)",
+            params![id, existing.status.as_id(), to.as_id(), ts_to_db(now), note],
+        )?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -633,8 +651,14 @@ impl ApplicationStore {
     // ── Internals ─────────────────────────────────────────────────────────────
 
     fn write_row(&self, app: &Application) -> AppResult<()> {
-        let answers_json = serde_json::to_string(&app.answers).unwrap_or_else(|_| "[]".into());
         let conn = self.conn.lock();
+        Self::write_row_conn(&conn, app)
+    }
+
+    /// Connection-scoped row write, callable inside a transaction. `conn` may be a
+    /// plain `&Connection` or a `&Transaction` (which derefs to `&Connection`).
+    fn write_row_conn(conn: &Connection, app: &Application) -> AppResult<()> {
+        let answers_json = serde_json::to_string(&app.answers).unwrap_or_else(|_| "[]".into());
         conn.execute(
             "INSERT INTO applications
                 (id, status, applied_at, created_at, updated_at, job_url, board,
@@ -680,8 +704,8 @@ impl ApplicationStore {
         Ok(())
     }
 
-    fn append_event(&self, id: &str, from: &str, to: &str, note: &str, at: u64) {
-        let conn = self.conn.lock();
+    /// Connection-scoped status-event append, callable inside a transaction.
+    fn append_event_conn(conn: &Connection, id: &str, from: &str, to: &str, note: &str, at: u64) {
         let _ = conn.execute(
             "INSERT INTO status_events (application_id, from_status, to_status, at, note)
              VALUES (?1,?2,?3,?4,?5)",
@@ -823,16 +847,27 @@ impl DataStore for ApplicationStore {
         let items = data
             .as_array()
             .ok_or_else(|| AppError::Parse("applications: expected an array".into()))?;
-        self.clear_all();
-        let mut count = 0;
-        for item in items {
-            let app: Application = serde_json::from_value(item.clone())?;
-            self.write_row(&app)?;
+        // Deserialize EVERY Application before mutating, so a malformed row aborts
+        // the import without having cleared the existing tables.
+        let apps: Vec<Application> = items
+            .iter()
+            .map(|item| serde_json::from_value(item.clone()).map_err(AppError::from))
+            .collect::<AppResult<_>>()?;
+
+        // Clear (both tables) + repopulate (each row + its seed event) in ONE
+        // transaction: the full bundle replaces the old data or nothing changes.
+        // `.transaction()` needs `&mut Connection`, so call on `&mut *guard`.
+        let mut guard = self.conn.lock();
+        let tx = guard.transaction()?;
+        tx.execute("DELETE FROM applications", [])?;
+        tx.execute("DELETE FROM status_events", [])?;
+        for app in &apps {
+            Self::write_row_conn(&tx, app)?;
             // Seed one event so an imported Application still carries a history row.
-            self.append_event(&app.id, "", app.status.as_id(), "imported", app.updated_at);
-            count += 1;
+            Self::append_event_conn(&tx, &app.id, "", app.status.as_id(), "imported", app.updated_at);
         }
-        Ok(count)
+        tx.commit()?;
+        Ok(apps.len())
     }
 }
 

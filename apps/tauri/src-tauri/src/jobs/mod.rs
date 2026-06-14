@@ -129,14 +129,14 @@ impl JobTracker {
     /// Incomplete jobs from the previous session are loaded as `failed`.
     pub fn open(data_dir: &Path) -> Self {
         let db_path = data_dir.join("jobs.db");
-        let conn = match Connection::open(&db_path) {
+        let mut conn = match crate::db::open(&db_path) {
             Ok(c) => c,
             Err(e) => {
                 log::warn!("[jobs] failed to open jobs.db, running in-memory only: {e}");
                 return Self::default();
             }
         };
-        if let Err(e) = run_migrations(&conn, Self::MIGRATIONS) {
+        if let Err(e) = run_migrations(&mut conn, Self::MIGRATIONS) {
             log::warn!("[jobs] migration failed, running in-memory only: {e}");
             return Self::default();
         }
