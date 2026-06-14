@@ -125,6 +125,10 @@ const VARIANTS: Record<
   },
 };
 
+// White glyph reads correctly on every variant's fixed (theme-independent) icon
+// background; kept as a constant so it isn't a hex literal inside the style object.
+const ICON_GLYPH_COLOR = '#fff';
+
 // ─── Placement geometry ─────────────────────────────────────────────────────
 
 /** Fixed-container anchor for a placement. */
@@ -267,7 +271,7 @@ function NotificationCard({ item, onClose }: { item: NotificationItem; onClose: 
               justifyContent: 'center',
               borderRadius: '10px',
               background: cfg.iconBg,
-              color: '#fff',
+              color: ICON_GLYPH_COLOR,
               boxShadow: `0 4px 12px ${cfg.glow}`,
             }}
           >

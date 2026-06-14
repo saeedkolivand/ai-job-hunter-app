@@ -83,6 +83,12 @@ export function ScrapeForm({
                 type="text"
                 value={form.query}
                 onChange={(e) => onFormChange({ query: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !scraping && form.query.trim()) {
+                    e.preventDefault();
+                    onStart();
+                  }
+                }}
                 placeholder={t('jobs.queryPlaceholder')}
                 disabled={scraping}
                 allowClear
