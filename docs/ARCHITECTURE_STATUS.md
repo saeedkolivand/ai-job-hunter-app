@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-06-03
+Last updated: 2026-06-14
 
 ---
 
@@ -38,6 +38,9 @@ Last updated: 2026-06-03
 | Shared platform layers                           | ✅     | `platform::config`, `net::http`, `error::AppError`, `observability::Span` + provider/board registries (Phases 1–6 — see PATTERNS.md §13)                                                        |
 | Architecture CI guardrails                       | ✅     | grep bans: `std::env::var` outside `platform/config.rs`; `reqwest::Client::new/builder` outside `net/http.rs`; `Result<_, String>` outside `error.rs`                                           |
 | PDF engine migration (printpdf → Typst)          | ✅     | `printpdf` + `ttf-parser` removed; `export/layout_pdf.rs`, `export/pdf_renderer/`, top-level `layout/`, `measure/` deleted; `export/typst_engine/` is the sole PDF backend                      |
+| Centralized SQLite (`db::open`)                  | ✅     | WAL mode + 5s busy_timeout; routed by all stores; atomic transactions on import/migration/status (ADR-022)                                                                                      |
+| Anti-abuse rate + concurrency limits             | ✅     | In-memory `RateLimited` error (H13) on `ai_generate` + scrape commands; per-provider daily ceiling + concurrent-op limit (`limits/` module)                                                     |
+| OS accent live-update watcher                    | ✅     | Windows WinRT `UISettings::ColorValuesChanged` → `system:accentChanged` event; renderer re-applies theme when accentSource='system' (macOS deferred)                                            |
 
 ---
 
@@ -125,25 +128,26 @@ former `packages/ai` and `packages/data` Node packages were removed.
 
 ## Autopilot (`apps/tauri/src-tauri/src/autopilot/`)
 
-| Feature                     | Status | Notes                                                                                                            |
-| --------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------- |
-| Workflow definition wizard  | ✅     | 3-step UI                                                                                                        |
-| Workflow persistence        | ✅     | [SQLite][sqlite]                                                                                                 |
-| Manual trigger              | ✅     |                                                                                                                  |
-| Scheduled execution         | ✅     | Cron-like scheduler                                                                                              |
-| Real-time step events       | ✅     | autopilot:step stream                                                                                            |
-| Pause / resume              | ✅     |                                                                                                                  |
-| Found-job dedup + tracking  | ✅     | `merge_found_jobs` dedup by URL; `FoundJob.is_new`; `applied` derived from `ai_generations.job_url`              |
-| Generation-session store    | ✅     | `store/generation-store/` — app-wide, keyed by context id, survives navigation; Tailor modal uses it             |
-| `ai_generations` aggregate  | ✅     | `job_url`, `board`, `application_answers`, `company_brief` columns; per-job merge-upsert (`merge_application`)   |
-| `run_status` + status badge | ✅     | `inProgress\|completed\|failed\|interrupted`; amber/red chip on `AutopilotCard`; crash reconciliation on startup |
-| OS notification on new jobs | ✅     | Permission-gated; clicking the notification navigates to `/autopilot`                                            |
-| Tray module                 | ✅     | Dynamic "New jobs: N" click→focus; "Pause all" — `apps/tauri/src-tauri/src/tray/`                                |
-| Deep-link focus guard       | ✅     | `ajh://autopilot/<id>` validated against strict allowlist; registered OS scheme — `deeplink/`                    |
-| Startup catch-up sweep      | ✅     | Fires ~5 s after launch instead of waiting a full tick interval                                                  |
-| `minMatchScore` enforcement | ✅     | Scorable postings below threshold dropped before `record_run`; unscored postings kept                            |
-| Cancellation token reuse    | ✅     | Tray/UI cancel reaches the running token across the whole run                                                    |
-| Launch-at-login             | ✅     | Opt-in (default OFF); `system_get/set_launch_at_login` via `tauri-plugin-autostart`                              |
+| Feature                      | Status | Notes                                                                                                                                                                            |
+| ---------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workflow definition wizard   | ✅     | 3-step UI                                                                                                                                                                        |
+| Workflow persistence         | ✅     | [SQLite][sqlite]                                                                                                                                                                 |
+| Manual trigger               | ✅     |                                                                                                                                                                                  |
+| Scheduled execution          | ✅     | Cron-like scheduler                                                                                                                                                              |
+| Real-time step events        | ✅     | autopilot:step stream                                                                                                                                                            |
+| Pause / resume               | ✅     |                                                                                                                                                                                  |
+| Found-job dedup + tracking   | ✅     | `merge_found_jobs` dedup by URL; `FoundJob.is_new`; `applied` derived from `ai_generations.job_url`                                                                              |
+| Generation-session store     | ✅     | `store/generation-store/` — app-wide, keyed by context id, survives navigation; Tailor modal uses it                                                                             |
+| `ai_generations` aggregate   | ✅     | `job_url`, `board`, `application_answers`, `company_brief` columns; per-job merge-upsert (`merge_application`)                                                                   |
+| `run_status` + status badge  | ✅     | `inProgress\|completed\|failed\|interrupted`; amber/red chip on `AutopilotCard`; crash reconciliation on startup                                                                 |
+| OS notification on new jobs  | ✅     | Permission-gated; clicking the notification navigates to `/autopilot`                                                                                                            |
+| Tray module                  | ✅     | Dynamic "New jobs: N" click→focus; "Pause all" — `apps/tauri/src-tauri/src/tray/`                                                                                                |
+| Deep-link focus guard        | ✅     | `ajh://autopilot/<id>` validated against strict allowlist; registered OS scheme — `deeplink/`                                                                                    |
+| Startup catch-up sweep       | ✅     | Fires ~5 s after launch instead of waiting a full tick interval                                                                                                                  |
+| `minMatchScore` enforcement  | ✅     | Scorable postings below threshold dropped before `record_run`; unscored postings kept                                                                                            |
+| Cancellation token reuse     | ✅     | Tray/UI cancel reaches the running token across the whole run                                                                                                                    |
+| Launch-at-login              | ✅     | Opt-in (default OFF); `system_get/set_launch_at_login` via `tauri-plugin-autostart`                                                                                              |
+| Ranking via keyword-coverage | ✅     | Unified on `documents::keywords::coverage_score` (embedding-free, pure keyword stemming + matching); relabeled "Keyword Coverage %" to distinguish from Jobs "Match %" (ADR-020) |
 
 ---
 
@@ -185,7 +189,6 @@ former `packages/ai` and `packages/data` Node packages were removed.
 | CJK font support in PDF/preview         | Medium   | Bundle Noto Sans CJK into Typst engine (`export/typst_engine/`) so zh/ja/ko render in PDF and live preview (generation + DOCX already work; currently shows tofu) |
 | URL-to-job-ad extraction in AI Generate | Medium   | `scrape.url` IPC contract exists; UI input not yet wired                                                                                                          |
 | LinkedIn official API integration       | Medium   | Currently Playwright-only                                                                                                                                         |
-| Browser extension (quick apply)         | Low      |                                                                                                                                                                   |
 | Advanced skill taxonomy                 | Medium   | Structured ontology for matching                                                                                                                                  |
 | Salary negotiation assistant            | Low      |                                                                                                                                                                   |
 | Cloud sync                              | Low      | Deferred — needs a remote backend; the backup bundle + `DataStore` trait are the substrate                                                                        |

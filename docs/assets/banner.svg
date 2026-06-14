@@ -1,43 +1,34 @@
-<svg width="1280" height="400" viewBox="0 0 1280 400" xmlns="http://www.w3.org/2000/svg">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" width="1280" height="360" role="img" aria-label="AI Job Hunter — it does everything but press send">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#15101F"/>
-      <stop offset="100%" stop-color="#0A0712"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="20%" cy="28%" r="58%">
-      <stop offset="0%" stop-color="#7C5CFF" stop-opacity="0.30"/>
-      <stop offset="55%" stop-color="#7C5CFF" stop-opacity="0.06"/>
-      <stop offset="100%" stop-color="#7C5CFF" stop-opacity="0"/>
+    <radialGradient id="glow" cx="20%" cy="28%" r="65%">
+      <stop offset="0%" stop-color="#e24b4a" stop-opacity="0.20"/>
+      <stop offset="100%" stop-color="#e24b4a" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="glow2" cx="92%" cy="82%" r="46%">
-      <stop offset="0%" stop-color="#2E6BFF" stop-opacity="0.13"/>
-      <stop offset="100%" stop-color="#2E6BFF" stop-opacity="0"/>
-    </radialGradient>
-    <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
-      <circle cx="1.4" cy="1.4" r="1.4" fill="#FFFFFF" opacity="0.045"/>
-    </pattern>
-    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#1A1330"/>
-      <stop offset="100%" stop-color="#0C0818"/>
-    </linearGradient>
-    <clipPath id="tileclip"><rect x="90" y="115" width="170" height="170" rx="40"/></clipPath>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter>
+    <filter id="ink" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="2" dy="3" stdDeviation="0" flood-color="#000" flood-opacity="0.35"/></filter>
   </defs>
 
-  <rect width="1280" height="400" fill="url(#bg)"/>
-  <rect width="1280" height="400" fill="url(#dots)"/>
-  <rect width="1280" height="400" fill="url(#glow)"/>
-  <rect width="1280" height="400" fill="url(#glow2)"/>
+  <rect width="1280" height="360" fill="#0a0c11"/>
+  <rect width="1280" height="360" fill="url(#glow)"/>
+  <rect width="1280" height="360" filter="url(#grain)" opacity="0.05"/>
 
-  <rect x="90" y="115" width="170" height="170" rx="40" fill="url(#tile)" stroke="#2C2150" stroke-width="1.5"/>
-  <g clip-path="url(#tileclip)">
-    <circle cx="175" cy="180" r="100" fill="#7C5CFF" opacity="0.2"/>
+  <g filter="url(#ink)">
+    <rect x="214" y="34" width="196" height="50" rx="16" ry="13" fill="#fffef8" stroke="#1c1812" stroke-width="3"/>
+    <path d="M250 84 l-4 24 l26 -24 z" fill="#fffef8" stroke="#1c1812" stroke-width="3"/>
+    <text x="232" y="66" font-family="'Patrick Hand','Comic Sans MS',cursive" font-size="23" fill="#1c1812">please hire him</text>
   </g>
-  <circle cx="175" cy="196" r="52" fill="none" stroke="#F4F2FA" stroke-width="8"/>
-  <rect x="143" y="182" width="64" height="18" rx="9" fill="#7C5CFF"/>
-  <path d="M157 222 q18 11 36 -2" fill="none" stroke="#F4F2FA" stroke-width="7" stroke-linecap="round"/>
 
-  <text x="312" y="180" font-family="'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" font-size="74" font-weight="700" fill="#FFFFFF" letter-spacing="-1">AI Job Hunter</text>
-  <rect x="314" y="198" width="118" height="5" rx="2.5" fill="#7C5CFF"/>
-  <text x="314" y="240" font-family="'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" font-size="27" fill="#ADA8C6">Your local-first, AI-native job-hunting assistant.</text>
-  <text x="314" y="288" font-family="'SF Mono','Consolas','DejaVu Sans Mono',monospace" font-size="18" fill="#8E83CC">scrape 18 boards · tailor résumés · apply on autopilot · 100% offline</text>
+  <g transform="translate(92,150) scale(4.4)" fill="none" stroke="#e7ecf3" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" filter="url(#ink)">
+    <circle cx="16" cy="16" r="12"/>
+    <path d="M11 14 q2 2 4 0 M17 14 q2 2 4 0 M11 22 q5 -4 10 0"/>
+    <ellipse cx="10" cy="18" rx="1.6" ry="2.8" fill="deepskyblue" stroke="none"/>
+  </g>
+
+  <text x="278" y="208" font-family="'Anton','Arial Narrow',Impact,sans-serif" font-weight="800" font-size="96" letter-spacing="1.5" fill="#f3f6fb" filter="url(#ink)">AI JOB HUNTER</text>
+
+  <path d="M280 234 q140 15 280 5 q160 -12 380 7 q80 8 130 -2" fill="none" stroke="#e24b4a" stroke-width="7" stroke-linecap="round"/>
+
+  <text x="282" y="288" font-family="'Space Mono','Courier New',monospace" font-size="26" fill="#c7d0dd">it does everything but press send.</text>
+
+  <path d="M282 326 q320 24 660 3 q190 -12 320 2" fill="none" stroke="#e24b4a" stroke-width="2.4" stroke-dasharray="2 11" stroke-linecap="round" opacity="0.45"/>
 </svg>

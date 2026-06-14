@@ -1,6 +1,6 @@
 # Deployment — AI Job Hunter
 
-Last updated: 2026-06-03
+Last updated: 2026-06-14
 
 AI Job Hunter is distributed as a native desktop installer built by [Tauri][tauri]. There is no server to deploy — the entire app runs on the end user's machine.
 
@@ -13,6 +13,49 @@ AI Job Hunter is distributed as a native desktop installer built by [Tauri][taur
 | Windows  | NSIS installer (`.exe`) + MSI (`.msi`) | `src-tauri/target/release/bundle/nsis/`     |
 | macOS    | App bundle (`.app`) + DMG (`.dmg`)     | `src-tauri/target/release/bundle/macos/`    |
 | Linux    | AppImage (`.AppImage`) + DEB (`.deb`)  | `src-tauri/target/release/bundle/appimage/` |
+
+---
+
+## Windows Installer Configuration
+
+`bundle.windows` in `apps/tauri/src-tauri/tauri.conf.json` pins the Windows install behavior:
+
+```json
+{
+  "bundle": {
+    "windows": {
+      "nsis": { "installMode": "currentUser" },
+      "webviewInstallMode": { "type": "downloadBootstrapper" }
+    }
+  }
+}
+```
+
+### `nsis.installMode: "currentUser"` — pinned per-user scope (root-cause fix)
+
+The NSIS installer is pinned to **per-user** scope (installs into the user profile, no UAC/Administrator prompt).
+
+**Why it matters.** Previously `bundle.windows` was absent, so the NSIS installer fell back to Tauri's default `installMode`. Because the repo also builds an **MSI** (per-machine) while the in-app updater only ever applies the **NSIS** artifact, an install and a later update could land at **different scopes / paths** (per-user vs per-machine). When that happens:
+
+- The in-app updater swaps in the new version at the NSIS/per-user path, so the **running** app is up to date.
+- The user's pinned taskbar/Start shortcuts still point at the **old** exe at the **old** (e.g. per-machine) path, which is never replaced.
+- Relaunching from a pin runs the **stale** version, and the update banner reappears every launch.
+
+Pinning `installMode: currentUser` guarantees every install **and** every update use the same installer type and the same path, so the shortcut target stays valid after an update. (Valid `installMode` values: `currentUser`, `perMachine`, `both` — we use `currentUser` as the no-UAC, auto-update-friendly choice.)
+
+`webviewInstallMode.type: downloadBootstrapper` is the standard/stable WebView2 provisioning mode (downloads the bootstrapper at install time).
+
+### Migration note — existing per-machine / MSI installs need a one-time clean reinstall
+
+This config change cannot retroactively move an existing install's pinned-shortcut target. A user who **currently** has a per-machine (or MSI) install must do a **one-time clean reinstall**:
+
+1. Uninstall the existing app (Settings ▸ Apps, or the MSI/per-machine entry).
+2. Remove any stale pinned taskbar/Start shortcuts pointing at the old path.
+3. Install the new per-user NSIS build and re-pin from it.
+
+After that one reinstall, all future in-app updates apply in place and pins stay valid.
+
+> **Maintainer recommendation (not actioned here):** the in-app updater only consumes the **NSIS** artifact, so a coexisting **MSI** target is the remaining source of "two installs on disk" / scope drift on Windows. Consider **dropping the MSI from user-facing Windows downloads** (keep NSIS as the single Windows distribution). This is a release-policy decision for the maintainer — `release.yml` targets and the `bundle.targets` MSI entry are intentionally left unchanged in this config fix.
 
 ---
 
