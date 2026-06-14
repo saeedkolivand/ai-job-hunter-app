@@ -56,7 +56,7 @@ fn date_stamp() -> String {
 /// bundle aborts the restore without clearing a store. Only checks presence +
 /// top-level shape (array vs object); deep per-record validation happens
 /// atomically inside each store's transactional `import`.
-fn validate_sections(stores: &Value) -> Result<(), String> {
+fn validate_sections(stores: &Value) -> crate::error::AppResult<()> {
     // Sections whose export is a JSON array of records.
     const ARRAY_SECTIONS: &[&str] = &[
         "documents",
@@ -72,14 +72,18 @@ fn validate_sections(stores: &Value) -> Result<(), String> {
     for key in ARRAY_SECTIONS {
         if let Some(section) = stores.get(*key) {
             if !section.is_array() {
-                return Err(format!("section '{key}' must be a JSON array"));
+                return Err(crate::error::AppError::Validation(format!(
+                    "section '{key}' must be a JSON array"
+                )));
             }
         }
     }
     for key in OBJECT_SECTIONS {
         if let Some(section) = stores.get(*key) {
             if !section.is_object() {
-                return Err(format!("section '{key}' must be a JSON object"));
+                return Err(crate::error::AppError::Validation(format!(
+                    "section '{key}' must be a JSON object"
+                )));
             }
         }
     }
@@ -205,8 +209,8 @@ pub async fn data_import(app: AppHandle) -> Value {
     // SQLite level (e.g. disk error) after an earlier store already committed, the
     // earlier store is not rolled back. Full cross-file atomicity would require a
     // single shared database; that is out of scope here.
-    if let Err(msg) = validate_sections(stores) {
-        return json!({ "success": false, "error": msg });
+    if let Err(err) = validate_sections(stores) {
+        return json!({ "success": false, "error": err.to_string() });
     }
 
     let mut imported = serde_json::Map::new();

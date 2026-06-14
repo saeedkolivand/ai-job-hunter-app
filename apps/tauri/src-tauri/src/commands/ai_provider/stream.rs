@@ -121,7 +121,7 @@ enum StreamSink {
     /// Cancelled mid-stream — fail with `"Job cancelled"`, no terminal event.
     Cancelled,
     /// Transport read error.
-    Error(String),
+    Error(AppError),
 }
 
 /// Pure control-flow core, factored out so the loop (cancel / emit / done /
@@ -141,7 +141,7 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
 ) where
     Cancel: FnMut() -> bool,
     Next: FnMut() -> Fut,
-    Fut: std::future::Future<Output = Result<Option<B>, String>>,
+    Fut: std::future::Future<Output = AppResult<Option<B>>>,
     B: AsRef<[u8]>,
     P: FnMut(&mut String) -> Vec<StreamPiece>,
 {
@@ -270,7 +270,7 @@ mod tests {
     }
 
     fn run(
-        chunks: Vec<Result<Option<Vec<u8>>, String>>,
+        chunks: Vec<AppResult<Option<Vec<u8>>>>,
         cancel_after: Option<usize>,
         parse: impl FnMut(&mut String) -> Vec<StreamPiece>,
     ) -> Vec<Act> {
@@ -298,7 +298,7 @@ mod tests {
                     StreamSink::Emit { delta, thinking } => Act::Emit(delta, thinking),
                     StreamSink::Complete => Act::Complete,
                     StreamSink::Cancelled => Act::Cancelled,
-                    StreamSink::Error(e) => Act::Error(e),
+                    StreamSink::Error(e) => Act::Error(e.to_string()),
                 };
                 acts.borrow_mut().push(act);
             },
@@ -390,7 +390,7 @@ mod tests {
     #[test]
     fn read_error_surfaces_and_stops() {
         let acts = run(
-            vec![Ok(Some(b"a\n".to_vec())), Err("boom".to_string())],
+            vec![Ok(Some(b"a\n".to_vec())), Err(AppError::Message("boom".to_string()))],
             None,
             line_parser,
         );

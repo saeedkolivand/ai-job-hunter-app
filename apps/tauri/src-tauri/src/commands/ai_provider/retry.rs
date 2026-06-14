@@ -141,7 +141,7 @@ mod retry_loop_tests {
         }
 
         let url = server.uri();
-        let client = reqwest::Client::new();
+        let client = crate::net::http::shared();
         let call_count = Arc::new(AtomicU32::new(0));
         let counter = call_count.clone();
 
