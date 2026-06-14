@@ -84,9 +84,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           className={cn(
             'flex items-center gap-2 rounded-lg px-2.5 transition-shadow duration-150',
             !unstyled &&
-              variant !== 'glass' && [
-                'border border-[var(--border-clear)] bg-[rgb(var(--glass-rgb)/0.08)] shadow-sm',
-              ],
+              variant !== 'glass' && ['border border-[var(--border-clear)] bg-card shadow-sm'],
             !unstyled && variant === 'glass' && 'glass shadow-sm',
             // Focus ring on the wrapper, not the input.
             'focus-within:outline-none focus-within:ring-2 focus-within:ring-brand/50 focus-within:ring-offset-1 focus-within:ring-offset-transparent',
@@ -121,7 +119,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         className={cn(
           !unstyled &&
             'input-field rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-foreground/30 transition-shadow duration-150',
-          variant === 'default' && 'bg-white/5 shadow-sm',
+          variant === 'default' && 'border border-[var(--border-clear)] bg-card shadow-sm',
           variant === 'glass' && 'glass shadow-sm',
           // Reserve room so long text doesn't slide under the clear button.
           allowClear && 'pr-9',
