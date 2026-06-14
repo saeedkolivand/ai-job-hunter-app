@@ -2,7 +2,6 @@ import {
   Activity,
   Briefcase,
   ClipboardList,
-  Cpu,
   FilePlus2,
   FileText,
   Gauge,
@@ -23,9 +22,8 @@ import { Button, cn, NavPill, transition, variants } from '@ajh/ui';
 
 import { ROUTES } from '@/constants/routes';
 import { getTimeGreeting } from '@/lib/greeting';
-import { useAICapability } from '@/providers/CapabilityProvider';
 import { useAppVersion } from '@/services/use-system';
-import { useAIModel, useAiProviderConfig, useUserName } from '@/store/preferences-store';
+import { useUserName } from '@/store/preferences-store';
 
 interface NavItem {
   to: string;
@@ -69,22 +67,11 @@ export function Sidebar() {
   const { t } = useTranslation();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const userName = useUserName();
-  const aiModel = useAIModel();
-  const providerConfig = useAiProviderConfig();
-  const ai = useAICapability();
   const { data: version = 'v0.1.0' } = useAppVersion();
   const appVersion = version.startsWith('v') ? version : `v${version}`;
 
   const [versionTooltip, setVersionTooltip] = useState(false);
   const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const aiStatus = !ai ? 'checking' : ai.ready ? 'ready' : 'offline';
-
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
-  const currentModel =
-    activeProvider === 'ollama'
-      ? aiModel?.defaultModel
-      : providerConfig?.providers?.[activeProvider]?.model;
 
   const showVersion = () => {
     setVersionTooltip(true);
@@ -156,44 +143,6 @@ export function Sidebar() {
             </Link>
           </div>
         )}
-        <div className="flex items-center gap-2 rounded-lg border border-foreground/[0.06] bg-foreground/[0.03] px-2 py-1.5">
-          <Cpu
-            size={11}
-            className={cn(
-              'shrink-0',
-              aiStatus === 'ready'
-                ? 'text-emerald-400/70'
-                : aiStatus === 'offline'
-                  ? 'text-red-400/60'
-                  : 'text-foreground/25'
-            )}
-          />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <span
-                className={cn(
-                  'h-1.5 w-1.5 shrink-0 rounded-full',
-                  aiStatus === 'ready'
-                    ? 'bg-emerald-400 shadow-[0_0_4px_rgba(52,211,153,0.6)]'
-                    : aiStatus === 'offline'
-                      ? 'bg-red-400/70'
-                      : 'animate-pulse bg-foreground/20'
-                )}
-              />
-              <span className="truncate text-xs text-foreground/55">
-                {aiStatus === 'ready'
-                  ? currentModel
-                    ? currentModel.length > 30
-                      ? `${currentModel.slice(0, 28)}…`
-                      : currentModel
-                    : 'AI ready'
-                  : aiStatus === 'offline'
-                    ? 'AI offline'
-                    : 'Checking…'}
-              </span>
-            </div>
-          </div>
-        </div>
         <div className="relative flex justify-center">
           <Button
             variant="unstyled"

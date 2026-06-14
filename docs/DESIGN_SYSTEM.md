@@ -9,7 +9,7 @@ The design system lives in `packages/ui` and is published as the `@ajh/ui` inter
 > 1. **Accent stays violet** (`--color-brand`), not Apple's Action Blue.
 > 2. **Colorful action buttons** are allowed (Apple mandates a single accent). They are _semantic_ (run/edit/delete), token-driven (`--color-action-*`), and never decorative.
 >
-> "Hybrid" depth: content surfaces are flat (`.surface-card`); frosted **glass is reserved for hero surfaces only** — modals, the dashboard hero, and chrome (sidebar/titlebar/sticky bars). Decorative gradients, glows, and the aurora background were removed from content.
+> "Hybrid" depth: content surfaces are flat (`.surface-card`); frosted **glass is reserved for hero surfaces only** — modals, the dashboard hero, and chrome (sidebar/titlebar/sticky bars). Decorative gradients and glows live in content. A **slim, accent-tinted aurora** (ribbons, nebulae, and cursor glow, gated by performance mode) sits as the ambient backdrop behind all surfaces; it is always present when performance allows.
 
 ---
 
@@ -23,6 +23,8 @@ All tokens are CSS custom properties defined in `packages/ui/src/css/tokens.css`
 /* Brand palette */
 --color-brand          /* Primary interactive color (violet — the accent) */
 --color-brand-soft     /* Muted/secondary brand variant */
+--color-brand-2        /* Gradient-end hue (hand-tuned per preset, rotateHueHex(-30°) for system/custom) */
+--color-brand-2-soft   /* Lighter step of brand-2 (for secondary text/icons) */
 --color-brand-dim      /* Darker accent tone (derived via CSS color-mix from brand) */
 
 /* Colorful action tokens (semantic; the deliberate divergence — tokens only,
@@ -170,18 +172,20 @@ A **single-source, user-customizable accent** system colllapses brand-color frag
 **Single point of derivation** — `--color-brand` in `packages/ui/src/css/tokens.css` is the sole accent. All derived colors compute from it at paint time:
 
 - **`--color-brand-soft`** — a lighter step for secondary accent text/icons (28% whiter on dark schemes, 16% on light to account for canvas contrast).
-- **`--color-brand-dim`** — a darker tone for disabled/subtle states (derived via CSS `color-mix(–10%)`).
+- **`--color-brand-2` / `--color-brand-2-soft`** — gradient-end hue and its lighter variant. Hand-tuned per preset (e.g. blue #007aff→#22d3ee) or auto-derived via `rotateHueHex()` in `packages/ui/src/lib/color.ts` for system/custom accents. Derived at runtime by `applyAccent()` in `packages/ui/src/lib/theme.ts`; see `ThemePrefs.accentColor2` for preset overrides.
+- **`--color-brand-dim`** — a darker tone for disabled/subtle states.
 - **`--color-action-primary`** — alias for brand (the signature CTA color); semantic, never diverges.
 - **`ring-brand`** — the focus ring (2px brand outline on focus-visible buttons/inputs).
-- **Brand glows and gradients** — all derive via `color-mix` in `utilities.css`, so they auto-adjust with the accent.
+- **Brand glows and gradients** (`.text-gradient`, `.gradient-border`, `.glass-violet`, `.glass-indigo`, aurora ribbons/nebulae) — all reference `var(--color-brand)` / `var(--color-brand-2)` via `color-mix` in `utilities.css` or inline CSS, so they auto-adjust with the accent.
 
-**Auto-contrast for legibility** — `--color-action-foreground` is computed at runtime by `applyAccent()` in `packages/ui/src/lib/theme.ts` using `readableForeground()` from `packages/ui/src/lib/color.ts`. The function applies WCAG luminance (`> 0.55 → dark label; ≤ 0.55 → white label`) so filled primary CTAs remain readable on any accent (pale lavender accents get `#1d1d1f` labels; deep indigo accents get `#ffffff`).
+**Auto-contrast for legibility** — `--color-action-foreground` is computed by `readableForeground()` from `packages/ui/src/lib/color.ts`, applied at runtime by `applyAccent()` in `packages/ui/src/lib/theme.ts`. So filled primary CTAs remain readable on any accent.
 
-**Runtime applier** — `applyAccent(root, prefs, scheme)` writes the three accent vars (`--color-brand`, `--color-brand-soft`, `--color-action-foreground`) to `<html>.style` before paint, or clears them for `'default'`. The applier is idempotent and re-runs on scheme changes (light/dark swap) to recalculate the soft-step lightness per-canvas. Applied via `restoreTheme()` on init and `applyThemeAnimated()` on user change.
+**Runtime applier** — `applyAccent()` in `packages/ui/src/lib/theme.ts` writes the five accent vars to `<html>.style` before paint, or clears them for `'default'`. It is idempotent and re-runs on scheme changes (light/dark swap). See `ACCENT_VARS` in theme.ts for the full list.
 
 **User picker** — Settings → Appearance card (`apps/tauri/src/renderer/features/settings/components/general-section/AppearanceCard.tsx`) offers:
 
-- Default chip + 8 preset macOS-style swatches + System chip (hidden when `supported:false`).
+- Default chip + 8 preset macOS-style swatches (each with hand-tuned `color2`) + System chip (hidden when `supported:false`).
+- Swatches preview the two-tone gradient (brand → brand-2), so users see the full accent effect before apply.
 - Persisted to `localStorage` as part of `ThemePrefs`.
 
 **One primary CTA per view** — to avoid visual noise and let the accent shine, each view has at most one `variant="primary"` button (the main action). Secondary actions use `variant="default"` (neutral, no accent).

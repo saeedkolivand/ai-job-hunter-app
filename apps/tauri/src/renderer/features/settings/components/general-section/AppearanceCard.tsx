@@ -32,15 +32,35 @@ const SCALES: { id: TextScale; labelKey: string; size: string }[] = [
 // macOS-style preset accents the user can pick manually. 'default' (handled
 // separately) keeps the shipped, per-scheme-tuned violet; each preset here is a
 // fixed hex applied to both schemes via the theme engine's accent applier.
-const ACCENTS: { id: string; color: string; labelKey: string }[] = [
-  { id: 'violet', color: '#a855f7', labelKey: 'settings.appearance.accentViolet' },
-  { id: 'blue', color: '#007aff', labelKey: 'settings.appearance.accentBlue' },
-  { id: 'green', color: '#34c759', labelKey: 'settings.appearance.accentGreen' },
-  { id: 'orange', color: '#ff9500', labelKey: 'settings.appearance.accentOrange' },
-  { id: 'pink', color: '#ff2d55', labelKey: 'settings.appearance.accentPink' },
-  { id: 'red', color: '#ff3b30', labelKey: 'settings.appearance.accentRed' },
-  { id: 'yellow', color: '#ffcc00', labelKey: 'settings.appearance.accentYellow' },
-  { id: 'graphite', color: '#8e8e93', labelKey: 'settings.appearance.accentGraphite' },
+const ACCENTS: { id: string; color: string; color2: string; labelKey: string }[] = [
+  {
+    id: 'violet',
+    color: '#a855f7',
+    color2: '#6366f1',
+    labelKey: 'settings.appearance.accentViolet',
+  },
+  { id: 'blue', color: '#007aff', color2: '#22d3ee', labelKey: 'settings.appearance.accentBlue' },
+  { id: 'green', color: '#34c759', color2: '#06b6a4', labelKey: 'settings.appearance.accentGreen' },
+  {
+    id: 'orange',
+    color: '#ff9500',
+    color2: '#ffb340',
+    labelKey: 'settings.appearance.accentOrange',
+  },
+  { id: 'pink', color: '#ff2d55', color2: '#ff5e9c', labelKey: 'settings.appearance.accentPink' },
+  { id: 'red', color: '#ff3b30', color2: '#ff2d7a', labelKey: 'settings.appearance.accentRed' },
+  {
+    id: 'yellow',
+    color: '#ffcc00',
+    color2: '#ff9500',
+    labelKey: 'settings.appearance.accentYellow',
+  },
+  {
+    id: 'graphite',
+    color: '#8e8e93',
+    color2: '#6e7280',
+    labelKey: 'settings.appearance.accentGraphite',
+  },
 ];
 
 export function AppearanceCard() {
@@ -114,7 +134,13 @@ export function AppearanceCard() {
                   : 'border-foreground/10 text-foreground/55 hover:text-foreground/80'
               )}
             >
-              <span className="h-3 w-3 rounded-full bg-brand" />
+              <span
+                data-testid="default-accent-dot"
+                className="h-3 w-3 rounded-full"
+                style={{
+                  background: 'linear-gradient(135deg, var(--color-brand), var(--color-brand-2))',
+                }}
+              />
               {t('settings.appearance.accentDefault')}
             </Button>
             {sysAccent?.supported && (
@@ -138,7 +164,7 @@ export function AppearanceCard() {
                 {t('settings.appearance.system')}
               </Button>
             )}
-            {ACCENTS.map(({ id, color, labelKey }) => {
+            {ACCENTS.map(({ id, color, color2, labelKey }) => {
               const active =
                 prefs.accentSource === 'custom' &&
                 prefs.accentColor?.toLowerCase() === color.toLowerCase();
@@ -150,12 +176,16 @@ export function AppearanceCard() {
                   aria-checked={active}
                   aria-label={t(labelKey)}
                   title={t(labelKey)}
-                  onClick={() => update({ accentSource: 'custom', accentColor: color })}
+                  onClick={() =>
+                    update({ accentSource: 'custom', accentColor: color, accentColor2: color2 })
+                  }
                   className={cn(
                     'h-7 w-7 rounded-full border-2 transition-transform focus-visible:ring-2 focus-visible:ring-brand/50',
                     active ? 'scale-110 border-foreground/70' : 'border-transparent hover:scale-105'
                   )}
-                  style={{ backgroundColor: color }}
+                  data-accent-color={color}
+                  data-accent-color2={color2}
+                  style={{ background: `linear-gradient(135deg, ${color}, ${color2})` }}
                 />
               );
             })}

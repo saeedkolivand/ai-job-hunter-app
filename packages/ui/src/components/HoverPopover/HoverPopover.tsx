@@ -103,8 +103,8 @@ export function HoverPopover({
         left: rect.left,
         zIndex: 9999,
         ...(placement === 'top'
-          ? { bottom: window.innerHeight - rect.top + 8 }
-          : { top: rect.bottom + 8 }),
+          ? { bottom: window.innerHeight - rect.top, paddingBottom: 8 }
+          : { top: rect.bottom, paddingTop: 8 }),
       }
     : { display: 'none' };
 
@@ -134,9 +134,8 @@ export function HoverPopover({
               style={panelStyle}
               onMouseEnter={cancelClose}
               onMouseLeave={scheduleClose}
-              className={contentClassName}
             >
-              {children}
+              <div className={contentClassName}>{children}</div>
             </motion.div>
           )}
         </AnimatePresence>,

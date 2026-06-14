@@ -22,9 +22,9 @@ export function FloatingIcon({ icon: Icon, size = 24, children }: FloatingIconPr
         className="relative flex h-14 w-14 items-center justify-center rounded-2xl"
         style={{
           background:
-            'linear-gradient(135deg, rgba(168,85,247,0.25) 0%, rgba(99,102,241,0.15) 100%)',
-          border: '1px solid rgba(168,85,247,0.3)',
-          boxShadow: '0 0 32px rgba(168,85,247,0.2)',
+            'linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 25%, transparent) 0%, color-mix(in srgb, var(--color-brand-2) 15%, transparent) 100%)',
+          border: '1px solid color-mix(in srgb, var(--color-brand) 30%, transparent)',
+          boxShadow: '0 0 32px color-mix(in srgb, var(--color-brand) 20%, transparent)',
         }}
       >
         {children || <Icon size={size} className="text-brand-soft" />}

@@ -44,6 +44,23 @@ describe('Button', () => {
     expect(btn.className).toContain('h-10');
   });
 
+  // ── accent-gradient assertions (feat/accent-gradients) ──────────────────────
+
+  it('variant="primary" carries bg-brand-gradient and text-action-foreground (NOT bg-action-primary)', () => {
+    render(<Button variant="primary">CTA</Button>);
+    const btn = screen.getByRole('button');
+    expect(btn.className).toContain('bg-brand-gradient');
+    expect(btn.className).toContain('text-action-foreground');
+    expect(btn.className).not.toContain('bg-action-primary');
+  });
+
+  it('variant="run" still carries its solid bg-action-run token (unchanged by accent-gradient sweep)', () => {
+    render(<Button variant="run">Run</Button>);
+    const btn = screen.getByRole('button');
+    expect(btn.className).toContain('bg-action-run');
+    expect(btn.className).toContain('text-action-foreground');
+  });
+
   it('injects no chrome for the unstyled variant but keeps a11y essentials', () => {
     render(
       <Button variant="unstyled" className="custom-surface">

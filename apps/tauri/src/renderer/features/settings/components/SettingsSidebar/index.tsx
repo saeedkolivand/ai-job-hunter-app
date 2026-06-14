@@ -1,6 +1,7 @@
 import { ChevronRight } from 'lucide-react';
+import { motion } from 'motion/react';
 
-import { Button, cn, NavPill } from '@ajh/ui';
+import { Button, cn, NavPill, transition } from '@ajh/ui';
 
 import type { NavGroup, SectionId } from '@/features/settings/constants';
 
@@ -46,7 +47,15 @@ export function SettingsSidebar({ navGroups, activeSection, onSectionChange }: P
                       )}
                     />
                     <span className="flex-1 font-medium">{label}</span>
-                    {active && <ChevronRight size={12} className="text-foreground/30" />}
+                    {active && (
+                      <motion.span
+                        layoutId="settings-chevron"
+                        transition={transition.spring}
+                        className="text-brand-soft"
+                      >
+                        <ChevronRight size={12} />
+                      </motion.span>
+                    )}
                   </Button>
                 </div>
               );
