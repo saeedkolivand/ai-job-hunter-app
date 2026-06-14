@@ -65,6 +65,33 @@ impl KvCache {
         let conn = self.conn.lock();
         let _ = conn.execute("DELETE FROM kv_cache", []);
     }
+
+    /// Bound the cache: expire entries older than `ttl_secs` and cap the table to
+    /// the newest `max_rows`. `None` for a knob disables that bound (today's
+    /// unbounded behavior). Best-effort — a failed prune never blocks the caller.
+    /// Mirrors `DocumentStore::prune_caches`, so the same performance-tier knobs
+    /// reclaim the `KvCache` (company briefs / OCR results) alongside the result
+    /// caches. `created_at` is epoch-SECONDS here (unlike the ms-based stores).
+    pub fn prune(&self, ttl_secs: Option<i64>, max_rows: Option<i64>) {
+        let conn = self.conn.lock();
+        if let Some(ttl) = ttl_secs {
+            let cutoff = now_secs().saturating_sub(ttl);
+            let _ = conn.execute(
+                "DELETE FROM kv_cache WHERE created_at < ?1",
+                params![cutoff],
+            );
+        }
+        if let Some(n) = max_rows {
+            // Index-free but small table: delete everything older than the n-th
+            // newest row. ≤ n rows → subquery is NULL → deletes nothing. Ties on
+            // created_at may retain slightly more than n — fine for a cache bound.
+            let _ = conn.execute(
+                "DELETE FROM kv_cache WHERE created_at < \
+                 (SELECT created_at FROM kv_cache ORDER BY created_at DESC LIMIT 1 OFFSET ?1)",
+                params![n],
+            );
+        }
+    }
 }
 
 fn now_secs() -> i64 {

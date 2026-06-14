@@ -626,8 +626,8 @@ fn norm_url_no_host_scheme_only_yields_conflict() {
 /// metadata (the "H6 — full_name never rendered" regression).
 #[test]
 fn apply_to_header_fills_blank_name_from_full_name() {
-    use crate::model::document::{DocumentModel, HeaderBlock};
     use crate::export::types::DocumentType;
+    use crate::model::document::DocumentModel;
 
     let profile = ContactProfile {
         full_name: Some("Jordan Lee".into()),
@@ -656,8 +656,8 @@ fn apply_to_header_fills_blank_name_from_full_name() {
 /// the generation metadata name takes precedence over the profile name.
 #[test]
 fn apply_to_header_does_not_overwrite_existing_name() {
-    use crate::model::document::DocumentModel;
     use crate::export::types::DocumentType;
+    use crate::model::document::DocumentModel;
 
     let profile = ContactProfile {
         full_name: Some("Jordan Lee".into()),

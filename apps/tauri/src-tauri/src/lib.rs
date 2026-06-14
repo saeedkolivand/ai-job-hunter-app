@@ -31,6 +31,7 @@ pub mod extraction;
 pub mod ipc_contracts;
 pub mod job_preferences;
 pub mod jobs;
+pub mod limits;
 pub mod locale;
 pub mod model;
 pub mod net;
@@ -506,6 +507,11 @@ pub fn run() {
             );
             app.manage(Mutex::new(UpdaterState::default()));
             app.manage(std::sync::Arc::new(ScraperEngine::new()));
+            // In-memory anti-abuse limiter (rate + concurrency + per-provider daily
+            // ceiling) for the expensive commands `ai_generate`, `scrape_board`, and
+            // `scrape_url`. Process-local; resets on restart. Not in the reset
+            // registry — it holds no user data, only transient counters.
+            app.manage(std::sync::Arc::new(limits::Limiter::new()));
             // Live performance config (balanced default). Updated by system_set_performance_mode.
             crate::performance::set(crate::performance::PerformanceConfig::default());
             app.manage(commands::translation::TranslationCache::new());

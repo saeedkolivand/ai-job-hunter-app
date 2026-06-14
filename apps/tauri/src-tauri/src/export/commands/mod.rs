@@ -95,7 +95,7 @@ pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<
     // Block only when a critical defect survived auto-fix.
     if let Some(report) = &report {
         if !report.ok {
-            return Err(AppError::Validation(blocking_reason(&report)));
+            return Err(AppError::Validation(blocking_reason(report)));
         }
     }
 

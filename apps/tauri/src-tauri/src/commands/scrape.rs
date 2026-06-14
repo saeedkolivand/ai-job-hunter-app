@@ -55,6 +55,23 @@ fn uuid_v4() -> String {
 #[tauri::command]
 pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
     let job_id = uuid_v4();
+
+    // Anti-abuse: rate + concurrency cap. Rejected before a job is created so a
+    // looping/XSS'd renderer can't drive unbounded scrape traffic. The guard is
+    // moved into the spawned task and dropped when the scrape finishes.
+    let limiter = app
+        .state::<std::sync::Arc<crate::limits::Limiter>>()
+        .inner()
+        .clone();
+    let guard = match limiter.acquire(
+        "scrape_board",
+        crate::limits::SCRAPE_RATE_MAX,
+        crate::limits::SCRAPE_CONCURRENCY_MAX,
+    ) {
+        Ok(g) => g,
+        Err(e) => return json!({ "error": e.to_string() }),
+    };
+
     crate::commands::jobs::job_start(&app, &job_id, "scrape.board");
 
     let engine = app.state::<std::sync::Arc<ScraperEngine>>().inner().clone();
@@ -124,6 +141,8 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
     let app_clone = app.clone();
     let job_id_clone = job_id.clone();
     tokio::spawn(async move {
+        // Hold the concurrency guard for the whole scrape; dropped on completion.
+        let _guard = guard;
         let result = engine
             .scrape_board(
                 &board,
@@ -160,12 +179,29 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
         return json!({ "error": "url is required" });
     }
 
+    // Anti-abuse: rate + concurrency cap (shares the scrape budget knobs). Checked
+    // after the cheap empty-url guard so an invalid call costs no slot.
+    let limiter = app
+        .state::<std::sync::Arc<crate::limits::Limiter>>()
+        .inner()
+        .clone();
+    let guard = match limiter.acquire(
+        "scrape_url",
+        crate::limits::SCRAPE_RATE_MAX,
+        crate::limits::SCRAPE_CONCURRENCY_MAX,
+    ) {
+        Ok(g) => g,
+        Err(e) => return json!({ "error": e.to_string() }),
+    };
+
     let job_id = uuid_v4();
     crate::commands::jobs::job_start(&app, &job_id, "scrape.url");
 
     let app_clone = app.clone();
     let job_id_clone = job_id.clone();
     tokio::spawn(async move {
+        // Hold the concurrency guard for the whole resolve; dropped on completion.
+        let _guard = guard;
         let result = crate::scraping::scrape_url::resolve(&url).await;
 
         match result {
