@@ -2,7 +2,7 @@
  * Stale-detection threshold: 30 days in milliseconds.
  * A pursuit is 'stale' when updatedAt is older than this with no nextActionAt set.
  */
-export const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
+const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Returns true when an application has had no status update for >= STALE_THRESHOLD_MS.

@@ -211,6 +211,18 @@ pub async fn system_set_performance_mode(
         );
     }
 
+    // Same one-shot prune for the namespaced KvCache (company briefs / OCR
+    // results), which previously grew unbounded — only the DocumentStore result
+    // caches were pruned. Managed only if its open() succeeded at boot (non-fatal
+    // in lib.rs), so use the fallible accessor.
+    if let Some(cache) = app.try_state::<crate::pipeline::cache::KvCache>() {
+        cache.prune(cache_ttl_secs, cache_max_rows);
+    } else {
+        tracing::warn!(
+            "system_set_performance_mode: KvCache unavailable; skipping one-shot cache prune"
+        );
+    }
+
     json!(null)
 }
 

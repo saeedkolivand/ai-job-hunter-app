@@ -96,10 +96,16 @@ impl Scraper for GermanTechJobsScraper {
         // Extract __NEXT_DATA__ JSON from HTML
         let raw = match NEXT_DATA_RE.captures(&res.text) {
             Some(c) => c.get(1).map(|m| m.as_str()).unwrap_or(""),
-            None => return Ok(vec![]),
+            None => {
+                log::warn!(
+                    "[germantechjobs] 200 OK but no __NEXT_DATA__ script found; page structure may have changed"
+                );
+                return Ok(vec![]);
+            }
         };
 
         if raw.is_empty() {
+            log::warn!("[germantechjobs] __NEXT_DATA__ matched but was empty");
             return Ok(vec![]);
         }
 
@@ -112,6 +118,9 @@ impl Scraper for GermanTechJobsScraper {
             .unwrap_or_default();
 
         if jobs.is_empty() {
+            log::warn!(
+                "[germantechjobs] __NEXT_DATA__ parsed but contained no jobs (props.pageProps.jobs/jobsList empty)"
+            );
             return Ok(vec![]);
         }
 

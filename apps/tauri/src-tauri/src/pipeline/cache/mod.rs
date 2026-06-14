@@ -33,8 +33,8 @@ impl KvCache {
 
     pub fn open(data_dir: &Path) -> AppResult<Self> {
         let path = data_dir.join("pipeline_cache.db");
-        let conn = Connection::open(&path).map_err(|e| format!("kv cache open: {e}"))?;
-        run_migrations(&conn, Self::MIGRATIONS)?;
+        let mut conn = crate::db::open(&path)?;
+        run_migrations(&mut conn, Self::MIGRATIONS)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -64,6 +64,42 @@ impl KvCache {
     pub fn clear(&self) {
         let conn = self.conn.lock();
         let _ = conn.execute("DELETE FROM kv_cache", []);
+    }
+
+    /// Bound the cache: expire entries older than `ttl_secs` and cap the table to
+    /// the newest `max_rows`. `None` for a knob disables that bound (today's
+    /// unbounded behavior). Best-effort — a failed prune never blocks the caller.
+    /// Mirrors `DocumentStore::prune_caches`, so the same performance-tier knobs
+    /// reclaim the `KvCache` (company briefs / OCR results) alongside the result
+    /// caches. `created_at` is epoch-SECONDS here (unlike the ms-based stores).
+    pub fn prune(&self, ttl_secs: Option<i64>, max_rows: Option<i64>) {
+        // Negative knobs would invert the bounds (delete all / delete all-but-newest);
+        // drop them defensively even though all current callers clamp non-negative.
+        let ttl_secs = ttl_secs.filter(|&t| t >= 0);
+        let max_rows = max_rows.filter(|&n| n >= 0);
+        let conn = self.conn.lock();
+        if let Some(ttl) = ttl_secs {
+            let cutoff = now_secs().saturating_sub(ttl);
+            let _ = conn.execute(
+                "DELETE FROM kv_cache WHERE created_at < ?1",
+                params![cutoff],
+            );
+        }
+        if let Some(n) = max_rows {
+            if n == 0 {
+                let _ = conn.execute("DELETE FROM kv_cache", []);
+            } else {
+                // Keep the n newest rows: the cutoff is the created_at of the
+                // n-th newest row (OFFSET n-1). ≤ n rows → subquery is NULL →
+                // deletes nothing. Ties on created_at may retain slightly more
+                // than n — fine for a cache bound.
+                let _ = conn.execute(
+                    "DELETE FROM kv_cache WHERE created_at < \
+                     (SELECT created_at FROM kv_cache ORDER BY created_at DESC LIMIT 1 OFFSET ?1)",
+                    params![n - 1],
+                );
+            }
+        }
     }
 }
 

@@ -1,3 +1,4 @@
+pub mod accent_watcher;
 pub mod chrome;
 pub mod config;
 pub mod process;

@@ -1,6 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
-import type { PerformanceBackendConfig } from '@ajh/shared';
+import { EVENT_CHANNELS, type PerformanceBackendConfig } from '@ajh/shared';
+
+import { asyncUnsub } from '../../utils.js';
 
 export const system = {
   health: () => invoke('system_health'),
@@ -20,4 +23,9 @@ export const system = {
   checkBrowser: () => invoke('system_check_browser'),
   openDevtools: () => invoke('system_open_devtools'),
   getProtocolVersion: () => invoke<string>('system_get_protocol_version'),
+  // OS accent-color change (Windows personalization). Emitted by the WinRT
+  // `UISettings::ColorValuesChanged` watcher — see `platform::accent_watcher`.
+  // Payload is unused; the renderer re-pulls `accentColor` on the signal.
+  onAccentChanged: (handler: () => void) =>
+    asyncUnsub(() => listen(EVENT_CHANNELS.system.accentChanged, () => handler())),
 };

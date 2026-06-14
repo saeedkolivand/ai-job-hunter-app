@@ -68,4 +68,33 @@ describe('usePreferencesStore', () => {
     expect(usePreferencesStore.getState().onboardingCompleted).toBe(false);
     expect(usePreferencesStore.getState().language).toBe('en');
   });
+
+  it('re-arms onboarding via resetOnboarding (without touching other prefs)', () => {
+    const s = usePreferencesStore.getState();
+    s.setOnboardingComplete();
+    s.setLanguage('de');
+    expect(usePreferencesStore.getState().onboardingCompleted).toBe(true);
+
+    usePreferencesStore.getState().resetOnboarding();
+    expect(usePreferencesStore.getState().onboardingCompleted).toBe(false);
+    // Unrelated prefs survive (unlike resetPreferences).
+    expect(usePreferencesStore.getState().language).toBe('de');
+  });
+
+  it('records recent locations most-recent-first, de-duplicated and capped at 5', () => {
+    const s = usePreferencesStore.getState();
+    expect(usePreferencesStore.getState().recentLocations).toEqual([]);
+
+    s.addRecentLocation('Berlin');
+    s.addRecentLocation('  '); // blank ignored
+    s.addRecentLocation('London');
+    s.addRecentLocation('Berlin'); // dedup → moves to front
+    expect(usePreferencesStore.getState().recentLocations).toEqual(['Berlin', 'London']);
+
+    ['Paris', 'Madrid', 'Rome', 'Vienna'].forEach((l) => s.addRecentLocation(l));
+    const recent = usePreferencesStore.getState().recentLocations;
+    expect(recent).toHaveLength(5);
+    expect(recent[0]).toBe('Vienna'); // newest first
+    expect(recent).not.toContain('London'); // oldest dropped past the cap
+  });
 });

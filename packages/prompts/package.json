@@ -25,6 +25,10 @@
     "./context-manager": {
       "types": "./src/context-manager/index.ts",
       "default": "./dist/context-manager/index.js"
+    },
+    "./provider": {
+      "types": "./src/provider/index.ts",
+      "default": "./dist/provider/index.js"
     }
   },
   "scripts": {

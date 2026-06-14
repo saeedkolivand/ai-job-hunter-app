@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 /// Recruitee — public per-company offers API
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
@@ -9,6 +7,7 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 struct Offer {
     id: i64,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     slug: String,
     title: String,
     description: Option<String>,

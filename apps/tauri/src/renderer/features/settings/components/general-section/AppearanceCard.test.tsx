@@ -4,8 +4,9 @@
  * Covers:
  *  - Every preset accent swatch button renders with an inline `background` style
  *    containing `linear-gradient(` — NOT a flat solid color.
- *  - The Default chip's colour dot uses the CSS-var gradient pair
- *    (var(--color-brand) … var(--color-brand-2)).
+ *  - The Default chip's colour dot uses the un-overridden BASE CSS-var gradient
+ *    pair (var(--color-brand-base) … var(--color-brand-2-base)) so it always
+ *    shows the TRUE shipped default — never the live, applier-overridden accent.
  *  - Clicking a preset swatch calls applyThemeAnimated with both accentColor and
  *    accentColor2 so the two-tone gradient is wired end-to-end.
  *
@@ -114,16 +115,23 @@ describe('AppearanceCard — preset accent swatches', () => {
     }
   });
 
-  it('the Default chip colour dot uses the CSS-var gradient (var(--color-brand) … var(--color-brand-2))', () => {
+  it('the Default chip colour dot uses the un-overridden BASE CSS-var gradient (var(--color-brand-base) … var(--color-brand-2-base))', () => {
     const { container } = render(<AppearanceCard />);
     // The Default chip contains a <span> tagged with a stable test id; locating it
     // by `data-testid` keeps element detection CSS-independent (no style matching).
     const dot = container.querySelector<HTMLElement>('[data-testid="default-accent-dot"]');
     if (!dot) throw new Error('expected default chip dot with CSS-var gradient background');
     const dotStyle = dot.getAttribute('style') ?? '';
-    expect(dotStyle).toContain('var(--color-brand)');
-    expect(dotStyle).toContain('var(--color-brand-2)');
+    expect(dotStyle).toContain('var(--color-brand-base)');
+    expect(dotStyle).toContain('var(--color-brand-2-base)');
     expect(dotStyle).toContain('linear-gradient(');
+    // Regression guard: the dot must NOT use the live accent vars, which the
+    // runtime applier (theme.ts applyAccent / ACCENT_VARS) overrides on :root —
+    // those would make "Default" wrongly mirror the active custom/system accent.
+    // The `-base` suffix is intentionally distinct, so the bare-var substrings
+    // must be absent (the closing paren differs: `--color-brand)` vs `-base)`).
+    expect(dotStyle).not.toContain('var(--color-brand)');
+    expect(dotStyle).not.toContain('var(--color-brand-2)');
   });
 
   it('clicking a preset swatch calls applyThemeAnimated with both accentColor and accentColor2', async () => {

@@ -59,16 +59,3 @@ async fn cancel_reaches_a_pre_registered_token() {
     engine.cancel("run-1").await;
     assert!(token.is_cancelled());
 }
-
-#[tokio::test]
-async fn test_shutdown() {
-    let engine = ScraperEngine::new();
-    // Register some tokens
-    let token1 = tokio_util::sync::CancellationToken::new();
-    let token2 = tokio_util::sync::CancellationToken::new();
-
-    engine.register_token("job-1", token1).await;
-    engine.register_token("job-2", token2).await;
-
-    engine.shutdown().await;
-}

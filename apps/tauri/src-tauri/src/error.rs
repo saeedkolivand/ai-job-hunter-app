@@ -29,6 +29,11 @@ pub enum AppError {
     /// Input failed validation / a precondition was not met.
     #[error("{0}")]
     Validation(String),
+    /// An anti-abuse limit was hit (request-rate, concurrency, or a per-provider
+    /// daily ceiling). Retriable — the same call can succeed once the window/day
+    /// rolls over or an in-flight call finishes. See [`crate::limits`].
+    #[error("{0}")]
+    RateLimited(String),
     /// The operation was cancelled (user abort, shutdown).
     /// The operation was cancelled (user abort, shutdown). Reserved for the
     /// cancellation paths that currently surface bespoke messages.
@@ -59,6 +64,7 @@ impl AppError {
             AppError::Storage(_) => "STORAGE",
             AppError::Parse(_) => "PARSE",
             AppError::Validation(_) => "VALIDATION",
+            AppError::RateLimited(_) => "RATE_LIMITED",
             AppError::Cancelled => "CANCELLED",
             AppError::Message(_) => "ERROR",
         }
@@ -66,7 +72,7 @@ impl AppError {
 
     /// Whether retrying the same operation could plausibly succeed.
     pub fn retriable(&self) -> bool {
-        matches!(self, AppError::Network(_))
+        matches!(self, AppError::Network(_) | AppError::RateLimited(_))
     }
 
     /// Convenience constructor for an uncategorized message.

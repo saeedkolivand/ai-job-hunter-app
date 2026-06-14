@@ -101,13 +101,11 @@ export function TechStackPreferences() {
     <GlassCard>
       <div className="mb-4 flex items-center justify-between">
         <div className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
-          Tech Stack
+          {t('settings.techStack.title')}
         </div>
       </div>
 
-      <p className="mb-4 text-sm text-foreground/55">
-        Add your technical skills to personalize job recommendations and AI analysis.
-      </p>
+      <p className="mb-4 text-sm text-foreground/55">{t('settings.techStack.description')}</p>
 
       {/* Current Tech Stack */}
       {techStack.length > 0 && (

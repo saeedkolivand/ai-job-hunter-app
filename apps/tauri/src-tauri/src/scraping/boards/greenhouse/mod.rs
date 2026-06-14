@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 /// Greenhouse — public per-company JSON board API
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
@@ -13,7 +11,9 @@ struct Location {
 
 #[derive(Debug, Deserialize)]
 struct Metadata {
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     name: String,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     value: serde_json::Value,
 }
 
@@ -27,6 +27,7 @@ struct Job {
     content: Option<String>,
     #[serde(rename = "updated_at")]
     updated_at: Option<String>,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     metadata: Option<Vec<Metadata>>,
 }
 

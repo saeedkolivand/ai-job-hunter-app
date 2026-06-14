@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::data_store::DataStore;
 use crate::db::{run_migrations, ts_from_db, ts_to_db, Migration};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 
 /// One locally-stored referral contact. Optional drafts/notes are empty strings
 /// on the wire when unset (the renderer treats `""` as "none").
@@ -82,10 +82,10 @@ impl ReferralStore {
     }];
 
     pub fn open(data_dir: &Path) -> AppResult<Self> {
-        std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(data_dir)?;
         let path = data_dir.join("referrals.db");
-        let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-        run_migrations(&conn, Self::MIGRATIONS)?;
+        let mut conn = crate::db::open(&path)?;
+        run_migrations(&mut conn, Self::MIGRATIONS)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -226,14 +226,46 @@ impl DataStore for ReferralStore {
 
     fn import(&self, data: &serde_json::Value) -> AppResult<usize> {
         let items = data.as_array().ok_or("referrals: expected an array")?;
-        self.clear_all();
-        let mut count = 0;
-        for item in items {
-            let record: ReferralContact =
-                serde_json::from_value(item.clone()).map_err(|e| e.to_string())?;
-            self.upsert(&record)?;
-            count += 1;
+        // Deserialize EVERY record before mutating the store, so a malformed row
+        // aborts the import without having cleared the table.
+        let records: Vec<ReferralContact> = items
+            .iter()
+            .map(|item| serde_json::from_value(item.clone()).map_err(AppError::from))
+            .collect::<AppResult<_>>()?;
+
+        // `DELETE` + the repopulation loop run in ONE transaction: either the
+        // whole replace lands or the old rows are left untouched on any failure.
+        // `Connection::transaction` needs `&mut Connection`, so take the lock and
+        // call on `&mut *guard`.
+        let mut guard = self.conn.lock();
+        let tx = guard.transaction()?;
+        tx.execute("DELETE FROM referrals", [])?;
+        for rec in &records {
+            tx.execute(
+                "INSERT INTO referrals
+                 (id, job_url, company_name, person_name, person_role, linkedin_url,
+                  email_draft, message_draft, invite_note_draft, channel, status, notes,
+                  created_at, updated_at)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+                params![
+                    rec.id,
+                    rec.job_url,
+                    rec.company_name,
+                    rec.person_name,
+                    rec.person_role,
+                    rec.linkedin_url,
+                    rec.email_draft,
+                    rec.message_draft,
+                    rec.invite_note_draft,
+                    rec.channel,
+                    rec.status,
+                    rec.notes,
+                    ts_to_db(rec.created_at),
+                    ts_to_db(rec.updated_at),
+                ],
+            )?;
         }
-        Ok(count)
+        tx.commit()?;
+        Ok(records.len())
     }
 }

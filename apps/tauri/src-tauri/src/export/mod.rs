@@ -1,13 +1,17 @@
 /*!
- * Export module for generating professional resumes and cover letters.
+ * Export module — résumé and cover-letter generation (PDF + DOCX + TXT).
  *
- * Architecture:
- * - parser.rs: Parse resume text into structured format
- * - docx.rs: Generate DOCX files
- * - pdf.rs: Generate PDF files
- * - templates.rs: Template definitions and styling
- * - types.rs: Shared types and structures
- * - commands.rs: Tauri commands for frontend integration
+ * Sub-modules:
+ * - `typst_engine/` — sole PDF engine (Typst adapter); all nine templates rendered here.
+ * - `pdf/`          — `generate_pdf` / `generate_preview_svg` entry points.
+ * - `docx/`         — `generate_docx` entry point; cover-letter DOCX renderer.
+ * - `model_docx`    — model-based résumé DOCX renderer (canonical résumé-DOCX path).
+ * - `docx_renderer` — shared DOCX primitive helpers (runs, colors, paragraphs).
+ * - `parser/`       — flat résumé text parser → `ParsedDocument` / `ParsedLine`.
+ * - `templates/`    — template registry, styling, spacing rules.
+ * - `links/`        — URL splitting for clickable hyperlinks in DOCX.
+ * - `types`         — shared types: `ExportRequest`, `ExportResult`, `TemplateId`, …
+ * - `commands/`     — Tauri command wrappers (`documents_export_document`, …).
  */
 
 pub mod commands;

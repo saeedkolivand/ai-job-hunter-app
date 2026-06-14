@@ -178,6 +178,10 @@ export const PreferencesSchema = z.object({
   // the shell's window-close handler reads the live flag.
   closeToTray: z.boolean().default(true),
 
+  // Recently picked job-search locations (most-recent first), capped at 5 so the
+  // "Recent" list in Settings is truthful across tab switches / restarts.
+  recentLocations: z.array(z.string()).default([]),
+
   // Onboarding
   onboardingCompleted: z.boolean().default(false),
 

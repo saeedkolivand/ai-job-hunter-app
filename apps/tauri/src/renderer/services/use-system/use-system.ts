@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { type Locale, PROTOCOL_VERSION } from '@ajh/shared';
+import { reapplySystemAccent } from '@ajh/ui';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 import { usePreferencesStore } from '@/store/preferences-store';
@@ -13,8 +14,8 @@ export const useSystemHealth = () => {
   return useQuery({
     queryKey: keys.system.health,
     queryFn: () => api.system.health(),
-    refetchInterval: 5_000,
-    staleTime: 4_000,
+    refetchInterval: 30_000,
+    staleTime: 20_000,
   });
 };
 
@@ -154,7 +155,13 @@ export const useSystemMetrics = () => {
 /**
  * OS accent color for the 'System' accent source. `supported` is false on
  * platforms we can't read (Linux) — the Appearance UI hides the System option
- * rather than showing an error. Accent rarely changes, so it's cached.
+ * rather than showing an error.
+ *
+ * `staleTime: Infinity` keeps it cached (accent rarely changes), but
+ * `refetchOnWindowFocus: true` re-pulls on focus as a cheap cross-platform
+ * fallback for a live accent change — covering macOS and any Windows
+ * `system:accentChanged` event we missed. The repaint on a fresh value is wired
+ * by `useAccentEvents`/its window-focus pair below.
  */
 export const useSystemAccent = () => {
   const api = useAppClient();
@@ -162,7 +169,48 @@ export const useSystemAccent = () => {
     queryKey: keys.system.accent,
     queryFn: () => api.system.accentColor(),
     staleTime: Infinity,
+    refetchOnWindowFocus: true,
   });
+};
+
+/**
+ * App-global subscription that keeps a 'system' accent live. Two triggers:
+ *   1. The shell's `system:accentChanged` push (Windows WinRT watcher) → invalidate
+ *      the cached accent so the query re-pulls the new OS hex.
+ *   2. A successful (re)fetch of the accent query (incl. the window-focus refetch
+ *      above, the macOS/missed-event fallback) → re-apply the theme when the source
+ *      is 'system', so the frozen `accentColor` repaints with the new hex.
+ *
+ * Mount ONCE in the root layout (like `useApplicationEvents`); never from a feature
+ * component, or the listener would attach/detach per route. The subscribe-once
+ * `useRef` discipline keeps the async Tauri `listen` from racing re-subscription.
+ */
+export const useAccentEvents = () => {
+  const api = useAppClient();
+  useEffect(() => {
+    // Re-apply whenever the accent cache changes (covers both the event-driven
+    // invalidation and the window-focus refetch). `reapplySystemAccent` no-ops
+    // unless the source is 'system' and the hex actually changed.
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      // Match on the queryKey array, not `queryHash`: the hash format is a
+      // React Query internal that could change and silently break the re-apply.
+      if (
+        event.type === 'updated' &&
+        JSON.stringify(event.query.queryKey) === JSON.stringify(keys.system.accent) &&
+        event.query.state.status === 'success'
+      ) {
+        const data = event.query.state.data as { color?: string | null } | undefined;
+        reapplySystemAccent(data?.color);
+      }
+    });
+    const off = api.system.onAccentChanged(() => {
+      void queryClient.invalidateQueries({ queryKey: keys.system.accent });
+    });
+    return () => {
+      unsubscribe();
+      off();
+    };
+  }, [api]);
 };
 
 /** Check if Chrome/Edge is available for browser automation. */

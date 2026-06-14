@@ -199,6 +199,8 @@ temp/
 .cursor/mcp.json
 # Continue.dev session cache
 .continue/.sessions/
+# rtk (token-saver CLI) local command-history DB — written at runtime in cwd
+/rtk/
 
 # Claude Code — the agent system (.claude/agents, skills, commands, hooks,
 # review-routes.json, settings.json) IS committed; personal/transient files are NOT:

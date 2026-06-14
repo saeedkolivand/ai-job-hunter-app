@@ -27,8 +27,8 @@ export function GeneralSection({
 }: GeneralSectionProps) {
   const { t } = useTranslation();
   const onboardingCompleted = useOnboardingCompleted();
-  const replayWizard = () =>
-    usePreferencesStore.setState((s) => ({ ...s, onboardingCompleted: false }));
+  const resetOnboarding = usePreferencesStore((s) => s.resetOnboarding);
+  const replayWizard = () => resetOnboarding();
 
   const { data: launchAtLogin = false } = useLaunchAtLogin();
   const setLaunchAtLogin = useSetLaunchAtLogin();

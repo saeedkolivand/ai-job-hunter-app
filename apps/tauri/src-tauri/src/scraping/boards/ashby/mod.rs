@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 /// Ashby — public posting API
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
@@ -10,8 +8,10 @@ use serde::Deserialize;
 struct Job {
     id: String,
     title: String,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     #[serde(rename = "departmentName")]
     department_name: Option<String>,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     #[serde(rename = "teamName")]
     team_name: Option<String>,
     #[serde(rename = "locationName")]
@@ -28,6 +28,7 @@ struct Job {
 
 #[derive(Debug, Deserialize)]
 struct AshbyResponse {
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     #[serde(rename = "apiVersion")]
     api_version: String,
     jobs: Vec<Job>,

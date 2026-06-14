@@ -2,6 +2,7 @@ import { Brain, ChevronDown } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
 import { Button, transition } from '@ajh/ui';
 
 interface ThinkingBubbleProps {
@@ -10,6 +11,7 @@ interface ThinkingBubbleProps {
 }
 
 export function ThinkingBubble({ thinking, done = false }: ThinkingBubbleProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
   const scrollRef = useRef<HTMLPreElement>(null);
 
@@ -43,7 +45,7 @@ export function ThinkingBubble({ thinking, done = false }: ThinkingBubbleProps) 
       >
         <Brain size={12} className="shrink-0 text-violet-400/70" />
         <span className="flex-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-400/60">
-          {done ? 'Reasoning complete' : 'Thinking…'}
+          {done ? t('aiGenerate.reasoningComplete') : t('aiGenerate.thinking')}
         </span>
         {!done && (
           <span className="flex gap-0.5">

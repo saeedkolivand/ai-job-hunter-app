@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 /// Bundesagentur für Arbeit — official German federal employment agency
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
@@ -25,6 +23,7 @@ struct Stellenangebot {
     arbeitsort: Option<Arbeitsort>,
     #[serde(rename = "aktuelleVeroeffentlichungsdatum")]
     aktuelle_veroeffentlichungsdatum: Option<String>,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     #[serde(rename = "eintrittsdatum")]
     eintrittsdatum: Option<String>,
     #[serde(rename = "externeUrl")]
@@ -36,22 +35,28 @@ struct Stellenangebot {
 #[derive(Debug, Deserialize)]
 struct ListResp {
     stellenangebote: Option<Vec<Stellenangebot>>,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     #[serde(rename = "maxErgebnisse")]
     max_ergebnisse: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Branche {
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     bezeichnung: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct DetailResp {
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     refnr: String,
     stellenbeschreibung: Option<String>,
     arbeitgeberdarstellung: Option<String>,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     branche: Option<Branche>,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     arbeitgeber: Option<String>,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     titel: Option<String>,
 }
 

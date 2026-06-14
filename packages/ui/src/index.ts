@@ -11,6 +11,7 @@ export {
   DEFAULT_THEME_PREFS,
   getResolvedScheme,
   getThemePrefs,
+  reapplySystemAccent,
   restoreTheme,
   type TextScale,
   type ThemePrefs,

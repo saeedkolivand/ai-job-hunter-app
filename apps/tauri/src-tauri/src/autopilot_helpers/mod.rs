@@ -3,7 +3,6 @@ use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, SCRAPE_ITEM, SCRAPE_PROGRESS};
 use crate::scraping::{BoardSearchInput, JobPosting, ScraperEngine};
 use tauri::AppHandle;
-use tokio_util::sync::CancellationToken;
 
 /// Scrape job postings from a board
 pub async fn autopilot_scrape(
@@ -62,46 +61,4 @@ pub async fn autopilot_scrape(
         .await;
 
     result.map_err(AppError::from)
-}
-
-/// Rank job postings by semantic similarity to resume
-#[allow(dead_code)]
-pub async fn autopilot_rank(
-    app: &AppHandle,
-    postings: Vec<JobPosting>,
-    resume_text: Option<&str>,
-    min_match_score: f64,
-    cancel_token: &CancellationToken,
-) -> Vec<(f64, JobPosting)> {
-    let resume_vec = match resume_text {
-        Some(text) if !text.is_empty() => crate::documents::embed(app, text).await,
-        _ => None,
-    };
-
-    let mut scored: Vec<(f64, JobPosting)> = Vec::new();
-    for posting in postings {
-        if cancel_token.is_cancelled() {
-            break;
-        }
-        let score = match (&resume_vec, &posting.description) {
-            (Some(rv), Some(desc)) if !desc.is_empty() => {
-                match crate::documents::embed(app, desc).await {
-                    // Space-checked: incompatible vectors score 0, never silently mixed.
-                    Some(jv) => crate::commands::ai_provider::compare(rv, &jv)
-                        .map(|s| (s * 100.0).round())
-                        .unwrap_or(0.0),
-                    None => 0.0,
-                }
-            }
-            _ => 0.0,
-        };
-        if score >= min_match_score {
-            scored.push((score, posting));
-        }
-    }
-
-    // Sort descending by score
-    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-
-    scored
 }

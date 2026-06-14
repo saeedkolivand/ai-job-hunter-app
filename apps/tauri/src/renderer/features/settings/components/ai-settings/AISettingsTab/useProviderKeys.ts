@@ -8,6 +8,7 @@ import { useAppClient } from '@/providers/AppClientProvider';
 import {
   useAIModels,
   useListProviderModels,
+  useListProviderModelsLazy,
   useOpenExternal,
   usePullModel,
   useRemoveProviderKey,
@@ -73,6 +74,7 @@ export function useProviderKeys() {
   const setProviderKey = useSetProviderKey();
   const removeProviderKey = useRemoveProviderKey();
   const testProviderKey = useTestProviderKey();
+  const listProviderModelsLazy = useListProviderModelsLazy();
 
   // Which provider row is expanded for editing
   const [expanded, setExpanded] = useState<AiProvider | null>(null);
@@ -123,7 +125,11 @@ export function useProviderKeys() {
       await setProviderKey.mutateAsync({ provider, apiKey: apiKeyInput.trim() });
       setApiKeyInput('');
       try {
-        const models = await api.ai.listProviderModels({ provider, baseUrl: baseUrlFor(provider) });
+        // One-shot verification through the service layer (primes the cache too).
+        const models = await listProviderModelsLazy.mutateAsync({
+          provider,
+          baseUrl: baseUrlFor(provider),
+        });
         const count = Array.isArray(models) ? models.length : 0;
         notify.open({
           message:
@@ -132,7 +138,6 @@ export function useProviderKeys() {
               : `${meta.label} key saved, but no models returned. Double-check the key.`,
           variant: count > 0 ? 'success' : 'warning',
         });
-        void qc.invalidateQueries({ queryKey: [...keys.ai.models, 'provider-models', provider] });
       } catch {
         notify.warning({
           message: `${meta.label} key saved, but couldn't verify it. Check that it's correct.`,

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 /// SmartRecruiters — public per-company postings API
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
@@ -16,11 +14,13 @@ struct Location {
 #[derive(Debug, Deserialize)]
 struct Posting {
     id: String,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     uuid: Option<String>,
     name: String,
     location: Option<Location>,
     #[serde(rename = "releasedDate")]
     released_date: Option<String>,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     #[serde(rename = "ref")]
     ref_field: Option<String>,
 }
@@ -45,6 +45,7 @@ struct JobAd {
 struct DetailResp {
     #[serde(rename = "jobAd")]
     job_ad: Option<JobAd>,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     #[serde(rename = "ref")]
     ref_field: Option<String>,
 }
@@ -103,14 +104,44 @@ impl Scraper for SmartRecruitersScraper {
                 p.id
             );
 
-            let detail =
-                fetch_json::<DetailResp>(&detail_url, Default::default(), ctx.signal.clone())
-                    .await?;
+            // On a detail-fetch error yield `None` (not `continue`) so the
+            // progress emission + politeness sleep below still run every
+            // iteration; otherwise repeated detail errors would stop
+            // rate-limiting requests and stall progress.
+            let detail = match fetch_json::<DetailResp>(
+                &detail_url,
+                Default::default(),
+                ctx.signal.clone(),
+            )
+            .await
+            {
+                Ok(d) => d,
+                Err(e) => {
+                    log::warn!(
+                        "[smartrecruiters] detail fetch failed for posting {} ({detail_url}): {e}; skipping",
+                        p.id
+                    );
+                    None
+                }
+            };
 
-            let sections = detail
-                .and_then(|d| d.job_ad)
-                .and_then(|ja| ja.sections)
-                .unwrap_or_default();
+            let detail = match detail {
+                Some(d) => d,
+                None => {
+                    // Detail unavailable: skip building a posting, but still run
+                    // the progress + sleep below so pacing and progress hold.
+                    if let Some(ref on_progress) = ctx.on_progress {
+                        on_progress((i + 1) as f32 / total as f32);
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        150 + (rand::random::<u64>() % 200),
+                    ))
+                    .await;
+                    continue;
+                }
+            };
+
+            let sections = detail.job_ad.and_then(|ja| ja.sections).unwrap_or_default();
 
             let description = sections
                 .values()
@@ -182,6 +213,13 @@ impl Scraper for SmartRecruitersScraper {
             if let Some(ref on_progress) = ctx.on_progress {
                 on_progress((i + 1) as f32 / total as f32);
             }
+
+            // Small jitter between per-listing detail fetches (rate-limit
+            // politeness; mirrors the arbeitsagentur per-page delay pattern).
+            tokio::time::sleep(std::time::Duration::from_millis(
+                150 + (rand::random::<u64>() % 200),
+            ))
+            .await;
         }
 
         Ok(out)

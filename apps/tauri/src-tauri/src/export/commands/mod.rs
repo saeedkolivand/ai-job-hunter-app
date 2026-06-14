@@ -42,33 +42,54 @@ pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<
     // passes). Shared with the preview command so they stay in lock-step.
     validate_and_normalize(&mut request)?;
 
-    // Generate based on format. PDF/DOCX run through the validation gate, which
-    // re-extracts the bytes, auto-fixes a two-column layout that doesn't survive
-    // extraction, and reports what it found.
-    let (data, mime_type, extension, report) = match request.format {
-        ExportFormat::Docx => {
-            let (bytes, report) = validate_and_fix(request.clone(), |r| {
-                // `generate_docx` (export/docx) is still on `anyhow::Result` this pass;
-                // bridge its error into the typed hierarchy at the boundary.
-                generate_docx(r).map_err(crate::error::AppError::from)
-            })?;
-            (
-                bytes,
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    .to_string(),
-                "docx",
-                Some(report),
-            )
-        }
-        ExportFormat::Pdf => {
-            let (bytes, report) = validate_and_fix(request.clone(), generate_pdf)?;
-            (bytes, "application/pdf".to_string(), "pdf", Some(report))
-        }
-        ExportFormat::Txt => {
-            let text = super::parser::strip_md(&request.text);
-            (text.into_bytes(), "text/plain".to_string(), "txt", None)
-        }
-    };
+    // TXT is lightweight — no compilation involved; keep it on the async thread.
+    if request.format == ExportFormat::Txt {
+        let text = super::parser::strip_md(&request.text);
+        let filename = generate_filename(&request, "txt");
+        return Ok(ExportResult {
+            data: text.into_bytes(),
+            mime_type: "text/plain".to_string(),
+            filename,
+            report: None,
+        });
+    }
+
+    // PDF/DOCX: typst::compile is CPU-bound and can take 100–400 ms. Running it
+    // on the async-runtime worker thread stalls other concurrent invokes (the
+    // "spinner freezes during a second export" symptom). Moving it to a dedicated
+    // blocking thread with `spawn_blocking` keeps the runtime responsive and
+    // mirrors the same pattern used for the save-dialog below.
+    //
+    // Clone the request before moving so `generate_filename` can still use it
+    // on the async thread after the blocking work completes.
+    let request_for_filename = request.clone();
+    let (data, mime_type, extension, report) =
+        tauri::async_runtime::spawn_blocking(move || -> AppResult<_> {
+            match request.format {
+                ExportFormat::Docx => {
+                    let (bytes, report) = validate_and_fix(request.clone(), |r| {
+                        // `generate_docx` (export/docx) is still on `anyhow::Result` this pass;
+                        // bridge its error into the typed hierarchy at the boundary.
+                        generate_docx(r).map_err(crate::error::AppError::from)
+                    })?;
+                    Ok((
+                        bytes,
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            .to_string(),
+                        "docx",
+                        Some(report),
+                    ))
+                }
+                ExportFormat::Pdf => {
+                    let (bytes, report) = validate_and_fix(request.clone(), generate_pdf)?;
+                    Ok((bytes, "application/pdf".to_string(), "pdf", Some(report)))
+                }
+                // TXT already handled above; this arm is unreachable but exhaustive.
+                ExportFormat::Txt => unreachable!("txt handled before spawn_blocking"),
+            }
+        })
+        .await
+        .map_err(|e| AppError::Message(format!("Export task panicked: {e}")))??;
 
     // Block only when a critical defect survived auto-fix.
     if let Some(report) = &report {
@@ -78,7 +99,7 @@ pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<
     }
 
     // Generate filename
-    let filename = generate_filename(&request, extension);
+    let filename = generate_filename(&request_for_filename, extension);
 
     Ok(ExportResult {
         data,

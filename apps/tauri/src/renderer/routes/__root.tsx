@@ -23,7 +23,12 @@ import { useAutopilotFocusNavigation } from '@/hooks/use-autopilot-focus-navigat
 import { useMenuNavigation } from '@/hooks/use-menu-navigation';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { CapabilityProvider } from '@/providers/CapabilityProvider';
-import { useApplicationEvents, useNotificationEvents, useSyncCloseToTray } from '@/services';
+import {
+  useAccentEvents,
+  useApplicationEvents,
+  useNotificationEvents,
+  useSyncCloseToTray,
+} from '@/services';
 
 /** Drives the native-menu navigation/actions. Rendered INSIDE
  *  `NotificationProvider` so its check-for-updates feedback can raise toasts. */
@@ -45,6 +50,14 @@ function ApplicationEventsBridge() {
  *  Rendered once inside `NotificationProvider`; the listeners attach a single time. */
 function NotificationEventsBridge() {
   useNotificationEvents();
+  return null;
+}
+
+/** Keeps a 'system' accent live: re-pulls + re-applies the OS accent on the
+ *  shell's `system:accentChanged` push (Windows) and on window-focus refetch
+ *  (macOS/fallback). Mounted once; the listener attaches a single time. */
+function AccentEventsBridge() {
+  useAccentEvents();
   return null;
 }
 
@@ -170,6 +183,7 @@ function RootLayout() {
       <MenuNavigationBridge />
       <ApplicationEventsBridge />
       <NotificationEventsBridge />
+      <AccentEventsBridge />
       <NotificationToastBridge />
       <ProtocolVersionGate>
         <CapabilityProvider>

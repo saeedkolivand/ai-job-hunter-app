@@ -14,6 +14,9 @@ import {
 // Migration function to handle version updates
 const STORE_VERSION = 3;
 
+// Cap on the persisted "Recent locations" list (most-recent first).
+const MAX_RECENT_LOCATIONS = 5;
+
 const migratePreferences = (state: Record<string, unknown>, version: number): Preferences => {
   // v0 → v1: baseline
   if (version < 1) {
@@ -57,6 +60,7 @@ const defaultPreferences: Preferences = {
   debugMode: false,
   semanticScoring: false,
   closeToTray: true,
+  recentLocations: [],
   onboardingCompleted: false,
   contactPromptSeen: false,
   lastUpdated: new Date().toISOString(),
@@ -84,7 +88,11 @@ interface PreferencesActions {
   setDebugMode: (enabled: boolean) => void;
   setSemanticScoring: (enabled: boolean) => void;
   setCloseToTray: (enabled: boolean) => void;
+  /** Record a picked job-search location (dedup + most-recent-first, capped). */
+  addRecentLocation: (location: string) => void;
   setOnboardingComplete: () => void;
+  /** Re-arm the onboarding wizard so it replays on next launch. */
+  resetOnboarding: () => void;
   setContactPromptSeen: () => void;
   resetPreferences: () => void;
 }
@@ -238,10 +246,30 @@ export const usePreferencesStore = create<PreferencesStore>()(
           lastUpdated: new Date().toISOString(),
         })),
 
+      addRecentLocation: (location: string) =>
+        set((state) => {
+          const trimmed = location.trim();
+          if (!trimmed) return state;
+          const existing = state.recentLocations ?? [];
+          // Most-recent first, de-duplicated, capped.
+          const next = [trimmed, ...existing.filter((l) => l !== trimmed)].slice(
+            0,
+            MAX_RECENT_LOCATIONS
+          );
+          return { ...state, recentLocations: next, lastUpdated: new Date().toISOString() };
+        }),
+
       setOnboardingComplete: () =>
         set((state) => ({
           ...state,
           onboardingCompleted: true,
+          lastUpdated: new Date().toISOString(),
+        })),
+
+      resetOnboarding: () =>
+        set((state) => ({
+          ...state,
+          onboardingCompleted: false,
           lastUpdated: new Date().toISOString(),
         })),
 
@@ -295,3 +323,4 @@ export const useDebugMode = () => usePreferencesStore((state) => state.debugMode
 export const useSemanticScoring = () =>
   usePreferencesStore((state) => state.semanticScoring ?? false);
 export const useCloseToTray = () => usePreferencesStore((state) => state.closeToTray ?? true);
+export const useRecentLocations = () => usePreferencesStore((state) => state.recentLocations ?? []);

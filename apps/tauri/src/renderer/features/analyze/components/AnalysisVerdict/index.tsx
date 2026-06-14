@@ -10,7 +10,8 @@ interface AnalysisVerdictProps {
 }
 
 export function AnalysisVerdict({ result, t }: AnalysisVerdictProps) {
-  const gradient = verdictGradient(result.scores.jobMatch);
+  // jobMatch may be null ("not scored"); fall back to the lowest-tier gradient.
+  const gradient = verdictGradient(result.scores.jobMatch ?? 0);
 
   return (
     <GlassCard>

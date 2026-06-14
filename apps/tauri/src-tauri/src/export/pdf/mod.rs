@@ -90,7 +90,10 @@ fn prepare_resume_render(request: &ExportRequest) -> ResumeRenderInputs {
     let page = request.page_geometry();
     let opts = RenderOpts {
         page,
-        // TODO(user-accent): RenderOpts.accent is always None — templates use their built-in accent. Wire from the export request when a user-settable accent color feature lands.
+        // `accent` is intentionally `None` — each template ships its own built-in
+        // accent color and no UI currently sends a user-settable override.
+        // This field is the single wiring point: when a user-accent-color feature
+        // lands, connect `request.accent` (or equivalent) here and nowhere else.
         accent: None,
         lang: request.target_lang(),
         ats: request.ats_mode,

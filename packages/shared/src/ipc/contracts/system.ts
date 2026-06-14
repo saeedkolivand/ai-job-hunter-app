@@ -48,6 +48,15 @@ export interface SystemContract {
 
   /** Returns the IPC protocol version string from the Tauri shell. */
   getProtocolVersion(): Promise<string>;
+
+  /**
+   * Subscribe to OS accent-color changes (Windows personalization). The shell
+   * emits `system:accentChanged` from a WinRT `UISettings::ColorValuesChanged`
+   * watcher; the renderer re-pulls {@link accentColor} and re-applies the theme
+   * when the accent source is 'system'. No-op on platforms without a watcher
+   * (macOS/Linux rely on the window-focus refetch fallback). Returns a sync
+   * unsubscribe handle. */
+  onAccentChanged(handler: () => void): () => void;
 }
 
 export const SYSTEM_CHANNELS = {

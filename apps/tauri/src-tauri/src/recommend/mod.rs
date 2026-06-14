@@ -61,10 +61,13 @@ pub fn recommend(signals: &RecommendSignals) -> Recommendation {
 
     let (template_id, reason) = pick_template(field, senior_exec, &haystack);
 
+    // Word-boundary match instead of the old space-padded `" ats"` /
+    // `starts_with("ats")` hacks — those missed "ATS" at the very start without
+    // the prefix branch and risked matching "ats" inside other words.
+    let ht = tokens(&haystack);
     let ats_suggested = matches!(field, Field::Conservative)
-        || haystack.contains("applicant tracking")
-        || haystack.contains(" ats")
-        || haystack.starts_with("ats");
+        || contains_phrase(&ht, "applicant tracking")
+        || contains_phrase(&ht, "ats");
 
     let locale = pick_locale(signals);
 
@@ -94,75 +97,127 @@ fn haystack(signals: &RecommendSignals) -> String {
     s.to_lowercase()
 }
 
-fn detect_field(h: &str) -> Field {
-    let has = |kws: &[&str]| kws.iter().any(|k| h.contains(k));
+const ACADEMIA_KW: &[&str] = &[
+    "professor",
+    "researcher",
+    "phd",
+    "postdoc",
+    "post-doc",
+    "lecturer",
+    "academic",
+    "dissertation",
+    "research scientist",
+];
 
-    if has(&[
-        "professor",
-        "researcher",
-        "phd",
-        "postdoc",
-        "post-doc",
-        "lecturer",
-        "academic",
-        "dissertation",
-        "research scientist",
-    ]) {
-        Field::Academia
-    } else if has(&[
-        "lawyer",
-        "attorney",
-        "legal",
-        "paralegal",
-        "accountant",
-        "auditor",
-        "finance",
-        "financial",
-        "compliance",
-        "banker",
-        "investment",
-        "actuary",
-        "government",
-        "public sector",
-        "policy analyst",
-        "tax ",
-    ]) {
-        Field::Conservative
-    } else if has(&[
-        "designer",
-        "ux",
-        "ui ",
-        "ux/ui",
-        "creative",
-        "art director",
-        "brand",
-        "graphic",
-        "illustrator",
-        "motion design",
-        "product design",
-    ]) {
-        Field::Design
-    } else if has(&[
-        "engineer",
-        "developer",
-        "software",
-        "programmer",
-        "data scientist",
-        "data engineer",
-        "devops",
-        "sre",
-        "backend",
-        "frontend",
-        "full stack",
-        "fullstack",
-        "machine learning",
-        "cloud",
-        "architect",
-    ]) {
-        Field::Software
-    } else {
-        Field::General
+const CONSERVATIVE_KW: &[&str] = &[
+    "lawyer",
+    "attorney",
+    "legal",
+    "paralegal",
+    "accountant",
+    "auditor",
+    "finance",
+    "financial",
+    "compliance",
+    "banker",
+    "investment",
+    "actuary",
+    "government",
+    "public sector",
+    "policy analyst",
+    "tax",
+];
+
+const DESIGN_KW: &[&str] = &[
+    "designer",
+    "ux",
+    "ui",
+    "ux/ui",
+    "creative",
+    "art director",
+    "brand",
+    "graphic",
+    "illustrator",
+    "motion design",
+    "product design",
+];
+
+const SOFTWARE_KW: &[&str] = &[
+    "engineer",
+    "developer",
+    "software",
+    "programmer",
+    "data scientist",
+    "data engineer",
+    "devops",
+    "sre",
+    "backend",
+    "frontend",
+    "full stack",
+    "fullstack",
+    "machine learning",
+    "cloud",
+    "architect",
+];
+
+/// Split a string into lowercase alphanumeric word tokens (the same boundary
+/// model used on both sides of [`contains_phrase`]). `c++`/`ux/ui` split on the
+/// non-alphanumeric separators into their word parts.
+fn tokens(s: &str) -> Vec<&str> {
+    s.split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+
+/// Word-boundary phrase match: true when the keyword's token sequence appears as
+/// a contiguous run inside the haystack's token sequence. Single-word keywords
+/// are the length-1 case. This is what replaces the old `h.contains(k)` substring
+/// test (which matched "tax" inside "syntax", "ats" inside "stats", etc.) and the
+/// space-padded `" ats"` / `"ui "` hacks.
+fn contains_phrase(haystack_tokens: &[&str], keyword: &str) -> bool {
+    let needle = tokens(keyword);
+    if needle.is_empty() {
+        return false;
     }
+    haystack_tokens
+        .windows(needle.len())
+        .any(|w| w == needle.as_slice())
+}
+
+/// Number of a field's keywords present (word-boundary) in the haystack tokens.
+fn field_score(haystack_tokens: &[&str], keywords: &[&str]) -> usize {
+    keywords
+        .iter()
+        .filter(|k| contains_phrase(haystack_tokens, k))
+        .count()
+}
+
+/// Classify the role by scoring EVERY field's keyword hits and taking the
+/// strongest, instead of the old first-match-wins ordering. Scoring all fields
+/// means a title like "financial software engineer" (1 Conservative hit vs. 2
+/// Software hits) classifies as Software, not Conservative. Ties fall back to the
+/// listed priority order (Academia → Conservative → Design → Software); a tie at
+/// zero hits is [`Field::General`].
+fn detect_field(h: &str) -> Field {
+    let ht = tokens(h);
+    // Ordered so a tie resolves to the earlier (higher-priority) field via the
+    // strict `>` comparison below — the first field with the max score wins.
+    let scored = [
+        (Field::Academia, field_score(&ht, ACADEMIA_KW)),
+        (Field::Conservative, field_score(&ht, CONSERVATIVE_KW)),
+        (Field::Design, field_score(&ht, DESIGN_KW)),
+        (Field::Software, field_score(&ht, SOFTWARE_KW)),
+    ];
+
+    let mut best = Field::General;
+    let mut best_score = 0;
+    for (field, score) in scored {
+        if score > best_score {
+            best = field;
+            best_score = score;
+        }
+    }
+    best
 }
 
 fn pick_template(field: Field, senior_exec: bool, h: &str) -> (TemplateId, &'static str) {

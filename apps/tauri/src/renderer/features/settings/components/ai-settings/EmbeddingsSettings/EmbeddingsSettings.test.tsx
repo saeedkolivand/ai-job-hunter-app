@@ -57,8 +57,10 @@ import { EmbeddingsSettings } from './index';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-// Unique fragment from the advisory paragraph — matches the component's literal.
-const ADVISORY_FRAGMENT = /cloud embedding providers charge per token/i;
+// Unique fragment from the advisory paragraph. The component renders the
+// localized string via `t(...)`; the i18n stub returns the key verbatim, so we
+// match the advisory's translation key (its text content under the mock).
+const ADVISORY_FRAGMENT = /settings\.embeddings\.cloudCostAdvisory/i;
 
 /**
  * Open the Dropdown by clicking the trigger button whose text content matches

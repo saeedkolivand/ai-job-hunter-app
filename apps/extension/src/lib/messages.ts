@@ -7,7 +7,7 @@
 import type { ExtensionImportResult } from '@ajh/shared';
 
 /** Coarse connection state the popup renders. */
-export type ConnectionPhase =
+type ConnectionPhase =
   /** Background has not yet found a desktop bridge port. */
   | 'searching'
   /** A bridge port answered but no token is stored — show the pairing screen. */

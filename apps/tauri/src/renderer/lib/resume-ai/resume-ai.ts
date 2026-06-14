@@ -18,26 +18,13 @@ import {
   type PromptMeta,
   validateAndRepair,
 } from '@ajh/prompts/analyze';
-import { getModelTier } from '@ajh/prompts/context-manager';
 import { detectLanguages } from '@ajh/shared/language-detection';
 
 import { safeLocale } from '@/lib/generate';
-import { usePreferencesStore } from '@/store/preferences-store';
 
 import { getClient } from '../app-client';
-import { createThinkSplitter } from '../generate/think-split';
-
-type ModelTier = 'large' | 'medium' | 'small';
-
-function effectiveTier(model: string): ModelTier {
-  const { promptQuality, aiProviderConfig } = usePreferencesStore.getState();
-  const provider = aiProviderConfig?.activeProvider ?? 'ollama';
-  // Cloud providers always get the full prompt
-  if (provider !== 'ollama') return 'large';
-  if (promptQuality === 'full') return 'large';
-  if (promptQuality === 'compact') return 'small';
-  return getModelTier(model);
-}
+import { buildProviderProfile, resolveActiveProvider } from '../generate/provider-context';
+import { awaitAiStream } from '../generate/stream-promise';
 
 export type { AnalysisMode, AnalysisResult };
 
@@ -72,8 +59,8 @@ export async function runAnalysis({
   // Detect languages client-side for accurate mismatch detection
   const clientSideDetection = detectLanguages(resume, jobAd);
 
-  const tier = effectiveTier(model);
-  const systemPrompt = buildSystemPrompt(tier);
+  const profile = buildProviderProfile(model);
+  const systemPrompt = buildSystemPrompt(profile);
   // Pass detected languages to LLM so it uses correct info during analysis
   const userPrompt = buildAnalysisPrompt(
     resume,
@@ -83,16 +70,14 @@ export async function runAnalysis({
       resumeLanguage: clientSideDetection.resumeName,
       jobAdLanguage: clientSideDetection.jobAdName,
     },
-    tier
+    profile
   );
 
   // Enqueue the generation job
   const api = getClient();
   // Route to the active provider's endpoint — without this the backend defaults
   // to Ollama, so cloud analysis would wrongly hit the local Ollama host.
-  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
-  const providerSettings = providerConfig?.providers?.[activeProvider];
+  const { activeProvider, providerSettings } = resolveActiveProvider(model);
   const res = await api.ai.generate({
     model: providerSettings?.model || model,
     messages: [
@@ -111,101 +96,10 @@ export async function runAnalysis({
   const jobId = res.jobId;
   onJobId?.(jobId);
 
-  // Collect streamed tokens into the full response
-  const full = await new Promise<string>((resolve, reject) => {
-    let buffer = '';
-    // Local models embed reasoning inline as <think>…</think>; the shared splitter
-    // keeps it out of the analysis JSON. Cloud providers flag it structurally below.
-    const splitter = createThinkSplitter(
-      (text) => {
-        buffer += text;
-        onToken?.(text);
-      },
-      (text) => onThinking?.(text)
-    );
-    const off = api.ai.onStream((chunk: unknown) => {
-      const c = chunk as {
-        jobId: string;
-        delta: string;
-        done: boolean;
-        error?: { code: string; message: string };
-        thinking?: boolean;
-      };
-      if (c.jobId !== jobId) return;
-      if (c.error) {
-        off();
-        reject(new Error(c.error.message));
-        return;
-      }
-      if (c.delta) {
-        if (c.thinking) {
-          onThinking?.(c.delta);
-        } else {
-          splitter.push(c.delta);
-        }
-      }
-      if (c.done) {
-        splitter.flush();
-        off();
-        resolve(buffer);
-      }
-    });
-
-    // Handle abort signal
-    let abortListener: (() => void) | null = null;
-    if (signal) {
-      abortListener = () => {
-        off();
-        // Cancel the job on the backend
-        void api.jobs.cancel(jobId);
-        reject(new Error('Analysis cancelled'));
-      };
-      signal.addEventListener('abort', abortListener);
-    }
-
-    // Timeout safety — local LLMs can be slow
-    const timeoutId = setTimeout(
-      () => {
-        off();
-        if (abortListener && signal) signal.removeEventListener('abort', abortListener);
-        splitter.flush();
-        resolve(buffer);
-      },
-      5 * 60 * 1000
-    ); // 5 min
-
-    // Watch for job completion/failure as a fallback in case the done stream
-    // event is missed (e.g. empty final delta).
-    const failCheck = setInterval(() => {
-      void (async () => {
-        try {
-          const job = (await api.jobs.get(jobId)) as {
-            status: string;
-            result?: { text: string };
-          } | null;
-          if (!job) return;
-          if (job.status === 'failed' || job.status === 'cancelled') {
-            clearInterval(failCheck);
-            clearTimeout(timeoutId);
-            off();
-            if (abortListener && signal) signal.removeEventListener('abort', abortListener);
-            reject(new Error(`Analysis job ${job.status}`));
-          } else if (job.status === 'completed') {
-            clearInterval(failCheck);
-            clearTimeout(timeoutId);
-            off();
-            if (abortListener && signal) signal.removeEventListener('abort', abortListener);
-            splitter.flush();
-            // Use the job result text if the stream already buffered everything,
-            // otherwise fall back to whatever the job stored.
-            resolve(buffer || job.result?.text || '');
-          }
-        } catch {
-          /* noop */
-        }
-      })();
-    }, 2_000);
-  });
+  // Collect streamed tokens into the full response.
+  // awaitAiStream enforces the abort-before-register guard (was missing here
+  // previously) and unifies poll interval to 3 s (was 2 s here before).
+  const full = await awaitAiStream(api, jobId, { onToken, onThinking, signal });
 
   // Validate and repair
   const result = validateAndRepair(full);

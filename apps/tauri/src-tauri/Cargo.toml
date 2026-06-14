@@ -163,6 +163,11 @@ windows = { version = "0.62.2", features = ["Win32_Security_Cryptography", "Win3
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
+# CFNotificationCenter (distributed) → observe AppleColorPreferencesChangedNotification
+# so the live OS accent-color watcher fires on macOS (mirrors the Windows WinRT watcher).
+# Already in the tree transitively (core-graphics→tao→Tauri); pinned to the locked 0.8.7
+# so no duplicate version / lockfile churn.
+core-foundation-sys = "0.8.7"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust", "vendored"] }

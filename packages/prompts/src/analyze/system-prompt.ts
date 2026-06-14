@@ -48,7 +48,7 @@ GOAL: produce a rigorous, honest resume-vs-job-ad analysis as one JSON object ma
 Apply three lenses at once: ATS parser (exact keyword match, parse-safety, standard section headers), senior recruiter (7-second scan, quantified impact, red/green flags), and career strategist (gap analysis, impact-ranked fixes).
 
 ACCEPTANCE CHECKS — verify before finalizing, and revise until all pass:
-- Output is exactly one JSON object conforming to the schema: every required field present, correct types, all scores integers 0–100.
+- Output is exactly one JSON object conforming to the schema: every required field present, correct types, each score an integer 0–100, or null when the input genuinely lacks enough signal to score it (never fabricate a midpoint).
 - Every statement is grounded in the provided resume / job-ad text — never invent skills, employers, titles, dates, or numbers.
 - A keyword is "missing" only if it explicitly appears in the job ad.
 - Hard score rules hold: 5+ missing required keywords → ats & keywordCoverage < 65; any ATS-breaking format (tables, multi-column) → ats < 60; wrong seniority → jobMatch < 70; language/market mismatch → languageAlignment < 50.

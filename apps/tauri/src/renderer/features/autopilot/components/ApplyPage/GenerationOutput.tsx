@@ -5,6 +5,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, cn, Dropdown, Switch } from '@ajh/ui';
 
 import { EditableOutput } from '@/components/generation/EditableOutput';
+import { type ExportFormat, ExportPicker } from '@/components/generation/ExportPicker';
 import { PdfPreview } from '@/components/generation/PdfPreview';
 import {
   buildFilename,
@@ -60,6 +61,9 @@ export function GenerationOutput({
 }: Props) {
   const { t } = useTranslation();
   const [view, setView] = useState<'doc' | 'jobAd'>('doc');
+  // Highlighted format in the export picker. The picker is immediate (a click
+  // downloads), so this only tracks the visual selection between opens.
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
   const atsSwitchId = useId();
 
   // Committed text per doc — what PdfPreview renders (recompiles only on discrete
@@ -167,46 +171,25 @@ export function GenerationOutput({
             {copied ? <Check size={11} /> : <Copy size={11} />}
             {copied ? t('autopilot.apply.copied') : t('autopilot.apply.copy')}
           </Button>
-          <div className="relative">
-            <Button
-              onClick={() => setExportOpen((o) => !o)}
-              disabled={!output || view === 'jobAd'}
-              className="flex h-auto items-center gap-1 border-transparent bg-transparent p-0 text-[10px] text-brand-soft hover:text-brand-soft/80"
-            >
-              <Download size={11} />
-              {t('aiGenerate.export')}
-            </Button>
-            {exportOpen && (
-              <>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  className="fixed inset-0 z-[650]"
-                  onClick={() => setExportOpen(false)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') {
-                      e.preventDefault();
-                      setExportOpen(false);
-                    }
-                  }}
-                />
-                <div className="absolute right-0 top-full z-[700] mt-1.5 w-32 overflow-hidden rounded-lg border border-white/10 bg-secondary shadow-2xl">
-                  {(['pdf', 'docx', 'txt'] as const).map((fmt) => (
-                    <Button
-                      key={fmt}
-                      variant="unstyled"
-                      type="button"
-                      onClick={() => void onExport(fmt)}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-[11px] text-foreground/65 transition-colors hover:bg-white/[0.05] hover:text-foreground"
-                    >
-                      <Download size={10} />
-                      {t('aiGenerate.download', { fmt: fmt.toUpperCase() })}
-                    </Button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+          <Button
+            onClick={() => setExportOpen(true)}
+            disabled={!output || view === 'jobAd'}
+            className="flex h-auto items-center gap-1 border-transparent bg-transparent p-0 text-[10px] text-brand-soft hover:text-brand-soft/80"
+          >
+            <Download size={11} />
+            {t('aiGenerate.export')}
+          </Button>
+          {/* Format picker — now the shared, focus-trapped ModalShell-based
+              ExportPicker (immediate mode): the chosen template/ATS live in the
+              toolbar strip below, so picking a format downloads it right away. */}
+          <ExportPicker
+            open={exportOpen}
+            onClose={() => setExportOpen(false)}
+            format={exportFormat}
+            onFormatChange={setExportFormat}
+            onExport={(fmt) => void onExport(fmt)}
+            zIndex={700}
+          />
         </div>
       </div>
       {/* Filename + LIVE template picker strip (parity with the AI Generate done step).

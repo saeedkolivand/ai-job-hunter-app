@@ -27,6 +27,4 @@ i18n.on('languageChanged', (lng) => {
   }
 });
 
-export type { TFunction } from '@ajh/translations';
-export { useTranslation } from '@ajh/translations';
 export default i18n;

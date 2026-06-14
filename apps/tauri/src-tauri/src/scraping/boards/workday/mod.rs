@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 /// Workday — per-tenant CXS API
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
@@ -15,6 +13,7 @@ struct WorkdayJobPosting {
     locations_text: Option<String>,
     #[serde(rename = "postedOn")]
     posted_on: Option<String>,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     #[serde(rename = "bulletFields")]
     bullet_fields: Option<Vec<String>>,
 }
@@ -23,6 +22,7 @@ struct WorkdayJobPosting {
 struct JobsResp {
     #[serde(rename = "jobPostings")]
     job_postings: Vec<WorkdayJobPosting>,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     total: i64,
 }
 
@@ -30,6 +30,7 @@ struct JobsResp {
 struct JobPostingInfo {
     #[serde(rename = "jobDescription")]
     job_description: Option<String>,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     #[serde(rename = "jobPostingId")]
     job_posting_id: Option<String>,
 }

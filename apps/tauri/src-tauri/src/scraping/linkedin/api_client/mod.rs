@@ -139,7 +139,7 @@ impl LinkedInJobsApiClient {
         }
 
         if let Some(ref job_type) = params.job_type {
-            url.push_str(&format!("&f_JT={}", job_type));
+            url.push_str(&format!("&f_JT={}", urlencoding::encode(job_type)));
         }
 
         if !f_tpr.is_empty() {
@@ -147,11 +147,11 @@ impl LinkedInJobsApiClient {
         }
 
         if let Some(ref work_type) = params.work_type {
-            url.push_str(&format!("&f_WT={}", work_type));
+            url.push_str(&format!("&f_WT={}", urlencoding::encode(work_type)));
         }
 
         if let Some(ref experience_level) = params.experience_level {
-            url.push_str(&format!("&f_E={}", experience_level));
+            url.push_str(&format!("&f_E={}", urlencoding::encode(experience_level)));
         }
 
         if params.easy_apply.unwrap_or(false) {
@@ -167,7 +167,7 @@ impl LinkedInJobsApiClient {
         }
 
         if let Some(ref sort_by) = params.sort_by {
-            url.push_str(&format!("&sortBy={}", sort_by));
+            url.push_str(&format!("&sortBy={}", urlencoding::encode(sort_by)));
         }
 
         let html = self.client.get_html(&url, signal).await?;

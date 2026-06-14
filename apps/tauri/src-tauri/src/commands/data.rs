@@ -50,6 +50,46 @@ fn date_stamp() -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+/// Structurally validate every section that is present in `stores`, returning
+/// `Err(message)` for the first section whose top-level shape does not match what
+/// its store's `import` requires. Runs BEFORE any store is mutated so a malformed
+/// bundle aborts the restore without clearing a store. Only checks presence +
+/// top-level shape (array vs object); deep per-record validation happens
+/// atomically inside each store's transactional `import`.
+fn validate_sections(stores: &Value) -> crate::error::AppResult<()> {
+    // Sections whose export is a JSON array of records.
+    const ARRAY_SECTIONS: &[&str] = &[
+        "documents",
+        "aiGenerations",
+        "applications",
+        "referrals",
+        "autopilots",
+        "interactions",
+    ];
+    // Sections whose export is a single JSON object (single-row settings stores).
+    const OBJECT_SECTIONS: &[&str] = &["jobPreferences", "contactProfile"];
+
+    for key in ARRAY_SECTIONS {
+        if let Some(section) = stores.get(*key) {
+            if !section.is_array() {
+                return Err(crate::error::AppError::Validation(format!(
+                    "section '{key}' must be a JSON array"
+                )));
+            }
+        }
+    }
+    for key in OBJECT_SECTIONS {
+        if let Some(section) = stores.get(*key) {
+            if !section.is_object() {
+                return Err(crate::error::AppError::Validation(format!(
+                    "section '{key}' must be a JSON object"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Collect a bundle of every store's exported data.
 fn build_bundle(app: &AppHandle) -> Value {
     let mut stores = serde_json::Map::new();
@@ -156,6 +196,22 @@ pub async fn data_import(app: AppHandle) -> Value {
         Some(s) => s,
         None => return json!({ "success": false, "error": "Backup has no 'stores'" }),
     };
+
+    // Validate the SHAPE of every present section BEFORE mutating any store, so a
+    // malformed section aborts the whole restore without having cleared a store.
+    // Each store's `import` clears-then-repopulates inside one transaction, and the
+    // two multi-row stores (aiGenerations, applications) also deserialize every
+    // record before touching their table — so a single store's restore is atomic.
+    //
+    // Residual limit: the stores live in SEPARATE SQLite files, which cannot share
+    // one transaction. This pre-pass guarantees we never *begin* mutating if any
+    // section is structurally invalid, but if a later store's write fails at the
+    // SQLite level (e.g. disk error) after an earlier store already committed, the
+    // earlier store is not rolled back. Full cross-file atomicity would require a
+    // single shared database; that is out of scope here.
+    if let Err(err) = validate_sections(stores) {
+        return json!({ "success": false, "error": err.to_string() });
+    }
 
     let mut imported = serde_json::Map::new();
     let mut import_into = |key: &str, store: &dyn DataStore| {

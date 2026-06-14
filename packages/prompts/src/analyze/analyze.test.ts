@@ -158,7 +158,28 @@ describe('validateAndRepair', () => {
   it('defaults missing sub-objects gracefully', () => {
     const result = validateAndRepair('{}') as AnalysisResult;
     expect(result.detectedLanguages.resume).toBe('unknown');
-    expect(result.scores.ats).toBe(50); // clamp() default for NaN
+    // A missing score is "not scored" (null), NOT a fabricated confident 50 (H2).
+    expect(result.scores.ats).toBeNull();
     expect(result.sectionAnalysis.summary.feedback).toBe('No feedback provided.');
+  });
+
+  it('returns null (not 50) for missing or non-numeric scores (H2)', () => {
+    const result = validateAndRepair(
+      JSON.stringify({
+        // ats omitted entirely; the rest are explicitly un-scoreable values.
+        scores: { jobMatch: null, languageAlignment: 'n/a', readability: '', keywordCoverage: 72 },
+        sectionAnalysis: {
+          summary: { feedback: 'no score given' }, // score omitted
+          experience: { score: 'unknown', feedback: 'garbled' },
+        },
+      })
+    ) as AnalysisResult;
+    expect(result.scores.ats).toBeNull(); // omitted
+    expect(result.scores.jobMatch).toBeNull(); // explicit null
+    expect(result.scores.languageAlignment).toBeNull(); // non-numeric string
+    expect(result.scores.readability).toBeNull(); // empty string
+    expect(result.scores.keywordCoverage).toBe(72); // valid numbers still pass through
+    expect(result.sectionAnalysis.summary.score).toBeNull();
+    expect(result.sectionAnalysis.experience.score).toBeNull();
   });
 });

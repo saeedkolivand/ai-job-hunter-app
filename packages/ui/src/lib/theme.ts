@@ -190,6 +190,25 @@ export function getThemePrefs(): ThemePrefs {
   return DEFAULT_THEME_PREFS;
 }
 
+/**
+ * Re-apply the live OS accent when the accent source is 'system'. The renderer
+ * calls this with a freshly-pulled OS hex (e.g. on a Windows accent-change push
+ * or a window-focus refetch) so a 'system' accent that was frozen at pick-time
+ * repaints live. Updates the persisted `accentColor` to the new hex, then
+ * re-applies (animated when supported). Returns true when an apply happened.
+ *
+ * No-ops (returns false) when the current source is not 'system', the new color
+ * is missing/unchanged, or no theme has been applied yet — so an unrelated
+ * refetch never disturbs a 'default'/'custom' accent. The hex comes IN from the
+ * renderer; this package never reads IPC or `window` IO itself.
+ */
+export function reapplySystemAccent(color: string | null | undefined): boolean {
+  if (current.accentSource !== 'system') return false;
+  if (!color || color === current.accentColor) return false;
+  applyThemeAnimated({ ...current, accentColor: color });
+  return true;
+}
+
 let listenersBound = false;
 /** Re-apply on OS changes so 'system' / 'auto' modifiers track live. */
 function bindOsListeners(): void {

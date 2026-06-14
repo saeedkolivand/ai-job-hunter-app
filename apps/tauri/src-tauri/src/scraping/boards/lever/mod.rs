@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 /// Lever — public JSON board API
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
@@ -9,7 +7,9 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 struct Categories {
     location: Option<String>,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     team: Option<String>,
+    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
     commitment: Option<String>,
 }
 
