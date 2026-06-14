@@ -33,6 +33,7 @@ import {
 } from '@ajh/ui';
 
 import { EditableOutput } from '@/components/generation/EditableOutput';
+import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
 import {
   buildFilename,
   exportDOCX,
@@ -71,6 +72,7 @@ interface GenerationCardProps {
 
 export function GenerationCard({ gen, selected = false, onToggleSelect }: GenerationCardProps) {
   const { t } = useTranslation();
+  const formatRelative = useFormatRelativeTime(t, 'resumes.relativeTime');
   const notify = useNotification();
   const openExternal = useOpenExternal();
   const removeAiGeneration = useRemoveAiGeneration();
@@ -200,18 +202,6 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
     month: 'short',
     day: 'numeric',
   });
-
-  const formatRelative = (ts: number): string => {
-    const diff = Date.now() - ts;
-    const m = Math.floor(diff / 60000);
-    const h = Math.floor(m / 60);
-    const d = Math.floor(h / 24);
-    if (m < 1) return t('resumes.relativeTime.justNow');
-    if (m < 60) return t('resumes.relativeTime.minutesAgo', { m });
-    if (h < 24) return t('resumes.relativeTime.hoursAgo', { h });
-    if (d < 7) return t('resumes.relativeTime.daysAgo', { d });
-    return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  };
 
   const channelLabel = (channel: ReferralChannel) =>
     t(`resumes.generated.referralChannel.${channel}`);

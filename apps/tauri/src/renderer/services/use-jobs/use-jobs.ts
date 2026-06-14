@@ -12,13 +12,22 @@ export const useJobQueue = () => {
   return useQuery({ queryKey: keys.jobs.all, queryFn: () => api.jobs.list() });
 };
 
+/**
+ * Single-job detail. No `refetchInterval`: job status is event-driven via
+ * `useJobEvents`, which invalidates `keys.jobs.all` (`['jobs']`) on every event
+ * type (queued/started/progress/stream/completed/failed/cancelled). Because
+ * React Query invalidation is prefix-based, invalidating `['jobs']` also marks
+ * the detail query `['jobs', id]` stale, so the detail refetches on every
+ * transition without a polling timer. Mount a `useJobEvents()` subscription
+ * somewhere in the tree (the worker-activity / job views already do) so events
+ * are delivered.
+ */
 export const useJob = (jobId: string) => {
   const api = useAppClient();
   return useQuery({
     queryKey: keys.jobs.detail(jobId),
     queryFn: () => api.jobs.get(jobId),
     enabled: !!jobId,
-    refetchInterval: 2_000,
   });
 };
 

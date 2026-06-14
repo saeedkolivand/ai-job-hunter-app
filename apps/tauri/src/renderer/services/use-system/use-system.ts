@@ -13,8 +13,8 @@ export const useSystemHealth = () => {
   return useQuery({
     queryKey: keys.system.health,
     queryFn: () => api.system.health(),
-    refetchInterval: 5_000,
-    staleTime: 4_000,
+    refetchInterval: 30_000,
+    staleTime: 20_000,
   });
 };
 
