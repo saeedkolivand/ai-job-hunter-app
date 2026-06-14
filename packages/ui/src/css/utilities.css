@@ -46,6 +46,9 @@
   background-clip: text;
   color: transparent;
 }
+.bg-brand-gradient {
+  background-image: linear-gradient(135deg, var(--color-brand), var(--color-brand-2));
+}
 
 /* ── Glass elevation scale ───────────────────────────────────────────────── */
 /*
@@ -752,11 +755,14 @@ html[data-text-scale='large'] {
   border-color: var(--border-soft);
 }
 
-/* In light mode the sidebar is a white panel (the card tone) floating on the
-   gray canvas — its glass border + shadow lift it off the page, matching the
-   white content cards rather than blending into the gray backdrop. */
 [data-color-scheme='light'] .app-sidebar {
+  /* Same flat surface as the content cards (.surface-card): one source —
+     --color-card fill + --border-soft hairline, no shadow/blur. */
   background: var(--color-card);
+  border-color: var(--border-soft);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* The main content area is a near-opaque white panel in dark mode (intended),

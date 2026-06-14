@@ -27,7 +27,11 @@ const BOARD_STYLE: Record<string, { iconBg: string; glowColor: string; abbr: str
   glassdoor: { iconBg: '#0CAA41', glowColor: 'rgba(12,170,65,0.2)', abbr: 'gd' },
 };
 
-const FALLBACK = { iconBg: 'var(--color-brand)', glowColor: 'rgba(168,85,247,0.2)', abbr: '?' };
+const FALLBACK = {
+  iconBg: 'var(--color-brand)',
+  glowColor: 'color-mix(in srgb, var(--color-brand) 20%, transparent)',
+  abbr: '?',
+};
 
 export function BoardSessionRow({ board }: { board: Board }) {
   const [confirmOpen, setConfirmOpen] = useState(false);

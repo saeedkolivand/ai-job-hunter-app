@@ -9,6 +9,7 @@ import { useKindLabelMap } from '@/hooks/use-kind-label-map';
 import { useCapabilities } from '@/providers/CapabilityProvider';
 import { useWorkerActivity } from '@/services';
 import { useAIModel, useAiProviderConfig } from '@/store/preferences-store';
+import { useSessionStore } from '@/store/session-store';
 
 export function StatusBar() {
   const { t } = useTranslation();
@@ -18,6 +19,7 @@ export function StatusBar() {
   const activity = useWorkerActivity(kindLabelMap);
   const aiModel = useAIModel();
   const providerConfig = useAiProviderConfig();
+  const setSettings = useSessionStore((s) => s.setSettings);
 
   // Get current model name from active provider
   const activeProvider = providerConfig?.activeProvider ?? 'ollama';
@@ -58,10 +60,18 @@ export function StatusBar() {
   return (
     <div className="glass-surface mx-3 mb-3 mt-2 flex items-center justify-between rounded-xl px-4 py-1.5 text-[11px] text-foreground/60">
       <div className="flex items-center gap-4">
-        <span className="flex items-center gap-1.5">
+        <Button
+          variant="unstyled"
+          aria-label="AI settings"
+          className="flex items-center gap-1.5 rounded hover:text-foreground/80 transition-colors"
+          onClick={() => {
+            setSettings({ activeSection: 'ai' });
+            void router.navigate({ to: ROUTES.SETTINGS });
+          }}
+        >
           <Sparkles size={12} className={statusColor()} />
           {statusText()}
-        </span>
+        </Button>
         <span className="flex items-center gap-1.5">
           <Database size={12} className={data.ready ? 'text-emerald-400' : 'text-foreground/40'} />
           {dbStatus()}

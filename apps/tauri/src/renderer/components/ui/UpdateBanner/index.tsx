@@ -41,7 +41,7 @@ export function UpdateBanner() {
             className="flex items-center gap-3 rounded-xl border border-brand/30 px-4 py-2.5 shadow-2xl shadow-black/40"
             style={{
               background:
-                'linear-gradient(135deg, rgba(168,85,247,0.15) 0%, rgba(99,102,241,0.10) 100%)',
+                'linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 15%, transparent) 0%, color-mix(in srgb, var(--color-brand-2) 10%, transparent) 100%)',
               backdropFilter: 'blur(16px)',
             }}
           >
