@@ -1,33 +1,53 @@
 /**
- * HoverPopover — structural tests (feat/accent-gradients).
+ * HoverPopover — structural tests.
  *
  * Strategy:
  *  - motion/react is globally shimmed in vitest.setup.ts — AnimatePresence
  *    passes children through synchronously, so the portalled panel is visible
- *    immediately after mouseenter without any async wait.
+ *    immediately after mouseenter without any async wait. The motion.div shim
+ *    uses React.forwardRef so panelRef (ref={panelRef}) attaches correctly to
+ *    the real DOM element.
  *  - createPortal renders into document.body; screen queries search the full
  *    document so role="tooltip" is always reachable.
  *  - getBoundingClientRect returns zeros in jsdom — the component detects a
  *    null rect and sets `display:none` on the panel until a non-zero rect is
  *    available. We stub getBoundingClientRect on the wrapper element to return
- *    a realistic rect so panelStyle resolves to `position:fixed` with real
- *    coordinates and the paddingBottom branch exercises correctly.
+ *    a realistic rect {top:200,bottom:220,left:100,right:300} so panelStyle
+ *    resolves to `position:fixed` with real coordinates and the paddingBottom
+ *    branch exercises correctly.
+ *  - Hover keep-open/close is now GEOMETRY-BASED, not mouseenter/leave-based.
+ *    While open, the component attaches a `document` `pointermove` listener.
+ *    It reads the trigger rect (wrapperRef) and panel rect (panelRef), inflates
+ *    each by PAD=8 px, and if the pointer is inside EITHER inflated rect it
+ *    cancels any pending close timer; otherwise it schedules close after
+ *    closeDelay ms (default 120 ms). A `document` `pointerleave` also schedules
+ *    close when the cursor exits the window.
+ *  - jsdom pointer event coordinate nuance: jsdom's getBoundingClientRect for
+ *    the PANEL element (panelRef) returns all-zeros. With PAD=8, any pointer
+ *    dispatched at (0,0) falls inside the inflated zero rect (−8..8 on both
+ *    axes) and keeps the panel open. To trigger a scheduled close, dispatch a
+ *    pointermove at coordinates well outside BOTH rects (e.g. 9999,9999).
+ *    closeDelay=120 ms, so fake timers are required to observe the close.
  *  - We NEVER assert on gradient CSS values (jsdom cssstyle gotcha).
- *    Assertions are structural: role, className tokens, inline paddingBottom.
+ *    Assertions are structural: role, className tokens, inline padding values.
  *
- * Covers (placement="top"):
- *  - Trigger open via mouseenter on the wrapper.
- *  - Portalled panel gets role="tooltip".
- *  - Panel element itself does NOT carry contentClassName (it lives on the
- *    inner wrapper div).
- *  - Inner wrapper div carries contentClassName.
- *  - Panel has inline paddingBottom set (the 8 px pointer-bridge gap).
- *  - Content text is accessible inside the element bearing contentClassName.
- *  - Esc closes the panel.
- *  - placement="bottom": panel has inline paddingTop instead of paddingBottom.
+ * Covers:
+ *  - Panel not in document before open.
+ *  - Opens on mouseenter on the wrapper.
+ *  - Opens on focus on the wrapper.
+ *  - Esc closes the panel immediately.
+ *  - Blur on wrapper schedules close (after closeDelay).
+ *  - placement="top": panel has inline paddingBottom.
+ *  - placement="bottom": panel has inline paddingTop (not paddingBottom).
+ *  - contentClassName on inner div, not on the panel element itself.
+ *  - Content text accessible inside the element bearing contentClassName.
+ *  - aria-expanded false→true transition.
+ *  - ariaLabel prop wired to panel.
+ *  - Geometry close: pointermove far outside both rects → schedules close.
+ *  - Geometry keep-open: pointermove inside the trigger rect → no close.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import { HoverPopover } from './HoverPopover';
 
@@ -56,6 +76,7 @@ function renderPopover(
     contentClassName?: string;
     ariaLabel?: string;
     children?: React.ReactNode;
+    closeDelay?: number;
   } = {}
 ) {
   const {
@@ -63,6 +84,7 @@ function renderPopover(
     contentClassName = 'popover-content',
     ariaLabel = 'Activity popover',
     children = <span>Panel content</span>,
+    closeDelay,
   } = overrides;
 
   const result = render(
@@ -71,6 +93,7 @@ function renderPopover(
       placement={placement}
       contentClassName={contentClassName}
       ariaLabel={ariaLabel}
+      {...(closeDelay !== undefined ? { closeDelay } : {})}
     >
       {children}
     </HoverPopover>
@@ -92,6 +115,11 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
+afterEach(() => {
+  // Ensure fake timers are always cleaned up even if a test throws.
+  vi.useRealTimers();
+});
+
 // ── open / close mechanics ────────────────────────────────────────────────────
 
 describe('HoverPopover — open/close', () => {
@@ -106,7 +134,15 @@ describe('HoverPopover — open/close', () => {
     expect(screen.getByRole('tooltip')).toBeInTheDocument();
   });
 
-  it('pressing Escape closes the panel', () => {
+  it('panel appears in the document after focus on the wrapper', () => {
+    const { container } = renderPopover();
+    stubRect(container);
+    const wrapper = container.firstChild as HTMLElement;
+    fireEvent.focus(wrapper);
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+  });
+
+  it('pressing Escape closes the panel immediately', () => {
     const { container } = renderPopover();
     openPopover(container);
     expect(screen.getByRole('tooltip')).toBeInTheDocument();
@@ -114,6 +150,114 @@ describe('HoverPopover — open/close', () => {
     const wrapper = container.firstChild as HTMLElement;
     fireEvent.keyDown(wrapper, { key: 'Escape' });
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+
+  it('blur on the wrapper schedules close — panel is gone after closeDelay', () => {
+    vi.useFakeTimers();
+    const { container } = renderPopover({ closeDelay: 120 });
+    openPopover(container);
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+
+    const wrapper = container.firstChild as HTMLElement;
+    fireEvent.blur(wrapper);
+
+    // Still present before the delay expires.
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+
+    // Gone after the delay.
+    act(() => {
+      vi.advanceTimersByTime(50);
+    });
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
+});
+
+// ── geometry-based hover tracking ────────────────────────────────────────────
+
+describe('HoverPopover — geometry-based hover tracking', () => {
+  it('pointermove far outside both rects schedules close — panel gone after closeDelay', () => {
+    vi.useFakeTimers();
+    const { container } = renderPopover({ closeDelay: 120 });
+    openPopover(container);
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+
+    // jsdom does not expose PointerEvent — use MouseEvent with type 'pointermove'.
+    // The component listener reads e.clientX/clientY which MouseEvent provides.
+    // Dispatch at (9999,9999): outside the stubbed trigger rect {top:200,
+    // bottom:220,left:100,right:300} and outside the zero panel rect even
+    // with PAD=8 (−8..8 on both axes).
+    document.dispatchEvent(
+      new MouseEvent('pointermove', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 9999,
+        clientY: 9999,
+      })
+    );
+
+    // Still present before closeDelay expires.
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+
+    // Gone after closeDelay passes.
+    act(() => {
+      vi.advanceTimersByTime(50);
+    });
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
+
+  it('pointermove inside the trigger rect cancels close — panel stays open after closeDelay', () => {
+    vi.useFakeTimers();
+    const { container } = renderPopover({ closeDelay: 120 });
+    openPopover(container);
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+
+    // Dispatch inside the stubbed wrapper rect {top:200,bottom:220,left:100,right:300}.
+    // clientX:150, clientY:210 is well within the rect (no PAD needed).
+    document.dispatchEvent(
+      new MouseEvent('pointermove', { bubbles: true, cancelable: true, clientX: 150, clientY: 210 })
+    );
+
+    // Advance well past closeDelay — panel must still be present.
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
+
+  it('pointerleave on document schedules close — panel gone after closeDelay', () => {
+    vi.useFakeTimers();
+    const { container } = renderPopover({ closeDelay: 120 });
+    openPopover(container);
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+
+    // onPointerLeave is NOT throttled, so no rAF flush needed.
+    document.dispatchEvent(new MouseEvent('pointerleave', { bubbles: true }));
+
+    // Still present before the delay expires.
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+
+    // Gone after closeDelay passes.
+    act(() => {
+      vi.advanceTimersByTime(50);
+    });
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+    vi.useRealTimers();
   });
 });
 

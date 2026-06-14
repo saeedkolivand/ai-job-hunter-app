@@ -25,7 +25,7 @@ L1  Domain             scraping, extraction, export, documents, jobs, postings,
                        applications, referrals, profile_import, model, layout, measure,
                        validate,
                        locale, theme
-L0  Shared infra       error, observability, db, data_store, net, platform, browser
+L0  Shared infra       error, observability, performance, db, data_store, net, platform, browser
 ```
 
 > This list is the single source of truth and is duplicated verbatim as the `LAYER`
@@ -36,7 +36,7 @@ L0  Shared infra       error, observability, db, data_store, net, platform, brow
 
 ## Per-layer contract
 
-### L0 — Shared infrastructure (`error`, `observability`, `db`, `data_store`, `net`, `platform`, `browser`)
+### L0 — Shared infrastructure (`error`, `observability`, `performance`, `db`, `data_store`, `net`, `platform`, `browser`)
 
 - **Allowed deps:** other L0 modules only.
 - **Forbidden deps:** L1, L2, L3. **No** `crate::commands`, `crate::scraping`, etc.

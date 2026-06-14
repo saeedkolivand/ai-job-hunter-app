@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 const L0: &[&str] = &[
     "error",
     "observability",
+    "performance",
     "db",
     "data_store",
     "net",

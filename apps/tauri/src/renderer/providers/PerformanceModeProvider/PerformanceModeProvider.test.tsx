@@ -20,9 +20,11 @@ describe('PerformanceModeProvider', () => {
     );
 
     await waitFor(() => expect(setPerformanceMode).toHaveBeenCalled());
-    // Default preference is 'balanced'.
+    // Default preference is 'balanced' — IPC receives the resolved PerformanceBackendConfig.
     expect(document.documentElement.getAttribute('data-performance-mode')).toBe('balanced');
-    expect(setPerformanceMode).toHaveBeenCalledWith('balanced');
+    expect(setPerformanceMode).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'balanced', concurrency: 2, keepAliveSecs: 300 })
+    );
   });
 
   it('swallows backend errors without crashing', async () => {

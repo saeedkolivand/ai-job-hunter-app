@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import { usePerformanceMode } from '@/store/preferences-store';
+import { useResolvedPerformanceProfile } from '@/store/preferences-store';
 
 /**
  * Slim accent aurora backdrop.
@@ -21,10 +21,12 @@ import { usePerformanceMode } from '@/store/preferences-store';
  *     straight to the DOM node — zero React re-renders — and is paused while the
  *     tab/window is hidden.
  *   - `low-memory` renders nothing; `balanced` trims to a reduced layer budget;
- *     `performance` adds the second nebula.
+ *     `performance` adds the second nebula. `custom` gates each layer
+ *     independently from the resolved profile.
  */
 export function CinematicBackground() {
-  const mode = usePerformanceMode();
+  const profile = useResolvedPerformanceProfile();
+  const { aurora, nebula, richNebula, cursorGlow } = profile.visual;
 
   // ── Lerp cursor glow ────────────────────────────────────────────────────────
   const blobRef = useRef<HTMLDivElement>(null);
@@ -35,8 +37,9 @@ export function CinematicBackground() {
   const LERP = 0.005; // 0.5% per frame → extremely slow, dreamy floating effect
 
   useEffect(() => {
-    // Skip RAF loop in low-memory mode — component returns null below.
-    if (mode === 'low-memory') return;
+    // Skip the RAF loop + pointer listener entirely when the cursor glow is off
+    // (low-memory or a custom profile with it disabled) — nothing to animate.
+    if (!cursorGlow) return;
     // Reduced-motion users get a static glow: paint the blob once at viewport
     // center and skip the pointer listener + RAF entirely (the aurora/nebula
     // keyframes are already neutralized by the CSS reduced-motion media query).
@@ -90,49 +93,57 @@ export function CinematicBackground() {
       document.removeEventListener('visibilitychange', onVisibility);
       cancelAnimationFrame(rafRef.current);
     };
-  }, [mode]); // re-run if mode changes so RAF is cleaned up correctly
+  }, [cursorGlow]); // re-run if the cursor glow toggles so RAF is cleaned up correctly
 
-  // All hooks have been called — safe to bail out now.
-  if (mode === 'low-memory') return null;
+  // All hooks have been called — safe to bail out now. Render nothing only when
+  // every layer is off (preserves the low-memory = renders-nothing behavior).
+  if (!aurora && !nebula && !cursorGlow) return null;
 
-  // The second nebula only renders on the high-end budget; balanced trims it to
-  // cut the number of large blurred/composited layers on the default mode.
-  const full = mode === 'performance';
+  // The second nebula only renders when the profile opts into the rich nebula
+  // (the `performance` preset); balanced/custom trim it to cut the number of
+  // large blurred/composited layers.
+  const showRichNebula = nebula && richNebula;
 
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
       {/* Aurora ribbons */}
-      <div
-        className="absolute -top-1/4 left-0 h-[60vh] w-[60vw] rounded-full opacity-40 animate-aurora-1"
-        style={{
-          background: 'radial-gradient(closest-side, var(--aurora-violet) 0%, transparent 70%)',
-          willChange: 'transform',
-        }}
-      />
-      <div
-        className="absolute -top-1/4 left-0 h-[55vh] w-[55vw] rounded-full opacity-35 animate-aurora-2"
-        style={{
-          background: 'radial-gradient(closest-side, var(--aurora-indigo) 0%, transparent 70%)',
-          willChange: 'transform',
-        }}
-      />
-      <div
-        className="absolute top-1/3 left-0 h-[40vh] w-[40vw] rounded-full opacity-25 animate-aurora-3"
-        style={{
-          background: 'radial-gradient(closest-side, var(--aurora-pink) 0%, transparent 70%)',
-          willChange: 'transform',
-        }}
-      />
+      {aurora && (
+        <>
+          <div
+            className="absolute -top-1/4 left-0 h-[60vh] w-[60vw] rounded-full opacity-40 animate-aurora-1"
+            style={{
+              background: 'radial-gradient(closest-side, var(--aurora-violet) 0%, transparent 70%)',
+              willChange: 'transform',
+            }}
+          />
+          <div
+            className="absolute -top-1/4 left-0 h-[55vh] w-[55vw] rounded-full opacity-35 animate-aurora-2"
+            style={{
+              background: 'radial-gradient(closest-side, var(--aurora-indigo) 0%, transparent 70%)',
+              willChange: 'transform',
+            }}
+          />
+          <div
+            className="absolute top-1/3 left-0 h-[40vh] w-[40vw] rounded-full opacity-25 animate-aurora-3"
+            style={{
+              background: 'radial-gradient(closest-side, var(--aurora-pink) 0%, transparent 70%)',
+              willChange: 'transform',
+            }}
+          />
+        </>
+      )}
 
       {/* Nebulae */}
-      <div
-        className="absolute top-[10vh] left-0 h-[30vh] w-[30vw] rounded-full opacity-40 animate-nebula-1"
-        style={{
-          background: 'radial-gradient(closest-side, var(--nebula-violet) 0%, transparent 70%)',
-          willChange: 'transform',
-        }}
-      />
-      {full && (
+      {nebula && (
+        <div
+          className="absolute top-[10vh] left-0 h-[30vh] w-[30vw] rounded-full opacity-40 animate-nebula-1"
+          style={{
+            background: 'radial-gradient(closest-side, var(--nebula-violet) 0%, transparent 70%)',
+            willChange: 'transform',
+          }}
+        />
+      )}
+      {showRichNebula && (
         <div
           className="absolute top-[60vh] left-0 h-[25vh] w-[25vw] rounded-full opacity-35 animate-nebula-2"
           style={{
@@ -145,20 +156,22 @@ export function CinematicBackground() {
       {/* Cursor glow — 900px lerp-smoothed blob.
           Position is updated every RAF tick via ref mutation (no React renders).
           Mixes the accent brand + gradient-end so it re-tints with the accent. */}
-      <div
-        ref={blobRef}
-        className="cursor-glow absolute pointer-events-none"
-        style={{
-          width: 900,
-          height: 900,
-          top: 0,
-          left: 0,
-          background:
-            'radial-gradient(circle, color-mix(in srgb, var(--color-brand) 30%, transparent) 0%, color-mix(in srgb, var(--color-brand) 14%, transparent) 30%, color-mix(in srgb, var(--color-brand-2) 6%, transparent) 55%, transparent 72%)',
-          filter: 'blur(55px)',
-          willChange: 'transform',
-        }}
-      />
+      {cursorGlow && (
+        <div
+          ref={blobRef}
+          className="cursor-glow absolute pointer-events-none"
+          style={{
+            width: 900,
+            height: 900,
+            top: 0,
+            left: 0,
+            background:
+              'radial-gradient(circle, color-mix(in srgb, var(--color-brand) 30%, transparent) 0%, color-mix(in srgb, var(--color-brand) 14%, transparent) 30%, color-mix(in srgb, var(--color-brand-2) 6%, transparent) 55%, transparent 72%)',
+            filter: 'blur(55px)',
+            willChange: 'transform',
+          }}
+        />
+      )}
     </div>
   );
 }

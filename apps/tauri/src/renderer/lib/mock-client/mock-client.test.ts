@@ -13,7 +13,7 @@ describe('createMockClient', () => {
 
   it('provides sensible default resolved values', async () => {
     const client = createMockClient();
-    await expect(client.system.getProtocolVersion()).resolves.toBe('1.0.0');
+    await expect(client.system.getProtocolVersion()).resolves.toBe('1.1.0');
     await expect(client.system.getLocale()).resolves.toBe('en');
     await expect(client.jobs.list()).resolves.toEqual([]);
     await expect(client.documents.list()).resolves.toEqual([]);
@@ -34,6 +34,6 @@ describe('createMockClient', () => {
     });
     await expect(client.system.getVersion()).resolves.toBe('9.9.9');
     // Non-overridden methods on the same namespace remain intact.
-    await expect(client.system.getProtocolVersion()).resolves.toBe('1.0.0');
+    await expect(client.system.getProtocolVersion()).resolves.toBe('1.1.0');
   });
 });

@@ -34,9 +34,15 @@ export interface HoverPopoverProps {
  * Generic hover/focus popover.
  *
  * Mechanics it owns (so call sites don't reimplement them):
- *  - Opens on `mouseenter` / `focus`, closes on `mouseleave` / `blur` after
- *    `closeDelay` ms (debounced so moving the pointer onto the panel keeps it open).
- *  - Esc closes immediately.
+ *  - Opens on `mouseenter` / `focus`. While open, hover keep-open/close is
+ *    GEOMETRY-BASED: a document `pointermove` listener keeps it open whenever the
+ *    pointer is over the trigger OR the panel (each inflated by an 8px bridge pad)
+ *    and otherwise schedules close after `closeDelay` ms. Geometry-based because when
+ *    `placement='top'` the panel is portalled directly under the descending cursor and
+ *    a synthetic `mouseenter` never fires for an element inserted under an
+ *    already-present pointer (the insertion-under-cursor race), so mouseenter/leave
+ *    on the panel can't be trusted. A document `pointerleave` schedules close when the
+ *    cursor leaves the window. Esc / `blur` still close.
  *  - Panel is portalled to `document.body` and positioned against the trigger via
  *    `getBoundingClientRect` (re-measured on scroll/resize), opening upward for
  *    `placement='top'` and downward for `placement='bottom'`.
@@ -58,7 +64,9 @@ export function HoverPopover({
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rafId = useRef<number | null>(null);
   const popoverId = useId();
 
   const cancelClose = useCallback(() => {
@@ -97,6 +105,48 @@ export function HoverPopover({
     };
   }, [open]);
 
+  // Geometry-based hover tracking: while open, a document `pointermove` listener is
+  // the SOLE authority for hover-close. It keeps the popover open whenever the pointer
+  // is over the trigger OR the panel (each inflated by an 8px bridge pad) and otherwise
+  // schedules close. This is immune to the synthetic `mouseenter` never firing for the
+  // panel when `placement='top'` portals it directly under the descending cursor. A
+  // document `pointerleave` schedules close when the cursor leaves the window.
+  useEffect(() => {
+    if (!open) return;
+    const PAD = 8;
+    const inside = (bounds: DOMRect | null, x: number, y: number) =>
+      bounds !== null &&
+      x >= bounds.left - PAD &&
+      x <= bounds.right + PAD &&
+      y >= bounds.top - PAD &&
+      y <= bounds.bottom + PAD;
+    const onPointerMove = (e: PointerEvent) => {
+      const { clientX, clientY } = e;
+      if (rafId.current !== null) cancelAnimationFrame(rafId.current);
+      rafId.current = requestAnimationFrame(() => {
+        rafId.current = null;
+        const triggerRect = wrapperRef.current?.getBoundingClientRect() ?? null;
+        const panelRect = panelRef.current?.getBoundingClientRect() ?? null;
+        if (inside(triggerRect, clientX, clientY) || inside(panelRect, clientX, clientY)) {
+          cancelClose();
+        } else {
+          scheduleClose();
+        }
+      });
+    };
+    const onPointerLeave = () => scheduleClose();
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerleave', onPointerLeave);
+    return () => {
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerleave', onPointerLeave);
+      if (rafId.current !== null) {
+        cancelAnimationFrame(rafId.current);
+        rafId.current = null;
+      }
+    };
+  }, [open, cancelClose, scheduleClose]);
+
   const panelStyle: React.CSSProperties = rect
     ? {
         position: 'fixed',
@@ -115,7 +165,6 @@ export function HoverPopover({
       aria-expanded={open}
       aria-describedby={open ? popoverId : undefined}
       onMouseEnter={handleOpen}
-      onMouseLeave={scheduleClose}
       onFocus={handleOpen}
       onBlur={scheduleClose}
       onKeyDown={handleKeyDown}
@@ -126,14 +175,13 @@ export function HoverPopover({
         <AnimatePresence>
           {open && (
             <motion.div
+              ref={panelRef}
               id={popoverId}
               role="tooltip"
               aria-label={ariaLabel}
               {...(placement === 'top' ? variants.fadeSlideUp : variants.fadeSlideDown)}
               transition={transition.fast}
               style={panelStyle}
-              onMouseEnter={cancelClose}
-              onMouseLeave={scheduleClose}
             >
               <div className={contentClassName}>{children}</div>
             </motion.div>

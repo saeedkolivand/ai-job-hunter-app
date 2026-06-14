@@ -36,6 +36,7 @@ pub mod model;
 pub mod net;
 pub mod notifications;
 pub mod observability;
+pub mod performance;
 pub mod pipeline;
 pub mod platform;
 pub mod postings;
@@ -505,6 +506,8 @@ pub fn run() {
             );
             app.manage(Mutex::new(UpdaterState::default()));
             app.manage(std::sync::Arc::new(ScraperEngine::new()));
+            // Live performance config (balanced default). Updated by system_set_performance_mode.
+            crate::performance::set(crate::performance::PerformanceConfig::default());
             app.manage(commands::translation::TranslationCache::new());
             // Live close-to-tray flag (default on). The renderer pushes the
             // persisted preference via `system_set_close_to_tray` on boot; the

@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
+import type { PerformanceBackendConfig } from '@ajh/shared';
+
 export const system = {
   health: () => invoke('system_health'),
   getVersion: () => invoke('system_get_version'),
@@ -8,8 +10,8 @@ export const system = {
   getPlatform: () => invoke('system_get_platform'),
   accentColor: () => invoke<{ supported: boolean; color: string | null }>('system_accent_color'),
   openExternal: (url: string) => invoke('system_open_external', { url }),
-  setPerformanceMode: (mode: 'low-memory' | 'balanced' | 'performance') =>
-    invoke('system_set_performance_mode', { mode }),
+  setPerformanceMode: (config: PerformanceBackendConfig) =>
+    invoke('system_set_performance_mode', { config }),
   getLaunchAtLogin: () => invoke<boolean>('system_get_launch_at_login'),
   setLaunchAtLogin: (enabled: boolean) =>
     invoke<boolean>('system_set_launch_at_login', { enabled }),

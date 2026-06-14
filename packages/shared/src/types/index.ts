@@ -166,6 +166,31 @@ export interface AppMetrics {
   snapshotAt: number;
 }
 
+/**
+ * Resolved performance configuration pushed to the Rust shell via
+ * `system.setPerformanceMode`. This is the IPC boundary shape: the renderer
+ * resolves the active mode (preset or custom profile) into concrete backend
+ * numbers and sends them so the shell never needs to know about presets.
+ *
+ * Tier→number mapping (owned by the renderer's `resolveBackendConfig`):
+ *   concurrency:   low→1,  balanced→2,    high→4
+ *   keepAliveSecs: low→0,  balanced→300,  high→1800
+ *   cacheTtlSecs:  low→86400, balanced→604800, high→null (no expiry)
+ *   cacheMaxRows:  low→250,   balanced→2000,   high→null (unbounded)
+ */
+export interface PerformanceBackendConfig {
+  /** The mode string (`low-memory` | `balanced` | `performance` | `custom`) — for logging / e2e. */
+  mode: string;
+  /** JobQueue concurrency (parallel workers). */
+  concurrency: number;
+  /** AiRuntime idle model keep-alive, in seconds (0 = unload immediately). */
+  keepAliveSecs: number;
+  /** Cache entry TTL in seconds; `null` = no expiry (generous). */
+  cacheTtlSecs: number | null;
+  /** Max cached rows; `null` = unbounded (generous). */
+  cacheMaxRows: number | null;
+}
+
 /** Identifies which boards support credential-based authentication. */
 export const AUTH_CAPABLE_BOARDS = ['linkedin', 'indeed', 'xing', 'glassdoor'] as const;
 export type AuthCapableBoard = (typeof AUTH_CAPABLE_BOARDS)[number];

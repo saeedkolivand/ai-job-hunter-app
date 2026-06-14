@@ -25,7 +25,7 @@ pub struct ScraperRuntimeHealth {
 }
 
 pub struct ScraperEngine {
-    /// Bounded concurrency — swapped on `set_performance_mode`. Holding an
+    /// Bounded concurrency — swapped on `set_concurrency`. Holding an
     /// owned permit for the duration of a scrape lets us shrink the limit
     /// without cancelling running work.
     semaphore: ArcSwap<Semaphore>,
@@ -134,14 +134,9 @@ impl ScraperEngine {
     }
 
     /// Resize the concurrency limit. Already-running jobs keep their permits
-    /// until they finish; new jobs are bounded by the new value.
-    pub fn set_performance_mode(&self, mode: &str) {
-        let n = match mode {
-            "low-memory" => 1,
-            "performance" => 4,
-            _ => 2,
-        };
-        self.semaphore.store(Arc::new(Semaphore::new(n)));
+    /// until they finish; new jobs are bounded by the new value (min 1).
+    pub fn set_concurrency(&self, n: usize) {
+        self.semaphore.store(Arc::new(Semaphore::new(n.max(1))));
     }
 
     /// Cancel every in-flight job. Called on app exit.
