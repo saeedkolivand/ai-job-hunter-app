@@ -12,16 +12,21 @@ type RelativeKey = 'justNow' | 'minutesAgo' | 'hoursAgo' | 'daysAgo' | 'weeksAgo
  * rather than templating `${ns}.${tier}` (which only works for one shape).
  * Both maps keep the pre-existing keys intact so no translation breaks.
  */
+// Job queue — flat `time*` keys under the `jobs` namespace (pre-existing).
+// Kept as a standalone const so it can serve as the non-indexed default below
+// (indexing `KEY_MAPS.jobs` would itself be `T | undefined` under
+// `noUncheckedIndexedAccess`, defeating the fallback).
+const JOBS_KEYS: Record<RelativeKey, string> = {
+  justNow: 'jobs.timeJustNow',
+  minutesAgo: 'jobs.timeMinutesAgo',
+  hoursAgo: 'jobs.timeHoursAgo',
+  daysAgo: 'jobs.timeDaysAgo',
+  weeksAgo: 'jobs.timeWeeksAgo',
+  monthsAgo: 'jobs.timeMonthsAgo',
+};
+
 const KEY_MAPS: Record<string, Record<RelativeKey, string>> = {
-  // Job queue — flat `time*` keys under the `jobs` namespace (pre-existing).
-  jobs: {
-    justNow: 'jobs.timeJustNow',
-    minutesAgo: 'jobs.timeMinutesAgo',
-    hoursAgo: 'jobs.timeHoursAgo',
-    daysAgo: 'jobs.timeDaysAgo',
-    weeksAgo: 'jobs.timeWeeksAgo',
-    monthsAgo: 'jobs.timeMonthsAgo',
-  },
+  jobs: JOBS_KEYS,
   // Résumé activity / generation cards — nested `relativeTime` namespace.
   'resumes.relativeTime': {
     justNow: 'resumes.relativeTime.justNow',
@@ -44,7 +49,7 @@ const MINUTE = 60_000;
  * A falsy timestamp formats to an empty string (callers render nothing).
  */
 export function useFormatRelativeTime(t: TFunction, nsPrefix: string = 'jobs') {
-  const keys = KEY_MAPS[nsPrefix] ?? KEY_MAPS.jobs;
+  const keys = KEY_MAPS[nsPrefix] ?? JOBS_KEYS;
   return (timestamp?: number): string => {
     if (!timestamp) return '';
     const diff = Date.now() - timestamp;
