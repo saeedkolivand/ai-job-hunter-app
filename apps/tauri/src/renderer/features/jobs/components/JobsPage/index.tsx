@@ -19,11 +19,12 @@ import { PageTransition } from '@/components/layout/PageTransition';
 import { PostingRow } from '@/features/jobs/components/PostingRow';
 import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
 import type { ScrapeFormState } from '@/features/jobs/components/ScrapeForm/constants';
+import { useDefaultResumeId } from '@/features/jobs/hooks/useDefaultResumeId';
 import { useFormatRelativeTime } from '@/features/jobs/hooks/useFormatRelativeTime';
 import { useScraping } from '@/features/jobs/hooks/useScraping';
+import { MatchScoresProvider } from '@/features/jobs/providers';
 import type { JobEvent, Posting } from '@/features/jobs/types';
 import { useAppClient } from '@/providers/AppClientProvider';
-import { ScoringSchedulerProvider } from '@/providers/ScoringScheduler';
 import { useClearPostings, useJobEvents, usePostings } from '@/services';
 import { useSessionStore } from '@/store/session-store';
 
@@ -157,6 +158,9 @@ export function JobsPage() {
     return result;
   }, [allPostings, filter, sortBy]);
 
+  const resumeId = useDefaultResumeId();
+  const jobIds = useMemo(() => filtered.map((p) => p.id), [filtered]);
+
   // Windowed list: only the visible rows (plus a small overscan) are mounted, so
   // a long postings list doesn't paint hundreds of glass rows at once. Keyed by
   // posting id so measurement survives live-prepended rows during a scrape.
@@ -170,7 +174,7 @@ export function JobsPage() {
   });
 
   return (
-    <ScoringSchedulerProvider>
+    <MatchScoresProvider resumeId={resumeId} jobIds={jobIds}>
       <PageTransition className="flex h-full flex-col overflow-hidden">
         {/* Pinned header + scrape form; the list below owns the scroll. */}
         <div className="shrink-0 px-10 pt-10">
@@ -312,6 +316,6 @@ export function JobsPage() {
         variant="danger"
         isConfirming={clearPostings.isPending}
       />
-    </ScoringSchedulerProvider>
+    </MatchScoresProvider>
   );
 }

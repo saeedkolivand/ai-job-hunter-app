@@ -148,6 +148,11 @@ whatlang = "0.16"
 # reuse our existing `rusqlite` to read the (copied, unlocked) Cookies DB.
 aes-gcm = "0.10"
 
+# SHA-256 over the (post-translation) job text, backing the match-cache text-hash
+# guard: posting_vectors.text_hash and match_scores.job_text_hash use a
+# deterministic, restart-stable hash so a stale or wrong-language cache row is a
+# natural miss. Resolves to 0.10.9 already in the tree (lopdf/tauri-codegen).
+sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies]
 wmi = "0.18"

@@ -156,6 +156,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
 
     match: {
       resume: noop,
+      resumeBatch: noop,
     },
 
     geocode: {

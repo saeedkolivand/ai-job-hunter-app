@@ -1,23 +1,20 @@
 /**
- * RowMatchScore — auto-fire + render-state tests.
+ * RowMatchScore — presentational render-state tests.
  *
- * Covers:
- *  - Auto-fires api.match.resume on render when resumeId + jobId are both present
- *  - While isPending shows the aria-busy loading placeholder
- *  - When data resolves shows the MatchBand tier label (High/Medium/Low)
- *  - When resumeId is null (no documents) renders nothing and never calls the API
- *  - When the query rejects renders nothing (isError path)
- *  - When resolved data carries an error field renders nothing
+ * RowMatchScore is now presentational: the combined score, pending flag, and
+ * hasResume flag are supplied by MatchScoresProvider via useRowMatchScore (one
+ * batch call for all filtered postings). These tests stub useRowMatchScore and
+ * assert the three render branches:
+ *  - hasResume === false → renders nothing
+ *  - score present → renders the MatchBand tier label (High/Medium/Low)
+ *  - pending (no score yet) → renders the aria-busy loading placeholder
+ *  - neither score nor pending → renders nothing
  */
-import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/dom';
-import { render, waitFor } from '@testing-library/react';
+import { render } from '@testing-library/react';
 
 import type { MatchScore } from '@ajh/shared';
-
-import { ScoringSchedulerProvider } from '@/providers/ScoringScheduler';
-import { createMockClient, makeQueryClient, withProviders } from '@/test-support';
 
 // ── i18n stub ─────────────────────────────────────────────────────────────────
 
@@ -25,20 +22,17 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 
-// ── useDocuments stub ─────────────────────────────────────────────────────────
-// Module-level ref so each test sets it BEFORE render (same pattern as
-// ReferralModal.test.tsx stubbedDraft). Never set after render.
+// ── useRowMatchScore stub ─────────────────────────────────────────────────────
+// Module-level ref so each test sets it BEFORE render. Never set after render.
 
-let stubbedDocs: Array<{ _id: string; isDefault?: boolean }> = [];
+let stubbedRow: { score?: MatchScore; pending: boolean; hasResume: boolean } = {
+  pending: false,
+  hasResume: false,
+};
 
-vi.mock('@/services', async () => {
-  const real = await import('@/services/use-match/use-match');
-  return {
-    useDocuments: () => ({ data: stubbedDocs }),
-    // Real useJobMatchScore so we exercise the actual useQuery wiring.
-    useJobMatchScore: real.useJobMatchScore,
-  };
-});
+vi.mock('@/features/jobs/providers', () => ({
+  useRowMatchScore: () => stubbedRow,
+}));
 
 // ── component under test ──────────────────────────────────────────────────────
 
@@ -48,7 +42,6 @@ import { RowMatchScore } from './index';
 
 const JOB_ID = 'job-abc';
 const RESUME_ID = 'resume-xyz';
-const ONE_DOC = [{ _id: RESUME_ID, isDefault: true }];
 
 const BASE_SCORE: MatchScore = {
   resumeId: RESUME_ID,
@@ -60,117 +53,81 @@ const BASE_SCORE: MatchScore = {
   recommendations: [],
 };
 
-// ── helper — always set stubbedDocs BEFORE calling render ─────────────────────
+// ── helper — always set stubbedRow BEFORE calling render ──────────────────────
 
-function renderScore(
-  matchResumeFn: (...args: never[]) => unknown,
-  docs: typeof stubbedDocs = ONE_DOC
-) {
-  stubbedDocs = docs;
-  const client = createMockClient({ 'match.resume': matchResumeFn });
-  const qc = makeQueryClient();
-  const Base = withProviders(client, qc);
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <Base>
-      <ScoringSchedulerProvider>{children}</ScoringSchedulerProvider>
-    </Base>
-  );
-  const { container } = render(<RowMatchScore jobId={JOB_ID} />, { wrapper });
-  return { container, matchResumeFn: matchResumeFn as ReturnType<typeof vi.fn> };
+function renderRow(row: typeof stubbedRow) {
+  stubbedRow = row;
+  return render(<RowMatchScore jobId={JOB_ID} />);
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
-describe('RowMatchScore — auto-fires on render', () => {
-  it('calls api.match.resume without any user interaction when resumeId and jobId are present', async () => {
-    const fn = vi.fn().mockResolvedValue(BASE_SCORE);
-    renderScore(fn);
+describe('RowMatchScore — no resume state', () => {
+  it('renders nothing when hasResume is false', () => {
+    const { container } = renderRow({ pending: false, hasResume: false });
+    expect(container.firstChild).toBeNull();
+  });
 
-    await waitFor(() => expect(fn).toHaveBeenCalledTimes(1));
-    expect(fn).toHaveBeenCalledWith({
-      resumeId: RESUME_ID,
-      jobId: JOB_ID,
-      semanticScoringEnabled: false,
+  it('renders nothing even while pending when hasResume is false', () => {
+    const { container } = renderRow({ pending: true, hasResume: false });
+    expect(container.firstChild).toBeNull();
+  });
+});
+
+describe('RowMatchScore — score state', () => {
+  it('renders the High MatchBand label for a combined score >= 75', () => {
+    const { container } = renderRow({
+      score: { ...BASE_SCORE, combined: 82 },
+      pending: false,
+      hasResume: true,
     });
+    expect(screen.getByText('High')).toBeInTheDocument();
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeInTheDocument();
+  });
+
+  it('renders the Medium MatchBand label for a combined score in [50, 74]', () => {
+    renderRow({ score: { ...BASE_SCORE, combined: 60 }, pending: false, hasResume: true });
+    expect(screen.getByText('Medium')).toBeInTheDocument();
+  });
+
+  it('renders the Low MatchBand label for a combined score < 50', () => {
+    renderRow({ score: { ...BASE_SCORE, combined: 30 }, pending: false, hasResume: true });
+    expect(screen.getByText('Low')).toBeInTheDocument();
+  });
+
+  it('prefers the score over the pending placeholder when both are set', () => {
+    const { container } = renderRow({
+      score: { ...BASE_SCORE, combined: 82 },
+      pending: true,
+      hasResume: true,
+    });
+    expect(screen.getByText('High')).toBeInTheDocument();
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeInTheDocument();
   });
 });
 
 describe('RowMatchScore — pending state', () => {
-  it('shows the aria-busy loading placeholder while the query is in-flight', () => {
-    // Never-resolving promise keeps the component in isPending.
-    renderScore(vi.fn().mockReturnValue(new Promise(() => {})));
+  it('shows the aria-busy loading placeholder while the batch is in-flight', () => {
+    const { container } = renderRow({ pending: true, hasResume: true });
 
-    const busyEl = document.querySelector('[aria-busy="true"]');
+    const busyEl = container.querySelector('[aria-busy="true"]');
     expect(busyEl).toBeInTheDocument();
     expect(busyEl).toHaveTextContent('…');
   });
 
   it('loading placeholder carries the jobs.scoreLoading aria-label', () => {
-    renderScore(vi.fn().mockReturnValue(new Promise(() => {})));
+    const { container } = renderRow({ pending: true, hasResume: true });
 
-    expect(document.querySelector('[aria-busy="true"]')).toHaveAttribute(
+    expect(container.querySelector('[aria-busy="true"]')).toHaveAttribute(
       'aria-label',
       'jobs.scoreLoading'
     );
   });
 });
 
-describe('RowMatchScore — score state', () => {
-  it('renders the High MatchBand label for a combined score >= 75', async () => {
-    renderScore(vi.fn().mockResolvedValue({ ...BASE_SCORE, combined: 82 }));
-
-    await waitFor(() => expect(screen.getByText('High')).toBeInTheDocument());
-    expect(document.querySelector('[aria-busy="true"]')).not.toBeInTheDocument();
-  });
-
-  it('renders the Medium MatchBand label for a combined score in [50, 74]', async () => {
-    renderScore(vi.fn().mockResolvedValue({ ...BASE_SCORE, combined: 60 }));
-
-    await waitFor(() => expect(screen.getByText('Medium')).toBeInTheDocument());
-  });
-
-  it('renders the Low MatchBand label for a combined score < 50', async () => {
-    renderScore(vi.fn().mockResolvedValue({ ...BASE_SCORE, combined: 30 }));
-
-    await waitFor(() => expect(screen.getByText('Low')).toBeInTheDocument());
-  });
-
-  it('renders nothing when the resolved data carries an error field', async () => {
-    const fn = vi
-      .fn()
-      .mockResolvedValue({ combined: 0, semantic: 0, ats: 0, error: 'no embeddings' });
-    const { container } = renderScore(fn);
-
-    // Wait for the loading placeholder to disappear — that confirms the query
-    // settled and the component re-rendered with the error-field result.
-    await waitFor(() =>
-      expect(document.querySelector('[aria-busy="true"]')).not.toBeInTheDocument()
-    );
-    expect(container.firstChild).toBeNull();
-  });
-});
-
-describe('RowMatchScore — no resume state', () => {
-  it('renders nothing and skips the API call when there are no documents', () => {
-    // stubbedDocs = [] → useDefaultResumeId returns null → query disabled.
-    const fn = vi.fn().mockResolvedValue(BASE_SCORE);
-    const { container } = renderScore(fn, []);
-
-    expect(container.firstChild).toBeNull();
-    expect(fn).not.toHaveBeenCalled();
-  });
-});
-
-describe('RowMatchScore — error state', () => {
-  it('renders nothing when the query rejects', async () => {
-    const fn = vi.fn().mockRejectedValue(new Error('network error'));
-    const { container } = renderScore(fn);
-
-    // Wait for loading placeholder to disappear — confirms the rejected promise
-    // propagated and the component re-rendered into the isError → null branch.
-    await waitFor(() =>
-      expect(document.querySelector('[aria-busy="true"]')).not.toBeInTheDocument()
-    );
+describe('RowMatchScore — settled with no score', () => {
+  it('renders nothing when the batch settled but this row has no score', () => {
+    const { container } = renderRow({ pending: false, hasResume: true });
     expect(container.firstChild).toBeNull();
   });
 });
