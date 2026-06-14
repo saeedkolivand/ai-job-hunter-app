@@ -8,7 +8,6 @@ import {
   ExternalLink as ExternalLinkIcon,
   FileText,
   HelpCircle,
-  Loader2,
   Search,
   Send,
   Trash2,
@@ -26,13 +25,16 @@ import {
   cn,
   ConfirmModal,
   GlassCard,
-  ModalShell,
-  SegmentedControl,
   transition,
   useNotification,
 } from '@ajh/ui';
 
 import { EditableOutput } from '@/components/generation/EditableOutput';
+import {
+  ExportActionIcon,
+  type ExportFormat,
+  ExportPicker,
+} from '@/components/generation/ExportPicker';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
 import {
   buildFilename,
@@ -47,8 +49,7 @@ import { useOpenExternal } from '@/services';
 import { useRemoveAiGeneration, useUpdateAiGeneration } from '@/services/use-ai-generations';
 import { useReferrals, useUpsertReferral } from '@/services/use-referrals/use-referrals';
 
-const EXPORT_FORMATS = ['pdf', 'docx', 'txt'] as const;
-type ExportFormat = (typeof EXPORT_FORMATS)[number];
+import { Section } from './Section';
 
 const TEMPLATE_OPTIONS: { id: TemplateId; label: string }[] = Object.values(TEMPLATES).map((t) => ({
   id: t.id,
@@ -384,202 +385,134 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
               )
                 .filter((s) => s.text)
                 .map(({ key, label, text, icon: SectionIcon, editType, docType }) => (
-                  <div key={key} className="border-t border-white/[0.04]">
-                    <Button
-                      variant="unstyled"
-                      onClick={() => setExpanded(expanded === key ? null : key)}
-                      className="flex w-full items-center justify-between px-5 py-3 text-left text-xs font-medium text-foreground/55 transition-colors hover:text-foreground/80"
-                    >
-                      <span className="flex items-center gap-2">
-                        <SectionIcon size={12} /> {label}
-                      </span>
-                      <ChevronDown
-                        size={13}
-                        className={cn('transition-transform', expanded === key && 'rotate-180')}
-                      />
-                    </Button>
-                    <AnimatePresence initial={false}>
-                      {expanded === key && (
-                        <motion.div
-                          initial={{ height: 0 }}
-                          animate={{ height: 'auto' }}
-                          exit={{ height: 0 }}
-                          transition={transition.normal}
-                          className="overflow-hidden"
-                        >
-                          {editType && docType ? (
-                            <div className="flex h-72 flex-col px-5 pb-5">
-                              <EditableOutput
-                                value={text}
-                                onChange={(v) => onEdit(editType, v)}
-                                docType={docType}
-                                meta={meta}
-                                className="flex h-full flex-col overflow-hidden"
-                                textAreaClassName="h-full w-full bg-transparent font-mono text-[11px] leading-relaxed text-foreground/65 placeholder:text-foreground/20"
-                              />
-                            </div>
-                          ) : (
-                            <pre className="max-h-64 select-text overflow-y-auto whitespace-pre-wrap px-5 pb-5 font-mono text-[11px] leading-relaxed text-foreground/55">
-                              {text}
-                            </pre>
-                          )}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
+                  <Section
+                    key={key}
+                    label={label}
+                    icon={SectionIcon}
+                    open={expanded === key}
+                    onToggle={() => setExpanded(expanded === key ? null : key)}
+                  >
+                    {editType && docType ? (
+                      <div className="flex h-72 flex-col px-5 pb-5">
+                        <EditableOutput
+                          value={text}
+                          onChange={(v) => onEdit(editType, v)}
+                          docType={docType}
+                          meta={meta}
+                          className="flex h-full flex-col overflow-hidden"
+                          textAreaClassName="h-full w-full bg-transparent font-mono text-[11px] leading-relaxed text-foreground/65 placeholder:text-foreground/20"
+                        />
+                      </div>
+                    ) : (
+                      <pre className="max-h-64 select-text overflow-y-auto whitespace-pre-wrap px-5 pb-5 font-mono text-[11px] leading-relaxed text-foreground/55">
+                        {text}
+                      </pre>
+                    )}
+                  </Section>
                 ))}
 
               {/* Application answers — structured Q/A from the questions assistant. */}
               {gen.applicationAnswers.length > 0 && (
-                <div className="border-t border-white/[0.04]">
-                  <Button
-                    variant="unstyled"
-                    onClick={() => setExpanded(expanded === 'answers' ? null : 'answers')}
-                    className="flex w-full items-center justify-between px-5 py-3 text-left text-xs font-medium text-foreground/55 transition-colors hover:text-foreground/80"
-                  >
-                    <span className="flex items-center gap-2">
-                      <HelpCircle size={12} /> {t('resumes.generated.applicationAnswers')}
-                      <span className="rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-foreground/45">
-                        {gen.applicationAnswers.length}
-                      </span>
-                    </span>
-                    <ChevronDown
-                      size={13}
-                      className={cn('transition-transform', expanded === 'answers' && 'rotate-180')}
-                    />
-                  </Button>
-                  <AnimatePresence initial={false}>
-                    {expanded === 'answers' && (
-                      <motion.div
-                        initial={{ height: 0 }}
-                        animate={{ height: 'auto' }}
-                        exit={{ height: 0 }}
-                        transition={transition.normal}
-                        className="overflow-hidden"
-                      >
-                        <div className="max-h-72 select-text space-y-3 overflow-y-auto px-5 pb-5">
-                          {gen.applicationAnswers.map((qa) => (
-                            <div key={qa.id}>
-                              <p className="text-[11px] font-medium text-foreground/70">
-                                {qa.question}
-                              </p>
-                              <p className="mt-0.5 whitespace-pre-wrap text-[11px] leading-relaxed text-foreground/55">
-                                {qa.answer}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
+                <Section
+                  label={t('resumes.generated.applicationAnswers')}
+                  icon={HelpCircle}
+                  badge={gen.applicationAnswers.length}
+                  open={expanded === 'answers'}
+                  onToggle={() => setExpanded(expanded === 'answers' ? null : 'answers')}
+                >
+                  <div className="max-h-72 select-text space-y-3 overflow-y-auto px-5 pb-5">
+                    {gen.applicationAnswers.map((qa) => (
+                      <div key={qa.id}>
+                        <p className="text-[11px] font-medium text-foreground/70">{qa.question}</p>
+                        <p className="mt-0.5 whitespace-pre-wrap text-[11px] leading-relaxed text-foreground/55">
+                          {qa.answer}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </Section>
               )}
 
               {/* Referral requests — these live in their own table keyed by job URL, so
                   we display-join them here by `gen.jobUrl`. Each contact exposes copy
                   and mark-as-sent quick actions. */}
               {contacts.length > 0 && (
-                <div className="border-t border-white/[0.04]">
-                  <Button
-                    variant="unstyled"
-                    onClick={() => setExpanded(expanded === 'referral' ? null : 'referral')}
-                    className="flex w-full items-center justify-between px-5 py-3 text-left text-xs font-medium text-foreground/55 transition-colors hover:text-foreground/80"
-                  >
-                    <span className="flex items-center gap-2">
-                      <UserPlus size={12} /> {t('resumes.generated.referralTitle')}
-                      <span className="rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-foreground/45">
-                        {contacts.length}
-                      </span>
-                    </span>
-                    <ChevronDown
-                      size={13}
-                      className={cn(
-                        'transition-transform',
-                        expanded === 'referral' && 'rotate-180'
-                      )}
-                    />
-                  </Button>
-                  <AnimatePresence initial={false}>
-                    {expanded === 'referral' && (
-                      <motion.div
-                        initial={{ height: 0 }}
-                        animate={{ height: 'auto' }}
-                        exit={{ height: 0 }}
-                        transition={transition.normal}
-                        className="overflow-hidden"
-                      >
-                        <div className="max-h-80 select-text space-y-2.5 overflow-y-auto px-5 pb-5">
-                          {contacts.map((contact) => {
-                            const draft = referralDraft(contact);
-                            return (
-                              <div
-                                key={contact.id}
-                                className="space-y-2.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3.5 py-3"
+                <Section
+                  label={t('resumes.generated.referralTitle')}
+                  icon={UserPlus}
+                  badge={contacts.length}
+                  open={expanded === 'referral'}
+                  onToggle={() => setExpanded(expanded === 'referral' ? null : 'referral')}
+                >
+                  <div className="max-h-80 select-text space-y-2.5 overflow-y-auto px-5 pb-5">
+                    {contacts.map((contact) => {
+                      const draft = referralDraft(contact);
+                      return (
+                        <div
+                          key={contact.id}
+                          className="space-y-2.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3.5 py-3"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-[12px] font-medium text-foreground/85">
+                                {contact.personName}
+                                {contact.personRole ? (
+                                  <span className="font-normal text-foreground/45">
+                                    {' '}
+                                    · {contact.personRole}
+                                  </span>
+                                ) : null}
+                              </p>
+                              <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-foreground/45">
+                                <span>{channelLabel(contact.channel)}</span>
+                                <span className="text-foreground/25">·</span>
+                                <span>
+                                  {t(`resumes.generated.referralStatus.${contact.status}`)}
+                                </span>
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <Button
+                                disabled={!draft}
+                                onClick={() => void copyReferralDraft(contact)}
+                                title={t('resumes.generated.referralCopyDraft')}
+                                className="flex h-auto items-center gap-1.5 rounded-lg border-transparent bg-white/5 px-2.5 py-1.5 text-[10px] text-foreground/60 transition-colors hover:text-foreground"
                               >
-                                <div className="flex flex-wrap items-start justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <p className="truncate text-[12px] font-medium text-foreground/85">
-                                      {contact.personName}
-                                      {contact.personRole ? (
-                                        <span className="font-normal text-foreground/45">
-                                          {' '}
-                                          · {contact.personRole}
-                                        </span>
-                                      ) : null}
-                                    </p>
-                                    <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-foreground/45">
-                                      <span>{channelLabel(contact.channel)}</span>
-                                      <span className="text-foreground/25">·</span>
-                                      <span>
-                                        {t(`resumes.generated.referralStatus.${contact.status}`)}
-                                      </span>
-                                    </p>
-                                  </div>
-                                  <div className="flex shrink-0 items-center gap-1.5">
-                                    <Button
-                                      disabled={!draft}
-                                      onClick={() => void copyReferralDraft(contact)}
-                                      title={t('resumes.generated.referralCopyDraft')}
-                                      className="flex h-auto items-center gap-1.5 rounded-lg border-transparent bg-white/5 px-2.5 py-1.5 text-[10px] text-foreground/60 transition-colors hover:text-foreground"
-                                    >
-                                      {copiedReferral === contact.id ? (
-                                        <Check size={11} />
-                                      ) : (
-                                        <Copy size={11} />
-                                      )}
-                                      {t('resumes.generated.referralCopyDraft')}
-                                    </Button>
-                                    {contact.status !== 'sent' && (
-                                      <Button
-                                        disabled={upsertReferral.isPending}
-                                        onClick={() => markReferralSent(contact)}
-                                        title={t('resumes.generated.referralMarkSent')}
-                                        className="flex h-auto items-center gap-1.5 rounded-lg border-brand/20 bg-brand/10 px-2.5 py-1.5 text-[10px] text-brand-soft transition-colors hover:bg-brand/20"
-                                      >
-                                        <Send size={11} />
-                                        {t('resumes.generated.referralMarkSent')}
-                                      </Button>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {draft ? (
-                                  <pre className="max-h-40 select-text overflow-y-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-foreground/55">
-                                    {draft}
-                                  </pre>
+                                {copiedReferral === contact.id ? (
+                                  <Check size={11} />
                                 ) : (
-                                  <p className="text-[10px] italic text-foreground/35">
-                                    {t('resumes.generated.referralNoDraft')}
-                                  </p>
+                                  <Copy size={11} />
                                 )}
-                              </div>
-                            );
-                          })}
+                                {t('resumes.generated.referralCopyDraft')}
+                              </Button>
+                              {contact.status !== 'sent' && (
+                                <Button
+                                  disabled={upsertReferral.isPending}
+                                  onClick={() => markReferralSent(contact)}
+                                  title={t('resumes.generated.referralMarkSent')}
+                                  className="flex h-auto items-center gap-1.5 rounded-lg border-brand/20 bg-brand/10 px-2.5 py-1.5 text-[10px] text-brand-soft transition-colors hover:bg-brand/20"
+                                >
+                                  <Send size={11} />
+                                  {t('resumes.generated.referralMarkSent')}
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+
+                          {draft ? (
+                            <pre className="max-h-40 select-text overflow-y-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-foreground/55">
+                              {draft}
+                            </pre>
+                          ) : (
+                            <p className="text-[10px] italic text-foreground/35">
+                              {t('resumes.generated.referralNoDraft')}
+                            </p>
+                          )}
                         </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
+                      );
+                    })}
+                  </div>
+                </Section>
               )}
             </motion.div>
           )}
@@ -587,67 +520,37 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
       </GlassCard>
 
       {/* Export — moved off the row into a modal (#28). */}
-      <ModalShell
+      <ExportPicker
         open={showExportModal}
         onClose={() => setShowExportModal(false)}
-        ariaLabel={t('resumes.generated.export')}
+        format={exportFormat}
+        onFormatChange={setExportFormat}
+        templateId={exportTemplate}
+        onTemplateChange={setExportTemplate}
+        templateOptions={TEMPLATE_OPTIONS}
       >
-        <div className="space-y-4 p-5">
-          <h3 className="text-sm font-semibold text-foreground/90">
-            {t('resumes.generated.export')}
-          </h3>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <SegmentedControl<ExportFormat>
-              ariaLabel={t('resumes.generated.format')}
-              size="sm"
-              value={exportFormat}
-              onChange={setExportFormat}
-              options={EXPORT_FORMATS.map((fmt) => ({ value: fmt, label: fmt.toUpperCase() }))}
-            />
-            {exportFormat !== 'txt' && (
-              <SegmentedControl<TemplateId>
-                ariaLabel={t('resumes.generated.template')}
-                size="sm"
-                value={exportTemplate}
-                onChange={setExportTemplate}
-                options={TEMPLATE_OPTIONS.map(({ id, label }) => ({ value: id, label }))}
-              />
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {resumeDraft && (
-              <Button
-                variant="primary"
-                disabled={exporting === 'resume'}
-                onClick={() => void doExport('resume')}
-                className="flex h-auto items-center gap-1.5 px-3 py-1.5 text-[11px]"
-              >
-                {exporting === 'resume' ? (
-                  <Loader2 size={11} className="animate-spin" />
-                ) : (
-                  <Download size={11} />
-                )}
-                {t('resumes.generated.exportResume')}
-              </Button>
-            )}
-            {coverDraft && (
-              <Button
-                disabled={exporting === 'cover'}
-                onClick={() => void doExport('cover')}
-                className="flex h-auto items-center gap-1.5 rounded-lg border-white/[0.06] bg-white/5 px-3 py-1.5 text-[11px] text-foreground/60 transition-colors hover:text-foreground"
-              >
-                {exporting === 'cover' ? (
-                  <Loader2 size={11} className="animate-spin" />
-                ) : (
-                  <Download size={11} />
-                )}
-                {t('resumes.generated.exportCoverLetter')}
-              </Button>
-            )}
-          </div>
-        </div>
-      </ModalShell>
+        {resumeDraft && (
+          <Button
+            variant="primary"
+            disabled={exporting === 'resume'}
+            onClick={() => void doExport('resume')}
+            className="flex h-auto items-center gap-1.5 px-3 py-1.5 text-[11px]"
+          >
+            <ExportActionIcon loading={exporting === 'resume'} />
+            {t('resumes.generated.exportResume')}
+          </Button>
+        )}
+        {coverDraft && (
+          <Button
+            disabled={exporting === 'cover'}
+            onClick={() => void doExport('cover')}
+            className="flex h-auto items-center gap-1.5 rounded-lg border-white/[0.06] bg-white/5 px-3 py-1.5 text-[11px] text-foreground/60 transition-colors hover:text-foreground"
+          >
+            <ExportActionIcon loading={exporting === 'cover'} />
+            {t('resumes.generated.exportCoverLetter')}
+          </Button>
+        )}
+      </ExportPicker>
 
       <ConfirmModal
         open={confirmDelete}
