@@ -2,9 +2,9 @@ use anyhow::{Context, Result};
 use docx_rs::*;
 
 use super::{
-    parser::{parse_resume, strip_md},
-    templates::{calculate_spacing, Template},
-    types::{DocumentType, ExportRequest, GenerationMeta, LineKind},
+    parser::strip_md,
+    templates::Template,
+    types::{DocumentType, ExportRequest, GenerationMeta},
 };
 use crate::locale::LocaleProfile;
 
@@ -18,108 +18,6 @@ use super::docx_renderer::*;
 fn page_size_dxa() -> (u32, u32) {
     let geom = LocaleProfile::default().page_geometry();
     (mm_to_dxa(geom.width_mm), mm_to_dxa(geom.height_mm))
-}
-
-// ─── Resume DOCX ──────────────────────────────────────────────────────────────
-
-fn generate_resume_docx(
-    text: &str,
-    meta: Option<&GenerationMeta>,
-    template: &Template,
-) -> Result<Docx> {
-    let parsed = parse_resume(text);
-    let mut docx = Docx::new();
-
-    let page_margin = PageMargin::new()
-        .top(inch_to_dxa(0.9))
-        .bottom(inch_to_dxa(0.9))
-        .left(inch_to_dxa(template.margin_in))
-        .right(inch_to_dxa(template.margin_in));
-
-    let colors = setup_colors(template);
-
-    let mut name_written = false;
-    let mut previous_kind: Option<LineKind> = None;
-
-    for line in &parsed.lines {
-        let spacing = calculate_spacing(&line.kind, previous_kind.as_ref());
-        let _spacing_before = pt_to_dxa(spacing.0);
-        let _spacing_after = pt_to_dxa(spacing.1);
-
-        match line.kind {
-            LineKind::Blank => {
-                // Blank lines in DOCX handled by paragraph spacing — skip emitting empty paras
-            }
-
-            LineKind::Name => {
-                name_written = true;
-                let para = render_name_line(&line.text, meta, template, &colors);
-                docx = docx.add_paragraph(para);
-            }
-
-            LineKind::Contact => {
-                let para = render_contact_line(&line.text, template, &colors);
-                docx = docx.add_paragraph(para.line_spacing(LineSpacing::new().after(120)));
-            }
-
-            LineKind::SectionHeader => {
-                let para = render_section_header(&line.text, template, &colors);
-                docx = docx.add_paragraph(
-                    para.line_spacing(
-                        LineSpacing::new()
-                            .before(pt_to_dxa(template.section_spacing_before) as u32)
-                            .after(60),
-                    ),
-                );
-            }
-
-            LineKind::JobEntry => {
-                let para = render_job_entry(
-                    &line.segments,
-                    line.right_text.as_deref(),
-                    template,
-                    &colors,
-                );
-                docx = docx.add_paragraph(para);
-            }
-
-            LineKind::JobTitle => {
-                let para = render_job_title(&line.segments, template, &colors);
-                docx = docx.add_paragraph(para.line_spacing(LineSpacing::new().after(60)));
-            }
-
-            LineKind::Bullet => {
-                let para = render_bullet_line(&line.segments, template, &colors);
-                docx = docx.add_paragraph(para);
-            }
-
-            LineKind::Text => {
-                let para = render_text_line(&line.segments, template, &colors);
-                docx = docx.add_paragraph(para);
-            }
-        }
-
-        previous_kind = Some(line.kind);
-    }
-
-    if !name_written {
-        if let Some(meta) = meta {
-            if let Some(_name) = &meta.candidate_name {
-                // Name would be prepended — skip for now (requires rebuild)
-            }
-        }
-    }
-
-    let (abstract_num, num) = create_bullet_numbering();
-
-    let (page_w, page_h) = page_size_dxa();
-    docx = docx
-        .add_abstract_numbering(abstract_num)
-        .add_numbering(num)
-        .page_size(page_w, page_h)
-        .page_margin(page_margin);
-
-    Ok(docx)
 }
 
 // ─── Cover letter DOCX ────────────────────────────────────────────────────────
@@ -353,24 +251,19 @@ pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
             } else {
                 text
             };
-            // Strangler-fig switch: the canonical model backend renders resume DOCX
-            // by default; `--no-default-features` falls back to the legacy renderer.
-            // Both arms compile via `cfg!` so neither path rots.
-            if cfg!(feature = "model_docx") {
-                crate::export::model_docx::generate_resume_docx_in(
-                    text,
-                    request.meta.as_ref(),
-                    &template,
-                    request.ats_mode,
-                    request.page_geometry(),
-                    request.contact.as_ref(),
-                    &request.target_lang(),
-                )
-                .context("Failed to generate resume DOCX")?
-            } else {
-                generate_resume_docx(text, request.meta.as_ref(), &single_column())
-                    .context("Failed to generate resume DOCX")?
-            }
+            // model_docx is the sole résumé-DOCX path. The legacy flat-parser arm
+            // has been removed — it was only reachable with `--no-default-features`
+            // and diverged from the model path.
+            crate::export::model_docx::generate_resume_docx_in(
+                text,
+                request.meta.as_ref(),
+                &template,
+                request.ats_mode,
+                request.page_geometry(),
+                request.contact.as_ref(),
+                &request.target_lang(),
+            )
+            .context("Failed to generate resume DOCX")?
         }
         DocumentType::CoverLetter => {
             let text = extract_section(&request.text, "### COMPLETE COVER LETTER ###", None);

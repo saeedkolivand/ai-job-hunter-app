@@ -1,9 +1,4 @@
-//! Pure model transforms: ATS linearization, locale-driven section reordering,
-//! and auto-fix mutators.
-//!
-//! `reorder_sections` and `linearize` are real and tested now. The auto-fix
-//! mutators are stubs (no-ops) with stable signatures — Phase 4 wires their
-//! bodies into the validation pipeline so callers can be written against them today.
+//! Pure model transforms: ATS linearization and locale-driven section reordering.
 
 use super::document::{DocumentModel, SectionId};
 
@@ -41,16 +36,6 @@ pub fn reorder_sections(model: &mut DocumentModel, order: &[SectionId]) {
 pub fn linearize(model: &mut DocumentModel) {
     reorder_sections(model, ATS_ORDER);
 }
-
-/// Move a section heading orphaned at the bottom of a column next to its content.
-///
-/// Stub: implemented in Phase 4 (validation auto-fix). No-op today.
-pub fn move_orphan_headers(_model: &mut DocumentModel) {}
-
-/// Re-flow content that overflows the available page area.
-///
-/// Stub: implemented in Phase 4 (validation auto-fix). No-op today.
-pub fn reflow_overflow(_model: &mut DocumentModel) {}
 
 #[cfg(test)]
 mod tests {
@@ -116,11 +101,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn autofix_stubs_do_not_drop_content() {
-        let mut m = model_with(&[SectionId::Summary, SectionId::Experience]);
-        move_orphan_headers(&mut m);
-        reflow_overflow(&mut m);
-        assert_eq!(ids(&m), vec![SectionId::Summary, SectionId::Experience]);
-    }
 }

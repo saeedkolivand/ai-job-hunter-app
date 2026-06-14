@@ -189,9 +189,19 @@ impl ContactProfile {
 
     /// Override a document header's contact line from this profile, localized for
     /// `lang`. No-op when the profile has no contact parts, so the caller keeps the
-    /// text-derived header. The name is left untouched (handled by generation
-    /// metadata); this fixes only the contact/link line (the URL-swap symptom).
+    /// text-derived header. This fixes the contact/link line (the URL-swap symptom).
+    ///
+    /// Name fallback: when `header.name` is blank (e.g. export without generation
+    /// metadata that normally fills it), `full_name` from this profile is used so
+    /// a profile-edited name is never silently dropped in the rendered output.
     pub fn apply_to_header(&self, header: &mut crate::model::document::HeaderBlock, lang: &str) {
+        // Fill the name from the profile when the header carries no name yet.
+        if header.name.trim().is_empty() {
+            if let Some(name) = non_empty(&self.full_name) {
+                header.name = name.to_string();
+            }
+        }
+
         let rich = self.header_rich(lang);
         if !rich.is_empty() {
             header.contact = rich;
