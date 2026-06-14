@@ -14,6 +14,8 @@ pub struct ScrapeBoardRequest {
     #[serde(default = "default_scrape_board_request_pages")]
     pub pages: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub replace: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub date_filter: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,

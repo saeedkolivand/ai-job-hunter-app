@@ -131,6 +131,10 @@ export const ScrapeBoardRequestSchema = z.object({
   query: z.string().min(1),
   location: z.string().optional(),
   pages: z.number().int().min(1).max(20).default(1),
+  // When true (a NEW search, not "show more"), the backend replaces the live
+  // postings cache the instant the first new result streams in — so a failed or
+  // empty search keeps the previous results. Omitted/false = append.
+  replace: z.boolean().optional(),
   dateFilter: z.enum(DATE_FILTER_OPTIONS).optional(),
   locale: LocaleSchema.optional(),
   // Structured location (from a picked geocode suggestion) — lets boards filter

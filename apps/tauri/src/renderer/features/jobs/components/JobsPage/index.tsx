@@ -24,7 +24,13 @@ import { useFormatRelativeTime } from '@/features/jobs/hooks/useFormatRelativeTi
 import { useScraping } from '@/features/jobs/hooks/useScraping';
 import { MatchScoresProvider } from '@/features/jobs/providers';
 import type { JobEvent, Posting } from '@/features/jobs/types';
-import { useClearPostings, useGeocodeSuggest, useJobEvents, usePostings } from '@/services';
+import {
+  useClearPostings,
+  useGeocodeSuggest,
+  useInvalidatePostings,
+  useJobEvents,
+  usePostings,
+} from '@/services';
 import { useSessionStore } from '@/store/session-store';
 
 export function JobsPage() {
@@ -37,6 +43,7 @@ export function JobsPage() {
   const { data: postingsData = [] } = usePostings();
   const postings = postingsData as Posting[];
   const clearPostings = useClearPostings();
+  const invalidatePostings = useInvalidatePostings();
 
   const { jobs, setJobs } = useSessionStore();
   const { filter, sortBy } = jobs;
@@ -60,6 +67,7 @@ export function JobsPage() {
     livePostings,
     setLivePostings,
     scrapeJobRef,
+    replacePendingRef,
     startScrape,
     cancelScrape,
     noteScrapeFinished,
@@ -84,16 +92,23 @@ export function JobsPage() {
         'url' in item
       ) {
         if (ev.jobId !== scrapeJobRef.current) return;
-        setLivePostings((prev) => {
-          if (prev.some((p) => p.id === item.id)) return prev;
-          return [item, ...prev].slice(0, 500);
-        });
+        if (replacePendingRef.current) {
+          replacePendingRef.current = false;
+          setLivePostings([item]);
+          void invalidatePostings(); // backend already cleared old + added this first item
+        } else {
+          setLivePostings((prev) => {
+            if (prev.some((p) => p.id === item.id)) return prev;
+            return [item, ...prev].slice(0, 500);
+          });
+        }
       }
       return;
     }
 
     if (ev.type === 'job.completed') {
       noteScrapeFinished(ev.jobId, { ok: true });
+      void invalidatePostings();
     } else if (ev.type === 'job.failed') {
       noteScrapeFinished(ev.jobId, {
         ok: false,

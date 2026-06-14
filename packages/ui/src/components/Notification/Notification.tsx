@@ -232,8 +232,8 @@ function NotificationCard({ item, onClose }: { item: NotificationItem; onClose: 
           // replaces the hardcoded violet gradient so it fits both schemes.
           background:
             'linear-gradient(135deg, rgb(var(--glass-rgb) / 0.97) 0%, rgb(var(--glass-rgb) / 0.99) 100%)',
-          backdropFilter: 'blur(24px) saturate(var(--glass-sat))',
-          WebkitBackdropFilter: 'blur(24px) saturate(var(--glass-sat))',
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
           border: '1px solid var(--border-mid)',
           boxShadow: 'var(--shadow-xl), var(--glass-specular)',
         }}
@@ -365,7 +365,7 @@ function NotificationStacks({
         const ordered = placement.startsWith('top') ? [...group].reverse() : group;
         return (
           <div key={placement} style={containerStyle(placement)}>
-            <AnimatePresence initial={false}>
+            <AnimatePresence>
               {ordered.map((item) => (
                 <NotificationCard key={item.key} item={item} onClose={() => dismiss(item.key)} />
               ))}

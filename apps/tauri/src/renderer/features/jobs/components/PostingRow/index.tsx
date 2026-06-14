@@ -9,11 +9,12 @@ import {
   Save,
   Wand2,
 } from 'lucide-react';
+import { motion } from 'motion/react';
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
 import { useTranslation } from '@ajh/translations';
-import { ActionMenu, Button, SourceBadge, useNotification } from '@ajh/ui';
+import { ActionMenu, Button, SourceBadge, transition, useNotification } from '@ajh/ui';
 
 import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
 import { useOpenExternal, usePersistJob } from '@/services';
@@ -138,22 +139,22 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
         <div className="flex items-center gap-2 text-sm font-semibold tracking-tight text-foreground/95">
           <span className="truncate">{posting.title}</span>
           {posting.remote && (
-            <span className="rounded-full border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-emerald-200/85">
+            <span className="rounded-full border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-emerald-300/90">
               {t('jobs.remote')}
             </span>
           )}
           {interactionTypes.has('applied') && (
-            <span className="flex items-center gap-1 rounded-full border border-purple-400/20 bg-purple-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-purple-200/85">
+            <span className="flex items-center gap-1 rounded-full border border-purple-400/20 bg-purple-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-purple-300/90">
               <CircleCheck size={8} /> {t('jobs.applied')}
             </span>
           )}
           {interactionTypes.has('opened') && (
-            <span className="flex items-center gap-1 rounded-full border border-blue-400/20 bg-blue-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-blue-200/85">
+            <span className="flex items-center gap-1 rounded-full border border-blue-400/20 bg-blue-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-blue-300/90">
               <Eye size={8} /> {t('jobs.viewed')}
             </span>
           )}
           {interactionTypes.has('bookmarked') && (
-            <span className="flex items-center gap-1 rounded-full border border-amber-400/20 bg-amber-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-amber-200/85">
+            <span className="flex items-center gap-1 rounded-full border border-amber-400/20 bg-amber-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-amber-300/90">
               <Bookmark size={8} /> {t('jobs.saved')}
             </span>
           )}
@@ -186,17 +187,20 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
         role="presentation"
       >
         <RowMatchScore jobId={posting.id} />
-        <Button
-          variant="primary"
-          onClick={saved ? handleView : handleSave}
-          disabled={saveFromPostingMutation.isPending}
-          title={saved ? t('jobs.view') : t('applications.saveToTracking')}
-          loading={saveFromPostingMutation.isPending}
-          className="transition-all duration-150 ease-out"
-        >
-          {saved ? <Eye size={11} /> : <Save size={11} />}{' '}
-          {saved ? t('jobs.view') : t('applications.save')}
-        </Button>
+        {/* motion wrapper animates the width change when Save flips to View. */}
+        <motion.div layout transition={transition.fast} className="shrink-0">
+          <Button
+            variant="primary"
+            onClick={saved ? handleView : handleSave}
+            disabled={saveFromPostingMutation.isPending}
+            title={saved ? t('jobs.view') : t('applications.saveToTracking')}
+            loading={saveFromPostingMutation.isPending}
+            className="transition-all duration-150 ease-out"
+          >
+            {saved ? <Eye size={11} /> : <Save size={11} />}{' '}
+            {saved ? t('jobs.view') : t('applications.save')}
+          </Button>
+        </motion.div>
         <Button
           variant="glass"
           onClick={handleTailor}
