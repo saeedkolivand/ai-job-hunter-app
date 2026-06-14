@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -26,7 +26,9 @@ try {
     });
     await page.goto(card, { waitUntil: 'networkidle' });
     await page.evaluate(() => document.fonts.ready);
-    await page.screenshot({ path: join(root, t.out) });
+    const outPath = join(root, t.out);
+    mkdirSync(dirname(outPath), { recursive: true });
+    await page.screenshot({ path: outPath });
     await page.close();
     console.log('wrote', t.out, t.w + 'x' + t.h);
   }
