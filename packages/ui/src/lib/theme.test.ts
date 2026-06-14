@@ -201,3 +201,117 @@ describe('theme engine — accent', () => {
     expect(darkSoft).not.toBe(lightSoft);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Gradient — two-tone accent vars (--color-brand-2 / --color-brand-2-soft)
+// ---------------------------------------------------------------------------
+
+describe('theme engine — accent gradient (brand-2)', () => {
+  const base: ThemePrefs = {
+    scheme: 'dark',
+    reduceTransparency: false,
+    contrast: 'normal',
+    textScale: 'default',
+    accentSource: 'default',
+  };
+  const cssVar = (name: string) => document.documentElement.style.getPropertyValue(name);
+
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.style.cssText = '';
+    stubMatchMedia({});
+  });
+  afterEach(() => {
+    localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it('uses the hand-tuned accentColor2 verbatim when provided (custom with color2)', () => {
+    applyTheme({
+      ...base,
+      accentSource: 'custom',
+      accentColor: '#007aff',
+      accentColor2: '#22d3ee',
+    });
+    expect(cssVar('--color-brand')).toBe('#007aff');
+    expect(cssVar('--color-brand-2')).toBe('#22d3ee');
+  });
+
+  it('auto-rotates to a distinct brand-2 when accentColor2 is absent (custom without color2)', () => {
+    applyTheme({
+      ...base,
+      accentSource: 'custom',
+      accentColor: '#007aff',
+      // accentColor2 intentionally omitted
+    });
+    const brand2 = cssVar('--color-brand-2');
+    // Must be set, valid hex, and different from the primary.
+    expect(brand2).toMatch(/^#[0-9a-f]{6}$/);
+    expect(brand2).not.toBe('');
+    expect(brand2).not.toBe('#007aff');
+  });
+
+  it("'default' source clears --color-brand-2 and --color-brand-2-soft", () => {
+    // First set a custom accent with brand-2.
+    applyTheme({
+      ...base,
+      accentSource: 'custom',
+      accentColor: '#a855f7',
+      accentColor2: '#6366f1',
+    });
+    expect(cssVar('--color-brand-2')).toBe('#6366f1');
+
+    // Switch to default — both gradient vars must be removed.
+    applyTheme({ ...base, accentSource: 'default' });
+    expect(cssVar('--color-brand-2')).toBe('');
+    expect(cssVar('--color-brand-2-soft')).toBe('');
+  });
+
+  it('sets --color-brand-2-soft to a non-empty valid hex whenever brand-2 is set', () => {
+    applyTheme({
+      ...base,
+      accentSource: 'custom',
+      accentColor: '#34c759',
+      accentColor2: '#06b6a4',
+    });
+    const brand2Soft = cssVar('--color-brand-2-soft');
+    expect(brand2Soft).toMatch(/^#[0-9a-f]{6}$/);
+    expect(brand2Soft).not.toBe('');
+  });
+
+  it('--color-brand-2-soft is also set when brand-2 is auto-derived (no color2 supplied)', () => {
+    applyTheme({
+      ...base,
+      accentSource: 'custom',
+      accentColor: '#ff9500',
+      // no accentColor2
+    });
+    const brand2Soft = cssVar('--color-brand-2-soft');
+    expect(brand2Soft).toMatch(/^#[0-9a-f]{6}$/);
+    expect(brand2Soft).not.toBe('');
+  });
+
+  it("'system' source derives brand-2 by rotation, ignoring a stale accentColor2", () => {
+    applyTheme({
+      ...base,
+      accentSource: 'system',
+      accentColor: '#1e9e5a',
+      // Leftover from a prior preset — must NOT be reused for the system accent.
+      accentColor2: '#6366f1',
+    });
+    const brand2 = cssVar('--color-brand-2');
+    // Derived via rotation of the system color, not the stale persisted pair.
+    expect(brand2).toMatch(/^#[0-9a-f]{6}$/);
+    expect(brand2).not.toBe('#6366f1');
+  });
+
+  it("'custom' source still honors the hand-tuned accentColor2 verbatim", () => {
+    applyTheme({
+      ...base,
+      accentSource: 'custom',
+      accentColor: '#1e9e5a',
+      accentColor2: '#22d3ee',
+    });
+    expect(cssVar('--color-brand-2')).toBe('#22d3ee');
+  });
+});

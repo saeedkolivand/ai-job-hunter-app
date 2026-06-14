@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { lighten, lightenHex, luminance, parseHex, readableForeground, toHex } from './color';
+import {
+  lighten,
+  lightenHex,
+  luminance,
+  parseHex,
+  readableForeground,
+  rotateHueHex,
+  toHex,
+} from './color';
 
 describe('parseHex', () => {
   it('parses #rrggbb', () => {
@@ -63,5 +71,102 @@ describe('readableForeground', () => {
   });
   it('returns null on invalid input', () => {
     expect(readableForeground('nope')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rotateHueHex
+// ---------------------------------------------------------------------------
+
+/** Derive hue in degrees [0, 360) from a #rrggbb string. Returns -1 when invalid. */
+function hueFromHex(hex: string): number {
+  const rgb = parseHex(hex);
+  if (!rgb) return -1;
+  const r = rgb.r / 255;
+  const g = rgb.g / 255;
+  const b = rgb.b / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  if (d === 0) return 0; // achromatic
+  let h: number;
+  if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return (h * 60 + 360) % 360;
+}
+
+describe('rotateHueHex', () => {
+  it('violet #a855f7 rotated -30° lands in the indigo/blue family (~240°)', () => {
+    const result = rotateHueHex('#a855f7', -30);
+    expect(result).not.toBeNull();
+    // Result must be a valid #rrggbb and different from the input.
+    expect(result).toMatch(/^#[0-9a-f]{6}$/);
+    expect(result).not.toBe('#a855f7');
+    // Hue must be near 240° (±6° tolerance to absorb rounding).
+    const hue = hueFromHex(result ?? '');
+    expect(Math.abs(hue - 240)).toBeLessThanOrEqual(6);
+  });
+
+  it('a 0° rotation returns the same color within rounding', () => {
+    const input = '#a855f7';
+    const result = rotateHueHex(input, 0);
+    expect(result).not.toBeNull();
+    // Round-trip: parse both and compare channels within ±1 (integer rounding).
+    const orig = parseHex(input);
+    if (!orig) throw new Error(`parseHex failed for known-valid input: ${input}`);
+    const got = parseHex(result ?? '');
+    if (!got) throw new Error(`parseHex failed for rotateHueHex result: ${result}`);
+    expect(Math.abs(got.r - orig.r)).toBeLessThanOrEqual(1);
+    expect(Math.abs(got.g - orig.g)).toBeLessThanOrEqual(1);
+    expect(Math.abs(got.b - orig.b)).toBeLessThanOrEqual(1);
+  });
+
+  it('a 360° rotation returns the same color within rounding', () => {
+    const input = '#34c759';
+    const result = rotateHueHex(input, 360);
+    expect(result).not.toBeNull();
+    const orig = parseHex(input);
+    if (!orig) throw new Error(`parseHex failed for known-valid input: ${input}`);
+    const got = parseHex(result ?? '');
+    if (!got) throw new Error(`parseHex failed for rotateHueHex result: ${result}`);
+    expect(Math.abs(got.r - orig.r)).toBeLessThanOrEqual(1);
+    expect(Math.abs(got.g - orig.g)).toBeLessThanOrEqual(1);
+    expect(Math.abs(got.b - orig.b)).toBeLessThanOrEqual(1);
+  });
+
+  it('hue wrap-around: near-red #ff3b30 rotated -30° gives a valid hex shifted toward magenta', () => {
+    // #ff3b30 is a red (hue ~3°). Rotating -30° wraps to ~333°, the magenta/pink
+    // range where blue > red channel gap is smaller (blue grows, hue shifts left).
+    const result = rotateHueHex('#ff3b30', -30);
+    expect(result).not.toBeNull();
+    expect(result).toMatch(/^#[0-9a-f]{6}$/);
+    // After rotating toward magenta the blue channel must have grown vs the input.
+    const orig = parseHex('#ff3b30');
+    if (!orig) throw new Error('parseHex failed for known-valid input: #ff3b30');
+    const got = parseHex(result ?? '');
+    if (!got) throw new Error(`parseHex failed for rotateHueHex result: ${result}`);
+    expect(got.b).toBeGreaterThan(orig.b);
+    // Result must still be a valid hex — no NaN / clamped-to-black artefact.
+    expect(got.r + got.g + got.b).toBeGreaterThan(0);
+  });
+
+  it('invalid inputs return null', () => {
+    expect(rotateHueHex('nope', -30)).toBeNull();
+    expect(rotateHueHex('#12', 10)).toBeNull();
+    expect(rotateHueHex('', 0)).toBeNull();
+  });
+
+  it('achromatic input (#808080) returns a valid hex that is still achromatic', () => {
+    // Saturation is 0 for pure grays, so rotating the hue is a mathematical
+    // no-op: S=0 means all channels must remain equal after the round-trip.
+    const result = rotateHueHex('#808080', -30);
+    expect(result).not.toBeNull();
+    expect(result).toMatch(/^#[0-9a-f]{6}$/);
+    const got = parseHex(result ?? '');
+    if (!got) throw new Error(`parseHex failed for rotateHueHex result: ${result}`);
+    // All channels equal within ±1 (rounding only).
+    expect(Math.abs(got.r - got.g)).toBeLessThanOrEqual(1);
+    expect(Math.abs(got.g - got.b)).toBeLessThanOrEqual(1);
   });
 });

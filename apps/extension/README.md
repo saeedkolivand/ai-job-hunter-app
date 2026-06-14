@@ -7,10 +7,11 @@
 <p align="center">
   <a href="https://img.shields.io/badge/MV3-Chrome%20%7C%20Firefox-24C8DB"><img alt="MV3" src="https://img.shields.io/badge/MV3-Chrome%20%7C%20Firefox-24C8DB"></a>
   <a href="https://img.shields.io/badge/loopback-only-2ea44f"><img alt="Loopback only" src="https://img.shields.io/badge/loopback-only-2ea44f"></a>
-  <a href="https://img.shields.io/badge/unpublished-dev-orange"><img alt="Unpublished" src="https://img.shields.io/badge/unpublished-dev-orange"></a>
+  <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll"><img alt="Chrome published" src="https://img.shields.io/badge/Chrome-published-2ea44f?logo=googlechrome&logoColor=white"></a>
+  <a href="https://img.shields.io/badge/Firefox-AMO%20pending-orange?logo=firefox&logoColor=white"><img alt="Firefox AMO pending" src="https://img.shields.io/badge/Firefox-AMO%20pending-orange?logo=firefox&logoColor=white"></a>
 </p>
 
-This is the browser half of the **AI Job Hunter** job-import feature. An MV3 extension (Chrome + Firefox) that captures the job posting on the current tab and sends it to the **desktop app** running on your machine, over a private loopback WebSocket. No account. No remote backend. It is inert unless the desktop app is running and you have paired it.
+This is the browser half of the **AI Job Hunter** job-import feature. An MV3 extension available for **Chrome on the Web Store** ([install](https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll)) and Firefox/AMO (pending). It captures the job posting on the current tab and sends it to the **desktop app** running on your machine, over a private loopback WebSocket. No account. No remote backend. It is inert unless the desktop app is running and you have paired it.
 
 **What it does:** while browsing a job board, click the extension button → choose **Import via URL** (extension sends the job URL, desktop fetches + parses it) or **Scan page** (extension captures the rendered DOM, desktop parses it) → the job appears in your **AI Job Hunter** saved applications, tagged **New**. Tick **"I already applied"** to mark it applied instead.
 
@@ -59,7 +60,7 @@ For **local development**, see the section below — the unpacked extension gets
 
 ## Local Development & Testing
 
-The one non-obvious step is **dev pairing**: a locally-loaded (unpacked) extension gets a random dev id that is NOT in the desktop app's origin allowlist (which only holds publish-time placeholders), so the app refuses to pair with it unless you trust that dev origin via the `AJH_EXTENSION_DEV_ORIGINS` env var. Chrome is the easiest target.
+The one non-obvious step is **dev pairing**: a locally-loaded (unpacked) extension gets a random dev id that is NOT in the desktop app's origin allowlist (which holds the published Chrome id), so the app refuses to pair with it unless you trust that dev origin via the `AJH_EXTENSION_DEV_ORIGINS` env var. Chrome is the easiest target.
 
 1. **Build the extension** (repo root):
 
@@ -236,7 +237,7 @@ On release, the **Release workflow** includes a manual `package-extension` job (
 - Packages them as zips with source-build reproducibility info
 - Uploads artifacts for store submission (when the extension is published)
 
-Release frequency: the extension version tracks the app version via `pnpm sync:version` (currently unpublished, so no store cadence).
+Release frequency: the extension version tracks the app version via `pnpm sync:version` (Chrome is published to the Web Store; Firefox/AMO is pending).
 
 ---
 
@@ -264,7 +265,7 @@ emitted JS stays readable for review.
 The desktop bridge validates `moz-extension://` and `chrome-extension://` origins in the WS handshake (`apps/tauri/src-tauri/src/extension_bridge/auth.rs::is_allowed_origin`). **The origin is not the auth boundary** — the per-frame 256-bit pairing token is; the origin is defense-in-depth.
 
 - **Firefox:** origins are random per-install internal UUIDs (anti-fingerprinting), not the AMO gecko id. The bridge accepts any well-formed UUID shape (8-4-4-4-12 lowercase hex) via `is_extension_uuid`. The gecko id (`job-importer@aijobhunter.app`) never appears in a real `moz-extension://` origin and is intentionally absent from the allowlist.
-- **Chrome:** the bridge holds the stable Chrome Web Store id in `ALLOWED_EXTENSION_IDS[0]` (still a placeholder `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`). The real CWS id is assigned at publish and cannot be forced from the manifest — it must be set in `auth.rs` once published. Until then, a locally-loaded Chrome build is admitted only via the desktop dev-origin override (`AJH_EXTENSION_DEV_ORIGINS`).
+- **Chrome:** the bridge pins the published Chrome Web Store id `oaoekkgkhmgdfnpmfkpphgiikliaicll` in `ALLOWED_EXTENSION_IDS` (in `apps/tauri/src-tauri/src/extension_bridge/auth.rs`). A locally-loaded Chrome build is still admitted only via the dev-origin override (`AJH_EXTENSION_DEV_ORIGINS`).
 
 ---
 

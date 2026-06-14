@@ -33,6 +33,7 @@
 <p align="center">
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey"></a>
   <a href="https://aijobhunter.app"><img alt="Live site" src="https://img.shields.io/badge/Live-site-e24b4a"></a>
+  <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll"><img alt="Chrome Web Store" src="https://img.shields.io/badge/Chrome%20Web%20Store-available-e24b4a?logo=googlechrome&logoColor=white"></a>
   <a href="SECURITY.md"><img alt="Security policy" src="https://img.shields.io/badge/security-policy-2ea44f"></a>
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/saeedkolivand/ai-job-hunter-app?style=flat&color=f5b301"></a>
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/pulls"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
@@ -129,6 +130,7 @@ The only outbound calls are to the AI provider **you** configure (and an optiona
 <details>
 <summary><strong>🌐 Browser extension (save jobs one-click)</strong></summary>
 
+- **Now on the Chrome Web Store** — <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener noreferrer">Install for Chrome</a>. Firefox (AMO) coming soon.
 - MV3 extension for **Chrome & Firefox** — while browsing any job board, click the extension button to import the job into your saved applications.
 - **Two import modes:** **Import via URL** (extension sends the URL, app fetches + parses), or **Scan page** (extension captures the authenticated DOM, useful for login-walled boards).
 - Fully local — jobs are sent to the desktop app over a **loopback-only WebSocket**, paired with a secret token. Zero remote backend, zero analytics.

@@ -17,7 +17,7 @@ export interface NavPillProps {
  * Animated active-row indicator for vertical nav lists (app sidebar, settings
  * sidebar). Render it conditionally — only for the active row — as the first
  * child of a `relative` wrapper, with the clickable row as its sibling above.
- * The violet glass pill slides between rows via motion's shared-layout
+ * The accent glass pill slides between rows via motion's shared-layout
  * animation keyed on {@link NavPillProps.layoutId}. Decorative: the active
  * state is conveyed to assistive tech by `aria-current` on the row itself.
  */
@@ -28,9 +28,10 @@ export function NavPill({ layoutId, className }: NavPillProps) {
       layoutId={layoutId}
       className={cn('pointer-events-none absolute inset-0 rounded-xl', className)}
       style={{
-        background: 'linear-gradient(135deg, rgba(168,85,247,0.18) 0%, rgba(99,102,241,0.10) 100%)',
-        border: '1px solid rgba(168,85,247,0.25)',
-        boxShadow: '0 0 16px rgba(168,85,247,0.12)',
+        background:
+          'linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 18%, transparent) 0%, color-mix(in srgb, var(--color-brand-2) 10%, transparent) 100%)',
+        border: '1px solid color-mix(in srgb, var(--color-brand) 25%, transparent)',
+        boxShadow: '0 0 16px color-mix(in srgb, var(--color-brand) 12%, transparent)',
       }}
       transition={transition.spring}
     />
