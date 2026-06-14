@@ -23,7 +23,7 @@ For the exact algorithm steps, parameters, and implementation, see `apps/tauri/s
 
 - Language detection via `whatlang`.
 - Snowball stemming for the detected language (English, German, French, etc.).
-- Jaccard-based keyword coverage (intersection ÷ union of stemmed terms).
+- Keyword coverage: the share of the job's keyword set matched by the résumé (`|job ∩ résumé| / |job|`), rounded to a 0–100 percentage.
 - Word-boundary detection to prevent false matches (e.g., "finance" vs. "refinance").
 - Unstemmed, readable gap terms surfaced in match explanations.
 
