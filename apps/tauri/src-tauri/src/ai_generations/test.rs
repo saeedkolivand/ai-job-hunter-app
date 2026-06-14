@@ -313,3 +313,138 @@ fn update_texts_unknown_id_both_fields_returns_err() {
         "error message must include the id: {msg}"
     );
 }
+
+// ── R1 — Import rollback regression guard ────────────────────────────────────
+//
+// The C1 fix added a transaction around clear + repopulate in `DataStore::import`.
+// These tests pin that fix: a malformed LATER record must abort the import and
+// leave the store's PRIOR data fully intact (neither wiped nor half-restored).
+
+/// A valid generation serialised with all required camelCase fields. Used as the
+/// "good" payload in rollback tests.
+fn valid_generation_json(id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "createdAt": 1_000_000u64,
+        "candidateName": "Jane",
+        "jobTitle": "Engineer",
+        "companyName": "Acme",
+        "resumeLanguage": "en",
+        "jobAdLanguage": "en",
+        "targetLanguage": "en",
+        "mismatch": false,
+        "topRequirements": ["rust"],
+        "mode": "ats",
+        "resumeText": "My resume",
+        "coverLetterText": "My cover letter",
+        "jobAd": "Job description"
+    })
+}
+
+#[test]
+fn import_with_invalid_later_record_returns_err_and_prior_data_intact() {
+    // R1 — Build a store with one known record, then attempt an import whose
+    // LAST element has an invalid type for `mismatch` (must be bool, not "bad").
+    // Assert: import returns Err AND the prior record is still present.
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    // Seed the store with prior data.
+    store.insert(&record("prior-1", "")).unwrap();
+    assert_eq!(store.list().len(), 1, "precondition: one prior record");
+
+    // Build a bundle: first element is valid, second is malformed (`mismatch` is
+    // a string instead of a bool). The malformed record must abort the whole import.
+    let bundle = serde_json::json!([
+        valid_generation_json("new-1"),
+        {
+            "id": "bad-2",
+            "createdAt": 2_000_000u64,
+            "candidateName": "Jane",
+            "jobTitle": "Engineer",
+            "companyName": "Acme",
+            "resumeLanguage": "en",
+            "jobAdLanguage": "en",
+            "targetLanguage": "en",
+            "mismatch": "not-a-bool",   // ← wrong type: must be bool
+            "topRequirements": [],
+            "mode": "ats",
+            "resumeText": "",
+            "coverLetterText": "",
+            "jobAd": ""
+        }
+    ]);
+
+    let result = crate::data_store::DataStore::import(&store, &bundle);
+    assert!(
+        result.is_err(),
+        "import of a malformed bundle must return Err; got Ok"
+    );
+
+    // Prior data must be fully intact — not wiped, not partially replaced.
+    let remaining = store.list();
+    assert_eq!(
+        remaining.len(),
+        1,
+        "import rollback must leave the prior 1 record intact; got {} records",
+        remaining.len()
+    );
+    assert_eq!(
+        remaining[0].id, "prior-1",
+        "the surviving record must be the original 'prior-1', not a partial import"
+    );
+}
+
+#[test]
+fn import_with_all_valid_records_replaces_prior_data() {
+    // R1 happy-path companion: confirms the import transaction DOES commit when
+    // the bundle is fully valid — prior data is replaced, not preserved.
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    store.insert(&record("prior-1", "")).unwrap();
+    store.insert(&record("prior-2", "")).unwrap();
+    assert_eq!(store.list().len(), 2, "precondition: two prior records");
+
+    let bundle = serde_json::json!([
+        valid_generation_json("new-1"),
+        valid_generation_json("new-2"),
+        valid_generation_json("new-3"),
+    ]);
+
+    let n = crate::data_store::DataStore::import(&store, &bundle).unwrap();
+    assert_eq!(n, 3, "import must report 3 records restored");
+
+    let list = store.list();
+    assert_eq!(list.len(), 3, "store must now hold the 3 imported records");
+    let ids: Vec<&str> = list.iter().map(|r| r.id.as_str()).collect();
+    assert!(
+        ids.contains(&"new-1") && ids.contains(&"new-2") && ids.contains(&"new-3"),
+        "imported ids must be present; got {ids:?}"
+    );
+    assert!(
+        !ids.contains(&"prior-1"),
+        "prior record 'prior-1' must not survive a successful import"
+    );
+}
+
+#[test]
+fn import_non_array_returns_err_and_prior_data_intact() {
+    // R1 edge-case: the top-level value is not an array at all. The store must
+    // return Err before touching any data.
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    store.insert(&record("prior-1", "")).unwrap();
+
+    let result = crate::data_store::DataStore::import(&store, &serde_json::json!({"bad": true}));
+    assert!(result.is_err(), "non-array input must be rejected");
+
+    let remaining = store.list();
+    assert_eq!(
+        remaining.len(),
+        1,
+        "prior data must be intact after non-array import rejection"
+    );
+    assert_eq!(remaining[0].id, "prior-1");
+}

@@ -887,3 +887,126 @@ fn delete_keep_documents_true_detaches_child_generations_but_keeps_rows() {
         "no generation rows should still reference the deleted Application id"
     );
 }
+
+// ── R1 — ApplicationStore::import rollback regression guard ──────────────────
+//
+// `DataStore::import` for ApplicationStore runs clear+repopulate in ONE
+// transaction. These tests pin that contract: a malformed LATER record must
+// abort the import and leave PRIOR data fully intact.
+
+/// Minimal valid Application JSON, compatible with the `Application` serde shape.
+fn valid_application_json(id: &str, status: &str) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "status": status,
+        "appliedAt": null,
+        "createdAt": 1_000_000u64,
+        "updatedAt": 1_000_000u64,
+        "jobUrl": "",
+        "board": "linkedin",
+        "company": "Acme",
+        "title": "Engineer",
+        "candidate": "Jane",
+        "answers": [],
+        "brief": "",
+        "notes": "",
+        "nextActionAt": null,
+        "comp": "",
+        "contactName": "",
+        "contactEmail": ""
+    })
+}
+
+#[test]
+fn application_import_malformed_later_record_rolls_back_prior_data() {
+    // R1 — Seed store with prior data, then import a bundle whose LAST element
+    // has `status` as a number (must be a string). Import must fail and prior
+    // data must be fully intact.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+
+    // Seed with a known application.
+    let prior_id = store.track_manual("", "", &meta("Prior Corp", "Prior Role")).unwrap();
+    let prior_count = store.list().len();
+    assert_eq!(prior_count, 1, "precondition: one prior record");
+
+    // Bundle: first element is valid, second has a numeric status (invalid type).
+    let bundle = serde_json::json!([
+        valid_application_json("new-1", "applied"),
+        {
+            "id": "bad-2",
+            "status": 42,           // ← wrong type: must be string
+            "appliedAt": null,
+            "createdAt": 2_000_000u64,
+            "updatedAt": 2_000_000u64,
+            "jobUrl": "",
+            "board": "",
+            "company": "Bad Corp",
+            "title": "Bad Role",
+            "candidate": "",
+            "answers": [],
+            "brief": "",
+            "notes": "",
+            "nextActionAt": null,
+            "comp": "",
+            "contactName": "",
+            "contactEmail": ""
+        }
+    ]);
+
+    let result = crate::data_store::DataStore::import(&store, &bundle);
+    assert!(
+        result.is_err(),
+        "import of a bundle with a malformed record must return Err; got Ok"
+    );
+
+    // PRIOR data must be fully intact — the transaction must have rolled back.
+    let remaining = store.list();
+    assert_eq!(
+        remaining.len(),
+        1,
+        "import rollback must leave prior records intact; got {} records (expected 1)",
+        remaining.len()
+    );
+    assert_eq!(
+        remaining[0].id, prior_id,
+        "the surviving record must be the original prior application, not a partial import"
+    );
+    // Status events for the prior record must also still be present.
+    assert!(
+        !store.events(&prior_id).is_empty(),
+        "status events for the prior application must survive a rolled-back import"
+    );
+}
+
+#[test]
+fn application_import_all_valid_records_replaces_prior_data() {
+    // R1 happy-path: confirms the import transaction commits when the bundle is
+    // fully valid — prior data is replaced with the imported records.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+
+    store.track_manual("", "", &meta("Old Corp", "Old Role")).unwrap();
+    assert_eq!(store.list().len(), 1, "precondition: one prior record");
+
+    let bundle = serde_json::json!([
+        valid_application_json("new-1", "applied"),
+        valid_application_json("new-2", "saved"),
+    ]);
+
+    let n = crate::data_store::DataStore::import(&store, &bundle).unwrap();
+    assert_eq!(n, 2, "import must report 2 records restored");
+
+    let list = store.list();
+    assert_eq!(list.len(), 2, "store must hold the 2 imported records");
+    let ids: Vec<&str> = list.iter().map(|a| a.id.as_str()).collect();
+    assert!(
+        ids.contains(&"new-1") && ids.contains(&"new-2"),
+        "both imported ids must be present; got {ids:?}"
+    );
+    // Prior record must be gone.
+    assert!(
+        list.iter().all(|a| a.company != "Old Corp"),
+        "prior record 'Old Corp' must not survive a successful import"
+    );
+}

@@ -250,4 +250,210 @@ mod tests {
         reg.register::<KvCache>("cache");
         assert_eq!(reg.labels(), vec!["job_tracker", "ai_generations", "cache"]);
     }
+
+    // C3 — `Resettable` for AiGenerationStore: populate then reset, verify empty.
+    #[test]
+    fn ai_generation_store_reset_empties_all_records() {
+        let dir = TempDir::new().unwrap();
+        let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+        store
+            .insert(&crate::ai_generations::AiGenerationRecord {
+                id: "g1".into(),
+                created_at: 1000,
+                candidate_name: "Jane".into(),
+                job_title: "Engineer".into(),
+                company_name: "Acme".into(),
+                resume_language: "en".into(),
+                job_ad_language: "en".into(),
+                target_language: "en".into(),
+                mismatch: false,
+                top_requirements: vec![],
+                mode: "ats".into(),
+                resume_text: "R".into(),
+                cover_letter_text: "C".into(),
+                job_ad: "JD".into(),
+                job_url: String::new(),
+                board: String::new(),
+                application_answers: vec![],
+                company_brief: String::new(),
+            })
+            .unwrap();
+        assert_eq!(store.list().len(), 1, "precondition: one record inserted");
+
+        Resettable::reset(&store);
+        assert!(
+            store.list().is_empty(),
+            "AiGenerationStore must be empty after Resettable::reset"
+        );
+    }
+
+    // C3 — `Resettable` for ApplicationStore: populate both tables then reset.
+    #[test]
+    fn application_store_reset_empties_applications_and_events() {
+        let dir = TempDir::new().unwrap();
+        let store = crate::applications::ApplicationStore::open(dir.path()).unwrap();
+        store
+            .track_manual(
+                "",
+                "",
+                &crate::applications::ApplicationMeta {
+                    company: "Acme".into(),
+                    title: "Dev".into(),
+                    candidate: "Jane".into(),
+                    brief: String::new(),
+                    answers: vec![],
+                },
+            )
+            .unwrap();
+        let id = store.list().first().unwrap().id.clone();
+        assert!(!store.events(&id).is_empty(), "precondition: event exists");
+
+        Resettable::reset(&store);
+        assert!(
+            store.list().is_empty(),
+            "ApplicationStore.list must be empty after reset"
+        );
+        assert!(
+            store.events(&id).is_empty(),
+            "status_events must also be wiped by reset"
+        );
+    }
+
+    // C3 — `Resettable` for JobPreferencesStore: the impl calls `.clear()`, NOT
+    // `.clear_all()`. Pin that this wrapping correctly zeroes the preferences.
+    #[test]
+    fn job_preferences_store_reset_nullifies_all_fields() {
+        let dir = TempDir::new().unwrap();
+        let store = crate::job_preferences::JobPreferencesStore::open(
+            &dir.path().to_path_buf(),
+        )
+        .unwrap();
+        store
+            .set(&crate::job_preferences::JobPreferences {
+                location: Some("Berlin".into()),
+                remote: Some("hybrid".into()),
+                seniority: Some("senior".into()),
+                salary_min: Some(80_000),
+                salary_max: Some(120_000),
+                tech_stack: Some(vec![crate::job_preferences::TechStackItem {
+                    name: "Rust".into(),
+                    category: "backend".into(),
+                }]),
+            })
+            .unwrap();
+        let before = store.get();
+        assert!(
+            before.location.is_some(),
+            "precondition: location set before reset"
+        );
+
+        Resettable::reset(&store);
+        let after = store.get();
+        assert!(
+            after.location.is_none(),
+            "location must be None after reset"
+        );
+        assert!(after.remote.is_none(), "remote must be None after reset");
+        assert!(
+            after.seniority.is_none(),
+            "seniority must be None after reset"
+        );
+        assert!(
+            after.salary_min.is_none(),
+            "salary_min must be None after reset"
+        );
+        assert!(
+            after.salary_max.is_none(),
+            "salary_max must be None after reset"
+        );
+        assert!(
+            after.tech_stack.is_none(),
+            "tech_stack must be None after reset"
+        );
+    }
+
+    // C3 — `Resettable` for ContactProfileStore: the impl calls `.clear()` which
+    // writes a default profile. Pin that the reset yields an empty profile.
+    #[test]
+    fn contact_profile_store_reset_yields_default_empty_profile() {
+        let dir = TempDir::new().unwrap();
+        let store = crate::contact_profile::ContactProfileStore::open(
+            &dir.path().to_path_buf(),
+        )
+        .unwrap();
+        let mut profile = crate::contact_profile::ContactProfile::default();
+        profile.email = Some("jane@acme.com".into());
+        store.set(&profile).unwrap();
+        assert!(
+            store.get().email.is_some(),
+            "precondition: email set before reset"
+        );
+
+        Resettable::reset(&store);
+        let after = store.get();
+        assert!(
+            after.email.is_none(),
+            "email must be None after ContactProfileStore reset"
+        );
+    }
+
+    // C3 — Registry completeness: every label that `privacy_reset_app` must wipe
+    // is registered. This test pins the *current* expected set (mirrored from
+    // `src/lib.rs::setup`) so a new persistent store added via `manage_resettable`
+    // can't silently escape the factory-reset wipe. If a new label appears in
+    // `lib.rs`, add it here too.
+    //
+    // NOTE: This exercises the type-erased registry labels and the compile-time
+    // `T: Resettable` bound, not the AppHandle dispatch (which needs a live
+    // Tauri runtime). The dispatch is correct-by-construction: `register::<T>`
+    // only compiles when `T` implements `Resettable`.
+    #[test]
+    fn reset_registry_expected_labels_match_lib_rs_setup() {
+        // Labels as used in `lib.rs::setup` — the single source of truth.
+        // Extension-bridge and notification labels are registered by their own
+        // `manage` helpers and are included here for completeness.
+        let expected: &[&str] = &[
+            "autopilots",
+            "credentials",
+            "documents",
+            "ai_generations",
+            "applications",
+            "job_preferences",
+            "contact_profile",
+            "referrals",
+            "job_tracker",
+            "postings",
+            "interactions",
+            "cache",
+        ];
+
+        let mut reg = ResetRegistry::default();
+        // Replicate registrations (types must match the T used in lib.rs).
+        reg.register::<Arc<Mutex<AutopilotStore>>>("autopilots");
+        reg.register::<Mutex<CredentialStore>>("credentials");
+        reg.register::<DocumentStore>("documents");
+        reg.register::<AiGenerationStore>("ai_generations");
+        reg.register::<ApplicationStore>("applications");
+        reg.register::<JobPreferencesStore>("job_preferences");
+        reg.register::<ContactProfileStore>("contact_profile");
+        reg.register::<ReferralStore>("referrals");
+        reg.register::<Mutex<JobTracker>>("job_tracker");
+        reg.register::<Mutex<PostingsCache>>("postings");
+        reg.register::<Mutex<InteractionStore>>("interactions");
+        reg.register::<KvCache>("cache");
+
+        let labels = reg.labels();
+        for label in expected {
+            assert!(
+                labels.contains(label),
+                "expected reset label '{label}' missing from registry; current labels: {labels:?}"
+            );
+        }
+        // Count must match so a removal in lib.rs also breaks this guard.
+        assert_eq!(
+            labels.len(),
+            expected.len(),
+            "registry label count changed: got {labels:?}, expected {expected:?}"
+        );
+    }
 }

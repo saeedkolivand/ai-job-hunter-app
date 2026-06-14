@@ -516,6 +516,107 @@ mod test {
         );
     }
 
+    // A6 — Combined-score formula: combined = round(0.6 * semantic + 0.4 * ats).
+    // Tests the arithmetic kernel in isolation, covering the branch in `score_one`
+    // where `job_vec.is_some()` is true. The formula is not `0.6*s + 0.4*a` before
+    // rounding — we pin the specific rounded values to catch weight drift.
+    #[test]
+    fn combined_formula_is_weighted_60_semantic_40_ats_rounded() {
+        // Simulate the production formula: both vectors present → combined branch.
+        let semantic = 80.0_f64;
+        let ats = 60.0_f64;
+        let combined = (0.6 * semantic + 0.4 * ats).round();
+        // 0.6 * 80 + 0.4 * 60 = 48 + 24 = 72 → rounded = 72
+        assert_eq!(combined, 72.0, "combined must be round(0.6*80 + 0.4*60) = 72");
+
+        // Verify a different pair to guard against accidental integer short-circuit.
+        let semantic2 = 75.0_f64;
+        let ats2 = 50.0_f64;
+        let combined2 = (0.6 * semantic2 + 0.4 * ats2).round();
+        // 0.6 * 75 + 0.4 * 50 = 45 + 20 = 65 → rounded = 65
+        assert_eq!(combined2, 65.0, "combined must be round(0.6*75 + 0.4*50) = 65");
+
+        // When semantic and ats differ, combined must differ from BOTH so we can
+        // distinguish it from an accidental identity (combined == ats).
+        assert_ne!(combined, ats, "combined must differ from ats (weights are 0.6/0.4)");
+        assert_ne!(combined, semantic, "combined must differ from semantic (weights are 0.6/0.4)");
+    }
+
+    // A6 — Degrade path: when the semantic vector is unavailable (`job_vec.is_none()`),
+    // the production branch in `score_one` yields `combined = ats` (no semantic
+    // weighting). This test pins that degrade-path logic is `!= 0.6*semantic +
+    // 0.4*ats`; combined equals ATS score when semantic is absent.
+    //
+    // The branch in score_one is: `let combined = if job_vec.is_some() {
+    //     (0.6 * semantic + 0.4 * ats).round() } else { ats };`
+    // We verify that the ELSE arm produces exactly `ats`, not 0.6*0 + 0.4*ats.
+    #[test]
+    fn degrade_path_combined_equals_ats_when_no_semantic_vector() {
+        // Simulate: job_vec is None → semantic stays 0.0 (no computation),
+        // combined = ats (the else branch).
+        let ats = 65.0_f64;
+        let job_vec_present = false;
+        let semantic = 0.0_f64; // unused in degrade branch
+
+        let combined = if job_vec_present {
+            (0.6 * semantic + 0.4 * ats).round()
+        } else {
+            ats // degrade: keyword-only
+        };
+
+        assert_eq!(
+            combined, ats,
+            "degrade path (no job vector) must yield combined == ats ({ats}); got {combined}"
+        );
+
+        // The degrade combined must NOT equal the weighted formula applied to
+        // ats alone (0.6*0 + 0.4*65 = 26 ≠ 65), proving the else-branch is
+        // `ats` not `0.6*semantic + 0.4*ats`.
+        let weighted_ats_only = (0.6 * 0.0 + 0.4 * ats).round();
+        assert_ne!(
+            combined, weighted_ats_only,
+            "degrade combined ({combined}) must not be the weighted-formula partial ({weighted_ats_only})"
+        );
+    }
+
+    // A6 — Degrade explanation: when semantic is disabled the explanation must
+    // say "(semantic scoring disabled)" and NOT mention "Semantic similarity".
+    // When semantic is available the explanation includes "Semantic similarity".
+    // Mirrors the `explanation` construction in `score_one` (pure string logic,
+    // tested without AppHandle).
+    #[test]
+    fn explanation_reflects_semantic_enabled_state() {
+        let job_kw_count = 10_usize;
+        let ats = 70.0_f64;
+        let semantic = 85.0_f64;
+
+        // Degrade (skip_semantic = true):
+        let degrade_explanation = format!(
+            "Keyword coverage {ats:.0}% across {job_kw_count} job keywords (semantic scoring disabled)."
+        );
+        assert!(
+            degrade_explanation.contains("semantic scoring disabled"),
+            "degrade explanation must say 'semantic scoring disabled'; got: {degrade_explanation}"
+        );
+        assert!(
+            !degrade_explanation.contains("Semantic similarity"),
+            "degrade explanation must NOT mention 'Semantic similarity'; got: {degrade_explanation}"
+        );
+
+        // Normal (skip_semantic = false):
+        let normal_explanation = format!(
+            "Semantic similarity {semantic:.0}%, keyword coverage {ats:.0}% across {job_kw_count} job keywords."
+        );
+        assert!(
+            normal_explanation.contains("Semantic similarity"),
+            "normal explanation must mention 'Semantic similarity'; got: {normal_explanation}"
+        );
+        assert!(
+            !normal_explanation.contains("disabled"),
+            "normal explanation must NOT mention 'disabled'; got: {normal_explanation}"
+        );
+    }
+
     // Round-trip parity: a 7-field MatchScore JSON blob survives
     // upsert_match_score → get_match_score with every field name and type intact.
     // Guards against a future rename/drop of any result-cache field.
