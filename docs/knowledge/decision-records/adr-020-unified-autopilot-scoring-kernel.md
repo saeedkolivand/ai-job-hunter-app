@@ -17,15 +17,9 @@ Autopilot's `simple_similarity` was crude (failed to weight keyword importance, 
 
 **Unify scoring: Autopilot now ranks using the shared `documents::keywords::coverage_score` kernel** (the ATS keyword algorithm used by the Jobs page for the `ats` component of the combined score).
 
-**Delete `simple_similarity`.** The keyword-coverage algorithm is the canonical **embedding-free keyword-based ranker**:
+**Delete `simple_similarity`.** The keyword-coverage algorithm is the canonical **embedding-free keyword-based ranker** — see `apps/tauri/src-tauri/src/documents/keywords.rs` → `coverage_score()` for the implementation. It is embedding-free, deterministic, and zero API calls (safe for headless Autopilot).
 
-- Stem all job keywords + candidate resume + job description text.
-- Primary scoring: keyword coverage (intersection ÷ union of stemmed terms) — **embedding-free, deterministic, zero API calls** (safe for headless Autopilot).
-- No embedding fallback: Autopilot ranks purely on keyword match strength.
-- Precision-gate matches via word-boundary detection (no "finance" false match on finance-sector jobs).
-- Return unstemmed readable gap terms (e.g., "AWS") not snowball stems ("aws").
-
-**Autopilot's displayed "% match" is now pure keyword-coverage (embedding-free), NOT the Jobs page combined metric (0.6·semantic + 0.4·ats).** The Jobs page combines semantic + keyword signals (weighted 60/40); Autopilot uses keyword coverage alone. Rename the Autopilot metric in UI/analytics as "Keyword Coverage %", clearly distinct from "Match %" (the combined Jobs metric, which is 60% semantic similarity + 40% keyword ATS). The two metrics are complementary: Autopilot ranks fast and deterministically on keywords alone; the Jobs page weighs semantic meaning more heavily.
+**Autopilot's displayed "% match" is now pure keyword-coverage (embedding-free), NOT the Jobs page combined metric.** The Jobs page combines semantic + keyword signals (see `apps/tauri/src-tauri/src/commands/match_resume.rs` → `score_one()` for the exact weights); Autopilot uses keyword coverage alone. Rename the Autopilot metric in UI/analytics as "Keyword Coverage %", clearly distinct from "Match %" (the combined Jobs metric). The two metrics are complementary: Autopilot ranks fast and deterministically on keywords alone; the Jobs page weighs semantic meaning more heavily.
 
 ## Consequences
 

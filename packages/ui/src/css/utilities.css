@@ -382,23 +382,6 @@
     transform: translate3d(62.5%, 25%, 0);
   }
 }
-@keyframes aurora-4 {
-  0% {
-    transform: translate3d(55vw, -10vh, 0);
-  }
-  25% {
-    transform: translate3d(40vw, 2vh, 0);
-  }
-  50% {
-    transform: translate3d(30vw, -4vh, 0);
-  }
-  75% {
-    transform: translate3d(44vw, 6vh, 0);
-  }
-  100% {
-    transform: translate3d(55vw, -10vh, 0);
-  }
-}
 /* nebula-1 blob: 30vw × 30vh → divide each vw/vh delta by 30. */
 @keyframes nebula-1 {
   0% {
@@ -433,28 +416,6 @@
   }
   100% {
     transform: translate3d(140%, 0, 0);
-  }
-}
-@keyframes nebula-3 {
-  0% {
-    transform: translate3d(-8vw, -5vh, 0);
-  }
-  50% {
-    transform: translate3d(16vw, 3vh, 0);
-  }
-  100% {
-    transform: translate3d(-8vw, -5vh, 0);
-  }
-}
-@keyframes nebula-4 {
-  0% {
-    transform: translate3d(30vw, 5vh, 0);
-  }
-  50% {
-    transform: translate3d(8vw, -3vh, 0);
-  }
-  100% {
-    transform: translate3d(30vw, 5vh, 0);
   }
 }
 @keyframes streak-1 {
@@ -524,11 +485,6 @@
   animation: aurora-3 85s ease-in-out infinite;
   animation-delay: -22s;
 }
-.animate-aurora-4 {
-  filter: blur(130px);
-  animation: aurora-4 100s ease-in-out infinite;
-  animation-delay: -65s;
-}
 .animate-nebula-1 {
   filter: blur(80px);
   animation: nebula-1 70s ease-in-out infinite;
@@ -538,16 +494,6 @@
   filter: blur(80px);
   animation: nebula-2 75s ease-in-out infinite;
   animation-delay: -50s;
-}
-.animate-nebula-3 {
-  filter: blur(70px);
-  animation: nebula-3 65s ease-in-out infinite;
-  animation-delay: -30s;
-}
-.animate-nebula-4 {
-  filter: blur(70px);
-  animation: nebula-4 68s ease-in-out infinite;
-  animation-delay: -42s;
 }
 .animate-streak-1 {
   animation: streak-1 8s ease-in-out infinite;
@@ -882,8 +828,7 @@ html[data-text-scale='large'] {
    the mouse-following glow/orbs down. Brand soul, just quieter (macOS-grade). */
 [data-color-scheme='dark'] .animate-aurora-1,
 [data-color-scheme='dark'] .animate-aurora-2,
-[data-color-scheme='dark'] .animate-aurora-3,
-[data-color-scheme='dark'] .animate-aurora-4 {
+[data-color-scheme='dark'] .animate-aurora-3 {
   opacity: 0.2;
 }
 [data-color-scheme='dark'] .animate-nebula-1,

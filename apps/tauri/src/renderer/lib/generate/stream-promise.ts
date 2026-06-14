@@ -82,6 +82,7 @@ export function awaitAiStream(
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let poll: ReturnType<typeof setInterval> | null = null;
     let abortListener: (() => void) | null = null;
+    let pollInFlight = false;
 
     // Local reasoning models embed <think>…</think> inline; the shared splitter
     // separates reasoning from answer text. Cloud providers flag reasoning
@@ -158,6 +159,8 @@ export function awaitAiStream(
 
     // Job-status poll — fallback for a missed `done` event (empty final delta).
     poll = setInterval(() => {
+      if (pollInFlight) return;
+      pollInFlight = true;
       void (async () => {
         const job = (await api.jobs.get(jobId).catch(() => null)) as {
           status: string;
@@ -174,7 +177,9 @@ export function awaitAiStream(
           cleanup();
           resolve(buffer || job.result?.text || '');
         }
-      })();
+      })().finally(() => {
+        pollInFlight = false;
+      });
     }, pollIntervalMs);
   });
 }

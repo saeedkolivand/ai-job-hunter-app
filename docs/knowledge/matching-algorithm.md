@@ -19,27 +19,13 @@ The `coverage_score()` function (in `documents::keywords`) is the **single sourc
 
 ### Algorithm
 
-1. **Detect language** from job description (via `whatlang` library).
-2. **Stem keywords** using Snowball for the detected language (e.g., English, German, French).
-3. **Match candidate resume** against job keywords:
-   - Extract all words from resume + job description.
-   - Build stemmed keyword set from both.
-   - Score: `coverage = intersection / union` (Jaccard).
-   - **Word-boundary detection** prevents false matches (e.g., "finance" sector keyword matches only word-boundary "finance", not "refinance").
-4. **Surface unstemmed, readable gap terms** (e.g., "AWS") instead of stemmed forms.
+For the exact algorithm steps, parameters, and implementation, see `apps/tauri/src-tauri/src/documents/keywords.rs` → `coverage_score()`. The implementation includes:
 
-### Inputs & Outputs
-
-```rust
-pub fn coverage_score(
-    resume_text: &str,
-    job_text: &str,
-) -> f64 {
-    // Returns coverage percentage (0–100)
-    // Gap terms (missing keywords) are computed in the scoring backend
-    // and surfaced in the match explanation.
-}
-```
+- Language detection via `whatlang`.
+- Snowball stemming for the detected language (English, German, French, etc.).
+- Jaccard-based keyword coverage (intersection ÷ union of stemmed terms).
+- Word-boundary detection to prevent false matches (e.g., "finance" vs. "refinance").
+- Unstemmed, readable gap terms surfaced in match explanations.
 
 ## Autopilot Ranking
 
@@ -55,16 +41,9 @@ Autopilot's ranking pipeline (in `autopilot::ranking` + `recommend::batch_match`
 
 ## Jobs Page Combined Score
 
-The Jobs page shows a **combined score** when analyzing a resume against a job:
+The Jobs page shows a **combined score** when analyzing a resume against a job. This hybrid approach weights semantic embedding similarity and keyword-based ATS scoring. See `apps/tauri/src-tauri/src/commands/match_resume.rs` → `score_one()` for the exact formula and weights.
 
-```
-Match % = 0.6 × semantic_score + 0.4 × ats_keywords_score
-```
-
-- **Semantic score**: embedding-based cosine similarity (0–1).
-- **ATS keywords score**: derived from `coverage_score()` (0–100 %, converted to 0–1).
-
-This hybrid approach is slower (requires embedding lookup) but more semantically aware.
+This hybrid approach is slower (requires embedding lookup) but more semantically aware than keyword coverage alone.
 
 ## Caching
 

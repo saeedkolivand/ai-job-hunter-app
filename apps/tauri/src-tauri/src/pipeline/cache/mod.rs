@@ -86,14 +86,19 @@ impl KvCache {
             );
         }
         if let Some(n) = max_rows {
-            // Index-free but small table: delete everything older than the n-th
-            // newest row. ≤ n rows → subquery is NULL → deletes nothing. Ties on
-            // created_at may retain slightly more than n — fine for a cache bound.
-            let _ = conn.execute(
-                "DELETE FROM kv_cache WHERE created_at < \
-                 (SELECT created_at FROM kv_cache ORDER BY created_at DESC LIMIT 1 OFFSET ?1)",
-                params![n],
-            );
+            if n == 0 {
+                let _ = conn.execute("DELETE FROM kv_cache", []);
+            } else {
+                // Keep the n newest rows: the cutoff is the created_at of the
+                // n-th newest row (OFFSET n-1). ≤ n rows → subquery is NULL →
+                // deletes nothing. Ties on created_at may retain slightly more
+                // than n — fine for a cache bound.
+                let _ = conn.execute(
+                    "DELETE FROM kv_cache WHERE created_at < \
+                     (SELECT created_at FROM kv_cache ORDER BY created_at DESC LIMIT 1 OFFSET ?1)",
+                    params![n - 1],
+                );
+            }
         }
     }
 }

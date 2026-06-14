@@ -293,10 +293,7 @@ pub fn posting_text_blob(
     if parts.is_empty() {
         None
     } else {
-        Some(parts.join(
-            "
-",
-        ))
+        Some(parts.join("\n"))
     }
 }
 
