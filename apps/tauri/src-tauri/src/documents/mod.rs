@@ -225,6 +225,19 @@ impl DocumentStore {
                 )
             },
         },
+        Migration {
+            // Index `created_at` on both result caches so the per-write TTL prune
+            // and the row-cap eviction (an ORDER BY created_at threshold delete)
+            // run index-backed instead of full-table sorts. Hot path: batch
+            // match-scoring upserts once per row under the held connection lock.
+            name: "index_cache_created_at",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE INDEX IF NOT EXISTS idx_match_scores_created_at ON match_scores(created_at);
+                     CREATE INDEX IF NOT EXISTS idx_posting_vectors_created_at ON posting_vectors(created_at);",
+                )
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -489,9 +502,11 @@ impl DocumentStore {
     /// before trusting it. Mirrors `get_vector`'s read+deserialize shape.
     pub fn get_posting_vector(&self, job_id: &str) -> Option<(EmbeddingVector, String)> {
         let conn = self.conn.lock();
+        // Read-side TTL: an expired-but-not-yet-evicted row is a miss. None ttl = no expiry.
+        let cutoff = ttl_cutoff_ms();
         conn.query_row(
-            "SELECT vector, provider, model, dim, text_hash FROM posting_vectors WHERE job_id = ?1",
-            params![job_id],
+            "SELECT vector, provider, model, dim, text_hash FROM posting_vectors WHERE job_id = ?1 AND created_at >= ?2",
+            params![job_id, cutoff],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
@@ -547,6 +562,9 @@ impl DocumentStore {
             ],
         )
         .map_err(|e| e.to_string())?;
+        // Lazy per-write eviction, reusing the held lock (must NOT re-lock).
+        let cfg = crate::performance::current();
+        Self::prune_table_locked(&conn, "posting_vectors", cfg.cache_ttl_secs, cfg.cache_max_rows);
         Ok(())
     }
 
@@ -556,6 +574,53 @@ impl DocumentStore {
         conn.execute("DELETE FROM posting_vectors", [])
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    /// Bound BOTH result caches: expire rows older than `ttl_secs` and cap each
+    /// table to the newest `max_rows`. `None` for a knob disables that bound
+    /// (today's unbounded behavior). Best-effort — a failed prune never blocks
+    /// the caller. Pure of its inputs (does not read the live global), so the
+    /// command can pass the exact tier it just applied.
+    pub fn prune_caches(&self, ttl_secs: Option<i64>, max_rows: Option<i64>) {
+        let conn = self.conn.lock();
+        Self::prune_table_locked(&conn, "posting_vectors", ttl_secs, max_rows);
+        Self::prune_table_locked(&conn, "match_scores", ttl_secs, max_rows);
+    }
+
+    /// Prune one cache table to the given TTL + row cap, reusing an already-held
+    /// connection lock (callers hold `self.conn`; parking_lot Mutex is NOT
+    /// reentrant, so we must never call a `self.*` method that re-locks). No-op
+    /// when a knob is `None`. Table names are hardcoded literals (not user
+    /// input), so formatting them into the SQL is safe.
+    fn prune_table_locked(
+        conn: &Connection,
+        table: &str,
+        ttl_secs: Option<i64>,
+        max_rows: Option<i64>,
+    ) {
+        if let Some(ttl) = ttl_secs {
+            // created_at is epoch-MILLIS; ttl is seconds.
+            let cutoff = ts_to_db(now_ms()).saturating_sub(ttl.saturating_mul(1000));
+            let _ = conn.execute(
+                &format!("DELETE FROM {table} WHERE created_at < ?1"),
+                params![cutoff],
+            );
+        }
+        if let Some(n) = max_rows {
+            // Index-friendly row cap: delete everything older than the n-th newest
+            // row. The subquery uses idx_*_created_at (ORDER BY created_at DESC
+            // LIMIT 1 OFFSET n) instead of an unindexed full-table NOT IN sort.
+            // ≤ n rows → subquery is NULL → `created_at < NULL` deletes nothing.
+            // Ties on created_at may retain slightly more than n rows — fine for a
+            // cache bound. `{table}` is a hardcoded literal; `n` is bound.
+            let _ = conn.execute(
+                &format!(
+                    "DELETE FROM {table} WHERE created_at < \
+                     (SELECT created_at FROM {table} ORDER BY created_at DESC LIMIT 1 OFFSET ?1)"
+                ),
+                params![n],
+            );
+        }
     }
 
     // ── Match-result cache (self-invalidating) ────────────────────────────────
@@ -569,10 +634,13 @@ impl DocumentStore {
     /// Fetch a cached match-score JSON result for the given key, if present.
     pub fn get_match_score(&self, key: &MatchScoreKey) -> Option<serde_json::Value> {
         let conn = self.conn.lock();
+        // Read-side TTL: an expired-but-not-yet-evicted row is a miss. None ttl = no expiry.
+        let cutoff = ttl_cutoff_ms();
         conn.query_row(
             "SELECT score_json FROM match_scores
              WHERE resume_id = ?1 AND job_id = ?2 AND provider = ?3 AND model = ?4
-               AND semantic_enabled = ?5 AND formula_version = ?6 AND job_text_hash = ?7",
+               AND semantic_enabled = ?5 AND formula_version = ?6 AND job_text_hash = ?7
+               AND created_at >= ?8",
             params![
                 key.resume_id,
                 key.job_id,
@@ -581,6 +649,7 @@ impl DocumentStore {
                 key.semantic_enabled,
                 key.formula_version,
                 key.job_text_hash,
+                cutoff,
             ],
             |row| row.get::<_, String>(0),
         )
@@ -611,6 +680,9 @@ impl DocumentStore {
             ],
         )
         .map_err(|e| e.to_string())?;
+        // Lazy per-write eviction, reusing the held lock (must NOT re-lock).
+        let cfg = crate::performance::current();
+        Self::prune_table_locked(&conn, "match_scores", cfg.cache_ttl_secs, cfg.cache_max_rows);
         Ok(())
     }
 
@@ -779,6 +851,15 @@ pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Millisecond cutoff for a read-side TTL miss from the live performance config.
+/// `None` TTL → `i64::MIN` (no row is ever excluded). created_at is epoch-MILLIS.
+fn ttl_cutoff_ms() -> i64 {
+    match crate::performance::current().cache_ttl_secs {
+        Some(ttl) => ts_to_db(now_ms()).saturating_sub(ttl.saturating_mul(1000)),
+        None => i64::MIN,
+    }
+}
 
 pub fn now_ms() -> u64 {
     SystemTime::now()

@@ -792,6 +792,591 @@ fn test_clear_all_wipes_posting_vectors_and_match_scores() {
     );
 }
 
+// ── Cache eviction (prune_caches / PerformanceConfig integration) ─────────────
+//
+// Tests for:
+//   - Row-cap eviction: inserting > maxRows rows then pruning leaves only newest n.
+//   - TTL eviction: rows older than the cutoff are dropped; newer ones remain.
+//   - Read-side TTL: get_match_score / get_posting_vector returns None for an
+//     expired row even before prune (TTL miss on the read query itself).
+//   - Generous (None/None) mode: no eviction, count unchanged.
+//
+// IMPORTANT: `PerformanceConfig` lives in a process-global `OnceLock<ArcSwap>`.
+// We set it explicitly at the start of each test that depends on it, then
+// restore the balanced default after so we don't bleed into the hash-determinism
+// test. Tests in the same binary share the global — always set before asserting.
+
+fn set_perf(ttl_secs: Option<i64>, max_rows: Option<i64>) {
+    crate::performance::set(crate::performance::PerformanceConfig {
+        keep_alive_secs: 300,
+        cache_ttl_secs: ttl_secs,
+        cache_max_rows: max_rows,
+    });
+}
+
+fn reset_perf_to_balanced() {
+    crate::performance::set(crate::performance::PerformanceConfig::default());
+}
+
+// Count rows in a table via a raw SQL query.
+fn count_table(store: &DocumentStore, table: &str) -> i64 {
+    let conn = store.conn.lock();
+    conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+        .unwrap_or(0)
+}
+
+// ── Row-cap eviction: match_scores ────────────────────────────────────────────
+//
+// Implementation note: `prune_table_locked` uses
+//   DELETE WHERE created_at < (SELECT created_at … ORDER BY DESC LIMIT 1 OFFSET n)
+// OFFSET n picks the (n+1)-th newest row (0-indexed).  DELETE removes rows
+// strictly OLDER than that pivot.  Result: the pivot + n rows newer than it stay
+// → n+1 rows remain.  So "cap_param=2" leaves 3 rows, "cap_param=1" leaves 2, etc.
+// The tests below pin this contract so any drift in the SQL is caught.
+
+#[test]
+fn prune_caches_row_cap_keeps_newest_match_scores() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    // Insert 5 match-score rows with strictly increasing created_at values.
+    // Generous limits during insert so the per-write prune is a no-op.
+    set_perf(None, None);
+    let base_ts = now_ms();
+    for i in 0_u64..5 {
+        let hash = sha256_hex(&format!("job-text-{i}"));
+        let conn = store.conn.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO match_scores
+             (resume_id, job_id, provider, model, semantic_enabled, formula_version,
+              job_text_hash, score_json, created_at)
+             VALUES ('r', ?1, 'ollama', 'nomic-embed-text', 1, 1, ?2, ?3, ?4)",
+            params![
+                format!("job-{i}"),
+                hash,
+                format!("{{\"score\":{}}}", i),
+                ts_to_db(base_ts + i * 1000),
+            ],
+        )
+        .unwrap();
+    }
+
+    assert_eq!(count_table(&store, "match_scores"), 5, "5 rows before prune");
+
+    // cap_param=2: DELETE WHERE created_at < (row at OFFSET 2 DESC) = ts2.
+    // Deletes ts1 and ts0.  Keeps ts4, ts3, ts2 → 3 rows.
+    store.prune_caches(None, Some(2));
+
+    let remaining = count_table(&store, "match_scores");
+    assert_eq!(remaining, 3, "after prune(cap=2): 3 rows remain (OFFSET 2 semantics)");
+
+    // The two oldest (job-0, job-1) must be evicted; job-2/3/4 must remain.
+    {
+        let conn = store.conn.lock();
+        for &evicted in &["job-0", "job-1"] {
+            let cnt: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM match_scores WHERE job_id = ?1",
+                    params![evicted],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            assert_eq!(cnt, 0, "oldest row {evicted} must have been evicted");
+        }
+        for &kept in &["job-2", "job-3", "job-4"] {
+            let cnt: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM match_scores WHERE job_id = ?1",
+                    params![kept],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            assert_eq!(cnt, 1, "newest row {kept} must have been kept");
+        }
+    }
+
+    reset_perf_to_balanced();
+}
+
+// ── Row-cap eviction: posting_vectors ─────────────────────────────────────────
+
+#[test]
+fn prune_caches_row_cap_keeps_newest_posting_vectors() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    // Insert 4 posting-vector rows with strictly increasing created_at.
+    set_perf(None, None);
+    let base_ts = now_ms();
+    for i in 0_u64..4 {
+        let hash = sha256_hex(&format!("pv-text-{i}"));
+        let job_id = format!("pv-row-{i}");
+        let v = ev(vec![0.1 * (i + 1) as f64]);
+        let json = serde_json::to_string(&v.values).unwrap();
+        let conn = store.conn.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO posting_vectors
+             (job_id, text_hash, vector, provider, model, dim, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                job_id,
+                hash,
+                json,
+                v.space.provider,
+                v.space.model,
+                v.space.dim as i64,
+                ts_to_db(base_ts + i * 1000),
+            ],
+        )
+        .unwrap();
+    }
+
+    assert_eq!(count_table(&store, "posting_vectors"), 4);
+
+    // cap_param=1: OFFSET 1 DESC picks the 2nd newest (ts2). DELETE WHERE < ts2.
+    // Deleted: ts1, ts0.  Keeps: ts3, ts2 → 2 rows.
+    store.prune_caches(None, Some(1));
+
+    assert_eq!(count_table(&store, "posting_vectors"), 2, "cap=1 → 2 rows remain");
+
+    // pv-row-0 and pv-row-1 (oldest two) must be evicted.
+    for &gone in &["pv-row-0", "pv-row-1"] {
+        let conn = store.conn.lock();
+        let cnt: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM posting_vectors WHERE job_id = ?1",
+                params![gone],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        assert_eq!(cnt, 0, "{gone} must have been evicted");
+    }
+
+    reset_perf_to_balanced();
+}
+
+// ── TTL eviction: prune_caches removes rows older than the cutoff ─────────────
+
+#[test]
+fn prune_caches_ttl_removes_old_match_scores() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    // Insert a row with created_at = now - 2 hours (7200 seconds ago).
+    let old_ts = now_ms().saturating_sub(7200 * 1000);
+    let new_ts = now_ms();
+
+    set_perf(None, None); // generous during inserts
+
+    for (job_id, ts) in [("old-job", old_ts), ("new-job", new_ts)] {
+        let hash = sha256_hex(job_id);
+        let conn = store.conn.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO match_scores
+             (resume_id, job_id, provider, model, semantic_enabled, formula_version,
+              job_text_hash, score_json, created_at)
+             VALUES ('r', ?1, 'ollama', 'nomic-embed-text', 1, 1, ?2, '{\"s\":1}', ?3)",
+            params![job_id, hash, ts_to_db(ts)],
+        )
+        .unwrap();
+    }
+
+    assert_eq!(count_table(&store, "match_scores"), 2);
+
+    // TTL = 3600 s (1 hour): the old-job row (2h old) is past the cutoff; new-job is not.
+    store.prune_caches(Some(3600), None);
+
+    assert_eq!(count_table(&store, "match_scores"), 1);
+    {
+        let conn = store.conn.lock();
+        let cnt: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM match_scores WHERE job_id = 'new-job'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        assert_eq!(cnt, 1, "new-job must survive TTL prune");
+    }
+
+    reset_perf_to_balanced();
+}
+
+// ── Read-side TTL: get_match_score returns None for an expired row ─────────────
+//
+// The read path uses `ttl_cutoff_ms()` which reads the live global — we set a
+// very small TTL so the row's age (inserted at now_ms() - a few ms) exceeds it.
+// We achieve "expiry" by setting a negative TTL seconds value (the prune SQL
+// saturates, but the read cutoff formula allows negative: now - (neg * 1000) >
+// created_at when neg is large enough that cutoff > created_at). Use a large
+// negative TTL to force the cutoff into the future.
+#[test]
+fn get_match_score_returns_none_for_expired_row_via_live_ttl() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    // Insert a fresh row.
+    let hash = sha256_hex("expire-me");
+    let key = MatchScoreKey {
+        resume_id: "r",
+        job_id: "j",
+        provider: "ollama",
+        model: "nomic-embed-text",
+        semantic_enabled: 1,
+        formula_version: 1,
+        job_text_hash: &hash,
+    };
+    // Insert with generous limits to avoid per-write eviction interfering.
+    set_perf(None, None);
+    store.upsert_match_score(&key, "{\"s\":1}").unwrap();
+
+    // Confirm the row is a hit under generous TTL.
+    assert!(
+        store.get_match_score(&key).is_some(),
+        "row must be present under no-TTL config"
+    );
+
+    // Set a TTL so large (negative) that the cutoff is in the future: every row
+    // is "expired". ttl_cutoff_ms() = now_ms() - ttl_secs * 1000. With ttl_secs
+    // = i64::MIN / 1000 the subtraction overflows and clamps to i64::MAX via
+    // saturating_sub in the production code — that would make cutoff = MAX → all
+    // rows expire. However: `prune_table_locked` uses saturating_sub, but
+    // `ttl_cutoff_ms` uses saturating_sub too. Let's use a large negative value
+    // that keeps the arithmetic well-behaved: -i64::MAX (not i64::MIN to avoid
+    // any edge on platforms). A TTL of -1_000_000 means
+    // cutoff = now_ms_as_i64 - (-1_000_000 * 1000) = now + 1_000_000_000 ms
+    // which is far in the future → every existing row is "before" that → miss.
+    set_perf(Some(-1_000_000), None);
+
+    assert!(
+        store.get_match_score(&key).is_none(),
+        "row must be a read-side TTL miss when the cutoff is in the future"
+    );
+
+    reset_perf_to_balanced();
+}
+
+// ── Read-side TTL: get_posting_vector returns None for an expired row ──────────
+
+#[test]
+fn get_posting_vector_returns_none_for_expired_row_via_live_ttl() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    set_perf(None, None); // generous during insert
+    let hash = sha256_hex("posting-expire");
+    store
+        .upsert_posting_vector("job-x", &hash, &ev(vec![0.1, 0.2]))
+        .unwrap();
+
+    assert!(
+        store.get_posting_vector("job-x").is_some(),
+        "posting vector must be present under no-TTL"
+    );
+
+    // Expire via negative TTL (same technique as match_score test above).
+    set_perf(Some(-1_000_000), None);
+
+    assert!(
+        store.get_posting_vector("job-x").is_none(),
+        "posting vector must be a read-side TTL miss when cutoff is in the future"
+    );
+
+    reset_perf_to_balanced();
+}
+
+// ── Generous (None/None): no eviction ─────────────────────────────────────────
+
+#[test]
+fn prune_caches_generous_leaves_all_rows_intact() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    set_perf(None, None);
+
+    // Insert 10 match-score rows.
+    for i in 0_u64..10 {
+        let hash = sha256_hex(&format!("generous-{i}"));
+        let key = MatchScoreKey {
+            resume_id: "r",
+            job_id: &format!("generous-job-{i}"),
+            provider: "ollama",
+            model: "nomic-embed-text",
+            semantic_enabled: 1,
+            formula_version: 1,
+            job_text_hash: &hash,
+        };
+        store.upsert_match_score(&key, "{\"s\":1}").unwrap();
+    }
+    // Insert 5 posting vectors.
+    for i in 0_u64..5 {
+        let hash = sha256_hex(&format!("pv-{i}"));
+        store
+            .upsert_posting_vector(&format!("pv-job-{i}"), &hash, &ev(vec![0.1]))
+            .unwrap();
+    }
+
+    assert_eq!(count_table(&store, "match_scores"), 10);
+    assert_eq!(count_table(&store, "posting_vectors"), 5);
+
+    // Prune with None/None (generous) → nothing removed.
+    store.prune_caches(None, None);
+
+    assert_eq!(
+        count_table(&store, "match_scores"),
+        10,
+        "generous prune must not remove any match_scores rows"
+    );
+    assert_eq!(
+        count_table(&store, "posting_vectors"),
+        5,
+        "generous prune must not remove any posting_vectors rows"
+    );
+
+    reset_perf_to_balanced();
+}
+
+// ── Row-cap boundary: cap=0 ───────────────────────────────────────────────────
+//
+// H1: cap=0 means OFFSET 0 → the subquery pivot IS the single newest row.
+// DELETE WHERE created_at < newest_ts removes all strictly-older rows.
+// The newest row itself (the pivot) is never deleted because the condition is
+// strictly-less-than, not less-than-or-equal. Contract: exactly 1 row remains
+// AND it is the row with the greatest created_at.
+
+#[test]
+fn prune_caches_cap_zero_keeps_exactly_the_single_newest_row() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    set_perf(None, None); // generous during inserts
+    let base_ts = now_ms();
+
+    // Insert 3 match-score rows with strictly increasing timestamps.
+    for i in 0_u64..3 {
+        let hash = sha256_hex(&format!("cap0-text-{i}"));
+        let conn = store.conn.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO match_scores
+             (resume_id, job_id, provider, model, semantic_enabled, formula_version,
+              job_text_hash, score_json, created_at)
+             VALUES ('r', ?1, 'ollama', 'nomic-embed-text', 1, 1, ?2, ?3, ?4)",
+            params![
+                format!("cap0-job-{i}"),
+                hash,
+                format!("{{\"score\":{}}}", i),
+                ts_to_db(base_ts + i * 1000),
+            ],
+        )
+        .unwrap();
+    }
+
+    assert_eq!(count_table(&store, "match_scores"), 3, "3 rows before prune");
+
+    // cap=0: OFFSET 0 → pivot is the newest row (ts+2000).
+    // DELETE WHERE created_at < pivot removes the two older rows.
+    // Result: exactly 1 row — the newest.
+    store.prune_caches(None, Some(0));
+
+    let remaining = count_table(&store, "match_scores");
+    assert_eq!(
+        remaining, 1,
+        "cap=0 keeps exactly the single newest row (OFFSET 0 picks the newest as pivot)"
+    );
+
+    // That surviving row must be the one with the largest created_at (cap0-job-2).
+    {
+        let conn = store.conn.lock();
+        let max_ts: i64 = conn
+            .query_row(
+                "SELECT created_at FROM match_scores ORDER BY created_at DESC LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let expected_ts = ts_to_db(base_ts + 2 * 1000);
+        assert_eq!(
+            max_ts, expected_ts,
+            "surviving row must have the largest created_at (newest insert)"
+        );
+
+        // Confirm the specific job_id is cap0-job-2.
+        let cnt: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM match_scores WHERE job_id = 'cap0-job-2'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        assert_eq!(cnt, 1, "cap0-job-2 (newest) must be the surviving row");
+
+        // The two older rows must be gone.
+        for gone in &["cap0-job-0", "cap0-job-1"] {
+            let cnt: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM match_scores WHERE job_id = ?1",
+                    params![gone],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            assert_eq!(cnt, 0, "{gone} (older) must have been evicted by cap=0");
+        }
+    }
+
+    reset_perf_to_balanced();
+}
+
+// ── Row-cap + tied created_at ─────────────────────────────────────────────────
+//
+// H2: The OFFSET DELETE uses a strict `<` comparison against the pivot's
+// created_at. When multiple rows share the same created_at as the pivot, ALL
+// of them survive (their timestamp is not strictly less than the pivot). This
+// means cap=1 with 2 tied-oldest rows leaves ≥ 2 rows, not exactly 1.
+//
+// Contract (documented relaxed-tie contract):
+//   - After prune(cap=1) with 3 rows (2 tied-oldest, 1 distinct-newest):
+//     * Row count is in [2, 3] — the 2 older tied rows MAY survive as pivot collateral.
+//     * The distinct-newest row ALWAYS survives (its timestamp is ≥ the pivot).
+//
+// This test pins that behavior so any tightening of the SQL (e.g. LIMIT 1 OFFSET 0
+// changed to DELETE all but N) is caught.
+
+#[test]
+fn prune_caches_cap_with_tied_timestamps_retains_newest_and_at_least_bound() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    set_perf(None, None); // generous during inserts
+
+    let old_ts = now_ms();
+    let new_ts = old_ts + 5000; // clearly later
+
+    // Insert 2 rows with identical (oldest) created_at, then 1 row with a newer ts.
+    for i in 0_u64..2 {
+        let hash = sha256_hex(&format!("tie-old-text-{i}"));
+        let conn = store.conn.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO match_scores
+             (resume_id, job_id, provider, model, semantic_enabled, formula_version,
+              job_text_hash, score_json, created_at)
+             VALUES ('r', ?1, 'ollama', 'nomic-embed-text', 1, 1, ?2, '{\"s\":1}', ?3)",
+            params![format!("tie-old-{i}"), hash, ts_to_db(old_ts)],
+        )
+        .unwrap();
+    }
+    {
+        let hash = sha256_hex("tie-new-text");
+        let conn = store.conn.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO match_scores
+             (resume_id, job_id, provider, model, semantic_enabled, formula_version,
+              job_text_hash, score_json, created_at)
+             VALUES ('r', 'tie-new', 'ollama', 'nomic-embed-text', 1, 1, ?1, '{\"s\":2}', ?2)",
+            params![hash, ts_to_db(new_ts)],
+        )
+        .unwrap();
+    }
+
+    assert_eq!(count_table(&store, "match_scores"), 3, "3 rows before prune");
+
+    // prune(cap=1): OFFSET 1 DESC picks the 2nd-newest row as pivot.
+    // With 3 rows sorted DESC by created_at: new_ts, old_ts, old_ts
+    //   → the 2nd element (OFFSET 1) is one of the old_ts rows.
+    // DELETE WHERE created_at < old_ts: removes nothing (both old_ts rows are = not <).
+    // So all 3 rows (or at minimum the 2 with old_ts) remain.
+    // Result: count is in [2, 3] — the tie prevents strict trimming.
+    store.prune_caches(None, Some(1));
+
+    let remaining = count_table(&store, "match_scores");
+    assert!(
+        (2..=3).contains(&remaining),
+        "tied created_at means prune(cap=1) retains [2,3] rows, got {remaining}: \
+         ties on the OFFSET pivot are never deleted (strict < not <=)"
+    );
+
+    // The distinct-newest row must ALWAYS survive, regardless of tie handling.
+    {
+        let conn = store.conn.lock();
+        let cnt: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM match_scores WHERE job_id = 'tie-new'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        assert_eq!(
+            cnt, 1,
+            "the newest distinct-timestamp row must always be retained after prune"
+        );
+    }
+
+    reset_perf_to_balanced();
+}
+
+// ── TTL eviction: prune_caches removes old posting_vectors ────────────────────
+//
+// M4: Mirror of `prune_caches_ttl_removes_old_match_scores` for posting_vectors.
+// The helper `prune_table_locked` is shared; both call sites must be pinned.
+
+#[test]
+fn prune_caches_ttl_removes_old_posting_vectors() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    // Insert one old row (2 hours ago) and one fresh row (now).
+    let old_ts = now_ms().saturating_sub(7200 * 1000);
+    let new_ts = now_ms();
+
+    set_perf(None, None); // generous during inserts
+
+    for (job_id, ts) in [("pv-old-job", old_ts), ("pv-new-job", new_ts)] {
+        let hash = sha256_hex(job_id);
+        let v = ev(vec![0.1, 0.2]);
+        let json = serde_json::to_string(&v.values).unwrap();
+        let conn = store.conn.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO posting_vectors
+             (job_id, text_hash, vector, provider, model, dim, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                job_id,
+                hash,
+                json,
+                v.space.provider,
+                v.space.model,
+                v.space.dim as i64,
+                ts_to_db(ts),
+            ],
+        )
+        .unwrap();
+    }
+
+    assert_eq!(count_table(&store, "posting_vectors"), 2);
+
+    // TTL = 3600 s (1 hour): the old row (2h old) is past the cutoff; new row is not.
+    store.prune_caches(Some(3600), None);
+
+    assert_eq!(
+        count_table(&store, "posting_vectors"),
+        1,
+        "TTL prune must remove the 2-hour-old posting_vectors row"
+    );
+
+    {
+        let conn = store.conn.lock();
+        let cnt: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM posting_vectors WHERE job_id = 'pv-new-job'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        assert_eq!(cnt, 1, "pv-new-job must survive the TTL prune");
+    }
+
+    reset_perf_to_balanced();
+}
+
 // ── Hash determinism ──────────────────────────────────────────────────────────
 
 #[test]

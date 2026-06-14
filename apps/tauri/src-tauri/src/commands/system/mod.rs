@@ -1,6 +1,8 @@
 use crate::commands::ai_provider::cli_agent;
+use crate::documents::DocumentStore;
 use crate::error::{AppError, AppResult};
 use crate::scraping::ScraperEngine;
+use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use tauri::{AppHandle, Manager};
 
@@ -158,11 +160,46 @@ pub async fn system_open_external(app: AppHandle, url: String) -> AppResult<()> 
         .map_err(|e| AppError::Message(e.to_string()))
 }
 
+/// Backend tuning payload from the renderer's performance-mode picker. camelCase
+/// to match the JS the renderer already sends via `system_set_performance_mode`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerformanceBackendConfig {
+    /// Informational label only (e.g. "battery"/"balanced"/"performance"). Backend
+    /// behavior is driven by the numeric knobs below, never by branching on `mode`.
+    pub mode: String,
+    pub concurrency: u32,
+    pub keep_alive_secs: u64,
+    pub cache_ttl_secs: Option<i64>,
+    pub cache_max_rows: Option<i64>,
+}
+
 #[tauri::command]
-pub async fn system_set_performance_mode(app: AppHandle, mode: String) -> Value {
-    // Update the engine's performance mode
-    let engine = app.state::<std::sync::Arc<ScraperEngine>>();
-    engine.set_performance_mode(&mode);
+pub async fn system_set_performance_mode(app: AppHandle, config: PerformanceBackendConfig) -> Value {
+    // Concurrency → scraper engine semaphore. Clamp at the trust boundary so a
+    // buggy renderer can't request a huge semaphore (upper) or a zero one (lower,
+    // also guarded by set_concurrency's .max(1)).
+    let concurrency = (config.concurrency as usize).clamp(1, 16);
+    app.state::<std::sync::Arc<ScraperEngine>>()
+        .set_concurrency(concurrency);
+
+    // Keep-alive + cache knobs → live performance config (read by the Ollama
+    // adapter and the cache eviction sites). Set BEFORE the prune below so the
+    // one-shot prune sees the new bounds. Coerce the cache bounds non-negative: a
+    // negative SQLite LIMIT means "no limit" (silently disables the cap) and a
+    // negative ttl expires everything — both footguns from a buggy renderer.
+    let cache_max_rows = config.cache_max_rows.map(|x| x.max(0));
+    let cache_ttl_secs = config.cache_ttl_secs.map(|x| x.max(0));
+    crate::performance::set(crate::performance::PerformanceConfig {
+        keep_alive_secs: config.keep_alive_secs,
+        cache_ttl_secs,
+        cache_max_rows,
+    });
+
+    // One-shot prune so tightening a tier reclaims immediately.
+    app.state::<DocumentStore>()
+        .prune_caches(cache_ttl_secs, cache_max_rows);
+
     json!(null)
 }
 
