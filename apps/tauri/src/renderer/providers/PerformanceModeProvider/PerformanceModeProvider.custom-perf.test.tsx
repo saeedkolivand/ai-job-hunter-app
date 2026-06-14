@@ -16,7 +16,7 @@
  *  - afterEach: clean up data-* attributes on <html> so tests don't bleed.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, render, waitFor } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 
 import type { PerformanceBackendConfig } from '@ajh/shared';
 
@@ -235,10 +235,12 @@ describe('PerformanceModeProvider — custom performance mode', () => {
 
       await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
 
-      // Simulate a visual-only change: same mode + same backend tiers, aurora toggled.
-      // The backend config JSON is unchanged → dedupe guard should suppress the IPC call.
+      // Simulate a visual-only change: same mode + same backend tiers, blur flipped to
+      // 'reduced'. The backend config JSON is unchanged → dedupe guard should suppress
+      // the IPC call. Using a visual field that produces an OBSERVABLE attribute change
+      // (data-perf-blur goes 'full' → 'reduced') proves the effect ran for this cycle.
       const visualOnlyChange: PerformanceProfile = {
-        visual: { ...PERFORMANCE_PRESETS.balanced.visual, aurora: false },
+        visual: { ...PERFORMANCE_PRESETS.balanced.visual, blur: 'reduced' },
         backend: PERFORMANCE_PRESETS.balanced.backend, // identical backend
       };
       currentMode = 'balanced';
@@ -246,11 +248,8 @@ describe('PerformanceModeProvider — custom performance mode', () => {
 
       // Rerender with the new profile. Do NOT use a raw setTimeout to settle
       // effects — that is non-deterministic under microtask scheduling. Instead,
-      // waitFor on a stable DOM attribute that the effect ALWAYS writes on every
-      // render (data-perf-blur reflects profile.visual.blur, which is unchanged
-      // between balanced and visualOnlyChange, so its value stays 'full'). The
-      // waitFor proves that the useEffect has flushed its synchronous DOM writes
-      // before we assert on the IPC spy.
+      // waitFor on the NEW blur attribute value the effect WILL write on this cycle.
+      // When the waitFor resolves, the effect has provably completed its DOM writes.
       rerender(
         <AppClientProvider client={client}>
           <PerformanceModeProvider>
@@ -259,13 +258,14 @@ describe('PerformanceModeProvider — custom performance mode', () => {
         </AppClientProvider>
       );
 
-      // Wait until the effect has written the (unchanged) blur attribute — this
+      // Wait until the effect has written the CHANGED blur attribute — this
       // guarantees the full effect body has run for the re-render cycle.
       await waitFor(() =>
-        expect(document.documentElement.getAttribute('data-perf-blur')).toBe('full')
+        expect(document.documentElement.getAttribute('data-perf-blur')).toBe('reduced')
       );
 
-      // The serialized backend config is identical → no second IPC call.
+      // blur is a visual.* field — resolveBackendConfig reads only profile.backend.* —
+      // so the serialized backend config is identical → no second IPC call.
       expect(spy.mock.calls.length).toBe(1);
     });
 
@@ -289,16 +289,13 @@ describe('PerformanceModeProvider — custom performance mode', () => {
       currentMode = 'low-memory';
       currentProfile = PERFORMANCE_PRESETS['low-memory'];
 
-      await act(async () => {
-        rerender(
-          <AppClientProvider client={client}>
-            <PerformanceModeProvider>
-              <span>child</span>
-            </PerformanceModeProvider>
-          </AppClientProvider>
-        );
-        await new Promise((r) => setTimeout(r, 0));
-      });
+      rerender(
+        <AppClientProvider client={client}>
+          <PerformanceModeProvider>
+            <span>child</span>
+          </PerformanceModeProvider>
+        </AppClientProvider>
+      );
 
       await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
       const secondCall = spy.mock.calls.at(1);
@@ -342,16 +339,13 @@ describe('PerformanceModeProvider — custom performance mode', () => {
       };
       currentProfile = customV2;
 
-      await act(async () => {
-        rerender(
-          <AppClientProvider client={client}>
-            <PerformanceModeProvider>
-              <span>child</span>
-            </PerformanceModeProvider>
-          </AppClientProvider>
-        );
-        await new Promise((r) => setTimeout(r, 0));
-      });
+      rerender(
+        <AppClientProvider client={client}>
+          <PerformanceModeProvider>
+            <span>child</span>
+          </PerformanceModeProvider>
+        </AppClientProvider>
+      );
 
       await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
       const secondCall = spy.mock.calls.at(1);

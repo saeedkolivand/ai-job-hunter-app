@@ -129,6 +129,7 @@ describe('CinematicBackground — layer presence/absence', () => {
   });
 
   describe('cursor glow RAF / listener gating', () => {
+    const originalMatchMedia = window.matchMedia;
     beforeEach(() => {
       // Ensure matchMedia returns non-reduced-motion so the full RAF path runs.
       const stub = {
@@ -142,6 +143,9 @@ describe('CinematicBackground — layer presence/absence', () => {
         dispatchEvent: vi.fn(),
       } as unknown as MediaQueryList;
       window.matchMedia = (_query: string) => stub;
+    });
+    afterEach(() => {
+      window.matchMedia = originalMatchMedia;
     });
 
     it('no pointermove listener and no RAF when cursorGlow=false', () => {

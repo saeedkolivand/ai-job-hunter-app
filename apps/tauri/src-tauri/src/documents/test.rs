@@ -1,4 +1,5 @@
 use super::*;
+use serial_test::serial;
 use tempfile::TempDir;
 
 /// Build a space-tagged vector for the default (Ollama/nomic) space in tests.
@@ -375,6 +376,7 @@ fn test_data_store_export_import_round_trip() {
 // ── Posting-vector cache ──────────────────────────────────────────────────────
 
 #[test]
+#[serial]
 fn test_posting_vector_round_trip() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -459,6 +461,7 @@ fn posting_vector_is_fresh_miss_when_absent() {
 // under provider/model A must not be trusted when the active config is
 // provider/model B (space miss), even though the row is present and hash matches.
 #[test]
+#[serial]
 fn test_posting_vector_space_miss() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -493,6 +496,7 @@ fn test_posting_vector_space_miss() {
 // A matching space but a different text_hash (e.g. a different translation of
 // the same posting) must miss — exercised through the store + real helper.
 #[test]
+#[serial]
 fn test_posting_vector_text_hash_miss() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -513,6 +517,7 @@ fn test_posting_vector_text_hash_miss() {
 }
 
 #[test]
+#[serial]
 fn test_posting_vector_upsert_replaces() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -622,6 +627,7 @@ fn match_key_in_space<'a>(
 }
 
 #[test]
+#[serial]
 fn test_match_score_round_trip_and_key_sensitivity() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -655,6 +661,7 @@ fn test_match_score_round_trip_and_key_sensitivity() {
 // different model. Guards against dropping the provider/model columns from the
 // match_scores primary key.
 #[test]
+#[serial]
 fn test_match_score_invalidates_on_provider_or_model_change() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -699,6 +706,7 @@ fn test_match_score_invalidates_on_provider_or_model_change() {
 // back `None` — i.e. a `get_match_score` cannot conjure a row, so the only way a
 // row exists is a prior `upsert_match_score` (which the error paths never reach).
 #[test]
+#[serial]
 fn errors_never_populate_match_scores_cache() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -715,6 +723,7 @@ fn errors_never_populate_match_scores_cache() {
 }
 
 #[test]
+#[serial]
 fn test_match_score_upsert_replaces_and_clear() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -735,6 +744,7 @@ fn test_match_score_upsert_replaces_and_clear() {
 // otherwise a user's "delete all data" leaves résumés, embeddings, and match
 // scores at rest. Guards the data-retention contract for the full table set.
 #[test]
+#[serial]
 fn test_clear_all_wipes_posting_vectors_and_match_scores() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -835,6 +845,7 @@ fn count_table(store: &DocumentStore, table: &str) -> i64 {
 // The tests below pin this contract so any drift in the SQL is caught.
 
 #[test]
+#[serial]
 fn prune_caches_row_cap_keeps_newest_match_scores() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -908,6 +919,7 @@ fn prune_caches_row_cap_keeps_newest_match_scores() {
 // ── Row-cap eviction: posting_vectors ─────────────────────────────────────────
 
 #[test]
+#[serial]
 fn prune_caches_row_cap_keeps_newest_posting_vectors() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -969,6 +981,7 @@ fn prune_caches_row_cap_keeps_newest_posting_vectors() {
 // ── TTL eviction: prune_caches removes rows older than the cutoff ─────────────
 
 #[test]
+#[serial]
 fn prune_caches_ttl_removes_old_match_scores() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -1022,6 +1035,7 @@ fn prune_caches_ttl_removes_old_match_scores() {
 // created_at when neg is large enough that cutoff > created_at). Use a large
 // negative TTL to force the cutoff into the future.
 #[test]
+#[serial]
 fn get_match_score_returns_none_for_expired_row_via_live_ttl() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -1070,6 +1084,7 @@ fn get_match_score_returns_none_for_expired_row_via_live_ttl() {
 // ── Read-side TTL: get_posting_vector returns None for an expired row ──────────
 
 #[test]
+#[serial]
 fn get_posting_vector_returns_none_for_expired_row_via_live_ttl() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -1099,6 +1114,7 @@ fn get_posting_vector_returns_none_for_expired_row_via_live_ttl() {
 // ── Generous (None/None): no eviction ─────────────────────────────────────────
 
 #[test]
+#[serial]
 fn prune_caches_generous_leaves_all_rows_intact() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -1156,6 +1172,7 @@ fn prune_caches_generous_leaves_all_rows_intact() {
 // AND it is the row with the greatest created_at.
 
 #[test]
+#[serial]
 fn prune_caches_cap_zero_keeps_exactly_the_single_newest_row() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -1257,6 +1274,7 @@ fn prune_caches_cap_zero_keeps_exactly_the_single_newest_row() {
 // changed to DELETE all but N) is caught.
 
 #[test]
+#[serial]
 fn prune_caches_cap_with_tied_timestamps_retains_newest_and_at_least_bound() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
@@ -1338,6 +1356,7 @@ fn prune_caches_cap_with_tied_timestamps_retains_newest_and_at_least_bound() {
 // The helper `prune_table_locked` is shared; both call sites must be pinned.
 
 #[test]
+#[serial]
 fn prune_caches_ttl_removes_old_posting_vectors() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();

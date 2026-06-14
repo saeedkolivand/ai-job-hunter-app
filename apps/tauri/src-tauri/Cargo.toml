@@ -186,6 +186,7 @@ sha1 = "0.10"
 mockall = "0.14"
 tempfile = "3.27"
 proptest = "1.5"
+serial_test = "3"
 wiremock = "0.6.5"
 # Rasteriser for the generate_templates_showcase_banner test — dev-only, NOT in the shipped binary.
 typst-render = "=0.14.2"
