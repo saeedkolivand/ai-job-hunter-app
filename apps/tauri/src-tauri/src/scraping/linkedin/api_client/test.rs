@@ -222,3 +222,30 @@ fn test_parse_iso_date_invalid() {
     assert!(parse_iso_date("not a date").is_none());
     assert!(parse_iso_date("1 hour ago").is_none());
 }
+
+#[tokio::test]
+async fn test_cancellable_sleep_aborts_on_cancel() {
+    let token = tokio_util::sync::CancellationToken::new();
+    token.cancel(); // pre-cancelled
+    let start = std::time::Instant::now();
+    let interrupted =
+        cancellable_sleep(Some(&token), std::time::Duration::from_secs(5)).await;
+    let elapsed = start.elapsed();
+    assert!(interrupted, "pre-cancelled token must interrupt the sleep");
+    assert!(
+        elapsed < std::time::Duration::from_secs(1),
+        "cancelled sleep must return promptly, took {elapsed:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_cancellable_sleep_elapses_normally() {
+    let start = std::time::Instant::now();
+    let interrupted =
+        cancellable_sleep(None, std::time::Duration::from_millis(10)).await;
+    assert!(!interrupted, "no signal must elapse, not interrupt");
+    assert!(
+        start.elapsed() >= std::time::Duration::from_millis(10),
+        "sleep must actually elapse the full duration"
+    );
+}
