@@ -120,28 +120,32 @@ Releases are **automated** via [semantic-release][semantic-release] on push to `
 
 ### Release configuration
 
-`.releaserc.json` controls semantic-release behavior:
+`.releaserc.json` controls semantic-release behavior. Releases execute these plugins in order:
 
-```json
-{
-  "branches": ["main"],
-  "plugins": [
-    "@semantic-release/commit-analyzer",
-    "@semantic-release/release-notes-generator",
-    "@semantic-release/github"
-  ]
-}
-```
+1. `@semantic-release/commit-analyzer` — analyzes commits to determine version bump
+2. `@semantic-release/release-notes-generator` — drafts release notes
+3. `@semantic-release/exec` — runs `scripts/sync-tauri-version.cjs ${nextRelease.version}` to sync 7 version files
+4. `@semantic-release/changelog` — writes/updates `CHANGELOG.md` at repo root
+5. `@semantic-release/github` — creates GitHub Release with notes and assets
+6. `@semantic-release/git` — commits the synced version files + `CHANGELOG.md` to `main` with message `chore(release): <version> [skip ci]`
+
+See `.releaserc.json` for full plugin options.
 
 ### Version sync
 
-When semantic-release creates a new tag, a CI step automatically syncs the version to:
+Version files are synced atomically as part of the release commit, executed by semantic-release's `@semantic-release/exec` plugin during the `prepare` phase.
+
+**Synced files** (7 total):
 
 - `package.json` (root)
 - `apps/tauri/package.json`
+- `apps/extension/package.json`
 - `apps/tauri/src-tauri/Cargo.toml`
 - `apps/tauri/src-tauri/Cargo.lock` (the `ajh-tauri` package entry — kept in lockstep so local builds don't drift)
 - `apps/tauri/src-tauri/tauri.conf.json`
+- `README.md` (release badge version)
+
+Plus `CHANGELOG.md` is generated in the same commit. The release commit (tagged at `v*`) contains all synced versions consistently.
 
 **Never manually bump versions.** Commit with the correct prefix and the pipeline handles it.
 
@@ -152,9 +156,9 @@ When semantic-release creates a new tag, a CI step automatically syncs the versi
 ```mermaid
 graph LR
     Push["git push to main"] --> Analysis["semantic-release\nanalyzes commits"]
-    Analysis --> Tag["git tag + GitHub\nrelease notes"]
-    Tag --> Sync["sync version files\n(commit to main)"]
-    Dispatch["Manual: Actions ▸\nRun workflow\n(version or latest)"] --> Build["build matrix"]
+    Analysis --> Release["prepare: sync versions\ngenerate: notes + CHANGELOG\npublish: tag + GitHub release\nfinal: commit to main"]
+    Release --> Dispatch["Manual: Actions ▸\nRun workflow\n(version or latest)"]
+    Dispatch --> Build["build matrix"]
     Build --> Windows["Windows\nNSIS + MSI"]
     Build --> Mac["macOS\nDMG + APP"]
     Build --> Linux["Linux\nAppImage + DEB"]
@@ -164,14 +168,19 @@ graph LR
 
 ### GitHub Actions workflow
 
-`.github/workflows/release.yml`. A release push publishes the release + version bump; installers are built only via the manual **Run workflow** dispatch.
+`.github/workflows/release.yml`. A release push publishes the release + syncs all version files atomically; installers are built only via the manual **Run workflow** dispatch.
 
 Every uploadable installer artifact (`.exe`, `.msi`, `.dmg`, `.AppImage`, `.deb`, `.rpm`) is prefixed with its OS (`windows-`, `macos-`, or `linux-`) so the GitHub Release asset list clusters by platform; `latest.json` and the extension zips are not prefixed.
 
-**On `push` to `main`** — `release` + `sync-version-files`:
+**On `push` to `main`** — single `release` job:
 
-1. semantic-release analyzes commits → creates the `v*` tag + GitHub release notes
-2. CI commits the synced version files back to `main`
+1. semantic-release analyzes commits
+2. If a release is warranted: exec syncs version files → changelog generates `CHANGELOG.md` → GitHub publishes release + assets → git commits the synced versions + CHANGELOG to `main` with tag `v*`
+3. The tag points to the commit that contains consistent, synced versions
+
+### Changelog
+
+`CHANGELOG.md` is an in-repo mirror generated and maintained by semantic-release's `@semantic-release/changelog` plugin. It contains every release's version + conventional-commits-derived notes grouped by type (Features, Bug Fixes, etc.). **GitHub Releases** remain canonical — they carry the per-platform **Downloads** table and signed assets; `CHANGELOG.md` is for offline / quick-reference access.
 
 **`build` + `generate-update-manifest`** — run **only** via **Actions ▸ "🚀 Release" ▸ "Run workflow"** (macOS Intel + Apple Silicon build as two parallel matrix legs, so wall-clock is roughly the slowest single platform rather than the sum of all three):
 
