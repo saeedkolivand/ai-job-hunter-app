@@ -5,8 +5,11 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::documents::keywords::{apply_stemmer, keywords, make_stemmer};
-use crate::documents::{embed, posting_vector_or_embed, sha256_hex, DocumentStore, MatchScoreKey};
-use crate::ipc_contracts::matching::MatchResumeRequest;
+use crate::documents::{
+    embed, posting_vector_or_embed, sha256_hex, DocumentRecord, DocumentStore, EmbeddingConfig,
+    MatchScoreKey,
+};
+use crate::ipc_contracts::matching::{MatchResumeBatchRequest, MatchResumeRequest};
 use crate::ipc_contracts::resume::ResumeExtractTextRequest;
 use crate::postings::PostingsCache;
 
@@ -21,6 +24,12 @@ use crate::postings::PostingsCache;
 /// changes — any of which would make a previously-cached score stale.
 const MATCH_FORMULA_VERSION: i64 = 1;
 
+/// Server-side cap on `match_resume_batch` job ids. Generous vs. realistic
+/// boards — `livePostings` caps at 500 — but bounds a malicious direct IPC
+/// invoke (Zod validation at the wire boundary is type-only, not enforced
+/// server-side) from fanning out an unbounded CPU/embed-spend batch.
+const MATCH_BATCH_MAX: usize = 1000;
+
 /// Map the `semantic_scoring_enabled` request flag to the `semantic_enabled`
 /// cache-key column: `Some(false)` disables semantic scoring (`0`); every other
 /// value (`None` / `Some(true)`) keeps it on (`1`). Single source of this bit so
@@ -33,21 +42,31 @@ fn semantic_enabled_bit(flag: Option<bool>) -> i64 {
     }
 }
 
-#[tauri::command]
-pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
-    let store = app.state::<DocumentStore>();
-    // INVARIANT (errors-never-cached): every error early-return below MUST
-    // precede the first `get_match_score`/`upsert_match_score` call. The
-    // match_scores cache is read+written only AFTER these guards, so an error
-    // path can never read or pollute the result cache. Keep these returns above
-    // the `cache_key` block; see `errors_never_populate_match_scores_cache` in
-    // documents/test.rs, which pins the store-level non-pollution half.
-    let Some(resume) = store.get(&req.resume_id) else {
-        return json!({ "error": format!("resume not found: {}", req.resume_id) });
-    };
-
-    let Some(job_text) = job_text_for(&app, &req.job_id) else {
-        return json!({ "error": format!("job not found in cache: {}", req.job_id) });
+/// Score a single resume against one job posting, returning a `MatchScore`
+/// JSON value (or a `{ "error": … }` object when the job isn't cached).
+///
+/// This is the per-job kernel shared by [`match_resume`] (one job) and
+/// [`match_resume_batch`] (N jobs in one IPC call). `resume_raw_keywords` is the
+/// parsed `keywords_json` (parsed ONCE by the caller); `None` — absent or corrupt
+/// JSON — falls back to live extraction from `resume.text`, preserving the legacy
+/// behaviour. `active` is the embedding config and `semantic_enabled` the
+/// already-derived cache-key bit, both hoisted by the caller so a batch resolves
+/// them once.
+///
+/// Errors-never-cached invariant: the only error return (job-not-found) happens
+/// before any `get_match_score`/`upsert_match_score`, so an error path can never
+/// read or pollute the result cache.
+async fn score_one(
+    app: &AppHandle,
+    store: &DocumentStore,
+    resume: &DocumentRecord,
+    resume_raw_keywords: Option<&[String]>,
+    active: &EmbeddingConfig,
+    job_id: &str,
+    semantic_enabled: i64,
+) -> Value {
+    let Some(job_text) = job_text_for(app, job_id) else {
+        return json!({ "error": format!("job not found in cache: {}", job_id) });
     };
 
     // Optional, local-only translation: when the JD language differs from the
@@ -56,32 +75,23 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
     // Always falls back to the original text on any failure. Cloud providers are
     // excluded, so this never incurs an unexpected API cost.
     let target_lang = resume.locale.as_deref().unwrap_or("en");
-    let translated = crate::commands::translation::translate_if_needed(
-        &app,
-        &req.job_id,
-        &job_text,
-        target_lang,
-    )
-    .await;
+    let translated =
+        crate::commands::translation::translate_if_needed(app, job_id, &job_text, target_lang)
+            .await;
     let job_text = translated; // shadow with the owned String; downstream code unchanged
 
-    // `semantic_enabled` is the cache-key bit; `skip_semantic` is its inverse —
-    // both derive from one helper so they can never drift.
-    let semantic_enabled: i64 = semantic_enabled_bit(req.semantic_scoring_enabled);
+    // `semantic_enabled` is the cache-key bit; `skip_semantic` is its inverse.
     let skip_semantic = semantic_enabled == 0;
-    // Fetched here (post-translation) so it can key both the semantic branch
-    // below and the match-result cache. `job_text` is now final.
-    let active = store.embedding_config();
 
     // Self-invalidating result cache: the key captures every input that can
     // change the score (ids, embedding space, semantic on/off, formula version,
     // and a hash of the final job text). A hit skips embedding + cosine +
-    // keyword work entirely. Errors above are returned before this point and
-    // are never cached.
+    // keyword work entirely. The job-not-found error above is returned before
+    // this point and is never cached.
     let job_text_hash = sha256_hex(&job_text);
     let cache_key = MatchScoreKey {
-        resume_id: &req.resume_id,
-        job_id: &req.job_id,
+        resume_id: &resume.id,
+        job_id,
         provider: &active.provider,
         model: &active.model,
         semantic_enabled,
@@ -94,17 +104,17 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
     let (resume_vec, job_vec) = if skip_semantic {
         (None, None)
     } else {
-        let rv = match store.get_vector(&req.resume_id) {
+        let rv = match store.get_vector(&resume.id) {
             Some(v) if active.matches(&v.space) => Some(v),
             _ => {
-                let v = embed(&app, &resume.text).await;
+                let v = embed(app, &resume.text).await;
                 if let Some(ref ev) = v {
-                    let _ = store.upsert_vector(&req.resume_id, ev);
+                    let _ = store.upsert_vector(&resume.id, ev);
                 }
                 v
             }
         };
-        let jv = posting_vector_or_embed(&app, &req.job_id, &job_text).await;
+        let jv = posting_vector_or_embed(app, job_id, &job_text).await;
         (rv, jv)
     };
     let semantic = match (&resume_vec, &job_vec) {
@@ -121,13 +131,10 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
     let job_keywords = keywords(&job_text, &stemmer);
     // Reuse the résumé's cached normalized keywords when present, stemming them
     // with the JD-derived stemmer so matching stays in the job-ad's language.
-    // Legacy documents (imported before the cache existed) fall back to live
-    // extraction from the stored text.
-    let resume_words: HashSet<String> = match &resume.keywords_json {
-        Some(json) => match serde_json::from_str::<Vec<String>>(json) {
-            Ok(tokens) => apply_stemmer(tokens.into_iter().collect(), &stemmer),
-            Err(_) => keywords(&resume.text, &stemmer), // corrupted cache → recompute
-        },
+    // Legacy documents (imported before the cache existed) and corrupt JSON
+    // arrive here as `None` and fall back to live extraction from the stored text.
+    let resume_words: HashSet<String> = match resume_raw_keywords {
+        Some(tokens) => apply_stemmer(tokens.iter().cloned().collect(), &stemmer),
         None => keywords(&resume.text, &stemmer),
     };
     let (ats, gaps) = keyword_coverage(&job_keywords, &resume_words);
@@ -152,8 +159,8 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
     };
 
     let result = json!({
-        "resumeId": req.resume_id,
-        "jobId": req.job_id,
+        "resumeId": resume.id,
+        "jobId": job_id,
         "ats": ats,
         "semantic": semantic,
         "combined": combined,
@@ -165,6 +172,99 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
         store.upsert_match_score(&cache_key, &s).ok();
     }
     result
+}
+
+/// Parse the résumé's cached normalized keywords (`keywords_json`) into a token
+/// list. Absent OR corrupt JSON → `None`, which makes [`score_one`] fall back to
+/// live extraction from `resume.text` (the legacy behaviour).
+fn parse_resume_keywords(resume: &DocumentRecord) -> Option<Vec<String>> {
+    resume
+        .keywords_json
+        .as_deref()
+        .and_then(|j| serde_json::from_str::<Vec<String>>(j).ok())
+}
+
+#[tauri::command]
+pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
+    let store = app.state::<DocumentStore>();
+    // INVARIANT (errors-never-cached): every error early-return MUST precede the
+    // first `get_match_score`/`upsert_match_score` call. The resume-not-found
+    // guard below returns before any cache access; `score_one`'s job-not-found
+    // early-return likewise precedes its first cache call. So an error path can
+    // never read or pollute the result cache. See
+    // `errors_never_populate_match_scores_cache` in documents/test.rs, which
+    // pins the store-level non-pollution half.
+    let Some(resume) = store.get(&req.resume_id) else {
+        return json!({ "error": format!("resume not found: {}", req.resume_id) });
+    };
+
+    // Parse the résumé's cached keywords ONCE (absent/corrupt → None → live
+    // extraction fallback inside `score_one`).
+    let resume_raw_keywords = parse_resume_keywords(&resume);
+    let active = store.embedding_config();
+    let semantic_enabled = semantic_enabled_bit(req.semantic_scoring_enabled);
+
+    score_one(
+        &app,
+        &store,
+        &resume,
+        resume_raw_keywords.as_deref(),
+        &active,
+        &req.job_id,
+        semantic_enabled,
+    )
+    .await
+}
+
+/// Score one resume against MANY job postings in a single IPC call.
+///
+/// Default keyword-only scoring is CPU-cheap, but the per-row renderer scheduler
+/// otherwise serialises N `match_resume` IPC round-trips. This scores every
+/// posting in one pass: the résumé record, its parsed keywords, the embedding
+/// config, and the semantic-enabled bit are resolved ONCE, then each job is
+/// scored sequentially via [`score_one`]. Sequential (not `join_all`) so the
+/// opt-in semantic branch can't fan out a burst of concurrent embeds.
+///
+/// Returns a JSON array of `MatchScore` values, one per requested job in order.
+/// A missing job yields a `{ "error": … }` element and does NOT abort the loop.
+/// Résumé-not-found returns a single `{ "error": … }` object (not an array).
+#[tauri::command]
+pub async fn match_resume_batch(app: AppHandle, req: MatchResumeBatchRequest) -> Value {
+    let store = app.state::<DocumentStore>();
+    let Some(resume) = store.get(&req.resume_id) else {
+        return json!({ "error": format!("resume not found: {}", req.resume_id) });
+    };
+
+    let resume_raw_keywords = parse_resume_keywords(&resume);
+    let active = store.embedding_config();
+    let semantic_enabled = semantic_enabled_bit(req.semantic_scoring_enabled);
+
+    let job_ids: &[String] = if req.job_ids.len() > MATCH_BATCH_MAX {
+        tracing::warn!(
+            requested = req.job_ids.len(),
+            cap = MATCH_BATCH_MAX,
+            "match_resume_batch job_ids exceeds cap; truncating to first {MATCH_BATCH_MAX}"
+        );
+        &req.job_ids[..MATCH_BATCH_MAX]
+    } else {
+        &req.job_ids
+    };
+
+    let mut results: Vec<Value> = Vec::with_capacity(job_ids.len());
+    for job_id in job_ids {
+        let score = score_one(
+            &app,
+            &store,
+            &resume,
+            resume_raw_keywords.as_deref(),
+            &active,
+            job_id,
+            semantic_enabled,
+        )
+        .await;
+        results.push(score);
+    }
+    Value::Array(results)
 }
 
 /// Build a searchable text blob for a cached job posting (title + description +
@@ -313,6 +413,18 @@ mod test {
         assert_eq!(semantic_enabled_bit(None), 1, "default (unset) → enabled");
     }
 
+    // The batch request must deserialize from the camelCase wire shape the
+    // renderer sends (`resumeId`/`jobIds`/`semanticScoringEnabled`). Pins the
+    // generated serde contract without needing an AppHandle.
+    #[test]
+    fn match_resume_batch_request_deserializes_camel_case() {
+        let json = r#"{"resumeId":"r","jobIds":["a","b"],"semanticScoringEnabled":false}"#;
+        let req: MatchResumeBatchRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.resume_id, "r");
+        assert_eq!(req.job_ids, vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(req.semantic_scoring_enabled, Some(false));
+    }
+
     // A bump to MATCH_FORMULA_VERSION must change the cache key, so a score
     // cached under the current version is a miss under the next one. Exercises
     // self-invalidation end-to-end against a real store.
@@ -345,5 +457,120 @@ mod test {
         assert!(store
             .get_match_score(&key(MATCH_FORMULA_VERSION + 1))
             .is_none());
+    }
+
+    // MATCH_FORMULA_VERSION guard: if a maintainer bumps the constant they MUST
+    // also bump the expected value here and invalidate any affected caches.
+    // Failing here is intentional — it's the reminder that a bump is breaking.
+    #[test]
+    fn formula_version_constant_is_pinned() {
+        assert_eq!(
+            MATCH_FORMULA_VERSION, 1,
+            "MATCH_FORMULA_VERSION changed — update this assert AND invalidate \
+             cached match scores (clear match_scores table or bump the stored version)"
+        );
+    }
+
+    // Round-trip parity: a 7-field MatchScore JSON blob survives
+    // upsert_match_score → get_match_score with every field name and type intact.
+    // Guards against a future rename/drop of any result-cache field.
+    #[test]
+    fn match_score_round_trip_preserves_all_seven_fields() {
+        use crate::documents::{sha256_hex, DocumentStore, MatchScoreKey};
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+        let hash = sha256_hex("round trip job text");
+        let key = MatchScoreKey {
+            resume_id: "resume-rt",
+            job_id: "job-rt",
+            provider: "ollama",
+            model: "nomic-embed-text",
+            semantic_enabled: 1,
+            formula_version: MATCH_FORMULA_VERSION,
+            job_text_hash: &hash,
+        };
+
+        // Build a known 7-field score JSON that mirrors the shape score_one produces.
+        let score_json = serde_json::json!({
+            "resumeId":       "resume-rt",
+            "jobId":          "job-rt",
+            "ats":            60.0_f64,
+            "semantic":       75.0_f64,
+            "combined":       70.0_f64,
+            "gaps":           ["kubernetes", "terraform"],
+            "recommendations": ["Consider adding evidence of: kubernetes, terraform."]
+        });
+        store
+            .upsert_match_score(&key, &serde_json::to_string(&score_json).unwrap())
+            .unwrap();
+
+        let got = store
+            .get_match_score(&key)
+            .expect("score must be present after upsert");
+
+        assert_eq!(
+            got["resumeId"], "resume-rt",
+            "resumeId field must survive round-trip"
+        );
+        assert_eq!(
+            got["jobId"], "job-rt",
+            "jobId field must survive round-trip"
+        );
+        assert_eq!(
+            got["ats"], 60.0_f64,
+            "ats field must survive round-trip as a number"
+        );
+        assert_eq!(
+            got["semantic"], 75.0_f64,
+            "semantic field must survive round-trip as a number"
+        );
+        assert_eq!(
+            got["combined"], 70.0_f64,
+            "combined field must survive round-trip as a number"
+        );
+        assert!(
+            got["gaps"].is_array(),
+            "gaps must survive round-trip as an array"
+        );
+        assert_eq!(
+            got["gaps"].as_array().unwrap().len(),
+            2,
+            "gaps array length must be preserved"
+        );
+        assert!(
+            got["recommendations"].is_array(),
+            "recommendations must survive round-trip as an array"
+        );
+        // Distinct values: ats != semantic != combined — guards against field swap.
+        assert_ne!(
+            got["ats"], got["combined"],
+            "ats and combined must be distinct"
+        );
+        assert_ne!(
+            got["semantic"], got["combined"],
+            "semantic and combined must be distinct"
+        );
+    }
+
+    // Pins the server-side DoS cap and the slice-truncation logic used by
+    // `match_resume_batch` (pure slice math — no AppHandle needed). The cap
+    // bounds a malicious direct IPC invoke; truncation must keep input order.
+    #[test]
+    fn match_batch_cap_truncates_preserving_order() {
+        assert_eq!(MATCH_BATCH_MAX, 1000, "cap value is pinned");
+
+        let v: Vec<String> = (0..MATCH_BATCH_MAX + 5).map(|i| i.to_string()).collect();
+        let capped = &v[..MATCH_BATCH_MAX];
+
+        assert_eq!(capped.len(), MATCH_BATCH_MAX, "truncated to the cap");
+        assert_eq!(capped.first(), Some(&"0".to_string()), "first preserved");
+        assert_eq!(
+            capped.last(),
+            Some(&(MATCH_BATCH_MAX - 1).to_string()),
+            "last of the capped slice preserved in order"
+        );
     }
 }

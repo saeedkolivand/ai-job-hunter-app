@@ -100,6 +100,19 @@ Add two new, self-invalidating SQLite tables to `DocumentStore` (`apps/tauri/src
 - **Storage grow unbounded:** Each unique (resume_id, job_id, provider, model, semantic_enabled, formula_version, job_text_hash) tuple adds a row. For typical usage (10–20 résumés, 100–500 scraped postings, 1 embedding space), this is negligible (~50–100 KB). A power user with 100 postings and 50 résumés in 2 spaces could accumulate 10 K rows (~5 MB). Phase 3 (pre-embed) will add more persistent data; full eviction / TTL strategy deferred to then.
 - **Deferred:** Phase 3 will pre-embed postings on scrape (no job_text_hash key needed if every posting is unique); Phase 4 will add provider-aware scheduler concurrency; Phase 5 will batch-embed via a provider trait (avoid round-tripping single embeds). Current implementation is a stable foundation for all three.
 
+## Phase K: Batch Scoring & Default Keyword-Only Path
+
+**Status:** Shipped in Phase K (v0.100+).
+
+The default scoring path is now **keyword-only** (`semanticScoring` defaults false → no embedding). The old per-row `ScoringScheduler` (CONCURRENCY=1) serialised N IPC calls and caused visible crawl even for cheap keyword-only work:
+
+- **New command:** `match_resume_batch(resumeId, jobIds[], semanticScoringEnabled)` — scores all postings in **one Rust pass**; the per-job kernel (`score_one`) is shared with the legacy `match_resume` single-job path, ensuring identical logic.
+- **Frontend:** `useJobMatchScores` batch hook + `MatchScoresProvider` context (exposes `useRowMatchScore(jobId)` per-row); `RowMatchScore` is now purely presentational (no scheduling logic).
+- **Deleted:** `apps/tauri/src/renderer/providers/ScoringScheduler/` (dead).
+- **Batch cap:** `MATCH_BATCH_MAX=1000` enforced in Rust (`commands/match_resume.rs`) — DoS guard against unbounded batch IPC.
+- **Cache alignment:** The batch command shares the ADR-017 `match_scores` cache (keyword keys use `semantic_enabled=0` to keep keyword and semantic paths isolated in the composite PK).
+- **Embedding-batch (Phase E):** Deferred — Ollama `/api/embed` batch + payload trim + warm-on-scrape are opt-in future work; do **not** ship or document as active.
+
 ## Testing
 
 - Unit tests in `documents/test.rs`:
