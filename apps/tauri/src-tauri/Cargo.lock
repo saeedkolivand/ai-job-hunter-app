@@ -109,6 +109,7 @@ dependencies = [
  "cbc",
  "chromiumoxide",
  "chrono",
+ "core-foundation-sys",
  "criterion",
  "dbus-secret-service-keyring-store",
  "docx-rs",
