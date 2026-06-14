@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.103.0",
   "description": "AI Job Hunter — local-first, AI-native desktop application",
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "packageManager": "pnpm@11.1.3",
   "engines": {

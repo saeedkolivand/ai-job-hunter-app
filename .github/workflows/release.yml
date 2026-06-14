@@ -8,8 +8,8 @@ name: 🚀 Release
 #   - push to main      → create the GitHub release + sync version files (NO build)
 #   - workflow_dispatch → build installers for a chosen tag (the only build path)
 # Jobs:
-#   - release: Determine version and create GitHub release (push only)
-#   - sync-version-files: Commit tracked version files for the release (push only)
+#   - release: Determine version, sync version files + changelog, create the
+#       GitHub release, and commit the bump back to main (push only)
 #   - build: Build Tauri apps for Windows, Linux, and macOS (manual / dispatch only)
 #   - generate-update-manifest: Publish latest.json for the auto-updater
 #   - update-cask: Pin the Homebrew cask to the built dmgs (version + per-arch sha256)
@@ -64,6 +64,9 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
+          # @semantic-release/git pushes the release commit (CHANGELOG + version
+          # files) to protected main over the deploy key the other jobs already use.
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
       - name: 📦 Setup pnpm
         uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
@@ -92,6 +95,11 @@ jobs:
       - name: 🏷️ Run Semantic Release
         id: semantic
         uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v6.0.0
+        with:
+          extra_plugins: |
+            @semantic-release/changelog@6
+            @semantic-release/git@10
+            @semantic-release/exec@6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -125,94 +133,13 @@ jobs:
           echo "Ref: ${{ github.ref }}"
           echo "::endgroup::"
 
-  sync-version-files:
-    name: 🔖 Sync Version Files
-    needs: release
-    # Reconcile the tracked version files to the latest release tag on EVERY push
-    # to main — not only when this push published. semantic-release's
-    # `new_release_published` output has reported false on runs that still tagged a
-    # release, stranding the version files a release behind (files at 0.69.1 while
-    # the tag was already v0.70.0). `always()` + deriving the version from the git
-    # tag makes "new tag ⇒ files synced" hold no matter the commit type; the
-    # diff-guard keeps it a no-op when they already match.
-    if: always() && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # The version-sync commit is pushed over the RELEASE_DEPLOY_KEY (SSH), not the
-    # GITHUB_TOKEN, so the token needs only read access for checkout.
-    permissions:
-      contents: read
-
-    steps:
-      - name: 📥 Checkout Repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          ref: main
-          # Full history + tags so `git describe` can resolve the latest release tag.
-          fetch-depth: 0
-          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
-
-      - name: � Setup pnpm
-        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
-        with:
-          version: 11.1.3
-
-      - name: � Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: 🔖 Sync + Commit Version Files
-        run: |
-          echo "::group::Resolving latest release tag"
-          VERSION="$(git describe --tags --abbrev=0 --match 'v*' | sed 's/^v*//')"
-          if [ -z "$VERSION" ]; then
-            echo "No release tag found — nothing to sync."
-            exit 0
-          fi
-          echo "Latest release tag: v$VERSION"
-          echo "::endgroup::"
-
-          echo "::group::Syncing tracked version files to v$VERSION"
-          node scripts/sync-tauri-version.cjs "$VERSION"
-          echo "::endgroup::"
-
-          echo "::group::Committing version files (if changed)"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          FILES="package.json apps/tauri/package.json apps/extension/package.json apps/tauri/src-tauri/Cargo.toml apps/tauri/src-tauri/Cargo.lock apps/tauri/src-tauri/tauri.conf.json README.md"
-          if git diff --quiet -- $FILES; then
-            echo "Version files already at v$VERSION — nothing to commit."
-            exit 0
-          fi
-
-          git add $FILES
-          git commit -m "chore: sync version files to v$VERSION [skip ci]"
-
-          # A bare push can fail non-fast-forward when another merge raced in during
-          # this job; rebase onto the latest main and retry so the sync is never
-          # silently dropped (the bug that left the files a release behind).
-          REMOTE="git@github.com:saeedkolivand/ai-job-hunter-app.git"
-          for attempt in 1 2 3; do
-            if git push "$REMOTE" HEAD:main; then
-              echo "Pushed version sync to v$VERSION (attempt $attempt)."
-              exit 0
-            fi
-            echo "Push rejected (attempt $attempt) — rebasing onto origin/main and retrying."
-            git fetch "$REMOTE" main && git rebase FETCH_HEAD || git rebase --abort || true
-          done
-          echo "::error::Failed to push version sync after 3 attempts."
-          exit 1
-
   build:
     name: 🏗️ Build Tauri Apps
     # Manual-only: installers are built on demand from the Actions tab
     # ("Run workflow"), never automatically on a release push — the cross-platform
     # compiles are slow, so they're decoupled from the every-merge release flow.
     # The build self-syncs version files and checks out the resolved tag, so it
-    # needs nothing from the push-only release / sync-version-files jobs.
+    # needs nothing from the push-only release job.
     if: github.event_name == 'workflow_dispatch'
 
     defaults:
@@ -822,9 +749,9 @@ jobs:
     name: 🍺 Update Homebrew Cask
     # Pins the cask to the just-built dmgs (version + per-arch sha256). Runs after
     # the build because that's the only point the dmgs — and their hashes — exist;
-    # deliberately NOT in sync-version-files, which runs on every release push
-    # before any build (so there'd be nothing to hash, and bumping the version
-    # there would point the cask at dmgs that never ship). Reads each asset's
+    # deliberately NOT in the push-only release job, which runs before any build
+    # (so there'd be nothing to hash, and bumping the version there would point
+    # the cask at dmgs that never ship). Reads each asset's
     # sha256 digest straight from the GitHub API (no download) and commits the
     # refreshed cask back to main. Skipped on the push path (build is manual).
     needs: build
