@@ -79,7 +79,7 @@ To find the exact numbers and update them, see the tier-mapping tables in `apps/
 
 ### IPC trust boundary
 
-- The command handler (`system_set_performance_mode`) clamps concurrency to [1, 16] and coerces cache bounds non-negative at the Rust boundary, even though today's renderer only sends fixed tiers. This guards against a buggy or future-variant renderer sending extreme values.
+- The command handler (`system_set_performance_mode`) clamps concurrency to [1, 16] and coerces cache bounds non-negative at the Rust boundary. The resolved backend config can carry user-edited values (from custom mode) or malformed data, so the boundary owns the invariant rather than relying on caller trust.
 
 ## Trade-offs Evaluated
 
