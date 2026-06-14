@@ -26,7 +26,7 @@ pub mod keywords;
 /// The active embedding configuration. Persisted next to the vectors it governs
 /// (in documents.db) because changing it changes the embedding *space* — every
 /// stored vector must be re-embedded. Defaults to local Ollama for offline use.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmbeddingConfig {
     pub provider: String,
@@ -40,6 +40,30 @@ impl EmbeddingConfig {
     pub fn matches(&self, space: &EmbeddingSpace) -> bool {
         self.provider == space.provider && self.model == space.model
     }
+}
+
+/// Whether moving from `old` to `new` is a real embedding-space change — i.e.
+/// any field differs (provider, model, or base_url). The posting_vectors /
+/// match_scores caches key on provider+model, so their old-space rows become
+/// unreachable and must be evicted only when this returns true. Single source of
+/// `ai_set_embedding_config`'s eviction gate so a dropped check fails a test.
+pub(crate) fn embedding_space_changed(old: &EmbeddingConfig, new: &EmbeddingConfig) -> bool {
+    old != new
+}
+
+/// Full cache key for the `match_scores` result cache (the table PK). Borrowed
+/// fields keep it allocation-free at the call site; passed by reference to the
+/// store methods. Grouped into a struct because 7 positional args read poorly.
+pub struct MatchScoreKey<'a> {
+    pub resume_id: &'a str,
+    pub job_id: &'a str,
+    pub provider: &'a str,
+    pub model: &'a str,
+    /// 1 when semantic scoring ran, 0 when it was skipped.
+    pub semantic_enabled: i64,
+    pub formula_version: i64,
+    /// SHA-256 of the post-translation job text (see [`sha256_hex`]).
+    pub job_text_hash: &'a str,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,6 +182,49 @@ impl DocumentStore {
                 Ok(())
             },
         },
+        Migration {
+            // Persisted, translation-aware job-vector cache. Keyed by job_id
+            // (one row per posting); `text_hash` pins the row to the exact text
+            // that was embedded (post-translation) and the provider/model pin the
+            // embedding space, so a stale or wrong-language row is a natural miss.
+            name: "create_posting_vectors",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS posting_vectors (
+                        job_id     TEXT PRIMARY KEY,
+                        text_hash  TEXT NOT NULL,
+                        vector     TEXT NOT NULL,
+                        provider   TEXT NOT NULL,
+                        model      TEXT NOT NULL,
+                        dim        INTEGER NOT NULL,
+                        created_at INTEGER NOT NULL
+                    );",
+                )
+            },
+        },
+        Migration {
+            // Persisted, self-invalidating match-result cache. The full PK is the
+            // cache key: resume/job ids, embedding space (provider/model), whether
+            // semantic scoring ran, the formula version, and a hash of the
+            // post-translation job text. Any change to those is a fresh key (miss).
+            name: "create_match_scores",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS match_scores (
+                        resume_id        TEXT NOT NULL,
+                        job_id           TEXT NOT NULL,
+                        provider         TEXT NOT NULL,
+                        model            TEXT NOT NULL,
+                        semantic_enabled INTEGER NOT NULL,
+                        formula_version  INTEGER NOT NULL,
+                        job_text_hash    TEXT NOT NULL,
+                        score_json       TEXT NOT NULL,
+                        created_at       INTEGER NOT NULL,
+                        PRIMARY KEY (resume_id, job_id, provider, model, semantic_enabled, formula_version, job_text_hash)
+                    );",
+                )
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -200,8 +267,10 @@ impl DocumentStore {
 
     pub fn clear_all(&self) {
         let conn = self.conn.lock();
-        conn.execute_batch("DELETE FROM vectors; DELETE FROM documents;")
-            .ok();
+        conn.execute_batch(
+            "DELETE FROM vectors; DELETE FROM documents; DELETE FROM posting_vectors; DELETE FROM match_scores;",
+        )
+        .ok();
     }
 
     pub fn list(&self) -> Vec<DocumentRecord> {
@@ -406,6 +475,153 @@ impl DocumentStore {
             .unwrap_or_default()
     }
 
+    // ── Posting-vector cache (translation-aware job embeddings) ───────────────
+    //
+    // A persisted, single-row-per-job cache of the job-text embedding. Distinct
+    // from `vectors` (résumé/document embeddings) and from the in-memory
+    // `PostingsCache` (which holds RAW-text vectors for hybrid search): this
+    // table stores the vector for the EXACT text that was embedded, which may be
+    // a translation. Reads are guarded by both the embedding space and a
+    // `text_hash` of that exact text, so a stale or wrong-language row misses.
+
+    /// Fetch a cached posting vector plus the `text_hash` it was stored under.
+    /// The caller compares the space (`EmbeddingConfig::matches`) and the hash
+    /// before trusting it. Mirrors `get_vector`'s read+deserialize shape.
+    pub fn get_posting_vector(&self, job_id: &str) -> Option<(EmbeddingVector, String)> {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT vector, provider, model, dim, text_hash FROM posting_vectors WHERE job_id = ?1",
+            params![job_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            },
+        )
+        .ok()
+        .and_then(|(json, provider, model, dim, text_hash)| {
+            let values: Vec<f64> = serde_json::from_str(&json).ok()?;
+            Some((
+                EmbeddingVector {
+                    values,
+                    space: EmbeddingSpace {
+                        provider,
+                        model,
+                        dim: dim as usize,
+                    },
+                },
+                text_hash,
+            ))
+        })
+    }
+
+    /// Store (or replace) the cached vector for `job_id`, tagged with the
+    /// `text_hash` of the exact text embedded and its embedding space.
+    pub fn upsert_posting_vector(
+        &self,
+        job_id: &str,
+        text_hash: &str,
+        v: &EmbeddingVector,
+    ) -> AppResult<()> {
+        let json = serde_json::to_string(&v.values).map_err(|e| e.to_string())?;
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO posting_vectors (job_id, text_hash, vector, provider, model, dim, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(job_id) DO UPDATE SET
+                text_hash = excluded.text_hash, vector = excluded.vector,
+                provider = excluded.provider, model = excluded.model,
+                dim = excluded.dim, created_at = excluded.created_at",
+            params![
+                job_id,
+                text_hash,
+                json,
+                v.space.provider,
+                v.space.model,
+                v.space.dim as i64,
+                ts_to_db(now_ms()),
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Drop the entire posting-vector cache (e.g. on embedding-config change).
+    pub fn clear_posting_vectors(&self) -> AppResult<()> {
+        let conn = self.conn.lock();
+        conn.execute("DELETE FROM posting_vectors", [])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    // ── Match-result cache (self-invalidating) ────────────────────────────────
+    //
+    // Caches the full `match_resume` JSON result. The cache key (the table PK)
+    // captures every input that can change the score: the resume/job ids, the
+    // embedding space, whether semantic scoring ran, the formula version, and a
+    // hash of the post-translation job text. A change to any of those is a new
+    // key — so the cache self-invalidates without explicit eviction.
+
+    /// Fetch a cached match-score JSON result for the given key, if present.
+    pub fn get_match_score(&self, key: &MatchScoreKey) -> Option<serde_json::Value> {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT score_json FROM match_scores
+             WHERE resume_id = ?1 AND job_id = ?2 AND provider = ?3 AND model = ?4
+               AND semantic_enabled = ?5 AND formula_version = ?6 AND job_text_hash = ?7",
+            params![
+                key.resume_id,
+                key.job_id,
+                key.provider,
+                key.model,
+                key.semantic_enabled,
+                key.formula_version,
+                key.job_text_hash,
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|json| serde_json::from_str(&json).ok())
+    }
+
+    /// Store (or replace) the cached match-score JSON result for the given key.
+    pub fn upsert_match_score(&self, key: &MatchScoreKey, score_json: &str) -> AppResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO match_scores
+                (resume_id, job_id, provider, model, semantic_enabled, formula_version,
+                 job_text_hash, score_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(resume_id, job_id, provider, model, semantic_enabled, formula_version, job_text_hash)
+             DO UPDATE SET score_json = excluded.score_json, created_at = excluded.created_at",
+            params![
+                key.resume_id,
+                key.job_id,
+                key.provider,
+                key.model,
+                key.semantic_enabled,
+                key.formula_version,
+                key.job_text_hash,
+                score_json,
+                ts_to_db(now_ms()),
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Drop the entire match-result cache (e.g. on embedding-config change).
+    pub fn clear_match_scores(&self) -> AppResult<()> {
+        let conn = self.conn.lock();
+        conn.execute("DELETE FROM match_scores", [])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     /// Count of stored vectors grouped by embedding space (for the status panel).
     pub fn vector_space_counts(&self) -> Vec<(EmbeddingSpace, usize)> {
         let conn = self.conn.lock();
@@ -490,6 +706,67 @@ pub async fn embed(app: &AppHandle, text: &str) -> Option<EmbeddingVector> {
             None
         }
     }
+}
+
+/// Lowercase-hex SHA-256 of `text`. Deterministic and stable across process
+/// restarts (unlike `DefaultHasher`/`RandomState`), so it is safe as the
+/// cross-session cache guard for both `posting_vectors.text_hash` and
+/// `match_scores.job_text_hash`. Single source of the hash for both caches.
+pub(crate) fn sha256_hex(text: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(text.as_bytes());
+    h.finalize()
+        .iter()
+        .fold(String::with_capacity(64), |mut acc, b| {
+            use std::fmt::Write;
+            let _ = write!(acc, "{b:02x}");
+            acc
+        })
+}
+
+/// Cache-precedence predicate for the posting-vector cache: a cached row is a
+/// HIT iff its embedding space matches the `active` config AND it was stored for
+/// the exact text we're requesting (`requested_hash == cached.text_hash`). A
+/// `None` row (no cached vector) is always a miss. This is the single source of
+/// the resolver's cache-hit decision — [`posting_vector_or_embed`] calls it so a
+/// reverted/loosened check fails a unit test (see documents/test.rs).
+pub(crate) fn posting_vector_is_fresh(
+    active: &EmbeddingConfig,
+    requested_hash: &str,
+    cached: Option<&(EmbeddingVector, String)>,
+) -> bool {
+    match cached {
+        Some((v, stored_hash)) => active.matches(&v.space) && stored_hash == requested_hash,
+        None => false,
+    }
+}
+
+/// Resolve the embedding for a job posting's (possibly translated) `text`,
+/// using the persisted `posting_vectors` cache. A hit avoids the embed call
+/// entirely. The cache is guarded by BOTH the active embedding space and a
+/// `text_hash` of the exact `text` passed here, so a stale or wrong-language
+/// row is a natural miss. Does NOT touch `PostingsCache` (raw-text vectors).
+pub async fn posting_vector_or_embed(
+    app: &AppHandle,
+    job_id: &str,
+    text: &str,
+) -> Option<EmbeddingVector> {
+    // Snapshot everything from the store before any await — the store methods
+    // each take/release the lock internally and return owned values, so no DB
+    // lock is held across the embed call below.
+    let active = app.state::<DocumentStore>().embedding_config();
+    let hash = sha256_hex(text);
+    let cached = app.state::<DocumentStore>().get_posting_vector(job_id);
+    // Single cache-hit decision (space + text_hash), shared with its unit test.
+    if posting_vector_is_fresh(&active, &hash, cached.as_ref()) {
+        return cached.map(|(v, _)| v); // cache hit — no embed
+    }
+    let v = embed(app, text).await?;
+    app.state::<DocumentStore>()
+        .upsert_posting_vector(job_id, &hash, &v)
+        .ok();
+    Some(v)
 }
 
 // ── Cosine similarity ─────────────────────────────────────────────────────────

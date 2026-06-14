@@ -180,7 +180,7 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
         <RowMatchScore jobId={posting.id} />
         <Button
           size="sm"
-          variant="glass"
+          variant="primary"
           onClick={handleSave}
           title={t('applications.saveToTracking')}
           loading={saveFromPostingMutation.isPending}

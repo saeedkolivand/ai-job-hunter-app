@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::credentials::CredentialStore;
-use crate::documents::{DocumentStore, EmbeddingConfig};
+use crate::documents::{embedding_space_changed, DocumentStore, EmbeddingConfig};
 use crate::events::{emit_event, JobEvent, JOBS_EVENT};
 use crate::ipc_contracts::ai::AiEmbedRequest;
 use crate::jobs::{JobStatus, JobTracker};
@@ -324,11 +324,25 @@ pub async fn ai_set_embedding_config(
         model,
         base_url,
     };
-    match app.state::<DocumentStore>().set_embedding_config(&cfg) {
-        Ok(()) => json!({
-            "success": true,
-            "config": { "provider": cfg.provider, "model": cfg.model, "baseUrl": cfg.base_url },
-        }),
+    let store = app.state::<DocumentStore>();
+    // Whether this is a real space change — the posting_vectors / match_scores
+    // caches key on provider+model, so their old-space rows become unreachable
+    // and must be reclaimed only when the space actually changes. Decision lives
+    // in `embedding_space_changed` (shared with its unit test).
+    let space_changed = embedding_space_changed(&store.embedding_config(), &cfg);
+    match store.set_embedding_config(&cfg) {
+        Ok(()) => {
+            if space_changed {
+                // Evict stale-space cache rows (mirrors how `ai_reembed_all`
+                // clears the live `PostingsCache` embeddings).
+                store.clear_posting_vectors().ok();
+                store.clear_match_scores().ok();
+            }
+            json!({
+                "success": true,
+                "config": { "provider": cfg.provider, "model": cfg.model, "baseUrl": cfg.base_url },
+            })
+        }
         Err(e) => json!({ "success": false, "error": e }),
     }
 }

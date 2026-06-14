@@ -160,6 +160,12 @@ export const MatchResumeRequestSchema = z.object({
   semanticScoringEnabled: z.boolean().optional(),
 });
 
+export const MatchResumeBatchRequestSchema = z.object({
+  resumeId: z.string().min(1),
+  jobIds: z.array(z.string().min(1)).max(1000),
+  semanticScoringEnabled: z.boolean().optional(),
+});
+
 export const JobIdSchema = z.object({ jobId: z.string().min(1) });
 
 export const CredentialSetSchema = z.object({
@@ -353,3 +359,4 @@ export type ScrapeBoardRequest = z.infer<typeof ScrapeBoardRequestSchema>;
 export type ScrapeUrlRequest = z.infer<typeof ScrapeUrlRequestSchema>;
 export type HybridSearchRequest = z.infer<typeof HybridSearchRequestSchema>;
 export type MatchResumeRequest = z.infer<typeof MatchResumeRequestSchema>;
+export type MatchResumeBatchRequest = z.infer<typeof MatchResumeBatchRequestSchema>;
