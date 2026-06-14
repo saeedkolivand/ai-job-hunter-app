@@ -85,7 +85,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             'flex items-center gap-2 rounded-lg px-2.5 transition-shadow duration-150',
             !unstyled &&
               variant !== 'glass' && [
-                'border border-[var(--border-soft)] bg-[rgb(var(--glass-rgb)/0.08)] shadow-sm',
+                'border border-[var(--border-clear)] bg-[rgb(var(--glass-rgb)/0.08)] shadow-sm',
               ],
             !unstyled && variant === 'glass' && 'glass shadow-sm',
             // Focus ring on the wrapper, not the input.

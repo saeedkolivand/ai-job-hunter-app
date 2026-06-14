@@ -185,10 +185,10 @@ export function Dropdown({
                 open ? 'border-brand/55 bg-brand/15' : 'hover:border-brand/45 hover:bg-brand/15'
               )
             : cn(
-                'border border-[var(--border-soft)] bg-[rgb(var(--glass-rgb)/0.08)]',
+                'border border-[var(--border-clear)] bg-[rgb(var(--glass-rgb)/0.08)]',
                 open
                   ? 'border-brand/35 bg-[rgb(var(--glass-rgb)/0.12)] text-foreground/90'
-                  : 'text-foreground/75 hover:border-[var(--border-mid)] hover:bg-[rgb(var(--glass-rgb)/0.12)] hover:text-foreground/90'
+                  : 'text-foreground/75 hover:border-[var(--border-clear)] hover:bg-[rgb(var(--glass-rgb)/0.12)] hover:text-foreground/90'
               )
         )}
       >

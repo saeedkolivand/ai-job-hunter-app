@@ -10,7 +10,7 @@
 @theme {
   /* Semantic color palette (OKLCH — perceptually uniform)
      Dark is a NEUTRAL CHARCOAL with a faint cool tint (macOS dark), not the old
-     saturated violet/blue. The brand violet survives only in primary/accent/ring
+     saturated violet/blue. The brand emerald survives only in primary/accent/ring
      (the accent), keeping identity without colouring every surface. Surfaces use
      a single cool hue (~285) at very low chroma so the elevation ladder is clean. */
   --color-background: oklch(21% 0.4% 285); /* #1d1d1f — Apple near-black canvas (neutral) */
@@ -42,19 +42,19 @@
      uses ring-brand, and --color-action-primary = brand. Change this one value
      (statically here for Default, or at runtime on :root) and the whole accent
      re-tints. Semantic action (run/edit/delete) + status colors are NOT accent. */
-  --color-brand: #a855f7;
-  --color-brand-soft: #c084fc;
-  /* Gradient-end + its soft step (shipped indigo) — the static `default` accent
+  --color-brand: #2ea36b;
+  --color-brand-soft: #46c489;
+  /* Gradient-end + its soft step (shipped amber) — the static `default` accent
      the runtime applier overrides for custom/system accents. */
-  --color-brand-2: #6366f1;
-  --color-brand-2-soft: #818cf8;
+  --color-brand-2: #f7a325;
+  --color-brand-2-soft: #ffca7a;
   --color-brand-dim: color-mix(in srgb, var(--color-brand) 15%, transparent);
   /* Un-overridden BASE brand pair — the SAME shipped default values, but the
      runtime accent applier (theme.ts `applyAccent` / ACCENT_VARS) never touches
      these. The Settings "Default" accent swatch reads these so it always shows
      the true shipped default even while a custom/system accent is active. */
-  --color-brand-base: #a855f7;
-  --color-brand-2-base: #6366f1;
+  --color-brand-base: #2ea36b;
+  --color-brand-2-base: #f7a325;
 
   /* Native macOS font (San Francisco) where it exists — it can't be bundled, so
      it only appears on real macOS via the OS; everyone else gets bundled Inter.
@@ -154,6 +154,7 @@
   --color-action-edit: oklch(62% 0.16 250); /* edit (blue) */
   --color-action-delete: var(--color-destructive); /* delete (red) */
   --color-action-foreground: oklch(98% 0.01 270); /* label on a filled action */
+  --color-brand-foreground: #15241c; /* dark ink label on the bright emerald→amber primary gradient (white fails on the amber tail) */
 
   /* ── Z-index utilities — use z-overlay, z-modal, z-toast etc. ─────────── */
   --z-index-raised: 10;
@@ -256,8 +257,8 @@
   --nebula-violet: var(--color-brand-soft);
   --nebula-indigo: var(--color-brand-2-soft);
   /* ── RGB aliases for brand colors (used in gradients) */
-  --rgb-brand: 168 85 247;
-  --rgb-aurora-indigo: 99 102 241;
+  --rgb-brand: 46 163 107;
+  --rgb-aurora-indigo: 247 163 37;
 
   /* ── Animation duration scale ─────────────────────────────────────────── */
   --dur-instant: 80ms;
@@ -306,20 +307,21 @@
   --color-border: oklch(88% 1% 264);
   --color-input: oklch(88% 1% 264);
 
-  /* Accent deepened for light: the bright #A855F7 washes out on white and
+  /* Accent deepened for light: the bright #2EA36B washes out on white and
      small accent text fails contrast, so brand/primary/accent/ring step down
-     to ~#7C3AED (still the same violet family, just legible on white). */
-  --color-brand: #7c3aed;
-  --color-brand-soft: #8b5cf6;
-  /* Gradient-end deepened for light (legible on white, matching the brand step). */
-  --color-brand-2: #4f46e5;
-  --color-brand-2-soft: #6366f1;
+     to ~#0F6B3F (still the same emerald family, just legible on white). */
+  --color-brand: #0f6b3f;
+  --color-brand-soft: #1f8a57;
+  /* Gradient-end (amber) deepened for light (legible on white, matching the brand step). */
+  --color-brand-2: #c2740a;
+  --color-brand-2-soft: #e08a12;
   --color-brand-dim: color-mix(in srgb, var(--color-brand) 12%, transparent);
   /* Un-overridden BASE brand pair for light (mirrors the @theme dark defaults):
      the SAME shipped light-scheme values, never touched by the runtime accent
      applier. The Settings "Default" accent swatch reads these. */
-  --color-brand-base: #7c3aed;
-  --color-brand-2-base: #4f46e5;
+  --color-brand-base: #0f6b3f;
+  --color-brand-2-base: #c2740a;
+  --color-brand-foreground: #ffffff; /* light scheme gradient is deep enough for a white label (dark ink would fail on deep-forest emerald) */
   --color-primary: oklch(50% 58% 285);
   --color-primary-foreground: oklch(99% 0.15% 270);
   --color-accent: oklch(50% 58% 285);

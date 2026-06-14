@@ -62,7 +62,7 @@ export function NotificationBell() {
       <Button
         variant="ghost"
         size="sm"
-        className={`app-no-drag relative border-transparent bg-transparent hover:border-transparent hover:bg-white/[0.06] ${
+        className={`app-no-drag relative border-foreground/15 bg-transparent hover:border-foreground/25 hover:bg-foreground/[0.06] ${
           unreadCount > 0
             ? 'text-brand hover:text-brand'
             : 'text-foreground/70 hover:text-foreground'
