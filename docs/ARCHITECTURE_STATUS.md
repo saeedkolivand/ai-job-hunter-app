@@ -47,10 +47,18 @@ AI generation (`commands/ai_provider/`) and data/document handling
 (`documents/`, `jobs/`, [SQLite][sqlite] via [rusqlite][rusqlite]) now live in the [Rust][rust] core; the
 former `packages/ai` and `packages/data` Node packages were removed.
 
+| Feature                     | Status | Notes                                                                                                 |
+| --------------------------- | ------ | ----------------------------------------------------------------------------------------------------- |
+| Resume/document storage     | ✅     | SQLite `documents` table, embeddings in `vectors` table                                               |
+| Job-posting vector cache    | ✅     | `posting_vectors` table (Phase 1 of faster match scoring); self-invalidating on space/text change     |
+| Match-score result cache    | ✅     | `match_scores` table (Phase 1); composite PK encodes formula version, space, semantic flag, text hash |
+| ATS keyword matching        | ✅     | Stemmed matching with language detection from job ad                                                  |
+| Semantic similarity scoring | ✅     | Embedding-based cosine similarity; local Ollama or cloud providers (OpenAI, Anthropic, Gemini)        |
+
 > ⚠️ This feature matrix previously tracked the deleted Node packages and has
 > not been re-audited against the Rust implementation. Some features that were
-> ✅ in TypeScript (notably hybrid search and the resume-job matcher) are
-> currently stubs in Rust — verify against the code before relying on this.
+> ✅ in TypeScript (notably hybrid search) are currently stubs in Rust — verify
+> against the code before relying on this.
 
 ---
 

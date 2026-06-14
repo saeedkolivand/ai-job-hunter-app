@@ -22,7 +22,7 @@ Merged knowledge for `scraping-applier-expert` and `ai-provider-expert`. Source 
 ## AI provider (`commands/ai_provider/`)
 
 - **Abstraction (architectural rule — HIGH if violated)** — `ollama.rs`, `openai.rs`, `anthropic.rs`, `gemini.rs`, `cli_agent/` behind a shared interface (`mod.rs`). **No business logic depends on a provider-specific API.** Adding OpenAI/Anthropic/Gemini/Ollama/OpenRouter/LM Studio/future = **config + adapter only**.
-- **Embeddings** — `documents/mod.rs`: storage + **embedding-space invalidation** when the model/space changes (stale embeddings across a model switch = HIGH).
+- **Embeddings & match scoring** — `documents/mod.rs`: document + posting-vector storage. Match-score result cache with self-invalidating composite key (provider + model + semantic_enabled + formula_version + job_text_hash). See [ADR-017](decision-records/adr-017-persisted-self-invalidating-match-score-caches.md) for the caching strategy. Embedding-space invalidation when the model/space changes (stale embeddings = HIGH). `posting_vector_or_embed()` is the resolver; `match_resume.rs` wraps results in the cache.
 - **Streaming / thinking normalization** — every provider maps reasoning to `ai:stream { delta, thinking:true }`; inline `<think>` blocks for local models are split by `renderer/lib/generate/think-split.ts: createThinkSplitter`. See [ADR-005](decision-records/adr-005-universal-thinking-normalization.md).
 - **Generation session store** — `renderer/store/generation-store/` ([Zustand][zustand]), keyed by context id, survives navigation/close. See [ADR-006](decision-records/adr-006-generation-session-store.md).
 - **Prompts** — `packages/prompts` (provider-aware, locale-driven, pure [TypeScript][typescript], zero deps); reusable/composable templates.
