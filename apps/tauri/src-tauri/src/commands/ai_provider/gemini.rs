@@ -105,6 +105,16 @@ fn parse_gemini_frames(buf: &mut String, state: &mut GeminiScanner) -> Vec<Strea
     let mut out = Vec::new();
     let chunk = std::mem::take(buf);
     for ch in chunk.chars() {
+        // Drop the JSON-array framing (`[`, `]`, `,`, whitespace) that appears at
+        // depth 0 before an object's `{`; otherwise it pollutes `pending` and the
+        // `starts_with('{')` guard never fires for `[{…}` / `,{…}`.
+        if !state.in_string
+            && state.depth == 0
+            && state.pending.is_empty()
+            && (matches!(ch, '[' | ']' | ',') || ch.is_whitespace())
+        {
+            continue;
+        }
         if state.escape {
             state.escape = false;
             state.pending.push(ch);
@@ -554,5 +564,24 @@ mod tests {
             parse_gemini_frames(&mut buf, &mut state),
             vec![StreamPiece::text("a } b { c")]
         );
+    }
+
+    #[test]
+    fn frames_emit_both_objects_in_a_json_array_payload() {
+        // A realistic streamed array (`[{…},{…}]`) split across two chunks: the
+        // depth-0 framing (`[`, `,`, `]`, whitespace) must be dropped so the
+        // `starts_with('{')` guard fires for the second object too. Both objects'
+        // text deltas must be emitted in order.
+        let mut state = GeminiScanner::default();
+        let mut buf =
+            String::from(r#"[{"candidates":[{"content":{"parts":[{"text":"Hello"}]}}]}, {"candi"#);
+        let first = parse_gemini_frames(&mut buf, &mut state);
+        assert_eq!(first, vec![StreamPiece::text("Hello")]);
+
+        buf.push_str(r#"dates":[{"content":{"parts":[{"text":" world"}]}}]}]"#);
+        let second = parse_gemini_frames(&mut buf, &mut state);
+        assert_eq!(second, vec![StreamPiece::text(" world")]);
+        assert!(buf.is_empty());
+        assert!(state.pending.is_empty());
     }
 }

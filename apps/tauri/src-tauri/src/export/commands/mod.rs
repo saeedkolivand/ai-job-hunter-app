@@ -89,8 +89,7 @@ pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<
             }
         })
         .await
-        .map_err(|e| AppError::Message(format!("Export task panicked: {e}")))?
-        .map_err(|e: AppError| e)?;
+        .map_err(|e| AppError::Message(format!("Export task panicked: {e}")))??;
 
     // Block only when a critical defect survived auto-fix.
     if let Some(report) = &report {

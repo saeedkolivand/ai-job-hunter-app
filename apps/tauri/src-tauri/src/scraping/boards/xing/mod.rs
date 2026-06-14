@@ -130,7 +130,7 @@ fn parse_xing_page(html: &str, seen: &mut HashSet<String>) -> Vec<JobPosting> {
         };
         let href = link_el.value().attr("href").unwrap_or("");
         let id = extract_id_from_href(href);
-        if id.is_empty() || !seen.insert(id.clone()) {
+        if id.is_empty() {
             continue;
         }
 
@@ -150,6 +150,13 @@ fn parse_xing_page(html: &str, seen: &mut HashSet<String>) -> Vec<JobPosting> {
             .map(|e| e.text().collect::<String>().trim().to_string());
 
         if title.is_empty() {
+            continue;
+        }
+
+        // Only mark the id as seen once a valid (non-empty) title confirms it's a
+        // real card; otherwise a first empty-title parse would permanently
+        // suppress later valid instances of the same id.
+        if !seen.insert(id.clone()) {
             continue;
         }
 

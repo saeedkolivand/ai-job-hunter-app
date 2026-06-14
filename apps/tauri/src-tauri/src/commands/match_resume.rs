@@ -292,24 +292,19 @@ pub async fn match_resume_batch(app: AppHandle, req: MatchResumeBatchRequest) ->
 /// description + requirements). Pure — no lock — so it can be reused for both the
 /// single-job and batch lookups. Returns None if the posting has no usable text.
 fn posting_to_text(posting: &Value) -> Option<String> {
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(t) = posting.get("title").and_then(|v| v.as_str()) {
-        parts.push(t.to_string());
-    }
-    if let Some(d) = posting.get("description").and_then(|v| v.as_str()) {
-        parts.push(d.to_string());
-    }
-    if let Some(reqs) = posting.get("requirements").and_then(|v| v.as_array()) {
-        for r in reqs {
-            if let Some(s) = r.as_str() {
-                parts.push(s.to_string());
-            }
-        }
-    }
-    if parts.is_empty() {
-        return None;
-    }
-    Some(parts.join("\n"))
+    let title = posting.get("title").and_then(|v| v.as_str()).unwrap_or("");
+    let description = posting.get("description").and_then(|v| v.as_str());
+    // `requirements` is an array of strings; collect to a Vec the shared helper
+    // can borrow as a slice.
+    let requirements: Option<Vec<String>> = posting
+        .get("requirements")
+        .and_then(|v| v.as_array())
+        .map(|reqs| {
+            reqs.iter()
+                .filter_map(|r| r.as_str().map(|s| s.to_string()))
+                .collect()
+        });
+    crate::documents::keywords::posting_text_blob(title, description, requirements.as_deref())
 }
 
 /// Build a searchable text blob for a cached job posting (title + description +

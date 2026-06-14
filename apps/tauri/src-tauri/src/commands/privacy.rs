@@ -98,6 +98,26 @@ impl Resettable for KvCache {
 /// A type-erased factory-reset action: resolve a store from app state and wipe it.
 type ResetAction = Box<dyn Fn(&AppHandle) + Send + Sync>;
 
+/// The factory-reset labels every persistent user-data store is registered under
+/// via `manage_resettable` in `lib.rs::setup`. SINGLE source of truth: `setup`
+/// debug-asserts the live registry matches this (catching a forgotten
+/// `manage_resettable`) and the completeness test pins it. Bridge/notification
+/// stores register through their own `manage` helpers and are NOT in this list.
+pub const MANAGE_RESETTABLE_LABELS: &[&str] = &[
+    "autopilots",
+    "credentials",
+    "documents",
+    "ai_generations",
+    "applications",
+    "job_preferences",
+    "contact_profile",
+    "referrals",
+    "job_tracker",
+    "postings",
+    "interactions",
+    "cache",
+];
+
 /// Registry of factory-reset actions, populated as stores are managed and
 /// iterated by [`privacy_reset_app`]. Holds type-erased closures that resolve
 /// each store from Tauri state and call its [`Resettable::reset`].
@@ -276,6 +296,7 @@ mod tests {
                 board: String::new(),
                 application_answers: vec![],
                 company_brief: String::new(),
+                application_id: None,
             })
             .unwrap();
         assert_eq!(store.list().len(), 1, "precondition: one record inserted");
@@ -396,10 +417,11 @@ mod tests {
     }
 
     // C3 — Registry completeness: every label that `privacy_reset_app` must wipe
-    // is registered. This test pins the *current* expected set (mirrored from
-    // `src/lib.rs::setup`) so a new persistent store added via `manage_resettable`
-    // can't silently escape the factory-reset wipe. If a new label appears in
-    // `lib.rs`, add it here too.
+    // is registered. The expected set now comes from the shared
+    // `MANAGE_RESETTABLE_LABELS` const (the single source of truth), and
+    // `lib.rs::setup` debug-asserts the live registry equals it — so a new
+    // persistent store added via `manage_resettable` can't silently escape the
+    // factory-reset wipe without tripping both this test and the boot assertion.
     //
     // NOTE: This exercises the type-erased registry labels and the compile-time
     // `T: Resettable` bound, not the AppHandle dispatch (which needs a live
@@ -407,23 +429,10 @@ mod tests {
     // only compiles when `T` implements `Resettable`.
     #[test]
     fn reset_registry_expected_labels_match_lib_rs_setup() {
-        // Labels as used in `lib.rs::setup` — the single source of truth.
-        // Extension-bridge and notification labels are registered by their own
-        // `manage` helpers and are included here for completeness.
-        let expected: &[&str] = &[
-            "autopilots",
-            "credentials",
-            "documents",
-            "ai_generations",
-            "applications",
-            "job_preferences",
-            "contact_profile",
-            "referrals",
-            "job_tracker",
-            "postings",
-            "interactions",
-            "cache",
-        ];
+        // Labels come from the shared const that `lib.rs::setup` debug-asserts
+        // against. Bridge/notification labels register via their own `manage`
+        // helpers and are intentionally excluded.
+        let expected: &[&str] = MANAGE_RESETTABLE_LABELS;
 
         let mut reg = ResetRegistry::default();
         // Replicate registrations (types must match the T used in lib.rs).

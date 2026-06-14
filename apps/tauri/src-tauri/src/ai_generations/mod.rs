@@ -61,6 +61,15 @@ pub struct AiGenerationRecord {
     pub application_answers: Vec<ApplicationAnswer>,
     #[serde(rename = "companyBrief", default)]
     pub company_brief: String,
+    /// Parent Application FK (NULL when unlinked). Carried through export/import so
+    /// a backup round-trip preserves the application↔generation link; otherwise
+    /// `remove_for_application`/`detach_application` stop matching restored rows.
+    #[serde(
+        rename = "applicationId",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub application_id: Option<String>,
 }
 
 pub struct AiGenerationStore {
@@ -153,7 +162,7 @@ impl AiGenerationStore {
             "SELECT id, created_at, candidate_name, job_title, company_name,
                     resume_language, job_ad_language, target_language, mismatch,
                     top_requirements, mode, resume_text, cover_letter_text, job_ad,
-                    job_url, board, application_answers, company_brief
+                    job_url, board, application_answers, company_brief, application_id
              FROM ai_generations ORDER BY created_at DESC",
         )
         .ok()
@@ -176,7 +185,7 @@ impl AiGenerationStore {
             "SELECT id, created_at, candidate_name, job_title, company_name,
                     resume_language, job_ad_language, target_language, mismatch,
                     top_requirements, mode, resume_text, cover_letter_text, job_ad,
-                    job_url, board, application_answers, company_brief
+                    job_url, board, application_answers, company_brief, application_id
              FROM ai_generations WHERE job_url = ?1 ORDER BY created_at DESC LIMIT 1",
         )
         .ok()
@@ -192,8 +201,8 @@ impl AiGenerationStore {
              (id, created_at, candidate_name, job_title, company_name,
               resume_language, job_ad_language, target_language, mismatch,
               top_requirements, mode, resume_text, cover_letter_text, job_ad,
-              job_url, board, application_answers, company_brief)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
+              job_url, board, application_answers, company_brief, application_id)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
             params![
                 rec.id,
                 ts_to_db(rec.created_at),
@@ -213,6 +222,7 @@ impl AiGenerationStore {
                 rec.board,
                 answers_json,
                 rec.company_brief,
+                rec.application_id,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -230,7 +240,7 @@ impl AiGenerationStore {
               resume_language = ?5, job_ad_language = ?6, target_language = ?7,
               mismatch = ?8, top_requirements = ?9, mode = ?10, resume_text = ?11,
               cover_letter_text = ?12, job_ad = ?13, job_url = ?14, board = ?15,
-              application_answers = ?16, company_brief = ?17
+              application_answers = ?16, company_brief = ?17, application_id = ?18
              WHERE id = ?1",
             params![
                 rec.id,
@@ -250,6 +260,7 @@ impl AiGenerationStore {
                 rec.board,
                 answers_json,
                 rec.company_brief,
+                rec.application_id,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -383,7 +394,7 @@ impl AiGenerationStore {
     }
 }
 
-/// Map a DB row (the full 18-column projection) to a record. Shared by `list`
+/// Map a DB row (the full 19-column projection) to a record. Shared by `list`
 /// and `find_by_job_url` so the column order lives in one place.
 fn row_to_record(row: &rusqlite::Row) -> rusqlite::Result<AiGenerationRecord> {
     let top_req_json: String = row.get(9)?;
@@ -407,6 +418,7 @@ fn row_to_record(row: &rusqlite::Row) -> rusqlite::Result<AiGenerationRecord> {
         board: row.get(15)?,
         application_answers: serde_json::from_str(&answers_json).unwrap_or_default(),
         company_brief: row.get(17)?,
+        application_id: row.get(18)?,
     })
 }
 
@@ -446,6 +458,7 @@ fn merge_application(
             incoming.application_answers
         },
         company_brief: pick(incoming.company_brief, existing.company_brief),
+        application_id: incoming.application_id.or(existing.application_id),
     }
 }
 
@@ -493,8 +506,8 @@ impl DataStore for AiGenerationStore {
                  (id, created_at, candidate_name, job_title, company_name,
                   resume_language, job_ad_language, target_language, mismatch,
                   top_requirements, mode, resume_text, cover_letter_text, job_ad,
-                  job_url, board, application_answers, company_brief)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
+                  job_url, board, application_answers, company_brief, application_id)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
                 params![
                     rec.id,
                     ts_to_db(rec.created_at),
@@ -514,6 +527,7 @@ impl DataStore for AiGenerationStore {
                     rec.board,
                     answers_json,
                     rec.company_brief,
+                    rec.application_id,
                 ],
             )?;
         }

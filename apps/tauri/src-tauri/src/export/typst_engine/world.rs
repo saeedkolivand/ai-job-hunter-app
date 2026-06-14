@@ -150,7 +150,7 @@ impl ResumeWorld {
         let data_bytes = data_json.map(Bytes::new);
         let photo_id = FileId::new(None, VirtualPath::new(PHOTO_PATH));
         let photo_bytes = photo_png.map(Bytes::new);
-        // Ensure the static is initialized (cheap: already parsed after first call).
+        // Force the font set to load (parsed once per process; subsequent ResumeWorld constructions reuse it).
         let _ = &*LOADED_FONTS;
         let library = LazyHash::new(Library::default());
 

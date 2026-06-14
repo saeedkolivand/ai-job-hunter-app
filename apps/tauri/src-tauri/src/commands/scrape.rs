@@ -264,10 +264,24 @@ pub fn scrape_persist_job(app: AppHandle, req: ScrapePersistJobRequest) -> Value
 /// Synchronous request/response — used to fetch a description on demand for
 /// boards whose list scrape omits it (LinkedIn, Glassdoor, etc.).
 #[tauri::command]
-pub async fn scrape_resolve_url(url: String) -> Value {
+pub async fn scrape_resolve_url(app: AppHandle, url: String) -> Value {
     if url.is_empty() {
         return json!(null);
     }
+    // Anti-abuse: same rate + concurrency budget as the other scrape commands so a
+    // looping/XSS'd renderer can't bypass the cap by hammering resolve directly.
+    let limiter = app
+        .state::<std::sync::Arc<crate::limits::Limiter>>()
+        .inner()
+        .clone();
+    let _guard = match limiter.acquire(
+        "scrape_url",
+        crate::limits::SCRAPE_RATE_MAX,
+        crate::limits::SCRAPE_CONCURRENCY_MAX,
+    ) {
+        Ok(g) => g,
+        Err(_) => return json!(null),
+    };
     match crate::scraping::scrape_url::resolve(&url).await {
         Ok(Some(posting)) => serde_json::to_value(&posting).unwrap_or(json!(null)),
         _ => json!(null),

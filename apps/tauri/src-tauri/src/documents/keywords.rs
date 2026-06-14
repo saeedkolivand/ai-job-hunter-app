@@ -223,7 +223,11 @@ pub fn keywords(text: &str, stemmer: &Stemmer) -> HashSet<String> {
 /// of `keywords(job_text, stemmer)`, so every gap has an entry.
 pub fn display_forms(job_text: &str, stemmer: &Stemmer) -> HashMap<String, String> {
     let mut map: HashMap<String, String> = HashMap::new();
-    for token in keywords_normalized(job_text) {
+    // Iterate a sorted Vec, not the HashSet, so the `or_insert` winner for two
+    // tokens sharing a stem is deterministic across runs.
+    let mut tokens: Vec<_> = keywords_normalized(job_text).into_iter().collect();
+    tokens.sort();
+    for token in tokens {
         let stem = if SHORT_TECH_TERMS.contains(&token.as_str()) {
             token.clone()
         } else {
@@ -259,6 +263,41 @@ pub fn keyword_coverage(job: &HashSet<String>, resume: &HashSet<String>) -> (f64
     let coverage = (matched as f64 / job.len() as f64 * 100.0).round();
     gaps.truncate(15);
     (coverage, gaps)
+}
+
+/// Build the ATS text blob for a job posting — title + description + requirements,
+/// joined by newlines. Single source of truth shared by the Jobs-page scorer
+/// (`commands::match_resume`) and the headless Autopilot ranker, so both score
+/// identical text. Returns None when there's no usable text.
+pub fn posting_text_blob(
+    title: &str,
+    description: Option<&str>,
+    requirements: Option<&[String]>,
+) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    if !title.trim().is_empty() {
+        parts.push(title.to_string());
+    }
+    if let Some(d) = description {
+        if !d.trim().is_empty() {
+            parts.push(d.to_string());
+        }
+    }
+    if let Some(reqs) = requirements {
+        for r in reqs {
+            if !r.trim().is_empty() {
+                parts.push(r.to_string());
+            }
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(
+            "
+",
+        ))
+    }
 }
 
 /// Embedding-free keyword-coverage match score (0–100) of a résumé against a

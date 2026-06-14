@@ -536,6 +536,16 @@ pub fn run() {
                 Err(e) => log::warn!("[setup] pipeline cache failed to open (non-fatal): {e}"),
             }
 
+            // Guard: the registry must contain exactly the labels the
+            // completeness test pins (`MANAGE_RESETTABLE_LABELS`) before the
+            // bridge/notification stores register their own labels. A forgotten
+            // `manage_resettable` above trips this in debug builds.
+            debug_assert_eq!(
+                reset_registry.labels(),
+                commands::privacy::MANAGE_RESETTABLE_LABELS.to_vec(),
+                "manage_resettable registrations drifted from MANAGE_RESETTABLE_LABELS"
+            );
+
             // Browser-extension bridge (Feature 2): manage the pairing-token state
             // (+ register its factory-reset token rotation). The loopback WS server
             // itself is started below, after the registry is in state.

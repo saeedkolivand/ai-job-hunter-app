@@ -104,6 +104,10 @@ impl Scraper for SmartRecruitersScraper {
                 p.id
             );
 
+            // On a detail-fetch error yield `None` (not `continue`) so the
+            // progress emission + politeness sleep below still run every
+            // iteration; otherwise repeated detail errors would stop
+            // rate-limiting requests and stall progress.
             let detail = match fetch_json::<DetailResp>(
                 &detail_url,
                 Default::default(),
@@ -117,14 +121,27 @@ impl Scraper for SmartRecruitersScraper {
                         "[smartrecruiters] detail fetch failed for posting {} ({detail_url}): {e}; skipping",
                         p.id
                     );
+                    None
+                }
+            };
+
+            let detail = match detail {
+                Some(d) => d,
+                None => {
+                    // Detail unavailable: skip building a posting, but still run
+                    // the progress + sleep below so pacing and progress hold.
+                    if let Some(ref on_progress) = ctx.on_progress {
+                        on_progress((i + 1) as f32 / total as f32);
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        150 + (rand::random::<u64>() % 200),
+                    ))
+                    .await;
                     continue;
                 }
             };
 
-            let sections = detail
-                .and_then(|d| d.job_ad)
-                .and_then(|ja| ja.sections)
-                .unwrap_or_default();
+            let sections = detail.job_ad.and_then(|ja| ja.sections).unwrap_or_default();
 
             let description = sections
                 .values()

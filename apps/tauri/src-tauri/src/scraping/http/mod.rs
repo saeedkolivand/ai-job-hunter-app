@@ -168,9 +168,10 @@ pub async fn fetch_json<T: for<'de> serde::Deserialize<'de>>(
     match serde_json::from_str::<T>(&res.text) {
         Ok(value) => Ok(Some(value)),
         Err(e) => {
-            let preview: String = res.text.chars().take(200).collect();
+            // Log metadata only; never the raw response body (third-party data).
             log::debug!(
-                "[scraping::http] fetch_json parse failure for {url} ({e}); body[..200]={preview:?}"
+                "[scraping::http] fetch_json parse failure for {url} ({e}); body_len={}",
+                res.text.len()
             );
             Ok(None)
         }

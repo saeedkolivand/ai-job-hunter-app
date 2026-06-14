@@ -399,6 +399,7 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
         // hammering a rate limit). Cancellation is honored between chunks; store
         // writes (sync) stay serialized to avoid lock contention.
         const REEMBED_CONCURRENCY: usize = 4;
+        let mut was_cancelled = false;
         for chunk in docs.chunks(REEMBED_CONCURRENCY) {
             let cancelled = app_clone
                 .state::<Mutex<JobTracker>>()
@@ -407,6 +408,7 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
                 .map(|j| j.status == JobStatus::Cancelled)
                 .unwrap_or(false);
             if cancelled {
+                was_cancelled = true;
                 break;
             }
 
@@ -423,9 +425,16 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
                 match ev {
                     Some(ev) => {
                         let store = app_clone.state::<DocumentStore>();
-                        let _ = store.upsert_vector(&doc.id, &ev);
-                        let _ = store.set_indexed(&doc.id);
-                        done += 1;
+                        match store
+                            .upsert_vector(&doc.id, &ev)
+                            .and_then(|_| store.set_indexed(&doc.id))
+                        {
+                            Ok(()) => done += 1,
+                            Err(e) => {
+                                log::warn!("reembed write failed for {}: {e}", doc.id);
+                                failed += 1;
+                            }
+                        }
                     }
                     None => failed += 1,
                 }
@@ -441,6 +450,12 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
                     ts: crate::documents::now_ms() as i64,
                 },
             );
+        }
+
+        // A user-cancelled job is already in Cancelled status; calling
+        // job_complete would overwrite it with Completed. Bail with partial counts.
+        if was_cancelled {
+            return;
         }
 
         crate::commands::jobs::job_complete(

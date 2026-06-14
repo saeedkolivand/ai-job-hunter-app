@@ -190,12 +190,18 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         .iter()
         .map(|p| {
             // Keyword-coverage match %: share of the JD's keywords present in the
-            // résumé (shared with `commands::match_resume`). Embedding-free.
-            let score = match &p.description {
-                Some(desc) if !resume.is_empty() && !desc.is_empty() => {
-                    Some(crate::documents::keywords::coverage_score(resume, desc))
-                }
-                _ => None,
+            // résumé, scored over the SAME blob as `commands::match_resume`
+            // (title + description + requirements via `posting_text_blob`).
+            // Embedding-free.
+            let score = if resume.is_empty() {
+                None
+            } else {
+                crate::documents::keywords::posting_text_blob(
+                    &p.title,
+                    p.description.as_deref(),
+                    p.requirements.as_deref(),
+                )
+                .map(|blob| crate::documents::keywords::coverage_score(resume, &blob))
             };
             FoundJob {
                 title: p.title.clone(),

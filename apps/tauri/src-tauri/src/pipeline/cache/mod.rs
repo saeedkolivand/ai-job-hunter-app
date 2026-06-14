@@ -73,6 +73,10 @@ impl KvCache {
     /// reclaim the `KvCache` (company briefs / OCR results) alongside the result
     /// caches. `created_at` is epoch-SECONDS here (unlike the ms-based stores).
     pub fn prune(&self, ttl_secs: Option<i64>, max_rows: Option<i64>) {
+        // Negative knobs would invert the bounds (delete all / delete all-but-newest);
+        // drop them defensively even though all current callers clamp non-negative.
+        let ttl_secs = ttl_secs.filter(|&t| t >= 0);
+        let max_rows = max_rows.filter(|&n| n >= 0);
         let conn = self.conn.lock();
         if let Some(ttl) = ttl_secs {
             let cutoff = now_secs().saturating_sub(ttl);

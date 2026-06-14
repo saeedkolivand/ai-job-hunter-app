@@ -21,6 +21,7 @@ fn record(id: &str, job_url: &str) -> AiGenerationRecord {
         board: "linkedin".into(),
         application_answers: vec![],
         company_brief: String::new(),
+        application_id: None,
     }
 }
 
@@ -447,4 +448,42 @@ fn import_non_array_returns_err_and_prior_data_intact() {
         "prior data must be intact after non-array import rejection"
     );
     assert_eq!(remaining[0].id, "prior-1");
+}
+
+// ── Finding 7 — application_id survives export → import round-trip ────────────
+//
+// `application_id` is the parent Application FK. Before the fix, export/import
+// dropped it, so a backup round-trip orphaned every linked generation
+// (`remove_for_application` stopped matching the restored rows). This pins the
+// FK through the round-trip.
+
+#[test]
+fn export_import_round_trip_preserves_application_id() {
+    let app_id = "app-123";
+
+    // Source store: one generation linked to an application (the FK that
+    // `applications::ApplicationStore::open` would set via its backfill UPDATE).
+    let src_dir = TempDir::new().unwrap();
+    let src = AiGenerationStore::open(&src_dir.path().to_path_buf()).unwrap();
+    let mut rec = record("g1", "https://acme.com/job/1");
+    rec.application_id = Some(app_id.to_string());
+    src.insert(&rec).unwrap();
+
+    // Export the backup (non-destructive — reads via `list`).
+    let exported = crate::data_store::DataStore::export(&src);
+
+    // Fresh store in a NEW temp dir imports the backup.
+    let dst_dir = TempDir::new().unwrap();
+    let dst = AiGenerationStore::open(&dst_dir.path().to_path_buf()).unwrap();
+    let n = crate::data_store::DataStore::import(&dst, &exported).unwrap();
+    assert_eq!(n, 1, "one record restored");
+
+    // The FK survived the round-trip: the restored row is still linked, so
+    // `remove_for_application` matches it (== 1). Before the fix the FK was
+    // dropped on export/import and this returned 0 (orphaned generation).
+    assert_eq!(
+        dst.remove_for_application(app_id).unwrap(),
+        1,
+        "application_id must survive export/import so the link still matches"
+    );
 }
