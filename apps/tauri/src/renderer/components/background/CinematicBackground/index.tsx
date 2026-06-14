@@ -12,8 +12,9 @@ import { usePerformanceMode } from '@/store/preferences-store';
  *
  * All colors derive from the accent: the aurora/nebula vars in tokens.css map
  * to the brand family, and the cursor glow mixes --color-brand / --color-brand-2,
- * so the whole layer re-tints with the chosen accent. Reduced motion is handled
- * in CSS (the animation keyframes are disabled under prefers-reduced-motion).
+ * so the whole layer re-tints with the chosen accent. Reduced motion disables
+ * the aurora/nebula keyframes in CSS, and the cursor-glow RAF loop is also
+ * skipped in JS (the glow is painted once, static, at viewport center).
  *
  * Performance:
  *   - The cursor glow uses a JavaScript lerp loop (not a CSS transition) applied
@@ -36,6 +37,20 @@ export function CinematicBackground() {
   useEffect(() => {
     // Skip RAF loop in low-memory mode — component returns null below.
     if (mode === 'low-memory') return;
+    // Reduced-motion users get a static glow: paint the blob once at viewport
+    // center and skip the pointer listener + RAF entirely (the aurora/nebula
+    // keyframes are already neutralized by the CSS reduced-motion media query).
+    const reduceMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) {
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      if (blobRef.current) {
+        blobRef.current.style.transform = `translate(${cx - HALF}px, ${cy - HALF}px)`;
+      }
+      return;
+    }
     // Seed starting position to viewport center so blob doesn't slide in from (0,0)
     if (typeof window !== 'undefined') {
       const cx = window.innerWidth / 2;

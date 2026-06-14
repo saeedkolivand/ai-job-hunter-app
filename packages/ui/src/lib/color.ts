@@ -115,10 +115,15 @@ function hslToRgb(h: number, s: number, l: number): Rgb {
   return { r: (r1 + m) * 255, g: (g1 + m) * 255, b: (b1 + m) * 255 };
 }
 
-/** Rotate a hex's hue by `deg` (keeps S + L); null on invalid input. */
+/**
+ * Rotate a hex's hue by `deg` (keeps S + L); null on invalid input. A non-finite
+ * `deg` (NaN/±Infinity) is a no-op that returns the normalized original rather
+ * than producing NaN channel garbage.
+ */
 export function rotateHueHex(hex: string, deg: number): string | null {
   const rgb = parseHex(hex);
   if (!rgb) return null;
+  if (!Number.isFinite(deg)) return toHex(rgb);
   const { h, s, l } = rgbToHsl(rgb);
   return toHex(hslToRgb(h + deg, s, l));
 }

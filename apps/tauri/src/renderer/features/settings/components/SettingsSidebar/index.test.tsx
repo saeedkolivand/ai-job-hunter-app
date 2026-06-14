@@ -94,12 +94,14 @@ describe('SettingsSidebar — active row chevron (feat/accent-gradients)', () =>
   it('chevron element carries the text-brand-soft class', () => {
     const { container } = renderSidebar('general');
     const [chevron] = findChevrons(container);
+    if (!chevron) throw new Error('Expected one chevron element but found none');
     expect(chevron.className).toContain('text-brand-soft');
   });
 
   it('chevron element contains a ChevronRight svg icon', () => {
     const { container } = renderSidebar('general');
     const [chevron] = findChevrons(container);
+    if (!chevron) throw new Error('Expected one chevron element but found none');
     // lucide icons render as <svg> elements
     const svg = chevron.querySelector('svg');
     expect(svg).not.toBeNull();
@@ -113,7 +115,9 @@ describe('SettingsSidebar — active row chevron (feat/accent-gradients)', () =>
     expect(chevrons).toHaveLength(1);
     // Verify the single chevron is inside the General row, not the AI row
     const aiButton = screen.getByRole('button', { name: /AI/i });
-    expect(aiButton.contains(chevrons[0])).toBe(false);
+    const activeChevron = chevrons[0];
+    if (!activeChevron) throw new Error('Expected one chevron element but found none');
+    expect(aiButton.contains(activeChevron)).toBe(false);
   });
 
   it('switching active section moves the chevron to the new active row', () => {
@@ -126,7 +130,9 @@ describe('SettingsSidebar — active row chevron (feat/accent-gradients)', () =>
     );
     expect(findChevrons(container)).toHaveLength(1);
     const generalButton = screen.getByRole('button', { name: /General/i });
-    expect(generalButton.contains(findChevrons(container)[0])).toBe(true);
+    const generalChevron = findChevrons(container)[0];
+    if (!generalChevron) throw new Error('Expected chevron in General row but found none');
+    expect(generalButton.contains(generalChevron)).toBe(true);
 
     rerender(
       <SettingsSidebar
@@ -137,7 +143,9 @@ describe('SettingsSidebar — active row chevron (feat/accent-gradients)', () =>
     );
     expect(findChevrons(container)).toHaveLength(1);
     const aiButton = screen.getByRole('button', { name: /AI/i });
-    expect(aiButton.contains(findChevrons(container)[0])).toBe(true);
+    const aiChevron = findChevrons(container)[0];
+    if (!aiChevron) throw new Error('Expected chevron in AI row but found none');
+    expect(aiButton.contains(aiChevron)).toBe(true);
   });
 });
 

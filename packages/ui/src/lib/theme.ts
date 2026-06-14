@@ -76,9 +76,14 @@ function applyAccent(root: HTMLElement, prefs: ThemePrefs, scheme: 'light' | 'da
   const softAmount = scheme === 'dark' ? 0.28 : 0.16;
   const soft = color ? lightenHex(color, softAmount) : null;
   const foreground = color ? readableForeground(color) : null;
-  // Gradient-end: a hand-tuned second hex when the preset ships one, else the
-  // accent hue rotated -30° so every accent gets a coherent two-tone pair.
-  const color2 = color ? (prefs.accentColor2 ?? rotateHueHex(color, -30) ?? undefined) : undefined;
+  // Gradient-end: a hand-tuned second hex only when the source is 'custom' (a
+  // preset's hand-tuned pair); 'system' always derives via hue rotation so a
+  // stale persisted accentColor2 never leaks onto a freshly picked system hue.
+  const color2 = color
+    ? ((prefs.accentSource === 'custom' ? prefs.accentColor2 : undefined) ??
+      rotateHueHex(color, -30) ??
+      undefined)
+    : undefined;
   const brand2Soft = color2 ? lightenHex(color2, softAmount) : null;
 
   if (!color || !soft || !foreground) {

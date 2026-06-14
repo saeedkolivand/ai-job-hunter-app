@@ -290,4 +290,28 @@ describe('theme engine — accent gradient (brand-2)', () => {
     expect(brand2Soft).toMatch(/^#[0-9a-f]{6}$/);
     expect(brand2Soft).not.toBe('');
   });
+
+  it("'system' source derives brand-2 by rotation, ignoring a stale accentColor2", () => {
+    applyTheme({
+      ...base,
+      accentSource: 'system',
+      accentColor: '#1e9e5a',
+      // Leftover from a prior preset — must NOT be reused for the system accent.
+      accentColor2: '#6366f1',
+    });
+    const brand2 = cssVar('--color-brand-2');
+    // Derived via rotation of the system color, not the stale persisted pair.
+    expect(brand2).toMatch(/^#[0-9a-f]{6}$/);
+    expect(brand2).not.toBe('#6366f1');
+  });
+
+  it("'custom' source still honors the hand-tuned accentColor2 verbatim", () => {
+    applyTheme({
+      ...base,
+      accentSource: 'custom',
+      accentColor: '#1e9e5a',
+      accentColor2: '#22d3ee',
+    });
+    expect(cssVar('--color-brand-2')).toBe('#22d3ee');
+  });
 });
