@@ -94,13 +94,6 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
     }
   };
 
-  // The scrapers paginate in ~25-result pages; map the requested job count to a
-  // page budget (#41), clamped to the backend's allowed range.
-  const jobsToPages = (amount: number) => {
-    const n = Number.isFinite(amount) && amount > 0 ? amount : 25;
-    return Math.min(Math.max(Math.ceil(n / 25), 1), 20);
-  };
-
   const doScrape = async (amount: number, replace: boolean) => {
     const res = (await scrapeBoard.mutateAsync({
       board: scrapeForm.board,
@@ -110,7 +103,7 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
       ...(scrapeForm.latitude != null ? { latitude: scrapeForm.latitude } : {}),
       ...(scrapeForm.longitude != null ? { longitude: scrapeForm.longitude } : {}),
       ...(scrapeForm.radiusKm > 0 ? { radiusKm: scrapeForm.radiusKm } : {}),
-      pages: jobsToPages(amount),
+      amount,
       ...(replace ? { replace: true } : {}),
       ...(scrapeForm.dateFilter ? { dateFilter: scrapeForm.dateFilter } : {}),
       ...(scrapeForm.board === 'indeed' ? { locale: scrapeForm.locale } : {}),

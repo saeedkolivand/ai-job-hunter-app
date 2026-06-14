@@ -10,7 +10,7 @@ export interface ScrapeFormState {
   longitude?: number;
   /** Search radius in km; 0 = exact location (no radius). */
   radiusKm: number;
-  /** Target number of jobs to fetch (#41); mapped to scraper pages on submit. */
+  /** Target number of jobs to fetch (#41); sent as the scrape `amount` (backend clamps to 100). */
   amount: number;
   dateFilter: '' | (typeof DATE_FILTER_OPTIONS)[number];
   locale: string;

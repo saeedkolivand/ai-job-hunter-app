@@ -14,6 +14,9 @@ pub async fn autopilot_scrape(
     let input = BoardSearchInput {
         query: target.query.clone(),
         location: target.location.clone(),
+        // Autopilot expresses its target in pages, so let the page budget bind and
+        // set the central item cap to the maximum (never caps autopilot to 0).
+        amount: 100,
         pages: target.pages,
         date_filter: target.date_filter.clone(),
         job_type: None,

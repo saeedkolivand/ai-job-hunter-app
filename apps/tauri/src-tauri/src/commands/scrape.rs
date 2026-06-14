@@ -11,6 +11,11 @@ use crate::events::{emit_event, JobEvent, JOBS_EVENT, SCRAPE_PROGRESS};
 // packages/shared by `pnpm gen:ipc`. See crate::ipc_contracts::scrape.
 pub use crate::ipc_contracts::scrape::{ScrapeBoardRequest, ScrapeUrlRequest};
 
+/// Per-board page request budget. Each board clamps this down to its own page
+/// cap; combined with the central `amount` cap, whichever limit is hit first
+/// stops the scrape.
+const MAX_PAGE_BUDGET: u32 = 10;
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JobObject {
@@ -78,7 +83,8 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
     let input = BoardSearchInput {
         query: req.query.clone(),
         location: req.location.clone(),
-        pages: req.pages,
+        amount: req.amount.clamp(1, 100),
+        pages: MAX_PAGE_BUDGET,
         date_filter: req.date_filter.clone(),
         // Structured search filters from the IPC request (ScrapeBoardRequestSchema
         // in packages/shared). Optional, so absent fields stay None; LinkedIn's

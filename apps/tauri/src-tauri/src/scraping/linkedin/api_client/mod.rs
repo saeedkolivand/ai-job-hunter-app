@@ -5,7 +5,9 @@ use anyhow::Result;
 use scraper::Html;
 use std::collections::HashSet;
 
-const PAGE_SIZE: usize = 25;
+// The guest seeMoreJobPostings endpoint returns 10 cards per request; stepping
+// `start` by 25 skipped jobs 10-24, 35-49, … Confirmed against the live endpoint.
+const PAGE_SIZE: usize = 10;
 
 // LinkedIn guest job-card CSS selectors compiled once (Selector is Send + Sync).
 static LI_CARD_SEL: std::sync::LazyLock<scraper::Selector> =

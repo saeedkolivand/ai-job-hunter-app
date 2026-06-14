@@ -130,7 +130,10 @@ export const ScrapeBoardRequestSchema = z.object({
   board: z.enum(BOARD_IDS),
   query: z.string().min(1),
   location: z.string().optional(),
-  pages: z.number().int().min(1).max(20).default(1),
+  // Target number of postings to collect. The backend paginates each board at
+  // its real page size until it has ~amount results (or hits the per-board page
+  // budget), then stops — replacing the old renderer-side ceil(amount/25).
+  amount: z.number().int().min(1).max(100).default(25),
   // When true (a NEW search, not "show more"), the backend replaces the live
   // postings cache the instant the first new result streams in — so a failed or
   // empty search keeps the previous results. Omitted/false = append.

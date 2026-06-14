@@ -11,8 +11,8 @@ pub struct ScrapeBoardRequest {
     pub query: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
-    #[serde(default = "default_scrape_board_request_pages")]
-    pub pages: u32,
+    #[serde(default = "default_scrape_board_request_amount")]
+    pub amount: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub replace: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -50,6 +50,6 @@ pub struct ScrapeUrlRequest {
     pub url: String,
 }
 
-fn default_scrape_board_request_pages() -> u32 {
-    1
+fn default_scrape_board_request_amount() -> u32 {
+    25
 }
