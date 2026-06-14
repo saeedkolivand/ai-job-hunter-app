@@ -6,8 +6,8 @@ Canonical source: `apps/tauri/src-tauri/src/documents/keywords.rs` → `coverage
 
 The AI Job Hunter uses **two complementary scoring strategies**:
 
-1. **Keyword-coverage scoring** (Autopilot + fast ATS screening): embedding-free, deterministic keyword matching with language-aware stemming.
-2. **Combined scoring** (Jobs page analysis): hybrid (0.6 semantic embedding + 0.4 keyword ATS).
+1. **Keyword-coverage scoring** (Autopilot + fast ATS screening): **pure keyword-based scoring** — embedding-free, deterministic, zero API calls, safe for headless scheduling.
+2. **Combined scoring** (Jobs page analysis): hybrid (**60% semantic embedding similarity + 40% keyword ATS**), semantically heavier but requires embedding lookup.
 
 ## Keyword-Coverage Kernel
 
@@ -26,8 +26,7 @@ The `coverage_score()` function (in `documents::keywords`) is the **single sourc
    - Build stemmed keyword set from both.
    - Score: `coverage = intersection / union` (Jaccard).
    - **Word-boundary detection** prevents false matches (e.g., "finance" sector keyword matches only word-boundary "finance", not "refinance").
-4. **Detect sector/role** only when keywords are insufficient (sparse job posting).
-5. **Surface unstemmed, readable gap terms** (e.g., "AWS") instead of stemmed forms.
+4. **Surface unstemmed, readable gap terms** (e.g., "AWS") instead of stemmed forms.
 
 ### Inputs & Outputs
 
@@ -35,11 +34,10 @@ The `coverage_score()` function (in `documents::keywords`) is the **single sourc
 pub fn coverage_score(
     resume_text: &str,
     job_text: &str,
-    job_description: &str, // optional; used for language detection
-) -> CoverageResult {
-    coverage_percent: f32,     // 0–100
-    matched_keywords: Vec<String>,
-    gap_terms: Vec<String>,
+) -> f64 {
+    // Returns coverage percentage (0–100)
+    // Gap terms (missing keywords) are computed in the scoring backend
+    // and surfaced in the match explanation.
 }
 ```
 

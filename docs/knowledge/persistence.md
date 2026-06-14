@@ -102,13 +102,19 @@ pub async fn data_export(state: State<'_, AppState>) -> AppResult<ExportBundle> 
 }
 
 pub async fn data_import(bundle: ExportBundle, state: State<'_, AppState>) -> AppResult<()> {
-    // Pre-validate all sections first
-    // Then import each store atomically
+    // Pre-validate all sections first (before touching any store)
+    // Then import each store atomically (independently)
     state.documents.import(bundle.documents)?;
     state.applications.import(bundle.applications)?;
-    // ...
+    // ... each import is atomic in isolation
+    // Known limitation: stores are in separate SQLite files, so no
+    // cross-file rollback if a later store fails after earlier commits
 }
 ```
+
+### Restore Atomicity
+
+**Each store's import is individually atomic** (pre-validate + transaction within one SQLite file). However, **full cross-file atomicity is not implemented**: the bundle is pre-validated before any mutation begins (preventing invalid data from being written to any store), but if a later store's write fails at the SQLite level (e.g., disk error) after an earlier store has already committed, the earlier store's changes are not rolled back. True cross-file rollback would require a unified database schema — that is a known limitation out of scope for the current design.
 
 ### Resettable Registry
 
