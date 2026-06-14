@@ -1,7 +1,7 @@
 {
   "name": "ai-job-hunter-desktop",
   "private": true,
-  "version": "0.101.0",
+  "version": "0.102.0",
   "description": "AI Job Hunter — local-first, AI-native desktop application",
   "license": "MIT",
   "type": "module",
