@@ -252,7 +252,13 @@ export const usePreferencesStore = create<PreferencesStore>()(
           lastUpdated: new Date().toISOString(),
         })),
 
-      resetPreferences: () => set(defaultPreferences),
+      resetPreferences: () =>
+        set((state) => ({
+          ...state,
+          ...defaultPreferences,
+          customPerformance: undefined,
+          lastUpdated: new Date().toISOString(),
+        })),
     }),
     {
       name: 'ai-job-hunter-preferences',

@@ -199,9 +199,17 @@ pub async fn system_set_performance_mode(
         cache_max_rows,
     });
 
-    // One-shot prune so tightening a tier reclaims immediately.
-    app.state::<DocumentStore>()
-        .prune_caches(cache_ttl_secs, cache_max_rows);
+    // One-shot prune so tightening a tier reclaims immediately. DocumentStore
+    // is managed only if its open() succeeded at boot (treated as non-fatal in
+    // lib.rs), so use the fallible accessor to avoid panicking on a degraded
+    // startup.
+    if let Some(store) = app.try_state::<DocumentStore>() {
+        store.prune_caches(cache_ttl_secs, cache_max_rows);
+    } else {
+        tracing::warn!(
+            "system_set_performance_mode: DocumentStore unavailable; skipping one-shot cache prune"
+        );
+    }
 
     json!(null)
 }
@@ -461,7 +469,7 @@ pub fn system_get_metrics() -> Value {
 /// IPC contract version. Must stay in sync with `PROTOCOL_VERSION` in
 /// `packages/shared/src/ipc/contracts/index.ts`. Bump both together on any
 /// breaking change to a command signature or event payload shape.
-const PROTOCOL_VERSION: &str = "1.0.0";
+const PROTOCOL_VERSION: &str = "1.1.0";
 
 #[tauri::command]
 pub fn system_get_protocol_version() -> String {

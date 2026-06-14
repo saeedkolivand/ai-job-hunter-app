@@ -66,6 +66,7 @@ html[data-color-scheme='light'][data-perf-blur='off'] body {
 body.modal-blur-active #root {
   filter: blur(8px);
 }
+html[data-perf-blur='reduced'] body.modal-blur-active #root,
 html[data-perf-blur='off'] body.modal-blur-active #root,
 [data-reduce-transparency] body.modal-blur-active #root {
   filter: none;

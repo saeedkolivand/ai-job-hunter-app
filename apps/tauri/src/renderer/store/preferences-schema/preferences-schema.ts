@@ -275,12 +275,27 @@ export function resolveBackendConfig(
   mode: PerformanceMode,
   profile: PerformanceProfile
 ): PerformanceBackendConfig {
+  // Defensive fallbacks guard against malformed persisted customPerformance whose
+  // tier key is not a valid PerfTier (e.g. stale/migrated data). We cast to
+  // Partial<Record<…>> so the index access types as `T | undefined`, making the
+  // fallback well-typed. For the nullable cache tables null is intentional ("no
+  // limit" for the high tier) — only undefined (missing key) falls back.
+  const cacheTtlRaw = (CACHE_TTL_SECS_BY_TIER as Partial<Record<PerfTier, number | null>>)[
+    profile.backend.cache
+  ];
+  const cacheMaxRaw = (CACHE_MAX_ROWS_BY_TIER as Partial<Record<PerfTier, number | null>>)[
+    profile.backend.cache
+  ];
   return {
     mode,
-    concurrency: CONCURRENCY_BY_TIER[profile.backend.concurrency],
-    keepAliveSecs: KEEP_ALIVE_SECS_BY_TIER[profile.backend.keepAlive],
-    cacheTtlSecs: CACHE_TTL_SECS_BY_TIER[profile.backend.cache],
-    cacheMaxRows: CACHE_MAX_ROWS_BY_TIER[profile.backend.cache],
+    concurrency:
+      (CONCURRENCY_BY_TIER as Partial<Record<PerfTier, number>>)[profile.backend.concurrency] ??
+      CONCURRENCY_BY_TIER.balanced,
+    keepAliveSecs:
+      (KEEP_ALIVE_SECS_BY_TIER as Partial<Record<PerfTier, number>>)[profile.backend.keepAlive] ??
+      KEEP_ALIVE_SECS_BY_TIER.balanced,
+    cacheTtlSecs: cacheTtlRaw === undefined ? CACHE_TTL_SECS_BY_TIER.balanced : cacheTtlRaw,
+    cacheMaxRows: cacheMaxRaw === undefined ? CACHE_MAX_ROWS_BY_TIER.balanced : cacheMaxRaw,
   };
 }
 export type PromptQuality = z.infer<typeof PromptQualitySchema>;

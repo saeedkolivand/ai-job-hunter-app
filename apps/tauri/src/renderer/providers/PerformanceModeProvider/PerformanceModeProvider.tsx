@@ -33,11 +33,18 @@ export function PerformanceModeProvider({ children }: { children: ReactNode }) {
     const config = resolveBackendConfig(mode, profile);
     const serialized = JSON.stringify(config);
     if (serialized === prevPayload.current) return;
-    prevPayload.current = serialized;
 
-    client.system.setPerformanceMode(config).catch(() => {
-      // Silently ignore — main process may not be ready on first render.
-    });
+    client.system
+      .setPerformanceMode(config)
+      .then(() => {
+        // Only mark this payload as pushed once the IPC actually succeeds.
+        // On failure (e.g. shell not ready on first render) we leave the dedupe
+        // cache untouched so the next effect run retries instead of suppressing.
+        prevPayload.current = serialized;
+      })
+      .catch(() => {
+        // Silently ignore — main process may not be ready on first render.
+      });
   }, [client, mode, profile]);
 
   return <>{children}</>;
