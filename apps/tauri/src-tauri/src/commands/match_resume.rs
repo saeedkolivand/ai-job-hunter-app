@@ -1,10 +1,12 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-use crate::documents::keywords::{apply_stemmer, keywords, make_stemmer};
+use crate::documents::keywords::{
+    apply_stemmer, display_forms, keyword_coverage, keywords, make_stemmer, readable_gaps,
+};
 use crate::documents::{
     embed, posting_vector_or_embed, sha256_hex, DocumentRecord, DocumentStore, EmbeddingConfig,
     MatchScoreKey,
@@ -53,6 +55,11 @@ fn semantic_enabled_bit(flag: Option<bool>) -> i64 {
 /// already-derived cache-key bit, both hoisted by the caller so a batch resolves
 /// them once.
 ///
+/// `job_text` is the posting blob resolved by the caller (`None` → the posting
+/// wasn't in the live cache → job-not-found error). The batch path resolves all
+/// texts under ONE `PostingsCache` lock before the loop so each job is an O(1)
+/// map lookup; the single-call path resolves one via [`job_text_for`].
+///
 /// Errors-never-cached invariant: the only error return (job-not-found) happens
 /// before any `get_match_score`/`upsert_match_score`, so an error path can never
 /// read or pollute the result cache.
@@ -63,9 +70,10 @@ async fn score_one(
     resume_raw_keywords: Option<&[String]>,
     active: &EmbeddingConfig,
     job_id: &str,
+    job_text: Option<String>,
     semantic_enabled: i64,
 ) -> Value {
-    let Some(job_text) = job_text_for(app, job_id) else {
+    let Some(job_text) = job_text else {
         return json!({ "error": format!("job not found in cache: {}", job_id) });
     };
 
@@ -137,7 +145,11 @@ async fn score_one(
         Some(tokens) => apply_stemmer(tokens.iter().cloned().collect(), &stemmer),
         None => keywords(&resume.text, &stemmer),
     };
-    let (ats, gaps) = keyword_coverage(&job_keywords, &resume_words);
+    let (ats, gap_stems) = keyword_coverage(&job_keywords, &resume_words);
+    // The coverage kernel works on stemmed tokens; map them back to readable,
+    // unstemmed forms before surfacing them so the UI shows "kubernetes" /
+    // "developer", not the Snowball stems "kubernet" / "develop".
+    let gaps = readable_gaps(&gap_stems, &display_forms(&job_text, &stemmer));
 
     let combined = if job_vec.is_some() {
         (0.6 * semantic + 0.4 * ats).round()
@@ -203,6 +215,7 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
     let resume_raw_keywords = parse_resume_keywords(&resume);
     let active = store.embedding_config();
     let semantic_enabled = semantic_enabled_bit(req.semantic_scoring_enabled);
+    let job_text = job_text_for(&app, &req.job_id);
 
     score_one(
         &app,
@@ -211,6 +224,7 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
         resume_raw_keywords.as_deref(),
         &active,
         &req.job_id,
+        job_text,
         semantic_enabled,
     )
     .await
@@ -250,6 +264,12 @@ pub async fn match_resume_batch(app: AppHandle, req: MatchResumeBatchRequest) ->
         &req.job_ids
     };
 
+    // Resolve every posting blob under ONE PostingsCache lock before the loop:
+    // the cache is an O(n) linear scan per id, so the old per-job `job_text_for`
+    // was O(n×batch) with a lock acquired each iteration. One pass builds an
+    // id→text map and turns each per-job lookup into O(1) (and one lock total).
+    let job_texts = job_texts_for(&app, job_ids);
+
     let mut results: Vec<Value> = Vec::with_capacity(job_ids.len());
     for job_id in job_ids {
         let score = score_one(
@@ -259,6 +279,7 @@ pub async fn match_resume_batch(app: AppHandle, req: MatchResumeBatchRequest) ->
             resume_raw_keywords.as_deref(),
             &active,
             job_id,
+            job_texts.get(job_id).cloned(),
             semantic_enabled,
         )
         .await;
@@ -267,16 +288,10 @@ pub async fn match_resume_batch(app: AppHandle, req: MatchResumeBatchRequest) ->
     Value::Array(results)
 }
 
-/// Build a searchable text blob for a cached job posting (title + description +
-/// requirements). Returns None if the posting isn't in the live cache.
-fn job_text_for(app: &AppHandle, job_id: &str) -> Option<String> {
-    let cache = app.state::<Mutex<PostingsCache>>();
-    let guard = cache.lock();
-    let posting = guard
-        .get_all()
-        .iter()
-        .find(|p| p.get("id").and_then(|v| v.as_str()) == Some(job_id))?;
-
+/// Build a searchable text blob for a single cached posting JSON value (title +
+/// description + requirements). Pure — no lock — so it can be reused for both the
+/// single-job and batch lookups. Returns None if the posting has no usable text.
+fn posting_to_text(posting: &Value) -> Option<String> {
     let mut parts: Vec<String> = Vec::new();
     if let Some(t) = posting.get("title").and_then(|v| v.as_str()) {
         parts.push(t.to_string());
@@ -297,17 +312,41 @@ fn job_text_for(app: &AppHandle, job_id: &str) -> Option<String> {
     Some(parts.join("\n"))
 }
 
-/// Returns (coverage % 0–100, up-to-15 missing keywords sorted).
-fn keyword_coverage(job: &HashSet<String>, resume: &HashSet<String>) -> (f64, Vec<String>) {
-    if job.is_empty() {
-        return (0.0, Vec::new());
+/// Build a searchable text blob for a cached job posting (title + description +
+/// requirements). Returns None if the posting isn't in the live cache. Single-job
+/// path; the batch path uses [`job_texts_for`] to avoid a per-job lock + scan.
+fn job_text_for(app: &AppHandle, job_id: &str) -> Option<String> {
+    let cache = app.state::<Mutex<PostingsCache>>();
+    let guard = cache.lock();
+    let posting = guard
+        .get_all()
+        .iter()
+        .find(|p| p.get("id").and_then(|v| v.as_str()) == Some(job_id))?;
+    posting_to_text(posting)
+}
+
+/// Resolve the text blob for many job ids under a SINGLE `PostingsCache` lock.
+/// One pass over the cache builds an `id → text` map (entries with no usable text
+/// are omitted), turning the batch scorer's per-job lookup into O(1) instead of
+/// re-locking and re-scanning the cache O(n) times. Postings absent from the
+/// cache simply have no map entry — the caller surfaces job-not-found per id.
+fn job_texts_for(app: &AppHandle, job_ids: &[String]) -> HashMap<String, String> {
+    let wanted: HashSet<&str> = job_ids.iter().map(String::as_str).collect();
+    let cache = app.state::<Mutex<PostingsCache>>();
+    let guard = cache.lock();
+    let mut map: HashMap<String, String> = HashMap::with_capacity(wanted.len());
+    for posting in guard.get_all() {
+        let Some(id) = posting.get("id").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        if !wanted.contains(id) || map.contains_key(id) {
+            continue;
+        }
+        if let Some(text) = posting_to_text(posting) {
+            map.insert(id.to_string(), text);
+        }
     }
-    let mut gaps: Vec<String> = job.difference(resume).cloned().collect();
-    gaps.sort();
-    let matched = job.len() - gaps.len();
-    let coverage = (matched as f64 / job.len() as f64 * 100.0).round();
-    gaps.truncate(15);
-    (coverage, gaps)
+    map
 }
 
 fn recommendations(gaps: &[String]) -> Vec<String> {
@@ -336,37 +375,43 @@ pub async fn resume_extract_text(req: ResumeExtractTextRequest) -> Value {
 mod test {
     use super::*;
 
-    fn set(words: &[&str]) -> HashSet<String> {
-        words.iter().map(|w| w.to_string()).collect()
-    }
+    // Keyword-extraction and the coverage/gap math (stopwords, synonyms, short
+    // terms, `keyword_coverage`, `coverage_score`) are owned and tested by
+    // `crate::documents::keywords`. These cover the match-command wiring that
+    // still lives here: the corrupt-keywords fallback and readable gaps.
 
-    // Keyword-extraction behaviour (stopwords, synonyms, short terms) is now
-    // owned and tested by `crate::documents::keywords`. These cover the
-    // coverage/gap math that still lives here.
-
+    // The stemmed gaps from `keyword_coverage` must be mapped back to readable,
+    // unstemmed forms before surfacing — "kubernetes"/"developer", not the
+    // Snowball stems "kubernet"/"develop". Mirrors `score_one`'s gap pipeline.
     #[test]
-    fn coverage_full_when_resume_has_all() {
-        let job = set(&["rust", "react", "docker"]);
-        let resume = set(&["rust", "react", "docker", "extra"]);
-        let (cov, gaps) = keyword_coverage(&job, &resume);
-        assert_eq!(cov, 100.0);
-        assert!(gaps.is_empty());
-    }
+    fn gaps_are_surfaced_in_readable_unstemmed_form() {
+        use crate::documents::keywords::{display_forms, readable_gaps, make_stemmer};
 
-    #[test]
-    fn coverage_reports_gaps() {
-        let job = set(&["rust", "react", "docker", "kubernetes"]);
-        let resume = set(&["rust", "react"]);
-        let (cov, gaps) = keyword_coverage(&job, &resume);
-        assert_eq!(cov, 50.0);
-        assert_eq!(gaps, vec!["docker".to_string(), "kubernetes".to_string()]);
-    }
+        let job_text = "kubernetes developer building scalable services";
+        let stemmer = make_stemmer(job_text);
+        let job_kw = keywords(job_text, &stemmer);
+        // An empty résumé → every job keyword is a gap.
+        let (_ats, gap_stems) = keyword_coverage(&job_kw, &HashSet::new());
 
-    #[test]
-    fn coverage_empty_job_is_zero() {
-        let (cov, gaps) = keyword_coverage(&HashSet::new(), &set(&["rust"]));
-        assert_eq!(cov, 0.0);
-        assert!(gaps.is_empty());
+        // The raw stems are mangled.
+        assert!(
+            gap_stems.iter().any(|g| g == "kubernet" || g == "develop"),
+            "precondition: stems should be mangled; got {gap_stems:?}"
+        );
+
+        let readable = readable_gaps(&gap_stems, &display_forms(job_text, &stemmer));
+        assert!(
+            readable.iter().any(|g| g == "kubernetes"),
+            "readable gaps must contain 'kubernetes', not the stem; got {readable:?}"
+        );
+        assert!(
+            readable.iter().any(|g| g == "developer"),
+            "readable gaps must contain 'developer', not 'develop'; got {readable:?}"
+        );
+        assert!(
+            !readable.iter().any(|g| g == "kubernet" || g == "develop"),
+            "no mangled stems may leak into the readable gaps; got {readable:?}"
+        );
     }
 
     // Corrupt keywords_json must not silently produce an empty resume word-set.

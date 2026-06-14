@@ -193,3 +193,67 @@ fn rationale_is_always_present() {
     assert!(!r.rationale.is_empty());
     assert_eq!(r.template_id, TemplateId::Modern); // empty → general default
 }
+
+// --- M1: score-all-fields-and-take-the-max classification ---
+
+/// The motivating case: a title with one finance keyword but two software
+/// keywords must classify as Software (Modern), not Conservative (Classic). The
+/// old first-match-wins ordering tested Conservative before Software and would
+/// have mis-routed this to Classic + ATS.
+#[test]
+fn finance_software_role_classifies_as_software_not_conservative() {
+    let r = recommend(&signals(
+        "Financial Software Engineer",
+        "mid",
+        &["backend", "APIs"],
+    ));
+    assert_eq!(
+        r.template_id,
+        TemplateId::Modern,
+        "more software signals than finance → Software/Modern"
+    );
+    assert!(
+        !r.ats_suggested,
+        "must not be classified Conservative, so no automatic ATS suggestion"
+    );
+}
+
+/// Word-boundary matching: "tax" must not match inside "syntax", which would have
+/// mis-classified a pure software role as Conservative under the old substring
+/// `h.contains("tax ")` / `h.contains(k)` logic.
+#[test]
+fn substring_does_not_trigger_false_conservative() {
+    let r = recommend(&signals(
+        "Backend Engineer",
+        "mid",
+        &["syntax trees", "compilers"],
+    ));
+    assert_eq!(r.template_id, TemplateId::Modern);
+}
+
+/// "ats" is matched on a word boundary, including when it is the very first
+/// token (the old code needed a special `starts_with("ats")` branch for that).
+#[test]
+fn ats_keyword_matched_on_word_boundary() {
+    let mut at_start = signals("ATS compliant resume screening", "mid", &[]);
+    at_start.top_requirements = vec![];
+    assert!(
+        recommend(&at_start).ats_suggested,
+        "leading 'ATS' token must trigger ATS suggestion"
+    );
+
+    // A word merely containing the letters "ats" must NOT trigger it.
+    let r = recommend(&signals("Stats Analyst", "mid", &["statistics"]));
+    assert!(
+        !r.ats_suggested,
+        "'stats'/'statistics' must not be read as an ATS mention"
+    );
+}
+
+/// A clear single-field role still classifies correctly under the max-score
+/// rule (regression guard that scoring all fields didn't change the easy cases).
+#[test]
+fn pure_design_role_still_design() {
+    let r = recommend(&signals("UX/UI Designer", "mid", &["Figma"]));
+    assert_eq!(r.template_id, TemplateId::Atelier);
+}

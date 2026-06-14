@@ -6,7 +6,7 @@
 //! normalized set with a stemmer whose language is detected at match time.
 //! This lets the same cached resume tokens match a JD in any language.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use rust_stemmers::{Algorithm, Stemmer};
 use whatlang::{detect, Lang};
@@ -211,6 +211,72 @@ pub fn keywords(text: &str, stemmer: &Stemmer) -> HashSet<String> {
     apply_stemmer(keywords_normalized(text), stemmer)
 }
 
+/// Map each stemmed JD keyword to a human-readable display form, so the gaps
+/// surfaced to the user read as real words ("kubernetes", "developer") instead
+/// of Snowball stems ("kubernet", "develop").
+///
+/// The display form is the *unstemmed, normalized* token (lowercase, synonyms
+/// collapsed) that stems to that key — synonym collapse means e.g. a `k8s` gap
+/// surfaces as `kubernetes`. Best-effort: original casing from the raw JD is not
+/// preserved (normalization lowercases), and if two distinct tokens stem to the
+/// same key the first one encountered wins. The map keys are exactly the members
+/// of `keywords(job_text, stemmer)`, so every gap has an entry.
+pub fn display_forms(job_text: &str, stemmer: &Stemmer) -> HashMap<String, String> {
+    let mut map: HashMap<String, String> = HashMap::new();
+    for token in keywords_normalized(job_text) {
+        let stem = if SHORT_TECH_TERMS.contains(&token.as_str()) {
+            token.clone()
+        } else {
+            stemmer.stem(&token).into_owned()
+        };
+        map.entry(stem).or_insert(token);
+    }
+    map
+}
+
+/// Replace each stemmed gap with its readable [`display_forms`] entry, falling
+/// back to the stem itself if no mapping exists (should not happen, since the
+/// map is keyed on the same JD keyword set). Order is preserved.
+pub fn readable_gaps(gaps: &[String], display: &HashMap<String, String>) -> Vec<String> {
+    gaps
+        .iter()
+        .map(|g| display.get(g).cloned().unwrap_or_else(|| g.clone()))
+        .collect()
+}
+
+/// Keyword-coverage of a job's keyword set by a résumé's keyword set: the share
+/// of job keywords (0–100, rounded) that also appear in the résumé, plus the
+/// up-to-15 sorted missing keywords (`gaps`). Single source of the coverage
+/// formula shared by the Jobs-page ATS sub-score ([`coverage_score`] /
+/// `commands::match_resume::score_one`) and the headless Autopilot ranker.
+/// Both sides are expected to be stemmed with the SAME (JD-derived) stemmer.
+pub fn keyword_coverage(job: &HashSet<String>, resume: &HashSet<String>) -> (f64, Vec<String>) {
+    if job.is_empty() {
+        return (0.0, Vec::new());
+    }
+    let mut gaps: Vec<String> = job.difference(resume).cloned().collect();
+    gaps.sort();
+    let matched = job.len() - gaps.len();
+    let coverage = (matched as f64 / job.len() as f64 * 100.0).round();
+    gaps.truncate(15);
+    (coverage, gaps)
+}
+
+/// Embedding-free keyword-coverage match score (0–100) of a résumé against a
+/// job's text. This is the SAME kernel as the Jobs-page ATS sub-score: detect
+/// the stemmer language from the JD, extract+stem both sides, and report the
+/// share of job keywords covered by the résumé. No embedding / API calls — safe
+/// for the headless Autopilot scheduler.
+///
+/// Returns only the coverage percentage; callers that also need the missing
+/// keywords should build the keyword sets and call [`keyword_coverage`].
+pub fn coverage_score(resume_text: &str, job_text: &str) -> f64 {
+    let stemmer = make_stemmer(job_text);
+    let job_kw = keywords(job_text, &stemmer);
+    let resume_kw = keywords(resume_text, &stemmer);
+    keyword_coverage(&job_kw, &resume_kw).0
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -381,6 +447,74 @@ mod test {
             stemmed
         );
         assert_eq!(stemmed.len(), 3, "no extra tokens; got {:?}", stemmed);
+    }
+
+    fn set(words: &[&str]) -> HashSet<String> {
+        words.iter().map(|w| w.to_string()).collect()
+    }
+
+    #[test]
+    fn keyword_coverage_full_when_resume_has_all() {
+        let job = set(&["rust", "react", "docker"]);
+        let resume = set(&["rust", "react", "docker", "extra"]);
+        let (cov, gaps) = keyword_coverage(&job, &resume);
+        assert_eq!(cov, 100.0);
+        assert!(gaps.is_empty());
+    }
+
+    #[test]
+    fn keyword_coverage_reports_sorted_gaps() {
+        let job = set(&["rust", "react", "docker", "kubernetes"]);
+        let resume = set(&["rust", "react"]);
+        let (cov, gaps) = keyword_coverage(&job, &resume);
+        assert_eq!(cov, 50.0);
+        assert_eq!(gaps, vec!["docker".to_string(), "kubernetes".to_string()]);
+    }
+
+    #[test]
+    fn keyword_coverage_empty_job_is_zero() {
+        let (cov, gaps) = keyword_coverage(&HashSet::new(), &set(&["rust"]));
+        assert_eq!(cov, 0.0);
+        assert!(gaps.is_empty());
+    }
+
+    #[test]
+    fn keyword_coverage_caps_gaps_at_fifteen() {
+        let job: HashSet<String> = (0..30).map(|i| format!("skill{i:02}")).collect();
+        let (cov, gaps) = keyword_coverage(&job, &HashSet::new());
+        assert_eq!(cov, 0.0);
+        assert_eq!(gaps.len(), 15, "gaps must be truncated to 15");
+    }
+
+    /// `coverage_score` is the embedding-free Jobs-page ATS kernel: a résumé that
+    /// contains all the JD's keywords scores high; an unrelated one scores 0.
+    #[test]
+    fn coverage_score_matches_and_misses() {
+        let full = coverage_score(
+            "experienced rust kubernetes docker engineer",
+            "rust kubernetes docker",
+        );
+        assert_eq!(full, 100.0, "résumé covering all JD keywords → 100");
+
+        let none = coverage_score("java spring developer", "rust kubernetes docker");
+        assert_eq!(none, 0.0, "no overlap → 0");
+
+        let partial = coverage_score("rust developer", "rust kubernetes docker");
+        assert!(
+            partial > 0.0 && partial < 100.0,
+            "partial overlap must be strictly between 0 and 100; got {partial}"
+        );
+    }
+
+    /// `coverage_score` must agree with the underlying `keyword_coverage` kernel
+    /// (single source of the formula — guards against the two drifting apart).
+    #[test]
+    fn coverage_score_agrees_with_keyword_coverage_kernel() {
+        let resume = "rust developer with docker";
+        let job = "rust kubernetes docker terraform";
+        let stemmer = make_stemmer(job);
+        let (kernel, _gaps) = keyword_coverage(&keywords(job, &stemmer), &keywords(resume, &stemmer));
+        assert_eq!(coverage_score(resume, job), kernel);
     }
 
     /// Round-trip invariant: apply_stemmer(keywords_normalized(text), stemmer)
