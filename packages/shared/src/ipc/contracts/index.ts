@@ -119,7 +119,7 @@ export type IpcChannel =
  * `system.getProtocolVersion()` from the Tauri shell. A mismatch at startup
  * indicates a partially-updated install and should be surfaced to the user.
  */
-export const PROTOCOL_VERSION = '1.0.0';
+export const PROTOCOL_VERSION = '1.1.0';
 
 // Re-export individual namespace contracts for direct imports if needed
 
