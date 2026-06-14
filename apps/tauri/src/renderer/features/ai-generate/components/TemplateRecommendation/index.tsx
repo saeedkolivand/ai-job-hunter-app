@@ -61,7 +61,6 @@ export function TemplateRecommendation({ meta, templateId, onApply }: Props) {
             </span>
           ) : (
             <Button
-              size="sm"
               variant="ghost"
               className="h-6 px-2 text-[11px] text-brand-soft hover:text-brand"
               onClick={() => onApply(rec.templateId, rec.atsSuggested, rec.locale)}

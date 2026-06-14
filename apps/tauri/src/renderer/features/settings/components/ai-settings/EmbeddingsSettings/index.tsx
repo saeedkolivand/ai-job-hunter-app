@@ -155,7 +155,6 @@ export function EmbeddingsSettings() {
         <div className="flex justify-end">
           <Button
             variant="glass"
-            size="sm"
             disabled={!dirty || setConfig.isPending}
             onClick={() => void onApply()}
           >
@@ -195,7 +194,6 @@ export function EmbeddingsSettings() {
         <div className="flex justify-end">
           <Button
             variant="ghost"
-            size="sm"
             disabled={reindexing || (docs?.total ?? 0) === 0}
             onClick={() => void onReindex()}
           >

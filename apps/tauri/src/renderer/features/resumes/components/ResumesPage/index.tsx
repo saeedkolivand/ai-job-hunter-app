@@ -122,8 +122,8 @@ function ResumesPage() {
               </div>
               {isActivity && (
                 <Button
-                  size="sm"
                   variant="ghost"
+                  className="h-8 w-8 p-0"
                   onClick={() => void refetch()}
                   title={t('resumes.open')}
                 >

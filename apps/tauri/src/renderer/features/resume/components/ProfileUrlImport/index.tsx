@@ -67,7 +67,6 @@ export function ProfileUrlImport({ onImported }: Props) {
     <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02]">
       <Button
         variant="ghost"
-        size="sm"
         onClick={() => {
           setShow((v) => !v);
           setUrl('');

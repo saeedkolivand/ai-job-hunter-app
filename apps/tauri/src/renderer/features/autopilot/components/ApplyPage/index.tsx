@@ -148,7 +148,6 @@ export function ApplyPage({ job, resumeText, board, onBack }: Props) {
         <Button
           onClick={onBack}
           variant="ghost"
-          size="sm"
           className="shrink-0 gap-1.5 text-foreground/50 hover:text-foreground/80"
         >
           <ArrowLeft size={14} /> {t('autopilot.apply.back')}
@@ -172,7 +171,6 @@ export function ApplyPage({ job, resumeText, board, onBack }: Props) {
         {stage === 'done' && (
           <Button
             variant="glass"
-            size="sm"
             onClick={() => setQuestionsOpen(true)}
             className="shrink-0 gap-1.5 text-brand-soft"
           >
@@ -186,7 +184,6 @@ export function ApplyPage({ job, resumeText, board, onBack }: Props) {
         )}
         <Button
           variant="glass"
-          size="sm"
           onClick={() => setReferralOpen(true)}
           className="shrink-0 gap-1.5 text-brand-soft"
         >

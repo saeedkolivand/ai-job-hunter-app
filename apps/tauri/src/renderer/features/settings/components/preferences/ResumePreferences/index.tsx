@@ -246,29 +246,26 @@ export function ResumePreferences() {
                 <div className="flex items-center gap-1">
                   <Button
                     variant="ghost"
-                    size="sm"
                     onClick={() => void handleSetDefault(doc.id)}
                     disabled={isDefault || setDefaultDocument.isPending}
                     title={t('settings.resume.setDefault')}
-                    className="text-foreground/30 hover:text-brand-soft disabled:opacity-0"
+                    className="h-8 w-8 p-0 text-foreground/30 hover:text-brand-soft disabled:opacity-0"
                   >
                     <Sparkles size={13} />
                   </Button>
                   <Button
                     variant="ghost"
-                    size="sm"
                     onClick={() => handleDownload(doc)}
                     title={t('settings.resume.download')}
-                    className="text-foreground/30 hover:text-blue-400"
+                    className="h-8 w-8 p-0 text-foreground/30 hover:text-blue-400"
                   >
                     <Download size={13} />
                   </Button>
                   <Button
                     variant="ghost"
-                    size="sm"
                     onClick={() => void handleDelete(doc.id)}
                     disabled={removeDocument.isPending}
-                    className="text-foreground/30 hover:text-red-400"
+                    className="h-8 w-8 p-0 text-foreground/30 hover:text-red-400"
                   >
                     <Trash2 size={13} />
                   </Button>

@@ -26,7 +26,6 @@ export function SaveActions({ fileName, saving, onSaveToLibrary, onSetDefault }:
       <span className="flex-1 truncate text-[11px] text-foreground/40">{fileName}</span>
       <Button
         variant="ghost"
-        size="sm"
         onClick={() => void onSaveToLibrary()}
         className="gap-1 text-[11px] text-foreground/45 hover:text-foreground/80 h-6 px-2"
       >
@@ -34,7 +33,6 @@ export function SaveActions({ fileName, saving, onSaveToLibrary, onSetDefault }:
       </Button>
       <Button
         variant="glass"
-        size="sm"
         onClick={() => void onSetDefault()}
         className="gap-1 text-[11px] h-6 px-2 ring-1 ring-brand/20"
       >

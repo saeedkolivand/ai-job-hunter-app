@@ -112,7 +112,6 @@ export function ProviderRow({
             {onTestKey && (
               <Button
                 variant="glass"
-                size="sm"
                 disabled={isTesting}
                 onClick={() => void onTestKey()}
                 className="h-auto px-1.5 py-0.5 text-[10px]"

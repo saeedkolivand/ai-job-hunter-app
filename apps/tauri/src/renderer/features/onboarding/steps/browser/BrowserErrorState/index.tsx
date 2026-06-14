@@ -34,7 +34,7 @@ export function BrowserErrorState({ onBack, onNext }: BrowserErrorStateProps) {
         <p className="mt-2 text-sm text-foreground/50">{t('onboarding.browser.checkFailedDesc')}</p>
       </div>
       <div className="flex items-center justify-between pt-4">
-        <Button variant="ghost" size="sm" onClick={onBack}>
+        <Button variant="ghost" onClick={onBack}>
           <ArrowLeft size={14} /> {t('onboarding.back')}
         </Button>
         <Button onClick={onNext} className="px-6">

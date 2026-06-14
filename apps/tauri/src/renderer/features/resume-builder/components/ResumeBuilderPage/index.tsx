@@ -139,11 +139,11 @@ export function ResumeBuilderPage() {
                   generatingDoc={null}
                 />
                 <div className="shrink-0 flex items-center justify-end gap-2 border-t border-white/8 px-8 py-3">
-                  <Button onClick={reset} variant="ghost" size="sm" className="gap-1.5">
+                  <Button onClick={reset} variant="ghost" className="gap-1.5">
                     <RotateCcw size={14} />
                     {t('build.output.startOver')}
                   </Button>
-                  <Button onClick={tailorToJob} variant="glass" size="sm" className="gap-1.5">
+                  <Button onClick={tailorToJob} variant="glass" className="gap-1.5">
                     {t('build.output.tailor')}
                     <ArrowRight size={14} />
                   </Button>

@@ -241,7 +241,7 @@ export function SpotlightTour({ onFinish }: Props) {
             >
               {t('onboarding.tour.skip')}
             </Button>
-            <Button variant="default" size="sm" className="ml-auto" onClick={next}>
+            <Button variant="default" className="ml-auto" onClick={next}>
               {isLast ? t('onboarding.tour.finish') : t('onboarding.tour.next')}
             </Button>
           </div>

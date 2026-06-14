@@ -229,7 +229,6 @@ export function TechStackPreferences() {
               <Button
                 key={tech.name}
                 variant="ghost"
-                size="sm"
                 onClick={() => handleAddTech(tech.name, tech.category)}
                 className="!bg-transparent hover:bg-white/5"
               >

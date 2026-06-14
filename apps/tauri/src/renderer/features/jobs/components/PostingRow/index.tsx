@@ -96,8 +96,14 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
     void navigate({ to: '/ai-generate' });
   };
 
+  // Once saved, the button becomes a "View" link to the tracking list.
+  const handleView = () => void navigate({ to: '/applications' });
+
   // Jobs-page Save: create an Application with status=saved linked to this posting.
   const handleSave = () => {
+    // Also mark the posting bookmarked — this persists, shows the "saved" badge,
+    // and flips the Save button to the "View" link (optimistically + on reload).
+    void trackInteraction('bookmarked');
     void saveFromPostingMutation.mutateAsync({
       jobUrl: posting.url,
       board: posting.source,
@@ -113,6 +119,8 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
       handleOpen();
     }
   };
+
+  const saved = interactionTypes.has('bookmarked');
 
   return (
     <div
@@ -179,17 +187,17 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
       >
         <RowMatchScore jobId={posting.id} />
         <Button
-          size="sm"
           variant="primary"
-          onClick={handleSave}
-          title={t('applications.saveToTracking')}
+          onClick={saved ? handleView : handleSave}
+          disabled={saveFromPostingMutation.isPending}
+          title={saved ? t('jobs.view') : t('applications.saveToTracking')}
           loading={saveFromPostingMutation.isPending}
           className="transition-all duration-150 ease-out"
         >
-          <Save size={11} /> {t('applications.save')}
+          {saved ? <Eye size={11} /> : <Save size={11} />}{' '}
+          {saved ? t('jobs.view') : t('applications.save')}
         </Button>
         <Button
-          size="sm"
           variant="glass"
           onClick={handleTailor}
           title={t('jobs.tailorHint')}

@@ -77,7 +77,6 @@ export function LocalModelLimits({ selectedModel }: Props) {
         </span>
         <Button
           variant="ghost"
-          size="sm"
           onClick={() => inspect.mutate({ model: selectedModel })}
           disabled={inspect.isPending}
         >
@@ -141,11 +140,7 @@ export function LocalModelLimits({ selectedModel }: Props) {
       </div>
 
       <div className="flex items-center justify-between">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setLocalModelLimits(selectedModel, suggestion)}
-        >
+        <Button variant="ghost" onClick={() => setLocalModelLimits(selectedModel, suggestion)}>
           {t('settings.ai.localLimits.useSuggested')}
         </Button>
         <span className="text-xs text-foreground/35">

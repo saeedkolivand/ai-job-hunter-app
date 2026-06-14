@@ -44,7 +44,7 @@ export function FieldArrayList<T extends FieldArrayRow>({
   render,
 }: FieldArrayListProps<T>) {
   const addButton = (
-    <Button type="button" onClick={onAppend} variant="ghost" size="sm" className="gap-1.5">
+    <Button type="button" onClick={onAppend} variant="ghost" className="gap-1.5">
       <Plus size={14} />
       {addLabel}
     </Button>
@@ -70,9 +70,8 @@ export function FieldArrayList<T extends FieldArrayRow>({
             type="button"
             onClick={() => onRemove(index)}
             variant="ghost"
-            size="sm"
             aria-label={removeLabel}
-            className="absolute right-2 top-2 text-foreground/40 hover:text-action-delete"
+            className="absolute right-2 top-2 h-8 w-8 p-0 text-foreground/40 hover:text-action-delete"
           >
             <Trash2 size={14} />
           </Button>

@@ -88,7 +88,6 @@ export function ResultsPanel({
 
         <Button
           variant="ghost"
-          size="sm"
           onClick={onReferral}
           className="self-start gap-1.5 text-foreground/50 hover:text-foreground/80"
         >
@@ -99,13 +98,12 @@ export function ResultsPanel({
       <div className="flex shrink-0 items-center justify-between border-t border-white/[0.06] px-8 py-4">
         <Button
           variant="ghost"
-          size="sm"
           onClick={onEditSettings}
           className="gap-1.5 text-foreground/50 hover:text-foreground/80"
         >
           <Settings2 size={13} /> {t('autopilot.apply.wizard.results.edit')}
         </Button>
-        <Button variant="glass" size="sm" onClick={onRegenerate} className="gap-1.5">
+        <Button variant="glass" onClick={onRegenerate} className="gap-1.5">
           <RefreshCw size={13} /> {t('autopilot.apply.wizard.results.regenerate')}
         </Button>
       </div>

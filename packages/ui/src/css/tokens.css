@@ -19,6 +19,9 @@
   --color-card-foreground: oklch(97% 0.4% 285);
   --color-popover: oklch(26.5% 0.4% 285);
   --color-popover-foreground: oklch(97% 0.4% 285);
+  /* Input/control fill. Inset DARKER than card/glass-surface so fields read on
+     the (lighter) content surface in dark; flipped to white in the light block. */
+  --color-field: #1a1a1d;
   --color-primary: oklch(65% 50% 270);
   --color-primary-foreground: oklch(98% 1% 210);
   --color-secondary: oklch(27% 0.8% 285);
@@ -300,6 +303,7 @@
   --color-card-foreground: oklch(21% 0.4% 280);
   --color-popover: oklch(100% 0 0);
   --color-popover-foreground: oklch(21% 0.4% 280);
+  --color-field: #ffffff; /* white control fill on the light surface (see dark @theme note) */
   --color-secondary: oklch(94% 0.6% 264);
   --color-secondary-foreground: oklch(28% 0.8% 280);
   --color-muted: oklch(94% 0.6% 264);

@@ -100,7 +100,6 @@ export function ExtensionBridgeSection() {
               />
               <Button
                 variant="glass"
-                size="sm"
                 disabled={!token}
                 onClick={() => void handleCopy()}
                 className="shrink-0"
@@ -130,7 +129,6 @@ export function ExtensionBridgeSection() {
           <div className="flex justify-end border-t border-white/[0.05] pt-3">
             <Button
               variant="danger"
-              size="sm"
               disabled={regenerate.isPending}
               onClick={() => setConfirmOpen(true)}
             >

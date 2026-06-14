@@ -70,7 +70,6 @@ export function GeneratingPanel({ target, phase, phaseLabel, thinking, output, o
       <div className="mt-4 flex shrink-0 justify-center">
         <Button
           variant="glass"
-          size="sm"
           onClick={onCancel}
           className="border-red-400/20 text-red-300/80 hover:text-red-200"
         >

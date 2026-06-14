@@ -70,7 +70,6 @@ export function ScrapeForm({
               </div>
               <Button
                 variant="ghost"
-                size="sm"
                 onClick={onToggle}
                 className="rounded-md p-1 text-foreground/40 hover:bg-white/5 hover:text-foreground/70 h-auto"
               >
@@ -159,7 +158,7 @@ export function ScrapeForm({
             {/* Footer */}
             <div className="flex items-center justify-end gap-2">
               {scraping ? (
-                <Button size="sm" variant="ghost" onClick={onCancel}>
+                <Button variant="ghost" onClick={onCancel}>
                   {t('jobs.cancel')}
                 </Button>
               ) : (
@@ -175,7 +174,6 @@ export function ScrapeForm({
                 )
               )}
               <Button
-                size="sm"
                 variant="primary"
                 onClick={() => onStart()}
                 disabled={scraping || !form.query.trim()}

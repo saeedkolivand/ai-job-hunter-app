@@ -88,7 +88,6 @@ function AutopilotPage() {
             </div>
             <Button
               variant="glass"
-              size="sm"
               onClick={() => setCreating(true)}
               className="transition-all duration-150 ease-out"
             >

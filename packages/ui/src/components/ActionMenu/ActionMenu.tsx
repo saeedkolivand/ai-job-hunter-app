@@ -27,7 +27,7 @@ export interface ActionMenuProps {
   className?: string;
 }
 
-const MENU_WIDTH = 200;
+const MENU_WIDTH = 176;
 
 /**
  * Overflow "3-dots" action menu (#32, #46). A small icon trigger opens a
@@ -115,7 +115,7 @@ export function ActionMenu({
                 width: MENU_WIDTH,
                 zIndex: 9999,
               }}
-              className="dropdown-surface overflow-hidden rounded-xl p-1.5"
+              className="dropdown-surface overflow-hidden rounded-xl p-1"
             >
               {items.map((item) => (
                 <button
@@ -128,7 +128,7 @@ export function ActionMenu({
                     setOpen(false);
                   }}
                   className={cn(
-                    'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-caption transition-colors',
+                    'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors',
                     'disabled:pointer-events-none disabled:opacity-45',
                     item.destructive
                       ? 'text-action-delete hover:bg-action-delete/10'

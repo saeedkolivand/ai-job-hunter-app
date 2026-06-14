@@ -42,15 +42,10 @@ export function OllamaConfig({
     <>
       {!connected && (
         <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-foreground/50"
-            onClick={onDownloadOllama}
-          >
+          <Button variant="ghost" className="text-foreground/50" onClick={onDownloadOllama}>
             <ExternalLink size={11} /> Download Ollama
           </Button>
-          <Button variant="ghost" size="sm" className="text-foreground/40" onClick={onRecheck}>
+          <Button variant="ghost" className="text-foreground/40" onClick={onRecheck}>
             <Loader2 size={11} /> Recheck
           </Button>
         </div>
@@ -102,7 +97,6 @@ export function OllamaConfig({
           {children}
           <Button
             variant="glass"
-            size="sm"
             onClick={onSetActive}
             disabled={isActive}
             className={isActive ? 'opacity-40' : 'ring-1 ring-brand/20'}

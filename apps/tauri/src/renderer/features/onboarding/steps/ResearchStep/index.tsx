@@ -120,7 +120,6 @@ export function ResearchStep({ onBack, onNext, direction, stepIndex, totalSteps 
             <div className="flex justify-end">
               <Button
                 variant="primary"
-                size="sm"
                 disabled={!apiKey.trim() || saving}
                 onClick={() => void handleSave()}
               >
@@ -146,14 +145,14 @@ export function ResearchStep({ onBack, onNext, direction, stepIndex, totalSteps 
         transition={withDelay(0.2)}
         className="flex items-center gap-3"
       >
-        <Button variant="ghost" size="sm" onClick={onBack} className="flex items-center gap-1.5">
+        <Button variant="ghost" onClick={onBack} className="flex items-center gap-1.5">
           <ArrowLeft size={13} />
           {t('onboarding.research.back')}
         </Button>
 
         <div className="flex-1" />
 
-        <Button variant="default" size="sm" onClick={onNext} className="flex items-center gap-1.5">
+        <Button variant="default" onClick={onNext} className="flex items-center gap-1.5">
           {connected ? t('onboarding.research.next') : t('onboarding.research.skip')}
           <ArrowRight size={13} />
         </Button>

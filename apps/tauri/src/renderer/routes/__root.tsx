@@ -81,7 +81,6 @@ function NotificationToastBridge() {
       description: toast.body,
       btn: route ? (
         <Button
-          size="sm"
           variant="glass"
           onClick={() => {
             // `route.to`/`route.search` are open-typed (string / unknown map) on

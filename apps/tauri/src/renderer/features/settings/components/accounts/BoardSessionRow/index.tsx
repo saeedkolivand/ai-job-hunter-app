@@ -138,7 +138,6 @@ export function BoardSessionRow({ board }: { board: Board }) {
         {connected ? (
           <Button
             variant="danger"
-            size="sm"
             onClick={() => setConfirmOpen(true)}
             disabled={loading}
             className="relative shrink-0"
@@ -158,7 +157,6 @@ export function BoardSessionRow({ board }: { board: Board }) {
         ) : (
           <Button
             variant="info"
-            size="sm"
             onClick={() => void handleConnect()}
             disabled={loading}
             className="relative shrink-0"

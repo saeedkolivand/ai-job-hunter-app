@@ -184,7 +184,6 @@ export function JobsPage() {
             actions={
               <div className="flex items-center gap-2">
                 <Button
-                  size="sm"
                   variant="primary"
                   onClick={() => setShowScrapeForm(!showScrapeForm)}
                   className="transition-all duration-150 ease-out"
@@ -194,7 +193,6 @@ export function JobsPage() {
                 </Button>
                 {allPostings.length > 0 && !scraping && (
                   <Button
-                    size="sm"
                     variant="ghost"
                     onClick={() => setConfirmClear(true)}
                     title={t('jobs.clearScrapedJobs')}
@@ -208,13 +206,12 @@ export function JobsPage() {
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                   placeholder={t('jobs.searchPlaceholder')}
-                  className="w-48 text-xs text-foreground/75 placeholder:text-foreground/30"
+                  className="text-xs text-foreground/75 placeholder:text-foreground/30"
                   variant="default"
-                  wrapperClassName="h-7"
+                  wrapperClassName="w-48"
                   allowClear
                 />
                 <Dropdown
-                  size="sm"
                   options={[
                     { value: 'newest', label: t('jobs.sortNewest') },
                     { value: 'oldest', label: t('jobs.sortOldest') },
@@ -256,7 +253,7 @@ export function JobsPage() {
                 icon={Search}
                 title={t('jobs.empty')}
                 action={
-                  <Button variant="primary" size="sm" onClick={() => setShowScrapeForm(true)}>
+                  <Button variant="primary" onClick={() => setShowScrapeForm(true)}>
                     <Search size={13} /> {t('jobs.emptyCta')}
                   </Button>
                 }
@@ -296,7 +293,7 @@ export function JobsPage() {
 
           {allPostings.length > 0 && (
             <div className="flex justify-center pt-4">
-              <Button variant="ghost" size="sm" onClick={handleShowMore} loading={scraping}>
+              <Button variant="ghost" onClick={handleShowMore} loading={scraping}>
                 {!scraping && <Plus size={12} />}
                 {t('jobs.showMore')}
               </Button>

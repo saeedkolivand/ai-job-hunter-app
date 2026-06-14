@@ -56,7 +56,6 @@ export function GeneralSection({
               />
               <Button
                 variant="glass"
-                size="sm"
                 onClick={() => setUserName(localName)}
                 disabled={localName === (userName || '')}
               >
@@ -76,7 +75,6 @@ export function GeneralSection({
           <p className="text-xs text-foreground/45">{t('settings.onboarding.description')}</p>
           <Button
             variant="glass"
-            size="sm"
             onClick={replayWizard}
             disabled={!onboardingCompleted}
             className="ml-4 shrink-0"

@@ -127,7 +127,6 @@ export function ApplicationQuestionsModal({
 
           <Button
             variant="primary"
-            size="sm"
             loading={generating}
             disabled={!canGenerate || generating}
             onClick={() => void generate()}

@@ -92,9 +92,8 @@ export function JobLocationPreferences() {
           <span className="flex-1 text-sm text-foreground">{jobPrefs.location}</span>
           <Button
             variant="ghost"
-            size="sm"
             onClick={handleRemoveLocation}
-            className="!bg-transparent hover:bg-white/5"
+            className="h-8 w-8 p-0 !bg-transparent hover:bg-white/5"
           >
             <X size={14} />
           </Button>
@@ -127,6 +126,7 @@ export function JobLocationPreferences() {
           <Button
             variant="glass"
             size="md"
+            className="h-8 w-8 p-0"
             onClick={() => inputValue && handleAddLocation(inputValue)}
             disabled={!inputValue}
           >
@@ -181,7 +181,6 @@ export function JobLocationPreferences() {
               <Button
                 key={loc}
                 variant="ghost"
-                size="sm"
                 onClick={() => handleAddLocation(loc)}
                 className="!bg-transparent hover:bg-white/5"
               >

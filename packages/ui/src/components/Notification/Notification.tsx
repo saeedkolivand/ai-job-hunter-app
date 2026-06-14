@@ -228,37 +228,28 @@ function NotificationCard({ item, onClose }: { item: NotificationItem; onClose: 
           overflow: 'hidden',
           borderRadius: '14px',
           padding: '14px',
-          background: 'linear-gradient(135deg, rgba(30,27,50,0.94) 0%, rgba(20,18,38,0.97) 100%)',
-          backdropFilter: 'blur(24px)',
-          WebkitBackdropFilter: 'blur(24px)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          boxShadow: `0 16px 48px rgba(0,0,0,0.48), 0 0 60px ${cfg.glow}, inset 0 1px 0 rgba(255,255,255,0.07)`,
+          // Themed glass surface (charcoal in dark, white in light) via tokens —
+          // replaces the hardcoded violet gradient so it fits both schemes.
+          background:
+            'linear-gradient(135deg, rgb(var(--glass-rgb) / 0.97) 0%, rgb(var(--glass-rgb) / 0.99) 100%)',
+          backdropFilter: 'blur(24px) saturate(var(--glass-sat))',
+          WebkitBackdropFilter: 'blur(24px) saturate(var(--glass-sat))',
+          border: '1px solid var(--border-mid)',
+          boxShadow: 'var(--shadow-xl), var(--glass-specular)',
         }}
       >
-        {/* Ambient glow */}
+        {/* Variant glow washing in from the left, behind the icon (like the
+            privacy ActionCard). The top sheen is handled by --glass-specular. */}
         <div
           style={{
             position: 'absolute',
-            top: '-24px',
-            left: '-24px',
-            width: '96px',
-            height: '96px',
+            bottom: '-22px',
+            left: '-22px',
+            width: '120px',
+            height: '120px',
             borderRadius: '50%',
-            background: cfg.ambient,
-            filter: 'blur(20px)',
-            pointerEvents: 'none',
-          }}
-        />
-        {/* Top edge highlight */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: '1px',
-            background:
-              'linear-gradient(to right, transparent, rgba(255,255,255,0.10), transparent)',
+            background: cfg.glow,
+            filter: 'blur(36px)',
             pointerEvents: 'none',
           }}
         />
@@ -276,7 +267,7 @@ function NotificationCard({ item, onClose }: { item: NotificationItem; onClose: 
               justifyContent: 'center',
               borderRadius: '10px',
               background: cfg.iconBg,
-              color: 'var(--color-brand)',
+              color: '#fff',
               boxShadow: `0 4px 12px ${cfg.glow}`,
             }}
           >
@@ -292,7 +283,7 @@ function NotificationCard({ item, onClose }: { item: NotificationItem; onClose: 
               fontSize: '13px',
               fontWeight: 600,
               lineHeight: 1.4,
-              color: 'rgba(255,255,255,0.92)',
+              color: 'var(--color-foreground)',
             }}
           >
             {item.message}
@@ -304,7 +295,7 @@ function NotificationCard({ item, onClose }: { item: NotificationItem; onClose: 
                 fontSize: '12px',
                 fontWeight: 400,
                 lineHeight: 1.45,
-                color: 'rgba(255,255,255,0.62)',
+                color: 'color-mix(in oklab, var(--color-foreground) 60%, transparent)',
               }}
             >
               {item.description}
@@ -328,19 +319,23 @@ function NotificationCard({ item, onClose }: { item: NotificationItem; onClose: 
               alignItems: 'center',
               justifyContent: 'center',
               borderRadius: '50%',
-              background: 'rgba(255,255,255,0.10)',
-              color: 'rgba(255,255,255,0.50)',
+              background: 'color-mix(in oklab, var(--color-foreground) 8%, transparent)',
+              color: 'color-mix(in oklab, var(--color-foreground) 45%, transparent)',
               border: 'none',
               cursor: 'pointer',
               transition: 'background 150ms, color 150ms',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.18)';
-              e.currentTarget.style.color = 'rgba(255,255,255,0.85)';
+              e.currentTarget.style.background =
+                'color-mix(in oklab, var(--color-foreground) 15%, transparent)';
+              e.currentTarget.style.color =
+                'color-mix(in oklab, var(--color-foreground) 80%, transparent)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.10)';
-              e.currentTarget.style.color = 'rgba(255,255,255,0.50)';
+              e.currentTarget.style.background =
+                'color-mix(in oklab, var(--color-foreground) 8%, transparent)';
+              e.currentTarget.style.color =
+                'color-mix(in oklab, var(--color-foreground) 45%, transparent)';
             }}
           >
             <X size={13} strokeWidth={2.5} />

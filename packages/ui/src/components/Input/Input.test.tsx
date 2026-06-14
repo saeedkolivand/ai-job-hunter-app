@@ -23,7 +23,7 @@ describe('Input', () => {
 
   it('applies the default (non-glass) variant styles', () => {
     render(<Input variant="default" placeholder="x" />);
-    expect(screen.getByPlaceholderText('x').className).toContain('bg-card');
+    expect(screen.getByPlaceholderText('x').className).toContain('bg-field');
   });
 
   it('injects no field chrome for the unstyled variant', () => {

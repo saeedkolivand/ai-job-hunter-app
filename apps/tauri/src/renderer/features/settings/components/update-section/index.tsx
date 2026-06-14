@@ -92,7 +92,6 @@ export function UpdateSection() {
         ) : status.state === 'available' ? (
           <Button
             variant="glass"
-            size="sm"
             onClick={() => void download()}
             className="gap-2 ring-1 ring-brand/20"
           >
@@ -130,7 +129,6 @@ export function UpdateSection() {
           </div>
           <Button
             variant="ghost"
-            size="sm"
             onClick={() => openExternal.mutate(GITHUB_RELEASES_URL)}
             className="gap-2 text-xs text-foreground/50 hover:text-foreground/80"
           >
@@ -182,7 +180,6 @@ export function UpdateSection() {
       <div className="mt-4 border-t border-white/[0.05] pt-3">
         <Button
           variant="ghost"
-          size="sm"
           onClick={() => setShowChangelog((v) => !v)}
           className="gap-2 text-xs text-foreground/50 hover:text-foreground/80"
         >
@@ -208,7 +205,6 @@ export function UpdateSection() {
                 <p>{t('settings.update.changelogError')}</p>
                 <Button
                   variant="ghost"
-                  size="sm"
                   onClick={() => openExternal.mutate(GITHUB_RELEASES_URL)}
                   className="gap-2 text-foreground/50 hover:text-foreground/80"
                 >

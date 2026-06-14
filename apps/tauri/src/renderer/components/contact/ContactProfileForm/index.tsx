@@ -257,7 +257,7 @@ export function ContactProfileForm() {
             onChange={onPickPhoto}
           />
           {photo && (
-            <Button variant="ghost" size="sm" onClick={removePhoto} className="gap-1.5 self-start">
+            <Button variant="ghost" onClick={removePhoto} className="gap-1.5 self-start">
               <Trash2 className="size-4" />
               {t('settings.contactProfile.photoRemove')}
             </Button>
@@ -477,7 +477,7 @@ export function ContactProfileForm() {
             />
             <Button
               variant="ghost"
-              size="sm"
+              className="h-8 w-8 p-0"
               aria-label={t('settings.contactProfile.removeLink')}
               onClick={() => removeLink(index)}
             >
@@ -486,7 +486,7 @@ export function ContactProfileForm() {
           </div>
         ))}
 
-        <Button variant="ghost" size="sm" onClick={addLink} className="mt-1 self-start gap-1.5">
+        <Button variant="ghost" onClick={addLink} className="mt-1 self-start gap-1.5">
           <Plus className="size-4" />
           {t('settings.contactProfile.addLink')}
         </Button>

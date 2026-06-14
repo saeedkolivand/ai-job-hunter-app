@@ -301,7 +301,6 @@ export function ReferralModal({ job, resume, onClose }: Props) {
                 <div className="flex items-center gap-2">
                   <Button
                     variant="glass"
-                    size="sm"
                     disabled={!gen.draft || overLimit || gen.generating}
                     onClick={() => void copy()}
                   >
@@ -310,7 +309,6 @@ export function ReferralModal({ job, resume, onClose }: Props) {
                   </Button>
                   <Button
                     variant="glass"
-                    size="sm"
                     loading={upsert.isPending}
                     disabled={!canSave || upsert.isPending}
                     onClick={save}

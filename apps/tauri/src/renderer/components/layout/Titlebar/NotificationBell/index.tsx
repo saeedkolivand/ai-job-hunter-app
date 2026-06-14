@@ -61,8 +61,7 @@ export function NotificationBell() {
     <div ref={containerRef} className="relative">
       <Button
         variant="ghost"
-        size="sm"
-        className={`app-no-drag relative border-foreground/15 bg-transparent hover:border-foreground/25 hover:bg-foreground/[0.06] ${
+        className={`app-no-drag relative h-8 w-8 p-0 border-foreground/15 bg-transparent hover:border-foreground/25 hover:bg-foreground/[0.06] ${
           unreadCount > 0
             ? 'text-brand hover:text-brand'
             : 'text-foreground/70 hover:text-foreground'
@@ -98,7 +97,6 @@ export function NotificationBell() {
               <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
-                  size="sm"
                   disabled={unreadCount === 0}
                   onClick={() => markAllRead.mutate()}
                 >
@@ -106,7 +104,6 @@ export function NotificationBell() {
                 </Button>
                 <Button
                   variant="ghost"
-                  size="sm"
                   disabled={items.length === 0}
                   onClick={() => clearAll.mutate()}
                 >
@@ -165,7 +162,7 @@ export function NotificationBell() {
                       </div>
                       <Button
                         variant="ghost"
-                        size="sm"
+                        className="h-8 w-8 p-0"
                         aria-label={t('notifications.remove.aria')}
                         onClick={(e) => {
                           e.stopPropagation();

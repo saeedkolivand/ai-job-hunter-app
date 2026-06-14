@@ -148,7 +148,6 @@ export function TailorWizard({
       <div className="flex shrink-0 items-center justify-between border-t border-white/[0.06] px-8 py-4">
         <Button
           variant="ghost"
-          size="sm"
           onClick={() => step > 0 && setStep(step - 1)}
           disabled={step === 0}
           className="gap-1.5 text-foreground/50 hover:text-foreground/80 disabled:opacity-40"
@@ -156,11 +155,11 @@ export function TailorWizard({
           <ChevronLeft size={13} /> {t('autopilot.apply.wizard.back')}
         </Button>
         {isLast ? (
-          <Button variant="primary" size="sm" onClick={handleGenerate} className="gap-1.5">
+          <Button variant="primary" onClick={handleGenerate} className="gap-1.5">
             <Sparkles size={13} /> {t('autopilot.apply.wizard.generate')}
           </Button>
         ) : (
-          <Button variant="primary" size="sm" onClick={() => void handleNext()} className="gap-1.5">
+          <Button variant="primary" onClick={() => void handleNext()} className="gap-1.5">
             {t('autopilot.apply.wizard.next')} <ChevronRight size={13} />
           </Button>
         )}

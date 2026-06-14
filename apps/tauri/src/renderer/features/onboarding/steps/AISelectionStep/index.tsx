@@ -213,7 +213,7 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
         transition={withDelay(0.15)}
         className="flex items-center gap-3"
       >
-        <Button variant="ghost" size="sm" onClick={onBack} className="flex items-center gap-1.5">
+        <Button variant="ghost" onClick={onBack} className="flex items-center gap-1.5">
           <ArrowLeft size={13} />
           {t('onboarding.ai.back')}
         </Button>
@@ -223,7 +223,6 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
         {(mode === 'cloud' || !canContinue) && !skipping && (
           <Button
             variant="ghost"
-            size="sm"
             onClick={handleSkip}
             className="flex items-center gap-1.5 text-foreground/35 hover:text-foreground/60"
           >
@@ -245,7 +244,6 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
 
         <Button
           variant="default"
-          size="sm"
           onClick={handleContinue}
           disabled={!canContinue}
           className="flex items-center gap-1.5"
