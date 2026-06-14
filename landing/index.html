@@ -9,6 +9,16 @@
 <meta property="og:title" content="IT DOES EVERYTHING ELSE.">
 <meta property="og:description" content="I sent 1,000 applications and got 0 replies. So I built a robot. It does everything but press send. (the OG image should be the deep-fried 'IT DOES EVERYTHING ELSE' frame)">
 <meta property="og:type" content="website">
+<meta property="og:url" content="https://aijobhunter.app/">
+<meta property="og:image" content="https://aijobhunter.app/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="AI Job Hunter — IT DOES EVERYTHING ELSE. Scrapes 19 job boards, writes your cover letters, does everything but hit submit.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="IT DOES EVERYTHING ELSE.">
+<meta name="twitter:description" content="I sent 1,000 applications and got 0 replies. So I built a robot. It does everything but press send.">
+<meta name="twitter:image" content="https://aijobhunter.app/og-card.png">
+<link rel="canonical" href="https://aijobhunter.app/">
 <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='12' fill='none' stroke='black' stroke-width='2'/><path d='M11 14 q2 2 4 0 M17 14 q2 2 4 0 M11 22 q5 -4 10 0' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'/><ellipse cx='10' cy='18' rx='1.6' ry='2.8' fill='deepskyblue'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -204,6 +214,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 }
 
 .kicker{font-family:var(--mono); font-size:12px; letter-spacing:.18em; text-transform:uppercase; opacity:.8; margin-bottom:14px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .counter{font-family:var(--mono); font-size:clamp(13px,2.4vw,17px); letter-spacing:.02em}
 
 /* reveal */
@@ -315,10 +326,10 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   color:#fff; -webkit-text-stroke:3px #000;
   text-shadow:4px 4px 0 #ff00d4, -3px -3px 0 #00fff0, 0 0 26px #fff300;
 }
-.fried.huge{font-size:clamp(40px,11vw,118px)}
+.fried.huge{font-size:clamp(40px,11vw,118px); margin:0}
 .fried.mid{font-size:clamp(22px,5.5vw,52px); -webkit-text-stroke:2px #000; margin-top:8px}
 .fried-line{font-family:var(--impact); text-transform:uppercase; color:#111; font-size:clamp(15px,3.2vw,26px); margin:14px auto; max-width:24ch; text-shadow:1px 1px 0 #fff}
-.fried-line b{color:#c1006f}
+.fried-line b{color:#8a0050; text-shadow:0 0 2px #fff, 1px 1px 0 #fff}
 .dialog{
   display:inline-block; margin-top:18px; background:#dfdfdf; border:2px solid #000; border-radius:6px; padding:14px 18px;
   box-shadow:5px 6px 0 rgba(0,0,0,.5); font-family:var(--mono); font-size:14px; color:#111;
@@ -382,6 +393,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 .cta{
   font-family:var(--hand); font-size:20px; background:var(--ink); color:#f4ecdc; border:none;
   border-radius:12px 9px 13px 8px; padding:12px 26px; box-shadow:4px 5px 0 rgba(0,0,0,.25); transition:transform .15s;
+  display:inline-block; text-decoration:none;
 }
 .cta:hover{transform:translateY(-2px)}
 .src-link{display:block; margin-top:18px; font-family:var(--hand); font-size:16px; color:#4a4233}
@@ -510,6 +522,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
     <p class="sub reveal">AI Job Hunter scrapes 19 job boards, writes your cover letters, and drafts your applications while you dissociate — you just press send. Runs fully offline. <b>Built by a guy who is, himself, still unemployed.</b></p>
     <div class="scrollhint reveal">scroll to watch a man fall apart<span class="arr">↓</span></div>
     <a class="filmhint reveal" href="creature.html">▶ or don't scroll — watch THE CREATURE. he summons a tiny recruiter. it grows. (2:40)</a>
+    <a class="filmhint reveal" href="https://github.com/saeedkolivand/ai-job-hunter-app">already sold? → just take the app</a>
   </div>
 </section>
 
@@ -517,6 +530,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 <section class="stage beat1">
   <div class="photo"></div><div class="grade"></div>
   <div class="inner">
+    <h2 class="sr-only">the slump</h2>
     <div class="section-label reveal">2:47 AM</div>
     <svg class="deco draw sm-hide" style="right:4%; top:-18px; width:64px" viewBox="0 0 70 70" aria-hidden="true">
       <path pathLength="1" d="M46 6 A21 21 0 1 0 60 42 A17 17 0 0 1 46 6"/>
@@ -661,7 +675,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
     <svg class="deco draw sm-hide" style="right:10%; top:66%; width:30px; transform:rotate(14deg); filter:drop-shadow(1px 2px 0 #ff00d4)" viewBox="0 0 30 50" aria-hidden="true"><path pathLength="1" d="M19 2 L8 24 H15 L6 48 L26 20 H17 L25 2 Z" style="stroke-width:2.8"/></svg>
     <svg class="deco draw" style="left:16%; top:10%; width:26px" viewBox="0 0 26 26" aria-hidden="true"><path pathLength="1" d="M13 2 v9 M13 15 v9 M2 13 h9 M15 13 h9" style="stroke-width:2.6"/></svg>
     <svg class="deco draw" style="right:16%; top:8%; width:20px" viewBox="0 0 22 22" aria-hidden="true"><path pathLength="1" d="M11 2 v7 M11 13 v7 M2 11 h7 M13 11 h7" style="stroke-width:2.4"/></svg>
-    <div class="fried huge reveal">WAIT.<br>IT DOES<br>EVERYTHING ELSE.</div>
+    <h2 class="fried huge reveal">WAIT.<br>IT DOES<br>EVERYTHING ELSE.</h2>
     <div class="fried mid reveal">it finds them. it writes them. you press send.</div>
     <p class="fried-line reveal">it <b>scrapes 19 boards</b> while you do NOTHING. it <b>writes the cover letter</b> — the one you CRIED over. GONE. it <b>scores your résumé</b> so the regex blob can't hurt you anymore. <b>semantic matching????</b> it KNOWS which jobs want you. it knows things you don't. the one thing it <b>won't</b> do? press submit. that terror stays yours.</p>
     <div class="dialog reveal">
@@ -683,6 +697,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   <svg class="deco draw sm-hide" style="left:34%; top:8%; width:54px" viewBox="0 0 60 26" aria-hidden="true"><path pathLength="1" d="M4 16 q5 -7 10 0 q5 -7 10 0" style="stroke:#5a3610; stroke-width:2"/><path pathLength="1" d="M36 8 q4 -6 8 0 q4 -6 8 0" style="stroke:#5a3610; stroke-width:1.8"/></svg>
   <svg class="stonks" viewBox="0 0 100 70"><path d="M6 64 L34 40 L52 50 L92 8" fill="none" stroke="#2a7d2a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M74 8 L92 8 L92 26" fill="none" stroke="#2a7d2a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
   <div class="inner">
+    <h2 class="sr-only">godmode</h2>
     <div class="doodle beat4-dood reveal tap" data-scream data-voice="smug" data-lines="effortless.|told you.|still got it.|too easy.|yawn.">
       <div class="bubble"></div>
       <svg viewBox="0 0 280 200">
@@ -778,8 +793,8 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
     </svg>
   </div>
   <p class="honest">yes, this app is real. yes, it actually scrapes LinkedIn, Indeed, StepStone, Xing, and 15 others. yes, it's built with Tauri + Rust + React 19 + a vector database + a pure-Rust Typst engine that renders every PDF — because I had a lot of free time, on account of the unemployment. no, it does not auto-apply — it finds the jobs and writes the whole application; hitting submit is the one job left to you. no, I still don't have a job. the autopilot is doing its best.</p>
-  <button class="cta" id="cta">ok fine, take the app →</button>
-  <a class="src-link" href="https://github.com/saeedkolivand/ai-job-hunter-app">view the source — it's MIT, like my prospects: open and freely available.</a>
+  <a class="cta" id="cta" href="https://github.com/saeedkolivand/ai-job-hunter-app">ok fine, take the app →</a>
+  <a class="src-link" href="https://github.com/saeedkolivand/ai-job-hunter-app">view the source — it's PolyForm Noncommercial: read it, fork it, learn from it. just don't sell my misery back to me.</a>
   <a class="src-link" href="creature.html">▶ THE CREATURE — a hand-drawn doodle about the tiny recruiter you accidentally summon. it grows. (2:40)</a>
   <p class="footnote">macOS will say the app is "damaged." it's not damaged. it's just unsigned — like a contract I was never offered. run <code>xattr -cr</code> and we move on.</p>
   <p class="builtwith">Tauri · Rust · React 19 · TanStack · LanceDB · Typst · Ollama · pure spite</p>
@@ -800,7 +815,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
     var link='color:#6cc6ff;font:13px/1.7 monospace';
     console.log('%c PLEASE HIRE HIM. ', head);
     console.log('%cmade it this far? you’re either hiring or you’re me at 3am. if it’s the former — he’s alarmingly available 👉 https://github.com/saeedkolivand/ai-job-hunter-app', link);
-    console.log('%c(source’s MIT — open and freely available, like my prospects.)', soft);
+    console.log('%c(source’s PolyForm Noncommercial — yours to read & fork, not to sell. like my prospects.)', soft);
   }catch(e){}
 })();
 
@@ -1147,7 +1162,6 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   var cta=document.getElementById('cta'), fd=document.getElementById('finale-dood'), fb=fd.querySelector('.bubble');
   cta.addEventListener('mouseenter', function(){ fb.textContent="you sure? …ok."; fb.classList.add('show'); });
   cta.addEventListener('mouseleave', function(){ fb.classList.remove('show'); });
-  cta.addEventListener('click', function(){ location.href='https://github.com/saeedkolivand/ai-job-hunter-app'; });
 
   /* ---- the secret "Are you sure?" dialog: yes / YES do nothing (by design),
           but the fried guy completely loses it — escalating, reuses the shared
