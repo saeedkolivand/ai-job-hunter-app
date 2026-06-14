@@ -75,7 +75,7 @@ export function TauriWindowControls() {
       {/* Close */}
       <button
         onClick={() => win.close()}
-        className="flex h-10 w-11 items-center justify-center text-foreground/50 transition-colors hover:bg-red-500 hover:text-white"
+        className="group flex h-10 w-11 items-center justify-center text-foreground/50 transition-colors hover:bg-red-500 hover:text-white"
         aria-label="Close"
       >
         <svg
@@ -85,6 +85,7 @@ export function TauriWindowControls() {
           fill="none"
           stroke="currentColor"
           strokeWidth="1.2"
+          className="group-hover:stroke-white"
         >
           <line x1="1" y1="1" x2="9" y2="9" />
           <line x1="9" y1="1" x2="1" y2="9" />

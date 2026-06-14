@@ -70,7 +70,7 @@ export function PrefsStep({ onBack, onNext, direction }: Props) {
         style={{
           background: 'linear-gradient(145deg, rgba(20,14,36,0.97) 0%, rgba(12,10,24,0.97) 100%)',
           boxShadow:
-            '0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(168,85,247,0.08), inset 0 1px 0 rgba(255,255,255,0.04)',
+            '0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px color-mix(in srgb, var(--color-brand) 8%, transparent), inset 0 1px 0 rgba(255,255,255,0.04)',
         }}
       >
         {/* Heading */}

@@ -15,7 +15,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import { lightenHex, readableForeground } from './color';
+import { lightenHex, readableForeground, rotateHueHex } from './color';
 
 export type ColorScheme = 'light' | 'dark' | 'system';
 export type ContrastPref = 'normal' | 'more';
@@ -41,6 +41,8 @@ export interface ThemePrefs {
   accentSource: AccentSource;
   /** Resolved hex accent for 'system'/'custom' (e.g. '#a855f7'). */
   accentColor?: string;
+  /** Optional hand-tuned gradient-end hex for presets; absent for system/custom (then auto-rotated). */
+  accentColor2?: string;
 }
 
 const STORAGE_KEY = 'ajh-theme';
@@ -54,7 +56,13 @@ export const DEFAULT_THEME_PREFS: ThemePrefs = {
 };
 
 /** Accent-derived CSS vars the applier owns on :root (cleared for 'default'). */
-const ACCENT_VARS = ['--color-brand', '--color-brand-soft', '--color-action-foreground'] as const;
+const ACCENT_VARS = [
+  '--color-brand',
+  '--color-brand-soft',
+  '--color-brand-2',
+  '--color-brand-2-soft',
+  '--color-action-foreground',
+] as const;
 
 /**
  * Write (or clear) the runtime accent override on :root. brand-dim, the focus
@@ -68,6 +76,15 @@ function applyAccent(root: HTMLElement, prefs: ThemePrefs, scheme: 'light' | 'da
   const softAmount = scheme === 'dark' ? 0.28 : 0.16;
   const soft = color ? lightenHex(color, softAmount) : null;
   const foreground = color ? readableForeground(color) : null;
+  // Gradient-end: a hand-tuned second hex only when the source is 'custom' (a
+  // preset's hand-tuned pair); 'system' always derives via hue rotation so a
+  // stale persisted accentColor2 never leaks onto a freshly picked system hue.
+  const color2 = color
+    ? ((prefs.accentSource === 'custom' ? prefs.accentColor2 : undefined) ??
+      rotateHueHex(color, -30) ??
+      undefined)
+    : undefined;
+  const brand2Soft = color2 ? lightenHex(color2, softAmount) : null;
 
   if (!color || !soft || !foreground) {
     for (const v of ACCENT_VARS) root.style.removeProperty(v);
@@ -76,6 +93,12 @@ function applyAccent(root: HTMLElement, prefs: ThemePrefs, scheme: 'light' | 'da
   root.style.setProperty('--color-brand', color);
   root.style.setProperty('--color-brand-soft', soft);
   root.style.setProperty('--color-action-foreground', foreground);
+  // brand-2 is best-effort: a valid accent still applies even when the second
+  // hue can't be derived — just skip the two gradient-end props.
+  if (color2 && brand2Soft) {
+    root.style.setProperty('--color-brand-2', color2);
+    root.style.setProperty('--color-brand-2-soft', brand2Soft);
+  }
 }
 
 const mq = (query: string): MediaQueryList | null =>

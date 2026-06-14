@@ -6,7 +6,7 @@ import { cn } from '../../lib/cn';
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /**
    * Apple-grammar variants:
-   * - `primary` — the signature solid violet CTA (action-primary token, rounded utility radius).
+   * - `primary` — the signature two-tone accent CTA (action-primary token, rounded utility radius).
    * - `run` / `edit` / `delete` — solid colorful action pills (semantic colour,
    *   the deliberate divergence from Apple's single-accent rule; tokens only).
    * - `default` / `glass` / `ghost` — neutral utility buttons (rounded, not pill).
@@ -59,7 +59,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 
           // Filled Apple actions — solid colour + white label (tokens only, no hex)
           variant === 'primary' && [
-            'bg-action-primary text-action-foreground',
+            'bg-brand-gradient text-action-foreground',
             'hover:brightness-110',
           ],
           variant === 'run' && ['bg-action-run text-action-foreground', 'hover:brightness-110'],

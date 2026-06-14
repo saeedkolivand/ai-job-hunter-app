@@ -44,6 +44,10 @@
      re-tints. Semantic action (run/edit/delete) + status colors are NOT accent. */
   --color-brand: #a855f7;
   --color-brand-soft: #c084fc;
+  /* Gradient-end + its soft step (shipped indigo) — the static `default` accent
+     the runtime applier overrides for custom/system accents. */
+  --color-brand-2: #6366f1;
+  --color-brand-2-soft: #818cf8;
   --color-brand-dim: color-mix(in srgb, var(--color-brand) 15%, transparent);
 
   /* Native macOS font (San Francisco) where it exists — it can't be bundled, so
@@ -236,13 +240,15 @@
   /* Top-edge specular highlight — the bright hairline that reads as real glass. */
   --glass-specular: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 
-  /* ── Aurora / nebula palette (for CinematicBackground) ───────────────── */
-  --aurora-violet: #a855f7;
-  --aurora-indigo: #6366f1;
-  --aurora-pink: #ec4899;
-  --aurora-cyan: #22d3ee;
-  --nebula-violet: #c084fc;
-  --nebula-indigo: #818cf8;
+  /* ── Aurora / nebula palette (for CinematicBackground) — re-tints with the
+     accent: every hue derives from the brand family so non-violet accents stay
+     coherent (no off-accent pink/cyan). ─────────────────────────────────── */
+  --aurora-violet: var(--color-brand);
+  --aurora-indigo: var(--color-brand-2);
+  --aurora-pink: var(--color-brand-soft);
+  --aurora-cyan: var(--color-brand-2-soft);
+  --nebula-violet: var(--color-brand-soft);
+  --nebula-indigo: var(--color-brand-2-soft);
   /* ── RGB aliases for brand colors (used in gradients) */
   --rgb-brand: 168 85 247;
   --rgb-aurora-indigo: 99 102 241;
@@ -299,6 +305,9 @@
      to ~#7C3AED (still the same violet family, just legible on white). */
   --color-brand: #7c3aed;
   --color-brand-soft: #8b5cf6;
+  /* Gradient-end deepened for light (legible on white, matching the brand step). */
+  --color-brand-2: #4f46e5;
+  --color-brand-2-soft: #6366f1;
   --color-brand-dim: color-mix(in srgb, var(--color-brand) 12%, transparent);
   --color-primary: oklch(50% 58% 285);
   --color-primary-foreground: oklch(99% 0.15% 270);
@@ -401,11 +410,12 @@
   --glow-brand-md: 0 0 36px rgba(124, 58, 237, 0.14);
   --glow-blue-md: 0 0 36px rgba(79, 70, 229, 0.14);
 
-  /* Pastel the cinematic aurora so the light canvas stays calm and readable. */
-  --aurora-violet: #c9b1f7;
-  --aurora-indigo: #adb6f7;
-  --aurora-pink: #f3bcd8;
-  --aurora-cyan: #aee5ef;
-  --nebula-violet: #dcccfb;
-  --nebula-indigo: #c1c8f7;
+  /* Pastel the cinematic aurora so the light canvas stays calm and readable —
+     each hue is the matching brand var softened toward white so it re-tints. */
+  --aurora-violet: color-mix(in srgb, var(--color-brand) 55%, white);
+  --aurora-indigo: color-mix(in srgb, var(--color-brand-2) 55%, white);
+  --aurora-pink: color-mix(in srgb, var(--color-brand-soft) 55%, white);
+  --aurora-cyan: color-mix(in srgb, var(--color-brand-2-soft) 55%, white);
+  --nebula-violet: color-mix(in srgb, var(--color-brand-soft) 45%, white);
+  --nebula-indigo: color-mix(in srgb, var(--color-brand-2-soft) 45%, white);
 }

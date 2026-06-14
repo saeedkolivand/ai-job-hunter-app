@@ -11,12 +11,21 @@ export function Sparkline({ data }: Props) {
       <svg viewBox="0 0 480 64" preserveAspectRatio="none" className="h-20 w-full">
         <defs>
           <linearGradient id="bar-fill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(168,85,247,0.6)" />
-            <stop offset="100%" stopColor="rgba(168,85,247,0.1)" />
+            <stop offset="0%" stopColor="color-mix(in srgb, var(--color-brand) 60%, transparent)" />
+            <stop
+              offset="100%"
+              stopColor="color-mix(in srgb, var(--color-brand) 10%, transparent)"
+            />
           </linearGradient>
           <linearGradient id="bar-fill-now" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(99,102,241,0.9)" />
-            <stop offset="100%" stopColor="rgba(99,102,241,0.2)" />
+            <stop
+              offset="0%"
+              stopColor="color-mix(in srgb, var(--color-brand-2) 90%, transparent)"
+            />
+            <stop
+              offset="100%"
+              stopColor="color-mix(in srgb, var(--color-brand-2) 20%, transparent)"
+            />
           </linearGradient>
         </defs>
         {data.map((v, i) => {
