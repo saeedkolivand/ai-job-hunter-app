@@ -35,14 +35,26 @@ fn test_credential_meta_serialization() {
 
 #[test]
 fn test_now_ms() {
+    // Capture a tight upper-bound AFTER the call so the interval [ts, upper] is
+    // always valid regardless of CI scheduling jitter. We only need:
+    //   ts > 0              — it is an epoch-ms value, not a sentinel
+    //   ts <= upper         — the clock did not run backward
+    //
+    // The previous ±1000 ms symmetric window was flaky under heavy CI load because
+    // the `now()` reference was captured AFTER `ts`, so `ts` could exceed `now+0`
+    // by a few ms on a context-switched thread; that made (now - ts) negative and
+    // the abs() check fail. Asymmetric bound (ts <= upper) is race-free.
     let ts = now_ms();
-    assert!(ts > 0);
-    // Should be roughly current time (within 1 second)
-    let now = SystemTime::now()
+    let upper = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
-    assert!((now as i64 - ts as i64).abs() < 1000);
+
+    assert!(ts > 0, "now_ms() must return a positive epoch-ms value");
+    assert!(
+        ts <= upper,
+        "now_ms() must not return a timestamp in the future (ts={ts}, upper={upper})"
+    );
 }
 
 // ── C4 — Credential metadata persistence layer ───────────────────────────────

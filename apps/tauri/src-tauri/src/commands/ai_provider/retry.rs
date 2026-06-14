@@ -101,6 +101,99 @@ where
     }
 }
 
+// ── send_with_retry integration tests ────────────────────────────────────────
+//
+// These tests exercise the full retry *loop* (build → send → check → backoff →
+// rebuild → send …) against a real wiremock server rather than the helper
+// predicates in isolation.
+//
+// `send_with_retry` uses `tokio::time::sleep` for backoff, which requires
+// `tokio`'s `test-util` feature to pause.  That feature is NOT enabled in this
+// crate's Cargo.toml, so we let the real backoff run.  With MAX_ATTEMPTS=3 and
+// BASE_DELAY_MS=500 the worst case is ~1.5 s of wall time — acceptable for an
+// integration test that exercises code no unit test can reach.
+//
+// Wiremock's `up_to_n_times(1)` mocks serve responses in FIFO registration
+// order so the sequence [429, 429, 200] is faithfully replayed.
+
+#[cfg(test)]
+mod retry_loop_tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::{MAX_ATTEMPTS, send_with_retry};
+
+    /// Spin up a wiremock server that serves the given status codes in FIFO order
+    /// and drive `send_with_retry` once.  Returns (call_count, is_ok).
+    async fn run_retry(status_codes: Vec<u16>) -> (u32, bool) {
+        let server = MockServer::start().await;
+
+        // Register one mock per expected response, consumed in FIFO order.
+        for code in &status_codes {
+            Mock::given(method("GET"))
+                .respond_with(ResponseTemplate::new(*code))
+                .up_to_n_times(1)
+                .mount(&server)
+                .await;
+        }
+
+        let url = server.uri();
+        let client = reqwest::Client::new();
+        let call_count = Arc::new(AtomicU32::new(0));
+        let counter = call_count.clone();
+
+        let result = send_with_retry(|| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            client.get(&url)
+        })
+        .await;
+
+        (call_count.load(Ordering::SeqCst), result.is_ok())
+    }
+
+    #[tokio::test]
+    async fn retry_loop_succeeds_after_two_transient_429s() {
+        // R4: 429 → 429 → 200.  Build closure invoked 3×; final result is Ok.
+        let (calls, is_ok) = run_retry(vec![429, 429, 200]).await;
+        assert_eq!(
+            calls, 3,
+            "build closure must be invoked 3× (initial + 2 retries); got {calls}"
+        );
+        assert!(is_ok, "the eventual 200 response must be returned as Ok");
+    }
+
+    #[tokio::test]
+    async fn retry_loop_stops_at_max_attempts_on_persistent_429() {
+        // R4: MAX_ATTEMPTS consecutive 429s → loop stops exactly at the budget.
+        // The final return is Ok(resp with status 429) because HTTP 4xx are not
+        // reqwest transport errors; what matters is the call count stays bounded.
+        let statuses = vec![429u16; MAX_ATTEMPTS as usize];
+        let (calls, _) = run_retry(statuses).await;
+        assert_eq!(
+            calls, MAX_ATTEMPTS,
+            "loop must stop after exactly MAX_ATTEMPTS ({MAX_ATTEMPTS}) calls; got {calls}"
+        );
+    }
+
+    #[tokio::test]
+    async fn retry_loop_does_not_retry_terminal_4xx() {
+        // A 400 is terminal; one call, no retry.
+        let (calls, is_ok) = run_retry(vec![400]).await;
+        assert_eq!(calls, 1, "terminal 400 must not be retried; got {calls} calls");
+        assert!(is_ok, "400 response must be returned as Ok (not a transport Err)");
+    }
+
+    #[tokio::test]
+    async fn retry_loop_returns_immediately_on_200() {
+        let (calls, is_ok) = run_retry(vec![200]).await;
+        assert_eq!(calls, 1, "200 must not trigger a retry; got {calls} calls");
+        assert!(is_ok, "200 response must be Ok");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
