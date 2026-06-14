@@ -27,7 +27,7 @@
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/saeedkolivand/ai-job-hunter-app/total?color=e24b4a&label=downloads"></a>
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/saeedkolivand/ai-job-hunter-app/ci-pipeline.yml?branch=main&label=CI"></a>
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/saeedkolivand/ai-job-hunter-app"></a>
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
+  <a href="LICENSE"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-orange.svg"></a>
 </p>
 
 <p align="center">
@@ -507,7 +507,7 @@ See <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBU
 - **Respect each site's Terms of Service.** Some job boards allow only manual access or their official APIs; automated collection — or signing in with your own account to scrape — may breach their terms and can get your account suspended. You choose which boards to enable and accept that responsibility.
 - **Not affiliated.** AI Job Hunter is an independent project, not affiliated with, endorsed by, or sponsored by LinkedIn, Indeed, Glassdoor, Xing, StepStone, or any other job board or company named in this repository. Product names and trademarks belong to their respective owners.
 - **Your data stays yours.** Processing is local-first and single-user; the project maintainers do not receive, store, or process your data. Bring-your-own-key means AI prompts go only to the provider you configure.
-- **No warranty.** Provided "as is" under the MIT License, without warranty of any kind and without liability for how it is used. This is not legal advice.
+- **No warranty.** Provided "as is" under the PolyForm Noncommercial License 1.0.0, without warranty of any kind and without liability for how it is used. This is not legal advice.
 
 ---
 
@@ -519,7 +519,7 @@ Found a vulnerability? Please report it privately — see **<a href="SECURITY.md
 
 ## License
 
-MIT — see <a href="LICENSE" target="_blank" rel="noopener noreferrer">LICENSE</a>.
+**PolyForm Noncommercial License 1.0.0** ([SPDX: `PolyForm-Noncommercial-1.0.0`](LICENSE)) — **source-available, not open source**. Free for noncommercial use; commercial repackaging and resale prohibited. Effective **2026-06-14**; reason: protect the codebase and author from commercial repackaging without consent. For a commercial license, contact [contact@aijobhunter.app](mailto:contact@aijobhunter.app).
 
 ---
 

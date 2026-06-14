@@ -47,11 +47,40 @@
       }
     ],
     [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "node scripts/sync-tauri-version.cjs ${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "CHANGELOG.md",
+        "changelogTitle": "# Changelog"
+      }
+    ],
+    [
       "@semantic-release/github",
       {
         "successComment": "🎉 This is included in version ${nextRelease.version}.",
         "failComment": false,
         "addReleases": "bottom"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": [
+          "CHANGELOG.md",
+          "package.json",
+          "apps/tauri/package.json",
+          "apps/extension/package.json",
+          "apps/tauri/src-tauri/Cargo.toml",
+          "apps/tauri/src-tauri/Cargo.lock",
+          "apps/tauri/src-tauri/tauri.conf.json",
+          "README.md"
+        ],
+        "message": "chore(release): ${nextRelease.version} [skip ci]"
       }
     ]
   ]
