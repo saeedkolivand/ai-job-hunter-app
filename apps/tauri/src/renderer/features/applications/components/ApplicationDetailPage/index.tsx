@@ -194,7 +194,7 @@ function SlimLayout({
 /** The bordered tabbed-panel surface (fills its parent height). */
 function PanelShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full min-h-0 flex-col rounded-lg border border-[var(--border-soft)] bg-foreground/[0.02]">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--border-soft)] bg-foreground/[0.02]">
       {children}
     </div>
   );
@@ -377,7 +377,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
           <div
             role="tablist"
             aria-label={t('applications.detail.tabsLabel')}
-            className="flex shrink-0 items-center gap-1 border-b border-[var(--border-soft)] px-3 py-2"
+            className="flex shrink-0 items-center gap-1 border-b border-[var(--border-soft)] bg-card px-3 py-2"
           >
             {DETAIL_TABS.map((tb, i) => (
               <Button
