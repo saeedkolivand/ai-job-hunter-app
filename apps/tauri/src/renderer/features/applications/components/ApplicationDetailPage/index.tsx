@@ -432,6 +432,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                         id="appdetail-notes"
                         variant="glass"
                         rows={4}
+                        className="!shadow-none"
                         placeholder={t('applications.detail.notesPlaceholder')}
                         value={notes}
                         onChange={(e) => setNotes(e.target.value)}
