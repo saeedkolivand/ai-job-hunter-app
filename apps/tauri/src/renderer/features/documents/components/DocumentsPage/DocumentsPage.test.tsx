@@ -124,6 +124,7 @@ function makeGen(overrides: Partial<AiGenerationRecord>): AiGenerationRecord {
     board: 'linkedin',
     applicationAnswers: [],
     companyBrief: '',
+    interviewQuestions: [],
     ...overrides,
   };
 }

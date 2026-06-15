@@ -296,6 +296,7 @@ mod tests {
                 board: String::new(),
                 application_answers: vec![],
                 company_brief: String::new(),
+                interview_questions: vec![],
                 application_id: None,
             })
             .unwrap();

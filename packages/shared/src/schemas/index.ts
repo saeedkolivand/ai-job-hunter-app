@@ -235,6 +235,18 @@ export const AiGenerationSaveSchema = z.object({
     )
     .default([]),
   companyBrief: z.string().default(''),
+  // The AI-suggested "questions to ask the interviewer" — the second assistant,
+  // merged onto the per-job record alongside the application answers.
+  interviewQuestions: z
+    .array(
+      z.object({
+        id: z.string().default(''),
+        question: z.string().default(''),
+        why: z.string().default(''),
+        audience: z.string().default('general'),
+      })
+    )
+    .default([]),
 });
 // Note: the `AiGenerationSaveRequest` type is declared in the aiGenerations IPC
 // contract (single source for that name); this schema validates the same shape.

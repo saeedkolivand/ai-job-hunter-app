@@ -313,6 +313,21 @@ export interface ApplicationAnswer {
   answer: string;
 }
 
+/**
+ * One AI-suggested question the candidate can ASK the interviewer — distinct from
+ * {@link ApplicationAnswer} (which the candidate answers). Persisted on the per-job
+ * aiGenerations aggregate.
+ */
+export interface InterviewQuestion {
+  id: string;
+  question: string;
+  /** Why this question lands well / what it signals to the interviewer. */
+  why: string;
+  /** Target interviewer — `recruiter` | `hiringManager` | `team` | `leadership` |
+   *  `general` (open-typed; an unknown value is treated as `general`). */
+  audience: string;
+}
+
 /** The Application aggregate root. */
 export interface Application {
   id: string;

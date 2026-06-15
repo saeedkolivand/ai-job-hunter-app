@@ -19,6 +19,8 @@ import {
   buildApplicationAnswerSystemPrompt,
   buildCoverLetterPrompt,
   buildCoverLetterSystemPrompt,
+  buildInterviewQuestionsPrompt,
+  buildInterviewQuestionsSystemPrompt,
   buildMetadataPrompt,
   buildReferralPrompt,
   buildResumePrompt,
@@ -383,6 +385,62 @@ export async function generateApplicationAnswer(params: {
     user,
     onToken ?? (() => {}),
     resolveTemperature('answers', 0.3),
+    meta.targetLanguage || 'en',
+    signal
+  );
+  return extractPlainText(raw);
+}
+
+/**
+ * Generate AI-suggested questions the candidate can ASK the interviewer. Routes
+ * through the same streaming pipeline as the other generators (zero per-provider
+ * code) and the untrusted company-research fence, so web intel only adds context.
+ * Pass `companyBrief` (gathered research) so questions cite concrete company/role
+ * detail; `seedTopics` biases them (hybrid). Returns the raw delimited text —
+ * parse with `parseInterviewQuestions`.
+ */
+export async function generateInterviewQuestions(params: {
+  resume: string;
+  jobAd: string;
+  meta: GenerationMeta;
+  model: string;
+  companyBrief?: string;
+  seedTopics?: string[];
+  signal?: AbortSignal;
+  onToken?: (tok: string) => void;
+}): Promise<string> {
+  const {
+    resume,
+    jobAd,
+    meta,
+    model,
+    companyBrief = '',
+    seedTopics = [],
+    signal,
+    onToken,
+  } = params;
+  const profile = buildProviderProfile(model);
+  const market = resolveMarket({
+    jobCountry: meta.jobCountry,
+    targetLanguage: meta.targetLanguage,
+  });
+
+  const system = buildInterviewQuestionsSystemPrompt();
+  const user = buildInterviewQuestionsPrompt({
+    resume,
+    jobAd,
+    meta,
+    companyBrief,
+    seedTopics,
+    target: profile,
+    market,
+  });
+  const raw = await streamGenerate(
+    model,
+    system,
+    user,
+    onToken ?? (() => {}),
+    resolveTemperature('answers', 0.5),
     meta.targetLanguage || 'en',
     signal
   );

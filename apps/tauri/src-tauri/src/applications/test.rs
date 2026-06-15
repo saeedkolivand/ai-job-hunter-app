@@ -628,6 +628,7 @@ fn generate_save_second_generation_same_url_merge_into_one_gen_row_and_one_appli
         board: "linkedin".into(),
         application_answers: vec![],
         company_brief: String::new(),
+        interview_questions: vec![],
         application_id: None,
     };
     gen_store.save_application(rec1).unwrap();
@@ -661,6 +662,7 @@ fn generate_save_second_generation_same_url_merge_into_one_gen_row_and_one_appli
         board: "linkedin".into(),
         application_answers: vec![],
         company_brief: String::new(),
+        interview_questions: vec![],
         application_id: None,
     };
     // AiGenerationStore::save_application merges same-url into one gen row.

@@ -57,6 +57,8 @@ import {
 import { useAiGenerations } from '@/services/use-ai-generations';
 import { useSessionStore } from '@/store/session-store';
 
+import { InterviewPrepTab } from './InterviewPrepTab';
+
 const STATUS_OPTIONS = APPLICATION_STAGES.map((s) => ({ value: s.id, label: s.id }));
 
 /** http(s)-only guard — mirrors ApplicationRow's open-link security gate. */
@@ -579,6 +581,13 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
 
                 {tab === 'documents' && (
                   <DocumentsTab
+                    application={application}
+                    matchingGenerations={matchingGenerations}
+                  />
+                )}
+
+                {tab === 'interview' && (
+                  <InterviewPrepTab
                     application={application}
                     matchingGenerations={matchingGenerations}
                   />

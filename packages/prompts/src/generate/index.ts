@@ -7,6 +7,7 @@
 export * from './application-questions.js';
 export * from './cover-letter.js';
 export * from './emphasis.js';
+export * from './interview-questions.js';
 export * from './links.js';
 export * from './metadata.js';
 export * from './modes.js';

@@ -89,6 +89,7 @@ const GEN: AiGenerationRecord = {
   mismatch: false,
   topRequirements: [],
   applicationAnswers: [],
+  interviewQuestions: [],
 };
 
 // ── Delete confirmation (pre-existing coverage) ───────────────────────────────

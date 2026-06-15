@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 
 import { ApplicationDetailPage } from '@/features/applications/components/ApplicationDetailPage';
 
-export const DETAIL_TABS = ['overview', 'timeline', 'brief', 'documents'] as const;
+export const DETAIL_TABS = ['overview', 'timeline', 'brief', 'documents', 'interview'] as const;
 export type DetailTab = (typeof DETAIL_TABS)[number];
 
 export const Route = createFileRoute('/applications/$id')({

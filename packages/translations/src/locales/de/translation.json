@@ -2341,7 +2341,8 @@
         "overview": "Übersicht",
         "timeline": "Verlauf",
         "brief": "Briefing & Antworten",
-        "documents": "Dokumente"
+        "documents": "Dokumente",
+        "interview": "Interview-Vorbereitung"
       },
       "tabsLabel": "Bewerbungsdetail-Tabs",
       "timelineTitle": "Verlauf",
@@ -2359,6 +2360,24 @@
       "briefTitle": "Unternehmens-Briefing",
       "answersTitle": "Bewerbungsantworten",
       "jobLink": "Job-Link",
+      "interview": {
+        "seedLabel": "Themen zum Fokussieren (optional)",
+        "seedPlaceholder": "z. B. Teamstruktur, Roadmap, Bereitschaftsdienst — durch Komma oder Zeile getrennt",
+        "generate": "Fragen vorschlagen",
+        "regenerate": "Neu generieren",
+        "generating": "Recherchiere…",
+        "empty": "Noch keine Interviewfragen",
+        "emptyDesc": "Generiere präzise, gut recherchierte Fragen für dein Interview.",
+        "needsModel": "Wähle in den Einstellungen ein KI-Modell, um Fragen zu generieren.",
+        "needsJob": "Für passende Fragen wird eine Stellenbeschreibung benötigt.",
+        "audience": {
+          "recruiter": "Für den Recruiter",
+          "hiringManager": "Für den Hiring Manager",
+          "team": "Für das Team",
+          "leadership": "Für die Führungsebene",
+          "general": "Für alle"
+        }
+      },
       "notFound": "Bewerbung nicht gefunden",
       "notFoundDesc": "Diese Bewerbung wurde möglicherweise entfernt."
     }

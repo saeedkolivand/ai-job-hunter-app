@@ -2381,7 +2381,8 @@
         "overview": "Overview",
         "timeline": "Timeline",
         "brief": "Brief & answers",
-        "documents": "Documents"
+        "documents": "Documents",
+        "interview": "Interview prep"
       },
       "tabsLabel": "Application detail tabs",
       "timelineTitle": "Timeline",
@@ -2399,6 +2400,24 @@
       "briefTitle": "Company brief",
       "answersTitle": "Application answers",
       "jobLink": "Job link",
+      "interview": {
+        "seedLabel": "Topics to focus on (optional)",
+        "seedPlaceholder": "e.g. team structure, roadmap, on-call — comma or line separated",
+        "generate": "Suggest questions",
+        "regenerate": "Regenerate",
+        "generating": "Researching…",
+        "empty": "No interview questions yet",
+        "emptyDesc": "Generate sharp, well-researched questions to ask your interviewer.",
+        "needsModel": "Select an AI model in settings to generate questions.",
+        "needsJob": "A job description is needed to tailor the questions.",
+        "audience": {
+          "recruiter": "For the recruiter",
+          "hiringManager": "For the hiring manager",
+          "team": "For the team",
+          "leadership": "For leadership",
+          "general": "For anyone"
+        }
+      },
       "notFound": "Application not found",
       "notFoundDesc": "This application may have been removed."
     }

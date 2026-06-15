@@ -195,6 +195,7 @@ function makeGen(overrides: { id: string; jobUrl: string }): AiGenerationRecord 
     board: '',
     applicationAnswers: [],
     companyBrief: '',
+    interviewQuestions: [],
   };
 }
 
