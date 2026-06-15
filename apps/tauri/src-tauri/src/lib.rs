@@ -668,8 +668,6 @@ pub fn run() {
             // contact profile (header source of truth)
             commands::contact_profile::contact_profile_get,
             commands::contact_profile::contact_profile_set,
-            // search
-            commands::search::search_hybrid,
             // scrape
             commands::scrape::scrape_board,
             commands::scrape::scrape_url,

@@ -7,7 +7,6 @@ export const ROUTES = {
   AUTOPILOT: '/autopilot',
   RESUMES: '/documents',
   APPLICATIONS: '/applications',
-  SEARCH: '/search',
   MONITORING: '/monitoring',
   SETTINGS: '/settings',
   SUPPORT: '/support',

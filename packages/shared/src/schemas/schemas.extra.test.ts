@@ -6,7 +6,6 @@ import {
   CredentialSetSchema,
   DocumentImportRequestSchema,
   EmbedRequestSchema,
-  HybridSearchRequestSchema,
   JobPreferencesSchema,
   MatchResumeRequestSchema,
   ResumeExtractTextSchema,
@@ -41,21 +40,6 @@ describe('ScrapeUrlRequestSchema', () => {
   it('requires a valid URL', () => {
     expect(() => ScrapeUrlRequestSchema.parse({ url: 'https://example.com' })).not.toThrow();
     expect(() => ScrapeUrlRequestSchema.parse({ url: 'not-a-url' })).toThrow();
-  });
-});
-
-describe('HybridSearchRequestSchema', () => {
-  it('applies defaults for topK and semanticWeight', () => {
-    const parsed = HybridSearchRequestSchema.parse({ query: 'react', collection: 'jobs' });
-    expect(parsed.topK).toBe(20);
-    expect(parsed.semanticWeight).toBeCloseTo(0.7);
-  });
-
-  it('rejects unknown collections and out-of-range weights', () => {
-    expect(() => HybridSearchRequestSchema.parse({ query: 'x', collection: 'unknown' })).toThrow();
-    expect(() =>
-      HybridSearchRequestSchema.parse({ query: 'x', collection: 'jobs', semanticWeight: 1.5 })
-    ).toThrow();
   });
 });
 

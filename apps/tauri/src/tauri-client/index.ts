@@ -37,7 +37,6 @@ import { privacy } from './namespaces/privacy/index.js';
 import { referrals } from './namespaces/referrals/index.js';
 import { resume } from './namespaces/resume/index.js';
 import { scrape } from './namespaces/scrape/index.js';
-import { search } from './namespaces/search/index.js';
 import { shortcuts } from './namespaces/shortcuts/index.js';
 import { support } from './namespaces/support/index.js';
 import { system } from './namespaces/system/index.js';
@@ -54,7 +53,6 @@ export function createTauriInvokeClient(): AppClient {
     jobPreferences: jobPreferences as AppClient['jobPreferences'],
     contactProfile: contactProfile as AppClient['contactProfile'],
     extensionBridge: extensionBridge as AppClient['extensionBridge'],
-    search: search as AppClient['search'],
     scrape: scrape as AppClient['scrape'],
     match: match as AppClient['match'],
     geocode: geocode as AppClient['geocode'],

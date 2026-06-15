@@ -16,4 +16,3 @@ pub mod matching;
 pub mod referrals;
 pub mod resume;
 pub mod scrape;
-pub mod search;

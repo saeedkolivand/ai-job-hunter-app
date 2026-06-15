@@ -28,7 +28,6 @@ const NAVIGATE: Row[] = [
 ];
 
 const ACTIONS: Row[] = [
-  { keys: [MOD, 'K'], labelKey: 'nav.search' },
   { keys: [MOD, ','], labelKey: 'nav.settings' },
   { keys: ['?'], labelKey: 'shortcuts.help' },
 ];

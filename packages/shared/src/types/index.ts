@@ -98,12 +98,6 @@ export interface JobInteraction {
   timestamp: number;
 }
 
-export interface SearchHit<T = unknown> {
-  id: string;
-  score: number;
-  payload: T;
-}
-
 export interface MatchScore {
   resumeId: string;
   jobId: string;

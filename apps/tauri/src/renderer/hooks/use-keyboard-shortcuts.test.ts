@@ -18,11 +18,9 @@ describe('useKeyboardShortcuts', () => {
     expect(onNavigate).toHaveBeenCalledExactlyOnceWith('/jobs');
   });
 
-  it('maps Ctrl/Cmd+K to search and Ctrl/Cmd+, to settings', () => {
+  it('maps Ctrl/Cmd+, to settings', () => {
     const onNavigate = vi.fn();
     renderHook(() => useKeyboardShortcuts({ onNavigate, onToggleHelp: vi.fn() }));
-    press('k', { ctrlKey: true });
-    expect(onNavigate).toHaveBeenLastCalledWith('/search');
     press(',', { metaKey: true });
     expect(onNavigate).toHaveBeenLastCalledWith('/settings');
   });
@@ -48,13 +46,13 @@ describe('useKeyboardShortcuts', () => {
     input.remove();
   });
 
-  it('still allows Cmd+K from within a field', () => {
+  it('still allows Cmd+, from within a field', () => {
     const onNavigate = vi.fn();
     renderHook(() => useKeyboardShortcuts({ onNavigate, onToggleHelp: vi.fn() }));
     const input = document.createElement('input');
     document.body.appendChild(input);
-    press('k', { metaKey: true }, input);
-    expect(onNavigate).toHaveBeenCalledWith('/search');
+    press(',', { metaKey: true }, input);
+    expect(onNavigate).toHaveBeenCalledWith('/settings');
     input.remove();
   });
 });

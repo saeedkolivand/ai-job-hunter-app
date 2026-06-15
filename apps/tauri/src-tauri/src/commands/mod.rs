@@ -25,7 +25,6 @@ pub mod profile_import;
 pub mod referrals;
 pub mod resume;
 pub mod scrape;
-pub mod search;
 pub mod support;
 pub mod system;
 pub mod translation;

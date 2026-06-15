@@ -165,14 +165,6 @@ export const ScrapeUrlRequestSchema = z.object({
   url: z.string().url(),
 });
 
-export const HybridSearchRequestSchema = z.object({
-  query: z.string().min(1),
-  collection: z.enum(['jobs', 'resumes', 'skills', 'conversations']),
-  topK: z.number().int().min(1).max(200).default(20),
-  filters: z.record(z.string(), z.unknown()).optional(),
-  semanticWeight: z.number().min(0).max(1).default(0.7),
-});
-
 export const MatchResumeRequestSchema = z.object({
   resumeId: z.string().min(1),
   jobId: z.string().min(1),
@@ -388,6 +380,5 @@ export type ModelInspectResult = z.infer<typeof ModelInspectResultSchema>;
 export type DocumentImportRequest = z.infer<typeof DocumentImportRequestSchema>;
 export type ScrapeBoardRequest = z.infer<typeof ScrapeBoardRequestSchema>;
 export type ScrapeUrlRequest = z.infer<typeof ScrapeUrlRequestSchema>;
-export type HybridSearchRequest = z.infer<typeof HybridSearchRequestSchema>;
 export type MatchResumeRequest = z.infer<typeof MatchResumeRequestSchema>;
 export type MatchResumeBatchRequest = z.infer<typeof MatchResumeBatchRequestSchema>;

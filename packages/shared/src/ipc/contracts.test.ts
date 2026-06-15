@@ -34,7 +34,6 @@ describe('IPC_CHANNELS', () => {
         'referrals',
         'resume',
         'scrape',
-        'search',
         'support',
         'system',
         'updater',
