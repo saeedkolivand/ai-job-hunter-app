@@ -17,6 +17,8 @@ import { useTranslation } from '@ajh/translations';
 import { ActionMenu, Button, SourceBadge, Tag, transition, useNotification } from '@ajh/ui';
 
 import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
+import { useRowMatchScore } from '@/features/jobs/providers';
+import { scoreToLevel } from '@/lib/match-level';
 import { useOpenExternal, usePersistJob } from '@/services';
 import { useSaveFromPosting } from '@/services/use-applications';
 import { useSessionStore } from '@/store/session-store';
@@ -49,10 +51,11 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
   const { t } = useTranslation();
   const notify = useNotification();
   const navigate = useNavigate();
-  const setAIGenerate = useSessionStore((s) => s.setAIGenerate);
+  const setApplicationApply = useSessionStore((s) => s.setApplicationApply);
   const openExternalMutation = useOpenExternal();
   const persistJobMutation = usePersistJob();
   const saveFromPostingMutation = useSaveFromPosting();
+  const { score } = useRowMatchScore(posting.id);
 
   const [interactionTypes, setInteractionTypes] = useState(
     () => new Set(posting.interactions?.map((i) => i.interactionType) || [])
@@ -95,11 +98,33 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
     }
   };
 
-  const handleTailor = () => {
+  // Mirror the autopilot Apply flow: save this posting as an application, seed the
+  // apply session (so the detail page's reset effect skips and the match badge
+  // shows), then open the application's apply/tailor surface (the documents tab).
+  const handleTailor = async () => {
     void trackInteraction('applied');
-    setAIGenerate({ jobAd: posting.description, stage: 'idle', meta: null });
-    void openExternalMutation.mutateAsync(posting.url);
-    void navigate({ to: '/ai-generate' });
+    const res = await saveFromPostingMutation.mutateAsync({
+      jobUrl: posting.url,
+      board: posting.source,
+      company: posting.company,
+      title: posting.title,
+    });
+    if (!res?.id) {
+      notify.error({ message: t('jobs.tailorError') });
+      return;
+    }
+    setApplicationApply({
+      applyForId: res.id,
+      applySeedResume: null,
+      applyMatchLevel: typeof score?.combined === 'number' ? scoreToLevel(score.combined) : null,
+      applyWizardStep: 0,
+      applyWizardForm: null,
+    });
+    void navigate({
+      to: '/applications/$id',
+      params: { id: res.id },
+      search: { tab: 'documents' },
+    });
   };
 
   // Once saved, the button becomes a "View" link to the tracking list.
@@ -197,7 +222,7 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
         </motion.div>
         <Button
           variant="glass"
-          onClick={handleTailor}
+          onClick={() => void handleTailor()}
           title={t('jobs.tailorHint')}
           className="transition-all duration-150 ease-out"
         >
