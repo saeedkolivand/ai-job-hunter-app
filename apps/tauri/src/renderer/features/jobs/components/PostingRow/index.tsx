@@ -14,7 +14,7 @@ import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
 import { useTranslation } from '@ajh/translations';
-import { ActionMenu, Button, SourceBadge, transition, useNotification } from '@ajh/ui';
+import { ActionMenu, Button, SourceBadge, Tag, transition, useNotification } from '@ajh/ui';
 
 import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
 import { useOpenExternal, usePersistJob } from '@/services';
@@ -39,6 +39,11 @@ interface PostingRowProps {
   posting: Posting;
   formatRelativeTime: (timestamp?: number) => string;
 }
+
+// Tiny status-pill shape for the in-row display Tags. Plain (non-CheckableTag)
+// Tags render a <span> with no onClick, so clicks bubble to the row's handler
+// instead of being swallowed — the whole row stays clickable.
+const STATUS_TAG = 'rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider';
 
 export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
   const { t } = useTranslation();
@@ -114,24 +119,13 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
     notify.success({ message: t('applications.savedToTracking') });
   };
 
-  const onRowKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      handleOpen();
-    }
-  };
-
   const saved = interactionTypes.has('bookmarked');
 
+  // The row is NOT clickable: a posting has no detail page, and clicking it must
+  // not open the external job link. Opening the link stays available explicitly
+  // via the row's "⋯ → Open" action. Save / Tailor are their own buttons.
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={handleOpen}
-      onKeyDown={onRowKey}
-      title={t('jobs.open')}
-      className="surface-card group flex items-center gap-5 rounded-xl p-4 pl-5 transition-colors hover:bg-foreground/[0.03]"
-    >
+    <div className="surface-card flex items-center gap-5 rounded-xl p-4 pl-5">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-[11px] font-semibold uppercase tracking-wider text-brand-soft">
         {posting.source.slice(0, 2)}
       </div>
@@ -139,24 +133,24 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
         <div className="flex items-center gap-2 text-sm font-semibold tracking-tight text-foreground/95">
           <span className="truncate">{posting.title}</span>
           {posting.remote && (
-            <span className="rounded-full border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-emerald-300/90">
+            <Tag color="green" className={STATUS_TAG}>
               {t('jobs.remote')}
-            </span>
+            </Tag>
           )}
           {interactionTypes.has('applied') && (
-            <span className="flex items-center gap-1 rounded-full border border-purple-400/20 bg-purple-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-purple-300/90">
-              <CircleCheck size={8} /> {t('jobs.applied')}
-            </span>
+            <Tag color="purple" icon={<CircleCheck size={8} />} className={STATUS_TAG}>
+              {t('jobs.applied')}
+            </Tag>
           )}
           {interactionTypes.has('opened') && (
-            <span className="flex items-center gap-1 rounded-full border border-blue-400/20 bg-blue-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-blue-300/90">
-              <Eye size={8} /> {t('jobs.viewed')}
-            </span>
+            <Tag color="blue" icon={<Eye size={8} />} className={STATUS_TAG}>
+              {t('jobs.viewed')}
+            </Tag>
           )}
           {interactionTypes.has('bookmarked') && (
-            <span className="flex items-center gap-1 rounded-full border border-amber-400/20 bg-amber-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-amber-300/90">
-              <Bookmark size={8} /> {t('jobs.saved')}
-            </span>
+            <Tag color="warning" icon={<Bookmark size={8} />} className={STATUS_TAG}>
+              {t('jobs.saved')}
+            </Tag>
           )}
         </div>
         <div className="mt-1 flex items-center gap-4 text-[11px]">
