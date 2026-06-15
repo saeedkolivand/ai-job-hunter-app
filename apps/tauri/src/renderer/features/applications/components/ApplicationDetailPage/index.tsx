@@ -4,6 +4,7 @@ import {
   ExternalLink,
   FileText,
   HelpCircle,
+  MessagesSquare,
   StickyNote,
   Trash2,
   UserPlus,
@@ -753,6 +754,19 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
             )}
           </Button>
         )}
+        <Button
+          variant="glass"
+          disabled={!controller}
+          onClick={() => controller?.openInterviewQuestions()}
+          className="shrink-0 gap-1.5 text-brand-soft"
+        >
+          <MessagesSquare size={13} /> {t('applications.detail.interview.title')}
+          {controller && controller.interviewQuestionsCount > 0 && (
+            <span className="rounded-full bg-brand/15 px-1.5 py-0.5 text-[9px] text-brand-soft">
+              {controller.interviewQuestionsCount}
+            </span>
+          )}
+        </Button>
         <Button
           variant="glass"
           disabled={!controller}

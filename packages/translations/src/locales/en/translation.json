@@ -2401,6 +2401,8 @@
       "answersTitle": "Application answers",
       "jobLink": "Job link",
       "interview": {
+        "title": "Questions to ask",
+        "hint": "Smart questions to ask your interviewer, from the job + company research.",
         "seedLabel": "Topics to focus on (optional)",
         "seedPlaceholder": "e.g. team structure, roadmap, on-call — comma or line separated",
         "generate": "Suggest questions",

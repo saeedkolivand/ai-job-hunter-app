@@ -109,6 +109,22 @@ vi.mock('@/features/documents/components/TailorFlow/useApplicationAnswers', () =
   useApplicationAnswers: () => answersMock,
 }));
 
+// ── useInterviewQuestions — controlled mock ───────────────────────────────────
+
+const interviewMock = {
+  seedTopics: '',
+  setSeedTopics: vi.fn(),
+  questions: [],
+  generating: false,
+  error: null,
+  generate: vi.fn(),
+  canGenerate: false,
+};
+
+vi.mock('@/hooks/use-interview-questions', () => ({
+  useInterviewQuestions: () => interviewMock,
+}));
+
 // ── Heavy child stubs ─────────────────────────────────────────────────────────
 
 // TailorWizard stub exposes:
@@ -185,6 +201,16 @@ vi.mock('./ApplicationQuestionsModal', () => ({
     <div data-testid="questions-modal">
       <div role="button" tabIndex={0} onClick={onClose}>
         close-questions
+      </div>
+    </div>
+  ),
+}));
+
+vi.mock('./InterviewQuestionsModal', () => ({
+  InterviewQuestionsModal: ({ onClose }: { onClose: () => void }) => (
+    <div data-testid="interview-modal">
+      <div role="button" tabIndex={0} onClick={onClose}>
+        close-interview
       </div>
     </div>
   ),

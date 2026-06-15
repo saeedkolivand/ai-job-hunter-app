@@ -7,11 +7,13 @@ import type { AutopilotFoundJob } from '@ajh/shared';
 import { transition } from '@ajh/ui';
 
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
+import { useInterviewQuestions } from '@/hooks/use-interview-questions';
 import type { TemplateId } from '@/lib/generate';
 import { useExtractText, useResolveJobUrl } from '@/services';
 
 import { ApplicationQuestionsModal } from './ApplicationQuestionsModal';
 import { GeneratingPanel } from './GeneratingPanel';
+import { InterviewQuestionsModal } from './InterviewQuestionsModal';
 import { tailorWizardSchema } from './lib/tailor-schema';
 import { buildTailorDefaults, type TailorWizardState } from './lib/tailor-state';
 import { ReferralModal } from './ReferralModal';
@@ -33,8 +35,10 @@ export type TailorFlowStage = 'configuring' | 'generating' | 'done';
 export interface TailorFlowController {
   stage: TailorFlowStage;
   questionsCount: number;
+  interviewQuestionsCount: number;
   openQuestions: () => void;
   openReferral: () => void;
+  openInterviewQuestions: () => void;
 }
 
 /**
@@ -112,6 +116,7 @@ export function TailorFlow({
 
   const [referralOpen, setReferralOpen] = useState(false);
   const [questionsOpen, setQuestionsOpen] = useState(false);
+  const [interviewOpen, setInterviewOpen] = useState(false);
   // "Edit settings" forces the configuring stage even though output exists; cleared
   // when the next run starts (output is intentionally preserved underneath).
   const [forceConfiguring, setForceConfiguring] = useState(false);
@@ -144,6 +149,19 @@ export function TailorFlow({
     jobDesc,
     model,
     researchCompany,
+    meta: gen.meta,
+    canUse,
+    hasDesc,
+    jobUrl,
+    board,
+  });
+
+  // "Questions to ask the interviewer" — the second assistant. Same inputs; it
+  // always gathers its own company/role research (not gated on the toggle).
+  const interview = useInterviewQuestions({
+    resume: methods.getValues('resume'),
+    jobDesc,
+    model,
     meta: gen.meta,
     canUse,
     hasDesc,
@@ -189,14 +207,17 @@ export function TailorFlow({
 
   // Surface the imperative controller to the host (header triggers + derived stage).
   const questionsCount = questions.selected.size;
+  const interviewQuestionsCount = interview.questions.length;
   useEffect(() => {
     onController?.({
       stage,
       questionsCount,
+      interviewQuestionsCount,
       openQuestions: () => setQuestionsOpen(true),
       openReferral: () => setReferralOpen(true),
+      openInterviewQuestions: () => setInterviewOpen(true),
     });
-  }, [stage, questionsCount, onController]);
+  }, [stage, questionsCount, interviewQuestionsCount, onController]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -268,6 +289,10 @@ export function TailorFlow({
 
       {questionsOpen && (
         <ApplicationQuestionsModal {...questions} onClose={() => setQuestionsOpen(false)} />
+      )}
+
+      {interviewOpen && (
+        <InterviewQuestionsModal {...interview} onClose={() => setInterviewOpen(false)} />
       )}
 
       {referralOpen && (
