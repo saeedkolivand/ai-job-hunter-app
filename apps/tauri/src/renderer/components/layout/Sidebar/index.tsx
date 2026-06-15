@@ -23,6 +23,7 @@ import { Button, cn, NavPill, transition, variants } from '@ajh/ui';
 import { ROUTES } from '@/constants/routes';
 import { getTimeGreeting } from '@/lib/greeting';
 import type { DetailTab } from '@/routes/applications.$id';
+import { useContactProfile } from '@/services';
 import { useAppVersion } from '@/services/use-system';
 import { useUserName } from '@/store/preferences-store';
 
@@ -69,6 +70,9 @@ export function Sidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const search = useRouterState({ select: (s) => s.location.search as { tab?: DetailTab } });
   const userName = useUserName();
+  // Use the contact-profile photo (a local data: URL) as the footer avatar when set.
+  const { data: contactProfile } = useContactProfile();
+  const avatar = contactProfile?.photo;
 
   // Remember the last Application detail the user viewed so the sidebar item
   // returns there instead of always resetting to the list (TanStack <Link>
@@ -159,9 +163,17 @@ export function Sidebar() {
       <div className="space-y-2 px-3 pb-3">
         {userName && (
           <div className="flex items-center gap-2.5 px-1">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-soft/25 to-brand/10 ring-1 ring-brand/20">
-              <User size={15} className="text-brand-soft" />
-            </div>
+            {avatar ? (
+              <img
+                src={avatar}
+                alt=""
+                className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-brand/20"
+              />
+            ) : (
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-soft/25 to-brand/10 ring-1 ring-brand/20">
+                <User size={15} className="text-brand-soft" />
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium leading-tight text-foreground/85">
                 {userName}
