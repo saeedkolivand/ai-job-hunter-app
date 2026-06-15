@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { GenerationMeta } from '../generate/modes.js';
+import type { GenerationMeta } from '../generate/modes/index.js';
 import {
   buildBuilderSystemPrompt,
   buildInterviewResumePrompt,

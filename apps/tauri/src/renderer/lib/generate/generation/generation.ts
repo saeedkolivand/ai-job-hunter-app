@@ -406,6 +406,8 @@ export async function generateInterviewQuestions(params: {
   model: string;
   companyBrief?: string;
   seedTopics?: string[];
+  /** Target interviewers (canonical audience ids) — N questions per audience. */
+  audiences?: string[];
   signal?: AbortSignal;
   onToken?: (tok: string) => void;
 }): Promise<string> {
@@ -416,6 +418,7 @@ export async function generateInterviewQuestions(params: {
     model,
     companyBrief = '',
     seedTopics = [],
+    audiences = [],
     signal,
     onToken,
   } = params;
@@ -432,6 +435,7 @@ export async function generateInterviewQuestions(params: {
     meta,
     companyBrief,
     seedTopics,
+    audiences,
     target: profile,
     market,
   });

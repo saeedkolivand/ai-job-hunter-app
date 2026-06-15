@@ -1,16 +1,15 @@
-import { HelpCircle, MessagesSquare, Sparkles } from 'lucide-react';
+import { MessagesSquare, Sparkles } from 'lucide-react';
 
 import type { AiGenerationRecord, Application, InterviewQuestion } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, CardSkeleton, EmptyState, TextArea } from '@ajh/ui';
 
+import { AudienceSelector } from '@/components/interview/AudienceSelector';
+import { InterviewQuestionsAccordion } from '@/components/interview/InterviewQuestionsAccordion';
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { useDefaultResumeId } from '@/features/jobs/hooks/useDefaultResumeId';
 import { useInterviewQuestions } from '@/hooks/use-interview-questions';
 import { useDocuments, useDocumentText, useResolveJobUrl } from '@/services';
-
-/** Group order for the audience sections (matches the prompt's audience tags). */
-const AUDIENCE_ORDER = ['recruiter', 'hiringManager', 'team', 'leadership', 'general'] as const;
 
 interface Props {
   application: Application;
@@ -60,16 +59,16 @@ export function InterviewPrepTab({ application, matchingGenerations }: Props) {
   // Freshly-generated set wins; before any generation, show the saved set (if any).
   const displayed: InterviewQuestion[] =
     iq.questions.length > 0 ? iq.questions : (saved?.interviewQuestions ?? []);
-  const grouped = AUDIENCE_ORDER.map((aud) => ({
-    aud,
-    items: displayed.filter((q) => q.audience === aud),
-  })).filter((g) => g.items.length > 0);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Toolbar — seed topics + generate */}
+      {/* Toolbar — audience selector + seed topics + generate */}
       <div className="shrink-0 space-y-2 border-b border-white/[0.06] px-8 py-3">
-        <label htmlFor="iq-seeds" className="text-xs font-medium text-foreground/70">
+        <span className="block text-xs font-medium text-foreground/70">
+          {t('applications.detail.interview.audienceLabel')}
+        </span>
+        <AudienceSelector selected={iq.audiences} onToggle={iq.toggleAudience} />
+        <label htmlFor="iq-seeds" className="block pt-1 text-xs font-medium text-foreground/70">
           {t('applications.detail.interview.seedLabel')}
         </label>
         <div className="flex items-start gap-2">
@@ -121,30 +120,7 @@ export function InterviewPrepTab({ application, matchingGenerations }: Props) {
             />
           </div>
         ) : (
-          <div className="space-y-5">
-            {grouped.map(({ aud, items }) => (
-              <div key={aud} className="space-y-2">
-                <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
-                  {t(`applications.detail.interview.audience.${aud}`)}
-                </span>
-                <ul className="space-y-2.5">
-                  {items.map((q) => (
-                    <li key={q.id} className="border-l border-white/[0.06] pl-3">
-                      <p className="select-text text-[12px] leading-relaxed text-foreground/85">
-                        {q.question}
-                      </p>
-                      {q.why && (
-                        <p className="mt-0.5 flex items-start gap-1 text-[11px] leading-relaxed text-foreground/45">
-                          <HelpCircle size={11} className="mt-0.5 shrink-0 text-brand-soft/70" />
-                          {q.why}
-                        </p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
+          <InterviewQuestionsAccordion questions={displayed} />
         )}
       </div>
     </div>

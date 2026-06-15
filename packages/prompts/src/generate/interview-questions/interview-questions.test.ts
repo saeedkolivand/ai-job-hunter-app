@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import type { GenerationMeta } from '../modes/index.js';
 import {
   buildInterviewQuestionsPrompt,
   buildInterviewQuestionsSystemPrompt,
 } from './interview-questions.js';
-import type { GenerationMeta } from './modes.js';
 
 const META: GenerationMeta = {
   resumeLanguage: 'en',
@@ -28,6 +28,15 @@ describe('buildInterviewQuestionsSystemPrompt', () => {
     expect(sys).toContain('Q:');
     expect(sys).toContain('WHY:');
     expect(sys).toContain('AUDIENCE:');
+  });
+
+  it('keeps recruiter/HR + hiring-manager questions non-technical and allows hook-anchored culture questions', () => {
+    const sys = buildInterviewQuestionsSystemPrompt();
+    // Recruiter/HR + hiring-manager lens is explicitly non-technical.
+    expect(sys).toMatch(/NON-technical/i);
+    // Culture / work-life is allowed, but only anchored to a concrete hook.
+    expect(sys).toMatch(/work-life/i);
+    expect(sys).toMatch(/anchored to a concrete hook/i);
   });
 });
 
@@ -62,7 +71,7 @@ describe('buildInterviewQuestionsPrompt', () => {
     expect(prompt).toContain('team growth');
   });
 
-  it('requests the configured number of questions', () => {
+  it('requests the configured number of questions (no-audience fallback)', () => {
     const prompt = buildInterviewQuestionsPrompt({
       resume: 'R',
       jobAd: 'JD',
@@ -70,5 +79,40 @@ describe('buildInterviewQuestionsPrompt', () => {
       count: 4,
     });
     expect(prompt).toMatch(/Write 4 strong/i);
+    // The fallback addresses a single interviewer, not a per-audience list.
+    expect(prompt).not.toMatch(/for EACH of these interviewers/i);
+  });
+
+  it('targets each selected audience with its own focus when audiences are given', () => {
+    const prompt = buildInterviewQuestionsPrompt({
+      resume: 'R',
+      jobAd: 'JD',
+      meta: META,
+      audiences: ['recruiter', 'team'],
+      perAudienceCount: 4,
+    });
+    expect(prompt).toMatch(/Write 4 strong/i);
+    expect(prompt).toMatch(/for EACH of these interviewers/i);
+    expect(prompt).toMatch(/Tag each question with its AUDIENCE/i);
+    // Each selected audience gets its own focus line, in canonical order.
+    expect(prompt).toContain('- recruiter:');
+    expect(prompt).toContain('- team:');
+    // Recruiter focus is the HR/first-round, non-technical lens.
+    expect(prompt).toMatch(/work-life/i);
+    // Unselected audiences are not requested.
+    expect(prompt).not.toContain('- leadership:');
+    expect(prompt).not.toContain('- hiringManager:');
+  });
+
+  it('ignores unknown audience ids and keeps canonical order', () => {
+    const prompt = buildInterviewQuestionsPrompt({
+      resume: 'R',
+      jobAd: 'JD',
+      meta: META,
+      audiences: ['bogus', 'team', 'recruiter'],
+    });
+    // Unknown dropped; recruiter precedes team (canonical order), not request order.
+    expect(prompt).not.toContain('- bogus:');
+    expect(prompt.indexOf('- recruiter:')).toBeLessThan(prompt.indexOf('- team:'));
   });
 });

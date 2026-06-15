@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { useTranslation } from '@ajh/translations';
@@ -19,6 +19,7 @@ import { useUpdateAiGeneration } from '@/services/use-ai-generations';
 import {
   EMPTY_SESSION,
   type GenerationResult,
+  type GenerationSession,
   type TailorTarget,
   useGenerationStore,
 } from '@/store/generation-store';
@@ -83,6 +84,7 @@ export function useTailorGeneration({
   const setActiveOutInStore = useGenerationStore((s) => s.setActiveOut);
   const setOutputInStore = useGenerationStore((s) => s.setOutput);
   const setSavedIdInStore = useGenerationStore((s) => s.setSavedId);
+  const hydrateInStore = useGenerationStore((s) => s.hydrate);
 
   const { generating, phase, resumeOut, coverOut, thinking, activeOut, error, meta, savedId } =
     session;
@@ -179,6 +181,15 @@ export function useTailorGeneration({
   const abort = () => cancel(contextId);
   const setActiveOut = (which: 'resume' | 'cover') => setActiveOutInStore(contextId, which);
 
+  // Seed this session from a persisted record (cold-entry hydration). Stable
+  // reference so the host's seed-once effect doesn't re-fire every render; the
+  // store guards against clobbering an in-flight/edited session.
+  const hydrate = useCallback(
+    (seed: Pick<GenerationSession, 'resumeOut' | 'coverOut' | 'meta' | 'savedId'>) =>
+      hydrateInStore(contextId, seed),
+    [hydrateInStore, contextId]
+  );
+
   const phaseLabel =
     phase === 'analyzing'
       ? t('autopilot.apply.analyzing')
@@ -237,6 +248,8 @@ export function useTailorGeneration({
     exportAs,
     // Inline edit of the active document (F1) — session-immediate + debounced persist.
     editActiveOutput,
+    // Cold-entry hydration from a persisted record (no-clobber, idempotent).
+    hydrate,
     // Detected metadata — lets the questions assistant reuse it instead of re-extracting.
     meta,
   };

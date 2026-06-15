@@ -10,18 +10,18 @@
  * web brief via {@link buildCompanyResearchBlock}.
  */
 
-import { truncateResume } from '../context-manager/index.js';
-import { letterConventions } from '../locale/index.js';
-import { type PromptTarget, resolveProfile } from '../provider/index.js';
+import { truncateResume } from '../../context-manager/index.js';
+import { letterConventions } from '../../locale/index.js';
+import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import {
   type ApplicantPreferences,
   buildApplicantDetailsBlock,
   buildCompanyResearchBlock,
   buildGroundingBlock,
-} from './emphasis.js';
-import { stripLinkBlock } from './links.js';
-import type { GenerationMeta } from './modes.js';
-import { ANTI_AI_TELL_PROSE } from './natural-voice.js';
+} from '../emphasis/index.js';
+import { stripLinkBlock } from '../links/index.js';
+import type { GenerationMeta } from '../modes/index.js';
+import { ANTI_AI_TELL_PROSE } from '../natural-voice/index.js';
 
 export type ApplicationQuestionCategory =
   | 'motivation'

@@ -785,6 +785,7 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
           board={application.board ?? ''}
           contextId={contextId}
           jobUrl={application.jobUrl}
+          seedGeneration={matchingGenerations[0]}
           persistence={persistence}
           onController={setController}
         />

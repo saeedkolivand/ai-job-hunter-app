@@ -2372,12 +2372,13 @@
         "emptyDesc": "Generiere präzise, gut recherchierte Fragen für dein Interview.",
         "needsModel": "Wähle in den Einstellungen ein KI-Modell, um Fragen zu generieren.",
         "needsJob": "Für passende Fragen wird eine Stellenbeschreibung benötigt.",
+        "audienceLabel": "Fragen generieren für",
         "audience": {
-          "recruiter": "Für den Recruiter",
-          "hiringManager": "Für den Hiring Manager",
-          "team": "Für das Team",
-          "leadership": "Für die Führungsebene",
-          "general": "Für alle"
+          "recruiter": "Recruiter / HR (1. Runde)",
+          "hiringManager": "Hiring Manager",
+          "team": "Team",
+          "leadership": "Führungsebene",
+          "general": "Alle"
         }
       },
       "notFound": "Bewerbung nicht gefunden",

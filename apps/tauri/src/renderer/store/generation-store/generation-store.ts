@@ -87,6 +87,17 @@ interface GenerationStore {
   setOutput: (id: string, which: 'resume' | 'cover', text: string) => void;
   /** Record the persisted id after a clean run saves the session's result. */
   setSavedId: (id: string, savedId: string) => void;
+  /**
+   * Seed a session from a persisted record so the flow opens on the results
+   * (`done`) stage instead of the wizard. No-clobber + idempotent: writes ONLY
+   * when the session is empty (not generating, no output, unsaved), so it is
+   * safe to call from a render-effect — repeat calls and in-flight/edited
+   * sessions are left untouched.
+   */
+  hydrate: (
+    id: string,
+    seed: Pick<GenerationSession, 'resumeOut' | 'coverOut' | 'meta' | 'savedId'>
+  ) => void;
   /** Cancel an in-flight run for a context id. */
   cancel: (id: string) => void;
   /** Drop a session entirely. */
@@ -127,6 +138,29 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
       patch(id, which === 'resume' ? { resumeOut: text } : { coverOut: text }),
 
     setSavedId: (id, savedId) => patch(id, { savedId }),
+
+    hydrate: (id, seed) =>
+      set((state) => {
+        const existing = state.sessions[id] ?? EMPTY_SESSION;
+        // Never clobber an in-flight run, existing output, or a saved session —
+        // the live session (or the user's in-progress work) always wins.
+        if (existing.generating || existing.resumeOut || existing.coverOut || existing.savedId) {
+          return state;
+        }
+        return {
+          sessions: {
+            ...state.sessions,
+            [id]: {
+              ...EMPTY_SESSION,
+              resumeOut: seed.resumeOut,
+              coverOut: seed.coverOut,
+              meta: seed.meta,
+              savedId: seed.savedId,
+              activeOut: seed.resumeOut ? 'resume' : 'cover',
+            },
+          },
+        };
+      }),
 
     cancel: (id) => {
       controllers.get(id)?.abort();

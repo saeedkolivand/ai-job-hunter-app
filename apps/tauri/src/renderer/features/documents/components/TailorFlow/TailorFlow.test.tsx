@@ -86,6 +86,7 @@ const genMock = {
   copy: vi.fn(),
   exportAs: vi.fn(),
   editActiveOutput: vi.fn(),
+  hydrate: vi.fn(),
   meta: null,
 };
 
@@ -114,6 +115,8 @@ vi.mock('@/features/documents/components/TailorFlow/useApplicationAnswers', () =
 const interviewMock = {
   seedTopics: '',
   setSeedTopics: vi.fn(),
+  audiences: ['recruiter', 'hiringManager'],
+  toggleAudience: vi.fn(),
   questions: [],
   generating: false,
   error: null,
@@ -228,7 +231,7 @@ vi.mock('./ReferralModal', () => ({
 
 // ── Import component after all mocks ─────────────────────────────────────────
 
-import type { AutopilotFoundJob } from '@ajh/shared';
+import type { AiGenerationRecord, AutopilotFoundJob } from '@ajh/shared';
 
 import type { TemplateId } from '@/lib/generate';
 
@@ -248,6 +251,28 @@ const JOB: AutopilotFoundJob = {
   description: 'Build great things.',
   location: undefined,
   foundAt: Date.now(),
+};
+
+const SAVED_GENERATION: AiGenerationRecord = {
+  id: 'rec-1',
+  createdAt: Date.now(),
+  candidateName: 'Ada Lovelace',
+  jobTitle: 'Senior Engineer',
+  companyName: 'Acme',
+  resumeLanguage: 'en',
+  jobAdLanguage: 'en',
+  targetLanguage: 'en',
+  mismatch: false,
+  topRequirements: ['rust'],
+  mode: 'ats',
+  resumeText: 'SAVED RESUME',
+  coverLetterText: 'SAVED COVER',
+  jobAd: 'Build great things.',
+  jobUrl: 'https://acme.com/jobs/1',
+  board: 'linkedin',
+  applicationAnswers: [],
+  companyBrief: '',
+  interviewQuestions: [],
 };
 
 type MockedPersistence = Omit<
@@ -277,6 +302,7 @@ function makePersistence(overrides: Partial<MockedPersistence> = {}): MockedPers
 function renderFlow(opts: {
   persistence?: TailorFlowPersistence;
   onController?: (c: TailorFlowController) => void;
+  seedGeneration?: AiGenerationRecord;
 }) {
   const persistence = opts.persistence ?? makePersistence();
   return render(
@@ -286,6 +312,7 @@ function renderFlow(opts: {
       board="linkedin"
       contextId="autopilot:https://acme.com/jobs/1"
       jobUrl="https://acme.com/jobs/1"
+      seedGeneration={opts.seedGeneration}
       persistence={persistence}
       onController={opts.onController}
     />
@@ -301,6 +328,7 @@ beforeEach(() => {
   genMock.output = '';
   genMock.generate.mockClear();
   genMock.abort.mockClear();
+  genMock.hydrate.mockClear();
   answersMock.selected = new Set<string>();
   answersMock.generate.mockClear();
 });
@@ -616,5 +644,44 @@ describe('TailorFlow — controller seam', () => {
     // Verify no crash when onController prop is omitted.
     expect(() => renderFlow({})).not.toThrow();
     expect(screen.getByTestId('tailor-wizard')).toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. Cold-entry hydration — seedGeneration → gen.hydrate
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('TailorFlow — cold-entry hydration', () => {
+  it('hydrates the session from seedGeneration (mapped text + id + meta)', () => {
+    renderFlow({ seedGeneration: SAVED_GENERATION });
+
+    expect(genMock.hydrate).toHaveBeenCalledTimes(1);
+    expect(genMock.hydrate).toHaveBeenCalledWith({
+      resumeOut: 'SAVED RESUME',
+      coverOut: 'SAVED COVER',
+      savedId: 'rec-1',
+      meta: {
+        candidateName: 'Ada Lovelace',
+        jobTitle: 'Senior Engineer',
+        companyName: 'Acme',
+        resumeLanguage: 'en',
+        jobAdLanguage: 'en',
+        mismatch: false,
+        targetLanguage: 'en',
+        topRequirements: ['rust'],
+      },
+    });
+  });
+
+  it('does not hydrate when no seedGeneration is provided', () => {
+    renderFlow({});
+    expect(genMock.hydrate).not.toHaveBeenCalled();
+  });
+
+  it('does not hydrate when the saved record has no résumé or cover text', () => {
+    renderFlow({
+      seedGeneration: { ...SAVED_GENERATION, resumeText: '', coverLetterText: '' },
+    });
+    expect(genMock.hydrate).not.toHaveBeenCalled();
   });
 });

@@ -1,16 +1,16 @@
 /** Resume generation — system prompt (brief / task / full) + user prompt. */
 
-import { truncateResume } from '../context-manager/index.js';
-import { resumeConventions } from '../locale/index.js';
-import { type PromptTarget, resolveProfile } from '../provider/index.js';
+import { truncateResume } from '../../context-manager/index.js';
+import { resumeConventions } from '../../locale/index.js';
+import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import {
   buildEmphasisBlock,
   buildEmphasisDirectivesBlock,
   buildGroundingBlock,
-} from './emphasis.js';
-import { buildBodyLinksBlock, parseLinksFromResume, stripLinkBlock } from './links.js';
-import { type GenerationMeta, type GenerationMode, MODES } from './modes.js';
-import { ANTI_AI_TELL_LEXICAL } from './natural-voice.js';
+} from '../emphasis/index.js';
+import { buildBodyLinksBlock, parseLinksFromResume, stripLinkBlock } from '../links/index.js';
+import { type GenerationMeta, type GenerationMode, MODES } from '../modes/index.js';
+import { ANTI_AI_TELL_LEXICAL } from '../natural-voice/index.js';
 
 /**
  * ATS keyword match outranks the anti-AI-tell word bans: an exact <job_ad> term

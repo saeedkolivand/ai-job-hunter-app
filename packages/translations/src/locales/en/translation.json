@@ -2412,12 +2412,13 @@
         "emptyDesc": "Generate sharp, well-researched questions to ask your interviewer.",
         "needsModel": "Select an AI model in settings to generate questions.",
         "needsJob": "A job description is needed to tailor the questions.",
+        "audienceLabel": "Generate questions for",
         "audience": {
-          "recruiter": "For the recruiter",
-          "hiringManager": "For the hiring manager",
-          "team": "For the team",
-          "leadership": "For leadership",
-          "general": "For anyone"
+          "recruiter": "Recruiter / HR (1st round)",
+          "hiringManager": "Hiring manager",
+          "team": "Team",
+          "leadership": "Leadership",
+          "general": "Anyone"
         }
       },
       "notFound": "Application not found",

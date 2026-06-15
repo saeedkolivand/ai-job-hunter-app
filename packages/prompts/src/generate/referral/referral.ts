@@ -21,10 +21,10 @@
  * résumé context the prompt carries and how verbose the framing is.
  */
 
-import { truncateResume } from '../context-manager/index.js';
-import { type PromptTarget, resolveProfile } from '../provider/index.js';
-import { stripLinkBlock } from './links.js';
-import { ANTI_AI_TELL_PROSE } from './natural-voice.js';
+import { truncateResume } from '../../context-manager/index.js';
+import { type PromptTarget, resolveProfile } from '../../provider/index.js';
+import { stripLinkBlock } from '../links/index.js';
+import { ANTI_AI_TELL_PROSE } from '../natural-voice/index.js';
 
 /** The outreach format the user picked — drives the variant + any hard limits. */
 export type ReferralFormat = 'email' | 'linkedin_message' | 'connection_note';

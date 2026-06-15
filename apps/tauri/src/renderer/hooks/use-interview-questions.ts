@@ -13,6 +13,9 @@ import {
 import { useAppClient } from '@/providers/AppClientProvider';
 import { keys } from '@/services/query-client';
 
+/** Default target interviewers — the two earliest rounds (recruiter/HR + hiring manager). */
+const DEFAULT_AUDIENCES = ['recruiter', 'hiringManager'];
+
 interface Params {
   resume: string;
   jobDesc: string;
@@ -50,11 +53,18 @@ export function useInterviewQuestions({
   const api = useAppClient();
   const qc = useQueryClient();
   const [seedTopics, setSeedTopics] = useState('');
+  // Target interviewers to generate for. Defaults to the two earliest rounds; the
+  // user narrows or widens via the audience selector. Questions are generated PER
+  // selected audience, tuned to that interviewer's lens.
+  const [audiences, setAudiences] = useState<string[]>(DEFAULT_AUDIENCES);
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canGenerate = canUse && hasDesc && resume.trim().length > 0;
+  const toggleAudience = (aud: string) =>
+    setAudiences((prev) => (prev.includes(aud) ? prev.filter((a) => a !== aud) : [...prev, aud]));
+
+  const canGenerate = canUse && hasDesc && resume.trim().length > 0 && audiences.length > 0;
 
   const generate = async () => {
     if (!canGenerate || generating) return;
@@ -76,6 +86,7 @@ export function useInterviewQuestions({
         model,
         companyBrief: brief,
         seedTopics: seeds,
+        audiences,
       });
       const parsed = parseInterviewQuestions(raw);
       setQuestions(parsed);
@@ -109,5 +120,15 @@ export function useInterviewQuestions({
     }
   };
 
-  return { seedTopics, setSeedTopics, questions, generating, error, generate, canGenerate };
+  return {
+    seedTopics,
+    setSeedTopics,
+    audiences,
+    toggleAudience,
+    questions,
+    generating,
+    error,
+    generate,
+    canGenerate,
+  };
 }

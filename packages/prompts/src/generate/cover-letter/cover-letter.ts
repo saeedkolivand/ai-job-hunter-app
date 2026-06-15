@@ -1,8 +1,8 @@
 /** Cover-letter generation — system prompt (brief / task / full) + user prompt. */
 
-import { truncateResume } from '../context-manager/index.js';
-import { letterConventions } from '../locale/index.js';
-import { type PromptTarget, resolveProfile } from '../provider/index.js';
+import { truncateResume } from '../../context-manager/index.js';
+import { letterConventions } from '../../locale/index.js';
+import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import {
   type ApplicantPreferences,
   buildApplicantDetailsBlock,
@@ -10,10 +10,10 @@ import {
   buildEmphasisDirectivesBlock,
   buildGroundingBlock,
   buildLetterEmphasisBlock,
-} from './emphasis.js';
-import { parseLinksFromResume, stripLinkBlock } from './links.js';
-import { type GenerationMeta, type GenerationMode, MODES } from './modes.js';
-import { ANTI_AI_TELL_PROSE } from './natural-voice.js';
+} from '../emphasis/index.js';
+import { parseLinksFromResume, stripLinkBlock } from '../links/index.js';
+import { type GenerationMeta, type GenerationMode, MODES } from '../modes/index.js';
+import { ANTI_AI_TELL_PROSE } from '../natural-voice/index.js';
 
 /**
  * Build the `<market_conventions>` block for the resolved job market. The letter

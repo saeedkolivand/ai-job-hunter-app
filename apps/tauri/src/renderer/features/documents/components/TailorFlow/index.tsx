@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 
-import type { AutopilotFoundJob } from '@ajh/shared';
+import type { AiGenerationRecord, AutopilotFoundJob } from '@ajh/shared';
 import { transition } from '@ajh/ui';
 
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
@@ -65,6 +65,12 @@ export interface TailorFlowProps {
   contextId: string;
   /** Saved onto the AiGeneration record. */
   jobUrl: string;
+  /**
+   * Latest persisted generation for this job, if any. When the live generation
+   * session is empty (e.g. a cold app start), the flow seeds itself from this
+   * record so it opens on the results (`done`) stage instead of the wizard.
+   */
+  seedGeneration?: AiGenerationRecord;
   persistence: TailorFlowPersistence;
   onController?: (c: TailorFlowController) => void;
 }
@@ -86,6 +92,7 @@ export function TailorFlow({
   board,
   contextId,
   jobUrl,
+  seedGeneration,
   persistence,
   onController,
 }: TailorFlowProps) {
@@ -140,6 +147,33 @@ export function TailorFlow({
     templateId: persistence.templateId,
     atsMode: persistence.atsMode,
   });
+
+  // Cold-entry hydration: when a prior generation is persisted for this job and
+  // the live session is empty, seed it so the flow opens on the results panel
+  // (`done`) instead of the wizard. The store guards re-entry (no-op once a
+  // session has output / a savedId / is generating), so this never clobbers
+  // in-progress work; `gen.hydrate` is stable so the effect fires once per record.
+  const hydrateSession = gen.hydrate;
+  useEffect(() => {
+    if (!seedGeneration) return;
+    const { resumeText: savedResume, coverLetterText } = seedGeneration;
+    if (!savedResume && !coverLetterText) return;
+    hydrateSession({
+      resumeOut: savedResume,
+      coverOut: coverLetterText,
+      savedId: seedGeneration.id,
+      meta: {
+        candidateName: seedGeneration.candidateName,
+        jobTitle: seedGeneration.jobTitle,
+        companyName: seedGeneration.companyName,
+        resumeLanguage: seedGeneration.resumeLanguage,
+        jobAdLanguage: seedGeneration.jobAdLanguage,
+        mismatch: seedGeneration.mismatch,
+        targetLanguage: seedGeneration.targetLanguage,
+        topRequirements: seedGeneration.topRequirements,
+      },
+    });
+  }, [seedGeneration, hydrateSession]);
 
   // Lifted out of ResultsPanel so the modal can fully unmount on close without
   // losing the user's picks/answers (the hook holds non-rehydrated local state)

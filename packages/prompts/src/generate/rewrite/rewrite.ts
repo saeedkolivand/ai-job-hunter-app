@@ -12,8 +12,8 @@
  * prompt carries (more for large-context providers, bounded for small models).
  */
 
-import { type PromptTarget, resolveProfile } from '../provider/index.js';
-import { ANTI_AI_TELL_LEXICAL, ANTI_AI_TELL_PROSE } from './natural-voice.js';
+import { type PromptTarget, resolveProfile } from '../../provider/index.js';
+import { ANTI_AI_TELL_LEXICAL, ANTI_AI_TELL_PROSE } from '../natural-voice/index.js';
 
 export type RewriteDocType = 'resume' | 'cover-letter';
 

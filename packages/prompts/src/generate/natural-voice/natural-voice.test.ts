@@ -20,12 +20,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildApplicationAnswerSystemPrompt } from './application-questions.js';
-import { buildCoverLetterSystemPrompt } from './cover-letter.js';
+import { buildApplicationAnswerSystemPrompt } from '../application-questions/index.js';
+import { buildCoverLetterSystemPrompt } from '../cover-letter/index.js';
+import { buildReferralPrompt } from '../referral/index.js';
+import { buildResumeSystemPrompt } from '../resume/index.js';
+import { buildRewritePrompt } from '../rewrite/index.js';
 import { ANTI_AI_TELL_LEXICAL, ANTI_AI_TELL_PROSE } from './natural-voice.js';
-import { buildReferralPrompt } from './referral.js';
-import { buildResumeSystemPrompt } from './resume.js';
-import { buildRewritePrompt } from './rewrite.js';
 
 // ─── stable phrase anchors ────────────────────────────────────────────────────
 // These are phrases in the current source that uniquely identify a block.

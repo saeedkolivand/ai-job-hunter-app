@@ -1,8 +1,8 @@
 /** Metadata-extraction prompt + validator. */
 
-import { type PromptTarget, resolveProfile } from '../provider/index.js';
-import { parseLinksFromResume, stripLinkBlock } from './links.js';
-import type { GenerationMeta } from './modes.js';
+import { type PromptTarget, resolveProfile } from '../../provider/index.js';
+import { parseLinksFromResume, stripLinkBlock } from '../links/index.js';
+import type { GenerationMeta } from '../modes/index.js';
 
 export function buildMetadataPrompt(
   resume: string,

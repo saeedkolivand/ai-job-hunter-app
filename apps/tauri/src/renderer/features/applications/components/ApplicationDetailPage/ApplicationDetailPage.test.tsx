@@ -103,7 +103,11 @@ vi.mock('@/features/jobs/hooks/useDefaultResumeId', () => ({
 // ── TailorFlow stub — keep the heavy generation tree out of the render ────────
 
 vi.mock('@/features/documents/components/TailorFlow', () => ({
-  TailorFlow: () => <div data-testid="tailor-flow" />,
+  // Surface the injected seedGeneration id so we can assert DocumentsTab wires the
+  // latest matching record (cold-entry hydration source).
+  TailorFlow: ({ seedGeneration }: { seedGeneration?: { id: string } }) => (
+    <div data-testid="tailor-flow" data-seedgenid={seedGeneration?.id ?? ''} />
+  ),
 }));
 
 // ── GenerationCard stub ───────────────────────────────────────────────────────
@@ -260,6 +264,46 @@ describe('ApplicationDetailPage — generation matching (Documents tab)', () => 
     expect(screen.queryByTestId('generation-card')).not.toBeInTheDocument();
     // TailorFlow still mounts so the user can generate inline.
     expect(screen.getByTestId('tailor-flow')).toBeInTheDocument();
+  });
+
+  it('passes the matching generation to TailorFlow as the seedGeneration (cold-entry source)', () => {
+    mockTab = 'documents';
+    const app = makeApp({ jobUrl: 'https://acme.com/job/1' });
+
+    mockUseApplication.mockReturnValue({
+      data: { application: app, events: [] },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({
+      data: [
+        makeGen({ id: 'gen-1', jobUrl: 'https://acme.com/job/1' }),
+        makeGen({ id: 'gen-2', jobUrl: 'https://other.com/x' }),
+      ],
+    });
+
+    render(<ApplicationDetailPage />);
+
+    // Only gen-1 matches the application's jobUrl → it seeds the flow.
+    expect(screen.getByTestId('tailor-flow')).toHaveAttribute('data-seedgenid', 'gen-1');
+  });
+
+  it('passes no seedGeneration to TailorFlow when nothing matches', () => {
+    mockTab = 'documents';
+    const app = makeApp({ jobUrl: 'https://acme.com/job/1' });
+
+    mockUseApplication.mockReturnValue({
+      data: { application: app, events: [] },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({
+      data: [makeGen({ id: 'gen-x', jobUrl: 'https://different.com/job/99' })],
+    });
+
+    render(<ApplicationDetailPage />);
+
+    expect(screen.getByTestId('tailor-flow')).toHaveAttribute('data-seedgenid', '');
   });
 
   it('does NOT match generations when the application jobUrl is empty', () => {

@@ -4,18 +4,18 @@
  * `@ajh/prompts/generate` entry point.
  */
 
-export * from './application-questions.js';
-export * from './cover-letter.js';
-export * from './emphasis.js';
-export * from './interview-questions.js';
-export * from './links.js';
-export * from './metadata.js';
-export * from './modes.js';
-export * from './natural-voice.js';
-export * from './referral.js';
-export * from './resume.js';
-export * from './rewrite.js';
-export * from './text.js';
+export * from './application-questions/index.js';
+export * from './cover-letter/index.js';
+export * from './emphasis/index.js';
+export * from './interview-questions/index.js';
+export * from './links/index.js';
+export * from './metadata/index.js';
+export * from './modes/index.js';
+export * from './natural-voice/index.js';
+export * from './referral/index.js';
+export * from './resume/index.js';
+export * from './rewrite/index.js';
+export * from './text/index.js';
 
 // Market resolution lives in the locale module but is consumed alongside the
 // generation builders (cover letter + application answers), so it's re-exported

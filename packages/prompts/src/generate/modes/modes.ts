@@ -1,6 +1,6 @@
 /** Generation modes + metadata shape. */
 
-import type { EmphasisId } from './emphasis.js';
+import type { EmphasisId } from '../emphasis/index.js';
 
 export type GenerationMode =
   | 'ats' // Conservative ATS Optimization
