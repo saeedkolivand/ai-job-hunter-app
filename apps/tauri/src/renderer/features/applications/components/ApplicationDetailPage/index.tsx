@@ -194,7 +194,7 @@ function SlimLayout({
 /** The bordered tabbed-panel surface (fills its parent height). */
 function PanelShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--border-soft)] bg-foreground/[0.02]">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--border-soft)]">
       {children}
     </div>
   );
