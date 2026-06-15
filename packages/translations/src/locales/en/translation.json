@@ -632,7 +632,7 @@
         "portLabel": "Port",
         "portUnavailable": "Unavailable",
         "help": "Pair the AI Job Hunter browser extension to send jobs straight from any job board into your tracker.",
-        "notPublished": "Available soon on the Chrome Web Store and Firefox Add-ons.",
+        "notPublished": "Available for Chrome now — Firefox coming soon.",
         "regenerate": "Regenerate token",
         "regenerated": "Pairing token regenerated. Re-pair your browser to reconnect.",
         "regenerateFailed": "Could not regenerate the token.",
@@ -2183,6 +2183,21 @@
       "back": "Back",
       "next": "See the features"
     },
+    "extension": {
+      "title": "Install the browser extension",
+      "subtitle": "Import jobs straight from any board with one click. Install the extension, then pair it in Settings.",
+      "addToChrome": "Add to Chrome",
+      "firefoxSoon": "Firefox — coming soon",
+      "pairHint": "After installing, pair it in Settings → Accounts.",
+      "back": "Back",
+      "next": "Continue"
+    },
+    "appearance": {
+      "title": "Make it your own",
+      "subtitle": "Pick a colour scheme and accent. You can fine-tune everything later in Settings.",
+      "back": "Back",
+      "next": "Continue"
+    },
     "tour": {
       "title": "Quick tour",
       "subtitle": "Here's what you can do",
@@ -2193,6 +2208,10 @@
       "dashboard": {
         "title": "Dashboard",
         "desc": "Your mission control — see active jobs, AI status, and recent activity at a glance."
+      },
+      "applications": {
+        "title": "Applications",
+        "desc": "Track every application through its stages — timeline, status, and AI interview-prep questions, all in one place."
       },
       "analyze": {
         "title": "Resume Analyzer",
@@ -2212,7 +2231,7 @@
       },
       "autopilot": {
         "title": "Autopilot",
-        "desc": "Set search criteria and let AI automatically discover, filter, and optionally apply to matching jobs."
+        "desc": "Set search criteria and let AI automatically discover and surface matching jobs — then get notified and deep-linked straight to them."
       },
       "documents": {
         "title": "Documents",

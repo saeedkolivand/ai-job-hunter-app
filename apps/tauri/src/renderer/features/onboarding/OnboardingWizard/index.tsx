@@ -6,19 +6,19 @@ import { transition } from '@ajh/ui';
 import { useOnboardingCompleted, usePreferencesStore } from '@/store/preferences-store';
 
 import { SpotlightTour } from '../SpotlightTour';
-import { AISelectionStep } from '../steps/AISelectionStep';
-import { BrowserStep } from '../steps/BrowserStep';
-import { ResearchStep } from '../steps/ResearchStep';
-import { ResumeStep } from '../steps/ResumeStep';
-import { WelcomeStep } from '../steps/WelcomeStep';
-import { ONBOARDING_STEPS, TOTAL_STEPS } from '../steps-config';
+import { ONBOARDING_STEPS } from '../steps-config';
 
 export function OnboardingWizard() {
   const onboardingCompleted = useOnboardingCompleted();
   const setOnboardingComplete = usePreferencesStore((s) => s.setOnboardingComplete);
+  const activeProvider = usePreferencesStore((s) => s.aiProviderConfig?.activeProvider);
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState(1);
   const [showTour, setShowTour] = useState(false);
+
+  // Research is only relevant for local Ollama (other providers search with
+  // their own key). `extension`/`appearance` are unconditional.
+  const steps = ONBOARDING_STEPS.filter((s) => s.id !== 'research' || activeProvider === 'ollama');
 
   // Reset wizard state when onboarding is restarted (e.g., after app reset)
   useEffect(() => {
@@ -29,11 +29,14 @@ export function OnboardingWizard() {
     }
   }, [onboardingCompleted]);
 
-  const currentStep = ONBOARDING_STEPS[stepIndex];
-  const stepId = showTour ? 'tour' : (currentStep?.id ?? 'welcome');
+  // A provider flip can shorten the step list — clamp the index so it can't
+  // strand past the end of the array.
+  useEffect(() => {
+    setStepIndex((i) => Math.min(i, steps.length - 1));
+  }, [steps.length]);
 
   const goNext = () => {
-    if (stepIndex < ONBOARDING_STEPS.length - 1) {
+    if (stepIndex < steps.length - 1) {
       setDirection(1);
       setStepIndex((prev) => prev + 1);
     } else {
@@ -50,6 +53,10 @@ export function OnboardingWizard() {
   };
 
   if (onboardingCompleted) return null;
+
+  const currentStep = steps[stepIndex] ?? steps[0];
+  if (!currentStep) return null;
+  const Current = currentStep.component;
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center overflow-hidden">
@@ -68,53 +75,14 @@ export function OnboardingWizard() {
       </AnimatePresence>
 
       <AnimatePresence mode="wait" custom={direction}>
-        {stepId === 'welcome' && (
-          <WelcomeStep
-            key="welcome"
+        {!showTour && (
+          <Current
+            key={currentStep.id}
             direction={direction}
-            stepIndex={0}
-            totalSteps={TOTAL_STEPS}
+            stepIndex={stepIndex}
+            totalSteps={steps.length}
             onNext={goNext}
-          />
-        )}
-        {stepId === 'resume' && (
-          <ResumeStep
-            key="resume"
-            direction={direction}
-            stepIndex={1}
-            totalSteps={TOTAL_STEPS}
             onBack={goBack}
-            onNext={goNext}
-          />
-        )}
-        {stepId === 'ai' && (
-          <AISelectionStep
-            key="ai"
-            direction={direction}
-            stepIndex={2}
-            totalSteps={TOTAL_STEPS}
-            onBack={goBack}
-            onNext={goNext}
-          />
-        )}
-        {stepId === 'research' && (
-          <ResearchStep
-            key="research"
-            direction={direction}
-            stepIndex={3}
-            totalSteps={TOTAL_STEPS}
-            onBack={goBack}
-            onNext={goNext}
-          />
-        )}
-        {stepId === 'browser' && (
-          <BrowserStep
-            key="browser"
-            direction={direction}
-            stepIndex={4}
-            totalSteps={TOTAL_STEPS}
-            onBack={goBack}
-            onNext={goNext}
           />
         )}
         {showTour && <SpotlightTour key="tour" onFinish={setOnboardingComplete} />}

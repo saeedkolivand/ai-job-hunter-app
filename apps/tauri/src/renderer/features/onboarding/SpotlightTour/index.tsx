@@ -1,5 +1,6 @@
 import {
   Briefcase,
+  ClipboardList,
   FilePlus2,
   FileText,
   Gauge,
@@ -29,6 +30,12 @@ const TOUR_ITEMS: TourItem[] = [
     icon: LayoutDashboard,
     titleKey: 'onboarding.tour.dashboard.title',
     descKey: 'onboarding.tour.dashboard.desc',
+  },
+  {
+    tourId: 'applications',
+    icon: ClipboardList,
+    titleKey: 'onboarding.tour.applications.title',
+    descKey: 'onboarding.tour.applications.desc',
   },
   {
     tourId: 'jobs',

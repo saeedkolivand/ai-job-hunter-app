@@ -602,7 +602,7 @@
         "portLabel": "Port",
         "portUnavailable": "Nicht verfügbar",
         "help": "Koppeln Sie die AI-Job-Hunter-Browser-Erweiterung, um Jobs direkt aus jeder Jobbörse in Ihre Verwaltung zu senden.",
-        "notPublished": "Demnächst im Chrome Web Store und bei Firefox Add-ons verfügbar.",
+        "notPublished": "Jetzt für Chrome verfügbar — Firefox folgt in Kürze.",
         "regenerate": "Token neu generieren",
         "regenerated": "Kopplungs-Token neu generiert. Koppeln Sie Ihren Browser erneut, um die Verbindung wiederherzustellen.",
         "regenerateFailed": "Token konnte nicht neu generiert werden.",
@@ -2153,6 +2153,21 @@
       "back": "Zurück",
       "next": "Funktionen ansehen"
     },
+    "extension": {
+      "title": "Browser-Erweiterung installieren",
+      "subtitle": "Importieren Sie Jobs mit einem Klick direkt von jeder Jobbörse. Installieren Sie die Erweiterung und koppeln Sie sie anschließend in den Einstellungen.",
+      "addToChrome": "Zu Chrome hinzufügen",
+      "firefoxSoon": "Firefox — folgt in Kürze",
+      "pairHint": "Koppeln Sie die Erweiterung nach der Installation unter Einstellungen → Konten.",
+      "back": "Zurück",
+      "next": "Weiter"
+    },
+    "appearance": {
+      "title": "Machen Sie es zu Ihrem",
+      "subtitle": "Wählen Sie ein Farbschema und einen Akzent. Alles Weitere können Sie später in den Einstellungen anpassen.",
+      "back": "Zurück",
+      "next": "Weiter"
+    },
     "tour": {
       "title": "Kurze Tour",
       "subtitle": "Hier ist, was Sie tun können",
@@ -2163,6 +2178,10 @@
       "dashboard": {
         "title": "Dashboard",
         "desc": "Ihr Missionskontrollzentrum — sehen Sie aktive Jobs, KI-Status und aktuelle Aktivitäten auf einen Blick."
+      },
+      "applications": {
+        "title": "Bewerbungen",
+        "desc": "Verfolgen Sie jede Bewerbung durch ihre Phasen — Zeitachse, Status und KI-gestützte Interview-Vorbereitungsfragen an einem Ort."
       },
       "analyze": {
         "title": "Lebenslauf-Analysator",
@@ -2182,7 +2201,7 @@
       },
       "autopilot": {
         "title": "Autopilot",
-        "desc": "Legen Sie Suchkriterien fest und lassen Sie KI automatisch passende Jobs entdecken, filtern und optional bewerben."
+        "desc": "Legen Sie Suchkriterien fest und lassen Sie KI automatisch passende Jobs entdecken und anzeigen — Sie werden benachrichtigt und direkt dorthin verlinkt."
       },
       "documents": {
         "title": "Dokumente",

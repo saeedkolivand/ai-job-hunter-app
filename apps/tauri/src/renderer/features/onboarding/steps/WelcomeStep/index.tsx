@@ -12,6 +12,7 @@ import { OnboardingStepWrapper } from '../../components/OnboardingStepWrapper';
 
 interface Props {
   onNext: () => void;
+  onBack?: () => void;
   direction: number;
   stepIndex: number;
   totalSteps: number;

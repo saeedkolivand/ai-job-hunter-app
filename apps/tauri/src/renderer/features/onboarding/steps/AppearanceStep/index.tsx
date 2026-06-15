@@ -1,4 +1,5 @@
-import { Monitor, Palette, Type } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Monitor, Palette } from 'lucide-react';
+import { motion } from 'motion/react';
 import { useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
@@ -6,24 +7,32 @@ import {
   applyThemeAnimated,
   Button,
   cn,
+  FloatingIcon,
   getThemePrefs,
-  SettingsSection,
-  Switch,
-  type TextScale,
   type ThemePrefs,
+  withDelay,
 } from '@ajh/ui';
 
 import { ACCENTS, SCHEMES } from '@/constants/appearance';
 import { useSystemAccent } from '@/services';
 
-// Each button previews its own size via the text utility it sets.
-const SCALES: { id: TextScale; labelKey: string; size: string }[] = [
-  { id: 'small', labelKey: 'settings.appearance.textSmall', size: 'text-xs' },
-  { id: 'default', labelKey: 'settings.appearance.textDefault', size: 'text-sm' },
-  { id: 'large', labelKey: 'settings.appearance.textLarge', size: 'text-base' },
-];
+import { OnboardingStepWrapper } from '../../components/OnboardingStepWrapper';
 
-export function AppearanceCard() {
+interface Props {
+  onBack?: () => void;
+  onNext: () => void;
+  direction: number;
+  stepIndex: number;
+  totalSteps: number;
+}
+
+/**
+ * Final onboarding step: pick a colour scheme and accent. Reuses the same theme
+ * engine as the Settings AppearanceCard — `applyThemeAnimated` persists, so no
+ * preferences-store wiring is needed here. Text size and a11y switches are
+ * intentionally omitted to keep the step lean; they live in Settings.
+ */
+export function AppearanceStep({ onBack, onNext, direction, stepIndex, totalSteps }: Props) {
   const { t } = useTranslation();
   const [prefs, setPrefs] = useState<ThemePrefs>(() => getThemePrefs());
   // Only offered when the OS accent is readable (Windows/macOS); on Linux/read
@@ -37,8 +46,36 @@ export function AppearanceCard() {
   };
 
   return (
-    <SettingsSection icon={Palette} label={t('settings.appearance.title')}>
-      <div className="space-y-4">
+    <OnboardingStepWrapper
+      direction={direction}
+      stepIndex={stepIndex}
+      totalSteps={totalSteps}
+      onBack={onBack}
+      onNext={onNext}
+      canAdvance
+    >
+      <div className="mb-6 flex justify-center">
+        <FloatingIcon icon={Palette} size={24} />
+      </div>
+
+      <motion.div
+        initial={{ y: 10, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={withDelay(0.1)}
+        className="mb-5 text-center"
+      >
+        <h1 className="mb-2 text-xl font-semibold text-foreground/95">
+          {t('onboarding.appearance.title')}
+        </h1>
+        <p className="text-sm text-foreground/50">{t('onboarding.appearance.subtitle')}</p>
+      </motion.div>
+
+      <motion.div
+        initial={{ y: 10, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={withDelay(0.15)}
+        className="mb-6 space-y-4"
+      >
         <div>
           <div className="mb-2 text-xs font-medium text-foreground/55">
             {t('settings.appearance.scheme')}
@@ -95,7 +132,6 @@ export function AppearanceCard() {
               )}
             >
               <span
-                data-testid="default-accent-dot"
                 className="h-3 w-3 rounded-full"
                 style={{
                   // BASE brand tokens (never overridden by the runtime accent
@@ -147,61 +183,34 @@ export function AppearanceCard() {
                     'h-7 w-7 rounded-full border-2 transition-transform focus-visible:ring-2 focus-visible:ring-brand/50',
                     active ? 'scale-110 border-foreground/70' : 'border-transparent hover:scale-105'
                   )}
-                  data-accent-color={color}
-                  data-accent-color2={color2}
                   style={{ background: `linear-gradient(135deg, ${color}, ${color2})` }}
                 />
               );
             })}
           </div>
         </div>
+      </motion.div>
 
-        <div>
-          <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground/55">
-            <Type size={13} />
-            {t('settings.appearance.textSize')}
-          </div>
-          <div
-            role="radiogroup"
-            aria-label={t('settings.appearance.textSize')}
-            className="grid grid-cols-3 gap-2"
-          >
-            {SCALES.map(({ id, labelKey, size }) => {
-              const active = prefs.textScale === id;
-              return (
-                <Button
-                  key={id}
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => update({ textScale: id })}
-                  className={cn(
-                    'flex h-auto items-center justify-center rounded-xl border px-3 py-2.5 font-medium transition-all focus-visible:ring-2 focus-visible:ring-brand/50',
-                    size,
-                    active
-                      ? 'border-brand/40 bg-brand/10 text-brand-soft'
-                      : 'border-foreground/10 bg-foreground/[0.02] text-foreground/55 hover:text-foreground/80'
-                  )}
-                >
-                  {t(labelKey)}
-                </Button>
-              );
-            })}
-          </div>
-        </div>
+      <motion.div
+        initial={{ y: 10, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={withDelay(0.2)}
+        className="flex items-center gap-3"
+      >
+        {onBack && (
+          <Button variant="ghost" onClick={onBack} className="flex items-center gap-1.5">
+            <ArrowLeft size={13} />
+            {t('onboarding.appearance.back')}
+          </Button>
+        )}
 
-        <Switch
-          label={t('settings.appearance.reduceTransparency')}
-          description={t('settings.appearance.reduceTransparencyHint')}
-          checked={prefs.reduceTransparency}
-          onCheckedChange={(v) => update({ reduceTransparency: v })}
-        />
-        <Switch
-          label={t('settings.appearance.increaseContrast')}
-          description={t('settings.appearance.increaseContrastHint')}
-          checked={prefs.contrast === 'more'}
-          onCheckedChange={(v) => update({ contrast: v ? 'more' : 'normal' })}
-        />
-      </div>
-    </SettingsSection>
+        <div className="flex-1" />
+
+        <Button variant="default" onClick={onNext} className="flex items-center gap-1.5">
+          {t('onboarding.appearance.next')}
+          <ArrowRight size={13} />
+        </Button>
+      </motion.div>
+    </OnboardingStepWrapper>
   );
 }
