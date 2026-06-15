@@ -972,7 +972,7 @@
         routes: {
           t: 'Routes / Pages',
           layer: 'ui',
-          d: 'File‑based routes. <code>__root.tsx</code> renders the chrome (Titlebar, Sidebar, StatusBar) plus the onboarding gate. Pages: Dashboard <code>/</code>, <code>/jobs</code>, <code>/ai-generate</code>, <code>/analyze</code>, <code>/search</code>, <code>/resumes</code>, <code>/autopilot</code>, <code>/settings</code>, <code>/ai</code>, <code>/monitoring</code>, <code>/support</code>.',
+          d: 'File‑based routes. <code>__root.tsx</code> renders the chrome (Titlebar, Sidebar, StatusBar) plus the onboarding gate. Pages: Dashboard <code>/</code>, <code>/jobs</code>, <code>/ai-generate</code>, <code>/analyze</code>, <code>/resumes</code>, <code>/autopilot</code>, <code>/settings</code>, <code>/ai</code>, <code>/monitoring</code>, <code>/support</code>.',
           f: ['apps/tauri/src/renderer/routes/__root.tsx', 'apps/tauri/src/renderer/routes/'],
         },
         features: {
@@ -1603,7 +1603,6 @@
         ['scrape', 'listPostings', 'inv', 'scrape_list_postings'],
         ['scrape', 'clearPostings', 'inv', 'scrape_clear_postings'],
         ['scrape', 'listInteractions', 'inv', 'scrape_list_interactions'],
-        ['search', 'hybrid', 'inv', 'search_hybrid'],
         ['shortcuts', 'onCommandPalette', 'evt', 'shortcut:command-palette'],
         ['support', 'exportDiagnostics', 'inv', 'support_export_diagnostics'],
         ['support', 'reloadAiRuntime', 'inv', 'support_reload_ai_runtime'],
@@ -1738,22 +1737,17 @@
           ],
         },
         {
-          h: 'Documents, embeddings & hybrid search',
+          h: 'Documents & embeddings',
           b: `
     <p><code>DocumentStore</code> (SQLite, <span class="path">documents.db</span>) holds résumés/cover letters plus a
     <code>vectors</code> table. Every vector is tagged with its <b>embedding space</b>
     <code>(provider, model, dim)</code> so incompatible vectors can never be silently compared — a mismatch is an
     error, not a 0.0 score.</p>
     <ul>
-      <li><b>Hybrid search</b> (<code>search_hybrid</code>) blends semantic similarity with keyword scoring; a
-        <code>semanticWeight</code> tunes the mix.</li>
       <li><b>Ranking</b> uses cosine similarity between the résumé vector and each posting vector.</li>
       <li>Changing the embedding config marks vectors stale → re‑embed on demand (<code>ai_reembed_all</code>).</li>
     </ul>`,
-          f: [
-            'apps/tauri/src-tauri/src/documents/mod.rs',
-            'apps/tauri/src-tauri/src/commands/search.rs',
-          ],
+          f: ['apps/tauri/src-tauri/src/documents/mod.rs'],
         },
         {
           h: 'Persistence map — where everything lives',
