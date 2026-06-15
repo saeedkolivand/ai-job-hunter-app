@@ -1,5 +1,5 @@
 import { useTranslation } from '@ajh/translations';
-import { Button, cn } from '@ajh/ui';
+import { Tag } from '@ajh/ui';
 
 import { INTERVIEW_AUDIENCES } from '@/lib/generate';
 
@@ -25,26 +25,11 @@ export function AudienceSelector({ selected, onToggle }: Props) {
       role="group"
       aria-label={t('applications.detail.interview.audienceLabel')}
     >
-      {INTERVIEW_AUDIENCES.map((aud) => {
-        const on = selected.includes(aud);
-        return (
-          <Button
-            key={aud}
-            variant="unstyled"
-            type="button"
-            aria-pressed={on}
-            onClick={() => onToggle(aud)}
-            className={cn(
-              'rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors',
-              on
-                ? 'border-brand/40 bg-brand/15 text-brand-soft'
-                : 'border-white/[0.08] bg-white/[0.02] text-foreground/50 hover:text-foreground/80'
-            )}
-          >
-            {t(`applications.detail.interview.audience.${aud}`)}
-          </Button>
-        );
-      })}
+      {INTERVIEW_AUDIENCES.map((aud) => (
+        <Tag.CheckableTag key={aud} checked={selected.includes(aud)} onChange={() => onToggle(aud)}>
+          {t(`applications.detail.interview.audience.${aud}`)}
+        </Tag.CheckableTag>
+      ))}
     </div>
   );
 }

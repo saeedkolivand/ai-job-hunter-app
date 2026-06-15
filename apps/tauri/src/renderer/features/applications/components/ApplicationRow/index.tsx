@@ -4,7 +4,7 @@ import { useNavigate } from '@tanstack/react-router';
 
 import { type Application, APPLICATION_STAGES } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { ActionMenu, cn, ConfirmModal, Dropdown } from '@ajh/ui';
+import { ActionMenu, cn, ConfirmModal, Dropdown, Tag } from '@ajh/ui';
 
 import { isStale, nextActionLabel, staleDays } from '@/features/applications/lib/stale';
 import { useOpenExternal, useRemoveApplication, useSetApplicationStatus } from '@/services';
@@ -16,6 +16,10 @@ interface ApplicationRowProps {
 }
 
 const STATUS_OPTIONS = APPLICATION_STAGES.map((s) => ({ value: s.id, label: s.id }));
+
+// Tiny status-pill shape for the in-row display Tags. Plain Tags render a <span>
+// with no onClick, so clicks bubble to the row and never block navigation.
+const STATUS_TAG = 'rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider';
 
 export function ApplicationRow({ application, highlighted = false }: ApplicationRowProps) {
   const { t } = useTranslation();
@@ -95,24 +99,16 @@ export function ApplicationRow({ application, highlighted = false }: Application
               {application.title || t('applications.row.noTitle')}
             </span>
             {stale && (
-              <span className="flex items-center gap-1 rounded-full border border-amber-400/20 bg-amber-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-amber-300/80">
-                <Clock size={8} />
+              <Tag color="warning" icon={<Clock size={8} />} className={STATUS_TAG}>
                 {t('applications.row.noReply', { days })}
-              </span>
+              </Tag>
             )}
             {nextState !== 'none' && (
-              <span
-                className={cn(
-                  'rounded-full border px-1.5 py-0.5 text-[9px] uppercase tracking-wider',
-                  nextState === 'overdue'
-                    ? 'border-red-400/20 bg-red-400/5 text-red-300/80'
-                    : 'border-blue-400/20 bg-blue-400/5 text-blue-300/80'
-                )}
-              >
+              <Tag color={nextState === 'overdue' ? 'error' : 'processing'} className={STATUS_TAG}>
                 {nextState === 'overdue'
                   ? t('applications.row.overdue')
                   : t('applications.row.followUp')}
-              </span>
+              </Tag>
             )}
           </div>
           <div className="mt-0.5 text-xs text-foreground/50">{application.company}</div>
