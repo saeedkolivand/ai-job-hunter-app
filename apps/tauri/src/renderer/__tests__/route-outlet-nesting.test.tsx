@@ -51,7 +51,7 @@ import {
 } from '@tanstack/react-router';
 import { render, screen, waitFor } from '@testing-library/react';
 
-import type { Application, AutopilotFoundJob } from '@ajh/shared';
+import type { Application } from '@ajh/shared';
 
 import { useSessionStore } from '@/store/session-store';
 
@@ -110,12 +110,6 @@ vi.mock('@/components/layout/PageTransition', () => ({
 
 vi.mock('@/features/documents/components/GenerationCard', () => ({
   GenerationCard: () => <div data-testid="generation-card" />,
-}));
-
-// ── ApplyPage stub — distinctive testid so we can assert it mounted ───────────
-
-vi.mock('@/features/autopilot/components/ApplyPage', () => ({
-  ApplyPage: () => <div data-testid="apply-page-stub" />,
 }));
 
 // ── AutopilotPage leaf stubs ───────────────────────────────────────────────────
@@ -213,7 +207,6 @@ vi.mock('@/features/documents/components/TailorFlow', () => ({
 
 import { ApplicationDetailPage } from '@/features/applications/components/ApplicationDetailPage';
 import { ApplicationsPage } from '@/features/applications/components/ApplicationsPage';
-import { ApplyPageRoute } from '@/features/autopilot/components/ApplyPageRoute';
 import { AutopilotPage } from '@/features/autopilot/components/AutopilotPage';
 import { DETAIL_TABS } from '@/routes/applications.$id';
 
@@ -286,16 +279,9 @@ function renderAt(initialPath: string) {
     component: AutopilotPage,
   });
 
-  // /autopilot/apply — ApplyPageRoute (mirrors autopilot.apply.tsx)
-  const autopilotApply = createRoute({
-    getParentRoute: () => autopilotLayout,
-    path: 'apply',
-    component: ApplyPageRoute,
-  });
-
   const routeTree = rootRoute.addChildren([
     applicationsLayout.addChildren([applicationsIndex, applicationsDetail]),
-    autopilotLayout.addChildren([autopilotIndex, autopilotApply]),
+    autopilotLayout.addChildren([autopilotIndex]),
   ]);
 
   const router = createRouter({
@@ -314,9 +300,6 @@ beforeEach(() => {
   useSessionStore.setState((s) => ({
     autopilot: {
       ...s.autopilot,
-      apply: null,
-      applyWizardStep: 0,
-      applyWizardForm: null,
       creating: false,
       focusedId: null,
     },
@@ -354,70 +337,6 @@ describe('Route Outlet nesting — regression guard', () => {
     // Critically: ApplicationsPage's "application-row" testid must NOT be present
     // — confirms the list page did NOT mount (layout Outlet served the child).
     expect(screen.queryByTestId('application-row')).not.toBeInTheDocument();
-  });
-
-  /**
-   * Case 2: /autopilot/apply WITH a valid apply target renders ApplyPageRoute
-   * (and its ApplyPage child) through the autopilot layout Outlet.
-   *
-   * Regression: if the autopilot layout ever renders its own content instead of
-   * <Outlet />, ApplyPageRoute never mounts and the apply-page-stub is absent.
-   */
-  it('navigating to /autopilot/apply with a valid apply target renders ApplyPageRoute through the layout Outlet', async () => {
-    // Set up a valid apply target in the real session store.
-    const applyTarget = {
-      job: {
-        title: 'Senior Engineer',
-        company: 'Acme',
-        url: 'https://acme.com/jobs/1',
-        description: 'Build cool things.',
-        score: 90,
-        foundAt: Date.now(),
-      } as AutopilotFoundJob,
-      resumeText: 'my resume text',
-      board: 'linkedin',
-    };
-    useSessionStore.setState((s) => ({
-      autopilot: { ...s.autopilot, apply: applyTarget },
-    }));
-
-    renderAt('/autopilot/apply');
-
-    // ApplyPage is stubbed to render data-testid="apply-page-stub".
-    // If this element is present, ApplyPageRoute mounted and rendered it,
-    // which means the Outlet nesting is working correctly.
-    await waitFor(() => {
-      expect(screen.getByTestId('apply-page-stub')).toBeInTheDocument();
-    });
-  });
-
-  /**
-   * Case 3: /autopilot/apply with NO apply target triggers the redirect inside
-   * ApplyPageRoute back to /autopilot (it renders null while redirecting).
-   *
-   * This proves:
-   * (a) ApplyPageRoute mounts through the real Outlet (otherwise no redirect fires)
-   * (b) useNavigate() from the real router actually navigates — the router's
-   *     location ends up at /autopilot and AutopilotPage content is rendered.
-   */
-  it('navigating to /autopilot/apply with no apply target redirects to /autopilot', async () => {
-    // apply is null (set in beforeEach) — cold URL / no session target.
-    const router = renderAt('/autopilot/apply');
-
-    // After the redirect effect fires, the router location must be /autopilot.
-    await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/autopilot');
-    });
-
-    // AutopilotPage is rendered at /autopilot — it shows the empty-state stub
-    // (useAutopilots returns [] from the mock above).
-    await waitFor(() => {
-      expect(screen.getByTestId('autopilot-empty-state')).toBeInTheDocument();
-    });
-
-    // apply-page-stub must NOT be present — the apply route rendered null then
-    // the redirect took over.
-    expect(screen.queryByTestId('apply-page-stub')).not.toBeInTheDocument();
   });
 
   /**

@@ -2334,6 +2334,7 @@
     },
     "detail": {
       "back": "Zurück zu Bewerbungen",
+      "backAutopilot": "Zurück zu Autopilot",
       "openAria": "{{title}} öffnen",
       "statusTitle": "Status",
       "tabs": {

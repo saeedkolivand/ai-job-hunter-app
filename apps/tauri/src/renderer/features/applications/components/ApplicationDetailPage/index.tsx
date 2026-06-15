@@ -98,11 +98,16 @@ export function ApplicationDetailPage() {
   const application = data?.application ?? null;
   const events = data?.events ?? [];
 
-  const back = () => void navigate({ to: '/applications' });
+  const { from } = Route.useSearch();
+  const backToAutopilot = from === 'autopilot';
+  const back = () => void navigate({ to: backToAutopilot ? '/autopilot' : '/applications' });
+  const backLabel = backToAutopilot
+    ? t('applications.detail.backAutopilot')
+    : t('applications.detail.back');
 
   if (isLoading) {
     return (
-      <SlimLayout onBack={back} title={t('applications.title')}>
+      <SlimLayout onBack={back} backLabel={backLabel} title={t('applications.title')}>
         <PanelShell>
           <div className="h-full space-y-4 overflow-y-auto px-6 py-5">
             <RowSkeleton />
@@ -116,7 +121,7 @@ export function ApplicationDetailPage() {
 
   if (isError || !application) {
     return (
-      <SlimLayout onBack={back} title={t('applications.title')}>
+      <SlimLayout onBack={back} backLabel={backLabel} title={t('applications.title')}>
         <PanelShell>
           <ErrorState
             title={t('applications.detail.notFound')}
@@ -132,21 +137,28 @@ export function ApplicationDetailPage() {
   // param) remounts the loaded view and re-seeds the save-on-blur edit buffers
   // from the new application — TanStack Router reuses the instance otherwise.
   return (
-    <ApplicationDetailLoaded key={id} application={application} events={events} onBack={back} />
+    <ApplicationDetailLoaded
+      key={id}
+      application={application}
+      events={events}
+      onBack={back}
+      backLabel={backLabel}
+    />
   );
 }
 
 /** Slim header + bordered-panel chrome shared by loading / error / loaded states. */
 function SlimLayout({
   onBack,
+  backLabel,
   title,
   children,
 }: {
   onBack: () => void;
+  backLabel: string;
   title: string;
   children: React.ReactNode;
 }) {
-  const { t } = useTranslation();
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-8 py-4">
@@ -155,7 +167,7 @@ function SlimLayout({
           variant="ghost"
           className="shrink-0 gap-1.5 text-foreground/50 hover:text-foreground/80"
         >
-          <ArrowLeft size={14} /> {t('applications.detail.back')}
+          <ArrowLeft size={14} /> {backLabel}
         </Button>
         <div className="min-w-0 flex-1">
           <span className="truncate text-base font-semibold text-foreground/90">{title}</span>
@@ -179,9 +191,10 @@ interface LoadedProps {
   application: Application;
   events: StatusEvent[];
   onBack: () => void;
+  backLabel: string;
 }
 
-function ApplicationDetailLoaded({ application, events, onBack }: LoadedProps) {
+function ApplicationDetailLoaded({ application, events, onBack, backLabel }: LoadedProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const formatRelative = useFormatRelativeTime(t, 'resumes.relativeTime');
@@ -227,6 +240,9 @@ function ApplicationDetailLoaded({ application, events, onBack }: LoadedProps) {
         applyForId: application.id,
         applyWizardStep: 0,
         applyWizardForm: null,
+        // Drop any autopilot one-shot seed/badge left over from another application.
+        applySeedResume: null,
+        applyMatchLevel: null,
       });
     }
   }, [application.id, applicationApply.applyForId, setApplicationApply]);
@@ -281,7 +297,7 @@ function ApplicationDetailLoaded({ application, events, onBack }: LoadedProps) {
           variant="ghost"
           className="shrink-0 gap-1.5 text-foreground/50 hover:text-foreground/80"
         >
-          <ArrowLeft size={14} /> {t('applications.detail.back')}
+          <ArrowLeft size={14} /> {backLabel}
         </Button>
 
         <div className="min-w-0 flex-1">
@@ -293,6 +309,12 @@ function ApplicationDetailLoaded({ application, events, onBack }: LoadedProps) {
             {application.board && (
               <span className="shrink-0 rounded-full border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 text-[9px] uppercase tracking-wider text-foreground/55">
                 {application.board}
+              </span>
+            )}
+            {applicationApply.applyMatchLevel && (
+              <span className="shrink-0 rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-medium text-brand-soft">
+                {t(`autopilot.wizard.filter.matchLevel.${applicationApply.applyMatchLevel}`)}{' '}
+                {t('autopilot.apply.match')}
               </span>
             )}
           </div>
@@ -669,7 +691,12 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
     );
   }
 
-  const seedResumeText = (resumeQuery.data ?? '') || (matchingGenerations[0]?.resumeText ?? '');
+  // Prefer the autopilot one-shot seed (deep-link from Apply), then the user's
+  // default résumé, then the most recent matching generation.
+  const seedResumeText =
+    (applicationApply.applySeedResume ?? '') ||
+    (resumeQuery.data ?? '') ||
+    (matchingGenerations[0]?.resumeText ?? '');
 
   // Generation-store session key. Empty job URLs (`z.string().default('')`) would
   // collide for every URL-less application, bleeding one application's live

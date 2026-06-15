@@ -48,6 +48,7 @@ vi.mock('@/services', async (importOriginal) => {
     ...(orig as object),
     useAutopilots: () => ({ data: [], isLoading: false }),
     useInvalidateAutopilots: () => mockInvalidateAutopilots,
+    useSaveFromPosting: () => ({ mutateAsync: vi.fn() }),
   };
 });
 
@@ -59,10 +60,6 @@ vi.mock('@/features/autopilot/components/AutopilotCard', () => ({
 
 vi.mock('@/features/autopilot/components/CreationWizard', () => ({
   CreationWizard: () => <div data-testid="creation-wizard" />,
-}));
-
-vi.mock('@/features/autopilot/components/ApplyPage', () => ({
-  ApplyPage: () => <div data-testid="apply-page" />,
 }));
 
 vi.mock('@/features/autopilot/components/EmptyState', () => ({

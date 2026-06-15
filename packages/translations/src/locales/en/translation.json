@@ -2374,6 +2374,7 @@
     },
     "detail": {
       "back": "Back to applications",
+      "backAutopilot": "Back to Autopilot",
       "openAria": "Open {{title}}",
       "statusTitle": "Status",
       "tabs": {

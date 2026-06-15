@@ -469,6 +469,8 @@ describe('ApplicationDetailPage — wizard reset on mount', () => {
       applyForId: 'app-reset-1',
       applyWizardStep: 0,
       applyWizardForm: null,
+      applySeedResume: null,
+      applyMatchLevel: null,
     });
   });
 

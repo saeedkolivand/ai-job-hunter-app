@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 
 import type { InterviewAnswers } from '@ajh/prompts/builder';
-import type { AutopilotFoundJob } from '@ajh/shared';
 
 import type { WizardState } from '@/features/autopilot/types';
 import type { TailorWizardState } from '@/features/documents/components/TailorFlow/lib/tailor-state';
@@ -81,23 +80,12 @@ interface SettingsSlice {
   activeSection: SettingsSection;
 }
 
-export interface AutopilotApplyTarget {
-  job: AutopilotFoundJob;
-  resumeText?: string;
-  board: string;
-}
-
 interface AutopilotSlice {
   creating: boolean;
   editingId: string | null;
   wizardStep: number;
   wizardForm: WizardState | null;
   focusedId: string | null;
-  apply: AutopilotApplyTarget | null;
-  applyWizardStep: number;
-  applyWizardForm: TailorWizardState | null;
-  applyTemplateId: TemplateId;
-  applyAtsMode: boolean;
 }
 
 /**
@@ -113,6 +101,12 @@ interface ApplicationApplySlice {
   applyTemplateId: TemplateId;
   applyAtsMode: boolean;
   applyForId: string | null;
+  /** One-shot résumé seed for the Documents-tab wizard when arriving from the
+   *  autopilot Apply deep-link; cleared when switching to another application. */
+  applySeedResume: string | null;
+  /** One-shot match-level id (e.g. `strong`) carried from autopilot Apply so the
+   *  detail header can show the badge; cleared when switching applications. */
+  applyMatchLevel: string | null;
 }
 
 /**
@@ -152,6 +146,8 @@ const APPLICATION_APPLY_DEFAULTS: ApplicationApplySlice = {
   applyTemplateId: 'modern',
   applyAtsMode: false,
   applyForId: null,
+  applySeedResume: null,
+  applyMatchLevel: null,
 };
 
 const ANALYZE_DEFAULTS: AnalyzeSlice = {
@@ -234,11 +230,6 @@ export const useSessionStore = create<SessionState>((set) => ({
     wizardStep: 0,
     wizardForm: null,
     focusedId: null,
-    apply: null,
-    applyWizardStep: 0,
-    applyWizardForm: null,
-    applyTemplateId: 'modern',
-    applyAtsMode: false,
   },
   applicationApply: { ...APPLICATION_APPLY_DEFAULTS },
   applications: { collapsedSections: [], filter: '' },

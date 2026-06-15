@@ -37,13 +37,13 @@ const NAV_SECTIONS: { labelKey: string; items: readonly NavItem[] }[] = [
     labelKey: 'nav.sections.workspace',
     items: [
       { to: ROUTES.DASHBOARD, label: 'nav.dashboard', icon: LayoutDashboard, tourId: 'dashboard' },
-      { to: ROUTES.JOBS, label: 'nav.jobs', icon: Briefcase, tourId: 'jobs' },
       {
         to: ROUTES.APPLICATIONS,
         label: 'nav.applications',
         icon: ClipboardList,
         tourId: 'applications',
       },
+      { to: ROUTES.JOBS, label: 'nav.jobs', icon: Briefcase, tourId: 'jobs' },
       { to: ROUTES.ANALYZE, label: 'nav.analyze', icon: Gauge, tourId: 'analyze' },
       { to: ROUTES.GENERATE, label: 'nav.generate', icon: Wand2, tourId: 'generate' },
       { to: ROUTES.BUILD, label: 'nav.build', icon: FilePlus2, tourId: 'build' },
