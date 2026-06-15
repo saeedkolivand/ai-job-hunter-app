@@ -65,7 +65,7 @@ export function FieldArrayList<T extends FieldArrayRow>({
   return (
     <div className="space-y-3">
       {fields.map((field, index) => (
-        <GlassCard key={field.id} className="relative space-y-2.5 p-4">
+        <GlassCard key={field.id} tone="glass" className="relative space-y-2.5 p-4">
           <Button
             type="button"
             onClick={() => onRemove(index)}

@@ -14,6 +14,6 @@ describe('StepDots', () => {
     const { container } = render(<StepDots currentStep={2} totalSteps={3} />);
     const dots = Array.from((container.firstChild as HTMLElement).children);
     expect((dots[2] as HTMLElement).className).toContain('bg-brand');
-    expect((dots[0] as HTMLElement).className).toContain('bg-white/15');
+    expect((dots[0] as HTMLElement).className).toContain('bg-foreground/20');
   });
 });
