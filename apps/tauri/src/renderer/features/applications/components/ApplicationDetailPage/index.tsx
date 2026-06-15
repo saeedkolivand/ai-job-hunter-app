@@ -35,6 +35,7 @@ import {
   RowSkeleton,
   SettingsSection,
   TextArea,
+  Timeline,
   transition,
 } from '@ajh/ui';
 
@@ -90,6 +91,15 @@ function formatEventDate(at: number): string {
     month: 'short',
     day: 'numeric',
   });
+}
+
+/** Map an application status to a Timeline dot colour (graceful substring match). */
+function statusColor(status: string): 'red' | 'green' | 'blue' | 'brand' {
+  const s = status.toLowerCase();
+  if (/reject|declin|withdraw/.test(s)) return 'red';
+  if (/offer|accept|hire/.test(s)) return 'green';
+  if (/interview|screen/.test(s)) return 'blue';
+  return 'brand';
 }
 
 export function ApplicationDetailPage() {
@@ -543,37 +553,38 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                         {t('applications.detail.timelineEmpty')}
                       </p>
                     ) : (
-                      <ol className="space-y-2.5">
-                        {orderedEvents.map((e) => (
-                          <li
-                            key={`${e.at}-${e.toStatus}`}
-                            className="flex flex-col gap-0.5 border-l border-white/[0.06] pl-3"
-                          >
-                            <span className="flex items-center gap-1.5 text-xs text-foreground/80">
-                              {e.fromStatus ? (
-                                <>
-                                  <span className="text-foreground/55">
-                                    {statusLabel(e.fromStatus)}
+                      <Timeline
+                        items={orderedEvents.map((e) => ({
+                          color: statusColor(e.toStatus),
+                          label: <span title={formatRelative(e.at)}>{formatEventDate(e.at)}</span>,
+                          children: (
+                            <>
+                              <span className="flex items-center gap-1.5">
+                                {e.fromStatus ? (
+                                  <>
+                                    <span className="text-foreground/55">
+                                      {statusLabel(e.fromStatus)}
+                                    </span>
+                                    <span className="text-foreground/30">→</span>
+                                    <span className="font-medium text-foreground/85">
+                                      {statusLabel(e.toStatus)}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="font-medium text-foreground/85">
+                                    {statusLabel(e.toStatus)}
                                   </span>
-                                  <span className="text-foreground/30">→</span>
-                                  <span className="font-medium">{statusLabel(e.toStatus)}</span>
-                                </>
-                              ) : (
-                                <span className="font-medium">{statusLabel(e.toStatus)}</span>
+                                )}
+                              </span>
+                              {e.note && (
+                                <span className="mt-0.5 block text-[11px] text-foreground/55">
+                                  {e.note}
+                                </span>
                               )}
-                            </span>
-                            <span
-                              className="text-[10px] text-foreground/40"
-                              title={formatRelative(e.at)}
-                            >
-                              {formatEventDate(e.at)}
-                            </span>
-                            {e.note && (
-                              <span className="text-[11px] text-foreground/55">{e.note}</span>
-                            )}
-                          </li>
-                        ))}
-                      </ol>
+                            </>
+                          ),
+                        }))}
+                      />
                     )}
                   </TabScroll>
                 )}

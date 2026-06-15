@@ -52,6 +52,12 @@ export { SetupHint, type SetupHintProps } from './components/SetupHint/index';
 export { SourceBadge, type SourceBadgeProps } from './components/SourceBadge/index';
 export { Switch, type SwitchProps } from './components/Switch/index';
 export { TextArea, type TextAreaProps } from './components/TextArea/index';
+export {
+  Timeline,
+  type TimelineColor,
+  type TimelineItem,
+  type TimelineProps,
+} from './components/Timeline/index';
 
 // ── Overlays & Modals ─────────────────────────────────────────────────────
 export { ConfirmModal } from './components/ConfirmModal/index';
