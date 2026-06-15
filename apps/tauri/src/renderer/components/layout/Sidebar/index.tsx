@@ -18,7 +18,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, cn, NavPill, transition, variants } from '@ajh/ui';
+import { Button, cn, Image, NavPill, transition, variants } from '@ajh/ui';
 
 import { ROUTES } from '@/constants/routes';
 import { getTimeGreeting } from '@/lib/greeting';
@@ -164,10 +164,12 @@ export function Sidebar() {
         {userName && (
           <div className="flex items-center gap-2.5 px-1">
             {avatar ? (
-              <img
+              <Image
                 src={avatar}
                 alt=""
-                className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-brand/20"
+                preview={false}
+                rootClassName="h-8 w-8 shrink-0 rounded-full ring-1 ring-brand/20"
+                className="h-8 w-8 object-cover"
               />
             ) : (
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-soft/25 to-brand/10 ring-1 ring-brand/20">

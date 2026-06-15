@@ -32,6 +32,7 @@ const WINDOW_API_DIRECT =
 const RAW_BUTTON = 'JSXOpeningElement[name.name="button"]';
 const RAW_SELECT = 'JSXOpeningElement[name.name="select"]';
 const RAW_TEXTAREA = 'JSXOpeningElement[name.name="textarea"]';
+const RAW_IMG = 'JSXOpeningElement[name.name="img"]';
 // <Input> is a styled text field; native structural types (range slider, file
 // picker, checkbox, radio, hidden) must NOT be forced through it. The selector
 // excludes those literal types so it matches its own documented message.
@@ -294,6 +295,11 @@ export default tseslint.config(
           selector: RAW_INPUT,
           message:
             "Use <Input> from '@ajh/ui' instead of raw <input>. Exceptions: type='range|file|checkbox|radio|hidden' are allowed.",
+        },
+        {
+          selector: RAW_IMG,
+          message:
+            "Use <Image> from '@ajh/ui' instead of raw <img>. It adds a loading placeholder, an error fallback, and a click-to-zoom preview (pass preview={false} to opt out). The <img> primitive itself lives only in @ajh/ui.",
         },
       ],
     },

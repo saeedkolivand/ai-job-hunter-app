@@ -1,7 +1,7 @@
 import { Check, FileText } from 'lucide-react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, cn } from '@ajh/ui';
+import { Button, cn, Image } from '@ajh/ui';
 
 import { isTwoColumnTemplate, type TemplateId, TEMPLATES } from '@/lib/generate';
 
@@ -59,9 +59,11 @@ export function StepTemplate({
               {/* Thumbnail */}
               <div className="relative w-full rounded-lg overflow-hidden bg-white/[0.03] aspect-[3/4] flex items-center justify-center">
                 {image ? (
-                  <img
+                  <Image
                     src={image}
                     alt={tpl.name}
+                    preview={false}
+                    rootClassName="w-full h-full"
                     className="w-full h-full object-cover rounded-lg"
                   />
                 ) : (
