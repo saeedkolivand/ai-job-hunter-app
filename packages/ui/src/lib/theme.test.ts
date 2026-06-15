@@ -352,15 +352,15 @@ describe('theme engine — accent sweep middle (brand-mid)', () => {
     expect(cssVar('--color-brand-mid-soft')).toMatch(/^#[0-9a-f]{6}$/);
   });
 
-  it('sets a color-derived --color-brand-mid (not the default gold) when only one hue is given', () => {
+  it('sets a color-derived --color-brand-mid (not the default mid) when only one hue is given', () => {
     applyTheme({ ...base, accentSource: 'system', accentColor: '#22c55e' });
     const mid = cssVar('--color-brand-mid');
     expect(mid).toMatch(/^#[0-9a-f]{6}$/);
-    // Must NOT be left as the shipped default gold.
-    expect(mid.toLowerCase()).not.toBe('#ba9249');
+    // Must NOT be left as the shipped default mid (peach).
+    expect(mid.toLowerCase()).not.toBe('#fad8a8');
   });
 
-  it("'default' source removes --color-brand-mid + --color-brand-mid-soft (restores tokens.css gold)", () => {
+  it("'default' source removes --color-brand-mid + --color-brand-mid-soft (restores tokens.css default mid)", () => {
     applyTheme({
       ...base,
       accentSource: 'custom',
