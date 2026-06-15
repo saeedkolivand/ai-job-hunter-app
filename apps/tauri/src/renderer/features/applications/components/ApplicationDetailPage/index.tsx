@@ -4,6 +4,7 @@ import {
   ExternalLink,
   FileText,
   HelpCircle,
+  type LucideIcon,
   MessagesSquare,
   StickyNote,
   Trash2,
@@ -31,9 +32,10 @@ import {
   Dropdown,
   EmptyState,
   ErrorState,
+  IconBadge,
   Input,
   RowSkeleton,
-  SettingsSection,
+  SectionLabel,
   TextArea,
   Timeline,
   transition,
@@ -194,7 +196,7 @@ function SlimLayout({
 /** The bordered tabbed-panel surface (fills its parent height). */
 function PanelShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--border-soft)]">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--border-soft)] bg-card">
       {children}
     </div>
   );
@@ -377,7 +379,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
           <div
             role="tablist"
             aria-label={t('applications.detail.tabsLabel')}
-            className="flex shrink-0 items-center gap-1 border-b border-[var(--border-soft)] bg-card px-3 py-2"
+            className="flex shrink-0 items-center gap-1 border-b border-[var(--border-soft)] px-3 py-2"
           >
             {DETAIL_TABS.map((tb, i) => (
               <Button
@@ -421,8 +423,8 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                 className="h-full"
               >
                 {tab === 'overview' && (
-                  <TabScroll>
-                    <SettingsSection icon={StickyNote} label={t('applications.detail.notesLabel')}>
+                  <div className="h-full overflow-y-auto px-6">
+                    <OverviewSection icon={StickyNote} label={t('applications.detail.notesLabel')}>
                       <label htmlFor="appdetail-notes" className="sr-only">
                         {t('applications.detail.notesLabel')}
                       </label>
@@ -439,9 +441,9 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                           }
                         }}
                       />
-                    </SettingsSection>
+                    </OverviewSection>
 
-                    <SettingsSection
+                    <OverviewSection
                       icon={UserRound}
                       label={t('applications.detail.contactSection')}
                     >
@@ -489,9 +491,9 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                           />
                         </div>
                       </div>
-                    </SettingsSection>
+                    </OverviewSection>
 
-                    <SettingsSection
+                    <OverviewSection
                       icon={CalendarClock}
                       label={t('applications.detail.trackingSection')}
                     >
@@ -543,8 +545,8 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                           />
                         </div>
                       </div>
-                    </SettingsSection>
-                  </TabScroll>
+                    </OverviewSection>
+                  </div>
                 )}
 
                 {tab === 'timeline' && (
@@ -630,9 +632,34 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
   );
 }
 
-/** Scroll + padding wrapper for the prose tabs (Overview / Timeline / Brief). */
+/** Scroll + padding wrapper for the prose tabs (Timeline / Brief). */
 function TabScroll({ children }: { children: React.ReactNode }) {
   return <div className="h-full space-y-4 overflow-y-auto px-6 py-5">{children}</div>;
+}
+
+/**
+ * A flat Overview section on the white detail sheet: an {@link IconBadge} +
+ * {@link SectionLabel} header over its fields, separated from the previous
+ * section by a hairline (none above the first). Replaces the old nested cards.
+ */
+function OverviewSection({
+  icon,
+  label,
+  children,
+}: {
+  icon: LucideIcon;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3 border-t border-[var(--border-soft)] py-5 first:border-t-0">
+      <div className="flex items-center gap-2">
+        <IconBadge icon={icon} size="sm" />
+        <SectionLabel>{label}</SectionLabel>
+      </div>
+      {children}
+    </section>
+  );
 }
 
 /** Brief & answers tab — company brief as prose + the answers list. */
