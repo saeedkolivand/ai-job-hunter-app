@@ -31,6 +31,9 @@ import userEvent from '@testing-library/user-event';
 import type { Application } from '@ajh/shared';
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
 
+import type { TailorWizardState } from '@/features/documents/components/TailorFlow/lib/tailor-state';
+import type { TemplateId } from '@/lib/generate';
+
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
 vi.mock('@ajh/translations', () => ({
@@ -62,7 +65,16 @@ vi.mock('@/routes/applications.$id', () => ({
 
 const mockSetApplicationApply = vi.fn();
 
-const mockSessionState = {
+const mockSessionState: {
+  applicationApply: {
+    applyWizardStep: number;
+    applyWizardForm: TailorWizardState | null;
+    applyTemplateId: TemplateId;
+    applyAtsMode: boolean;
+    applyForId: string | null;
+  };
+  setApplicationApply: typeof mockSetApplicationApply;
+} = {
   applicationApply: {
     applyWizardStep: 0,
     applyWizardForm: null,

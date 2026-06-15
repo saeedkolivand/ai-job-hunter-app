@@ -23,7 +23,7 @@
  */
 
 import React, { act } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -204,7 +204,14 @@ vi.mock('./ReferralModal', () => ({
 
 import type { AutopilotFoundJob } from '@ajh/shared';
 
-import { TailorFlow, type TailorFlowController, type TailorFlowPersistence } from './index';
+import type { TemplateId } from '@/lib/generate';
+
+import {
+  TailorFlow,
+  type TailorFlowController,
+  type TailorFlowPersistence,
+  type TailorWizardState,
+} from './index';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -217,21 +224,26 @@ const JOB: AutopilotFoundJob = {
   foundAt: Date.now(),
 };
 
-function makePersistence(overrides: Partial<TailorFlowPersistence> = {}): TailorFlowPersistence & {
-  setWizardStep: ReturnType<typeof vi.fn>;
-  setWizardForm: ReturnType<typeof vi.fn>;
-  setTemplateId: ReturnType<typeof vi.fn>;
-  setAtsMode: ReturnType<typeof vi.fn>;
-} {
+type MockedPersistence = Omit<
+  TailorFlowPersistence,
+  'setWizardStep' | 'setWizardForm' | 'setTemplateId' | 'setAtsMode'
+> & {
+  setWizardStep: Mock<(v: number) => void>;
+  setWizardForm: Mock<(v: TailorWizardState) => void>;
+  setTemplateId: Mock<(v: TemplateId) => void>;
+  setAtsMode: Mock<(v: boolean) => void>;
+};
+
+function makePersistence(overrides: Partial<MockedPersistence> = {}): MockedPersistence {
   return {
     wizardStep: 0,
     wizardForm: null,
     templateId: 'modern',
     atsMode: false,
-    setWizardStep: vi.fn(),
-    setWizardForm: vi.fn(),
-    setTemplateId: vi.fn(),
-    setAtsMode: vi.fn(),
+    setWizardStep: vi.fn<(v: number) => void>(),
+    setWizardForm: vi.fn<(v: TailorWizardState) => void>(),
+    setTemplateId: vi.fn<(v: TemplateId) => void>(),
+    setAtsMode: vi.fn<(v: boolean) => void>(),
     ...overrides,
   };
 }
