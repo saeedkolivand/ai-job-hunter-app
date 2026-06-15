@@ -14,7 +14,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 
 import { useTranslation } from '@ajh/translations';
@@ -22,6 +22,7 @@ import { Button, cn, NavPill, transition, variants } from '@ajh/ui';
 
 import { ROUTES } from '@/constants/routes';
 import { getTimeGreeting } from '@/lib/greeting';
+import type { DetailTab } from '@/routes/applications.$id';
 import { useAppVersion } from '@/services/use-system';
 import { useUserName } from '@/store/preferences-store';
 
@@ -66,7 +67,22 @@ const PINNED_ITEMS: readonly NavItem[] = [
 export function Sidebar() {
   const { t } = useTranslation();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const search = useRouterState({ select: (s) => s.location.search as { tab?: DetailTab } });
   const userName = useUserName();
+
+  // Remember the last Application detail the user viewed so the sidebar item
+  // returns there instead of always resetting to the list (TanStack <Link>
+  // navigates fresh). Session-scoped — the Sidebar is always mounted — and
+  // cleared back to the list when the user lands on the list route itself.
+  const [lastAppDetail, setLastAppDetail] = useState<{ id: string; tab?: DetailTab } | null>(null);
+  useEffect(() => {
+    if (pathname === ROUTES.APPLICATIONS) {
+      setLastAppDetail(null);
+    } else if (pathname.startsWith(ROUTES.APPLICATIONS + '/')) {
+      const id = pathname.slice(ROUTES.APPLICATIONS.length + 1).split('/')[0];
+      if (id) setLastAppDetail({ id, tab: search.tab });
+    }
+  }, [pathname, search]);
   const { data: version = 'v0.1.0' } = useAppVersion();
   const appVersion = version.startsWith('v') ? version : `v${version}`;
 
@@ -81,27 +97,44 @@ export function Sidebar() {
 
   const renderNavItem = ({ to, label, icon: Icon, tourId }: NavItem) => {
     const active = pathname === to || (to !== '/' && pathname.startsWith(to + '/'));
+    const linkClassName = cn(
+      'group relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors duration-150',
+      active
+        ? 'text-foreground'
+        : 'text-foreground/45 hover:bg-foreground/[0.04] hover:text-foreground/75'
+    );
+    const linkContent = (
+      <>
+        <Icon
+          size={15}
+          className={cn(
+            'shrink-0 transition-colors duration-150',
+            active ? 'text-brand-soft' : 'text-foreground/35 group-hover:text-foreground/55'
+          )}
+        />
+        <span className="flex-1 font-medium">{t(label)}</span>
+      </>
+    );
+    // The Applications item returns to the last-viewed application detail (when
+    // one is remembered) instead of always resetting to the list.
+    const restoreDetail = to === ROUTES.APPLICATIONS ? lastAppDetail : null;
     return (
       <div key={to} className="relative" data-tour-id={tourId}>
         {active && <NavPill layoutId="sidebar-pill" />}
-        <Link
-          to={to}
-          className={cn(
-            'group relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors duration-150',
-            active
-              ? 'text-foreground'
-              : 'text-foreground/45 hover:bg-foreground/[0.04] hover:text-foreground/75'
-          )}
-        >
-          <Icon
-            size={15}
-            className={cn(
-              'shrink-0 transition-colors duration-150',
-              active ? 'text-brand-soft' : 'text-foreground/35 group-hover:text-foreground/55'
-            )}
-          />
-          <span className="flex-1 font-medium">{t(label)}</span>
-        </Link>
+        {restoreDetail ? (
+          <Link
+            to="/applications/$id"
+            params={{ id: restoreDetail.id }}
+            search={{ tab: restoreDetail.tab }}
+            className={linkClassName}
+          >
+            {linkContent}
+          </Link>
+        ) : (
+          <Link to={to} className={linkClassName}>
+            {linkContent}
+          </Link>
+        )}
       </div>
     );
   };
