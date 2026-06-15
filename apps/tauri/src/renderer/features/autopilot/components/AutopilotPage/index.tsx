@@ -123,7 +123,7 @@ function AutopilotPage() {
             </div>
           </div>
           <Button
-            variant="glass"
+            variant="primary"
             onClick={() => setCreating(true)}
             className="transition-all duration-150 ease-out"
           >
