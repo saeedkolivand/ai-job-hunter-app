@@ -1420,7 +1420,10 @@ fn documents_get_text_returns_empty_string_for_missing_id() {
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
 
     // No documents inserted — any id is missing.
-    let text = store.get("nonexistent-doc-id").map(|d| d.text).unwrap_or_default();
+    let text = store
+        .get("nonexistent-doc-id")
+        .map(|d| d.text)
+        .unwrap_or_default();
     assert_eq!(
         text, "",
         "documents_get_text must return an empty string for a missing id, never an error"

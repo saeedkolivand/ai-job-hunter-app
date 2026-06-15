@@ -73,8 +73,8 @@ impl ScraperEngine {
         on_progress: Option<Box<dyn Fn(f32) + Send>>,
         on_item: Option<Box<dyn Fn(JobPosting) + Send>>,
     ) -> anyhow::Result<Vec<JobPosting>> {
-        let scraper = super::boards::get(board)
-            .ok_or_else(|| anyhow::anyhow!("Unknown board: {}", board));
+        let scraper =
+            super::boards::get(board).ok_or_else(|| anyhow::anyhow!("Unknown board: {}", board));
         self.run_search(board, scraper, input, job_id, on_progress, on_item)
             .await
     }

@@ -228,8 +228,7 @@ async fn test_cancellable_sleep_aborts_on_cancel() {
     let token = tokio_util::sync::CancellationToken::new();
     token.cancel(); // pre-cancelled
     let start = std::time::Instant::now();
-    let interrupted =
-        cancellable_sleep(Some(&token), std::time::Duration::from_secs(5)).await;
+    let interrupted = cancellable_sleep(Some(&token), std::time::Duration::from_secs(5)).await;
     let elapsed = start.elapsed();
     assert!(interrupted, "pre-cancelled token must interrupt the sleep");
     assert!(
@@ -241,8 +240,7 @@ async fn test_cancellable_sleep_aborts_on_cancel() {
 #[tokio::test]
 async fn test_cancellable_sleep_elapses_normally() {
     let start = std::time::Instant::now();
-    let interrupted =
-        cancellable_sleep(None, std::time::Duration::from_millis(10)).await;
+    let interrupted = cancellable_sleep(None, std::time::Duration::from_millis(10)).await;
     assert!(!interrupted, "no signal must elapse, not interrupt");
     assert!(
         start.elapsed() >= std::time::Duration::from_millis(10),

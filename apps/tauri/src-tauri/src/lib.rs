@@ -120,7 +120,12 @@ const NAV_ITEMS: &[(&str, &str, &str, &str)] = &[
         "/ai-generate",
         "AI Generate",
     ),
-    ("menu_nav_documents", "CmdOrCtrl+5", "/documents", "Documents"),
+    (
+        "menu_nav_documents",
+        "CmdOrCtrl+5",
+        "/documents",
+        "Documents",
+    ),
     (
         "menu_nav_autopilot",
         "CmdOrCtrl+6",
