@@ -4017,5 +4017,16 @@
       window.addEventListener('resize', () => {});
       fit();
     </script>
+    <script>
+      /* console easter egg — devtools hello, in the wiring's voice */
+      (function () { try {
+        var head = 'color:#0f0f0f;background:#f5b942;font:700 18px/1.4 monospace;padding:6px 12px';
+        var blue = 'color:#4ea1ff;font:13px/1.7 monospace';
+        var soft = 'color:#8a8a8a;font:13px/1.7 monospace';
+        console.log('%c ◇ you're reading the wiring ', head);
+        console.log('%cevery node maps to a real file. trace it yourself 👉 https://github.com/saeedkolivand/ai-job-hunter-app', blue);
+        console.log('%c(a drift checker fails CI if this diagram ever lies. it has caught me twice.)', soft);
+      } catch (e) {} })();
+    </script>
   </body>
 </html>

@@ -2543,5 +2543,16 @@
       wireEvents();
       refresh();
     </script>
+    <script>
+      /* console easter egg — devtools hello, in CI voice */
+      (function () { try {
+        var head = 'color:#0d1117;background:#3fb950;font:700 18px/1.4 monospace;padding:6px 12px';
+        var ok = 'color:#3fb950;font:13px/1.7 monospace';
+        var soft = 'color:#8b949e;font:13px/1.7 monospace';
+        console.log('%c ✓ all checks passed ', head);
+        console.log('%cthe pipeline is green. the job hunt is not. source 👉 https://github.com/saeedkolivand/ai-job-hunter-app', ok);
+        console.log('%c(every badge here is real CI — no green-washing, unlike my résumé.)', soft);
+      } catch (e) {} })();
+    </script>
   </body>
 </html>
