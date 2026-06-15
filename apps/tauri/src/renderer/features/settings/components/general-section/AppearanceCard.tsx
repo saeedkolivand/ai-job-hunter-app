@@ -142,7 +142,7 @@ export function AppearanceCard() {
                   // applier) so the Default dot always shows the true shipped
                   // default, even while a custom/system accent is active.
                   background:
-                    'linear-gradient(135deg, var(--color-brand-base), var(--color-brand-2-base))',
+                    'linear-gradient(135deg, var(--color-brand-base), var(--color-brand-mid-base), var(--color-brand-2-base))',
                 }}
               />
               {t('settings.appearance.accentDefault')}

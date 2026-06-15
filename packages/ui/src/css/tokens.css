@@ -45,19 +45,25 @@
      uses ring-brand, and --color-action-primary = brand. Change this one value
      (statically here for Default, or at runtime on :root) and the whole accent
      re-tints. Semantic action (run/edit/delete) + status colors are NOT accent. */
-  --color-brand: #2ea36b;
-  --color-brand-soft: #46c489;
-  /* Gradient-end + its soft step (shipped amber) — the static `default` accent
+  --color-brand: #366569;
+  --color-brand-soft: #4f878b;
+  /* Sweep MIDDLE (gold) + its soft step (light gold) — the static `default`
+     accent middle stop. The runtime applier recomputes this as the start↔end
+     MIDPOINT for custom/system accents so no gold gets stuck in the middle. */
+  --color-brand-mid: #ba9249;
+  --color-brand-mid-soft: #e2ba71;
+  /* Sweep END (rose) + its soft step — the static `default` accent gradient-end
      the runtime applier overrides for custom/system accents. */
-  --color-brand-2: #f7a325;
-  --color-brand-2-soft: #ffca7a;
+  --color-brand-2: #995f5c;
+  --color-brand-2-soft: #b9817e;
   --color-brand-dim: color-mix(in srgb, var(--color-brand) 15%, transparent);
-  /* Un-overridden BASE brand pair — the SAME shipped default values, but the
+  /* Un-overridden BASE brand stops — the SAME shipped default values, but the
      runtime accent applier (theme.ts `applyAccent` / ACCENT_VARS) never touches
      these. The Settings "Default" accent swatch reads these so it always shows
      the true shipped default even while a custom/system accent is active. */
-  --color-brand-base: #2ea36b;
-  --color-brand-2-base: #f7a325;
+  --color-brand-base: #366569;
+  --color-brand-mid-base: #ba9249;
+  --color-brand-2-base: #995f5c;
 
   /* Native macOS font (San Francisco) where it exists — it can't be bundled, so
      it only appears on real macOS via the OS; everyone else gets bundled Inter.
@@ -157,7 +163,7 @@
   --color-action-edit: oklch(62% 0.16 250); /* edit (blue) */
   --color-action-delete: var(--color-destructive); /* delete (red) */
   --color-action-foreground: oklch(98% 0.01 270); /* label on a filled action */
-  --color-brand-foreground: #15241c; /* dark ink label on the bright emerald→amber primary gradient (white fails on the amber tail) */
+  --color-brand-foreground: #16201f; /* dark ink label — sits over the bright GOLD middle of the teal→gold→rose sweep, where white fails contrast */
 
   /* ── Z-index utilities — use z-overlay, z-modal, z-toast etc. ─────────── */
   --z-index-raised: 10;
@@ -260,8 +266,8 @@
   --nebula-violet: var(--color-brand-soft);
   --nebula-indigo: var(--color-brand-2-soft);
   /* ── RGB aliases for brand colors (used in gradients) */
-  --rgb-brand: 46 163 107;
-  --rgb-aurora-indigo: 247 163 37;
+  --rgb-brand: 54 101 105;
+  --rgb-aurora-indigo: 153 95 92;
 
   /* ── Animation duration scale ─────────────────────────────────────────── */
   --dur-instant: 80ms;
@@ -311,21 +317,26 @@
   --color-border: oklch(88% 1% 264);
   --color-input: oklch(88% 1% 264);
 
-  /* Accent deepened for light: the bright #2EA36B washes out on white and
-     small accent text fails contrast, so brand/primary/accent/ring step down
-     to ~#0F6B3F (still the same emerald family, just legible on white). */
-  --color-brand: #0f6b3f;
-  --color-brand-soft: #1f8a57;
-  /* Gradient-end (amber) deepened for light (legible on white, matching the brand step). */
-  --color-brand-2: #c2740a;
-  --color-brand-2-soft: #e08a12;
+  /* Accent deepened for light: each sweep stop washes out on white at the dark
+     shipped value, so teal/gold/rose step down (still the same family, just
+     legible on the white canvas — mirrors how the old emerald/amber deepened). */
+  --color-brand: #2b5256;
+  --color-brand-soft: #3c6e72;
+  /* Sweep MIDDLE (gold) deepened to an ochre that reads on white. */
+  --color-brand-mid: #9a7634;
+  --color-brand-mid-soft: #ba9249;
+  /* Sweep END (rose) deepened for light (legible on white, matching the steps). */
+  --color-brand-2: #834e4b;
+  --color-brand-2-soft: #9c605c;
   --color-brand-dim: color-mix(in srgb, var(--color-brand) 12%, transparent);
-  /* Un-overridden BASE brand pair for light (mirrors the @theme dark defaults):
+  /* Un-overridden BASE brand stops for light (mirrors the @theme dark defaults):
      the SAME shipped light-scheme values, never touched by the runtime accent
      applier. The Settings "Default" accent swatch reads these. */
-  --color-brand-base: #0f6b3f;
-  --color-brand-2-base: #c2740a;
-  --color-brand-foreground: #ffffff; /* light scheme gradient is deep enough for a white label (dark ink would fail on deep-forest emerald) */
+  --color-brand-base: #2b5256;
+  --color-brand-mid-base: #9a7634;
+  --color-brand-2-base: #834e4b;
+  --color-brand-foreground: #ffffff; /* the deepened light-scheme sweep is dark enough across all three stops for a white label */
+  --rgb-brand: 43 82 86; /* deeper-teal triplet — keep in sync with the light --color-brand (#2b5256) */
   --color-primary: oklch(50% 58% 285);
   --color-primary-foreground: oklch(99% 0.15% 270);
   --color-accent: oklch(50% 58% 285);
@@ -422,9 +433,10 @@
   --shadow-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.6);
   --color-spotlight-overlay: rgba(0, 0, 0, 0.4);
 
-  /* Softer glows on a bright canvas. */
-  --glow-brand-sm: 0 0 20px rgba(124, 58, 237, 0.08);
-  --glow-brand-md: 0 0 36px rgba(124, 58, 237, 0.14);
+  /* Softer glows on a bright canvas. Teal-tinted to match the new brand (these
+     were stale violet from the old brand). */
+  --glow-brand-sm: 0 0 20px rgba(54, 101, 105, 0.08);
+  --glow-brand-md: 0 0 36px rgba(54, 101, 105, 0.14);
   --glow-blue-md: 0 0 36px rgba(79, 70, 229, 0.14);
 
   /* Pastel the cinematic aurora so the light canvas stays calm and readable —

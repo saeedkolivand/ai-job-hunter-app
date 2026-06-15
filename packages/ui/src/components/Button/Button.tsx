@@ -59,7 +59,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 
           // Filled Apple actions — solid colour + white label (tokens only, no hex)
           variant === 'primary' && [
-            'bg-brand-gradient text-brand-foreground',
+            'bg-brand-gradient text-brand-foreground [text-shadow:0_1px_2px_rgba(0,0,0,0.28)]',
             'hover:brightness-110',
           ],
           variant === 'run' && ['bg-action-run text-action-foreground', 'hover:brightness-110'],

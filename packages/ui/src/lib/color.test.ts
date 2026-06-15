@@ -4,6 +4,7 @@ import {
   lighten,
   lightenHex,
   luminance,
+  mixHex,
   parseHex,
   readableForeground,
   rotateHueHex,
@@ -57,6 +58,27 @@ describe('lighten / lightenHex', () => {
   it('lightenHex returns a lighter hex, or null on invalid input', () => {
     expect(lightenHex('#000000', 0.5)).toBe('#808080');
     expect(lightenHex('xyz', 0.3)).toBeNull();
+  });
+});
+
+describe('mixHex', () => {
+  it('returns the even midpoint of two hexes by default', () => {
+    // #000000 ↔ #ffffff midpoint = #808080 (127.5 rounds to 128 = 0x80).
+    expect(mixHex('#000000', '#ffffff')).toBe('#808080');
+    // teal ↔ rose midpoint blends each channel halfway.
+    expect(mixHex('#366569', '#995f5c')).toBe('#686263');
+  });
+  it('honors the blend factor t (0 → a, 1 → b)', () => {
+    expect(mixHex('#000000', '#ffffff', 0)).toBe('#000000');
+    expect(mixHex('#000000', '#ffffff', 1)).toBe('#ffffff');
+  });
+  it('clamps t to [0,1]', () => {
+    expect(mixHex('#000000', '#ffffff', -1)).toBe('#000000');
+    expect(mixHex('#000000', '#ffffff', 2)).toBe('#ffffff');
+  });
+  it('returns null when either hex is invalid', () => {
+    expect(mixHex('nope', '#ffffff')).toBeNull();
+    expect(mixHex('#000000', 'xyz')).toBeNull();
   });
 });
 

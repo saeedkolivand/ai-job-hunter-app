@@ -315,3 +315,61 @@ describe('theme engine — accent gradient (brand-2)', () => {
     expect(cssVar('--color-brand-2')).toBe('#22d3ee');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sweep middle — --color-brand-mid (start↔end midpoint, never stuck on gold)
+// ---------------------------------------------------------------------------
+
+describe('theme engine — accent sweep middle (brand-mid)', () => {
+  const base: ThemePrefs = {
+    scheme: 'dark',
+    reduceTransparency: false,
+    contrast: 'normal',
+    textScale: 'default',
+    accentSource: 'default',
+  };
+  const cssVar = (name: string) => document.documentElement.style.getPropertyValue(name);
+
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.style.cssText = '';
+    stubMatchMedia({});
+  });
+  afterEach(() => {
+    localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it('sets --color-brand-mid to the start↔end MIDPOINT for a two-color custom accent', () => {
+    applyTheme({
+      ...base,
+      accentSource: 'custom',
+      accentColor: '#000000',
+      accentColor2: '#ffffff',
+    });
+    // Even channel midpoint of black↔white = #808080 — no shipped gold injected.
+    expect(cssVar('--color-brand-mid')).toBe('#808080');
+    expect(cssVar('--color-brand-mid-soft')).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  it('sets a color-derived --color-brand-mid (not the default gold) when only one hue is given', () => {
+    applyTheme({ ...base, accentSource: 'system', accentColor: '#22c55e' });
+    const mid = cssVar('--color-brand-mid');
+    expect(mid).toMatch(/^#[0-9a-f]{6}$/);
+    // Must NOT be left as the shipped default gold.
+    expect(mid.toLowerCase()).not.toBe('#ba9249');
+  });
+
+  it("'default' source removes --color-brand-mid + --color-brand-mid-soft (restores tokens.css gold)", () => {
+    applyTheme({
+      ...base,
+      accentSource: 'custom',
+      accentColor: '#007aff',
+      accentColor2: '#22d3ee',
+    });
+    expect(cssVar('--color-brand-mid')).not.toBe('');
+    applyTheme({ ...base, accentSource: 'default' });
+    expect(cssVar('--color-brand-mid')).toBe('');
+    expect(cssVar('--color-brand-mid-soft')).toBe('');
+  });
+});
