@@ -1,4 +1,14 @@
-import { ArrowLeft, ExternalLink, FileText, HelpCircle, Trash2, UserPlus } from 'lucide-react';
+import {
+  ArrowLeft,
+  CalendarClock,
+  ExternalLink,
+  FileText,
+  HelpCircle,
+  StickyNote,
+  Trash2,
+  UserPlus,
+  UserRound,
+} from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
@@ -22,11 +32,11 @@ import {
   ErrorState,
   Input,
   RowSkeleton,
+  SettingsSection,
   TextArea,
   transition,
 } from '@ajh/ui';
 
-import { GenerationCard } from '@/features/documents/components/GenerationCard';
 import {
   TailorFlow,
   type TailorFlowController,
@@ -280,14 +290,6 @@ function ApplicationDetailLoaded({ application, events, onBack }: LoadedProps) {
             <span className="truncate text-base font-semibold text-foreground/90">
               {application.title || t('applications.row.noTitle')}
             </span>
-            <div className="shrink-0">
-              <Dropdown
-                options={stageOptions}
-                value={application.status}
-                onChange={handleStatusChange}
-                tone="primary"
-              />
-            </div>
             {application.board && (
               <span className="shrink-0 rounded-full border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 text-[9px] uppercase tracking-wider text-foreground/55">
                 {application.board}
@@ -299,13 +301,21 @@ function ApplicationDetailLoaded({ application, events, onBack }: LoadedProps) {
           )}
         </div>
 
+        <div className="shrink-0">
+          <Dropdown
+            options={stageOptions}
+            value={application.status}
+            onChange={handleStatusChange}
+            tone="primary"
+          />
+        </div>
         {isHttpUrl(application.jobUrl) && (
           <Button
             variant="glass"
             onClick={() => openExternal.mutate(application.jobUrl)}
             className="shrink-0 gap-1.5"
           >
-            <ExternalLink size={13} /> {t('applications.row.openUrl')}
+            <ExternalLink size={13} /> {t('applications.detail.jobLink')}
           </Button>
         )}
         <ActionMenu
@@ -377,11 +387,12 @@ function ApplicationDetailLoaded({ application, events, onBack }: LoadedProps) {
               >
                 {tab === 'overview' && (
                   <TabScroll>
-                    <label className="block space-y-1.5">
-                      <span className="text-xs text-foreground/60">
+                    <SettingsSection icon={StickyNote} label={t('applications.detail.notesLabel')}>
+                      <label htmlFor="appdetail-notes" className="sr-only">
                         {t('applications.detail.notesLabel')}
-                      </span>
+                      </label>
                       <TextArea
+                        id="appdetail-notes"
                         variant="glass"
                         rows={4}
                         value={notes}
@@ -392,77 +403,108 @@ function ApplicationDetailLoaded({ application, events, onBack }: LoadedProps) {
                           }
                         }}
                       />
-                    </label>
+                    </SettingsSection>
 
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="block space-y-1.5">
-                        <span className="text-xs text-foreground/60">
-                          {t('applications.detail.contactNameLabel')}
-                        </span>
-                        <Input
-                          variant="default"
-                          value={contactName}
-                          onChange={(e) => setContactName(e.target.value)}
-                          onBlur={() => {
-                            if (contactName !== application.contactName) {
-                              updateApplication.mutate({ id: application.id, contactName });
-                            }
-                          }}
-                        />
-                      </label>
+                    <SettingsSection
+                      icon={UserRound}
+                      label={t('applications.detail.contactSection')}
+                    >
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="flex flex-col gap-1.5">
+                          <label
+                            htmlFor="appdetail-contact-name"
+                            className="text-xs font-medium text-foreground/70"
+                          >
+                            {t('applications.detail.contactNameLabel')}
+                          </label>
+                          <Input
+                            id="appdetail-contact-name"
+                            variant="default"
+                            value={contactName}
+                            onChange={(e) => setContactName(e.target.value)}
+                            onBlur={() => {
+                              if (contactName !== application.contactName) {
+                                updateApplication.mutate({ id: application.id, contactName });
+                              }
+                            }}
+                          />
+                        </div>
 
-                      <label className="block space-y-1.5">
-                        <span className="text-xs text-foreground/60">
-                          {t('applications.detail.contactEmailLabel')}
-                        </span>
-                        <Input
-                          variant="default"
-                          type="email"
-                          value={contactEmail}
-                          onChange={(e) => setContactEmail(e.target.value)}
-                          onBlur={() => {
-                            if (contactEmail !== application.contactEmail) {
-                              updateApplication.mutate({ id: application.id, contactEmail });
-                            }
-                          }}
-                        />
-                      </label>
+                        <div className="flex flex-col gap-1.5">
+                          <label
+                            htmlFor="appdetail-contact-email"
+                            className="text-xs font-medium text-foreground/70"
+                          >
+                            {t('applications.detail.contactEmailLabel')}
+                          </label>
+                          <Input
+                            id="appdetail-contact-email"
+                            variant="default"
+                            type="email"
+                            value={contactEmail}
+                            onChange={(e) => setContactEmail(e.target.value)}
+                            onBlur={() => {
+                              if (contactEmail !== application.contactEmail) {
+                                updateApplication.mutate({ id: application.id, contactEmail });
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </SettingsSection>
 
-                      <label className="block space-y-1.5">
-                        <span className="text-xs text-foreground/60">
-                          {t('applications.detail.compLabel')}
-                        </span>
-                        <Input
-                          variant="default"
-                          value={comp}
-                          onChange={(e) => setComp(e.target.value)}
-                          onBlur={() => {
-                            if (comp !== application.comp) {
-                              updateApplication.mutate({ id: application.id, comp });
-                            }
-                          }}
-                        />
-                      </label>
+                    <SettingsSection
+                      icon={CalendarClock}
+                      label={t('applications.detail.trackingSection')}
+                    >
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="flex flex-col gap-1.5">
+                          <label
+                            htmlFor="appdetail-comp"
+                            className="text-xs font-medium text-foreground/70"
+                          >
+                            {t('applications.detail.compLabel')}
+                          </label>
+                          <Input
+                            id="appdetail-comp"
+                            variant="default"
+                            value={comp}
+                            onChange={(e) => setComp(e.target.value)}
+                            onBlur={() => {
+                              if (comp !== application.comp) {
+                                updateApplication.mutate({ id: application.id, comp });
+                              }
+                            }}
+                          />
+                        </div>
 
-                      <label className="block space-y-1.5">
-                        <span className="text-xs text-foreground/60">
-                          {t('applications.detail.nextActionLabel')}
-                        </span>
-                        <Input
-                          variant="default"
-                          type="date"
-                          value={nextActionAt}
-                          onChange={(e) => setNextActionAt(e.target.value)}
-                          onBlur={() => {
-                            const next = fromDateInputValue(nextActionAt);
-                            if (next !== (application.nextActionAt ?? null)) {
-                              updateApplication.mutate({ id: application.id, nextActionAt: next });
-                            }
-                          }}
-                          className="w-full"
-                        />
-                      </label>
-                    </div>
+                        <div className="flex flex-col gap-1.5">
+                          <label
+                            htmlFor="appdetail-next-action"
+                            className="text-xs font-medium text-foreground/70"
+                          >
+                            {t('applications.detail.nextActionLabel')}
+                          </label>
+                          <Input
+                            id="appdetail-next-action"
+                            variant="default"
+                            type="date"
+                            value={nextActionAt}
+                            onChange={(e) => setNextActionAt(e.target.value)}
+                            onBlur={() => {
+                              const next = fromDateInputValue(nextActionAt);
+                              if (next !== (application.nextActionAt ?? null)) {
+                                updateApplication.mutate({
+                                  id: application.id,
+                                  nextActionAt: next,
+                                });
+                              }
+                            }}
+                            className="w-full"
+                          />
+                        </div>
+                      </div>
+                    </SettingsSection>
                   </TabScroll>
                 )}
 
@@ -598,8 +640,8 @@ interface DocumentsTabProps {
 }
 
 /**
- * Documents tab — embeds the shared {@link TailorFlow} generator seeded with the
- * user's default résumé, plus a bounded list of previously-saved generations.
+ * Documents tab — a full-height host for the shared {@link TailorFlow} generator
+ * seeded with the user's default résumé, mirroring the autopilot apply flow.
  * Wizard / template / ATS persistence lives on the `applicationApply` session
  * slice (this surface owns it); TailorFlow surfaces a controller so the toolbar
  * can drive its Questions / Referral modals.
@@ -685,7 +727,7 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
         </Button>
       </div>
 
-      {/* Shared tailoring body */}
+      {/* Shared tailoring body — full-height, matching the autopilot apply flow */}
       <div className="min-h-0 flex-1">
         <TailorFlow
           job={job}
@@ -697,18 +739,6 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
           onController={setController}
         />
       </div>
-
-      {/* Previously-saved generations — bounded so TailorFlow's scroll still works */}
-      {matchingGenerations.length > 0 && (
-        <div className="max-h-[35%] shrink-0 space-y-2 overflow-y-auto border-t border-white/[0.06] px-8 py-3">
-          <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
-            {t('applications.detail.documentsTitle')}
-          </span>
-          {matchingGenerations.map((g) => (
-            <GenerationCard key={g.id} gen={g} />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

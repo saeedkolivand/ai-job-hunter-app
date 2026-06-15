@@ -217,7 +217,7 @@ beforeEach(() => {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('ApplicationDetailPage — generation matching (Documents tab)', () => {
-  it('renders a GenerationCard for a generation whose jobUrl matches the application', () => {
+  it('does NOT render a saved-generations list even when a generation matches (list removed)', () => {
     mockTab = 'documents';
     const app = makeApp({ jobUrl: 'https://acme.com/job/1' });
 
@@ -235,14 +235,9 @@ describe('ApplicationDetailPage — generation matching (Documents tab)', () => 
 
     render(<ApplicationDetailPage />);
 
-    const cards = screen.getAllByTestId('generation-card');
-    expect(cards).toHaveLength(1);
-
-    const card = cards[0];
-    expect(card).toBeDefined();
-    expect(card?.getAttribute('data-genid')).toBe('gen-1');
-
-    // The embedded TailorFlow generator is always present on the Documents tab.
+    // The Documents tab is now a full-height host for TailorFlow (mirrors the
+    // autopilot apply flow); the previously-saved generations list was removed.
+    expect(screen.queryByTestId('generation-card')).not.toBeInTheDocument();
     expect(screen.getByTestId('tailor-flow')).toBeInTheDocument();
   });
 
@@ -306,7 +301,6 @@ describe('ApplicationDetailPage — save-on-blur (Overview tab)', () => {
     const app = makeApp({ notes: 'existing note' });
     renderLoadedApp(app);
 
-    // t() returns keys, so the textarea's accessible name is the label key.
     const notes = screen.getByLabelText('applications.detail.notesLabel');
     fireEvent.blur(notes);
 
@@ -815,28 +809,5 @@ describe('ApplicationDetailPage — Documents tab toolbar', () => {
     ).not.toBeInTheDocument();
     // Referral button always present.
     expect(screen.getByRole('button', { name: /autopilot\.referral\.open/i })).toBeInTheDocument();
-  });
-
-  it('renders matching GenerationCards on the Documents tab', () => {
-    mockTab = 'documents';
-    const app = makeApp({ id: 'app-docs-match', jobUrl: 'https://example.com/job/99' });
-    mockUseApplication.mockReturnValue({
-      data: { application: app, events: [] },
-      isLoading: false,
-      isError: false,
-    });
-    mockUseAiGenerations.mockReturnValue({
-      data: [
-        makeGen({ id: 'gen-match-1', jobUrl: 'https://example.com/job/99' }),
-        makeGen({ id: 'gen-no-match', jobUrl: 'https://other.com/job/1' }),
-      ],
-    });
-    render(<ApplicationDetailPage />);
-
-    const cards = screen.getAllByTestId('generation-card');
-    expect(cards).toHaveLength(1);
-    const firstCard = cards[0];
-    expect(firstCard).toBeDefined();
-    expect(firstCard?.getAttribute('data-genid')).toBe('gen-match-1');
   });
 });

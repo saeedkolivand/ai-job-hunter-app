@@ -2353,9 +2353,11 @@
       "contactEmailLabel": "Kontakt-E-Mail",
       "compLabel": "Vergütung",
       "nextActionLabel": "Erinnerung für nächste Aktion",
+      "contactSection": "Kontakt",
+      "trackingSection": "Nachverfolgung",
       "briefTitle": "Unternehmens-Briefing",
       "answersTitle": "Bewerbungsantworten",
-      "documentsTitle": "Dokumente",
+      "jobLink": "Job-Link",
       "notFound": "Bewerbung nicht gefunden",
       "notFoundDesc": "Diese Bewerbung wurde möglicherweise entfernt."
     }

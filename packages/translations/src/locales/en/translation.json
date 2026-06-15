@@ -2393,9 +2393,11 @@
       "contactEmailLabel": "Contact email",
       "compLabel": "Compensation",
       "nextActionLabel": "Next action reminder",
+      "contactSection": "Contact",
+      "trackingSection": "Tracking",
       "briefTitle": "Company brief",
       "answersTitle": "Application answers",
-      "documentsTitle": "Documents",
+      "jobLink": "Job link",
       "notFound": "Application not found",
       "notFoundDesc": "This application may have been removed."
     }
