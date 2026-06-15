@@ -122,6 +122,7 @@ const interviewMock = {
   error: null,
   generate: vi.fn(),
   canGenerate: false,
+  needsResearchKey: false,
 };
 
 vi.mock('@/hooks/use-interview-questions', () => ({

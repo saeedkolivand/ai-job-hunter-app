@@ -3,6 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import type { InterviewQuestion } from '@ajh/shared';
 
+import { useSelectedProvider } from '@/components/ui/ModelSelector';
+import { isOllamaFamily } from '@/lib/ai-providers/provider-meta';
 import {
   extractMetadata,
   generateInterviewQuestions,
@@ -11,7 +13,9 @@ import {
   researchCompany as fetchCompanyBrief,
 } from '@/lib/generate';
 import { useAppClient } from '@/providers/AppClientProvider';
+import { useHasProviderKey } from '@/services';
 import { keys } from '@/services/query-client';
+import type { AiProvider } from '@/store/preferences-schema';
 
 /** Default target interviewers — the two earliest rounds (recruiter/HR + hiring manager). */
 const DEFAULT_AUDIENCES = ['recruiter', 'hiringManager'];
@@ -63,6 +67,15 @@ export function useInterviewQuestions({
 
   const toggleAudience = (aud: string) =>
     setAudiences((prev) => (prev.includes(aud) ? prev.filter((a) => a !== aud) : [...prev, aud]));
+
+  // Company research ALWAYS runs here, via the active provider's web search.
+  // Ollama-family providers need the free Ollama account key for it — surface a
+  // non-blocking hint so the user knows their questions won't be web-grounded
+  // until they add the key (Settings → AI). Does not gate generation.
+  const activeProvider = useSelectedProvider();
+  const { data: ollamaKey } = useHasProviderKey('ollama-cloud');
+  const needsResearchKey =
+    isOllamaFamily(activeProvider as AiProvider) && !(ollamaKey?.has ?? false);
 
   const canGenerate = canUse && hasDesc && resume.trim().length > 0 && audiences.length > 0;
 
@@ -130,5 +143,6 @@ export function useInterviewQuestions({
     error,
     generate,
     canGenerate,
+    needsResearchKey,
   };
 }

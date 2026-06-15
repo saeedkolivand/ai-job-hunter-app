@@ -19,6 +19,8 @@ interface Props {
   error: string | null;
   generate: () => void;
   canGenerate: boolean;
+  /** Ollama-family provider without the web-search key — research won't be grounded. */
+  needsResearchKey: boolean;
   onClose: () => void;
 }
 
@@ -38,6 +40,7 @@ export function InterviewQuestionsModal({
   error,
   generate,
   canGenerate,
+  needsResearchKey,
   onClose,
 }: Props) {
   const { t } = useTranslation();
@@ -97,6 +100,11 @@ export function InterviewQuestionsModal({
             placeholder={t('applications.detail.interview.seedPlaceholder')}
           />
 
+          {needsResearchKey && (
+            <p className="text-[11px] text-amber-300/70">
+              {t('aiGenerate.research.ollamaKeyHint')}
+            </p>
+          )}
           {error && <p className="text-[11px] text-red-300/80">{error}</p>}
 
           {questions.length === 0 ? (

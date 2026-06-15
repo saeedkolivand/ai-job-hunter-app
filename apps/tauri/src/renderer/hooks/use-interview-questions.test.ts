@@ -39,6 +39,13 @@ vi.mock('@/lib/generate', () => ({
     .mockReturnValue([{ id: 'iq-1', question: 'Q1', why: 'because', audience: 'recruiter' }]),
 }));
 
+// Active provider + Ollama web-search key — controllable so we can exercise the
+// needsResearchKey hint (Ollama-family provider without the key).
+let mockProvider = 'openai';
+let mockHasOllamaKey = true;
+vi.mock('@/components/ui/ModelSelector', () => ({ useSelectedProvider: () => mockProvider }));
+vi.mock('@/services', () => ({ useHasProviderKey: () => ({ data: { has: mockHasOllamaKey } }) }));
+
 const params = {
   resume: 'my resume',
   jobDesc: 'JD',
@@ -59,6 +66,8 @@ describe('useInterviewQuestions', () => {
   beforeEach(() => {
     save.mockClear();
     vi.mocked(generateInterviewQuestions).mockClear();
+    mockProvider = 'openai';
+    mockHasOllamaKey = true;
   });
 
   it('defaults to the two earliest rounds (recruiter/HR + hiring manager)', () => {
@@ -114,6 +123,24 @@ describe('useInterviewQuestions', () => {
         interviewQuestions: [{ id: 'iq-1', question: 'Q1', why: 'because', audience: 'recruiter' }],
       })
     );
+  });
+
+  it('flags needsResearchKey for an Ollama provider missing the web-search key', () => {
+    mockProvider = 'ollama';
+    mockHasOllamaKey = false;
+    expect(render().result.current.needsResearchKey).toBe(true);
+  });
+
+  it('does not flag needsResearchKey for a cloud provider (uses its own web search)', () => {
+    mockProvider = 'openai';
+    mockHasOllamaKey = false;
+    expect(render().result.current.needsResearchKey).toBe(false);
+  });
+
+  it('does not flag needsResearchKey once the Ollama key is present', () => {
+    mockProvider = 'ollama';
+    mockHasOllamaKey = true;
+    expect(render().result.current.needsResearchKey).toBe(false);
   });
 
   it('does not call the generator when no audience is selected', async () => {

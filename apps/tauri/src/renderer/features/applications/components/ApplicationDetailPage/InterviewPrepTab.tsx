@@ -105,6 +105,9 @@ export function InterviewPrepTab({ application, matchingGenerations }: Props) {
             {t('applications.detail.interview.needsJob')}
           </p>
         )}
+        {iq.needsResearchKey && (
+          <p className="text-[11px] text-amber-400/70">{t('aiGenerate.research.ollamaKeyHint')}</p>
+        )}
         {iq.error && <p className="text-[11px] text-red-400/80">{iq.error}</p>}
       </div>
 
