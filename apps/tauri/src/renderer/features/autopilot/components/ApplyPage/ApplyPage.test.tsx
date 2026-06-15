@@ -94,7 +94,7 @@ const genMock = {
   meta: null,
 };
 
-vi.mock('./useTailorGeneration', () => ({
+vi.mock('@/features/documents/components/TailorFlow/useTailorGeneration', () => ({
   useTailorGeneration: () => genMock,
 }));
 
@@ -116,11 +116,11 @@ vi.mock('@/components/resume/ResumeInputCard', () => ({
   ),
 }));
 
-vi.mock('./ApplicationQuestionsModal', () => ({
+vi.mock('@/features/documents/components/TailorFlow/ApplicationQuestionsModal', () => ({
   ApplicationQuestionsModal: () => <div data-testid="application-questions-modal" />,
 }));
 
-vi.mock('./useApplicationAnswers', () => ({
+vi.mock('@/features/documents/components/TailorFlow/useApplicationAnswers', () => ({
   useApplicationAnswers: () => ({
     selected: new Set<string>(),
     toggle: vi.fn(),
@@ -132,7 +132,7 @@ vi.mock('./useApplicationAnswers', () => ({
   }),
 }));
 
-vi.mock('../ReferralModal', () => ({
+vi.mock('@/features/documents/components/TailorFlow/ReferralModal', () => ({
   ReferralModal: () => <div data-testid="referral-modal" />,
 }));
 

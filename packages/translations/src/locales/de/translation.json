@@ -2334,8 +2334,16 @@
       "back": "Zurück zu Bewerbungen",
       "openAria": "{{title}} öffnen",
       "statusTitle": "Status",
+      "tabs": {
+        "overview": "Übersicht",
+        "timeline": "Verlauf",
+        "brief": "Briefing & Antworten",
+        "documents": "Dokumente"
+      },
+      "tabsLabel": "Bewerbungsdetail-Tabs",
       "timelineTitle": "Verlauf",
       "timelineEmpty": "Noch kein Statusverlauf.",
+      "briefEmpty": "Noch kein Briefing oder Antworten.",
       "created": "Erstellt",
       "fieldsTitle": "Details",
       "notesLabel": "Notizen",
@@ -2346,9 +2354,6 @@
       "briefTitle": "Unternehmens-Briefing",
       "answersTitle": "Bewerbungsantworten",
       "documentsTitle": "Dokumente",
-      "noDocuments": "Noch keine Dokumente",
-      "noDocumentsDesc": "Erstelle einen passgenauen Lebenslauf und ein Anschreiben für diese Bewerbung.",
-      "generateDocs": "Dokumente erstellen",
       "notFound": "Bewerbung nicht gefunden",
       "notFoundDesc": "Diese Bewerbung wurde möglicherweise entfernt."
     }

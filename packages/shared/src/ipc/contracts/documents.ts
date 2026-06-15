@@ -161,6 +161,13 @@ export interface TemplateRecommendation {
 export interface DocumentsContract {
   list(): Promise<DocumentRecord[]>;
 
+  /**
+   * Fetch the stored extracted text for one document by id. Returns the empty
+   * string when the document is missing or has no text (never rejects), so a
+   * caller can safely seed a generator without a missing-doc guard.
+   */
+  getText(id: string): Promise<string>;
+
   import(req: DocumentImportRequest): Promise<{
     id: string;
     success: boolean;
@@ -196,6 +203,7 @@ export interface DocumentsContract {
 
 export const DOCUMENTS_CHANNELS = {
   list: 'documents:list',
+  getText: 'documents:get_text',
   import: 'documents:import',
   recommendTemplate: 'documents:recommend_template',
   remove: 'documents:remove',

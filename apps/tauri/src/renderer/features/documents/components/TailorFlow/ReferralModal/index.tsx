@@ -7,10 +7,10 @@ import { useTranslation } from '@ajh/translations';
 import { Button, Input, ModalShell, SegmentedControl, StreamingText, TextArea } from '@ajh/ui';
 
 import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
-import { WizardField } from '@/features/autopilot/components/wizard-steps/WizardField';
 import { CONNECTION_NOTE_LIMIT } from '@/lib/generate';
 import { useReferrals, useUpsertReferral } from '@/services';
 
+import { WizardField } from '../WizardField';
 import { ReferralList } from './ReferralList';
 import { useReferralDraft } from './useReferralDraft';
 

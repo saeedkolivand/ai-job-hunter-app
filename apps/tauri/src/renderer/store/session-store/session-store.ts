@@ -3,8 +3,8 @@ import { create } from 'zustand';
 import type { InterviewAnswers } from '@ajh/prompts/builder';
 import type { AutopilotFoundJob } from '@ajh/shared';
 
-import type { TailorWizardState } from '@/features/autopilot/components/ApplyPage/lib/tailor-state';
 import type { WizardState } from '@/features/autopilot/types';
+import type { TailorWizardState } from '@/features/documents/components/TailorFlow/lib/tailor-state';
 import type { EmphasisId, GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate';
 import type { AnalysisMode, AnalysisResult } from '@/lib/resume-ai';
 
@@ -101,6 +101,21 @@ interface AutopilotSlice {
 }
 
 /**
+ * Application-detail tailoring state — a SEPARATE slice from `autopilot` so the
+ * application-detail surface owns its own wizard/template/ATS persistence and
+ * never shares configuring state with the autopilot apply flow.
+ * applyForId — which application id this configuring state belongs to (used to
+ * reset on switch).
+ */
+interface ApplicationApplySlice {
+  applyWizardStep: number;
+  applyWizardForm: TailorWizardState | null;
+  applyTemplateId: TemplateId;
+  applyAtsMode: boolean;
+  applyForId: string | null;
+}
+
+/**
  * Applications-page UI state.
  * collapsedSections — stage ids currently collapsed; all sections expanded by default.
  * filter — text filter applied across company/title/candidate.
@@ -129,6 +144,14 @@ const AI_GENERATE_DEFAULTS: AIGenerateSlice = {
   coverOut: '',
   activeOut: 'resume',
   wizardStep: 0,
+};
+
+const APPLICATION_APPLY_DEFAULTS: ApplicationApplySlice = {
+  applyWizardStep: 0,
+  applyWizardForm: null,
+  applyTemplateId: 'modern',
+  applyAtsMode: false,
+  applyForId: null,
 };
 
 const ANALYZE_DEFAULTS: AnalyzeSlice = {
@@ -173,6 +196,7 @@ interface SessionState {
   resumes: ResumesSlice;
   settings: SettingsSlice;
   autopilot: AutopilotSlice;
+  applicationApply: ApplicationApplySlice;
   applications: ApplicationsSlice;
 
   setAIGenerate: (patch: Partial<AIGenerateSlice>) => void;
@@ -190,6 +214,8 @@ interface SessionState {
 
   setAutopilot: (patch: Partial<AutopilotSlice>) => void;
   resetAutopilotWizard: () => void;
+
+  setApplicationApply: (patch: Partial<ApplicationApplySlice>) => void;
 
   setApplications: (patch: Partial<ApplicationsSlice>) => void;
   toggleApplicationSection: (stageId: string) => void;
@@ -214,6 +240,7 @@ export const useSessionStore = create<SessionState>((set) => ({
     applyTemplateId: 'modern',
     applyAtsMode: false,
   },
+  applicationApply: { ...APPLICATION_APPLY_DEFAULTS },
   applications: { collapsedSections: [], filter: '' },
 
   setAIGenerate: (patch) => set((s) => ({ aiGenerate: { ...s.aiGenerate, ...patch } })),
@@ -240,6 +267,9 @@ export const useSessionStore = create<SessionState>((set) => ({
         wizardForm: null,
       },
     })),
+
+  setApplicationApply: (patch) =>
+    set((s) => ({ applicationApply: { ...s.applicationApply, ...patch } })),
 
   setApplications: (patch) => set((s) => ({ applications: { ...s.applications, ...patch } })),
   toggleApplicationSection: (stageId) =>

@@ -109,6 +109,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
 
     documents: {
       list: emptyList,
+      getText: async () => '',
       import: noop,
       recommendTemplate: async () => ({
         templateId: 'modern',

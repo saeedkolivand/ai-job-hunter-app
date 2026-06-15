@@ -656,6 +656,7 @@ pub fn run() {
             commands::documents::documents_recommend_template,
             commands::documents::documents_remove,
             commands::documents::documents_set_default,
+            commands::documents::documents_get_text,
             // job preferences
             commands::job_preferences::job_preferences_get,
             commands::job_preferences::job_preferences_set,

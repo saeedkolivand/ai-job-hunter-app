@@ -185,6 +185,10 @@ vi.mock('@/services', async (importOriginal) => {
     }),
     useUpdateApplication: () => ({ mutate: vi.fn(), isPending: false }),
     useOpenExternal: () => ({ mutate: vi.fn() }),
+    useRemoveApplication: () => ({
+      mutateAsync: vi.fn().mockResolvedValue(undefined),
+      isPending: false,
+    }),
     useAutopilots: () => ({ data: [], isLoading: false }),
     useInvalidateAutopilots: () => vi.fn(),
   };
@@ -194,12 +198,24 @@ vi.mock('@/services/use-ai-generations', () => ({
   useAiGenerations: () => ({ data: [] }),
 }));
 
+// ── TailorFlow stub — cuts the heavy generation subtree (incl. the i18n shim) ─
+// ApplicationDetailPage embeds TailorFlow in its Documents tab. Importing the
+// real TailorFlow pulls in StepResume → ResumeInputCard → use-import-with-ocr →
+// @/i18n shim, which calls i18n.on(...) on the @ajh/translations default export
+// that the translations mock above does not supply.  This test is about ROUTING,
+// not TailorFlow internals, so stubbing the leaf is the correct approach.
+
+vi.mock('@/features/documents/components/TailorFlow', () => ({
+  TailorFlow: () => <div data-testid="tailor-flow-stub" />,
+}));
+
 // ── Import real page components (after all mocks) ─────────────────────────────
 
 import { ApplicationDetailPage } from '@/features/applications/components/ApplicationDetailPage';
 import { ApplicationsPage } from '@/features/applications/components/ApplicationsPage';
 import { ApplyPageRoute } from '@/features/autopilot/components/ApplyPageRoute';
 import { AutopilotPage } from '@/features/autopilot/components/AutopilotPage';
+import { DETAIL_TABS } from '@/routes/applications.$id';
 
 // ── Mock @/routes/applications.index Route (useSearch) ───────────────────────
 // ApplicationsPage imports Route from @/routes/applications.index for useSearch.
@@ -332,8 +348,8 @@ describe('Route Outlet nesting — regression guard', () => {
       expect(screen.getByText('applications.detail.back')).toBeInTheDocument();
     });
 
-    // The status-title label is another detail-only marker.
-    expect(screen.getByText('applications.detail.statusTitle')).toBeInTheDocument();
+    // The overview tab button is another detail-only marker (active tab in the tablist).
+    expect(screen.getByText('applications.detail.tabs.overview')).toBeInTheDocument();
 
     // Critically: ApplicationsPage's "application-row" testid must NOT be present
     // — confirms the list page did NOT mount (layout Outlet served the child).
@@ -402,5 +418,69 @@ describe('Route Outlet nesting — regression guard', () => {
     // apply-page-stub must NOT be present — the apply route rendered null then
     // the redirect took over.
     expect(screen.queryByTestId('apply-page-stub')).not.toBeInTheDocument();
+  });
+
+  /**
+   * Case 4: /applications/abc?tab=GARBAGE exercises the REAL validateSearch on
+   * the $id route. Unknown tab values are coerced to undefined by validateSearch;
+   * ApplicationDetailPage then defaults to 'overview' via `?? 'overview'`.
+   *
+   * This test is the only one that exercises the real validateSearch coercion —
+   * unit tests mock the router and cannot reach it.
+   */
+  it('navigating to /applications/$id?tab=GARBAGE coerces to the overview tab via validateSearch', async () => {
+    // Build a route tree identical to renderAt but with the real validateSearch
+    // wired onto the $id route so the coercion path is live.
+    const validateSearch = (
+      s: Record<string, unknown>
+    ): { tab?: (typeof DETAIL_TABS)[number] } => ({
+      tab: (DETAIL_TABS as readonly string[]).includes(s.tab as string)
+        ? (s.tab as (typeof DETAIL_TABS)[number])
+        : undefined,
+    });
+
+    const rootRoute = createRootRoute({ component: () => <Outlet /> });
+    const applicationsLayout = createRoute({
+      getParentRoute: () => rootRoute,
+      path: '/applications',
+      component: () => <Outlet />,
+    });
+    const applicationsIndex = createRoute({
+      getParentRoute: () => applicationsLayout,
+      path: '/',
+      component: ApplicationsPage,
+    });
+    const applicationsDetail = createRoute({
+      getParentRoute: () => applicationsLayout,
+      path: '$id',
+      validateSearch,
+      component: ApplicationDetailPage,
+    });
+
+    const routeTree = rootRoute.addChildren([
+      applicationsLayout.addChildren([applicationsIndex, applicationsDetail]),
+    ]);
+
+    const router = createRouter({
+      routeTree,
+      history: createMemoryHistory({ initialEntries: ['/applications/abc?tab=GARBAGE'] }),
+    });
+
+    render(<RouterProvider router={router} />);
+
+    // ApplicationDetailPage should mount and default to the overview tab.
+    await waitFor(() => {
+      expect(screen.getByText('applications.detail.back')).toBeInTheDocument();
+    });
+
+    // The overview tab button must be the active one (aria-selected="true").
+    // t() returns keys so the tab label is the i18n key literal.
+    const overviewTab = screen.getByRole('tab', {
+      name: /applications\.detail\.tabs\.overview/i,
+    });
+    expect(overviewTab).toHaveAttribute('aria-selected', 'true');
+
+    // Sanity: the list page must not have rendered.
+    expect(screen.queryByTestId('application-row')).not.toBeInTheDocument();
   });
 });

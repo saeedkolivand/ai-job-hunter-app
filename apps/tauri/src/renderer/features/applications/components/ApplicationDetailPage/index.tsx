@@ -1,28 +1,46 @@
-import { ArrowLeft, ExternalLink, FileText } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowLeft, ExternalLink, FileText, HelpCircle, Trash2, UserPlus } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
-import { type Application, APPLICATION_STAGES, type StatusEvent } from '@ajh/shared';
+import {
+  type AiGenerationRecord,
+  type Application,
+  APPLICATION_STAGES,
+  type AutopilotFoundJob,
+  type StatusEvent,
+} from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import {
+  ActionMenu,
   Button,
   CardSkeleton,
+  cn,
+  ConfirmModal,
   Dropdown,
   EmptyState,
   ErrorState,
-  GlassCard,
   Input,
   RowSkeleton,
   TextArea,
+  transition,
 } from '@ajh/ui';
 
-import { PageShell } from '@/components/layout/PageShell';
 import { GenerationCard } from '@/features/documents/components/GenerationCard';
+import {
+  TailorFlow,
+  type TailorFlowController,
+  type TailorFlowPersistence,
+} from '@/features/documents/components/TailorFlow';
+import { useDefaultResumeId } from '@/features/jobs/hooks/useDefaultResumeId';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
-import { Route } from '@/routes/applications.$id';
+import { DETAIL_TABS, type DetailTab, Route } from '@/routes/applications.$id';
 import {
   useApplication,
+  useDocuments,
+  useDocumentText,
   useOpenExternal,
+  useRemoveApplication,
   useSetApplicationStatus,
   useUpdateApplication,
 } from '@/services';
@@ -74,32 +92,29 @@ export function ApplicationDetailPage() {
 
   if (isLoading) {
     return (
-      <PageShell title={t('applications.title')}>
-        <div className="space-y-4 pt-4">
-          <RowSkeleton />
-          <CardSkeleton />
-          <CardSkeleton />
-        </div>
-      </PageShell>
+      <SlimLayout onBack={back} title={t('applications.title')}>
+        <PanelShell>
+          <div className="h-full space-y-4 overflow-y-auto px-6 py-5">
+            <RowSkeleton />
+            <CardSkeleton />
+            <CardSkeleton />
+          </div>
+        </PanelShell>
+      </SlimLayout>
     );
   }
 
   if (isError || !application) {
     return (
-      <PageShell
-        title={t('applications.title')}
-        actions={
-          <Button variant="glass" onClick={back}>
-            <ArrowLeft size={12} /> {t('applications.detail.back')}
-          </Button>
-        }
-      >
-        <ErrorState
-          title={t('applications.detail.notFound')}
-          description={t('applications.detail.notFoundDesc')}
-          className="py-16"
-        />
-      </PageShell>
+      <SlimLayout onBack={back} title={t('applications.title')}>
+        <PanelShell>
+          <ErrorState
+            title={t('applications.detail.notFound')}
+            description={t('applications.detail.notFoundDesc')}
+            className="py-16"
+          />
+        </PanelShell>
+      </SlimLayout>
     );
   }
 
@@ -108,6 +123,45 @@ export function ApplicationDetailPage() {
   // from the new application — TanStack Router reuses the instance otherwise.
   return (
     <ApplicationDetailLoaded key={id} application={application} events={events} onBack={back} />
+  );
+}
+
+/** Slim header + bordered-panel chrome shared by loading / error / loaded states. */
+function SlimLayout({
+  onBack,
+  title,
+  children,
+}: {
+  onBack: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-8 py-4">
+        <Button
+          onClick={onBack}
+          variant="ghost"
+          className="shrink-0 gap-1.5 text-foreground/50 hover:text-foreground/80"
+        >
+          <ArrowLeft size={14} /> {t('applications.detail.back')}
+        </Button>
+        <div className="min-w-0 flex-1">
+          <span className="truncate text-base font-semibold text-foreground/90">{title}</span>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 p-4">{children}</div>
+    </div>
+  );
+}
+
+/** The bordered tabbed-panel surface (fills its parent height). */
+function PanelShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-full min-h-0 flex-col rounded-lg border border-white/[0.06] bg-white/[0.02]">
+      {children}
+    </div>
   );
 }
 
@@ -121,12 +175,64 @@ function ApplicationDetailLoaded({ application, events, onBack }: LoadedProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const formatRelative = useFormatRelativeTime(t, 'resumes.relativeTime');
-  const setAIGenerate = useSessionStore((s) => s.setAIGenerate);
+  const applicationApply = useSessionStore((s) => s.applicationApply);
+  const setApplicationApply = useSessionStore((s) => s.setApplicationApply);
 
   const setStatus = useSetApplicationStatus();
   const updateApplication = useUpdateApplication();
   const openExternal = useOpenExternal();
+  const remove = useRemoveApplication();
   const aiGenerations = useAiGenerations();
+
+  const tab: DetailTab = Route.useSearch().tab ?? 'overview';
+  const setTab = (next: DetailTab) =>
+    void navigate({
+      to: '/applications/$id',
+      params: { id: application.id },
+      search: { tab: next },
+      replace: true,
+    });
+
+  // Roving arrow-key navigation across the tablist: ArrowRight/Left move to the
+  // next/previous tab (wrapping), select it, and move focus to its button.
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const onTabKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault();
+    const delta = e.key === 'ArrowRight' ? 1 : -1;
+    const nextIndex = (index + delta + DETAIL_TABS.length) % DETAIL_TABS.length;
+    const nextTab = DETAIL_TABS[nextIndex];
+    if (!nextTab) return;
+    setTab(nextTab);
+    tabRefs.current[nextIndex]?.focus();
+  };
+
+  // Reset the in-progress wizard form when this surface switches to a different
+  // application so one application's résumé text doesn't bleed into another.
+  // Template / ATS stay sticky globals. The guard makes this idempotent: once
+  // `applyForId` matches, the effect no-ops, so full deps don't loop.
+  useEffect(() => {
+    if (applicationApply.applyForId !== application.id) {
+      setApplicationApply({
+        applyForId: application.id,
+        applyWizardStep: 0,
+        applyWizardForm: null,
+      });
+    }
+  }, [application.id, applicationApply.applyForId, setApplicationApply]);
+
+  // Delete (mirrors ApplicationRow): keepDocs decides which variant + payload.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [keepDocs, setKeepDocs] = useState(true);
+  const openDelete = (keep: boolean) => {
+    setKeepDocs(keep);
+    setDeleteOpen(true);
+  };
+  const confirmDelete = async () => {
+    await remove.mutateAsync({ id: application.id, keepDocuments: keepDocs });
+    setDeleteOpen(false);
+    onBack();
+  };
 
   // Save-on-blur editable buffers, seeded once from the loaded application.
   const [notes, setNotes] = useState(application.notes);
@@ -156,37 +262,23 @@ function ApplicationDetailLoaded({ application, events, onBack }: LoadedProps) {
   const statusLabel = (status: string) =>
     status ? t(`applications.status.${status}` as const) : t('applications.detail.created');
 
-  const goGenerate = () => {
-    // Prefill is intentionally empty (v1) — the wizard resolves the rest.
-    setAIGenerate({ jobAd: '', stage: 'idle', meta: null });
-    void navigate({ to: '/ai-generate' });
-  };
-
-  const actions = (
-    <div className="flex items-center gap-2">
-      {isHttpUrl(application.jobUrl) && (
-        <Button variant="glass" onClick={() => openExternal.mutate(application.jobUrl)}>
-          <ExternalLink size={12} /> {t('applications.row.openUrl')}
-        </Button>
-      )}
-      <Button variant="glass" onClick={onBack}>
-        <ArrowLeft size={12} /> {t('applications.detail.back')}
-      </Button>
-    </div>
-  );
-
   return (
-    <PageShell
-      title={application.title || t('applications.row.noTitle')}
-      subtitle={application.company}
-      actions={actions}
-    >
-      <div className="space-y-4 pt-4">
-        {/* Status + timeline */}
-        <GlassCard className="space-y-4 p-5">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
-              {t('applications.detail.statusTitle')}
+    <div className="flex h-full flex-col">
+      {/* Slim header (persists across all tabs) */}
+      <div className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-8 py-4">
+        <Button
+          onClick={onBack}
+          variant="ghost"
+          className="shrink-0 gap-1.5 text-foreground/50 hover:text-foreground/80"
+        >
+          <ArrowLeft size={14} /> {t('applications.detail.back')}
+        </Button>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <FileText size={14} className="shrink-0 text-brand-soft" />
+            <span className="truncate text-base font-semibold text-foreground/90">
+              {application.title || t('applications.row.noTitle')}
             </span>
             <div className="shrink-0">
               <Dropdown
@@ -197,196 +289,426 @@ function ApplicationDetailLoaded({ application, events, onBack }: LoadedProps) {
               />
             </div>
             {application.board && (
-              <span className="rounded-full border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 text-[9px] uppercase tracking-wider text-foreground/55">
+              <span className="shrink-0 rounded-full border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 text-[9px] uppercase tracking-wider text-foreground/55">
                 {application.board}
               </span>
             )}
           </div>
+          {application.company && (
+            <div className="truncate text-[11px] text-foreground/40">{application.company}</div>
+          )}
+        </div>
 
-          <div>
-            <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
-              {t('applications.detail.timelineTitle')}
-            </span>
-            {orderedEvents.length === 0 ? (
-              <p className="text-xs text-foreground/45">{t('applications.detail.timelineEmpty')}</p>
-            ) : (
-              <ol className="space-y-2.5">
-                {orderedEvents.map((e) => (
-                  <li
-                    key={`${e.at}-${e.toStatus}`}
-                    className="flex flex-col gap-0.5 border-l border-white/[0.06] pl-3"
-                  >
-                    <span className="flex items-center gap-1.5 text-xs text-foreground/80">
-                      {e.fromStatus ? (
-                        <>
-                          <span className="text-foreground/55">{statusLabel(e.fromStatus)}</span>
-                          <span className="text-foreground/30">→</span>
-                          <span className="font-medium">{statusLabel(e.toStatus)}</span>
-                        </>
-                      ) : (
-                        <span className="font-medium">{statusLabel(e.toStatus)}</span>
-                      )}
-                    </span>
-                    <span className="text-[10px] text-foreground/40" title={formatRelative(e.at)}>
-                      {formatEventDate(e.at)}
-                    </span>
-                    {e.note && <span className="text-[11px] text-foreground/55">{e.note}</span>}
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
-        </GlassCard>
-
-        {/* Editable fields — save on blur (only when changed) */}
-        <GlassCard className="space-y-4 p-5">
-          <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
-            {t('applications.detail.fieldsTitle')}
-          </span>
-
-          <label className="block space-y-1.5">
-            <span className="text-xs text-foreground/60">
-              {t('applications.detail.notesLabel')}
-            </span>
-            <TextArea
-              variant="glass"
-              rows={4}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              onBlur={() => {
-                if (notes !== application.notes) {
-                  updateApplication.mutate({ id: application.id, notes });
-                }
-              }}
-            />
-          </label>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block space-y-1.5">
-              <span className="text-xs text-foreground/60">
-                {t('applications.detail.contactNameLabel')}
-              </span>
-              <Input
-                variant="default"
-                value={contactName}
-                onChange={(e) => setContactName(e.target.value)}
-                onBlur={() => {
-                  if (contactName !== application.contactName) {
-                    updateApplication.mutate({ id: application.id, contactName });
-                  }
-                }}
-              />
-            </label>
-
-            <label className="block space-y-1.5">
-              <span className="text-xs text-foreground/60">
-                {t('applications.detail.contactEmailLabel')}
-              </span>
-              <Input
-                variant="default"
-                type="email"
-                value={contactEmail}
-                onChange={(e) => setContactEmail(e.target.value)}
-                onBlur={() => {
-                  if (contactEmail !== application.contactEmail) {
-                    updateApplication.mutate({ id: application.id, contactEmail });
-                  }
-                }}
-              />
-            </label>
-
-            <label className="block space-y-1.5">
-              <span className="text-xs text-foreground/60">
-                {t('applications.detail.compLabel')}
-              </span>
-              <Input
-                variant="default"
-                value={comp}
-                onChange={(e) => setComp(e.target.value)}
-                onBlur={() => {
-                  if (comp !== application.comp) {
-                    updateApplication.mutate({ id: application.id, comp });
-                  }
-                }}
-              />
-            </label>
-
-            <label className="block space-y-1.5">
-              <span className="text-xs text-foreground/60">
-                {t('applications.detail.nextActionLabel')}
-              </span>
-              <Input
-                variant="default"
-                type="date"
-                value={nextActionAt}
-                onChange={(e) => setNextActionAt(e.target.value)}
-                onBlur={() => {
-                  const next = fromDateInputValue(nextActionAt);
-                  if (next !== (application.nextActionAt ?? null)) {
-                    updateApplication.mutate({ id: application.id, nextActionAt: next });
-                  }
-                }}
-                className="w-full"
-              />
-            </label>
-          </div>
-        </GlassCard>
-
-        {/* Read-only: company brief */}
-        {application.brief && (
-          <GlassCard className="space-y-2 p-5">
-            <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
-              {t('applications.detail.briefTitle')}
-            </span>
-            <pre className="select-text whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground/55">
-              {application.brief}
-            </pre>
-          </GlassCard>
+        {isHttpUrl(application.jobUrl) && (
+          <Button
+            variant="glass"
+            onClick={() => openExternal.mutate(application.jobUrl)}
+            className="shrink-0 gap-1.5"
+          >
+            <ExternalLink size={13} /> {t('applications.row.openUrl')}
+          </Button>
         )}
+        <ActionMenu
+          label={t('applications.row.actions')}
+          items={[
+            {
+              label: t('applications.row.deleteKeepDocs'),
+              icon: <Trash2 size={14} />,
+              onSelect: () => openDelete(true),
+            },
+            {
+              label: t('applications.row.deleteAll'),
+              icon: <Trash2 size={14} />,
+              destructive: true,
+              onSelect: () => openDelete(false),
+            },
+          ]}
+        />
+      </div>
 
-        {/* Read-only: application answers */}
-        {application.answers.length > 0 && (
-          <GlassCard className="space-y-3 p-5">
-            <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
-              {t('applications.detail.answersTitle')}
-            </span>
-            {application.answers.map((qa) => (
-              <div key={qa.id}>
-                <p className="text-[11px] font-medium text-foreground/70">{qa.question}</p>
-                <p className="mt-0.5 whitespace-pre-wrap text-[11px] leading-relaxed text-foreground/55">
-                  {qa.answer}
-                </p>
-              </div>
+      {/* Bordered tabbed panel */}
+      <div className="min-h-0 flex-1 p-4">
+        <PanelShell>
+          <div
+            role="tablist"
+            aria-label={t('applications.detail.tabsLabel')}
+            className="flex shrink-0 items-center gap-1 border-b border-white/[0.06] px-3 py-2"
+          >
+            {DETAIL_TABS.map((tb, i) => (
+              <Button
+                key={tb}
+                ref={(el) => {
+                  tabRefs.current[i] = el;
+                }}
+                id={`appdetail-tab-${tb}`}
+                variant="unstyled"
+                type="button"
+                role="tab"
+                aria-selected={tab === tb}
+                tabIndex={tab === tb ? 0 : -1}
+                onClick={() => setTab(tb)}
+                onKeyDown={(e) => onTabKeyDown(e, i)}
+                className={cn(
+                  'rounded px-2.5 py-1 text-[11px] font-medium transition-colors',
+                  tab === tb
+                    ? 'bg-brand/15 text-brand-soft'
+                    : 'text-foreground/40 hover:text-foreground/70'
+                )}
+              >
+                {t(`applications.detail.tabs.${tb}` as const)}
+              </Button>
             ))}
-          </GlassCard>
-        )}
+          </div>
 
-        {/* Documents */}
+          <div
+            role="tabpanel"
+            id={`appdetail-panel-${tab}`}
+            aria-labelledby={`appdetail-tab-${tab}`}
+            className="min-h-0 flex-1"
+          >
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={tab}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={transition.fast}
+                className="h-full"
+              >
+                {tab === 'overview' && (
+                  <TabScroll>
+                    <label className="block space-y-1.5">
+                      <span className="text-xs text-foreground/60">
+                        {t('applications.detail.notesLabel')}
+                      </span>
+                      <TextArea
+                        variant="glass"
+                        rows={4}
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        onBlur={() => {
+                          if (notes !== application.notes) {
+                            updateApplication.mutate({ id: application.id, notes });
+                          }
+                        }}
+                      />
+                    </label>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="block space-y-1.5">
+                        <span className="text-xs text-foreground/60">
+                          {t('applications.detail.contactNameLabel')}
+                        </span>
+                        <Input
+                          variant="default"
+                          value={contactName}
+                          onChange={(e) => setContactName(e.target.value)}
+                          onBlur={() => {
+                            if (contactName !== application.contactName) {
+                              updateApplication.mutate({ id: application.id, contactName });
+                            }
+                          }}
+                        />
+                      </label>
+
+                      <label className="block space-y-1.5">
+                        <span className="text-xs text-foreground/60">
+                          {t('applications.detail.contactEmailLabel')}
+                        </span>
+                        <Input
+                          variant="default"
+                          type="email"
+                          value={contactEmail}
+                          onChange={(e) => setContactEmail(e.target.value)}
+                          onBlur={() => {
+                            if (contactEmail !== application.contactEmail) {
+                              updateApplication.mutate({ id: application.id, contactEmail });
+                            }
+                          }}
+                        />
+                      </label>
+
+                      <label className="block space-y-1.5">
+                        <span className="text-xs text-foreground/60">
+                          {t('applications.detail.compLabel')}
+                        </span>
+                        <Input
+                          variant="default"
+                          value={comp}
+                          onChange={(e) => setComp(e.target.value)}
+                          onBlur={() => {
+                            if (comp !== application.comp) {
+                              updateApplication.mutate({ id: application.id, comp });
+                            }
+                          }}
+                        />
+                      </label>
+
+                      <label className="block space-y-1.5">
+                        <span className="text-xs text-foreground/60">
+                          {t('applications.detail.nextActionLabel')}
+                        </span>
+                        <Input
+                          variant="default"
+                          type="date"
+                          value={nextActionAt}
+                          onChange={(e) => setNextActionAt(e.target.value)}
+                          onBlur={() => {
+                            const next = fromDateInputValue(nextActionAt);
+                            if (next !== (application.nextActionAt ?? null)) {
+                              updateApplication.mutate({ id: application.id, nextActionAt: next });
+                            }
+                          }}
+                          className="w-full"
+                        />
+                      </label>
+                    </div>
+                  </TabScroll>
+                )}
+
+                {tab === 'timeline' && (
+                  <TabScroll>
+                    <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
+                      {t('applications.detail.timelineTitle')}
+                    </span>
+                    {orderedEvents.length === 0 ? (
+                      <p className="text-xs text-foreground/45">
+                        {t('applications.detail.timelineEmpty')}
+                      </p>
+                    ) : (
+                      <ol className="space-y-2.5">
+                        {orderedEvents.map((e) => (
+                          <li
+                            key={`${e.at}-${e.toStatus}`}
+                            className="flex flex-col gap-0.5 border-l border-white/[0.06] pl-3"
+                          >
+                            <span className="flex items-center gap-1.5 text-xs text-foreground/80">
+                              {e.fromStatus ? (
+                                <>
+                                  <span className="text-foreground/55">
+                                    {statusLabel(e.fromStatus)}
+                                  </span>
+                                  <span className="text-foreground/30">→</span>
+                                  <span className="font-medium">{statusLabel(e.toStatus)}</span>
+                                </>
+                              ) : (
+                                <span className="font-medium">{statusLabel(e.toStatus)}</span>
+                              )}
+                            </span>
+                            <span
+                              className="text-[10px] text-foreground/40"
+                              title={formatRelative(e.at)}
+                            >
+                              {formatEventDate(e.at)}
+                            </span>
+                            {e.note && (
+                              <span className="text-[11px] text-foreground/55">{e.note}</span>
+                            )}
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </TabScroll>
+                )}
+
+                {tab === 'brief' && <BriefTab application={application} />}
+
+                {tab === 'documents' && (
+                  <DocumentsTab
+                    application={application}
+                    matchingGenerations={matchingGenerations}
+                  />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </PanelShell>
+      </div>
+
+      <ConfirmModal
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={() => void confirmDelete()}
+        title={keepDocs ? t('applications.delete.keepTitle') : t('applications.delete.allTitle')}
+        description={
+          keepDocs ? t('applications.delete.keepDesc') : t('applications.delete.allDesc')
+        }
+        confirmText={t('applications.delete.confirm')}
+        variant="danger"
+        isConfirming={remove.isPending}
+      />
+    </div>
+  );
+}
+
+/** Scroll + padding wrapper for the prose tabs (Overview / Timeline / Brief). */
+function TabScroll({ children }: { children: React.ReactNode }) {
+  return <div className="h-full space-y-4 overflow-y-auto px-6 py-5">{children}</div>;
+}
+
+/** Brief & answers tab — company brief as prose + the answers list. */
+function BriefTab({ application }: { application: Application }) {
+  const { t } = useTranslation();
+  const hasBrief = application.brief.trim().length > 0;
+  const hasAnswers = application.answers.length > 0;
+
+  if (!hasBrief && !hasAnswers) {
+    return (
+      <div className="flex h-full items-center justify-center px-6 py-5">
+        <EmptyState icon={FileText} title={t('applications.detail.briefEmpty')} className="py-12" />
+      </div>
+    );
+  }
+
+  return (
+    <TabScroll>
+      {hasBrief && (
+        <div className="space-y-2">
+          <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
+            {t('applications.detail.briefTitle')}
+          </span>
+          <p className="select-text whitespace-pre-wrap text-[12px] leading-relaxed text-foreground/70">
+            {application.brief}
+          </p>
+        </div>
+      )}
+
+      {hasAnswers && (
         <div className="space-y-3">
+          <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
+            {t('applications.detail.answersTitle')}
+          </span>
+          {application.answers.map((qa) => (
+            <div key={qa.id}>
+              <p className="text-[11px] font-medium text-foreground/70">{qa.question}</p>
+              <p className="mt-0.5 whitespace-pre-wrap text-[11px] leading-relaxed text-foreground/55">
+                {qa.answer}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </TabScroll>
+  );
+}
+
+interface DocumentsTabProps {
+  application: Application;
+  matchingGenerations: AiGenerationRecord[];
+}
+
+/**
+ * Documents tab — embeds the shared {@link TailorFlow} generator seeded with the
+ * user's default résumé, plus a bounded list of previously-saved generations.
+ * Wizard / template / ATS persistence lives on the `applicationApply` session
+ * slice (this surface owns it); TailorFlow surfaces a controller so the toolbar
+ * can drive its Questions / Referral modals.
+ */
+function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
+  const { t } = useTranslation();
+  const applicationApply = useSessionStore((s) => s.applicationApply);
+  const setApplicationApply = useSessionStore((s) => s.setApplicationApply);
+  const [controller, setController] = useState<TailorFlowController | null>(null);
+
+  // Seed the résumé text ONCE at mount — wait for BOTH the documents list (which
+  // resolves `defaultResumeId`) and the default résumé text so the one-shot
+  // wizard seed is present before TailorFlow mounts. `useDefaultResumeId` reads
+  // `useDocuments` internally; while that list loads it returns `null`, so we
+  // must gate on the list load too or TailorFlow seeds empty and locks it in.
+  const docsQuery = useDocuments();
+  const defaultResumeId = useDefaultResumeId();
+  const resumeQuery = useDocumentText(defaultResumeId);
+
+  if (docsQuery.isLoading || (!!defaultResumeId && resumeQuery.isLoading)) {
+    return (
+      <div className="h-full overflow-y-auto px-6 py-5">
+        <CardSkeleton />
+      </div>
+    );
+  }
+
+  const seedResumeText = (resumeQuery.data ?? '') || (matchingGenerations[0]?.resumeText ?? '');
+
+  // Generation-store session key. Empty job URLs (`z.string().default('')`) would
+  // collide for every URL-less application, bleeding one application's live
+  // tailoring session into another — so key those by the stable application id.
+  // Real URLs keep the `autopilot:` key so the live session is shared across the
+  // autopilot apply surface and this detail tab.
+  const contextId =
+    application.jobUrl.trim() === '' ? `app:${application.id}` : `autopilot:${application.jobUrl}`;
+
+  const job: AutopilotFoundJob = {
+    title: application.title,
+    company: application.company,
+    url: application.jobUrl,
+    location: undefined,
+    description: undefined,
+    foundAt: application.createdAt,
+  };
+
+  const persistence: TailorFlowPersistence = {
+    wizardStep: applicationApply.applyWizardStep,
+    wizardForm: applicationApply.applyWizardForm,
+    templateId: applicationApply.applyTemplateId,
+    atsMode: applicationApply.applyAtsMode,
+    setWizardStep: (v) => setApplicationApply({ applyWizardStep: v }),
+    setWizardForm: (v) => setApplicationApply({ applyWizardForm: v }),
+    setTemplateId: (v) => setApplicationApply({ applyTemplateId: v }),
+    setAtsMode: (v) => setApplicationApply({ applyAtsMode: v }),
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Toolbar — Questions (only on `done`) + Referral */}
+      <div className="flex shrink-0 items-center justify-end gap-2 border-b border-white/[0.06] px-8 py-3">
+        {controller?.stage === 'done' && (
+          <Button
+            variant="glass"
+            onClick={() => controller.openQuestions()}
+            className="shrink-0 gap-1.5 text-brand-soft"
+          >
+            <HelpCircle size={13} /> {t('autopilot.apply.questions.title')}
+            {controller.questionsCount > 0 && (
+              <span className="rounded-full bg-brand/15 px-1.5 py-0.5 text-[9px] text-brand-soft">
+                {controller.questionsCount}
+              </span>
+            )}
+          </Button>
+        )}
+        <Button
+          variant="glass"
+          disabled={!controller}
+          onClick={() => controller?.openReferral()}
+          className="shrink-0 gap-1.5 text-brand-soft"
+        >
+          <UserPlus size={13} /> {t('autopilot.referral.open')}
+        </Button>
+      </div>
+
+      {/* Shared tailoring body */}
+      <div className="min-h-0 flex-1">
+        <TailorFlow
+          job={job}
+          resumeText={seedResumeText}
+          board={application.board ?? ''}
+          contextId={contextId}
+          jobUrl={application.jobUrl}
+          persistence={persistence}
+          onController={setController}
+        />
+      </div>
+
+      {/* Previously-saved generations — bounded so TailorFlow's scroll still works */}
+      {matchingGenerations.length > 0 && (
+        <div className="max-h-[35%] shrink-0 space-y-2 overflow-y-auto border-t border-white/[0.06] px-8 py-3">
           <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
             {t('applications.detail.documentsTitle')}
           </span>
-          {matchingGenerations.length > 0 ? (
-            <div className="space-y-3">
-              {matchingGenerations.map((g) => (
-                <GenerationCard key={g.id} gen={g} />
-              ))}
-            </div>
-          ) : (
-            <EmptyState
-              icon={FileText}
-              title={t('applications.detail.noDocuments')}
-              description={t('applications.detail.noDocumentsDesc')}
-              action={
-                <Button variant="primary" onClick={goGenerate}>
-                  {t('applications.detail.generateDocs')}
-                </Button>
-              }
-              className="py-12"
-            />
-          )}
+          {matchingGenerations.map((g) => (
+            <GenerationCard key={g.id} gen={g} />
+          ))}
         </div>
-      </div>
-    </PageShell>
+      )}
+    </div>
   );
 }

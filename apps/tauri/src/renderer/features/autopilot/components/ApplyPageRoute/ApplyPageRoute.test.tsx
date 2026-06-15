@@ -16,9 +16,9 @@ import { act, render, screen } from '@testing-library/react';
 
 import type { AutopilotFoundJob } from '@ajh/shared';
 
+import type { TailorWizardState } from '@/features/documents/components/TailorFlow/lib/tailor-state';
 import { useSessionStore } from '@/store/session-store';
 
-import type { TailorWizardState } from '../ApplyPage/lib/tailor-state';
 import { ApplyPageRoute } from './index';
 
 // ── Router ────────────────────────────────────────────────────────────────────

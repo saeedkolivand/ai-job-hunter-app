@@ -49,7 +49,10 @@ export const keys = {
     models: ['ai', 'models'] as const,
     embeddingStatus: ['ai', 'embeddingStatus'] as const,
   },
-  documents: { all: ['documents'] as const },
+  documents: {
+    all: ['documents'] as const,
+    text: (id: string) => ['documents', 'text', id] as const,
+  },
   jobPreferences: { all: ['jobPreferences'] as const },
   contactProfile: { all: ['contactProfile'] as const },
   postings: {
