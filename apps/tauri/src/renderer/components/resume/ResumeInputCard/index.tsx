@@ -188,7 +188,7 @@ export function ResumeInputCard({
               className={cn(
                 'flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-medium transition-all',
                 inputMode === 'upload'
-                  ? 'bg-action-primary text-action-foreground shadow-sm'
+                  ? 'bg-brand-gradient text-brand-foreground shadow-sm [text-shadow:0_1px_2px_rgba(0,0,0,0.28)]'
                   : 'text-brand-soft/60 hover:text-brand-soft'
               )}
             >

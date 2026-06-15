@@ -1,4 +1,4 @@
-import { Activity, Mail, RefreshCw, Search, Trash2, Wand2 } from 'lucide-react';
+import { Activity, ListChecks, Mail, RefreshCw, Search, Trash2, Wand2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useMemo, useState } from 'react';
 
@@ -30,12 +30,19 @@ function ResumesPage() {
   const setTab = (v: DocTab) => {
     setResumes({ tab: v });
     setSelection(new Set());
+    setSelectionMode(false);
   };
   const setFilter = (v: string) => setResumes({ filter: v });
 
   const [selection, setSelection] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const removeBulk = useRemoveAiGenerationsBulk();
+
+  const exitSelection = () => {
+    setSelection(new Set());
+    setSelectionMode(false);
+  };
 
   const toggleSelect = (id: string) => {
     setSelection((prev) => {
@@ -110,16 +117,15 @@ function ResumesPage() {
           subtitle={t('resumes.subtitle')}
           actions={
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-1.5 transition-colors focus-within:border-brand/35">
-                <Search size={12} className="shrink-0 text-foreground/40" />
-                <Input
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  placeholder={t('resumes.filterPlaceholder')}
-                  className="w-40 bg-transparent text-xs text-foreground outline-none placeholder:text-foreground/25 border-none p-0 rounded-none"
-                  variant="default"
-                />
-              </div>
+              <Input
+                prefix={<Search size={12} />}
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder={t('resumes.filterPlaceholder')}
+                variant="default"
+                wrapperClassName="w-48"
+                allowClear
+              />
               {isActivity && (
                 <Button
                   variant="ghost"
@@ -130,20 +136,37 @@ function ResumesPage() {
                   <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} />
                 </Button>
               )}
-              {!isActivity && generationDocs.length > 0 && (
-                <label className="flex cursor-pointer items-center gap-1.5 text-xs text-foreground/50 select-none">
-                  <input
-                    type="checkbox"
-                    checked={
-                      generationDocs.length > 0 && generationDocs.every((g) => selection.has(g.id))
-                    }
-                    onChange={() => toggleSelectAll(generationDocs.map((g) => g.id))}
-                    aria-label={t('resumes.select.selectAll')}
-                    className="h-4 w-4 cursor-pointer accent-[color:var(--color-brand)] rounded border border-white/20"
-                  />
-                  {t('resumes.select.selectAll')}
-                </label>
-              )}
+              {!isActivity &&
+                counts[tab] > 0 &&
+                (selectionMode ? (
+                  <>
+                    <label className="flex cursor-pointer items-center gap-1.5 text-xs text-foreground/50 select-none">
+                      <input
+                        type="checkbox"
+                        checked={
+                          generationDocs.length > 0 &&
+                          generationDocs.every((g) => selection.has(g.id))
+                        }
+                        onChange={() => toggleSelectAll(generationDocs.map((g) => g.id))}
+                        aria-label={t('resumes.select.selectAll')}
+                        className="h-4 w-4 cursor-pointer accent-[color:var(--color-brand)] rounded border border-white/20"
+                      />
+                      {t('resumes.select.selectAll')}
+                    </label>
+                    <Button variant="ghost" onClick={exitSelection}>
+                      {t('resumes.select.done')}
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    className="flex h-8 items-center gap-1.5 px-2"
+                    onClick={() => setSelectionMode(true)}
+                  >
+                    <ListChecks size={12} />
+                    {t('resumes.select.start')}
+                  </Button>
+                ))}
             </div>
           }
         />
@@ -278,7 +301,7 @@ function ResumesPage() {
                   <GenerationCard
                     gen={gen}
                     selected={selection.has(gen.id)}
-                    onToggleSelect={toggleSelect}
+                    onToggleSelect={selectionMode ? toggleSelect : undefined}
                   />
                 </motion.div>
               ))}

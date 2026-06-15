@@ -221,7 +221,7 @@ export function JobsPage() {
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                   placeholder={t('jobs.searchPlaceholder')}
-                  className="text-xs text-foreground/75 placeholder:text-foreground/30"
+                  className="text-foreground/75 placeholder:text-foreground/30"
                   variant="default"
                   wrapperClassName="w-48"
                   allowClear

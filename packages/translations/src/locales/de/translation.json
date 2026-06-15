@@ -1581,6 +1581,8 @@
     "unknownPosition": "Unbekannte Position",
     "open": "Öffnen",
     "select": {
+      "start": "Auswählen",
+      "done": "Fertig",
       "selectAll": "Alle auswählen",
       "selectItem": "Element auswählen",
       "clear": "Auswahl aufheben",

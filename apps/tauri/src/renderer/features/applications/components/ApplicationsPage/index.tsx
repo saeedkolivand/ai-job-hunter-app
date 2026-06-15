@@ -89,7 +89,7 @@ export function ApplicationsPage() {
         value={filter}
         onChange={(e) => setApplications({ filter: e.target.value })}
         placeholder={t('applications.filterPlaceholder')}
-        className="w-40 text-xs text-foreground/75 placeholder:text-foreground/30"
+        className="w-40 text-foreground/75 placeholder:text-foreground/30"
         variant="default"
         wrapperClassName="h-8"
         allowClear

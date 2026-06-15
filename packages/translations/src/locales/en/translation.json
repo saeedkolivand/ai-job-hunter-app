@@ -1607,6 +1607,8 @@
     "unknownPosition": "Unknown position",
     "open": "Open",
     "select": {
+      "start": "Select",
+      "done": "Done",
       "selectAll": "Select all",
       "selectItem": "Select item",
       "clear": "Clear selection",
