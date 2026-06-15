@@ -152,7 +152,7 @@ export function ResearchStep({ onBack, onNext, direction, stepIndex, totalSteps 
 
         <div className="flex-1" />
 
-        <Button variant="default" onClick={onNext} className="flex items-center gap-1.5">
+        <Button variant="primary" onClick={onNext} className="flex items-center gap-1.5">
           {connected ? t('onboarding.research.next') : t('onboarding.research.skip')}
           <ArrowRight size={13} />
         </Button>

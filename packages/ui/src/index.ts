@@ -1,13 +1,10 @@
 // ── Design utilities ──────────────────────────────────────────────────────
 export { cn } from './lib/cn';
-export { lightenHex, luminance, parseHex, readableForeground, type Rgb } from './lib/color';
 export * from './lib/motion';
 export {
-  type AccentSource,
   applyTheme,
   applyThemeAnimated,
   type ColorScheme,
-  type ContrastPref,
   DEFAULT_THEME_PREFS,
   getResolvedScheme,
   getThemePrefs,
@@ -54,12 +51,7 @@ export {
 export { GlassCard, type GlassCardProps } from './components/GlassCard/index';
 export { IconBadge, type IconBadgeProps } from './components/IconBadge/index';
 export { IconText } from './components/IconText/index';
-export {
-  Image,
-  type ImagePreviewGroupProps,
-  type ImagePreviewType,
-  type ImageProps,
-} from './components/Image/index';
+export { Image, type ImageProps } from './components/Image/index';
 export { Input, type InputProps } from './components/Input/index';
 export { LocationInput, type LocationInputProps } from './components/LocationInput/index';
 export { NumberField, type NumberFieldProps } from './components/NumberField/index';
@@ -79,8 +71,6 @@ export { Switch, type SwitchProps } from './components/Switch/index';
 export {
   type CheckableTagProps,
   Tag,
-  type TagColor,
-  type TagPresetColor,
   type TagProps,
   type TagStatusColor,
 } from './components/Tag/index';

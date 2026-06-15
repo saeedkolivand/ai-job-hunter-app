@@ -104,6 +104,8 @@ function statusColor(status: string): 'red' | 'green' | 'blue' | 'brand' {
   return 'brand';
 }
 
+const BACK_TO = { jobs: '/jobs', autopilot: '/autopilot', applications: '/applications' } as const;
+
 export function ApplicationDetailPage() {
   const { id } = Route.useParams();
   const { t } = useTranslation();
@@ -114,11 +116,14 @@ export function ApplicationDetailPage() {
   const events = data?.events ?? [];
 
   const { from } = Route.useSearch();
-  const backToAutopilot = from === 'autopilot';
-  const back = () => void navigate({ to: backToAutopilot ? '/autopilot' : '/applications' });
-  const backLabel = backToAutopilot
-    ? t('applications.detail.backAutopilot')
-    : t('applications.detail.back');
+  const backTarget = from ? BACK_TO[from] : '/applications';
+  const back = () => void navigate({ to: backTarget });
+  const backLabel =
+    from === 'jobs'
+      ? t('applications.detail.backJobs')
+      : from === 'autopilot'
+        ? t('applications.detail.backAutopilot')
+        : t('applications.detail.back'); // default + 'applications' → "Back to applications"
 
   if (isLoading) {
     return (
@@ -227,7 +232,9 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
     void navigate({
       to: '/applications/$id',
       params: { id: application.id },
-      search: { tab: next },
+      // Preserve `from` (and any other search) so switching tabs keeps the
+      // origin-aware Back target instead of dropping it to the default.
+      search: (prev) => ({ ...prev, tab: next }),
       replace: true,
     });
 

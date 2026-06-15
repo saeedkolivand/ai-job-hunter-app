@@ -123,7 +123,7 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
     void navigate({
       to: '/applications/$id',
       params: { id: res.id },
-      search: { tab: 'documents' },
+      search: { tab: 'documents', from: 'jobs' },
     });
   };
 

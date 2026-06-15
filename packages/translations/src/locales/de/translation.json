@@ -1412,6 +1412,8 @@
     "tailorError": "Anpassung konnte nicht gestartet werden. Bitte erneut versuchen.",
     "scrapeJobs": "Jobs scrapen",
     "scrapeFailed": "Scraping fehlgeschlagen",
+    "searching": "Suche nach Jobs…",
+    "scoring": "Bewerte Übereinstimmungen…",
     "cancel": "Abbrechen",
     "clear": "Löschen",
     "clearScrapedJobs": "Gescrapte Jobs löschen",
@@ -2062,18 +2064,7 @@
       "next": "Loslegen"
     },
     "prefs": {
-      "title": "Schnelleinrichtung",
-      "subtitle": "Legen Sie Ihre Einstellungen fest — Sie können diese jederzeit ändern.",
-      "languageLabel": "Sprache",
-      "remoteLabel": "Wo möchten Sie arbeiten?",
-      "remote": {
-        "remote": "Remote",
-        "hybrid": "Hybrid",
-        "on-site": "Vor Ort",
-        "any": "Alles offen"
-      },
-      "back": "Zurück",
-      "next": "Lebenslauf hochladen"
+      "languageLabel": "Sprache"
     },
     "ai": {
       "title": "KI einrichten",
@@ -2151,7 +2142,7 @@
       "skip": "Vorerst überspringen",
       "envVar": "Sie können auch die Umgebungsvariable CHROME festlegen, um auf eine benutzerdefinierte Browser-Installation zu verweisen.",
       "back": "Zurück",
-      "next": "Funktionen ansehen"
+      "next": "Weiter"
     },
     "extension": {
       "title": "Browser-Erweiterung installieren",
@@ -2206,10 +2197,6 @@
       "documents": {
         "title": "Dokumente",
         "desc": "Importieren und verwalten Sie Ihre Lebensläufe und Anschreiben. KI indiziert sie für intelligentes Matching."
-      },
-      "search": {
-        "title": "Suche",
-        "desc": "Semantische Suche über alle Ihre Dokumente und Job-Anzeigen mit KI-Embeddings."
       }
     },
     "resume": {
@@ -2354,6 +2341,7 @@
     "detail": {
       "back": "Zurück zu Bewerbungen",
       "backAutopilot": "Zurück zu Autopilot",
+      "backJobs": "Zurück zu Jobs",
       "openAria": "{{title}} öffnen",
       "statusTitle": "Status",
       "tabs": {

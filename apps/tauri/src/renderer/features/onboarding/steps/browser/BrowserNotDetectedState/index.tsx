@@ -109,7 +109,7 @@ export function BrowserNotDetectedState({ onBack, onNext }: BrowserNotDetectedSt
           <ArrowLeft size={14} /> {t('onboarding.back')}
         </Button>
         <Button
-          variant="glass"
+          variant="primary"
           size="md"
           onClick={onNext}
           className="transition-all duration-150 ease-out px-6 gap-2"

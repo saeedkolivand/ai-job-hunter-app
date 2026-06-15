@@ -283,6 +283,7 @@ describe('ApplicationRow — row navigation', () => {
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/applications/$id',
       params: { id: 'app-nav-1' },
+      search: { from: 'applications' },
     });
   });
 
@@ -323,6 +324,7 @@ describe('ApplicationRow — row navigation', () => {
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/applications/$id',
       params: { id: 'app-nav-3' },
+      search: { from: 'applications' },
     });
   });
 
@@ -337,6 +339,7 @@ describe('ApplicationRow — row navigation', () => {
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/applications/$id',
       params: { id: 'app-nav-4' },
+      search: { from: 'applications' },
     });
   });
 });

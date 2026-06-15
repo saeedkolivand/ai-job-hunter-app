@@ -243,7 +243,7 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
         )}
 
         <Button
-          variant="default"
+          variant="primary"
           onClick={handleContinue}
           disabled={!canContinue}
           className="flex items-center gap-1.5"

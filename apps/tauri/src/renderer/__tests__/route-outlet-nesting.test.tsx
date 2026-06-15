@@ -49,10 +49,11 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import type { Application } from '@ajh/shared';
 
+import { installUnknownPathRedirect } from '@/lib/router-guard';
 import { useSessionStore } from '@/store/session-store';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
@@ -401,5 +402,149 @@ describe('Route Outlet nesting — regression guard', () => {
 
     // Sanity: the list page must not have rendered.
     expect(screen.queryByTestId('application-row')).not.toBeInTheDocument();
+  });
+
+  /**
+   * Case 5 (Tailor → detail → Back regression): opening the detail from the Jobs
+   * "Tailor" action lands on `/applications/$id?from=jobs`. The in-page Back button
+   * must then return to the Jobs page (`/jobs`) — NOT the Dashboard (`/`). This
+   * wires the REAL unknown-path guard (`installUnknownPathRedirect`) so a
+   * guard-driven redirect-to-`/` would surface. (Tab defaults to `overview` to
+   * keep the detail subtree provider-free — the Back-button route target is
+   * identical regardless of the active tab.)
+   */
+  it('Tailor-flow Back button (from=jobs) returns to /jobs (not the dashboard) with the guard active', async () => {
+    const FROMS = ['jobs', 'autopilot', 'applications'] as const;
+    const fromSearch = (
+      s: Record<string, unknown>
+    ): { tab?: (typeof DETAIL_TABS)[number]; from?: (typeof FROMS)[number] } => ({
+      tab: (DETAIL_TABS as readonly string[]).includes(s.tab as string)
+        ? (s.tab as (typeof DETAIL_TABS)[number])
+        : undefined,
+      from: FROMS.includes(s.from as (typeof FROMS)[number])
+        ? (s.from as (typeof FROMS)[number])
+        : undefined,
+    });
+
+    const rootRoute = createRootRoute({ component: () => <Outlet /> });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: '/',
+      component: () => <div data-testid="dashboard">dashboard</div>,
+    });
+    const jobsRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: '/jobs',
+      component: () => <div data-testid="jobs-list">jobs</div>,
+    });
+    const applicationsLayout = createRoute({
+      getParentRoute: () => rootRoute,
+      path: '/applications',
+      component: () => <Outlet />,
+    });
+    const applicationsIndex = createRoute({
+      getParentRoute: () => applicationsLayout,
+      path: '/',
+      component: ApplicationsPage,
+    });
+    const applicationsDetail = createRoute({
+      getParentRoute: () => applicationsLayout,
+      path: '$id',
+      validateSearch: fromSearch,
+      component: ApplicationDetailPage,
+    });
+
+    const routeTree = rootRoute.addChildren([
+      indexRoute,
+      jobsRoute,
+      applicationsLayout.addChildren([applicationsIndex, applicationsDetail]),
+    ]);
+
+    const router = createRouter({
+      routeTree,
+      history: createMemoryHistory({ initialEntries: ['/applications/abc?from=jobs'] }),
+    });
+
+    installUnknownPathRedirect(router);
+    render(<RouterProvider router={router} />);
+
+    // Detail view mounted (back label is the jobs-origin one — `from=jobs`).
+    const backButton = await screen.findByRole('button', { name: 'applications.detail.backJobs' });
+
+    fireEvent.click(backButton);
+
+    // Must land on the Jobs page, NOT the dashboard.
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/jobs');
+    });
+    expect(router.state.location.pathname).toBe('/jobs');
+    expect(screen.queryByTestId('dashboard')).not.toBeInTheDocument();
+  });
+
+  /**
+   * Case 6 (deep-link Back default): a deep-link / notification opens the detail
+   * with NO `from`. The Back button must default to the Applications LIST
+   * (`/applications`) — NOT the Dashboard (`/`) — with the real guard active.
+   */
+  it('deep-link (no `from`) Back button defaults to /applications (not the dashboard) with the guard active', async () => {
+    const FROMS = ['jobs', 'autopilot', 'applications'] as const;
+    const fromSearch = (
+      s: Record<string, unknown>
+    ): { tab?: (typeof DETAIL_TABS)[number]; from?: (typeof FROMS)[number] } => ({
+      tab: (DETAIL_TABS as readonly string[]).includes(s.tab as string)
+        ? (s.tab as (typeof DETAIL_TABS)[number])
+        : undefined,
+      from: FROMS.includes(s.from as (typeof FROMS)[number])
+        ? (s.from as (typeof FROMS)[number])
+        : undefined,
+    });
+
+    const rootRoute = createRootRoute({ component: () => <Outlet /> });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: '/',
+      component: () => <div data-testid="dashboard">dashboard</div>,
+    });
+    const applicationsLayout = createRoute({
+      getParentRoute: () => rootRoute,
+      path: '/applications',
+      component: () => <Outlet />,
+    });
+    const applicationsIndex = createRoute({
+      getParentRoute: () => applicationsLayout,
+      path: '/',
+      component: ApplicationsPage,
+    });
+    const applicationsDetail = createRoute({
+      getParentRoute: () => applicationsLayout,
+      path: '$id',
+      validateSearch: fromSearch,
+      component: ApplicationDetailPage,
+    });
+
+    const routeTree = rootRoute.addChildren([
+      indexRoute,
+      applicationsLayout.addChildren([applicationsIndex, applicationsDetail]),
+    ]);
+
+    const router = createRouter({
+      routeTree,
+      history: createMemoryHistory({ initialEntries: ['/applications/abc'] }),
+    });
+
+    installUnknownPathRedirect(router);
+    render(<RouterProvider router={router} />);
+
+    // Detail view mounted (back label is the default one — `from` is absent).
+    const backButton = await screen.findByRole('button', { name: 'applications.detail.back' });
+
+    fireEvent.click(backButton);
+
+    // Must land on the Applications list, NOT the dashboard.
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/applications');
+    });
+    expect(router.state.location.pathname).toBe('/applications');
+    expect(screen.queryByTestId('dashboard')).not.toBeInTheDocument();
   });
 });

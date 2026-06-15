@@ -87,28 +87,13 @@ describe('SpotlightTour — index-1 ordering (applications)', () => {
 });
 
 describe('SpotlightTour — item count === 8', () => {
-  it('has exactly 8 step-dot buttons', () => {
-    renderTour();
-    // The dot buttons are rendered by TOUR_ITEMS.map — each maps to one Button
-    // inside the "mb-4 flex items-center gap-1" container. They have no text
-    // but they are role="button". We count all buttons then subtract the named
-    // action buttons (Skip + Next/Finish = 2) to get the dot count.
-    // Alternatively: count buttons whose accessible name is empty/numeric-key.
-    //
-    // Robust approach: count all role="button" elements and subtract the two
-    // labelled action buttons that always appear (Skip and Next/Finish).
-    const allButtons = screen.getAllByRole('button');
-    // Action buttons have non-empty accessible names from t():
-    //   'onboarding.tour.skip' and 'onboarding.tour.next'
-    const actionButtonNames = new Set([
-      'onboarding.tour.skip',
-      'onboarding.tour.next',
-      'onboarding.tour.finish',
-    ]);
-    const dotButtons = allButtons.filter(
-      (btn) => !actionButtonNames.has(btn.textContent?.trim() ?? '')
-    );
-    expect(dotButtons).toHaveLength(8);
+  it('has exactly 8 step-dot indicators', () => {
+    const { container } = renderTour();
+    // Dots are now rendered by the @ajh/ui StepDots component (non-interactive
+    // <div>s, not buttons). Each dot div carries `h-1 rounded-full ...`; the
+    // StepDots wrapper div does not (it is a `flex` row). Scope to the dot divs.
+    const dots = container.querySelectorAll('div.h-1.rounded-full');
+    expect(dots).toHaveLength(8);
   });
 
   it('clicking Next 7 times reaches the last item and shows the finish button', async () => {

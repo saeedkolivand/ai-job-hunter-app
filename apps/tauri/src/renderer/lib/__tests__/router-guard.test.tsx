@@ -70,6 +70,55 @@ function mountAt(initialPath: string) {
   return router;
 }
 
+/**
+ * Mirror the REAL applications route shape: a LAYOUT route `/applications`
+ * (`<Outlet/>`) with an index child (the list) and a dynamic child (`$id`).
+ * Mount at the dynamic child, install the guard, then return the router so a
+ * caller can navigate to the bare layout path and assert it is NOT redirected.
+ */
+function mountLayoutWithIndex(initialPath: string) {
+  const rootRoute = createRootRoute({ component: () => <Outlet /> });
+
+  const indexRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/',
+    component: () => <div>home</div>,
+  });
+
+  const layoutRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/applications',
+    component: () => <Outlet />,
+  });
+
+  const listRoute = createRoute({
+    getParentRoute: () => layoutRoute,
+    path: '/',
+    component: () => <div>list</div>,
+  });
+
+  const detailRoute = createRoute({
+    getParentRoute: () => layoutRoute,
+    path: '$id',
+    component: () => <div>detail</div>,
+  });
+
+  const routeTree = rootRoute.addChildren([
+    indexRoute,
+    layoutRoute.addChildren([listRoute, detailRoute]),
+  ]);
+
+  const router = createRouter({
+    routeTree,
+    history: createMemoryHistory({ initialEntries: [initialPath] }),
+  });
+
+  installUnknownPathRedirect(router);
+  render(<RouterProvider router={router} />);
+
+  return router;
+}
+
 describe('installUnknownPathRedirect', () => {
   it('keeps a matched dynamic /x/$id route — does NOT redirect', async () => {
     const router = mountAt('/x/123');
@@ -95,5 +144,85 @@ describe('installUnknownPathRedirect', () => {
       expect(router.state.location.pathname).toBe('/static');
     });
     expect(router.state.location.pathname).toBe('/static');
+  });
+
+  it('keeps the bare layout path /applications (it has an index child) when navigated from a child', async () => {
+    const router = mountLayoutWithIndex('/applications/abc');
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/applications/abc');
+    });
+
+    await router.navigate({ to: '/applications' });
+
+    await waitFor(() => {
+      expect(router.state.isLoading).toBe(false);
+    });
+    expect(router.state.location.pathname).toBe('/applications');
+  });
+
+  it('keeps /applications even when the index child has an async loader (no intermediate redirect)', async () => {
+    const rootRoute = createRootRoute({ component: () => <Outlet /> });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: '/',
+      component: () => <div>home</div>,
+    });
+    const layoutRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: '/applications',
+      component: () => <Outlet />,
+    });
+    const listRoute = createRoute({
+      getParentRoute: () => layoutRoute,
+      path: '/',
+      // Simulate the real list page resolving data asynchronously (React Query):
+      // an awaited loader forces a pending → success transition so the guard's
+      // onResolved sees any intermediate state.
+      loader: () => new Promise((r) => setTimeout(r, 5)),
+      component: () => <div>list</div>,
+    });
+    const detailRoute = createRoute({
+      getParentRoute: () => layoutRoute,
+      path: '$id',
+      component: () => <div>detail</div>,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([
+        indexRoute,
+        layoutRoute.addChildren([listRoute, detailRoute]),
+      ]),
+      history: createMemoryHistory({ initialEntries: ['/applications/abc'] }),
+    });
+
+    installUnknownPathRedirect(router);
+    render(<RouterProvider router={router} />);
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/applications/abc');
+    });
+
+    await router.navigate({ to: '/applications' });
+
+    await waitFor(() => {
+      expect(router.state.isLoading).toBe(false);
+    });
+    expect(router.state.location.pathname).toBe('/applications');
+  });
+
+  it('keeps /applications when navigated from a child that carries search params', async () => {
+    const router = mountLayoutWithIndex('/applications/abc?tab=documents');
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/applications/abc');
+    });
+
+    // Mirror ApplicationDetailPage.back() EXACTLY: `to` only, no `search` key.
+    await router.navigate({ to: '/applications' });
+
+    await waitFor(() => {
+      expect(router.state.isLoading).toBe(false);
+    });
+    expect(router.state.location.pathname).toBe('/applications');
   });
 });

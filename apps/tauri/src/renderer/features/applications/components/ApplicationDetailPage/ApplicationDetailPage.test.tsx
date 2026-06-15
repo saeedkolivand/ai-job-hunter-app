@@ -661,7 +661,18 @@ describe('ApplicationDetailPage — ?tab= behaviour', () => {
     expect(validateSearch({})).toEqual({ tab: undefined });
   });
 
-  it('clicking a tab calls navigate with the correct search param', async () => {
+  // `setTab` passes a FUNCTIONAL search updater `(prev) => ({ ...prev, tab })` so
+  // the origin `from` param is preserved across tab switches. These tests assert
+  // both the `replace: true` shape and that the updater merges `tab` onto `prev`
+  // (incl. preserving an existing `from`).
+  const lastSearchUpdater = () => {
+    const call = mockNavigate.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    return call.search;
+  };
+
+  it('clicking a tab calls navigate with a functional search updater that sets tab + preserves from', async () => {
     mockTab = 'overview';
     const user = userEvent.setup();
     renderLoaded({ id: 'app-nav-1' });
@@ -671,14 +682,12 @@ describe('ApplicationDetailPage — ?tab= behaviour', () => {
     await user.click(timelineTab);
 
     expect(mockNavigate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        search: { tab: 'timeline' },
-        replace: true,
-      })
+      expect.objectContaining({ search: expect.any(Function), replace: true })
     );
+    expect(lastSearchUpdater()({ from: 'jobs' })).toEqual({ from: 'jobs', tab: 'timeline' });
   });
 
-  it('clicking the brief tab calls navigate with search: { tab: "brief" }', async () => {
+  it('clicking the brief tab sets tab: "brief" via the functional updater', async () => {
     mockTab = 'overview';
     const user = userEvent.setup();
     renderLoaded({ id: 'app-nav-2' });
@@ -686,11 +695,12 @@ describe('ApplicationDetailPage — ?tab= behaviour', () => {
     await user.click(screen.getByRole('tab', { name: /applications\.detail\.tabs\.brief/i }));
 
     expect(mockNavigate).toHaveBeenCalledWith(
-      expect.objectContaining({ search: { tab: 'brief' }, replace: true })
+      expect.objectContaining({ search: expect.any(Function), replace: true })
     );
+    expect(lastSearchUpdater()({})).toEqual({ tab: 'brief' });
   });
 
-  it('clicking the documents tab calls navigate with search: { tab: "documents" }', async () => {
+  it('clicking the documents tab sets tab: "documents" via the functional updater', async () => {
     mockTab = 'overview';
     const user = userEvent.setup();
     renderLoaded({ id: 'app-nav-3' });
@@ -698,8 +708,12 @@ describe('ApplicationDetailPage — ?tab= behaviour', () => {
     await user.click(screen.getByRole('tab', { name: /applications\.detail\.tabs\.documents/i }));
 
     expect(mockNavigate).toHaveBeenCalledWith(
-      expect.objectContaining({ search: { tab: 'documents' }, replace: true })
+      expect.objectContaining({ search: expect.any(Function), replace: true })
     );
+    expect(lastSearchUpdater()({ from: 'autopilot' })).toEqual({
+      from: 'autopilot',
+      tab: 'documents',
+    });
   });
 
   it('renders the active tabpanel with the correct id for the current tab', () => {

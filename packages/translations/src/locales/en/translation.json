@@ -1438,6 +1438,8 @@
     "tailorError": "Couldn't start tailoring. Please try again.",
     "scrapeJobs": "Scrape Jobs",
     "scrapeFailed": "Scraping failed",
+    "searching": "Searching for jobs…",
+    "scoring": "Scoring matches…",
     "cancel": "Cancel",
     "clear": "Clear",
     "clearScrapedJobs": "Clear scraped jobs",
@@ -2092,18 +2094,7 @@
       "next": "Get started"
     },
     "prefs": {
-      "title": "Quick setup",
-      "subtitle": "Set your preferences — you can change these any time.",
-      "languageLabel": "Language",
-      "remoteLabel": "Where do you prefer to work?",
-      "remote": {
-        "remote": "Remote",
-        "hybrid": "Hybrid",
-        "on-site": "On-site",
-        "any": "Open to all"
-      },
-      "back": "Back",
-      "next": "Upload resume"
+      "languageLabel": "Language"
     },
     "ai": {
       "title": "Set up your AI",
@@ -2181,7 +2172,7 @@
       "skip": "Skip for now",
       "envVar": "You can also set the CHROME environment variable to point to a custom browser installation.",
       "back": "Back",
-      "next": "See the features"
+      "next": "Continue"
     },
     "extension": {
       "title": "Install the browser extension",
@@ -2236,10 +2227,6 @@
       "documents": {
         "title": "Documents",
         "desc": "Import and manage your resumes and cover letters. AI indexes them for smart matching."
-      },
-      "search": {
-        "title": "Search",
-        "desc": "Semantic search across all your documents and job postings using AI embeddings."
       }
     },
     "resume": {
@@ -2394,6 +2381,7 @@
     "detail": {
       "back": "Back to applications",
       "backAutopilot": "Back to Autopilot",
+      "backJobs": "Back to jobs",
       "openAria": "Open {{title}}",
       "statusTitle": "Status",
       "tabs": {

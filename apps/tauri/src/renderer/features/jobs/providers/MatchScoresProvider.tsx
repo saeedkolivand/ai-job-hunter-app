@@ -55,3 +55,18 @@ export function useRowMatchScore(jobId: string): {
   const score = getScore(jobId);
   return { score, pending: isPending && !score, hasResume };
 }
+
+/**
+ * Reads the whole batch-score context — used by `JobsResults` to gate the list
+ * (while `isPending`/scraping) and to re-sort by score on reveal. Rows should
+ * keep using `useRowMatchScore` for their per-row slice.
+ */
+export function useMatchScores(): {
+  getScore: (jobId: string) => MatchScore | undefined;
+  isPending: boolean;
+  hasResume: boolean;
+} {
+  const ctx = useContext(MatchScoresContext);
+  if (!ctx) throw new Error('useMatchScores must be used within MatchScoresProvider');
+  return ctx;
+}

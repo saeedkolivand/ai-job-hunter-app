@@ -56,7 +56,11 @@ export function ApplicationRow({ application, highlighted = false }: Application
   };
 
   const openDetail = () => {
-    void navigate({ to: '/applications/$id', params: { id: application.id } });
+    void navigate({
+      to: '/applications/$id',
+      params: { id: application.id },
+      search: { from: 'applications' },
+    });
   };
 
   const onRowKey = (e: React.KeyboardEvent) => {

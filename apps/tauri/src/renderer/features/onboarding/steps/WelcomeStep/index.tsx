@@ -122,7 +122,7 @@ export function WelcomeStep({ onNext, direction, stepIndex, totalSteps }: Props)
       </div>
 
       <Button
-        variant="default"
+        variant="primary"
         size="lg"
         className="w-full justify-center"
         onClick={handleNext}

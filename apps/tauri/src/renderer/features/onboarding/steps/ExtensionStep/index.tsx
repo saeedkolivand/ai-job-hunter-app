@@ -87,7 +87,7 @@ export function ExtensionStep({ onBack, onNext, direction, stepIndex, totalSteps
 
         <div className="flex-1" />
 
-        <Button variant="default" onClick={onNext} className="flex items-center gap-1.5">
+        <Button variant="primary" onClick={onNext} className="flex items-center gap-1.5">
           {t('onboarding.extension.next')}
           <ArrowRight size={13} />
         </Button>
