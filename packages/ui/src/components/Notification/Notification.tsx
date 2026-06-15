@@ -19,7 +19,7 @@ import { transition } from '../../lib/motion';
 
 export type NotificationVariant = 'success' | 'error' | 'info' | 'warning';
 
-/** All six corner/edge placements, matching antd's `notification`. */
+/** All six corner/edge placements. */
 export type NotificationPlacement =
   | 'top'
   | 'topLeft'
@@ -28,8 +28,7 @@ export type NotificationPlacement =
   | 'bottomLeft'
   | 'bottomRight';
 
-/** Open a notification. Modelled on antd's `notification` config. `duration` is
- *  in SECONDS (antd convention); `0` keeps it open until dismissed. */
+/** Open a notification. `duration` is in SECONDS; `0` keeps it open until dismissed. */
 export interface NotificationConfig {
   /** Title line (bold). */
   message: ReactNode;
@@ -54,7 +53,7 @@ export interface NotificationConfig {
   onClose?: () => void;
 }
 
-/** Imperative API returned by {@link useNotification}. Mirrors antd. */
+/** Imperative API returned by {@link useNotification}. */
 export interface NotificationApi {
   open: (config: NotificationConfig) => string;
   success: (config: Omit<NotificationConfig, 'variant'>) => string;
@@ -81,7 +80,7 @@ interface NotificationItem {
 
 const NotificationContext = createContext<NotificationApi | null>(null);
 
-const DEFAULT_DURATION = 4.5; // seconds (antd default)
+const DEFAULT_DURATION = 4.5; // seconds
 const DEFAULT_PLACEMENT: NotificationPlacement = 'topRight';
 
 const PLACEMENTS: NotificationPlacement[] = [
@@ -458,8 +457,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-/** Imperative notification API (antd-style). Must be used within
- *  {@link NotificationProvider}. */
+/** Imperative notification API. Must be used within {@link NotificationProvider}. */
 export function useNotification(): NotificationApi {
   const ctx = useContext(NotificationContext);
   if (!ctx) throw new Error('useNotification must be used within NotificationProvider');

@@ -3,7 +3,7 @@ import type { CSSProperties, ReactNode } from 'react';
 
 import { cn } from '../../lib/cn';
 
-/** A dot colour: an antd-style preset or any CSS colour string. */
+/** A dot colour: a preset name or any CSS colour string. */
 export type TimelineColor = 'brand' | 'blue' | 'green' | 'red' | 'gray' | (string & {});
 
 export interface TimelineItem {
@@ -21,7 +21,7 @@ export interface TimelineProps {
   /** Ordered nodes (oldest first unless `reverse`). */
   items: TimelineItem[];
   /**
-   * Label/content placement (antd parity). Unset = a compact left rail with the
+   * Label/content placement. Unset = a compact left rail with the
    * label muted above the content. `left`/`right`/`alternate` put the label on the
    * opposite side of a centered rail.
    */
@@ -30,12 +30,12 @@ export interface TimelineProps {
   pending?: ReactNode;
   /** Custom dot for the pending node. Default: a spinning loader. */
   pendingDot?: ReactNode;
-  /** Newest-first: reverses the items and moves `pending` to the top (antd parity). */
+  /** Newest-first: reverses the items and moves `pending` to the top. */
   reverse?: boolean;
   className?: string;
 }
 
-/** antd-style colour presets; `brand` maps to the app accent, the rest to the shared palette. */
+/** Colour presets; `brand` maps to the app accent, the rest to the shared palette. */
 const PRESET_COLORS: Record<string, string> = {
   brand: 'var(--color-brand)',
   blue: '#3b82f6',
@@ -68,7 +68,7 @@ interface Row {
 }
 
 /**
- * Vertical timeline modelled on antd's `Timeline`: a connecting rail of coloured
+ * Vertical timeline: a connecting rail of coloured
  * (or custom) dots with content to the side. Supports opposite-side labels via
  * `mode` (`left`/`right`/`alternate`), a trailing `pending` node with a spinner,
  * and `reverse` (newest-first). Brand-aware: the default dot colour is the accent.

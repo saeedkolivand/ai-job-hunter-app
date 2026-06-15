@@ -15,7 +15,7 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
    */
   suffix?: ReactNode;
   /**
-   * Show a clear (×) button while the field holds a value (antd `allowClear`).
+   * Show a clear (×) button while the field holds a value.
    * Clearing dispatches a native input event so the bound `onChange` fires with
    * an empty string — assumes a controlled `value`.
    */

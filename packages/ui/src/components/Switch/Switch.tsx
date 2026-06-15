@@ -95,7 +95,7 @@ export function Switch({
     <div className="flex items-center justify-between gap-4">
       <div className="min-w-0">
         {/* The button is a labelable element, so htmlFor associates this label with
-            it: clicking the text toggles the switch (antd's whole-control click).
+            it: clicking the text toggles the switch (whole-control click).
             The label wraps ONLY the name text — the description stays outside so the
             accessible name is just the label, with the hint exposed once via
             aria-describedby (not concatenated into the name). */}

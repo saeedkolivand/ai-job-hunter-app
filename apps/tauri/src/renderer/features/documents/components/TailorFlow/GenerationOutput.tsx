@@ -231,7 +231,7 @@ export function GenerationOutput({
                 )}
               >
                 {/* Real <label htmlFor> so clicking the text toggles the switch
-                    (antd whole-control click) and supplies its accessible name. */}
+                    (whole-control click) and supplies its accessible name. */}
                 <label
                   htmlFor={atsSwitchId}
                   className="cursor-pointer select-none text-[10px] font-medium"
