@@ -57,7 +57,7 @@ export function InterviewQuestionsModal({
     >
       <div className="flex max-h-[85vh] flex-col">
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] px-5 py-4">
+        <div className="flex items-start justify-between gap-3 border-b border-[var(--border-soft)] px-5 py-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <MessagesSquare size={14} className="shrink-0 text-brand-soft" />

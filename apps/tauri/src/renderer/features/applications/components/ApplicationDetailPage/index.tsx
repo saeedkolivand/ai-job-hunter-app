@@ -174,7 +174,7 @@ function SlimLayout({
 }) {
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-8 py-4">
+      <div className="flex shrink-0 items-center gap-3 border-b border-[var(--border-soft)] px-8 py-4">
         <Button
           onClick={onBack}
           variant="ghost"
@@ -194,7 +194,7 @@ function SlimLayout({
 /** The bordered tabbed-panel surface (fills its parent height). */
 function PanelShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full min-h-0 flex-col rounded-lg border border-white/[0.06] bg-white/[0.02]">
+    <div className="flex h-full min-h-0 flex-col rounded-lg border border-[var(--border-soft)] bg-foreground/[0.02]">
       {children}
     </div>
   );
@@ -304,7 +304,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
   return (
     <div className="flex h-full flex-col">
       {/* Slim header (persists across all tabs) */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-8 py-4">
+      <div className="flex shrink-0 items-center gap-3 border-b border-[var(--border-soft)] px-8 py-4">
         <Button
           onClick={onBack}
           variant="ghost"
@@ -320,7 +320,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
               {application.title || t('applications.row.noTitle')}
             </span>
             {application.board && (
-              <span className="shrink-0 rounded-full border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 text-[9px] uppercase tracking-wider text-foreground/55">
+              <span className="shrink-0 rounded-full border border-[var(--border-soft)] bg-foreground/[0.04] px-2 py-0.5 text-[9px] uppercase tracking-wider text-foreground/55">
                 {application.board}
               </span>
             )}
@@ -377,7 +377,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
           <div
             role="tablist"
             aria-label={t('applications.detail.tabsLabel')}
-            className="flex shrink-0 items-center gap-1 border-b border-white/[0.06] px-3 py-2"
+            className="flex shrink-0 items-center gap-1 border-b border-[var(--border-soft)] px-3 py-2"
           >
             {DETAIL_TABS.map((tb, i) => (
               <Button
@@ -430,6 +430,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                         id="appdetail-notes"
                         variant="glass"
                         rows={4}
+                        placeholder={t('applications.detail.notesPlaceholder')}
                         value={notes}
                         onChange={(e) => setNotes(e.target.value)}
                         onBlur={() => {
@@ -455,6 +456,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                           <Input
                             id="appdetail-contact-name"
                             variant="default"
+                            placeholder={t('applications.detail.contactNamePlaceholder')}
                             value={contactName}
                             onChange={(e) => setContactName(e.target.value)}
                             onBlur={() => {
@@ -476,6 +478,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                             id="appdetail-contact-email"
                             variant="default"
                             type="email"
+                            placeholder={t('applications.detail.contactEmailPlaceholder')}
                             value={contactEmail}
                             onChange={(e) => setContactEmail(e.target.value)}
                             onBlur={() => {
@@ -503,6 +506,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                           <Input
                             id="appdetail-comp"
                             variant="default"
+                            placeholder={t('applications.detail.compPlaceholder')}
                             value={comp}
                             onChange={(e) => setComp(e.target.value)}
                             onBlur={() => {
@@ -750,7 +754,7 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Toolbar — Questions (only on `done`) + Referral */}
-      <div className="flex shrink-0 items-center justify-end gap-2 border-b border-white/[0.06] px-8 py-3">
+      <div className="flex shrink-0 items-center justify-end gap-2 border-b border-[var(--border-soft)] px-8 py-3">
         {controller?.stage === 'done' && (
           <Button
             variant="glass"

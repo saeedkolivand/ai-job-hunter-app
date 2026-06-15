@@ -63,7 +63,7 @@ export function InterviewPrepTab({ application, matchingGenerations }: Props) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Toolbar — audience selector + seed topics + generate */}
-      <div className="shrink-0 space-y-2 border-b border-white/[0.06] px-8 py-3">
+      <div className="shrink-0 space-y-2 border-b border-[var(--border-soft)] px-8 py-3">
         <span className="block text-xs font-medium text-foreground/70">
           {t('applications.detail.interview.audienceLabel')}
         </span>
