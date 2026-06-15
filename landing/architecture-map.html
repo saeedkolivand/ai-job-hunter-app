@@ -1054,7 +1054,7 @@
           {
             role: 'Builds the resume system+user prompt, provider-aware and locale-driven.',
             plain: 'Writes the exact instructions the AI follows to rewrite your resume.',
-            path: 'packages/prompts/src/generate/resume.ts',
+            path: 'packages/prompts/src/generate/resume/resume.ts',
             notes: ['Depth chosen by ProviderProfile (brief/full/task)'],
             tag: ['overview', 'aigenerate', 'all'],
             critical: true,
@@ -1073,7 +1073,7 @@
           {
             role: 'Builds the cover-letter system+user prompt.',
             plain: 'Writes the instructions the AI follows to draft your cover letter.',
-            path: 'packages/prompts/src/generate/cover-letter.ts',
+            path: 'packages/prompts/src/generate/cover-letter/cover-letter.ts',
             notes: ['Has self-verifying task-brief variant for CLI agents'],
             tag: ['overview', 'aigenerate', 'all'],
             critical: true,
@@ -1092,7 +1092,7 @@
           {
             role: 'Prompt that extracts JSON metadata (name, role, company, languages, keywords).',
             plain: 'A first quick pass that pulls the key facts out of the job ad and resume.',
-            path: 'packages/prompts/src/generate/metadata.ts',
+            path: 'packages/prompts/src/generate/metadata/metadata.ts',
             notes: [],
             tag: ['aigenerate', 'all'],
           }
@@ -1110,7 +1110,7 @@
           {
             role: 'Validates + repairs model JSON output (universal fallback).',
             plain: 'Cleans up the AI’s answer if it comes back slightly malformed.',
-            path: 'packages/prompts/src/generate/metadata.ts',
+            path: 'packages/prompts/src/generate/metadata/metadata.ts',
             notes: ['Fallback for every provider'],
             tag: ['aigenerate', 'all'],
           }
@@ -1128,7 +1128,7 @@
           {
             role: 'Extracts links from the source resume and re-injects them into generated text.',
             plain: 'Makes sure your portfolio/LinkedIn links survive the rewrite.',
-            path: 'packages/prompts/src/generate/links.ts',
+            path: 'packages/prompts/src/generate/links/links.ts',
             notes: ['injectLinksIntoGeneratedText / getLinkMap'],
             tag: ['aigenerate', 'all'],
           }
