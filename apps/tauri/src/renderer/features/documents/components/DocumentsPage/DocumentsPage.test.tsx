@@ -1,5 +1,5 @@
 /**
- * ResumesPage — selection-mode tests
+ * DocumentsPage — selection-mode tests
  *
  * Strategy (mirrors ApplicationsPage.test.tsx):
  *  - The three service hooks (`useAiGenerations`, `useInteractions`,
@@ -32,7 +32,7 @@ import type { AiGenerationRecord } from '@ajh/shared/ipc';
 
 import { useSessionStore } from '@/store/session-store';
 
-import { ResumesPage } from './index';
+import { DocumentsPage } from './index';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
@@ -88,7 +88,7 @@ vi.mock('@/features/documents/components/GenerationCard', () => ({
       data-genid={gen.id}
       data-selected={selected ? '1' : '0'}
       // The whole point of the change: the card is only "selectable" (renders its
-      // checkbox) when ResumesPage passes onToggleSelect, i.e. in selection mode.
+      // checkbox) when DocumentsPage passes onToggleSelect, i.e. in selection mode.
       data-selectable={onToggleSelect ? '1' : '0'}
     >
       {gen.jobTitle}
@@ -98,7 +98,7 @@ vi.mock('@/features/documents/components/GenerationCard', () => ({
 
 // ── InteractionRow stub (Résumés tab never renders it; import must resolve) ────
 
-vi.mock('@/features/resumes/components/InteractionRow', () => ({
+vi.mock('@/features/documents/components/InteractionRow', () => ({
   InteractionRow: () => <div data-testid="interaction-row" />,
 }));
 
@@ -150,9 +150,9 @@ beforeEach(() => {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe('ResumesPage — selection mode', () => {
+describe('DocumentsPage — selection mode', () => {
   it('hides the Select-all checkbox and per-card checkboxes by default', () => {
-    render(<ResumesPage />);
+    render(<DocumentsPage />);
 
     // No Select-all checkbox in the header before entering selection mode.
     expect(screen.queryByLabelText(SELECT_ALL)).not.toBeInTheDocument();
@@ -168,7 +168,7 @@ describe('ResumesPage — selection mode', () => {
   });
 
   it('reveals the Select-all checkbox + Done button and makes cards selectable after clicking "Select"', () => {
-    render(<ResumesPage />);
+    render(<DocumentsPage />);
 
     fireEvent.click(screen.getByRole('button', { name: SELECT_START }));
 
@@ -184,7 +184,7 @@ describe('ResumesPage — selection mode', () => {
   });
 
   it('exits selection mode (hides checkbox + cards no longer selectable) after clicking "Done"', () => {
-    render(<ResumesPage />);
+    render(<DocumentsPage />);
 
     fireEvent.click(screen.getByRole('button', { name: SELECT_START }));
     expect(screen.getByLabelText(SELECT_ALL)).toBeInTheDocument();
@@ -202,7 +202,7 @@ describe('ResumesPage — selection mode', () => {
   it('does not show the Select button when there are no documents', () => {
     mockUseAiGenerations.mockReturnValue({ data: [] });
 
-    render(<ResumesPage />);
+    render(<DocumentsPage />);
 
     expect(screen.queryByRole('button', { name: SELECT_START })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(SELECT_ALL)).not.toBeInTheDocument();
@@ -215,7 +215,7 @@ describe('ResumesPage — selection mode', () => {
       resumes: { ...s.resumes, tab: 'resumes', filter: 'zzz-no-match' },
     }));
 
-    render(<ResumesPage />);
+    render(<DocumentsPage />);
 
     // The header Select control stays visible because the tab has documents,
     // even though the filtered list is empty.
@@ -227,7 +227,7 @@ describe('ResumesPage — selection mode', () => {
   });
 
   it('checks every card via Select-all once in selection mode', () => {
-    render(<ResumesPage />);
+    render(<DocumentsPage />);
 
     fireEvent.click(screen.getByRole('button', { name: SELECT_START }));
 

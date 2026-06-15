@@ -101,7 +101,7 @@ const ISSUES_URL: &str = "https://github.com/saeedkolivand/ai-job-hunter-app/iss
 
 /// View-submenu go-to-route items: `(id, accelerator, route, label)`. The route
 /// strings are the canonical values from
-/// `apps/tauri/src/renderer/constants/routes/routes.ts` (Documents → `/resumes`,
+/// `apps/tauri/src/renderer/constants/routes/routes.ts` (Documents → `/documents`,
 /// Resume Analyzer → `/analyze`, AI Generate → `/ai-generate`). The label is the
 /// menu-item title. `on_app_menu_event` emits `menu:navigate { route, section: null }`
 /// for each. One row per item keeps id/accel/route/label in lockstep.
@@ -120,7 +120,7 @@ const NAV_ITEMS: &[(&str, &str, &str, &str)] = &[
         "/ai-generate",
         "AI Generate",
     ),
-    ("menu_nav_documents", "CmdOrCtrl+5", "/resumes", "Documents"),
+    ("menu_nav_documents", "CmdOrCtrl+5", "/documents", "Documents"),
     (
         "menu_nav_autopilot",
         "CmdOrCtrl+6",

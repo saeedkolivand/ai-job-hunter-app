@@ -37,7 +37,7 @@ const KNOWN_ROUTE_TABLE: Record<KnownRoutePath, true> = {
   '/build': true,
   '/jobs': true,
   '/monitoring': true,
-  '/resumes': true,
+  '/documents': true,
   '/search': true,
   '/settings': true,
   '/support': true,

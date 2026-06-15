@@ -17,13 +17,13 @@ import {
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { GenerationCard } from '@/features/documents/components/GenerationCard';
-import { InteractionRow } from '@/features/resumes/components/InteractionRow';
-import { DOC_TABS, type DocTab, type Interaction } from '@/features/resumes/constants';
+import { InteractionRow } from '@/features/documents/components/InteractionRow';
+import { DOC_TABS, type DocTab, type Interaction } from '@/features/documents/constants';
 import { useAiGenerations, useRemoveAiGenerationsBulk } from '@/services/use-ai-generations';
 import { useInteractions } from '@/services/use-postings';
 import { useSessionStore } from '@/store/session-store';
 
-function ResumesPage() {
+function DocumentsPage() {
   const { t } = useTranslation();
   const { resumes, setResumes } = useSessionStore();
   const { tab, filter } = resumes;
@@ -324,4 +324,4 @@ function ResumesPage() {
   );
 }
 
-export { ResumesPage };
+export { DocumentsPage };

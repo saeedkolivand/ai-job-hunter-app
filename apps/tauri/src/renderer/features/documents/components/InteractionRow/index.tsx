@@ -3,7 +3,7 @@ import { Building2, Clock, ExternalLink, MapPin, Tag } from 'lucide-react';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, GlassCard } from '@ajh/ui';
 
-import { type Interaction, INTERACTION_TYPES } from '@/features/resumes/constants';
+import { type Interaction, INTERACTION_TYPES } from '@/features/documents/constants';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
 import { useOpenExternal } from '@/services/use-system';
 
