@@ -86,6 +86,12 @@ interface AutopilotSlice {
   wizardStep: number;
   wizardForm: WizardState | null;
   focusedId: string | null;
+  /**
+   * The autopilot the user last applied from (deep-linked into the application
+   * detail). Consumed once when the Autopilot page next mounts — promoted to
+   * `focusedId` so pressing Back re-expands that card instead of collapsing it.
+   */
+  lastAppliedId: string | null;
 }
 
 /**
@@ -230,6 +236,7 @@ export const useSessionStore = create<SessionState>((set) => ({
     wizardStep: 0,
     wizardForm: null,
     focusedId: null,
+    lastAppliedId: null,
   },
   applicationApply: { ...APPLICATION_APPLY_DEFAULTS },
   applications: { collapsedSections: [], filter: '' },

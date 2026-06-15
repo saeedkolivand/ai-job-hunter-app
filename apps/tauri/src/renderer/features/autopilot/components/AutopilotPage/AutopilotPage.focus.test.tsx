@@ -88,7 +88,7 @@ vi.mock('@/components/layout/PageTransition', () => ({
 
 beforeEach(() => {
   useSessionStore.setState((s) => ({
-    autopilot: { ...s.autopilot, focusedId: null, creating: false },
+    autopilot: { ...s.autopilot, focusedId: null, lastAppliedId: null, creating: false },
   }));
   mockNavigate.mockReset();
   mockInvalidateAutopilots.mockReset();
@@ -146,5 +146,21 @@ describe('AutopilotPage — ?focus consumption', () => {
     expect(mockInvalidateAutopilots).not.toHaveBeenCalled();
     const { autopilot } = useSessionStore.getState();
     expect(autopilot.focusedId).toBeNull();
+  });
+});
+
+describe('AutopilotPage — lastAppliedId (re-expand on Back)', () => {
+  it('promotes lastAppliedId to focusedId on mount and clears it', async () => {
+    // Simulates returning from an Apply deep-link: the page should re-focus the
+    // autopilot the user applied from so its found-jobs list re-expands.
+    useSessionStore.setState((s) => ({ autopilot: { ...s.autopilot, lastAppliedId: 'ap-7' } }));
+
+    await act(async () => {
+      render(<AutopilotPage />);
+    });
+
+    const { autopilot } = useSessionStore.getState();
+    expect(autopilot.focusedId).toBe('ap-7');
+    expect(autopilot.lastAppliedId).toBeNull();
   });
 });

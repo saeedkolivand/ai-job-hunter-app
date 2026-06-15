@@ -41,6 +41,15 @@ function AutopilotPage() {
     void navigate({ to: '/autopilot', search: {}, replace: true });
   }, [focus, navigate, invalidateAutopilots, setAutopilot]);
 
+  // Returning from an Apply (Back): the user deep-linked into an application from a
+  // found job. Re-focus that autopilot on this mount so its found-jobs list stays
+  // expanded instead of collapsing. One-shot — promoted to `focusedId` (which the
+  // card consumes + scrolls to) and cleared, so it only fires the first mount back.
+  useEffect(() => {
+    const appliedId = useSessionStore.getState().autopilot.lastAppliedId;
+    if (appliedId) setAutopilot({ focusedId: appliedId, lastAppliedId: null });
+  }, [setAutopilot]);
+
   const { runStates, stepLogs, error, setError, handleRun, handleTogglePause, handleDelete } =
     useAutopilotRun();
   const saveFromPosting = useSaveFromPosting();
@@ -86,6 +95,9 @@ function AutopilotPage() {
         applyWizardStep: 0,
         applyWizardForm: null,
       });
+      // Remember which autopilot we applied from so Back re-expands it (consumed
+      // on the Autopilot page's next mount).
+      setAutopilot({ lastAppliedId: ap._id });
       void navigate({
         to: '/applications/$id',
         params: { id: res.id },
