@@ -35,6 +35,12 @@ export { Dropdown, type DropdownOption, type DropdownProps } from './components/
 export { GlassCard, type GlassCardProps } from './components/GlassCard/index';
 export { IconBadge, type IconBadgeProps } from './components/IconBadge/index';
 export { IconText } from './components/IconText/index';
+export {
+  Image,
+  type ImagePreviewGroupProps,
+  type ImagePreviewType,
+  type ImageProps,
+} from './components/Image/index';
 export { Input, type InputProps } from './components/Input/index';
 export { LocationInput, type LocationInputProps } from './components/LocationInput/index';
 export { NumberField, type NumberFieldProps } from './components/NumberField/index';
