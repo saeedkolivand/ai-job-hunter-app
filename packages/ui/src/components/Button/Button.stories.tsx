@@ -118,8 +118,8 @@ export const CssCheck: Story = {
     const button = canvas.getByRole('button', { name: /submit/i });
     const styles = getComputedStyle(button);
     await expect(styles.display).toBe('inline-flex');
-    // Apple type grammar: buttons are weight 400 (no 500). Still a non-UA value
-    // that only holds when the design-system CSS is loaded.
-    await expect(styles.fontWeight).toBe('400');
+    // Buttons default to weight 500 (`font-medium`). Still a non-UA value that
+    // only holds when the design-system CSS is loaded.
+    await expect(styles.fontWeight).toBe('500');
   },
 };
