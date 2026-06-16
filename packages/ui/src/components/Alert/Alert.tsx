@@ -12,7 +12,7 @@ export interface AlertProps {
   description?: ReactNode;
   /** Visual type. Default `info` (or `warning` in `banner` mode when unset). */
   type?: AlertType;
-  /** Show the type icon. Default `false` (antd parity); auto-on with a description. */
+  /** Show the type icon. Default `false`; auto-on with a description. */
   showIcon?: boolean;
   /** Override the type icon. */
   icon?: ReactNode;
@@ -60,7 +60,7 @@ const TYPES: Record<AlertType, { icon: LucideIcon; accent: string; bg: string; b
 // ─── Component ──────────────────────────────────────────────────────────────────
 
 /**
- * Inline status banner, modelled on antd's `Alert`. Unlike `useNotification`
+ * Inline status banner. Unlike `useNotification`
  * (transient, floating, imperative) this is a persistent element you place in the
  * layout. Supports `message` + optional `description`, a type icon, a close
  * button, an `action` slot, and `banner` mode.
@@ -84,7 +84,7 @@ export function Alert({
   const resolvedType: AlertType = type ?? (banner ? 'warning' : 'info');
   const cfg = TYPES[resolvedType];
   const Icon = cfg.icon;
-  const withIcon = showIcon ?? description != null; // antd: icon emphasised in description mode
+  const withIcon = showIcon ?? description != null; // icon emphasised in description mode
   const isClosable = closable === true || (typeof closable === 'object' && closable !== null);
   const closeIcon =
     typeof closable === 'object' && closable?.closeIcon ? (

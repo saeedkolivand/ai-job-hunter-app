@@ -51,7 +51,7 @@ export function TrackJobModal({ open, onClose }: TrackJobModalProps) {
   return (
     <ModalShell open={open} onClose={handleClose} maxWidth="max-w-md" ariaLabelledby={titleId}>
       <form onSubmit={(e) => void onSubmit(e)}>
-        <div className="border-b border-white/5 px-6 py-5">
+        <div className="border-b border-[var(--border-soft)] px-6 py-5">
           <h2 id={titleId} className="text-base font-medium text-foreground">
             {t('applications.trackModal.title')}
           </h2>
@@ -118,7 +118,7 @@ export function TrackJobModal({ open, onClose }: TrackJobModalProps) {
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-white/5 px-6 py-4">
+        <div className="flex items-center justify-end gap-2 border-t border-[var(--border-soft)] px-6 py-4">
           <Button type="button" variant="ghost" size="md" onClick={handleClose}>
             {t('applications.trackModal.cancel')}
           </Button>

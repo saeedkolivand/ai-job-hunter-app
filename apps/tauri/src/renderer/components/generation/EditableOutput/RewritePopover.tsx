@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, Input, transition, useFocusTrap } from '@ajh/ui';
+import { Button, Input, Tag, transition, useFocusTrap } from '@ajh/ui';
 
 import { type RewriteDocType, rewriteSelection } from '@/lib/generate';
 
@@ -181,16 +181,14 @@ export function RewritePopover({
         {/* Quick-action chips */}
         <div className="flex flex-wrap gap-1">
           {PRESETS.map((preset) => (
-            <Button
+            <Tag.CheckableTag
               key={preset}
-              variant="unstyled"
-              type="button"
+              checked={false}
               disabled={streaming}
-              onClick={() => onPreset(preset)}
-              className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[10px] text-foreground/60 transition-colors hover:border-brand/30 hover:text-brand-soft disabled:opacity-40 disabled:pointer-events-none"
+              onChange={() => onPreset(preset)}
             >
               {t(`aiGenerate.rewrite.presets.${preset}`)}
-            </Button>
+            </Tag.CheckableTag>
           ))}
         </div>
 

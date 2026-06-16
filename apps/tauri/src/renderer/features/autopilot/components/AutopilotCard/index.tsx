@@ -25,8 +25,8 @@ import {
   transition,
 } from '@ajh/ui';
 
-import { scoreToLevel } from '@/features/autopilot/lib/match-level';
 import { type AutopilotRunState, RUN_STATE_LABEL } from '@/lib/machines/autopilot-run.machine';
+import { scoreToLevel } from '@/lib/match-level';
 import { timeAgo } from '@/lib/time';
 import { useOpenExternal } from '@/services';
 

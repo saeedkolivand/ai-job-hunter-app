@@ -66,6 +66,7 @@ fn test_board_search_input_creation() {
     let input = BoardSearchInput {
         query: "Software Engineer".to_string(),
         location: Some("Berlin".to_string()),
+        amount: 25,
         pages: 5,
         date_filter: Some("7d".to_string()),
         job_type: Some("F".to_string()),
@@ -83,6 +84,7 @@ fn test_board_search_input_creation() {
     };
     assert_eq!(input.query, "Software Engineer");
     assert_eq!(input.pages, 5);
+    assert_eq!(input.amount, 25);
 }
 
 #[test]
@@ -90,6 +92,7 @@ fn test_board_search_input_defaults() {
     let input = BoardSearchInput {
         query: "Software Engineer".to_string(),
         location: None,
+        amount: 25,
         pages: 1,
         date_filter: None,
         job_type: None,

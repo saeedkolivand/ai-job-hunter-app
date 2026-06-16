@@ -18,6 +18,13 @@ export default defineConfig({
         find: /^@ajh\/ui$/,
         replacement: path.resolve(__dirname, '../../packages/ui/src/index.ts'),
       },
+      // Same rationale as @ajh/ui: resolve translations to SOURCE so editing
+      // translation.json / the i18n config hot-reloads in dev instead of serving
+      // the prebuilt dist. Exact-match so any future subpath still hits the package.
+      {
+        find: /^@ajh\/translations$/,
+        replacement: path.resolve(__dirname, '../../packages/translations/src/index.ts'),
+      },
       { find: '@', replacement: path.resolve(__dirname, 'src/renderer') },
     ],
   },

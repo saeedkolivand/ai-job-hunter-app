@@ -5,8 +5,8 @@ import { useTranslation } from '@ajh/translations';
 import { Button, cn, Input } from '@ajh/ui';
 
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
-import { MATCH_LEVELS, scoreToLevel } from '@/features/autopilot/lib/match-level';
 import type { Prefilled, WizardState } from '@/features/autopilot/types';
+import { MATCH_LEVELS, scoreToLevel } from '@/lib/match-level';
 import { useExtractText } from '@/services';
 
 import { PrefilledBadge } from '../PrefilledBadge';

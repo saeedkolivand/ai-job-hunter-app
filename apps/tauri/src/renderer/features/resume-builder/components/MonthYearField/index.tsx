@@ -54,7 +54,7 @@ export function MonthYearField({ value, onChange, disabled, present, id }: Month
 
   if (present) {
     return (
-      <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-foreground/45">
+      <div className="rounded-lg border border-[var(--border-soft)] bg-foreground/[0.03] px-3 py-2 text-xs text-foreground/45">
         {t('build.experience.present')}
       </div>
     );

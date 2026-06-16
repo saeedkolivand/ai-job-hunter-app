@@ -113,7 +113,7 @@ export function ResumeReviewPanel({ review, onDismiss }: Props) {
       )}
 
       <div className="flex justify-end">
-        <Button size="sm" variant="ghost" onClick={onDismiss}>
+        <Button variant="ghost" onClick={onDismiss}>
           {t('resumeReview.dismiss')}
         </Button>
       </div>

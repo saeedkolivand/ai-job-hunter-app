@@ -61,8 +61,7 @@ export function NotificationBell() {
     <div ref={containerRef} className="relative">
       <Button
         variant="ghost"
-        size="sm"
-        className={`app-no-drag relative border-transparent bg-transparent hover:border-transparent hover:bg-white/[0.06] ${
+        className={`app-no-drag relative h-8 w-8 p-0 border-foreground/15 bg-transparent hover:border-foreground/25 hover:bg-foreground/[0.06] ${
           unreadCount > 0
             ? 'text-brand hover:text-brand'
             : 'text-foreground/70 hover:text-foreground'
@@ -91,14 +90,13 @@ export function NotificationBell() {
             exit={{ opacity: 0, y: -4 }}
             transition={transition.fast}
           >
-            <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3 py-2">
+            <div className="flex items-center justify-between gap-2 border-b border-foreground/10 px-3 py-2">
               <span className="text-sm font-medium text-foreground">
                 {t('notifications.title')}
               </span>
               <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
-                  size="sm"
                   disabled={unreadCount === 0}
                   onClick={() => markAllRead.mutate()}
                 >
@@ -106,7 +104,6 @@ export function NotificationBell() {
                 </Button>
                 <Button
                   variant="ghost"
-                  size="sm"
                   disabled={items.length === 0}
                   onClick={() => clearAll.mutate()}
                 >
@@ -119,64 +116,72 @@ export function NotificationBell() {
               <EmptyState icon={Bell} title={t('notifications.empty')} />
             ) : (
               <div className="max-h-96 overflow-y-auto">
-                {sorted.map((n) => {
-                  const openNotification = () => {
-                    markRead.mutate(n.id);
-                    setOpen(false);
-                    if (n.route) {
-                      const validatedTo = resolveNotificationRoute(n.route.to);
-                      void router.navigate({
-                        to: validatedTo,
-                        search: validatedTo === n.route.to ? n.route.search : undefined,
-                      });
-                    }
-                  };
-                  return (
-                    // A clickable row carries a nested remove `Button`; using a
-                    // `<button>` row would nest interactive elements (invalid DOM),
-                    // so it follows the repo's `role="button"` row pattern instead.
-                    <div
-                      key={n.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={openNotification}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          openNotification();
-                        }
-                      }}
-                      className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5 focus-visible:bg-white/5 focus-visible:outline-none"
-                    >
-                      {n.read ? (
-                        <span className="mt-1.5 h-2 w-2 shrink-0" />
-                      ) : (
-                        <span
-                          className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand"
-                          aria-label={t('notifications.unread.dotAria')}
-                        />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-foreground">{n.title}</p>
-                        <p className="line-clamp-2 text-xs text-foreground/60">{n.body}</p>
-                        <p className="mt-0.5 text-[11px] text-foreground/40">
-                          {timeAgo(n.createdAt, Date.now(), i18n.language)}
-                        </p>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        aria-label={t('notifications.remove.aria')}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeNotification.mutate(n.id);
+                <AnimatePresence initial={false}>
+                  {sorted.map((n) => {
+                    const openNotification = () => {
+                      markRead.mutate(n.id);
+                      setOpen(false);
+                      if (n.route) {
+                        const validatedTo = resolveNotificationRoute(n.route.to);
+                        void router.navigate({
+                          to: validatedTo,
+                          search: validatedTo === n.route.to ? n.route.search : undefined,
+                        });
+                      }
+                    };
+                    return (
+                      // A clickable row carries a nested remove `Button`; using a
+                      // `<button>` row would nest interactive elements (invalid DOM),
+                      // so it follows the repo's `role="button"` row pattern instead.
+                      <motion.div
+                        key={n.id}
+                        layout
+                        role="button"
+                        tabIndex={0}
+                        onClick={openNotification}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            openNotification();
+                          }
                         }}
+                        className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06] focus-visible:outline-none"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={transition.fast}
+                        style={{ overflow: 'hidden' }}
                       >
-                        <X size={14} />
-                      </Button>
-                    </div>
-                  );
-                })}
+                        {n.read ? (
+                          <span className="mt-1.5 h-2 w-2 shrink-0" />
+                        ) : (
+                          <span
+                            className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand"
+                            aria-label={t('notifications.unread.dotAria')}
+                          />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-foreground">{n.title}</p>
+                          <p className="line-clamp-2 text-xs text-foreground/60">{n.body}</p>
+                          <p className="mt-0.5 text-[11px] text-foreground/40">
+                            {timeAgo(n.createdAt, Date.now(), i18n.language)}
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          className="h-8 w-8 p-0"
+                          aria-label={t('notifications.remove.aria')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeNotification.mutate(n.id);
+                          }}
+                        >
+                          <X size={14} />
+                        </Button>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
               </div>
             )}
           </motion.div>

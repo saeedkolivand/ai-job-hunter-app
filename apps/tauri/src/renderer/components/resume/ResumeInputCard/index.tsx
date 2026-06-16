@@ -102,7 +102,6 @@ export function ResumeInputCard({
               <Button
                 ref={savedBtnRef}
                 variant="ghost"
-                size="sm"
                 onClick={openSavedMenu}
                 className="gap-1 text-[10px] text-foreground/45 hover:text-foreground/70 h-6 px-2"
               >
@@ -142,7 +141,6 @@ export function ResumeInputCard({
           {!disabled && (
             <Button
               variant="info"
-              size="sm"
               onClick={toggleUrlInput}
               className={cn(
                 'h-6 w-6 p-0',
@@ -157,7 +155,6 @@ export function ResumeInputCard({
           {/* Collapse toggle */}
           <Button
             variant="ghost"
-            size="sm"
             onClick={() => setExpanded((v) => !v)}
             className="h-6 w-6 p-0 text-foreground/25 hover:text-foreground/50"
           >
@@ -191,7 +188,7 @@ export function ResumeInputCard({
               className={cn(
                 'flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-medium transition-all',
                 inputMode === 'upload'
-                  ? 'bg-action-primary text-action-foreground shadow-sm'
+                  ? 'bg-brand-gradient text-brand-foreground shadow-sm [text-shadow:0_1px_2px_rgba(0,0,0,0.28)]'
                   : 'text-brand-soft/60 hover:text-brand-soft'
               )}
             >
@@ -200,7 +197,6 @@ export function ResumeInputCard({
             </Button>
             <Button
               variant="default"
-              size="sm"
               onClick={() => setInputMode('paste')}
               className={cn(
                 'flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-medium transition-all h-auto',

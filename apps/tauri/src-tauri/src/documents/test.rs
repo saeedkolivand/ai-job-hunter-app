@@ -1375,6 +1375,123 @@ fn prune_caches_ttl_removes_old_posting_vectors() {
     reset_perf_to_balanced();
 }
 
+// ── documents_get_text (command-layer contract) ───────────────────────────────
+//
+// The command wraps `DocumentStore::get(id).map(|d| d.text).unwrap_or_default()`.
+// Tests exercise the store-level equivalent because the Tauri `AppHandle` cannot
+// be instantiated in unit tests. The two invariants:
+//   1. A stored document's text round-trips unchanged through get().
+//   2. A missing id returns an empty string — never an error.
+//   (The command wraps this in `Ok(...)` so it can never fail either.)
+
+#[test]
+fn documents_get_text_returns_stored_text() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    let id = make_doc_id();
+    let expected_text = "Experienced Rust developer with 7 years of experience.";
+
+    let doc = DocumentRecord {
+        id: id.clone(),
+        title: "Resume".to_string(),
+        name: "resume.pdf".to_string(),
+        locale: Some("en".to_string()),
+        text: expected_text.to_string(),
+        pages: Some(1),
+        created_at: now_ms(),
+        indexed: false,
+        is_default: false,
+        keywords_json: None,
+    };
+    store.insert(&doc).unwrap();
+
+    // Simulate the command body: get → map text → unwrap_or_default.
+    let text = store.get(&id).map(|d| d.text).unwrap_or_default();
+    assert_eq!(
+        text, expected_text,
+        "documents_get_text must return the stored text unchanged"
+    );
+}
+
+#[test]
+fn documents_get_text_returns_empty_string_for_missing_id() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    // No documents inserted — any id is missing.
+    let text = store
+        .get("nonexistent-doc-id")
+        .map(|d| d.text)
+        .unwrap_or_default();
+    assert_eq!(
+        text, "",
+        "documents_get_text must return an empty string for a missing id, never an error"
+    );
+}
+
+#[test]
+fn documents_get_text_empty_string_when_stored_text_is_empty() {
+    // The renderer treats "no text" and "no document" the same; this pins the
+    // degenerate case where a document exists but text is empty (e.g. import edge).
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    let id = make_doc_id();
+    let doc = DocumentRecord {
+        id: id.clone(),
+        title: "Empty".to_string(),
+        name: "empty.txt".to_string(),
+        locale: None,
+        text: String::new(), // empty text
+        pages: None,
+        created_at: now_ms(),
+        indexed: false,
+        is_default: false,
+        keywords_json: None,
+    };
+    store.insert(&doc).unwrap();
+
+    let text = store.get(&id).map(|d| d.text).unwrap_or_default();
+    assert_eq!(text, "");
+}
+
+#[test]
+fn documents_get_text_returns_text_after_multiple_inserts() {
+    // Verify get() returns the right document when multiple docs are in the store.
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    let id_a = "doc-text-a".to_string();
+    let id_b = "doc-text-b".to_string();
+
+    for (id, text) in [(&id_a, "Resume A text"), (&id_b, "Resume B text")] {
+        store
+            .insert(&DocumentRecord {
+                id: id.clone(),
+                title: id.clone(),
+                name: format!("{id}.pdf"),
+                locale: None,
+                text: text.to_string(),
+                pages: None,
+                created_at: now_ms(),
+                indexed: false,
+                is_default: false,
+                keywords_json: None,
+            })
+            .unwrap();
+    }
+
+    let text_a = store.get(&id_a).map(|d| d.text).unwrap_or_default();
+    let text_b = store.get(&id_b).map(|d| d.text).unwrap_or_default();
+
+    assert_eq!(text_a, "Resume A text");
+    assert_eq!(text_b, "Resume B text");
+    // An unknown id still returns empty.
+    let text_c = store.get("doc-text-c").map(|d| d.text).unwrap_or_default();
+    assert_eq!(text_c, "");
+}
+
 // ── Hash determinism ──────────────────────────────────────────────────────────
 
 #[test]

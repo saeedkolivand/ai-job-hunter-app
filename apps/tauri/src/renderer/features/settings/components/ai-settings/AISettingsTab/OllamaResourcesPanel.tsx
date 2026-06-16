@@ -13,7 +13,7 @@ export function OllamaResourcesPanel({ selectedModel }: Props) {
   return (
     <div className="space-y-2">
       {/* System resources display */}
-      <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+      <div className="rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2">
         <div className="flex items-center justify-between text-xs">
           <span className="text-foreground/40">
             RAM: {totalRamGb} GB ({freeRamGb} GB free)

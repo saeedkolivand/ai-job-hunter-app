@@ -30,7 +30,7 @@ export function DiagnosticItem({ name, status, description, action }: Diagnostic
         </div>
       </div>
       {action && (
-        <Button size="sm" variant="ghost" className="text-xs">
+        <Button variant="ghost" className="text-xs">
           {action}
         </Button>
       )}

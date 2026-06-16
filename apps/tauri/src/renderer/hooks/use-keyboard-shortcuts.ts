@@ -34,7 +34,7 @@ interface Options {
 
 /**
  * Global keyboard shortcuts (mounted once, app-wide):
- *   - ⌘/Ctrl+K → Search, ⌘/Ctrl+, → Settings (work even from a field)
+ *   - ⌘/Ctrl+, → Settings (works even from a field)
  *   - `?` → toggle the shortcuts cheat-sheet
  *   - `g` then d/a/g/j/p/r/m/i/s → jump to that route
  * Intentionally NOT a command palette (out of scope).
@@ -59,11 +59,6 @@ export function useKeyboardShortcuts({ onNavigate, onToggleHelp }: Options) {
       const mod = e.ctrlKey || e.metaKey;
 
       // Modifier combos fire from anywhere, including inputs.
-      if (mod && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        onNavigate(ROUTES.SEARCH);
-        return;
-      }
       if (mod && e.key === ',') {
         e.preventDefault();
         onNavigate(ROUTES.SETTINGS);

@@ -2,6 +2,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::documents::keywords::keywords_normalized;
+use crate::error::AppResult;
 
 // DocumentsImportRequest is generated from DocumentImportRequestSchema by `pnpm gen:ipc`.
 pub use crate::ipc_contracts::documents::DocumentsImportRequest;
@@ -139,4 +140,14 @@ pub async fn documents_set_default(app: AppHandle, id: String) -> Value {
         Ok(()) => json!({ "success": true }),
         Err(e) => json!({ "error": e.to_string() }),
     }
+}
+
+/// Fetch the stored extracted text for a single document by id. Returns an
+/// empty string when the document is missing (the renderer treats "no text" and
+/// "no document" the same — it only ever seeds a generator with this), so this
+/// never errors on a missing row. `AppResult` is the typed-command convention.
+#[tauri::command]
+pub async fn documents_get_text(app: AppHandle, id: String) -> AppResult<String> {
+    let store = app.state::<crate::documents::DocumentStore>();
+    Ok(store.get(&id).map(|doc| doc.text).unwrap_or_default())
 }

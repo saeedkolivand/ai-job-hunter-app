@@ -5,8 +5,8 @@ import type { AutopilotSchedule } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Dropdown } from '@ajh/ui';
 
-import { scoreToLevel } from '@/features/autopilot/lib/match-level';
 import type { WizardState } from '@/features/autopilot/types';
+import { scoreToLevel } from '@/lib/match-level';
 
 import { WizardField } from '../WizardField';
 

@@ -2552,9 +2552,10 @@ fn stray_typst_code_guard_letter() {
 // #F4F4F5 background with 20 px border-padding and 14 px gaps, writing the
 // result to docs/assets/templates-showcase.png.
 //
-// As a side output it also writes one 700 px-wide per-template preview PNG to
-// apps/tauri/src/renderer/features/ai-generate/assets/template-previews/<id>.png,
-// which the AI-Generate option previews show in the result panel.
+// As a side output it also writes one per-template preview SVG to
+// apps/tauri/src/renderer/features/ai-generate/assets/template-previews/<id>.svg,
+// which the AI-Generate option previews show in the result panel. SVG (vector)
+// replaces the old PNGs — crisp at any zoom and a fraction of the bundle size.
 //
 // This test is `#[ignore]`d so it never runs in the normal CI suite.
 // Run it explicitly with (the crate is a binary, so target the bin, not --lib):
@@ -2638,11 +2639,6 @@ fn generate_templates_showcase_banner() {
     /// Each thumbnail is scaled to exactly this width (px); height is derived
     /// from the original A4 aspect ratio.
     const CELL_W: u32 = 300;
-
-    /// Width (px) of each per-template preview image written for the AI-Generate
-    /// option previews — a generic sample résumé rendered in each template,
-    /// committed under the renderer's feature assets and fetched lazily by the UI.
-    const PREVIEW_W: u32 = 700;
 
     /// Layout: a single wide row — 9 columns × 1 row (banner proportions).
     const COLS: u32 = 9;
@@ -2735,9 +2731,8 @@ fn generate_templates_showcase_banner() {
     let a4_aspect = 297.0_f32 / 210.0_f32;
     let cell_h = (CELL_W as f32 * a4_aspect).round() as u32;
 
-    // Per-template preview images for the AI-Generate option previews. Written
-    // into the renderer's feature assets (the UI imports them via a Vite glob).
-    let preview_h = (PREVIEW_W as f32 * a4_aspect).round() as u32;
+    // Per-template preview SVGs for the AI-Generate option previews. Written into
+    // the renderer's feature assets (the UI imports them via a Vite glob).
     let preview_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../src/renderer/features/ai-generate/assets/template-previews");
     std::fs::create_dir_all(&preview_dir)
@@ -2780,16 +2775,16 @@ fn generate_templates_showcase_banner() {
         let raw = pixmap.data().to_vec();
         let rgba = pixmap_to_rgba(pxw, pxh, raw);
 
-        // Per-template preview PNG (downscaled page-1 raster) for the UI picker.
-        let preview = DynamicImage::ImageRgba8(rgba.clone())
-            .thumbnail(PREVIEW_W, preview_h)
-            .to_rgba8();
-        let mut preview_buf: Vec<u8> = Vec::new();
-        DynamicImage::ImageRgba8(preview)
-            .write_to(&mut Cursor::new(&mut preview_buf), ImageFormat::Png)
-            .unwrap_or_else(|e| panic!("showcase: preview PNG encode ({label}) failed: {e}"));
-        let preview_path = preview_dir.join(format!("{slug}.png"));
-        std::fs::write(&preview_path, &preview_buf)
+        // Per-template preview SVG (vector page-1 export) for the UI picker —
+        // crisp at any zoom, a fraction of the old PNG's size, and self-contained
+        // (Typst exports glyphs as paths, so there is no font dependency at display time).
+        let svg: String = typst_svg::svg(&document.pages[0]);
+        assert!(
+            svg.contains("<svg"),
+            "showcase: {label} preview SVG missing <svg root element"
+        );
+        let preview_path = preview_dir.join(format!("{slug}.svg"));
+        std::fs::write(&preview_path, svg.as_bytes())
             .unwrap_or_else(|e| panic!("showcase: write preview {}: {e}", preview_path.display()));
 
         // Thumbnail to CELL_W × cell_h.
@@ -2904,18 +2899,17 @@ fn generate_templates_showcase_banner() {
     // ── Verify: all nine per-template previews exist and are non-trivial ──────
 
     for (_, label, slug) in templates {
-        let p = preview_dir.join(format!("{slug}.png"));
+        let p = preview_dir.join(format!("{slug}.svg"));
         let meta = std::fs::metadata(&p)
-            .unwrap_or_else(|e| panic!("showcase: preview {slug}.png missing ({label}): {e}"));
+            .unwrap_or_else(|e| panic!("showcase: preview {slug}.svg missing ({label}): {e}"));
         assert!(
-            meta.len() >= 5_000,
-            "showcase: preview {slug}.png suspiciously small ({} bytes)",
+            meta.len() >= 1_000,
+            "showcase: preview {slug}.svg suspiciously small ({} bytes)",
             meta.len()
         );
     }
     eprintln!(
-        "template previews written: 9 × {} px wide → {}",
-        PREVIEW_W,
+        "template previews written: 9 SVG → {}",
         preview_dir.display()
     );
 }

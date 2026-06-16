@@ -17,7 +17,7 @@ const OUT_MAX = 8192;
 
 // Range-input styling shared by the limit + temperature sliders below.
 const SLIDER_CLASS =
-  'w-full h-2 appearance-none rounded-lg bg-white/5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-brand-soft [&::-webkit-slider-thumb]:cursor-pointer';
+  'w-full h-2 appearance-none rounded-lg bg-foreground/[0.06] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-brand-soft [&::-webkit-slider-thumb]:cursor-pointer';
 
 // Per-step temperature sliders revealed when "Custom temperature" is ON. Each
 // step is set independently; `def` is the app's per-step default (mirrors
@@ -70,14 +70,13 @@ export function LocalModelLimits({ selectedModel }: Props) {
   const mightLag = contextWindow > suggestion.contextWindow;
 
   return (
-    <div className="mt-2 space-y-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-3">
+    <div className="mt-2 space-y-3 rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-3">
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-foreground/60">
           {t('settings.ai.localLimits.title')}
         </span>
         <Button
           variant="ghost"
-          size="sm"
           onClick={() => inspect.mutate({ model: selectedModel })}
           disabled={inspect.isPending}
         >
@@ -141,11 +140,7 @@ export function LocalModelLimits({ selectedModel }: Props) {
       </div>
 
       <div className="flex items-center justify-between">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setLocalModelLimits(selectedModel, suggestion)}
-        >
+        <Button variant="ghost" onClick={() => setLocalModelLimits(selectedModel, suggestion)}>
           {t('settings.ai.localLimits.useSuggested')}
         </Button>
         <span className="text-xs text-foreground/35">
@@ -167,7 +162,7 @@ export function LocalModelLimits({ selectedModel }: Props) {
           (the schema allows up to 2). Kept as the LAST element, separated by a
           divider, so the context-window "Suggested: …" hint above never reads as
           a temperature suggestion. */}
-      <div className="border-t border-white/[0.06] pt-3">
+      <div className="border-t border-foreground/10 pt-3">
         <Switch
           label={t('settings.ai.localLimits.temperatureOverride')}
           checked={temperatureOn}

@@ -3,9 +3,10 @@
 /// Uses interior mutability so `Arc<ScraperEngine>` can be cloned into Tauri
 /// commands and scrape jobs run concurrently (bounded by `semaphore`) without
 /// serializing on an outer mutex.
-use super::types::{BoardSearchInput, JobPosting, ScrapeContext, ScraperMode};
+use super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use arc_swap::ArcSwap;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
@@ -72,6 +73,24 @@ impl ScraperEngine {
         on_progress: Option<Box<dyn Fn(f32) + Send>>,
         on_item: Option<Box<dyn Fn(JobPosting) + Send>>,
     ) -> anyhow::Result<Vec<JobPosting>> {
+        let scraper =
+            super::boards::get(board).ok_or_else(|| anyhow::anyhow!("Unknown board: {}", board));
+        self.run_search(board, scraper, input, job_id, on_progress, on_item)
+            .await
+    }
+
+    /// Core scrape path with the central `amount` cap enforced here (no board
+    /// loop is touched). `scraper` is the resolved board (or an error to report
+    /// for an unknown board); tests inject a fake scraper through this seam.
+    async fn run_search(
+        &self,
+        board: &str,
+        scraper: anyhow::Result<&dyn Scraper>,
+        input: BoardSearchInput,
+        job_id: String,
+        on_progress: Option<Box<dyn Fn(f32) + Send>>,
+        on_item: Option<Box<dyn Fn(JobPosting) + Send>>,
+    ) -> anyhow::Result<Vec<JobPosting>> {
         // Bound concurrency — acquire owned permit so the limit can be reduced
         // mid-flight without aborting this job.
         let sem = self.semaphore.load_full();
@@ -91,27 +110,82 @@ impl ScraperEngine {
                 .clone()
         };
 
+        // Central item cap. The board loops stream items through `on_item` and
+        // check `ctx.signal`; we count the stream here and cancel the token the
+        // instant `amount` is reached, so whichever limit (page budget or item
+        // cap) is hit first stops the scrape — without touching any board loop.
+        let amount = (input.amount as usize).max(1);
+        let streamed = Arc::new(AtomicUsize::new(0));
+        let reached = Arc::new(AtomicBool::new(false));
+        let kept: Arc<std::sync::Mutex<Vec<JobPosting>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        // Wrap the caller's `on_item` so each streamed posting is counted, kept,
+        // and forwarded only while under the cap; the cap-reaching item flips
+        // `reached` and cancels the token so each board's pagination stops early.
+        let wrapped: Option<Box<dyn Fn(JobPosting) + Send>> = on_item.map(|inner| {
+            let streamed = streamed.clone();
+            let reached = reached.clone();
+            let kept = kept.clone();
+            let token_for_wrapper = token.clone();
+            let boxed: Box<dyn Fn(JobPosting) + Send> = Box::new(move |item: JobPosting| {
+                let n = streamed.fetch_add(1, Ordering::SeqCst);
+                if n < amount {
+                    if let Ok(mut guard) = kept.lock() {
+                        guard.push(item.clone());
+                    }
+                    inner(item);
+                    if n + 1 >= amount {
+                        reached.store(true, Ordering::SeqCst);
+                        token_for_wrapper.cancel();
+                    }
+                }
+                // n >= amount → drop the item (already at the cap).
+            });
+            boxed
+        });
+
         let ctx = ScrapeContext {
             signal: token,
             on_progress,
-            on_item,
+            on_item: wrapped,
         };
 
         let span =
             crate::observability::Span::begin("scrape", format!("board={board} job={job_id}"));
-        let result = match super::boards::get(board) {
-            Some(scraper) => scraper.search(input, ctx).await,
-            None => Err(anyhow::anyhow!("Unknown board: {}", board)),
+        let result = match scraper {
+            Ok(scraper) => scraper.search(input, ctx).await,
+            Err(e) => Err(e),
         };
 
         // Always clear the token slot, even on error.
         self.jobs.lock().await.remove(&job_id);
 
-        match &result {
-            Ok(items) => span.end_with(&format!("count={}", items.len()), true),
-            Err(_) => span.end(false),
+        match result {
+            Ok(mut items) => {
+                items.truncate(amount);
+                span.end_with(&format!("count={}", items.len()), true);
+                Ok(items)
+            }
+            Err(e) => {
+                // Our own target-reached cancellation: the kept items were already
+                // streamed to the renderer, so recover and return them as success.
+                // A real user cancel leaves `reached == false`, so it propagates the
+                // error exactly as before.
+                if reached.load(Ordering::SeqCst) {
+                    let mut kept_items = kept
+                        .lock()
+                        .map(|mut g| std::mem::take(&mut *g))
+                        .unwrap_or_default();
+                    kept_items.truncate(amount);
+                    span.end_with(&format!("count={}", kept_items.len()), true);
+                    Ok(kept_items)
+                } else {
+                    span.end(false);
+                    Err(e)
+                }
+            }
         }
-        result
     }
 
     /// Signal cancellation to a running job by id. No-op if the id is unknown.

@@ -122,7 +122,6 @@ export function ModelSelectionPanel({
                 )}
                 <Button
                   variant="glass"
-                  size="sm"
                   className="w-full justify-center gap-2"
                   onClick={() => void handlePull()}
                 >

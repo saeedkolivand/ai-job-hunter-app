@@ -74,7 +74,6 @@ export function CompanyResearchSettings() {
           </div>
           <Button
             variant="ghost"
-            size="sm"
             className="text-xs text-red-400/60 hover:text-red-400"
             onClick={() => setConfirmRemove(true)}
           >
@@ -116,7 +115,6 @@ export function CompanyResearchSettings() {
             </span>
             <Button
               variant="glass"
-              size="sm"
               disabled={!apiKey.trim() || saving}
               onClick={() => void handleSave()}
               className={apiKey.trim() && !saving ? 'ring-1 ring-brand/20' : ''}

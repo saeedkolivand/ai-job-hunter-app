@@ -48,7 +48,6 @@ export function ProfileUrlInput({
           <>
             <Button
               variant="glass"
-              size="sm"
               onClick={() => void onSubmit()}
               disabled={!isValid}
               className="h-6 px-2 text-[11px] gap-1"
@@ -57,7 +56,6 @@ export function ProfileUrlInput({
             </Button>
             <Button
               variant="ghost"
-              size="sm"
               onClick={onCancel}
               className="h-6 w-6 p-0 text-foreground/30 hover:text-foreground/60"
             >

@@ -1,0 +1,457 @@
+/**
+ * OnboardingWizard — step filter, navigation, clamp, and completion-gate tests.
+ *
+ * Strategy:
+ *  - All step components are stubbed to lightweight buttons that expose their
+ *    props (stepIndex, totalSteps, onNext, onBack) via data-testid attributes.
+ *    This keeps the filter/clamp/nav logic under test without dragging in
+ *    every step's service dependencies.
+ *  - SpotlightTour is stubbed to a single marker element so we can assert the
+ *    wizard transitions to the tour on last-step onNext.
+ *  - usePreferencesStore.setState is used to seed provider and completed state.
+ *    The store is reset in beforeEach so tests don't bleed into each other.
+ *  - @ajh/translations returns keys as-is (key-passthrough pattern).
+ *  - motion/react is not mocked — AnimatePresence renders synchronously in
+ *    jsdom with no layout side-effects that need suppressing.
+ *
+ * noUncheckedIndexedAccess: all array accesses are guarded with null-checks.
+ */
+
+import { act } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+
+import { Button } from '@ajh/ui';
+
+import { usePreferencesStore } from '@/store/preferences-store';
+import { createMockClient, withProviders } from '@/test-support';
+
+// ── i18n stub ─────────────────────────────────────────────────────────────────
+
+vi.mock('@ajh/translations', () => ({
+  useTranslation: () => ({ t: (k: string) => k }),
+}));
+
+// ── Step component stubs ──────────────────────────────────────────────────────
+// Each stub renders a root element carrying data-testid so tests can assert
+// which step is visible, plus buttons that forward onNext/onBack. The step id
+// literal is embedded in data-testid to distinguish stubs from one another.
+// Button from @ajh/ui is used (raw <button> is banned in renderer files).
+
+vi.mock('../steps/WelcomeStep', () => ({
+  WelcomeStep: ({
+    onNext,
+    onBack,
+    stepIndex,
+    totalSteps,
+  }: {
+    onNext: () => void;
+    onBack?: () => void;
+    stepIndex: number;
+    totalSteps: number;
+  }) => (
+    <div data-testid="step-welcome" data-step-index={stepIndex} data-total-steps={totalSteps}>
+      <Button onClick={onNext}>next</Button>
+      {onBack && <Button onClick={onBack}>back</Button>}
+    </div>
+  ),
+}));
+
+vi.mock('../steps/ResumeStep', () => ({
+  ResumeStep: ({
+    onNext,
+    onBack,
+    stepIndex,
+    totalSteps,
+  }: {
+    onNext: () => void;
+    onBack?: () => void;
+    stepIndex: number;
+    totalSteps: number;
+  }) => (
+    <div data-testid="step-resume" data-step-index={stepIndex} data-total-steps={totalSteps}>
+      <Button onClick={onNext}>next</Button>
+      {onBack && <Button onClick={onBack}>back</Button>}
+    </div>
+  ),
+}));
+
+vi.mock('../steps/AISelectionStep', () => ({
+  AISelectionStep: ({
+    onNext,
+    onBack,
+    stepIndex,
+    totalSteps,
+  }: {
+    onNext: () => void;
+    onBack?: () => void;
+    stepIndex: number;
+    totalSteps: number;
+  }) => (
+    <div data-testid="step-ai" data-step-index={stepIndex} data-total-steps={totalSteps}>
+      <Button onClick={onNext}>next</Button>
+      {onBack && <Button onClick={onBack}>back</Button>}
+    </div>
+  ),
+}));
+
+vi.mock('../steps/ResearchStep', () => ({
+  ResearchStep: ({
+    onNext,
+    onBack,
+    stepIndex,
+    totalSteps,
+  }: {
+    onNext: () => void;
+    onBack?: () => void;
+    stepIndex: number;
+    totalSteps: number;
+  }) => (
+    <div data-testid="step-research" data-step-index={stepIndex} data-total-steps={totalSteps}>
+      <Button onClick={onNext}>next</Button>
+      {onBack && <Button onClick={onBack}>back</Button>}
+    </div>
+  ),
+}));
+
+vi.mock('../steps/BrowserStep', () => ({
+  BrowserStep: ({
+    onNext,
+    onBack,
+    stepIndex,
+    totalSteps,
+  }: {
+    onNext: () => void;
+    onBack?: () => void;
+    stepIndex: number;
+    totalSteps: number;
+  }) => (
+    <div data-testid="step-browser" data-step-index={stepIndex} data-total-steps={totalSteps}>
+      <Button onClick={onNext}>next</Button>
+      {onBack && <Button onClick={onBack}>back</Button>}
+    </div>
+  ),
+}));
+
+vi.mock('../steps/ExtensionStep', () => ({
+  ExtensionStep: ({
+    onNext,
+    onBack,
+    stepIndex,
+    totalSteps,
+  }: {
+    onNext: () => void;
+    onBack?: () => void;
+    stepIndex: number;
+    totalSteps: number;
+  }) => (
+    <div data-testid="step-extension" data-step-index={stepIndex} data-total-steps={totalSteps}>
+      <Button onClick={onNext}>next</Button>
+      {onBack && <Button onClick={onBack}>back</Button>}
+    </div>
+  ),
+}));
+
+vi.mock('../steps/AppearanceStep', () => ({
+  AppearanceStep: ({
+    onNext,
+    onBack,
+    stepIndex,
+    totalSteps,
+  }: {
+    onNext: () => void;
+    onBack?: () => void;
+    stepIndex: number;
+    totalSteps: number;
+  }) => (
+    <div data-testid="step-appearance" data-step-index={stepIndex} data-total-steps={totalSteps}>
+      <Button onClick={onNext}>next</Button>
+      {onBack && <Button onClick={onBack}>back</Button>}
+    </div>
+  ),
+}));
+
+// ── SpotlightTour stub ────────────────────────────────────────────────────────
+
+vi.mock('../SpotlightTour', () => ({
+  SpotlightTour: ({ onFinish }: { onFinish: () => void }) => (
+    <div data-testid="tour">
+      <Button onClick={onFinish}>finish-tour</Button>
+    </div>
+  ),
+}));
+
+// ── component under test (imported AFTER mocks) ───────────────────────────────
+
+import { OnboardingWizard } from './index';
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+function renderWizard() {
+  const client = createMockClient();
+  return render(<OnboardingWizard />, { wrapper: withProviders(client) });
+}
+
+/** Return the data-total-steps attribute of the currently visible step. */
+function totalStepsOf(el: HTMLElement): number {
+  return Number(el.getAttribute('data-total-steps'));
+}
+
+function stepIndexOf(el: HTMLElement): number {
+  return Number(el.getAttribute('data-step-index'));
+}
+
+/** Click the "next" button inside a step stub element. */
+async function clickNext(user: ReturnType<typeof userEvent.setup>, stepEl: HTMLElement) {
+  await user.click(within(stepEl).getByRole('button', { name: 'next' }));
+}
+
+/** Click the "back" button inside a step stub element. */
+async function clickBack(user: ReturnType<typeof userEvent.setup>, stepEl: HTMLElement) {
+  await user.click(within(stepEl).getByRole('button', { name: 'back' }));
+}
+
+// ── store reset ───────────────────────────────────────────────────────────────
+
+beforeEach(() => {
+  act(() => {
+    usePreferencesStore.setState({
+      onboardingCompleted: false,
+      aiProviderConfig: undefined,
+    });
+  });
+});
+
+// ── tests ─────────────────────────────────────────────────────────────────────
+
+describe('OnboardingWizard — step filter', () => {
+  it('includes research step (7 total) when activeProvider is ollama', () => {
+    usePreferencesStore.setState({
+      aiProviderConfig: { activeProvider: 'ollama', providers: {} },
+    });
+    renderWizard();
+
+    const welcome = screen.getByTestId('step-welcome');
+    expect(totalStepsOf(welcome)).toBe(7);
+  });
+
+  it('excludes research step (6 total) when activeProvider is openai', () => {
+    usePreferencesStore.setState({
+      aiProviderConfig: { activeProvider: 'openai', providers: {} },
+    });
+    renderWizard();
+
+    const welcome = screen.getByTestId('step-welcome');
+    expect(totalStepsOf(welcome)).toBe(6);
+  });
+
+  it('excludes research step (6 total) when activeProvider is undefined', () => {
+    usePreferencesStore.setState({ aiProviderConfig: undefined });
+    renderWizard();
+
+    const welcome = screen.getByTestId('step-welcome');
+    expect(totalStepsOf(welcome)).toBe(6);
+  });
+
+  it('research stub is present in the DOM when ollama is active after navigating to it', async () => {
+    usePreferencesStore.setState({
+      aiProviderConfig: { activeProvider: 'ollama', providers: {} },
+    });
+    const user = userEvent.setup();
+    renderWizard();
+
+    // welcome → resume → ai → research (index 3)
+    await clickNext(user, screen.getByTestId('step-welcome'));
+    await clickNext(user, screen.getByTestId('step-resume'));
+    await clickNext(user, screen.getByTestId('step-ai'));
+
+    expect(screen.getByTestId('step-research')).toBeInTheDocument();
+  });
+
+  it('research stub never appears when activeProvider is openai', async () => {
+    usePreferencesStore.setState({
+      aiProviderConfig: { activeProvider: 'openai', providers: {} },
+    });
+    const user = userEvent.setup();
+    renderWizard();
+
+    // welcome → resume → ai → browser (research skipped)
+    await clickNext(user, screen.getByTestId('step-welcome'));
+    await clickNext(user, screen.getByTestId('step-resume'));
+    await clickNext(user, screen.getByTestId('step-ai'));
+
+    expect(screen.queryByTestId('step-research')).not.toBeInTheDocument();
+    expect(screen.getByTestId('step-browser')).toBeInTheDocument();
+  });
+});
+
+describe('OnboardingWizard — navigation', () => {
+  it('advances from first step to second step on onNext', async () => {
+    const user = userEvent.setup();
+    renderWizard();
+
+    expect(screen.getByTestId('step-welcome')).toBeInTheDocument();
+
+    await clickNext(user, screen.getByTestId('step-welcome'));
+
+    expect(screen.queryByTestId('step-welcome')).not.toBeInTheDocument();
+    expect(screen.getByTestId('step-resume')).toBeInTheDocument();
+  });
+
+  it('stepIndex prop increments correctly on each onNext', async () => {
+    const user = userEvent.setup();
+    renderWizard();
+
+    expect(stepIndexOf(screen.getByTestId('step-welcome'))).toBe(0);
+
+    await clickNext(user, screen.getByTestId('step-welcome'));
+    expect(stepIndexOf(screen.getByTestId('step-resume'))).toBe(1);
+
+    await clickNext(user, screen.getByTestId('step-resume'));
+    expect(stepIndexOf(screen.getByTestId('step-ai'))).toBe(2);
+  });
+
+  it('renders SpotlightTour after onNext on the last step', async () => {
+    usePreferencesStore.setState({
+      aiProviderConfig: { activeProvider: 'openai', providers: {} },
+    });
+    const user = userEvent.setup();
+    renderWizard();
+
+    // 6-step sequence (openai): welcome(0) → resume(1) → ai(2) → browser(3) → extension(4) → appearance(5)
+    await clickNext(user, screen.getByTestId('step-welcome'));
+    await clickNext(user, screen.getByTestId('step-resume'));
+    await clickNext(user, screen.getByTestId('step-ai'));
+    await clickNext(user, screen.getByTestId('step-browser'));
+    await clickNext(user, screen.getByTestId('step-extension'));
+    await clickNext(user, screen.getByTestId('step-appearance'));
+
+    expect(screen.getByTestId('tour')).toBeInTheDocument();
+    expect(screen.queryByTestId('step-appearance')).not.toBeInTheDocument();
+  });
+
+  it('calling onFinish on the tour marks onboarding complete (renders null)', async () => {
+    usePreferencesStore.setState({
+      aiProviderConfig: { activeProvider: 'openai', providers: {} },
+    });
+    const user = userEvent.setup();
+    const { container } = renderWizard();
+
+    // Advance through all 6 steps to reach the tour
+    await clickNext(user, screen.getByTestId('step-welcome'));
+    await clickNext(user, screen.getByTestId('step-resume'));
+    await clickNext(user, screen.getByTestId('step-ai'));
+    await clickNext(user, screen.getByTestId('step-browser'));
+    await clickNext(user, screen.getByTestId('step-extension'));
+    await clickNext(user, screen.getByTestId('step-appearance'));
+
+    // Tour is visible; click finish
+    await user.click(screen.getByRole('button', { name: 'finish-tour' }));
+
+    // Wizard should have unmounted — container children are empty
+    expect(container.firstChild).toBeNull();
+  });
+});
+
+describe('OnboardingWizard — goBack floor', () => {
+  it('does not crash when goBack is called at stepIndex 0', async () => {
+    const user = userEvent.setup();
+    renderWizard();
+
+    // Advance to step 1, then go back to step 0
+    await clickNext(user, screen.getByTestId('step-welcome'));
+    expect(screen.getByTestId('step-resume')).toBeInTheDocument();
+
+    // Go back to welcome
+    await clickBack(user, screen.getByTestId('step-resume'));
+
+    expect(screen.getByTestId('step-welcome')).toBeInTheDocument();
+    expect(stepIndexOf(screen.getByTestId('step-welcome'))).toBe(0);
+
+    // Clicking the (non-existent / inert) back at index 0 must not crash.
+    // The WelcomeStep stub only shows a back button when onBack is provided.
+    // The wizard passes goBack unconditionally; verify the step renders fine.
+    expect(screen.getByTestId('step-welcome')).toBeInTheDocument();
+  });
+
+  it('stepIndex stays at 0 when goBack is triggered at first step', async () => {
+    const user = userEvent.setup();
+    renderWizard();
+
+    // Navigate forward then back to index 0
+    await clickNext(user, screen.getByTestId('step-welcome'));
+    await clickBack(user, screen.getByTestId('step-resume'));
+
+    // Now at index 0. The WelcomeStep stub only renders a back button when
+    // onBack is provided; the wizard always passes goBack so the button IS
+    // present. Assert it exists (non-vacuous), click it, and confirm the
+    // wizard stays at index 0 — goBack is a floor-clamped no-op at step 0.
+    const welcomeEl = screen.getByTestId('step-welcome');
+    expect(stepIndexOf(welcomeEl)).toBe(0);
+
+    const welcomeBackBtn = within(welcomeEl).queryByRole('button', { name: 'back' });
+    expect(welcomeBackBtn).not.toBeNull();
+    if (welcomeBackBtn) await user.click(welcomeBackBtn);
+
+    // Identity of the visible step must not change
+    expect(screen.getByTestId('step-welcome')).toBeInTheDocument();
+    expect(stepIndexOf(screen.getByTestId('step-welcome'))).toBe(0);
+  });
+});
+
+describe('OnboardingWizard — clamp on provider flip', () => {
+  it('clamps stepIndex to new last index when provider flips from ollama to openai', async () => {
+    usePreferencesStore.setState({
+      aiProviderConfig: { activeProvider: 'ollama', providers: {} },
+    });
+    const user = userEvent.setup();
+    renderWizard();
+
+    // Advance to the last step of the 7-step ollama sequence (index 6 = appearance)
+    await clickNext(user, screen.getByTestId('step-welcome'));
+    await clickNext(user, screen.getByTestId('step-resume'));
+    await clickNext(user, screen.getByTestId('step-ai'));
+    await clickNext(user, screen.getByTestId('step-research'));
+    await clickNext(user, screen.getByTestId('step-browser'));
+    await clickNext(user, screen.getByTestId('step-extension'));
+
+    // At index 6 (appearance), totalSteps 7
+    expect(screen.getByTestId('step-appearance')).toBeInTheDocument();
+    expect(stepIndexOf(screen.getByTestId('step-appearance'))).toBe(6);
+    expect(totalStepsOf(screen.getByTestId('step-appearance'))).toBe(7);
+
+    // Flip provider to openai — array shrinks to 6 steps (max valid index = 5).
+    // The clamp effect must land the wizard on step 5 = appearance.
+    act(() => {
+      usePreferencesStore.setState({
+        aiProviderConfig: { activeProvider: 'openai', providers: {} },
+      });
+    });
+
+    // The clamped visible step must be exactly appearance at index 5 / totalSteps 6.
+    const visibleStep = document.querySelector('[data-total-steps]');
+    if (!visibleStep) throw new Error('expected a visible step after provider flip');
+    const visibleStepEl = visibleStep as HTMLElement;
+
+    // Identity: must be the appearance stub (not a fallback to welcome at index 0)
+    expect(visibleStepEl.getAttribute('data-testid')).toBe('step-appearance');
+    // Exact clamped index — not just "within range"
+    expect(stepIndexOf(visibleStepEl)).toBe(5);
+    expect(totalStepsOf(visibleStepEl)).toBe(6);
+  });
+});
+
+describe('OnboardingWizard — completion gate', () => {
+  it('renders null immediately when onboardingCompleted is true', () => {
+    usePreferencesStore.setState({ onboardingCompleted: true });
+    const { container } = renderWizard();
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('renders the wizard when onboardingCompleted is false', () => {
+    usePreferencesStore.setState({ onboardingCompleted: false });
+    renderWizard();
+    expect(screen.getByTestId('step-welcome')).toBeInTheDocument();
+  });
+});

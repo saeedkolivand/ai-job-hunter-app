@@ -10,8 +10,8 @@
  * unchanged.
  */
 
-import { buildEmphasisDirectivesBlock } from '../generate/emphasis.js';
-import type { GenerationMeta } from '../generate/modes.js';
+import { buildEmphasisDirectivesBlock } from '../generate/emphasis/index.js';
+import type { GenerationMeta } from '../generate/modes/index.js';
 import { resumeConventions } from '../locale/index.js';
 import { type PromptTarget, resolveProfile } from '../provider/index.js';
 import type {

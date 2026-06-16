@@ -33,7 +33,7 @@ export function EmptyState({ onNew }: EmptyStateProps) {
         ))}
       </div>
       <Button
-        variant="glass"
+        variant="primary"
         size="md"
         onClick={onNew}
         className="transition-all duration-150 ease-out px-6 gap-2"

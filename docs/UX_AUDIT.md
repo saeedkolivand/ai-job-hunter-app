@@ -189,10 +189,7 @@ BEFORE (flat 11)                AFTER (grouped, ~3 sections)
 
 ## 7. Onboarding _(existing wizard; do NOT add a new one)_
 
-Flow: Welcome → AI Selection → Browser → Résumé → Research → Prefs + `SpotlightTour`. It sets up the real
-prerequisites — good. ✅ inline `transition` objects → tokens (#232). **Open:** re-verify full keyboard
-operability after the §4 focus-ring fix (first thing a new user touches); ensure "skip" paths leave a usable
-contextual-setup trail (§5.2 — if AI setup is skipped, the inline Generate CTA must appear).
+Flow: Welcome → Resume → AI Selection → Research → Browser → Extension → Appearance + `SpotlightTour`. ✅ Browser prerequisite honored. ✅ Extension step added: pair the published Chrome extension, Firefox coming soon. ✅ Appearance step added: colour scheme + accent picker using the live theme engine. Research is conditional (Ollama only). ✅ inline `transition` objects → tokens (#232). **Open:** re-verify full keyboard operability after the §4 focus-ring fix (first thing a new user touches); ensure "skip" paths leave a usable contextual-setup trail (§5.2 — if AI setup is skipped, the inline Generate CTA must appear).
 
 ---
 

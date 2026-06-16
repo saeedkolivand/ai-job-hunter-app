@@ -51,9 +51,14 @@ describe('buildDefaults()', () => {
   });
 
   it('seeds scheduleHour: 9 and scheduleMinute: 0 when prefs are provided', () => {
-    const state = buildDefaults({ location: 'Berlin', remote: 'hybrid' });
+    const state = buildDefaults({ location: 'Berlin' });
     expect(state.scheduleHour).toBe(9);
     expect(state.scheduleMinute).toBe(0);
+  });
+
+  it("defaults workType to the 'any' sentinel (no job-preference seed)", () => {
+    expect(buildDefaults().workType).toBe('any');
+    expect(buildDefaults({ location: 'Berlin' }).workType).toBe('any');
   });
 
   it('sets default schedule to daily', () => {

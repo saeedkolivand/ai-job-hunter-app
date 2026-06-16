@@ -47,7 +47,6 @@ export function OllamaNotInstalled({ onRecheck }: OllamaNotInstalledProps) {
 
       <Button
         variant="glass"
-        size="sm"
         className="w-full justify-center gap-2"
         onClick={() => void openExternal.mutateAsync('https://ollama.com')}
       >
@@ -57,7 +56,6 @@ export function OllamaNotInstalled({ onRecheck }: OllamaNotInstalledProps) {
 
       <Button
         variant="ghost"
-        size="sm"
         className="w-full justify-center gap-1.5 text-foreground/40 hover:text-foreground/70"
         onClick={onRecheck}
       >

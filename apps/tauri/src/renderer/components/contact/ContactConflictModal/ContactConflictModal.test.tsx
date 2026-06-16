@@ -14,7 +14,7 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string, _opts?: Record<string, unknown>) => k }),
 }));
 
-// useNotification: return an antd-style API of spies; tests assert calls.
+// useNotification: return an API of spies; tests assert calls.
 const mockNotify = {
   open: vi.fn(),
   success: vi.fn(),

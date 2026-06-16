@@ -151,3 +151,73 @@ describe('generation store', () => {
     expect(useGenerationStore.getState().getSession('c2').error).toBe('boom');
   });
 });
+
+describe('generation store — hydrate (cold-entry seed)', () => {
+  const meta = {
+    candidateName: 'Ada',
+    jobTitle: 'Engineer',
+    companyName: 'Acme',
+    resumeLanguage: 'en',
+    jobAdLanguage: 'en',
+    mismatch: false,
+    targetLanguage: 'en',
+    topRequirements: [],
+  };
+  const seed = { resumeOut: 'SAVED-RESUME', coverOut: 'SAVED-COVER', meta, savedId: 'rec-1' };
+
+  it('seeds an empty session and lands on the résumé tab when a résumé exists', () => {
+    const id = 'autopilot:job-x';
+    useGenerationStore.getState().hydrate(id, seed);
+
+    const s = useGenerationStore.getState().getSession(id);
+    expect(s.resumeOut).toBe('SAVED-RESUME');
+    expect(s.coverOut).toBe('SAVED-COVER');
+    expect(s.savedId).toBe('rec-1');
+    expect(s.meta).toEqual(meta);
+    expect(s.generating).toBe(false);
+    expect(s.activeOut).toBe('resume');
+  });
+
+  it('lands on the cover tab when only a cover letter exists', () => {
+    const id = 'cover-only';
+    useGenerationStore.getState().hydrate(id, { ...seed, resumeOut: '' });
+    expect(useGenerationStore.getState().getSession(id).activeOut).toBe('cover');
+  });
+
+  it('no-ops when a run is in flight (never clobbers the live session)', () => {
+    const id = 'busy';
+    useGenerationStore.setState({ sessions: { [id]: { ...EMPTY_SESSION, generating: true } } });
+    useGenerationStore.getState().hydrate(id, seed);
+
+    const s = useGenerationStore.getState().getSession(id);
+    expect(s.resumeOut).toBe('');
+    expect(s.generating).toBe(true);
+  });
+
+  it('no-ops when output already exists (live output wins over the saved record)', () => {
+    const id = 'has-output';
+    useGenerationStore.setState({ sessions: { [id]: { ...EMPTY_SESSION, resumeOut: 'LIVE' } } });
+    useGenerationStore.getState().hydrate(id, seed);
+    expect(useGenerationStore.getState().getSession(id).resumeOut).toBe('LIVE');
+  });
+
+  it('no-ops when the session is already saved (savedId set)', () => {
+    const id = 'already-saved';
+    useGenerationStore.setState({
+      sessions: { [id]: { ...EMPTY_SESSION, savedId: 'other-rec' } },
+    });
+    useGenerationStore.getState().hydrate(id, seed);
+
+    const s = useGenerationStore.getState().getSession(id);
+    expect(s.savedId).toBe('other-rec');
+    expect(s.resumeOut).toBe('');
+  });
+
+  it('is idempotent — a second hydrate call after seeding does not re-apply', () => {
+    const id = 'idem';
+    useGenerationStore.getState().hydrate(id, seed);
+    useGenerationStore.getState().hydrate(id, { ...seed, resumeOut: 'DIFFERENT' });
+    // The first seed set savedId, so the second call is a no-op.
+    expect(useGenerationStore.getState().getSession(id).resumeOut).toBe('SAVED-RESUME');
+  });
+});

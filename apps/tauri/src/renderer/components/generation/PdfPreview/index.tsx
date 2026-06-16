@@ -2,7 +2,7 @@ import { FileWarning, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { cn } from '@ajh/ui';
+import { cn, Image } from '@ajh/ui';
 
 import { type GenerationMeta, renderDocumentPreview, type TemplateId } from '@/lib/generate';
 
@@ -135,17 +135,19 @@ export function PdfPreview({
     >
       {hasPages ? (
         <div className="h-full w-full overflow-y-auto">
-          <div className="flex flex-col items-center gap-4 p-4">
-            {pageUrls.map((url, i) => (
-              <img
-                key={i}
-                src={url}
-                alt={`${title} — page ${i + 1}`}
-                className="w-full rounded bg-white shadow-sm"
-                draggable={false}
-              />
-            ))}
-          </div>
+          <Image.PreviewGroup>
+            <div className="flex flex-col items-center gap-4 p-4">
+              {pageUrls.map((url, i) => (
+                <Image
+                  key={i}
+                  src={url}
+                  alt={`${title} — page ${i + 1}`}
+                  rootClassName="w-full rounded bg-white shadow-sm"
+                  className="w-full"
+                />
+              ))}
+            </div>
+          </Image.PreviewGroup>
         </div>
       ) : status === 'error' ? (
         <div className="flex h-full flex-col items-center justify-center gap-2 text-foreground/40">

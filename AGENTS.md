@@ -8,7 +8,7 @@ Rules enforced by ESLint, TypeScript, and CI. Violations fail the build.
 
 Active automatically every session; invoke via the Skill tool without waiting for the slash command.
 
-- **caveman** — ultra-terse output, every response. Keep all technical substance, code blocks, and exact error text; drop filler/articles/pleasantries. Honor the auto-clarity exception (security warnings, irreversible-action confirmations, multi-step sequences), then resume. Off only on `stop caveman` / `normal mode`. Source: `~/.claude/skills/caveman`.
+- **ponytail** — lazy-senior-dev mode, every response. Simplest/shortest solution that works: YAGNI (question whether the task needs to exist), stdlib/native platform before dependencies, one line over fifty. Default intensity `full`; switch with `/ponytail lite|full|ultra`. Off only on `stop ponytail` / `normal mode`. Source: `ponytail@ponytail` plugin.
 - **grill-with-docs** — before presenting any non-trivial plan/design (incl. before `ExitPlanMode`), first stress-test it against the repo domain model + ADRs, one question at a time. Skip for trivial / one-line / docs changes. Source: `~/.claude/skills/grill-with-docs`.
 
 ---

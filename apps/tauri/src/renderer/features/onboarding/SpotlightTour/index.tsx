@@ -1,5 +1,6 @@
 import {
   Briefcase,
+  ClipboardList,
   FilePlus2,
   FileText,
   Gauge,
@@ -12,7 +13,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, cn, transition } from '@ajh/ui';
+import { Button, StepDots, transition } from '@ajh/ui';
 
 interface TourItem {
   tourId: string;
@@ -29,6 +30,12 @@ const TOUR_ITEMS: TourItem[] = [
     icon: LayoutDashboard,
     titleKey: 'onboarding.tour.dashboard.title',
     descKey: 'onboarding.tour.dashboard.desc',
+  },
+  {
+    tourId: 'applications',
+    icon: ClipboardList,
+    titleKey: 'onboarding.tour.applications.title',
+    descKey: 'onboarding.tour.applications.desc',
   },
   {
     tourId: 'jobs',
@@ -215,16 +222,7 @@ export function SpotlightTour({ onFinish }: Props) {
 
           {/* Step dots */}
           <div className="mb-4 flex items-center gap-1">
-            {TOUR_ITEMS.map((_, i) => (
-              <Button
-                key={i}
-                onClick={() => setStepIdx(i)}
-                className={cn(
-                  'h-1 rounded-full transition-all duration-300 p-0 border-transparent',
-                  i === stepIdx ? 'w-5 bg-brand' : 'w-1.5 bg-white/15 hover:bg-white/25'
-                )}
-              />
-            ))}
+            <StepDots currentStep={stepIdx} totalSteps={TOUR_ITEMS.length} className="my-0" />
             <span className="ml-auto text-[10px] tabular-nums text-foreground/30">
               {t('onboarding.tour.step', {
                 current: String(stepIdx + 1),
@@ -235,13 +233,10 @@ export function SpotlightTour({ onFinish }: Props) {
 
           {/* Actions */}
           <div className="flex items-center gap-2">
-            <Button
-              onClick={onFinish}
-              className="text-xs text-foreground/30 transition-colors hover:text-foreground/55 h-auto bg-transparent border-transparent"
-            >
+            <Button variant="ghost" onClick={onFinish} className="text-xs">
               {t('onboarding.tour.skip')}
             </Button>
-            <Button variant="default" size="sm" className="ml-auto" onClick={next}>
+            <Button variant="primary" className="ml-auto" onClick={next}>
               {isLast ? t('onboarding.tour.finish') : t('onboarding.tour.next')}
             </Button>
           </div>

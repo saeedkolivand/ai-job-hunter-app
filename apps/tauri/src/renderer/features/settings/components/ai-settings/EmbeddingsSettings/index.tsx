@@ -155,7 +155,6 @@ export function EmbeddingsSettings() {
         <div className="flex justify-end">
           <Button
             variant="glass"
-            size="sm"
             disabled={!dirty || setConfig.isPending}
             onClick={() => void onApply()}
           >
@@ -168,7 +167,7 @@ export function EmbeddingsSettings() {
         </div>
 
         {/* Index status */}
-        <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs">
+        <div className="rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2 text-xs">
           <div className="flex items-center justify-between text-foreground/50">
             <span>
               {t('settings.embeddings.activeLabel')} {status?.active.provider ?? '—'} /{' '}
@@ -195,7 +194,6 @@ export function EmbeddingsSettings() {
         <div className="flex justify-end">
           <Button
             variant="ghost"
-            size="sm"
             disabled={reindexing || (docs?.total ?? 0) === 0}
             onClick={() => void onReindex()}
           >
@@ -204,7 +202,7 @@ export function EmbeddingsSettings() {
           </Button>
         </div>
 
-        <div className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
+        <div className="flex items-center justify-between rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2.5">
           <div className="space-y-0.5">
             <p className="text-xs font-semibold text-foreground/70">
               {t('settings.embeddings.semanticScoring')}

@@ -5,7 +5,9 @@ use anyhow::Result;
 use scraper::Html;
 use std::collections::HashSet;
 
-const PAGE_SIZE: usize = 25;
+// The guest seeMoreJobPostings endpoint returns 10 cards per request; stepping
+// `start` by 25 skipped jobs 10-24, 35-49, … Confirmed against the live endpoint.
+const PAGE_SIZE: usize = 10;
 
 // LinkedIn guest job-card CSS selectors compiled once (Selector is Send + Sync).
 static LI_CARD_SEL: std::sync::LazyLock<scraper::Selector> =
@@ -69,6 +71,25 @@ fn parse_relative_time(text: &str) -> Option<chrono::DateTime<chrono::FixedOffse
     };
 
     Some((now - duration).into())
+}
+
+/// Sleep for `dur`, aborting early if `signal` fires. Returns `true` if
+/// cancellation interrupted the sleep (caller should stop), `false` if it
+/// elapsed normally. Keeps the scrape responsive to cancel during backoff.
+pub(crate) async fn cancellable_sleep(
+    signal: Option<&tokio_util::sync::CancellationToken>,
+    dur: std::time::Duration,
+) -> bool {
+    match signal {
+        Some(sig) => tokio::select! {
+            _ = sig.cancelled() => true,
+            _ = tokio::time::sleep(dur) => false,
+        },
+        None => {
+            tokio::time::sleep(dur).await;
+            false
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -288,6 +309,13 @@ impl LinkedInJobsApiClient {
         let mut all_jobs = Vec::new();
         let mut seen = HashSet::new();
 
+        // `effective` tracks the params we actually send to LinkedIn.  On page 0 we
+        // start with the caller-supplied params (which may include a geoId).  If the
+        // first response comes back empty while a geoId is set, LinkedIn is
+        // soft-blocking the geo-filtered query; we strip geoId + distance from
+        // `effective` and retry once so that subsequent pages also skip the geoId.
+        let mut effective = params.clone();
+
         for page in 0..max_pages {
             if let Some(signal) = signal {
                 if signal.is_cancelled() {
@@ -296,10 +324,10 @@ impl LinkedInJobsApiClient {
             }
 
             let start = page * PAGE_SIZE;
-            let mut search_params = params.clone();
+            let mut search_params = effective.clone();
             search_params.start = start;
 
-            let jobs = match self.search_guest(&search_params, signal).await {
+            let mut jobs = match self.search_guest(&search_params, signal).await {
                 Ok(jobs) => jobs,
                 // First page failed → nothing collected → propagate as a real failure.
                 Err(e) if all_jobs.is_empty() => return Err(e),
@@ -312,6 +340,37 @@ impl LinkedInJobsApiClient {
                     break;
                 }
             };
+
+            // Page-0 soft-block detection: LinkedIn returns an empty result set when
+            // a geoId filter is applied to the guest endpoint.  Fall back to a
+            // free-text location query (no geoId / no distance) and keep it for all
+            // remaining pages by mutating `effective`.
+            if page == 0 && jobs.is_empty() && effective.geo_id.is_some() {
+                log::info!(
+                    "[linkedin] geoId-filtered search returned 0 results; retrying with free-text location only"
+                );
+                effective.geo_id = None;
+                effective.distance = None;
+
+                // Jittered, cancellation-aware pause so the retry isn't fired back-to-back
+                // with the soft-blocked request (avoids LinkedIn's anti-bot velocity boundary).
+                if cancellable_sleep(
+                    signal,
+                    std::time::Duration::from_millis(300 + (rand::random::<u64>() % 300)),
+                )
+                .await
+                {
+                    break;
+                }
+
+                let mut retry_params = effective.clone();
+                retry_params.start = start;
+
+                jobs = match self.search_guest(&retry_params, signal).await {
+                    Ok(jobs) => jobs,
+                    Err(e) => return Err(e),
+                };
+            }
 
             for job in &jobs {
                 let job_id = job.external_id.clone().unwrap_or_else(|| job.id.clone());
@@ -328,12 +387,15 @@ impl LinkedInJobsApiClient {
                 break;
             }
 
-            // Add delay between pages
-            if page < max_pages - 1 {
-                tokio::time::sleep(tokio::time::Duration::from_millis(
-                    500 + (rand::random::<u64>() % 500),
-                ))
-                .await;
+            // Add delay between pages (cancellation-aware).
+            if page < max_pages - 1
+                && cancellable_sleep(
+                    signal,
+                    std::time::Duration::from_millis(500 + (rand::random::<u64>() % 500)),
+                )
+                .await
+            {
+                break;
             }
         }
 

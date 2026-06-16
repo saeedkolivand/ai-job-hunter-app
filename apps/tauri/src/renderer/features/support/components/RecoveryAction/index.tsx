@@ -62,7 +62,6 @@ export function RecoveryAction({
         <div className="text-xs text-foreground/55">{description}</div>
       </div>
       <Button
-        size="sm"
         variant={destructive ? 'ghost' : 'glass'}
         className={cn('text-xs', destructive && 'text-red-400 hover:text-red-300')}
         disabled={pending}

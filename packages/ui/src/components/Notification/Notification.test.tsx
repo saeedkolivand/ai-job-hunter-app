@@ -31,7 +31,7 @@ function renderHarness(props: React.ComponentProps<typeof Harness>) {
   );
 }
 
-describe('Notification (antd-style)', () => {
+describe('Notification', () => {
   it('shows message + description when opened', () => {
     renderHarness({ config: { message: 'Saved!', description: 'All good', duration: 0 } });
     fireEvent.click(screen.getByText('trigger'));

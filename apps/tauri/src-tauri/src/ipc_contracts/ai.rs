@@ -77,6 +77,8 @@ pub struct AiGenerationSaveRequest {
     pub application_answers: Vec<AiGenerationSaveRequestApplicationAnswer>,
     #[serde(default = "default_ai_generation_save_request_company_brief")]
     pub company_brief: String,
+    #[serde(default = "default_ai_generation_save_request_interview_questions")]
+    pub interview_questions: Vec<AiGenerationSaveRequestInterviewQuestion>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -89,6 +91,20 @@ pub struct AiGenerationSaveRequestApplicationAnswer {
     pub question: String,
     #[serde(default = "default_ai_generation_save_request_application_answer_answer")]
     pub answer: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+pub struct AiGenerationSaveRequestInterviewQuestion {
+    #[serde(default = "default_ai_generation_save_request_interview_question_id")]
+    pub id: String,
+    #[serde(default = "default_ai_generation_save_request_interview_question_question")]
+    pub question: String,
+    #[serde(default = "default_ai_generation_save_request_interview_question_why")]
+    pub why: String,
+    #[serde(default = "default_ai_generation_save_request_interview_question_audience")]
+    pub audience: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -167,6 +183,11 @@ fn default_ai_generation_save_request_company_brief() -> String {
     "".to_string()
 }
 
+fn default_ai_generation_save_request_interview_questions(
+) -> Vec<AiGenerationSaveRequestInterviewQuestion> {
+    Vec::new()
+}
+
 fn default_ai_generation_save_request_application_answer_id() -> String {
     "".to_string()
 }
@@ -177,4 +198,20 @@ fn default_ai_generation_save_request_application_answer_question() -> String {
 
 fn default_ai_generation_save_request_application_answer_answer() -> String {
     "".to_string()
+}
+
+fn default_ai_generation_save_request_interview_question_id() -> String {
+    "".to_string()
+}
+
+fn default_ai_generation_save_request_interview_question_question() -> String {
+    "".to_string()
+}
+
+fn default_ai_generation_save_request_interview_question_why() -> String {
+    "".to_string()
+}
+
+fn default_ai_generation_save_request_interview_question_audience() -> String {
+    "general".to_string()
 }

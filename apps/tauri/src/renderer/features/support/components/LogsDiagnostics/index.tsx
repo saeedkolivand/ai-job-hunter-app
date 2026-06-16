@@ -13,13 +13,13 @@ export function LogsDiagnostics() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">{t('support.logs.logViewer')}</h2>
           <div className="flex gap-2">
-            <Button size="sm" variant="ghost" className="text-xs">
+            <Button variant="ghost" className="text-xs">
               {t('support.logs.filter')}
             </Button>
-            <Button size="sm" variant="ghost" className="text-xs">
+            <Button variant="ghost" className="text-xs">
               {t('support.logs.export')}
             </Button>
-            <Button size="sm" variant="ghost" className="text-xs">
+            <Button variant="ghost" className="text-xs">
               {t('support.logs.clear')}
             </Button>
           </div>

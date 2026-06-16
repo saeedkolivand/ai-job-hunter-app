@@ -49,7 +49,10 @@ export const keys = {
     models: ['ai', 'models'] as const,
     embeddingStatus: ['ai', 'embeddingStatus'] as const,
   },
-  documents: { all: ['documents'] as const },
+  documents: {
+    all: ['documents'] as const,
+    text: (id: string) => ['documents', 'text', id] as const,
+  },
   jobPreferences: { all: ['jobPreferences'] as const },
   contactProfile: { all: ['contactProfile'] as const },
   postings: {
@@ -57,7 +60,6 @@ export const keys = {
     interactions: (type?: string) => ['postings', 'interactions', type] as const,
     resolve: (url: string) => ['postings', 'resolve', url] as const,
   },
-  search: { results: (q: string) => ['search', q] as const },
   credentials: { all: ['credentials'] as const },
   cliAgents: { all: ['cliAgents'] as const },
   autopilot: { all: ['autopilot'] as const, detail: (id: string) => ['autopilot', id] as const },

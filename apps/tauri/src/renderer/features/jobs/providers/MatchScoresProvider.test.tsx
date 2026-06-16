@@ -18,9 +18,10 @@ import type { MatchScore } from '@ajh/shared';
 // ── useJobMatchScores stub ────────────────────────────────────────────────────
 // Module-level ref so each test sets it BEFORE renderHook.
 
-let stubbedQuery: { scoresById: Map<string, MatchScore>; isPending: boolean } = {
+let stubbedQuery: { scoresById: Map<string, MatchScore>; isPending: boolean; isError: boolean } = {
   scoresById: new Map(),
   isPending: false,
+  isError: false,
 };
 
 vi.mock('@/services', () => ({
@@ -66,6 +67,7 @@ function renderRow(
   stubbedQuery = {
     scoresById: opts.scoresById ?? new Map(),
     isPending: opts.isPending ?? false,
+    isError: false,
   };
   const resumeId = 'resumeId' in opts ? (opts.resumeId ?? null) : RESUME_ID;
   const jobIds = opts.jobIds ?? [JOB_A, JOB_B];
@@ -80,7 +82,7 @@ function renderRow(
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  stubbedQuery = { scoresById: new Map(), isPending: false };
+  stubbedQuery = { scoresById: new Map(), isPending: false, isError: false };
 });
 
 describe('MatchScoresProvider — score distribution', () => {

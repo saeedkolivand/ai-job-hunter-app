@@ -201,7 +201,7 @@ export function PrivacySettingsTab() {
       </SettingsSection>
 
       {/* ── Danger Zone ─────────────────────────────────────────────── */}
-      <div className="mt-2 rounded-xl border border-rose-700/40 bg-rose-950/20 p-3">
+      <div className="mt-2 rounded-xl border border-red-500/30 bg-red-500/[0.08] p-3">
         <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-rose-500/80">
           <RotateCcw size={10} />
           {t('settings.privacy.dangerZone')}

@@ -90,7 +90,7 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
             <label className={LABEL}>{t('jobs.amount')}</label>
             <NumberField
               min={1}
-              max={500}
+              max={100}
               fallback={25}
               value={form.amount}
               onChange={(n) => onFormChange({ amount: n })}

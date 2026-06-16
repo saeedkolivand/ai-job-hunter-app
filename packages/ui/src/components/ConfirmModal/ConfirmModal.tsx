@@ -33,7 +33,7 @@ const variantConfig: Record<
     iconBg: 'bg-red-500/20',
     iconColor: 'text-red-400',
     border: 'border-red-500/30',
-    confirmClass: 'border-red-500/50 text-red-400 hover:border-red-500/70 hover:text-red-300',
+    confirmClass: 'border-transparent bg-red-600 text-white hover:bg-red-700',
     glow: '0 0 16px rgba(239,68,68,0.25)',
   },
   warning: {
@@ -41,8 +41,7 @@ const variantConfig: Record<
     iconBg: 'bg-orange-500/20',
     iconColor: 'text-orange-400',
     border: 'border-orange-500/30',
-    confirmClass:
-      'border-amber-500/50 text-amber-400 hover:border-amber-500/70 hover:text-amber-300',
+    confirmClass: 'border-transparent bg-amber-500 text-amber-950 hover:bg-amber-400',
     glow: '0 0 16px rgba(245,158,11,0.25)',
   },
   info: {
@@ -50,7 +49,7 @@ const variantConfig: Record<
     iconBg: 'bg-blue-500/20',
     iconColor: 'text-blue-400',
     border: 'border-blue-500/30',
-    confirmClass: 'border-blue-500/50 text-blue-400 hover:border-blue-500/70 hover:text-blue-300',
+    confirmClass: 'border-transparent bg-blue-600 text-white hover:bg-blue-700',
     glow: '0 0 16px rgba(59,130,246,0.25)',
   },
   success: {
@@ -58,8 +57,7 @@ const variantConfig: Record<
     iconBg: 'bg-green-500/20',
     iconColor: 'text-green-400',
     border: 'border-green-500/30',
-    confirmClass:
-      'border-emerald-500/50 text-emerald-400 hover:border-emerald-500/70 hover:text-emerald-300',
+    confirmClass: 'border-transparent bg-emerald-600 text-white hover:bg-emerald-700',
     glow: '0 0 16px rgba(16,185,129,0.25)',
   },
 };
@@ -133,7 +131,7 @@ export function ConfirmModal({
           onClick={onConfirm}
           style={{ boxShadow: isConfirming ? 'none' : config.glow }}
           className={cn(
-            'inline-flex h-8 items-center gap-2 rounded-lg border bg-transparent px-5 text-sm font-medium transition-all duration-150',
+            'inline-flex h-8 items-center gap-2 rounded-lg border px-5 text-sm font-medium transition-all duration-150',
             'disabled:pointer-events-none disabled:opacity-45',
             config.confirmClass
           )}

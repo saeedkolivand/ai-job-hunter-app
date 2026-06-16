@@ -76,7 +76,7 @@ export function ExtensionBridgeSection() {
                 {t('settings.accounts.extension.connected')}
               </span>
             ) : (
-              <span className="flex items-center gap-1 rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-foreground/45">
+              <span className="flex items-center gap-1 rounded-full bg-foreground/[0.06] px-2 py-0.5 text-[10px] font-medium text-foreground/45">
                 <X size={9} strokeWidth={2.5} />
                 {t('settings.accounts.extension.disconnected')}
               </span>
@@ -100,7 +100,6 @@ export function ExtensionBridgeSection() {
               />
               <Button
                 variant="glass"
-                size="sm"
                 disabled={!token}
                 onClick={() => void handleCopy()}
                 className="shrink-0"
@@ -127,10 +126,9 @@ export function ExtensionBridgeSection() {
           </p>
 
           {/* Regenerate */}
-          <div className="flex justify-end border-t border-white/[0.05] pt-3">
+          <div className="flex justify-end border-t border-foreground/10 pt-3">
             <Button
               variant="danger"
-              size="sm"
               disabled={regenerate.isPending}
               onClick={() => setConfirmOpen(true)}
             >

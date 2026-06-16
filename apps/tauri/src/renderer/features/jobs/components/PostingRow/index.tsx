@@ -9,13 +9,16 @@ import {
   Save,
   Wand2,
 } from 'lucide-react';
+import { motion } from 'motion/react';
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
 import { useTranslation } from '@ajh/translations';
-import { ActionMenu, Button, SourceBadge, useNotification } from '@ajh/ui';
+import { ActionMenu, Button, SourceBadge, Tag, transition, useNotification } from '@ajh/ui';
 
 import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
+import { useRowMatchScore } from '@/features/jobs/providers';
+import { scoreToLevel } from '@/lib/match-level';
 import { useOpenExternal, usePersistJob } from '@/services';
 import { useSaveFromPosting } from '@/services/use-applications';
 import { useSessionStore } from '@/store/session-store';
@@ -39,14 +42,20 @@ interface PostingRowProps {
   formatRelativeTime: (timestamp?: number) => string;
 }
 
+// Tiny status-pill shape for the in-row display Tags. Plain (non-CheckableTag)
+// Tags render a <span> with no onClick, so clicks bubble to the row's handler
+// instead of being swallowed — the whole row stays clickable.
+const STATUS_TAG = 'rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider';
+
 export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
   const { t } = useTranslation();
   const notify = useNotification();
   const navigate = useNavigate();
-  const setAIGenerate = useSessionStore((s) => s.setAIGenerate);
+  const setApplicationApply = useSessionStore((s) => s.setApplicationApply);
   const openExternalMutation = useOpenExternal();
   const persistJobMutation = usePersistJob();
   const saveFromPostingMutation = useSaveFromPosting();
+  const { score } = useRowMatchScore(posting.id);
 
   const [interactionTypes, setInteractionTypes] = useState(
     () => new Set(posting.interactions?.map((i) => i.interactionType) || [])
@@ -89,15 +98,43 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
     }
   };
 
-  const handleTailor = () => {
+  // Mirror the autopilot Apply flow: save this posting as an application, seed the
+  // apply session (so the detail page's reset effect skips and the match badge
+  // shows), then open the application's apply/tailor surface (the documents tab).
+  const handleTailor = async () => {
     void trackInteraction('applied');
-    setAIGenerate({ jobAd: posting.description, stage: 'idle', meta: null });
-    void openExternalMutation.mutateAsync(posting.url);
-    void navigate({ to: '/ai-generate' });
+    const res = await saveFromPostingMutation.mutateAsync({
+      jobUrl: posting.url,
+      board: posting.source,
+      company: posting.company,
+      title: posting.title,
+    });
+    if (!res?.id) {
+      notify.error({ message: t('jobs.tailorError') });
+      return;
+    }
+    setApplicationApply({
+      applyForId: res.id,
+      applySeedResume: null,
+      applyMatchLevel: typeof score?.combined === 'number' ? scoreToLevel(score.combined) : null,
+      applyWizardStep: 0,
+      applyWizardForm: null,
+    });
+    void navigate({
+      to: '/applications/$id',
+      params: { id: res.id },
+      search: { tab: 'documents', from: 'jobs' },
+    });
   };
+
+  // Once saved, the button becomes a "View" link to the tracking list.
+  const handleView = () => void navigate({ to: '/applications' });
 
   // Jobs-page Save: create an Application with status=saved linked to this posting.
   const handleSave = () => {
+    // Also mark the posting bookmarked — this persists, shows the "saved" badge,
+    // and flips the Save button to the "View" link (optimistically + on reload).
+    void trackInteraction('bookmarked');
     void saveFromPostingMutation.mutateAsync({
       jobUrl: posting.url,
       board: posting.source,
@@ -107,22 +144,13 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
     notify.success({ message: t('applications.savedToTracking') });
   };
 
-  const onRowKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      handleOpen();
-    }
-  };
+  const saved = interactionTypes.has('bookmarked');
 
+  // The row is NOT clickable: a posting has no detail page, and clicking it must
+  // not open the external job link. Opening the link stays available explicitly
+  // via the row's "⋯ → Open" action. Save / Tailor are their own buttons.
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={handleOpen}
-      onKeyDown={onRowKey}
-      title={t('jobs.open')}
-      className="surface-card group flex items-center gap-5 rounded-xl p-4 pl-5 transition-colors hover:bg-foreground/[0.03]"
-    >
+    <div className="surface-card flex items-center gap-5 rounded-xl p-4 pl-5">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-[11px] font-semibold uppercase tracking-wider text-brand-soft">
         {posting.source.slice(0, 2)}
       </div>
@@ -130,24 +158,24 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
         <div className="flex items-center gap-2 text-sm font-semibold tracking-tight text-foreground/95">
           <span className="truncate">{posting.title}</span>
           {posting.remote && (
-            <span className="rounded-full border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-emerald-200/85">
+            <Tag color="green" className={STATUS_TAG}>
               {t('jobs.remote')}
-            </span>
+            </Tag>
           )}
           {interactionTypes.has('applied') && (
-            <span className="flex items-center gap-1 rounded-full border border-purple-400/20 bg-purple-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-purple-200/85">
-              <CircleCheck size={8} /> {t('jobs.applied')}
-            </span>
+            <Tag color="purple" icon={<CircleCheck size={8} />} className={STATUS_TAG}>
+              {t('jobs.applied')}
+            </Tag>
           )}
           {interactionTypes.has('opened') && (
-            <span className="flex items-center gap-1 rounded-full border border-blue-400/20 bg-blue-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-blue-200/85">
-              <Eye size={8} /> {t('jobs.viewed')}
-            </span>
+            <Tag color="blue" icon={<Eye size={8} />} className={STATUS_TAG}>
+              {t('jobs.viewed')}
+            </Tag>
           )}
           {interactionTypes.has('bookmarked') && (
-            <span className="flex items-center gap-1 rounded-full border border-amber-400/20 bg-amber-400/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-amber-200/85">
-              <Bookmark size={8} /> {t('jobs.saved')}
-            </span>
+            <Tag color="warning" icon={<Bookmark size={8} />} className={STATUS_TAG}>
+              {t('jobs.saved')}
+            </Tag>
           )}
         </div>
         <div className="mt-1 flex items-center gap-4 text-[11px]">
@@ -178,20 +206,23 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
         role="presentation"
       >
         <RowMatchScore jobId={posting.id} />
+        {/* motion wrapper animates the width change when Save flips to View. */}
+        <motion.div layout transition={transition.fast} className="shrink-0">
+          <Button
+            variant="primary"
+            onClick={saved ? handleView : handleSave}
+            disabled={saveFromPostingMutation.isPending}
+            title={saved ? t('jobs.view') : t('applications.saveToTracking')}
+            loading={saveFromPostingMutation.isPending}
+            className="transition-all duration-150 ease-out"
+          >
+            {saved ? <Eye size={11} /> : <Save size={11} />}{' '}
+            {saved ? t('jobs.view') : t('applications.save')}
+          </Button>
+        </motion.div>
         <Button
-          size="sm"
-          variant="primary"
-          onClick={handleSave}
-          title={t('applications.saveToTracking')}
-          loading={saveFromPostingMutation.isPending}
-          className="transition-all duration-150 ease-out"
-        >
-          <Save size={11} /> {t('applications.save')}
-        </Button>
-        <Button
-          size="sm"
           variant="glass"
-          onClick={handleTailor}
+          onClick={() => void handleTailor()}
           title={t('jobs.tailorHint')}
           className="transition-all duration-150 ease-out"
         >

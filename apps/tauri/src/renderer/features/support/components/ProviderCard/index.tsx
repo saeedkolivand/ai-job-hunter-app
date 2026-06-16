@@ -42,10 +42,10 @@ export function ProviderCard({
         </div>
       </div>
       <div className="flex gap-2">
-        <Button size="sm" variant="ghost" className="text-xs">
+        <Button variant="ghost" className="text-xs">
           Retry
         </Button>
-        <Button size="sm" variant="ghost" className="text-xs">
+        <Button variant="ghost" className="text-xs">
           Reset
         </Button>
       </div>

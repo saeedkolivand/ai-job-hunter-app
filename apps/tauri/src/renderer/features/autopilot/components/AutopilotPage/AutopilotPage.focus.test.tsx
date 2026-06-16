@@ -34,7 +34,7 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-vi.mock('@/routes/autopilot', () => ({
+vi.mock('@/routes/autopilot.index', () => ({
   Route: { useSearch: () => currentSearch },
 }));
 
@@ -48,6 +48,7 @@ vi.mock('@/services', async (importOriginal) => {
     ...(orig as object),
     useAutopilots: () => ({ data: [], isLoading: false }),
     useInvalidateAutopilots: () => mockInvalidateAutopilots,
+    useSaveFromPosting: () => ({ mutateAsync: vi.fn() }),
   };
 });
 
@@ -59,10 +60,6 @@ vi.mock('@/features/autopilot/components/AutopilotCard', () => ({
 
 vi.mock('@/features/autopilot/components/CreationWizard', () => ({
   CreationWizard: () => <div data-testid="creation-wizard" />,
-}));
-
-vi.mock('@/features/autopilot/components/ApplyPage', () => ({
-  ApplyPage: () => <div data-testid="apply-page" />,
 }));
 
 vi.mock('@/features/autopilot/components/EmptyState', () => ({
@@ -91,7 +88,7 @@ vi.mock('@/components/layout/PageTransition', () => ({
 
 beforeEach(() => {
   useSessionStore.setState((s) => ({
-    autopilot: { ...s.autopilot, focusedId: null, creating: false },
+    autopilot: { ...s.autopilot, focusedId: null, lastAppliedId: null, creating: false },
   }));
   mockNavigate.mockReset();
   mockInvalidateAutopilots.mockReset();
@@ -149,5 +146,21 @@ describe('AutopilotPage — ?focus consumption', () => {
     expect(mockInvalidateAutopilots).not.toHaveBeenCalled();
     const { autopilot } = useSessionStore.getState();
     expect(autopilot.focusedId).toBeNull();
+  });
+});
+
+describe('AutopilotPage — lastAppliedId (re-expand on Back)', () => {
+  it('promotes lastAppliedId to focusedId on mount and clears it', async () => {
+    // Simulates returning from an Apply deep-link: the page should re-focus the
+    // autopilot the user applied from so its found-jobs list re-expands.
+    useSessionStore.setState((s) => ({ autopilot: { ...s.autopilot, lastAppliedId: 'ap-7' } }));
+
+    await act(async () => {
+      render(<AutopilotPage />);
+    });
+
+    const { autopilot } = useSessionStore.getState();
+    expect(autopilot.focusedId).toBe('ap-7');
+    expect(autopilot.lastAppliedId).toBeNull();
   });
 });

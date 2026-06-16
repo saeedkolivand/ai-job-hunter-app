@@ -37,7 +37,7 @@ export function ProviderDebugBadge() {
   const endpoint = chatEndpoint(provider, model, baseUrl);
 
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 font-mono text-[10px] leading-relaxed text-foreground/45">
+    <div className="flex items-start gap-2 rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2 font-mono text-[10px] leading-relaxed text-foreground/45">
       <Radio size={11} className="mt-0.5 shrink-0 text-brand-soft/70" />
       <div className="min-w-0 break-all">
         <span className="text-foreground/70">provider</span>={provider}

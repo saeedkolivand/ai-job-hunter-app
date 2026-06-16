@@ -36,7 +36,7 @@ export function SettingsContent({
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Section header */}
-      <div className="shrink-0 border-white/[0.05] px-8 py-6">
+      <div className="shrink-0 px-8 py-6">
         <div className="flex items-center gap-3">
           <IconBadge icon={current.icon} size="md" />
           <div>

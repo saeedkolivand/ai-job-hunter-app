@@ -75,7 +75,6 @@ export function SavedResumeMenu({
               ) : (
                 <Button
                   variant="ghost"
-                  size="sm"
                   onClick={() => onSetDefault(doc)}
                   title={t('resumeInput.setDefault')}
                   aria-label={t('resumeInput.setDefault')}

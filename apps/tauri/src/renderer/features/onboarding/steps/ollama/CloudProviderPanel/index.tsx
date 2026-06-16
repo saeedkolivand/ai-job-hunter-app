@@ -174,7 +174,6 @@ export function CloudProviderPanel({
           </div>
           <Button
             variant="glass"
-            size="sm"
             disabled={testing}
             onClick={() => void handleTestKey()}
             className="h-auto px-2 py-1 text-xs"
@@ -222,7 +221,6 @@ export function CloudProviderPanel({
             <div className="flex justify-end">
               <Button
                 variant="glass"
-                size="sm"
                 disabled={!apiKey.trim() || saving}
                 onClick={() => void handleSaveKey()}
                 className={apiKey.trim() && !saving ? 'ring-1 ring-brand/20' : ''}

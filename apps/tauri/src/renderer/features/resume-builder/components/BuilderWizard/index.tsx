@@ -172,7 +172,6 @@ export function BuilderWizard({
           onClick={() => setStep(step - 1)}
           disabled={step === 0}
           variant="ghost"
-          size="sm"
           className="gap-1.5 text-foreground/50 hover:text-foreground/80 disabled:opacity-0"
         >
           <ChevronLeft size={14} />
@@ -192,7 +191,6 @@ export function BuilderWizard({
             disabled={buildDisabled}
             loading={isGenerating}
             variant="primary"
-            size="sm"
             className="gap-1.5 transition-all duration-150 ease-out"
           >
             {!isGenerating && <Sparkles size={13} />}
@@ -202,7 +200,6 @@ export function BuilderWizard({
           <Button
             onClick={() => setStep(step + 1)}
             variant="primary"
-            size="sm"
             className="gap-1.5 transition-all duration-150 ease-out"
           >
             {t('build.wizard.next')}

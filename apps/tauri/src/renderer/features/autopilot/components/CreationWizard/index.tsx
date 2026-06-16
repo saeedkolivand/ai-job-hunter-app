@@ -188,7 +188,6 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
           {step < STEPS.length - 1 ? (
             <Button
               variant="primary"
-              size="sm"
               onClick={() => void handleNext()}
               className="transition-all duration-150 ease-out"
             >
@@ -197,7 +196,6 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
           ) : (
             <Button
               variant="primary"
-              size="sm"
               loading={saving}
               onClick={() => void methods.handleSubmit(onValid)()}
               className="transition-all duration-150 ease-out"

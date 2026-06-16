@@ -73,7 +73,7 @@ export function ProviderRow({
 }: Props) {
   return (
     <div
-      className={`rounded-xl border transition-all ${isExpanded ? 'border-white/15 bg-white/[0.03]' : 'border-white/[0.06] bg-white/[0.01]'}`}
+      className={`rounded-xl border transition-all ${isExpanded ? 'border-foreground/15 bg-foreground/[0.03]' : 'border-foreground/10 bg-foreground/[0.03]'}`}
     >
       {/* Row header */}
       <Button
@@ -112,7 +112,6 @@ export function ProviderRow({
             {onTestKey && (
               <Button
                 variant="glass"
-                size="sm"
                 disabled={isTesting}
                 onClick={() => void onTestKey()}
                 className="h-auto px-1.5 py-0.5 text-[10px]"
@@ -128,7 +127,7 @@ export function ProviderRow({
 
       {/* Expanded config */}
       {isExpanded && (
-        <div className="border-t border-white/[0.06] px-4 pb-4 pt-3 space-y-3">
+        <div className="border-t border-foreground/10 px-4 pb-4 pt-3 space-y-3">
           {meta.kind === 'local-server' ? (
             <OllamaConfig
               connected={connected}

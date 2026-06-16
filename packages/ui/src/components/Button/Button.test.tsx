@@ -46,11 +46,11 @@ describe('Button', () => {
 
   // ── accent-gradient assertions (feat/accent-gradients) ──────────────────────
 
-  it('variant="primary" carries bg-brand-gradient and text-action-foreground (NOT bg-action-primary)', () => {
+  it('variant="primary" carries bg-brand-gradient and text-brand-foreground (NOT bg-action-primary)', () => {
     render(<Button variant="primary">CTA</Button>);
     const btn = screen.getByRole('button');
     expect(btn.className).toContain('bg-brand-gradient');
-    expect(btn.className).toContain('text-action-foreground');
+    expect(btn.className).toContain('text-brand-foreground');
     expect(btn.className).not.toContain('bg-action-primary');
   });
 

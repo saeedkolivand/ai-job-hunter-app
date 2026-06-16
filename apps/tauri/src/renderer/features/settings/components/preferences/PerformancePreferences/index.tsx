@@ -57,7 +57,7 @@ function BackendOptionInfo({ t, knob }: { t: TFunction; knob: BackendKnob }) {
         size={12}
         className="text-foreground/30 cursor-help transition-colors group-hover:text-foreground/60"
       />
-      <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border border-white/[0.1] bg-black/95 p-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 shadow-2xl">
+      <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border border-foreground/15 bg-[var(--color-card)] p-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 shadow-2xl">
         <p className="mb-2 text-[11px] leading-relaxed text-foreground/70">{t(`${base}.info`)}</p>
         <ul className="space-y-1">
           {BACKEND_TIERS.map((tier) => (
@@ -122,13 +122,13 @@ export function PerformancePreferences() {
                 'relative flex items-start gap-4 rounded-xl border p-4 text-left transition-all duration-150',
                 isSelected
                   ? 'border-brand-soft/50 bg-brand-soft/10 ring-1 ring-brand/20'
-                  : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10'
+                  : 'border-foreground/10 bg-foreground/[0.03] hover:border-foreground/20 hover:bg-foreground/[0.06]'
               )}
             >
               <div
                 className={cn(
                   'rounded-xl p-3 transition-colors',
-                  isSelected ? 'bg-brand-soft/20' : 'bg-white/5'
+                  isSelected ? 'bg-brand-soft/20' : 'bg-foreground/[0.06]'
                 )}
               >
                 <Icon
@@ -170,7 +170,7 @@ export function PerformancePreferences() {
       </div>
 
       {performanceMode === 'custom' && (
-        <div className="mt-5 space-y-5 rounded-xl border border-white/10 bg-white/5 p-4">
+        <div className="mt-5 space-y-5 rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4">
           {/* Visual */}
           <div className="space-y-3">
             <SectionLabel>{t('settings.performanceMode.visual.heading')}</SectionLabel>

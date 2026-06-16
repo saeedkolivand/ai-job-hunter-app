@@ -14,14 +14,16 @@ import {
   Zap,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, cn, NavPill, transition, variants } from '@ajh/ui';
+import { Button, cn, Image, NavPill, transition, variants } from '@ajh/ui';
 
 import { ROUTES } from '@/constants/routes';
 import { getTimeGreeting } from '@/lib/greeting';
+import type { DetailTab } from '@/routes/applications.$id';
+import { useContactProfile } from '@/services';
 import { useAppVersion } from '@/services/use-system';
 import { useUserName } from '@/store/preferences-store';
 
@@ -36,13 +38,13 @@ const NAV_SECTIONS: { labelKey: string; items: readonly NavItem[] }[] = [
     labelKey: 'nav.sections.workspace',
     items: [
       { to: ROUTES.DASHBOARD, label: 'nav.dashboard', icon: LayoutDashboard, tourId: 'dashboard' },
-      { to: ROUTES.JOBS, label: 'nav.jobs', icon: Briefcase, tourId: 'jobs' },
       {
         to: ROUTES.APPLICATIONS,
         label: 'nav.applications',
         icon: ClipboardList,
         tourId: 'applications',
       },
+      { to: ROUTES.JOBS, label: 'nav.jobs', icon: Briefcase, tourId: 'jobs' },
       { to: ROUTES.ANALYZE, label: 'nav.analyze', icon: Gauge, tourId: 'analyze' },
       { to: ROUTES.GENERATE, label: 'nav.generate', icon: Wand2, tourId: 'generate' },
       { to: ROUTES.BUILD, label: 'nav.build', icon: FilePlus2, tourId: 'build' },
@@ -66,7 +68,25 @@ const PINNED_ITEMS: readonly NavItem[] = [
 export function Sidebar() {
   const { t } = useTranslation();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const search = useRouterState({ select: (s) => s.location.search as { tab?: DetailTab } });
   const userName = useUserName();
+  // Use the contact-profile photo (a local data: URL) as the footer avatar when set.
+  const { data: contactProfile } = useContactProfile();
+  const avatar = contactProfile?.photo;
+
+  // Remember the last Application detail the user viewed so the sidebar item
+  // returns there instead of always resetting to the list (TanStack <Link>
+  // navigates fresh). Session-scoped — the Sidebar is always mounted — and
+  // cleared back to the list when the user lands on the list route itself.
+  const [lastAppDetail, setLastAppDetail] = useState<{ id: string; tab?: DetailTab } | null>(null);
+  useEffect(() => {
+    if (pathname === ROUTES.APPLICATIONS) {
+      setLastAppDetail(null);
+    } else if (pathname.startsWith(ROUTES.APPLICATIONS + '/')) {
+      const id = pathname.slice(ROUTES.APPLICATIONS.length + 1).split('/')[0];
+      if (id) setLastAppDetail({ id, tab: search.tab });
+    }
+  }, [pathname, search]);
   const { data: version = 'v0.1.0' } = useAppVersion();
   const appVersion = version.startsWith('v') ? version : `v${version}`;
 
@@ -81,27 +101,44 @@ export function Sidebar() {
 
   const renderNavItem = ({ to, label, icon: Icon, tourId }: NavItem) => {
     const active = pathname === to || (to !== '/' && pathname.startsWith(to + '/'));
+    const linkClassName = cn(
+      'group relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors duration-150',
+      active
+        ? 'text-foreground'
+        : 'text-foreground/45 hover:bg-foreground/[0.04] hover:text-foreground/75'
+    );
+    const linkContent = (
+      <>
+        <Icon
+          size={15}
+          className={cn(
+            'shrink-0 transition-colors duration-150',
+            active ? 'text-brand-soft' : 'text-foreground/35 group-hover:text-foreground/55'
+          )}
+        />
+        <span className="flex-1 font-medium">{t(label)}</span>
+      </>
+    );
+    // The Applications item returns to the last-viewed application detail (when
+    // one is remembered) instead of always resetting to the list.
+    const restoreDetail = to === ROUTES.APPLICATIONS ? lastAppDetail : null;
     return (
       <div key={to} className="relative" data-tour-id={tourId}>
         {active && <NavPill layoutId="sidebar-pill" />}
-        <Link
-          to={to}
-          className={cn(
-            'group relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors duration-150',
-            active
-              ? 'text-foreground'
-              : 'text-foreground/45 hover:bg-foreground/[0.04] hover:text-foreground/75'
-          )}
-        >
-          <Icon
-            size={15}
-            className={cn(
-              'shrink-0 transition-colors duration-150',
-              active ? 'text-brand-soft' : 'text-foreground/35 group-hover:text-foreground/55'
-            )}
-          />
-          <span className="flex-1 font-medium">{t(label)}</span>
-        </Link>
+        {restoreDetail ? (
+          <Link
+            to="/applications/$id"
+            params={{ id: restoreDetail.id }}
+            search={{ tab: restoreDetail.tab }}
+            className={linkClassName}
+          >
+            {linkContent}
+          </Link>
+        ) : (
+          <Link to={to} className={linkClassName}>
+            {linkContent}
+          </Link>
+        )}
       </div>
     );
   };
@@ -119,16 +156,26 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <nav className="mt-auto flex flex-col gap-1 border-t border-white/[0.06] pb-3 pt-3">
+      <nav className="mt-auto flex flex-col gap-1 border-t border-foreground/[0.06] pb-3 pt-3">
         {PINNED_ITEMS.map(renderNavItem)}
       </nav>
 
       <div className="space-y-2 px-3 pb-3">
         {userName && (
           <div className="flex items-center gap-2.5 px-1">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-soft/25 to-brand/10 ring-1 ring-brand/20">
-              <User size={15} className="text-brand-soft" />
-            </div>
+            {avatar ? (
+              <Image
+                src={avatar}
+                alt=""
+                preview={false}
+                rootClassName="h-8 w-8 shrink-0 rounded-full ring-1 ring-brand/20"
+                className="h-8 w-8 object-cover"
+              />
+            ) : (
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-soft/25 to-brand/10 ring-1 ring-brand/20">
+                <User size={15} className="text-brand-soft" />
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium leading-tight text-foreground/85">
                 {userName}

@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 
 import type { ContactProfile } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, Input, LocationInput } from '@ajh/ui';
+import { Button, Image, Input, LocationInput } from '@ajh/ui';
 
 import { PhotoProcessingError, processPhotoFile } from '@/lib/photo';
 import { useAppClient } from '@/providers/AppClientProvider';
@@ -229,12 +229,14 @@ export function ContactProfileForm() {
           type="button"
           onClick={() => fileRef.current?.click()}
           aria-label={t('settings.contactProfile.photoUpload')}
-          className="group relative size-20 shrink-0 overflow-hidden rounded-full border border-white/10 bg-white/[0.03]"
+          className="group relative size-20 shrink-0 overflow-hidden rounded-full border border-foreground/10 bg-foreground/[0.03]"
         >
           {photo ? (
-            <img
+            <Image
               src={photo}
               alt={t('settings.contactProfile.photoAlt')}
+              preview={false}
+              rootClassName="size-full"
               className="size-full object-cover"
             />
           ) : (
@@ -257,7 +259,7 @@ export function ContactProfileForm() {
             onChange={onPickPhoto}
           />
           {photo && (
-            <Button variant="ghost" size="sm" onClick={removePhoto} className="gap-1.5 self-start">
+            <Button variant="danger" onClick={removePhoto} className="gap-1.5 self-start">
               <Trash2 className="size-4" />
               {t('settings.contactProfile.photoRemove')}
             </Button>
@@ -477,7 +479,7 @@ export function ContactProfileForm() {
             />
             <Button
               variant="ghost"
-              size="sm"
+              className="h-8 w-8 p-0"
               aria-label={t('settings.contactProfile.removeLink')}
               onClick={() => removeLink(index)}
             >
@@ -486,7 +488,7 @@ export function ContactProfileForm() {
           </div>
         ))}
 
-        <Button variant="ghost" size="sm" onClick={addLink} className="mt-1 self-start gap-1.5">
+        <Button variant="info" onClick={addLink} className="mt-1 self-start gap-1.5">
           <Plus className="size-4" />
           {t('settings.contactProfile.addLink')}
         </Button>

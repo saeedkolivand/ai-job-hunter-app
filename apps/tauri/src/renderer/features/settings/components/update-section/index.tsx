@@ -92,7 +92,6 @@ export function UpdateSection() {
         ) : status.state === 'available' ? (
           <Button
             variant="glass"
-            size="sm"
             onClick={() => void download()}
             className="gap-2 ring-1 ring-brand/20"
           >
@@ -130,7 +129,6 @@ export function UpdateSection() {
           </div>
           <Button
             variant="ghost"
-            size="sm"
             onClick={() => openExternal.mutate(GITHUB_RELEASES_URL)}
             className="gap-2 text-xs text-foreground/50 hover:text-foreground/80"
           >
@@ -151,7 +149,7 @@ export function UpdateSection() {
                 ? t('settings.update.changesSince', { version: currentVersion })
                 : `${t('settings.update.whatsNew')} ${'version' in status ? status.version : ''}`}
             </div>
-            <div className="max-h-60 overflow-y-auto rounded-lg border border-white/[0.05] bg-white/[0.02] p-3">
+            <div className="max-h-60 overflow-y-auto rounded-lg border border-foreground/10 bg-foreground/[0.03] p-3">
               {pendingReleases.length > 0 ? (
                 <div className="space-y-3">
                   {pendingReleases.map((release) => (
@@ -179,10 +177,9 @@ export function UpdateSection() {
         )}
 
       {/* Changelog history (current + previous versions) */}
-      <div className="mt-4 border-t border-white/[0.05] pt-3">
+      <div className="mt-4 border-t border-foreground/10 pt-3">
         <Button
           variant="ghost"
-          size="sm"
           onClick={() => setShowChangelog((v) => !v)}
           className="gap-2 text-xs text-foreground/50 hover:text-foreground/80"
         >
@@ -208,7 +205,6 @@ export function UpdateSection() {
                 <p>{t('settings.update.changelogError')}</p>
                 <Button
                   variant="ghost"
-                  size="sm"
                   onClick={() => openExternal.mutate(GITHUB_RELEASES_URL)}
                   className="gap-2 text-foreground/50 hover:text-foreground/80"
                 >
@@ -242,7 +238,7 @@ export function UpdateSection() {
                     )}
                   </div>
                   {release.body && (
-                    <div className="rounded-lg border border-white/[0.05] bg-white/[0.02] p-3">
+                    <div className="rounded-lg border border-foreground/10 bg-foreground/[0.03] p-3">
                       <MarkdownMessage
                         content={release.body}
                         className="text-xs text-foreground/60"

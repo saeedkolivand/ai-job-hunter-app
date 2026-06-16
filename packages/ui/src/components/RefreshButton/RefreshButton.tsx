@@ -41,7 +41,6 @@ export function RefreshButton({
   return (
     <Button
       variant={variant}
-      size="sm"
       onClick={handleRefresh}
       disabled={disabled || refreshing}
       className={className}

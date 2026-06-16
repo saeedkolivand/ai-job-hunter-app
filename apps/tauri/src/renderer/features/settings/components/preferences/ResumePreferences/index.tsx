@@ -136,7 +136,7 @@ export function ResumePreferences() {
           'relative mb-5 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-all',
           dragActive
             ? 'border-brand/50 bg-brand/5'
-            : 'border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]',
+            : 'border-foreground/10 bg-foreground/[0.03] hover:border-foreground/20 hover:bg-foreground/[0.05]',
           uploading && 'cursor-default opacity-60'
         )}
       >
@@ -159,7 +159,7 @@ export function ResumePreferences() {
             <div
               className={cn(
                 'rounded-full p-3 transition-colors',
-                dragActive ? 'bg-brand/15' : 'bg-white/5'
+                dragActive ? 'bg-brand/15' : 'bg-foreground/[0.06]'
               )}
             >
               <Upload
@@ -205,13 +205,15 @@ export function ResumePreferences() {
                 transition={transition.normal}
                 className={cn(
                   'flex items-center gap-3 rounded-xl border px-4 py-3 transition-all',
-                  isDefault ? 'border-brand/30 bg-brand/8' : 'border-white/[0.06] bg-white/[0.02]'
+                  isDefault
+                    ? 'border-brand/30 bg-brand/8'
+                    : 'border-foreground/10 bg-foreground/[0.03]'
                 )}
               >
                 <div
                   className={cn(
                     'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-                    isDefault ? 'bg-brand/15' : 'bg-white/5'
+                    isDefault ? 'bg-brand/15' : 'bg-foreground/[0.06]'
                   )}
                 >
                   <FileText
@@ -246,29 +248,26 @@ export function ResumePreferences() {
                 <div className="flex items-center gap-1">
                   <Button
                     variant="ghost"
-                    size="sm"
                     onClick={() => void handleSetDefault(doc.id)}
                     disabled={isDefault || setDefaultDocument.isPending}
                     title={t('settings.resume.setDefault')}
-                    className="text-foreground/30 hover:text-brand-soft disabled:opacity-0"
+                    className="h-8 w-8 p-0 text-foreground/30 hover:text-brand-soft disabled:opacity-0"
                   >
                     <Sparkles size={13} />
                   </Button>
                   <Button
                     variant="ghost"
-                    size="sm"
                     onClick={() => handleDownload(doc)}
                     title={t('settings.resume.download')}
-                    className="text-foreground/30 hover:text-blue-400"
+                    className="h-8 w-8 p-0 text-foreground/30 hover:text-blue-400"
                   >
                     <Download size={13} />
                   </Button>
                   <Button
                     variant="ghost"
-                    size="sm"
                     onClick={() => void handleDelete(doc.id)}
                     disabled={removeDocument.isPending}
-                    className="text-foreground/30 hover:text-red-400"
+                    className="h-8 w-8 p-0 text-foreground/30 hover:text-red-400"
                   >
                     <Trash2 size={13} />
                   </Button>

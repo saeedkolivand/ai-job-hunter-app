@@ -57,15 +57,13 @@ export function wizardStateToPayload(form: WizardState): AutopilotCreate {
 
 /** Initial wizard form, pre-filled from saved job preferences where available. */
 export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
-  const validWorkType = ['remote', 'hybrid', 'on-site', 'any'] as const;
   return {
     name: '',
     board: 'linkedin',
     query: '',
     location: jobPrefs?.location ?? '',
-    workType: validWorkType.includes(jobPrefs?.remote as (typeof validWorkType)[number])
-      ? (jobPrefs?.remote as WizardState['workType'])
-      : 'any',
+    // No job-preference field seeds work type; default to the 'any' sentinel.
+    workType: 'any',
     amount: 50,
     dateFilter: '24h',
     minMatchScore: 50,

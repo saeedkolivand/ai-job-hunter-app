@@ -154,8 +154,14 @@ describe('ScrapeBoardRequestSchema', () => {
     ).toThrow();
   });
 
-  it('defaults pages to 1', () => {
+  it('defaults amount to 25', () => {
     const result = ScrapeBoardRequestSchema.parse({ board: 'linkedin', query: 'test' });
-    expect(result.pages).toBe(1);
+    expect(result.amount).toBe(25);
+  });
+
+  it('rejects amount above 100', () => {
+    expect(() =>
+      ScrapeBoardRequestSchema.parse({ board: 'linkedin', query: 'test', amount: 101 })
+    ).toThrow();
   });
 });

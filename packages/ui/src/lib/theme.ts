@@ -15,7 +15,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import { lightenHex, readableForeground, rotateHueHex } from './color';
+import { lightenHex, mixHex, readableForeground, rotateHueHex } from './color';
 
 export type ColorScheme = 'light' | 'dark' | 'system';
 export type ContrastPref = 'normal' | 'more';
@@ -59,6 +59,8 @@ export const DEFAULT_THEME_PREFS: ThemePrefs = {
 const ACCENT_VARS = [
   '--color-brand',
   '--color-brand-soft',
+  '--color-brand-mid',
+  '--color-brand-mid-soft',
   '--color-brand-2',
   '--color-brand-2-soft',
   '--color-action-foreground',
@@ -93,6 +95,14 @@ function applyAccent(root: HTMLElement, prefs: ThemePrefs, scheme: 'light' | 'da
   root.style.setProperty('--color-brand', color);
   root.style.setProperty('--color-brand-soft', soft);
   root.style.setProperty('--color-action-foreground', foreground);
+  // Sweep MIDDLE: the start↔end MIDPOINT when a second hue exists, so a custom
+  // two-color accent renders as a smooth start→mid→end sweep (never the shipped
+  // gold). With no color2 (system, single hue) fall back to a lightened
+  // derivative of `color` so the mid stop is NEVER left as the default gold.
+  const mid = color2 ? (mixHex(color, color2) ?? color) : (lightenHex(color, softAmount) ?? color);
+  const midSoft = lightenHex(mid, softAmount);
+  root.style.setProperty('--color-brand-mid', mid);
+  if (midSoft) root.style.setProperty('--color-brand-mid-soft', midSoft);
   // brand-2 is best-effort: a valid accent still applies even when the second
   // hue can't be derived — just skip the two gradient-end props.
   if (color2 && brand2Soft) {

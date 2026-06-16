@@ -18,6 +18,19 @@ pub struct ApplicationAnswer {
     pub answer: String,
 }
 
+/// One AI-suggested question the candidate can ASK the interviewer (distinct from
+/// the answered application questions above). Stored on the application record.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct InterviewQuestion {
+    pub id: String,
+    pub question: String,
+    /// Why this question lands well / what it signals to the interviewer.
+    pub why: String,
+    /// Target interviewer — `recruiter` | `hiringManager` | `team` | `leadership`
+    /// | `general` (open-typed; an unknown value is treated as `general`).
+    pub audience: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiGenerationRecord {
     pub id: String,
@@ -61,6 +74,10 @@ pub struct AiGenerationRecord {
     pub application_answers: Vec<ApplicationAnswer>,
     #[serde(rename = "companyBrief", default)]
     pub company_brief: String,
+    /// AI-suggested "questions to ask the interviewer" — the second assistant,
+    /// distinct from `application_answers` above. Stored as JSON.
+    #[serde(rename = "interviewQuestions", default)]
+    pub interview_questions: Vec<InterviewQuestion>,
     /// Parent Application FK (NULL when unlinked). Carried through export/import so
     /// a backup round-trip preserves the application↔generation link; otherwise
     /// `remove_for_application`/`detach_application` stop matching restored rows.
@@ -139,6 +156,16 @@ impl AiGenerationStore {
                 )
             },
         },
+        // Additive: AI-suggested "questions to ask the interviewer" — the second
+        // assistant alongside application answers. Old rows default to empty.
+        Migration {
+            name: "add_interview_questions",
+            up: |conn| {
+                conn.execute_batch(
+                    "ALTER TABLE ai_generations ADD COLUMN interview_questions TEXT NOT NULL DEFAULT '[]';",
+                )
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -162,7 +189,8 @@ impl AiGenerationStore {
             "SELECT id, created_at, candidate_name, job_title, company_name,
                     resume_language, job_ad_language, target_language, mismatch,
                     top_requirements, mode, resume_text, cover_letter_text, job_ad,
-                    job_url, board, application_answers, company_brief, application_id
+                    job_url, board, application_answers, company_brief, application_id,
+                    interview_questions
              FROM ai_generations ORDER BY created_at DESC",
         )
         .ok()
@@ -185,7 +213,8 @@ impl AiGenerationStore {
             "SELECT id, created_at, candidate_name, job_title, company_name,
                     resume_language, job_ad_language, target_language, mismatch,
                     top_requirements, mode, resume_text, cover_letter_text, job_ad,
-                    job_url, board, application_answers, company_brief, application_id
+                    job_url, board, application_answers, company_brief, application_id,
+                    interview_questions
              FROM ai_generations WHERE job_url = ?1 ORDER BY created_at DESC LIMIT 1",
         )
         .ok()
@@ -195,14 +224,17 @@ impl AiGenerationStore {
     pub fn insert(&self, rec: &AiGenerationRecord) -> AppResult<()> {
         let top_req_json = serde_json::to_string(&rec.top_requirements).unwrap_or_default();
         let answers_json = serde_json::to_string(&rec.application_answers).unwrap_or_default();
+        let interview_questions_json =
+            serde_json::to_string(&rec.interview_questions).unwrap_or_default();
         let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO ai_generations
              (id, created_at, candidate_name, job_title, company_name,
               resume_language, job_ad_language, target_language, mismatch,
               top_requirements, mode, resume_text, cover_letter_text, job_ad,
-              job_url, board, application_answers, company_brief, application_id)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
+              job_url, board, application_answers, company_brief, application_id,
+              interview_questions)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
             params![
                 rec.id,
                 ts_to_db(rec.created_at),
@@ -223,6 +255,7 @@ impl AiGenerationStore {
                 answers_json,
                 rec.company_brief,
                 rec.application_id,
+                interview_questions_json,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -233,6 +266,8 @@ impl AiGenerationStore {
     fn update(&self, rec: &AiGenerationRecord) -> AppResult<()> {
         let top_req_json = serde_json::to_string(&rec.top_requirements).unwrap_or_default();
         let answers_json = serde_json::to_string(&rec.application_answers).unwrap_or_default();
+        let interview_questions_json =
+            serde_json::to_string(&rec.interview_questions).unwrap_or_default();
         let conn = self.conn.lock();
         conn.execute(
             "UPDATE ai_generations SET
@@ -240,7 +275,8 @@ impl AiGenerationStore {
               resume_language = ?5, job_ad_language = ?6, target_language = ?7,
               mismatch = ?8, top_requirements = ?9, mode = ?10, resume_text = ?11,
               cover_letter_text = ?12, job_ad = ?13, job_url = ?14, board = ?15,
-              application_answers = ?16, company_brief = ?17, application_id = ?18
+              application_answers = ?16, company_brief = ?17, application_id = ?18,
+              interview_questions = ?19
              WHERE id = ?1",
             params![
                 rec.id,
@@ -261,6 +297,7 @@ impl AiGenerationStore {
                 answers_json,
                 rec.company_brief,
                 rec.application_id,
+                interview_questions_json,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -399,6 +436,7 @@ impl AiGenerationStore {
 fn row_to_record(row: &rusqlite::Row) -> rusqlite::Result<AiGenerationRecord> {
     let top_req_json: String = row.get(9)?;
     let answers_json: String = row.get(16)?;
+    let interview_questions_json: String = row.get(19)?;
     Ok(AiGenerationRecord {
         id: row.get(0)?,
         created_at: ts_from_db(row.get::<_, i64>(1)?),
@@ -419,6 +457,7 @@ fn row_to_record(row: &rusqlite::Row) -> rusqlite::Result<AiGenerationRecord> {
         application_answers: serde_json::from_str(&answers_json).unwrap_or_default(),
         company_brief: row.get(17)?,
         application_id: row.get(18)?,
+        interview_questions: serde_json::from_str(&interview_questions_json).unwrap_or_default(),
     })
 }
 
@@ -458,6 +497,11 @@ fn merge_application(
             incoming.application_answers
         },
         company_brief: pick(incoming.company_brief, existing.company_brief),
+        interview_questions: if incoming.interview_questions.is_empty() {
+            existing.interview_questions
+        } else {
+            incoming.interview_questions
+        },
         application_id: incoming.application_id.or(existing.application_id),
     }
 }
@@ -501,13 +545,16 @@ impl DataStore for AiGenerationStore {
         for rec in &records {
             let top_req_json = serde_json::to_string(&rec.top_requirements).unwrap_or_default();
             let answers_json = serde_json::to_string(&rec.application_answers).unwrap_or_default();
+            let interview_questions_json =
+                serde_json::to_string(&rec.interview_questions).unwrap_or_default();
             tx.execute(
                 "INSERT INTO ai_generations
                  (id, created_at, candidate_name, job_title, company_name,
                   resume_language, job_ad_language, target_language, mismatch,
                   top_requirements, mode, resume_text, cover_letter_text, job_ad,
-                  job_url, board, application_answers, company_brief, application_id)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
+                  job_url, board, application_answers, company_brief, application_id,
+                  interview_questions)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
                 params![
                     rec.id,
                     ts_to_db(rec.created_at),
@@ -528,6 +575,7 @@ impl DataStore for AiGenerationStore {
                     answers_json,
                     rec.company_brief,
                     rec.application_id,
+                    interview_questions_json,
                 ],
             )?;
         }

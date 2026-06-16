@@ -62,7 +62,6 @@ export function JobAdField({
         headerAction={
           <Button
             variant="info"
-            size="sm"
             onClick={() => setShowUrl((s) => !s)}
             className={cn(
               'flex items-center gap-1 rounded-md px-2 py-1 text-[10px] transition-colors h-auto',

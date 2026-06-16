@@ -42,15 +42,10 @@ export function OllamaConfig({
     <>
       {!connected && (
         <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-foreground/50"
-            onClick={onDownloadOllama}
-          >
+          <Button variant="ghost" className="text-foreground/50" onClick={onDownloadOllama}>
             <ExternalLink size={11} /> Download Ollama
           </Button>
-          <Button variant="ghost" size="sm" className="text-foreground/40" onClick={onRecheck}>
+          <Button variant="ghost" className="text-foreground/40" onClick={onRecheck}>
             <Loader2 size={11} /> Recheck
           </Button>
         </div>
@@ -62,7 +57,7 @@ export function OllamaConfig({
         <Button
           onClick={onRecheck}
           disabled={loading}
-          className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2 py-1 text-xs text-foreground/60 hover:text-foreground h-auto border-transparent"
+          className="flex items-center gap-1.5 rounded-lg bg-foreground/[0.06] px-2 py-1 text-xs text-foreground/60 hover:text-foreground h-auto border-transparent"
         >
           <Loader2 size={11} className={loading ? 'animate-spin' : ''} />
           {t('settings.aiModel.refresh')}
@@ -78,7 +73,7 @@ export function OllamaConfig({
                 variant="unstyled"
                 onClick={() => void onPull(qm)}
                 disabled={pulling !== null}
-                className="flex w-full items-center justify-between rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-left text-sm hover:bg-white/[0.04] disabled:opacity-50"
+                className="flex w-full items-center justify-between rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2 text-left text-sm hover:bg-foreground/[0.05] disabled:opacity-50"
               >
                 <span className="text-foreground/70">{qm}</span>
                 {pulling === qm ? (
@@ -102,7 +97,6 @@ export function OllamaConfig({
           {children}
           <Button
             variant="glass"
-            size="sm"
             onClick={onSetActive}
             disabled={isActive}
             className={isActive ? 'opacity-40' : 'ring-1 ring-brand/20'}
