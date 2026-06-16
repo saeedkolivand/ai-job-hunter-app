@@ -58,15 +58,27 @@ pub fn is_allowed_origin(origin: &str, dev_origins: &[String]) -> bool {
     if dev_origins.iter().any(|d| d == origin) {
         return true;
     }
+    // Firefox: a WebSocket/fetch initiated from an extension BACKGROUND script
+    // sends `Origin: null` — Firefox deliberately strips the `moz-extension://`
+    // UUID rather than leak it (Bugzilla 1607936 / 1257989). So the real Firefox
+    // bridge handshake arrives as `null`, NOT `moz-extension://<uuid>`. Accept
+    // it: the origin gate is defense-in-depth only — the actual boundary is the
+    // per-frame 256-bit pairing token over a loopback-only (`127.0.0.1`)
+    // listener, which a null-origin page cannot satisfy without the token the
+    // user copied from the app's Settings.
+    if origin == "null" {
+        return true;
+    }
     // Chrome: scheme + known store id. An origin is just scheme + host, so a
     // clean id has no slash (reject a trailing path / extra segment).
     if let Some(id) = origin.strip_prefix("chrome-extension://") {
         return !id.contains('/') && ALLOWED_EXTENSION_IDS.contains(&id);
     }
-    // Firefox: scheme + per-install internal UUID. The id is random per profile
-    // and unknowable in advance, so accept any well-formed UUID host (again, no
-    // trailing path). `is_extension_uuid` already rejects anything containing a
-    // slash, since a slash is not a hex/dash UUID char.
+    // Firefox, non-background contexts (e.g. a content/popup-initiated socket):
+    // `moz-extension://<uuid>`. The id is random per profile and unknowable in
+    // advance, so accept any well-formed UUID host (no trailing path —
+    // `is_extension_uuid` rejects a slash, which is not a hex/dash char). The
+    // common background path is handled by the `null` case above.
     if let Some(host) = origin.strip_prefix("moz-extension://") {
         return is_extension_uuid(host);
     }
@@ -144,6 +156,27 @@ mod tests {
     fn allows_well_formed_firefox_uuid() {
         let origin = format!("moz-extension://{FIREFOX_UUID}");
         assert!(is_allowed_origin(&origin, &[]));
+    }
+
+    #[test]
+    fn allows_firefox_null_origin() {
+        // Firefox sends `Origin: null` for a WebSocket initiated from an
+        // extension background script — it strips the moz-extension UUID rather
+        // than leak it (Bugzilla 1607936 / 1257989). This is the REAL Firefox
+        // bridge handshake (NOT `moz-extension://<uuid>`). The origin gate is
+        // defense-in-depth only; the per-frame 256-bit pairing token over a
+        // loopback-only listener is the actual boundary.
+        assert!(is_allowed_origin("null", &[]));
+        // Leading/trailing whitespace is trimmed before the check.
+        assert!(is_allowed_origin("  null  ", &[]));
+    }
+
+    #[test]
+    fn rejects_origins_that_merely_contain_null() {
+        // Only the exact `null` token is accepted — not arbitrary strings that
+        // happen to contain it.
+        assert!(!is_allowed_origin("nullish", &[]));
+        assert!(!is_allowed_origin("https://null.example.com", &[]));
     }
 
     #[test]
