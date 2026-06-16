@@ -184,18 +184,44 @@ describe('savePairing (#btn-save-token)', () => {
 
   it('confirms with "✓ Authorized" then flips to the import view on success', async () => {
     vi.useFakeTimers();
-    sendMessageMock.mockResolvedValueOnce({ ok: true, kind: 'token' }).mockResolvedValueOnce({
-      ok: true,
-      kind: 'status',
-      status: { phase: 'connected', port: 1, hasToken: true },
-    });
+    try {
+      sendMessageMock.mockResolvedValueOnce({ ok: true, kind: 'token' }).mockResolvedValueOnce({
+        ok: true,
+        kind: 'status',
+        status: { phase: 'connected', port: 1, hasToken: true },
+      });
 
-    byId<HTMLButtonElement>('btn-save-token').click();
-    await vi.runAllTimersAsync();
-    vi.useRealTimers();
+      byId<HTMLButtonElement>('btn-save-token').click();
+      await vi.runAllTimersAsync();
 
-    expect(byId<HTMLButtonElement>('btn-save-token').textContent).toContain('Authorized');
-    expect(byId<HTMLElement>('view-import').hidden).toBe(false);
+      expect(byId<HTMLButtonElement>('btn-save-token').textContent).toContain('Authorized');
+      expect(byId<HTMLElement>('view-import').hidden).toBe(false);
+    } finally {
+      // Restore real timers even if an assertion throws, so later tests don't
+      // inherit fake timers and flake.
+      vi.useRealTimers();
+    }
+  });
+
+  it('resets the button when the status refresh does not reach the connected view', async () => {
+    vi.useFakeTimers();
+    try {
+      sendMessageMock.mockResolvedValueOnce({ ok: true, kind: 'token' }).mockResolvedValueOnce({
+        ok: true,
+        kind: 'status',
+        status: { phase: 'app_not_running', port: null, hasToken: true },
+      });
+
+      byId<HTMLButtonElement>('btn-save-token').click();
+      await vi.runAllTimersAsync();
+
+      const btn = byId<HTMLButtonElement>('btn-save-token');
+      expect(btn.disabled).toBe(false);
+      expect(btn.textContent).toBe('Save & pair');
+      expect(byId<HTMLElement>('view-import').hidden).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('restores the actionable button when the pairing request rejects', async () => {
