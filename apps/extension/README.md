@@ -107,12 +107,13 @@ The loopback WebSocket (`ws://127.0.0.1:47615..47620`) discovers the desktop app
 
 ## Permissions — minimal & justified
 
-| Permission                                                 | Why it is required                                                                                                                                                          |
-| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `activeTab`                                                | Read the URL and (Scan mode) the DOM of the tab the user clicked on — **only** on that click, with no standing access to any site.                                          |
-| `storage`                                                  | Persist the pairing token locally so the user pairs once.                                                                                                                   |
-| `scripting`                                                | MV3 requires `scripting` to dynamically inject the Scan-mode capture via `chrome.scripting.executeScript`. Host scope stays limited to the active tab by `activeTab`.       |
-| `host_permissions: ws://127.0.0.1/*`, `http://127.0.0.1/*` | **Loopback only.** The background worker opens `ws://127.0.0.1:<port>` to the desktop bridge. See the finding below — this is the narrowest entry that works cross-browser. |
+| Permission                                                 | Why it is required                                                                                                                                                                                        |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `activeTab`                                                | Read the URL and (Scan mode) the DOM of the tab the user clicked on — **only** on that click, with no standing access to any site.                                                                        |
+| `storage`                                                  | Persist the pairing token locally so the user pairs once.                                                                                                                                                 |
+| `scripting`                                                | MV3 requires `scripting` to dynamically inject the Scan-mode capture via `chrome.scripting.executeScript`. Host scope stays limited to the active tab by `activeTab`.                                     |
+| `nativeMessaging`                                          | Spawn and exchange messages with the AI Job Hunter desktop host (`app.aijobhunter.bridge`) — the HTTPS-Only-safe transport to the local app. Falls back to loopback WS if the native host is unavailable. |
+| `host_permissions: ws://127.0.0.1/*`, `http://127.0.0.1/*` | **Loopback only.** The background worker opens `ws://127.0.0.1:<port>` to the desktop bridge (native-messaging fallback). See the finding below — this is the narrowest entry that works cross-browser.   |
 
 We do **not** request broad host access (`<all_urls>`, `*://*/*`), no
 `tabs` permission, no `webRequest`, and we do **not** loosen
@@ -179,12 +180,17 @@ the pairing token to the **first loopback port that answers** (see the
 **The extension is non-functional without the AI Job Hunter desktop app** — this
 is expected. A reviewer testing it standalone will see, by design:
 
-- On open with the app **not running**: an _"AI Job Hunter isn't running"_
-  empty state with a **Retry** button. No errors, no broken UI.
+- On open with the app **not running**: an empty body with a header **Retry** icon
+  and a **"?"** help popover; the status pill reads **"✕ App not running"**. No
+  errors, no broken UI.
 - With the app **running but unpaired**: a **pairing screen** asking for the
   64-character token from the app's Settings.
 - With the app **running and paired**: the import view (two buttons + the
   "I already applied" checkbox).
+- **On Firefox with HTTPS-Only Mode enabled**: the extension connects via
+  **native messaging** (the `app.aijobhunter.bridge` host spawned by the browser)
+  instead of the loopback WebSocket; this avoids the silent `ws://` → `wss://`
+  upgrade that breaks the plain loopback path.
 
 To exercise the full path, install the desktop app from the project release,
 open it, copy the token from **Settings → Browser extension**, paste it into the
@@ -262,15 +268,23 @@ emitted JS stays readable for review.
 
 ## Extension origin validation (bridge side)
 
-The desktop bridge validates `moz-extension://` and `chrome-extension://` origins in the WS handshake (`apps/tauri/src-tauri/src/extension_bridge/auth.rs::is_allowed_origin`). **The origin is not the auth boundary** — the per-frame 256-bit pairing token is; the origin is defense-in-depth.
+The desktop bridge validates extension origins in the handshake (`apps/tauri/src-tauri/src/extension_bridge/auth.rs::is_allowed_origin`). **The origin is not the auth boundary** — the per-frame 256-bit pairing token is; the origin is defense-in-depth.
 
-- **Firefox:** origins are random per-install internal UUIDs (anti-fingerprinting), not the AMO gecko id. The bridge accepts any well-formed UUID shape (8-4-4-4-12 lowercase hex) via `is_extension_uuid`. The gecko id (`job-importer@aijobhunter.app`) never appears in a real `moz-extension://` origin and is intentionally absent from the allowlist.
+- **Firefox:** a background-script WebSocket sends `Origin: null` (Firefox deliberately strips the per-install UUID to prevent fingerprinting per Bugzilla 1607936/1257989). The bridge accepts `null`. The gecko id (`job-importer@aijobhunter.app`) never appears as an origin and is intentionally absent from the allowlist.
 - **Chrome:** the bridge pins the published Chrome Web Store id `oaoekkgkhmgdfnpmfkpphgiikliaicll` in `ALLOWED_EXTENSION_IDS` (in `apps/tauri/src-tauri/src/extension_bridge/auth.rs`). A locally-loaded Chrome build is still admitted only via the dev-origin override (`AJH_EXTENSION_DEV_ORIGINS`).
+- **Native-messaging host:** sends the sentinel `Origin: ajh-native-host` (see `NATIVE_HOST_ORIGIN` in `auth.rs`). Defense-in-depth only; the per-frame token + loopback binding remain the real boundary.
 
 ---
 
-## Native Messaging Fallback (Future)
+## Native Messaging Transport
 
-This v1 uses a loopback WebSocket. If a store policy or hardened OS network config blocks loopback WS from an extension, the **fallback is native messaging**: register a native messaging host with the desktop app and swap `BridgeClient`'s transport from `WebSocket` to `browser.runtime.connectNative` (via `@wxt-dev/browser`).
+The extension uses **native-messaging as the primary transport**, with **loopback WebSocket as a fallback**:
 
-The wire protocol envelope (`@ajh/shared`) and desktop handlers stay identical — **only the transport changes**. Native messaging is browser-approved, cannot be port-squatted, and works across permission policies. Tracked as a `TODO(bridge)` follow-up; not implemented in v1.
+1. **Native messaging (preferred):** The browser spawns the desktop app's own exe in `--native-host` mode, which runs a stdio ↔ `ws://127.0.0.1` relay (`apps/tauri/src-tauri/src/extension_bridge/native_host.rs`). This is the by-default fix for Firefox's HTTPS-Only Mode: Firefox silently upgrades the extension's `ws://127.0.0.1` to `wss://` in strict-mode profiles, breaking the plain loopback path. A native process spawned by the browser is immune to that upgrade.
+   - **Native host name:** `app.aijobhunter.bridge` (configured in `apps/extension/src/lib/bridge.ts` and registered on every app launch via `apps/tauri/src-tauri/src/extension_bridge/register.rs`).
+   - **Readiness frame:** the native host sends a transport-local `{"type":"bridge.ready","ok":true|false}` control frame (not part of the wire protocol) so the extension can distinguish "app reachable" from "app down".
+   - **Same wire envelope:** the bridge protocol (`@ajh/shared` extension-protocol) is unchanged; only the transport swaps from `WebSocket` to `browser.runtime.connectNative` (`@wxt-dev/browser`).
+
+2. **WebSocket fallback:** if the native host is not registered (old app / never installed), or native-messaging is unavailable, the extension probes `127.0.0.1:47615..47620` and falls back to the loopback WebSocket. Chrome and older desktop app versions keep working.
+
+All origins flow through unchanged (the per-frame 256-bit pairing token over the loopback-only listener remains the real boundary). Native messaging cannot be port-squatted and survives permission policies that block loopback WS.
