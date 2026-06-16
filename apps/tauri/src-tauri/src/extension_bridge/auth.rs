@@ -28,6 +28,16 @@ pub const ALLOWED_EXTENSION_IDS: &[&str] = &[
     "oaoekkgkhmgdfnpmfkpphgiikliaicll",
 ];
 
+/// Sentinel `Origin` the native-messaging host
+/// ([`super::native_host`]) sends when it relays the browser's frames to this
+/// loopback bridge. The host is our OWN native process (spawned by the browser,
+/// our exe in `--native-host` mode) bridging stdio → `ws://127.0.0.1`, so it has
+/// no `chrome-extension://`/`moz-extension://` origin of its own. Accepting this
+/// sentinel is defense-in-depth only: the real boundary stays the per-frame
+/// 256-bit pairing token over the loopback-only listener, which the host relays
+/// through unchanged.
+pub const NATIVE_HOST_ORIGIN: &str = "ajh-native-host";
+
 /// Whether a handshake `Origin` is an allowed extension origin.
 ///
 /// This check is **defense-in-depth, not the primary boundary**. The real
@@ -67,6 +77,12 @@ pub fn is_allowed_origin(origin: &str, dev_origins: &[String]) -> bool {
     // listener, which a null-origin page cannot satisfy without the token the
     // user copied from the app's Settings.
     if origin == "null" {
+        return true;
+    }
+    // Native-messaging host (our own native process relaying to the loopback
+    // bridge — see `NATIVE_HOST_ORIGIN`). Exact match only; the per-frame token +
+    // loopback binding remain the real boundary.
+    if origin == NATIVE_HOST_ORIGIN {
         return true;
     }
     // Chrome: scheme + known store id. An origin is just scheme + host, so a
@@ -177,6 +193,24 @@ mod tests {
         // happen to contain it.
         assert!(!is_allowed_origin("nullish", &[]));
         assert!(!is_allowed_origin("https://null.example.com", &[]));
+    }
+
+    #[test]
+    fn allows_native_host_sentinel_origin() {
+        // Our native-messaging host relays to the loopback bridge with this
+        // sentinel Origin (it has no extension origin of its own). Accepted
+        // (defense-in-depth); the per-frame token is the real boundary.
+        assert!(is_allowed_origin(NATIVE_HOST_ORIGIN, &[]));
+        assert!(is_allowed_origin("ajh-native-host", &[]));
+        // Leading/trailing whitespace is trimmed before the check.
+        assert!(is_allowed_origin("  ajh-native-host  ", &[]));
+    }
+
+    #[test]
+    fn rejects_origins_that_merely_contain_native_sentinel() {
+        // Only the exact sentinel is accepted — not strings that contain it.
+        assert!(!is_allowed_origin("ajh-native-host.evil.com", &[]));
+        assert!(!is_allowed_origin("xajh-native-host", &[]));
     }
 
     #[test]
