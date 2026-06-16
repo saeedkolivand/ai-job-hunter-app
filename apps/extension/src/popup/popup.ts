@@ -182,6 +182,23 @@ async function refreshStatusWithTimeout(): Promise<void> {
   }
 }
 
+/**
+ * Poll `getStatus` until the phase leaves `searching` (the bridge connection has
+ * settled to connected / not_paired / app_not_running) or the attempts run out.
+ * Renders each result. A safety net so the popup never strands on the "searching"
+ * spinner when the background's live status push is missed (MV3 race / just-woken
+ * worker). The live `onMessage` push still updates the view independently.
+ */
+async function refreshUntilSettled(attempts = 5, gapMs = 600): Promise<void> {
+  for (let i = 0; i < attempts; i += 1) {
+    const res = await send({ kind: 'getStatus' });
+    const status = resolveStatusResponse(res, lastKnownHasToken);
+    render(status);
+    if (status.phase !== 'searching') return;
+    if (i < attempts - 1) await delay(gapMs);
+  }
+}
+
 async function doImport(mode: ImportMode): Promise<void> {
   els.btnUrl.disabled = true;
   els.btnScan.disabled = true;
@@ -217,7 +234,7 @@ async function savePairing(): Promise<void> {
     els.btnSaveToken.textContent = '✓ Authorized';
     setMsg(els.pairMsg, 'Paired.', 'ok');
     await delay(AUTHORIZED_CONFIRM_MS);
-    await refreshStatus();
+    await refreshUntilSettled();
     if (!els.views.import.hidden) {
       // Connected view is now shown; move focus off the (hidden) token input.
       els.btnUrl.focus();
