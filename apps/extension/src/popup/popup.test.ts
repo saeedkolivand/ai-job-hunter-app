@@ -50,7 +50,6 @@ function buildPopupDom(): void {
     <p id="pair-msg"></p>
     <button id="btn-save-token"></button>
     <button id="btn-retry"></button>
-    <button id="btn-open-app"></button>
     <button id="btn-open-settings"></button>
     <button id="btn-help"></button>
     <p id="help-popover" hidden></p>
@@ -235,5 +234,32 @@ describe('savePairing (#btn-save-token)', () => {
     expect(btn.disabled).toBe(false);
     expect(btn.textContent).toBe('Save & pair');
     expect(byId<HTMLParagraphElement>('pair-msg').textContent).toMatch(/failed/i);
+  });
+});
+
+describe('header Retry visibility', () => {
+  // wire() registers a runtime message listener that calls render() on status pushes.
+  // Grab it from the mocked addListener so we can drive render() with a phase.
+  const statusListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
+    | ((message: unknown) => void)
+    | undefined;
+  const push = (phase: string) =>
+    statusListener?.({ ok: true, kind: 'status', status: { phase, port: null, hasToken: true } });
+
+  it('is shown only in the app_not_running state', () => {
+    expect(statusListener).toBeTypeOf('function');
+    const retry = byId<HTMLButtonElement>('btn-retry');
+
+    push('app_not_running');
+    expect(retry.hidden).toBe(false);
+
+    push('connected');
+    expect(retry.hidden).toBe(true);
+
+    push('searching');
+    expect(retry.hidden).toBe(true);
+
+    push('not_paired');
+    expect(retry.hidden).toBe(true);
   });
 });
