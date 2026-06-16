@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.104.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.104.1...v0.104.2) (2026-06-16)
+
+### 🐛 Bug Fixes
+
+* import jobs as applications only, sidebar nav, tab order, popup UX + Firefox launch ([#385](https://github.com/saeedkolivand/ai-job-hunter-app/issues/385)) ([465ea0b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/465ea0b7eed5b97e92cde3f776df14c98f62d180))
+
 ## [0.104.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.104.0...v0.104.1) (2026-06-16)
 
 ### 🐛 Bug Fixes
