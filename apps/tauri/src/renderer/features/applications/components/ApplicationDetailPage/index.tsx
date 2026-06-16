@@ -227,7 +227,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
   const remove = useRemoveApplication();
   const aiGenerations = useAiGenerations();
 
-  const tab: DetailTab = Route.useSearch().tab ?? 'overview';
+  const tab: DetailTab = Route.useSearch().tab ?? DETAIL_TABS[0];
   const setTab = (next: DetailTab) =>
     void navigate({
       to: '/applications/$id',

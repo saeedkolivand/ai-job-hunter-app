@@ -632,7 +632,7 @@
         "portLabel": "Port",
         "portUnavailable": "Unavailable",
         "help": "Pair the AI Job Hunter browser extension to send jobs straight from any job board into your tracker.",
-        "notPublished": "Available for Chrome now — Firefox coming soon.",
+        "notPublished": "Available for Chrome and Firefox.",
         "regenerate": "Regenerate token",
         "regenerated": "Pairing token regenerated. Re-pair your browser to reconnect.",
         "regenerateFailed": "Could not regenerate the token.",
@@ -2178,7 +2178,7 @@
       "title": "Install the browser extension",
       "subtitle": "Import jobs straight from any board with one click. Install the extension, then pair it in Settings.",
       "addToChrome": "Add to Chrome",
-      "firefoxSoon": "Firefox — coming soon",
+      "addToFirefox": "Add to Firefox",
       "pairHint": "After installing, pair it in Settings → Accounts.",
       "back": "Back",
       "next": "Continue"

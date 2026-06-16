@@ -266,6 +266,73 @@ fn app_meta(company: &str, title: &str) -> crate::applications::ApplicationMeta 
     }
 }
 
+fn sample_posting(url: &str, company: &str, title: &str) -> crate::scraping::types::JobPosting {
+    crate::scraping::types::JobPosting {
+        id: "p1".into(),
+        external_id: None,
+        title: title.into(),
+        company: company.into(),
+        location: None,
+        url: url.into(),
+        source: "linkedin".into(),
+        description: None,
+        requirements: None,
+        posted_at: None,
+        captured_at: 0,
+        extra: std::collections::HashMap::new(),
+    }
+}
+
+// ── import-isolation contract ──────────────────────────────────────────────────
+// `persist_import_application` is the WHOLE persistence side effect of an import.
+// It takes only the `ApplicationStore` (no `PostingsCache`), so an import can
+// never enter the Jobs/discovery feed — these lock that mapping + the Saved origin.
+
+/// An import persists exactly one Saved Application carrying the posting's
+/// company/title; the absence of a `PostingsCache` parameter is the structural
+/// guarantee that nothing lands in the Jobs feed.
+#[test]
+fn import_persists_one_saved_application_from_posting() {
+    let (_dir, store) = open_store();
+    let posting = sample_posting("https://acme.example/jobs/77", "Acme", "Staff Engineer");
+
+    let (id, status) =
+        super::persist_import_application(&store, "https://acme.example/jobs/77", &posting, None)
+            .unwrap();
+
+    assert_eq!(
+        status, "saved",
+        "an import with no applied flag stays saved"
+    );
+    let app = store.get(&id).unwrap();
+    assert_eq!(app.status, ApplicationStatus::Saved);
+    assert_eq!(app.company, "Acme");
+    assert_eq!(app.title, "Staff Engineer");
+    assert_eq!(
+        store.list().len(),
+        1,
+        "import creates exactly one Application"
+    );
+}
+
+/// `applied=Some(true)` from the extension advances the imported Application
+/// straight to `applied`.
+#[test]
+fn import_applied_flag_advances_status() {
+    let (_dir, store) = open_store();
+    let posting = sample_posting("https://acme.example/jobs/78", "Beta", "SRE");
+
+    let (_id, status) = super::persist_import_application(
+        &store,
+        "https://acme.example/jobs/78",
+        &posting,
+        Some(true),
+    )
+    .unwrap();
+
+    assert_eq!(status, "applied");
+}
+
 /// `applied=None` (or `applied=Some(false)`) with `ApplicationOrigin::Saved`
 /// must create ONE Application with status `saved` and no `applied_at`.
 #[test]

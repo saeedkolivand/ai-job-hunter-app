@@ -55,6 +55,7 @@ import { ExtensionStep } from './index';
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 const CHROME_URL = 'https://chromewebstore.google.com/detail/oaoekkgkhmgdfnpmfkpphgiikliaicll';
+const FIREFOX_URL = 'https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/';
 
 function renderStep(overrides: Partial<Parameters<typeof ExtensionStep>[0]> = {}) {
   const onNext = vi.fn();
@@ -85,13 +86,13 @@ describe('ExtensionStep — render', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders the Firefox button in a disabled state', () => {
+  it('renders the Add to Firefox button (enabled)', () => {
     renderStep();
     const firefoxBtn = screen.getByRole('button', {
-      name: 'onboarding.extension.firefoxSoon',
+      name: 'onboarding.extension.addToFirefox',
     });
     expect(firefoxBtn).toBeInTheDocument();
-    expect(firefoxBtn).toBeDisabled();
+    expect(firefoxBtn).toBeEnabled();
   });
 
   it('renders the next navigation button', () => {
@@ -110,6 +111,17 @@ describe('ExtensionStep — interaction', () => {
 
     expect(mutateAsyncSpy).toHaveBeenCalledTimes(1);
     expect(mutateAsyncSpy).toHaveBeenCalledWith(CHROME_URL);
+  });
+
+  it('clicking Add to Firefox calls openExternal mutation with the AMO URL', async () => {
+    mutateAsyncSpy.mockClear();
+    const user = userEvent.setup();
+    renderStep();
+
+    await user.click(screen.getByRole('button', { name: 'onboarding.extension.addToFirefox' }));
+
+    expect(mutateAsyncSpy).toHaveBeenCalledTimes(1);
+    expect(mutateAsyncSpy).toHaveBeenCalledWith(FIREFOX_URL);
   });
 
   it('clicking the next button calls onNext', async () => {

@@ -2,9 +2,10 @@
 //!
 //! Feature 2: the browser extension's "Save this job" button opens a WS to the
 //! desktop app and sends an [`import.request`](shared `extension-protocol.ts`)
-//! frame. The desktop scrapes/parses the posting, persists it the same way the
-//! in-app scrape path does (postings cache + [`crate::applications`] aggregate),
-//! and replies with `import.result`.
+//! frame. The desktop scrapes/parses the posting, creates a [`crate::applications`]
+//! aggregate from it (Application only — an import is a pursuit, not a discovery,
+//! so it does NOT enter the postings cache / Jobs feed), and replies with
+//! `import.result`.
 //!
 //! ## Security model (layered — see [`auth`])
 //! 1. **Loopback only** — the listener binds `127.0.0.1`; no LAN/remote reach.
@@ -475,9 +476,42 @@ fn result_reply(req_id: &str, outcome: AppResult<ImportOk>) -> String {
     .to_string()
 }
 
+/// Persist a parsed [`JobPosting`] from an import as a Saved Application and
+/// return `(application_id, status_id)`. This is the *entire* persistence side
+/// effect of an import: it touches the [`ApplicationStore`] only and has **no
+/// access to the `PostingsCache`**, so an import can never enter the
+/// Jobs/discovery feed. Split out of [`handle_import`] (which needs an
+/// `AppHandle` for event/notification plumbing) so the import → Application
+/// contract is unit-testable without a Tauri app — see `import_tests.rs`.
+fn persist_import_application(
+    store: &ApplicationStore,
+    normalized_url: &str,
+    posting: &crate::scraping::types::JobPosting,
+    applied: Option<bool>,
+) -> AppResult<(String, String)> {
+    let meta = ApplicationMeta {
+        company: posting.company.clone(),
+        title: posting.title.clone(),
+        ..Default::default()
+    };
+    let id = store.upsert_for_origin(
+        normalized_url,
+        &posting.source,
+        &meta,
+        ApplicationOrigin::Saved,
+        applied,
+    )?;
+    let status = store
+        .get(&id)
+        .map(|a| a.status.as_id().to_string())
+        .unwrap_or_else(|| "saved".to_string());
+    Ok((id, status))
+}
+
 /// Core import: parse the posting (Scan mode from provided HTML, else URL mode
-/// via the resolver), persist it into the postings cache + the Applications
-/// aggregate, emit the change event, and return the application id + status.
+/// via the resolver), upsert the Applications aggregate from it (Application
+/// only — not the postings cache), emit the change event, and return the
+/// application id + status.
 async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<ImportOk> {
     let url = payload
         .get("url")
@@ -524,36 +558,20 @@ async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<ImportOk> {
         }
     };
 
-    // Persist into the in-memory postings cache so the Jobs page shows it
-    // (mirrors commands::scrape's add). Best-effort.
-    if let Some(cache) = app.try_state::<Mutex<crate::postings::PostingsCache>>() {
-        if let Ok(item_json) = serde_json::to_value(&posting) {
-            cache.lock().add(item_json);
-        }
-    }
+    // An import is a deliberate pursuit, NOT a discovery: it creates only the
+    // status-bearing Application below. It is intentionally NOT added to the
+    // in-memory postings cache (the Jobs/discovery feed via
+    // `commands::scrape::scrape_list_postings`), so an imported job shows up
+    // under Applications only — never in the Jobs page. The Application carries
+    // the title/company the detail-page tailoring needs; the JD is re-resolved
+    // there if required.
 
     // Upsert the status-bearing Application (Saved origin → `saved` unless the
     // request flags it applied). Merges onto any existing row for this URL.
     let store = app
         .try_state::<ApplicationStore>()
         .ok_or_else(|| AppError::Config("applications store unavailable".to_string()))?;
-    let meta = ApplicationMeta {
-        company: posting.company.clone(),
-        title: posting.title.clone(),
-        ..Default::default()
-    };
-    let id = store.upsert_for_origin(
-        &normalized,
-        &posting.source,
-        &meta,
-        ApplicationOrigin::Saved,
-        applied,
-    )?;
-
-    let status = store
-        .get(&id)
-        .map(|a| a.status.as_id().to_string())
-        .unwrap_or_else(|| "saved".to_string());
+    let (id, status) = persist_import_application(store.inner(), &normalized, &posting, applied)?;
 
     // Tell the renderer to refresh (Applications + Jobs views) and surface a
     // live toast. Carry the title/company/status so the toast can name the job

@@ -602,7 +602,7 @@
         "portLabel": "Port",
         "portUnavailable": "Nicht verfügbar",
         "help": "Koppeln Sie die AI-Job-Hunter-Browser-Erweiterung, um Jobs direkt aus jeder Jobbörse in Ihre Verwaltung zu senden.",
-        "notPublished": "Jetzt für Chrome verfügbar — Firefox folgt in Kürze.",
+        "notPublished": "Jetzt für Chrome und Firefox verfügbar.",
         "regenerate": "Token neu generieren",
         "regenerated": "Kopplungs-Token neu generiert. Koppeln Sie Ihren Browser erneut, um die Verbindung wiederherzustellen.",
         "regenerateFailed": "Token konnte nicht neu generiert werden.",
@@ -2148,7 +2148,7 @@
       "title": "Browser-Erweiterung installieren",
       "subtitle": "Importieren Sie Jobs mit einem Klick direkt von jeder Jobbörse. Installieren Sie die Erweiterung und koppeln Sie sie anschließend in den Einstellungen.",
       "addToChrome": "Zu Chrome hinzufügen",
-      "firefoxSoon": "Firefox — folgt in Kürze",
+      "addToFirefox": "Zu Firefox hinzufügen",
       "pairHint": "Koppeln Sie die Erweiterung nach der Installation unter Einstellungen → Konten.",
       "back": "Zurück",
       "next": "Weiter"

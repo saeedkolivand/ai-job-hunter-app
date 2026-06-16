@@ -10,6 +10,8 @@ import { OnboardingStepWrapper } from '../../components/OnboardingStepWrapper';
 
 const CHROME_WEB_STORE_URL =
   'https://chromewebstore.google.com/detail/oaoekkgkhmgdfnpmfkpphgiikliaicll';
+const FIREFOX_AMO_URL =
+  'https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/';
 
 interface Props {
   onBack?: () => void;
@@ -21,8 +23,8 @@ interface Props {
 
 /**
  * Optional onboarding step: surface the browser extension so users can import
- * jobs straight from any board. Chrome is live; Firefox is coming soon. The
- * step is never required to advance.
+ * jobs straight from any board. Chrome and Firefox are both live. The step is
+ * never required to advance.
  */
 export function ExtensionStep({ onBack, onNext, direction, stepIndex, totalSteps }: Props) {
   const { t } = useTranslation();
@@ -66,8 +68,12 @@ export function ExtensionStep({ onBack, onNext, direction, stepIndex, totalSteps
         >
           {t('onboarding.extension.addToChrome')}
         </Button>
-        <Button variant="default" disabled className="w-full justify-center">
-          {t('onboarding.extension.firefoxSoon')}
+        <Button
+          variant="default"
+          onClick={() => void openExternal.mutateAsync(FIREFOX_AMO_URL)}
+          className="w-full justify-center"
+        >
+          {t('onboarding.extension.addToFirefox')}
         </Button>
         <p className="text-[10px] text-foreground/30">{t('onboarding.extension.pairHint')}</p>
       </motion.div>

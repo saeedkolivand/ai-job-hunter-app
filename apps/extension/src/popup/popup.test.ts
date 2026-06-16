@@ -8,7 +8,10 @@
  * are strictly required for the assertions here.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { browser } from '@wxt-dev/browser';
+
+import { looksLikeToken } from '../lib/storage';
 
 // vi.mock must come before the import that triggers the module side-effects.
 // popup.ts imports @wxt-dev/browser; stub it out so the module-level
@@ -49,13 +52,21 @@ function buildPopupDom(): void {
     <button id="btn-retry"></button>
     <button id="btn-open-app"></button>
     <button id="btn-open-settings"></button>
+    <button id="btn-help"></button>
+    <p id="help-popover" hidden></p>
   `;
 }
 
 buildPopupDom();
 
-// Dynamic import AFTER DOM + mocks are in place.
+// Dynamic import AFTER DOM + mocks are in place. The module wires its DOM event
+// listeners at load (wire()), so the behavioral tests below drive the controller
+// by dispatching real clicks on the wired buttons and asserting DOM state.
 const { resolveStatusResponse, resolveImportResponse } = await import('./popup');
+
+const sendMessageMock = vi.mocked(browser.runtime.sendMessage);
+const looksLikeTokenMock = vi.mocked(looksLikeToken);
+const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 // ── resolveStatusResponse ─────────────────────────────────────────────────────
 
@@ -136,5 +147,93 @@ describe('resolveImportResponse', () => {
     const { text, tone } = resolveImportResponse(res);
     expect(tone).toBe('ok');
     expect(text).toBe('Imported. Open AI Job Hunter → Applications to view it.');
+  });
+});
+
+// ── controller behavior (wired DOM) ───────────────────────────────────────────
+
+describe('help toggle (#btn-help)', () => {
+  it('toggles the popover open/closed and keeps aria-expanded in sync', () => {
+    const btn = byId<HTMLButtonElement>('btn-help');
+    const popover = byId<HTMLParagraphElement>('help-popover');
+    popover.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+
+    btn.click();
+    expect(popover.hidden).toBe(false);
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+
+    btn.click();
+    expect(popover.hidden).toBe(true);
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+  });
+});
+
+describe('savePairing (#btn-save-token)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  beforeEach(() => {
+    sendMessageMock.mockReset();
+    looksLikeTokenMock.mockReturnValue(true);
+    const btn = byId<HTMLButtonElement>('btn-save-token');
+    btn.disabled = false;
+    btn.textContent = 'Save & pair';
+    byId<HTMLInputElement>('token-input').value = 'a'.repeat(64);
+    byId<HTMLElement>('view-import').hidden = true;
+  });
+
+  it('confirms with "✓ Authorized" then flips to the import view on success', async () => {
+    vi.useFakeTimers();
+    try {
+      sendMessageMock.mockResolvedValueOnce({ ok: true, kind: 'token' }).mockResolvedValueOnce({
+        ok: true,
+        kind: 'status',
+        status: { phase: 'connected', port: 1, hasToken: true },
+      });
+
+      byId<HTMLButtonElement>('btn-save-token').click();
+      await vi.runAllTimersAsync();
+
+      expect(byId<HTMLButtonElement>('btn-save-token').textContent).toContain('Authorized');
+      expect(byId<HTMLElement>('view-import').hidden).toBe(false);
+    } finally {
+      // Restore real timers even if an assertion throws, so later tests don't
+      // inherit fake timers and flake.
+      vi.useRealTimers();
+    }
+  });
+
+  it('resets the button when the status refresh does not reach the connected view', async () => {
+    vi.useFakeTimers();
+    try {
+      sendMessageMock.mockResolvedValueOnce({ ok: true, kind: 'token' }).mockResolvedValueOnce({
+        ok: true,
+        kind: 'status',
+        status: { phase: 'app_not_running', port: null, hasToken: true },
+      });
+
+      byId<HTMLButtonElement>('btn-save-token').click();
+      await vi.runAllTimersAsync();
+
+      const btn = byId<HTMLButtonElement>('btn-save-token');
+      expect(btn.disabled).toBe(false);
+      expect(btn.textContent).toBe('Save & pair');
+      expect(byId<HTMLElement>('view-import').hidden).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('restores the actionable button when the pairing request rejects', async () => {
+    sendMessageMock.mockRejectedValueOnce(new Error('transport down'));
+
+    byId<HTMLButtonElement>('btn-save-token').click();
+    await flush();
+    await flush();
+
+    const btn = byId<HTMLButtonElement>('btn-save-token');
+    expect(btn.disabled).toBe(false);
+    expect(btn.textContent).toBe('Save & pair');
+    expect(byId<HTMLParagraphElement>('pair-msg').textContent).toMatch(/failed/i);
   });
 });
