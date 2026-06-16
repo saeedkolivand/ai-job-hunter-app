@@ -11,6 +11,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { browser } from '@wxt-dev/browser';
 
+import type { ConnectionStatus } from '../lib/messages';
 import { looksLikeToken } from '../lib/storage';
 
 // vi.mock must come before the import that triggers the module side-effects.
@@ -243,7 +244,7 @@ describe('header Retry visibility', () => {
   const statusListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
     | ((message: unknown) => void)
     | undefined;
-  const push = (phase: string) =>
+  const push = (phase: ConnectionStatus['phase']) =>
     statusListener?.({ ok: true, kind: 'status', status: { phase, port: null, hasToken: true } });
 
   it('is shown only in the app_not_running state', () => {
