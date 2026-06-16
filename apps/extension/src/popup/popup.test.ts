@@ -49,6 +49,8 @@ function buildPopupDom(): void {
     <button id="btn-retry"></button>
     <button id="btn-open-app"></button>
     <button id="btn-open-settings"></button>
+    <button id="btn-help"></button>
+    <p id="help-popover" hidden></p>
   `;
 }
 

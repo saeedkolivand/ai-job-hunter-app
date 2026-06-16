@@ -16,9 +16,29 @@
             <path d="M3 5 Q34 1 62 4 T117 4" />
           </svg>
         </h1>
-        <!-- role="status" already implies aria-live="polite"; no redundant attr. -->
-        <span id="status-pill" class="pill pill--searching" role="status"> ○ Connecting… </span>
+        <div class="status">
+          <!-- role="status" already implies aria-live="polite"; no redundant attr. -->
+          <span id="status-pill" class="pill pill--searching" role="status"> ○ Connecting… </span>
+          <button
+            id="btn-help"
+            class="help"
+            type="button"
+            aria-label="How this works"
+            aria-expanded="false"
+            aria-controls="help-popover"
+          >
+            ?
+          </button>
+        </div>
       </header>
+
+      <!-- Help popover: explains the local-only connection and what to do when the
+           app isn't running — the guidance the offline view used to spell out inline.
+           Toggled by #btn-help; hidden by default. -->
+      <p id="help-popover" class="help-popover" role="region" aria-label="How this works" hidden>
+        The extension talks to the desktop app only on your own computer (loopback). If the
+        status shows “App not running”, open AI Job Hunter and reopen this popup.
+      </p>
 
       <!-- Import view: shown when paired + connected. -->
       <section id="view-import" class="view" hidden>
@@ -59,7 +79,6 @@
       <!-- Empty state: the desktop app is not running. -->
       <section id="view-offline" class="view" hidden>
         <div class="empty">
-          <p class="empty__title">AI Job Hunter isn't running</p>
           <p class="empty__body">
             Open the desktop app, then reopen this popup. The extension only talks to the app on
             your own computer.
