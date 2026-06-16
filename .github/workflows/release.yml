@@ -823,16 +823,19 @@ jobs:
     name: 🌐 Update Landing Download Page
     # Pins the landing download page (landing/download.html) to the just-built
     # installer assets — the versioned .dmg/.exe/.AppImage URLs only resolve once
-    # the build has uploaded them, so this hangs off `build` exactly like the cask
-    # and update-manifest jobs (NOT the push-only release job, which runs before
-    # any build). Rewrites the marked block via scripts/sync-download-page.cjs and
-    # commits landing/download.html back to main.
+    # the build has uploaded them. It also commits landing/download.html back to
+    # main, so it must run AFTER update-cask (the other main-pushing job) — both
+    # did a bare `git push HEAD:main` in parallel and raced ("fetch first" reject).
+    # Serializing via needs makes cask push first, then this job checks out the
+    # updated main and pushes cleanly. generate-update-manifest is included so the
+    # whole release fan-out drains before the final landing push. Rewrites the
+    # marked block via scripts/sync-download-page.cjs and commits it back to main.
     #
     # NOTE: unlike the cask commit, this one deliberately omits `[skip ci]` — we
     # WANT the push to re-trigger pages.yml (it watches landing/**) so the live
     # site redeploys with the fresh links. The push-only `release` job also fires
     # but no-ops (a lone chore commit yields no semantic-release version bump).
-    needs: build
+    needs: [build, update-cask, generate-update-manifest]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # `git push` goes over the RELEASE_DEPLOY_KEY (SSH), not the GITHUB_TOKEN, so
