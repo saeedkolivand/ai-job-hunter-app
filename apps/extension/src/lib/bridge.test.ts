@@ -14,10 +14,25 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { browser } from '@wxt-dev/browser';
 
 import { EXTENSION_MESSAGE_TYPES } from '@ajh/shared';
 
 import { BridgeClient } from './bridge';
+
+// Default `connectNative` THROWS so the existing ws describe-blocks (which never
+// mock it) go straight to the ws probe — native is treated as "host unavailable
+// → fall back to ws". The native describe-block overrides this per-test.
+vi.mock('@wxt-dev/browser', () => ({
+  browser: {
+    runtime: {
+      connectNative: vi.fn(() => {
+        throw new Error('connectNative not available');
+      }),
+      lastError: undefined,
+    },
+  },
+}));
 
 // ── WebSocket fake ────────────────────────────────────────────────────────────
 
@@ -477,5 +492,177 @@ describe('BridgeClient – reconnect/backoff on close', () => {
 
     // No new probes — dispose prevented the reconnect.
     expect(createdCount).toBe(countBefore);
+  });
+});
+
+// ── native messaging transport ─────────────────────────────────────────────────
+
+type PortListener = (msg: unknown, port?: unknown) => void;
+
+interface FakePort {
+  postMessage: ReturnType<typeof vi.fn>;
+  disconnect: ReturnType<typeof vi.fn>;
+  onMessage: { addListener: (cb: PortListener) => void };
+  onDisconnect: { addListener: (cb: () => void) => void };
+  simulateMessage: (obj: unknown) => void;
+  simulateDisconnect: (lastError?: { message: string }) => void;
+}
+
+function buildFakePort(): FakePort {
+  const msgListeners: PortListener[] = [];
+  const discListeners: Array<() => void> = [];
+  return {
+    postMessage: vi.fn(),
+    disconnect: vi.fn(),
+    onMessage: { addListener: (cb: PortListener) => void msgListeners.push(cb) },
+    onDisconnect: { addListener: (cb: () => void) => void discListeners.push(cb) },
+    simulateMessage(obj: unknown) {
+      msgListeners.forEach((cb) => cb(obj));
+    },
+    simulateDisconnect(lastError?: { message: string }) {
+      (browser.runtime as { lastError?: unknown }).lastError = lastError;
+      discListeners.forEach((cb) => cb());
+    },
+  };
+}
+
+describe('BridgeClient – native messaging transport', () => {
+  const connectNativeMock = vi.mocked(browser.runtime.connectNative);
+  let createdSockets: FakeWebSocket[] = [];
+  let restoreWS: () => void;
+
+  beforeEach(() => {
+    createdSockets = [];
+    restoreWS = installFakeWS((ws) => createdSockets.push(ws));
+    (browser.runtime as { lastError?: unknown }).lastError = undefined;
+  });
+
+  afterEach(() => {
+    restoreWS();
+    connectNativeMock.mockReset();
+    // Restore the suite default (throw) for any later file.
+    connectNativeMock.mockImplementation(() => {
+      throw new Error('connectNative not available');
+    });
+    vi.useRealTimers();
+  });
+
+  it('connects native-first on bridge.ready{ok:true} and round-trips an import via the port', async () => {
+    const port = buildFakePort();
+    connectNativeMock.mockReturnValue(port as never);
+
+    const client = new BridgeClient(vi.fn());
+    const connectPromise = client.ensureConnected();
+    port.simulateMessage({ type: 'bridge.ready', ok: true });
+    await connectPromise;
+
+    expect(client.status().phase).toBe('connected');
+    expect(createdSockets).toHaveLength(0); // never touched ws
+
+    const importPromise = client.importJob(FAKE_TOKEN, makeImportRequest());
+    await vi.waitFor(() => {
+      expect(port.postMessage).toHaveBeenCalled();
+    });
+    const sent = port.postMessage.mock.calls[0]?.[0] as { reqId: string };
+    expect(sent.type).toBe(EXTENSION_MESSAGE_TYPES.importRequest);
+
+    // Reply arrives as a PARSED OBJECT (native auto-parses JSON), not a string.
+    port.simulateMessage({
+      type: EXTENSION_MESSAGE_TYPES.importResult,
+      token: FAKE_TOKEN,
+      reqId: sent.reqId,
+      payload: { applicationId: 'native-1', status: 'saved' },
+    });
+
+    const result = await importPromise;
+    expect(result).toEqual({ applicationId: 'native-1', status: 'saved' });
+
+    client.dispose();
+  });
+
+  it('enters app_not_running on bridge.ready{ok:false} with NO ws fallback', async () => {
+    vi.useFakeTimers();
+    const port = buildFakePort();
+    connectNativeMock.mockReturnValue(port as never);
+
+    const client = new BridgeClient(vi.fn());
+    const connectPromise = client.ensureConnected();
+    port.simulateMessage({ type: 'bridge.ready', ok: false });
+    await connectPromise;
+
+    expect(port.disconnect).toHaveBeenCalled(); // ok:false closes the native port
+    expect(client.status().phase).toBe('app_not_running');
+    expect(createdSockets).toHaveLength(0); // app down ≠ fall back to ws
+
+    // Reconnect scheduled — advance past backoff[0]=500ms; it re-tries native.
+    const callsBefore = connectNativeMock.mock.calls.length;
+    vi.advanceTimersByTime(600);
+    expect(connectNativeMock.mock.calls.length).toBeGreaterThan(callsBefore);
+
+    client.dispose();
+  });
+
+  it('falls back to the ws probe when connectNative throws', async () => {
+    connectNativeMock.mockImplementation(() => {
+      throw new Error('host not registered');
+    });
+
+    const client = new BridgeClient(vi.fn());
+    const connectPromise = client.ensureConnected();
+
+    await vi.waitFor(() => {
+      expect(createdSockets.length).toBeGreaterThanOrEqual(1);
+    });
+    expect(createdSockets[0]!.url).toBe('ws://127.0.0.1:47615');
+    createdSockets[0]!.simulateOpen();
+    await connectPromise;
+
+    expect(client.status()).toMatchObject({ phase: 'connected', port: 47615 });
+
+    client.dispose();
+  });
+
+  it('falls back to ws when the port disconnects (lastError) before any bridge.ready', async () => {
+    const port = buildFakePort();
+    connectNativeMock.mockReturnValue(port as never);
+
+    const client = new BridgeClient(vi.fn());
+    const connectPromise = client.ensureConnected();
+
+    // Host not registered: onDisconnect fires with lastError, before any ready.
+    port.simulateDisconnect({ message: 'Native host has exited.' });
+
+    await vi.waitFor(() => {
+      expect(createdSockets.length).toBeGreaterThanOrEqual(1);
+    });
+    createdSockets[0]!.simulateOpen();
+    await connectPromise;
+
+    expect(client.status()).toMatchObject({ phase: 'connected', port: 47615 });
+
+    client.dispose();
+  });
+
+  it('falls back to ws when no bridge.ready arrives within the ready timeout', async () => {
+    vi.useFakeTimers();
+    const port = buildFakePort();
+    connectNativeMock.mockReturnValue(port as never);
+
+    const client = new BridgeClient(vi.fn());
+    const connectPromise = client.ensureConnected();
+
+    // No ready frame — advance past READY_TIMEOUT_MS (1500ms) → fall back.
+    await vi.advanceTimersByTimeAsync(1_600);
+
+    await vi.waitFor(() => {
+      expect(createdSockets.length).toBeGreaterThanOrEqual(1);
+    });
+    createdSockets[0]!.simulateOpen();
+    await connectPromise;
+
+    expect(port.disconnect).toHaveBeenCalled(); // timeout closes the native port
+    expect(client.status()).toMatchObject({ phase: 'connected', port: 47615 });
+
+    client.dispose();
   });
 });

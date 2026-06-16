@@ -1,10 +1,19 @@
 /**
- * Loopback WebSocket client to the desktop bridge.
+ * Client to the desktop bridge, native-messaging first with a `ws` fallback.
  *
- * The desktop binds `127.0.0.1` on the first free port in the range below
- * (see `apps/tauri/src-tauri/src/extension_bridge/mod.rs::PORT_RANGE`). We probe
- * that exact range, hold a SINGLE socket, send `import.request` envelopes
- * (token on every frame), and correlate replies by `reqId`.
+ * Two transports behind one {@link BridgeTransport} seam:
+ *
+ * 1. **Native messaging** (preferred). The browser spawns the desktop exe as a
+ *    native host (`app.aijobhunter.bridge`) which relays stdio ↔ the running
+ *    app's loopback bridge. Survives Firefox HTTPS-Only Mode (which upgrades the
+ *    extension's `ws://127.0.0.1` to `wss://` and breaks the socket path).
+ * 2. **WebSocket** (fallback). The desktop binds `127.0.0.1` on the first free
+ *    port in the range below (see
+ *    `apps/tauri/src-tauri/src/extension_bridge/mod.rs::PORT_RANGE`). Used when
+ *    the native host isn't registered (old/never-installed app).
+ *
+ * Either way we hold a SINGLE transport, send `import.request` envelopes (token
+ * on every frame), and correlate replies by `reqId`.
  *
  * Lifecycle note (MV3): the background service worker can be evicted at any
  * time, tearing down this client. The background entry re-creates it on wake
@@ -12,6 +21,8 @@
  * keeps no cross-eviction state beyond the in-flight `reqId` map (which dies
  * with the worker — callers re-issue on the fresh instance).
  */
+
+import { type Browser, browser } from '@wxt-dev/browser';
 
 import {
   EXTENSION_MESSAGE_TYPES,
@@ -24,6 +35,9 @@ import {
 const PORT_START = 47615;
 const PORT_END = 47620;
 
+/** Native host name — MUST match the Rust `extension_bridge::mod::NATIVE_HOST_NAME`. */
+const HOST_NAME = 'app.aijobhunter.bridge';
+
 /** Per-request timeout (ms) — the desktop fetch+parse for URL mode can be slow. */
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -32,6 +46,9 @@ const BACKOFF_MS = [500, 1_000, 2_000, 5_000, 10_000];
 
 /** WS handshake/open timeout per port probe. */
 const OPEN_TIMEOUT_MS = 1_500;
+
+/** How long to wait for the native host's `bridge.ready` before falling back to ws. */
+const READY_TIMEOUT_MS = 1_500;
 
 type PendingResolver = (result: ExtensionImportResult) => void;
 
@@ -68,8 +85,147 @@ function isExtensionImportResult(v: unknown): v is ExtensionImportResult {
   );
 }
 
+// ── transport seam ──────────────────────────────────────────────────────────
+
+/**
+ * One open connection to the desktop bridge. `onMessage` delivers a PARSED
+ * object — ws JSON.parses the string frame, native messaging already auto-parses
+ * the JSON for us.
+ */
+interface BridgeTransport {
+  send(envelope: ExtensionEnvelope): void;
+  onMessage(cb: (env: unknown) => void): void;
+  onClose(cb: () => void): void;
+  close(): void;
+}
+
+class WebSocketTransport implements BridgeTransport {
+  constructor(private readonly socket: WebSocket) {}
+
+  send(envelope: ExtensionEnvelope): void {
+    this.socket.send(JSON.stringify(envelope));
+  }
+
+  onMessage(cb: (env: unknown) => void): void {
+    this.socket.addEventListener('message', (ev: MessageEvent) => {
+      if (typeof ev.data !== 'string') return;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+      cb(parsed);
+    });
+  }
+
+  onClose(cb: () => void): void {
+    this.socket.addEventListener('close', cb);
+    // `close` fires after `error`; cleanup happens there. No error handler needed.
+  }
+
+  close(): void {
+    this.socket.close();
+  }
+}
+
+/** Distinguishable native-connect failures (see {@link connectNative}). */
+const NATIVE_UNAVAILABLE = 'native_unavailable'; // host not registered → fall back to ws
+const NATIVE_APP_DOWN = 'native_app_down'; // host ran, app is down → app_not_running, no ws
+
+class NativeMessagingTransport implements BridgeTransport {
+  constructor(private readonly port: Browser.runtime.Port) {}
+
+  send(envelope: ExtensionEnvelope): void {
+    this.port.postMessage(envelope);
+  }
+
+  onMessage(cb: (env: unknown) => void): void {
+    this.port.onMessage.addListener((msg: unknown) => {
+      // `bridge.ready` is transport-local; never forward it to result correlation.
+      if (isBridgeReady(msg)) {
+        // ok:false after connect = the app's bridge went away → behave like close.
+        if (!msg.ok) this.close();
+        return;
+      }
+      cb(msg);
+    });
+  }
+
+  onClose(cb: () => void): void {
+    this.port.onDisconnect.addListener(cb);
+  }
+
+  close(): void {
+    this.port.disconnect();
+  }
+}
+
+interface BridgeReady {
+  type: 'bridge.ready';
+  ok: boolean;
+}
+
+function isBridgeReady(msg: unknown): msg is BridgeReady {
+  return (
+    typeof msg === 'object' &&
+    msg !== null &&
+    (msg as { type?: unknown }).type === 'bridge.ready' &&
+    typeof (msg as { ok?: unknown }).ok === 'boolean'
+  );
+}
+
+/**
+ * Connect via native messaging, resolving only after `bridge.ready{ok:true}`.
+ * Rejects with {@link NATIVE_APP_DOWN} on `ok:false` (host reachable, app down)
+ * or {@link NATIVE_UNAVAILABLE} on pre-ready disconnect / ready-timeout (host not
+ * registered → caller falls back to ws). THROWS SYNCHRONOUSLY if `connectNative`
+ * itself fails so the caller can start the ws probe in the same tick (the ws
+ * reconnect test asserts the probe fires synchronously after the timer).
+ */
+function connectNative(): Promise<NativeMessagingTransport> {
+  const port: Browser.runtime.Port = browser.runtime.connectNative(HOST_NAME);
+
+  return new Promise<NativeMessagingTransport>((resolve, reject) => {
+    let settled = false;
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    // Pre-attach failures must close the native Port; otherwise the browser keeps
+    // the spawned host process alive across reconnect-backoff attempts.
+    const rejectWith = (reason: string, disconnect: boolean): void => {
+      finish(() => {
+        if (disconnect) {
+          try {
+            port.disconnect();
+          } catch {
+            /* already closed */
+          }
+        }
+        reject(new Error(reason));
+      });
+    };
+
+    const timer = setTimeout(() => rejectWith(NATIVE_UNAVAILABLE, true), READY_TIMEOUT_MS);
+
+    port.onMessage.addListener((msg: unknown) => {
+      if (!isBridgeReady(msg)) return; // ignore stray frames before ready
+      if (msg.ok) finish(() => resolve(new NativeMessagingTransport(port)));
+      else rejectWith(NATIVE_APP_DOWN, true);
+    });
+    port.onDisconnect.addListener(() => {
+      // Disconnect before ready = host not registered (lastError set); the port
+      // already fired disconnect, so do NOT call disconnect() again here.
+      rejectWith(NATIVE_UNAVAILABLE, false);
+    });
+  });
+}
+
 export class BridgeClient {
-  private socket: WebSocket | null = null;
+  private transport: BridgeTransport | null = null;
   private port: number | null = null;
   private phase: BridgePhase = 'searching';
   private readonly pending = new Map<string, PendingResolver>();
@@ -86,22 +242,52 @@ export class BridgeClient {
     return { phase: this.phase, port: this.port };
   }
 
-  /** Whether an authenticated socket is currently open. */
+  /** Whether a transport is currently live. */
   isOpen(): boolean {
-    return this.socket?.readyState === WebSocket.OPEN;
+    return this.transport !== null;
   }
 
   /**
-   * Ensure a connection: if already open, no-op; otherwise probe the range.
+   * Ensure a connection: if already open, no-op; otherwise try native then ws.
    * Safe to call repeatedly (popup-open wake, reconnect button).
    */
   async ensureConnected(): Promise<void> {
     if (this.disposed || this.isOpen() || this.connecting) return;
     this.connecting = true;
     try {
+      this.setPhase('searching');
+      // Native first. ponytail: serial single-in-flight is fine — the popup
+      // imports one job at a time, matching the Rust host's serial relay.
+      // `connectNative()` THROWS SYNCHRONOUSLY when the host isn't registered, so
+      // building the readiness promise is separated from awaiting it — that keeps
+      // the ws fallback probe firing in the SAME tick (no microtask hop) when
+      // native is unavailable, which the ws reconnect test relies on.
+      let readyPromise: Promise<NativeMessagingTransport> | null = null;
+      try {
+        readyPromise = connectNative();
+      } catch {
+        readyPromise = null; // host not registered → straight to ws, same tick.
+      }
+      if (readyPromise) {
+        try {
+          const native = await readyPromise;
+          this.port = null; // native has no port number; diagnostics only.
+          this.attach(native);
+          return;
+        } catch (err) {
+          if (err instanceof Error && err.message === NATIVE_APP_DOWN) {
+            // Host reachable, app down — do NOT fall back to ws.
+            this.setPhase('app_not_running');
+            this.scheduleReconnect();
+            return;
+          }
+          // NATIVE_UNAVAILABLE → fall through to the ws probe.
+        }
+      }
+
       const socket = await this.probeRange();
       if (socket) {
-        this.attach(socket);
+        this.attach(new WebSocketTransport(socket));
       } else {
         this.setPhase('app_not_running');
         this.scheduleReconnect();
@@ -111,15 +297,15 @@ export class BridgeClient {
     }
   }
 
-  /** Tear down the socket and cancel timers (worker shutdown / manual reset). */
+  /** Tear down the transport and cancel timers (worker shutdown / manual reset). */
   dispose(): void {
     this.disposed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     for (const t of this.timers.values()) clearTimeout(t);
     this.timers.clear();
     this.pending.clear();
-    this.socket?.close();
-    this.socket = null;
+    this.transport?.close();
+    this.transport = null;
   }
 
   /**
@@ -128,8 +314,8 @@ export class BridgeClient {
    */
   async importJob(token: string, payload: ExtensionImportRequest): Promise<ExtensionImportResult> {
     await this.ensureConnected();
-    const socket = this.socket;
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
+    const transport = this.transport;
+    if (!transport) {
       throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
     }
 
@@ -151,7 +337,7 @@ export class BridgeClient {
       this.pending.set(reqId, resolve);
 
       try {
-        socket.send(JSON.stringify(envelope));
+        transport.send(envelope);
       } catch (err) {
         clearTimeout(timer);
         this.timers.delete(reqId);
@@ -224,37 +410,25 @@ export class BridgeClient {
     });
   }
 
-  /** Wire an opened socket: register handlers and reset backoff. */
-  private attach(socket: WebSocket): void {
-    this.socket = socket;
+  /** Wire an opened transport: register handlers and reset backoff. */
+  private attach(transport: BridgeTransport): void {
+    this.transport = transport;
     this.backoffIndex = 0;
     this.setPhase('connected');
 
-    socket.addEventListener('message', (ev: MessageEvent) => {
-      this.onMessage(typeof ev.data === 'string' ? ev.data : '');
-    });
-    socket.addEventListener('close', () => {
-      this.socket = null;
+    transport.onMessage((env) => this.onMessage(env));
+    transport.onClose(() => {
+      this.transport = null;
       this.failAllPending('Connection to the desktop app closed.');
       if (!this.disposed) {
         this.setPhase('app_not_running');
         this.scheduleReconnect();
       }
     });
-    socket.addEventListener('error', () => {
-      // `close` fires after `error`; cleanup happens there.
-    });
   }
 
-  /** Parse a reply envelope, match `reqId`, validate payload, resolve caller. */
-  private onMessage(raw: string): void {
-    if (!raw) return;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return;
-    }
+  /** Match a parsed reply envelope by `reqId`, validate payload, resolve caller. */
+  private onMessage(parsed: unknown): void {
     if (typeof parsed !== 'object' || parsed === null) return;
     const env = parsed as Partial<ExtensionEnvelope>;
     if (env.type !== EXTENSION_MESSAGE_TYPES.importResult) return;

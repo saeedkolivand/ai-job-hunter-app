@@ -28,6 +28,16 @@ pub const ALLOWED_EXTENSION_IDS: &[&str] = &[
     "oaoekkgkhmgdfnpmfkpphgiikliaicll",
 ];
 
+/// Sentinel `Origin` the native-messaging host
+/// ([`super::native_host`]) sends when it relays the browser's frames to this
+/// loopback bridge. The host is our OWN native process (spawned by the browser,
+/// our exe in `--native-host` mode) bridging stdio → `ws://127.0.0.1`, so it has
+/// no `chrome-extension://`/`moz-extension://` origin of its own. Accepting this
+/// sentinel is defense-in-depth only: the real boundary stays the per-frame
+/// 256-bit pairing token over the loopback-only listener, which the host relays
+/// through unchanged.
+pub const NATIVE_HOST_ORIGIN: &str = "ajh-native-host";
+
 /// Whether a handshake `Origin` is an allowed extension origin.
 ///
 /// This check is **defense-in-depth, not the primary boundary**. The real
@@ -58,15 +68,33 @@ pub fn is_allowed_origin(origin: &str, dev_origins: &[String]) -> bool {
     if dev_origins.iter().any(|d| d == origin) {
         return true;
     }
+    // Firefox: a WebSocket/fetch initiated from an extension BACKGROUND script
+    // sends `Origin: null` — Firefox deliberately strips the `moz-extension://`
+    // UUID rather than leak it (Bugzilla 1607936 / 1257989). So the real Firefox
+    // bridge handshake arrives as `null`, NOT `moz-extension://<uuid>`. Accept
+    // it: the origin gate is defense-in-depth only — the actual boundary is the
+    // per-frame 256-bit pairing token over a loopback-only (`127.0.0.1`)
+    // listener, which a null-origin page cannot satisfy without the token the
+    // user copied from the app's Settings.
+    if origin == "null" {
+        return true;
+    }
+    // Native-messaging host (our own native process relaying to the loopback
+    // bridge — see `NATIVE_HOST_ORIGIN`). Exact match only; the per-frame token +
+    // loopback binding remain the real boundary.
+    if origin == NATIVE_HOST_ORIGIN {
+        return true;
+    }
     // Chrome: scheme + known store id. An origin is just scheme + host, so a
     // clean id has no slash (reject a trailing path / extra segment).
     if let Some(id) = origin.strip_prefix("chrome-extension://") {
         return !id.contains('/') && ALLOWED_EXTENSION_IDS.contains(&id);
     }
-    // Firefox: scheme + per-install internal UUID. The id is random per profile
-    // and unknowable in advance, so accept any well-formed UUID host (again, no
-    // trailing path). `is_extension_uuid` already rejects anything containing a
-    // slash, since a slash is not a hex/dash UUID char.
+    // Firefox, non-background contexts (e.g. a content/popup-initiated socket):
+    // `moz-extension://<uuid>`. The id is random per profile and unknowable in
+    // advance, so accept any well-formed UUID host (no trailing path —
+    // `is_extension_uuid` rejects a slash, which is not a hex/dash char). The
+    // common background path is handled by the `null` case above.
     if let Some(host) = origin.strip_prefix("moz-extension://") {
         return is_extension_uuid(host);
     }
@@ -144,6 +172,45 @@ mod tests {
     fn allows_well_formed_firefox_uuid() {
         let origin = format!("moz-extension://{FIREFOX_UUID}");
         assert!(is_allowed_origin(&origin, &[]));
+    }
+
+    #[test]
+    fn allows_firefox_null_origin() {
+        // Firefox sends `Origin: null` for a WebSocket initiated from an
+        // extension background script — it strips the moz-extension UUID rather
+        // than leak it (Bugzilla 1607936 / 1257989). This is the REAL Firefox
+        // bridge handshake (NOT `moz-extension://<uuid>`). The origin gate is
+        // defense-in-depth only; the per-frame 256-bit pairing token over a
+        // loopback-only listener is the actual boundary.
+        assert!(is_allowed_origin("null", &[]));
+        // Leading/trailing whitespace is trimmed before the check.
+        assert!(is_allowed_origin("  null  ", &[]));
+    }
+
+    #[test]
+    fn rejects_origins_that_merely_contain_null() {
+        // Only the exact `null` token is accepted — not arbitrary strings that
+        // happen to contain it.
+        assert!(!is_allowed_origin("nullish", &[]));
+        assert!(!is_allowed_origin("https://null.example.com", &[]));
+    }
+
+    #[test]
+    fn allows_native_host_sentinel_origin() {
+        // Our native-messaging host relays to the loopback bridge with this
+        // sentinel Origin (it has no extension origin of its own). Accepted
+        // (defense-in-depth); the per-frame token is the real boundary.
+        assert!(is_allowed_origin(NATIVE_HOST_ORIGIN, &[]));
+        assert!(is_allowed_origin("ajh-native-host", &[]));
+        // Leading/trailing whitespace is trimmed before the check.
+        assert!(is_allowed_origin("  ajh-native-host  ", &[]));
+    }
+
+    #[test]
+    fn rejects_origins_that_merely_contain_native_sentinel() {
+        // Only the exact sentinel is accepted — not strings that contain it.
+        assert!(!is_allowed_origin("ajh-native-host.evil.com", &[]));
+        assert!(!is_allowed_origin("xajh-native-host", &[]));
     }
 
     #[test]
