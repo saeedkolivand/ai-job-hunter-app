@@ -52,6 +52,7 @@ const migratePreferences = (state: Record<string, unknown>, version: number): Pr
 
 // Default preferences
 const defaultPreferences: Preferences = {
+  userName: '',
   version: 1,
   language: 'en',
   outputTone: 'professional',
