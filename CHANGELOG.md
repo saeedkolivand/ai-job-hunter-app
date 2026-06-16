@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.104.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.104.0...v0.104.1) (2026-06-16)
+
+### 🐛 Bug Fixes
+
+* download page button seam + serialize release main pushes ([#384](https://github.com/saeedkolivand/ai-job-hunter-app/issues/384)) ([3f8227f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/3f8227fe10099896e3db8cc885b691afb947800a))
+
 ## [0.104.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.103.0...v0.104.0) (2026-06-16)
 
 ### ✨ Features
