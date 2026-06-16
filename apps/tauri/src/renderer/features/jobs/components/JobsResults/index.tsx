@@ -24,7 +24,9 @@ interface JobsResultsProps {
  *
  * Gating: results stay hidden behind a loading state while a scrape is running
  * OR (when a résumé exists) while the match-score batch is in flight. The list
- * is revealed only once scraping has finished AND every score is ready.
+ * is revealed once scraping has finished AND either every score is ready OR the
+ * scoring query has errored out (error escape hatch — shows unscored results
+ * rather than hanging on an infinite spinner).
  *
  * On reveal (résumé present), rows are re-sorted by `combined` score descending;
  * rows without a score sink to the bottom. `Array.sort` is stable, so ties keep
@@ -39,9 +41,9 @@ export function JobsResults({
   onScrape,
 }: JobsResultsProps) {
   const { t } = useTranslation();
-  const { getScore, isPending, hasResume } = useMatchScores();
+  const { getScore, isPending, hasResume, isError } = useMatchScores();
 
-  const waiting = scraping || (hasResume && isPending);
+  const waiting = scraping || (hasResume && isPending && !isError);
 
   // Re-sort by score on reveal. When the query data updates, the provider's
   // memoized `scoresById` Map changes identity, flowing a new `getScore` closure

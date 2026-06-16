@@ -26,9 +26,10 @@ vi.mock('@ajh/translations', () => ({
 
 // ── useJobMatchScores stub — module-level ref set BEFORE each render ───────────
 
-let stubbedQuery: { scoresById: Map<string, MatchScore>; isPending: boolean } = {
+let stubbedQuery: { scoresById: Map<string, MatchScore>; isPending: boolean; isError: boolean } = {
   scoresById: new Map(),
   isPending: false,
+  isError: false,
 };
 
 vi.mock('@/services', () => ({
@@ -103,10 +104,12 @@ function renderResults(opts: {
   resumeId?: string | null;
   scoresById?: Map<string, MatchScore>;
   isPending?: boolean;
+  isError?: boolean;
 }) {
   stubbedQuery = {
     scoresById: opts.scoresById ?? new Map(),
     isPending: opts.isPending ?? false,
+    isError: opts.isError ?? false,
   };
   const resumeId = 'resumeId' in opts ? (opts.resumeId ?? null) : RESUME_ID;
   const jobIds = opts.filtered.map((p) => p.id);
@@ -136,7 +139,7 @@ function rowOrder(): string[] {
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  stubbedQuery = { scoresById: new Map(), isPending: false };
+  stubbedQuery = { scoresById: new Map(), isPending: false, isError: false };
 });
 
 describe('JobsResults — gating', () => {
@@ -157,6 +160,20 @@ describe('JobsResults — gating', () => {
 
     expect(screen.getByText('jobs.scoring')).toBeInTheDocument();
     expect(screen.queryByTestId('posting-row')).not.toBeInTheDocument();
+  });
+
+  it('reveals results (escape hatch) when scoring errors even while the batch is still pending', () => {
+    // isError=true collapses waiting=false regardless of isPending=true,
+    // so the gate opens and unscored rows reveal in input order.
+    renderResults({
+      filtered: [posting('x', 'X'), posting('y', 'Y')],
+      isPending: true,
+      isError: true,
+    });
+
+    expect(screen.queryByText('jobs.scoring')).not.toBeInTheDocument();
+    expect(screen.queryByText('jobs.searching')).not.toBeInTheDocument();
+    expect(rowOrder()).toEqual(['x', 'y']);
   });
 });
 

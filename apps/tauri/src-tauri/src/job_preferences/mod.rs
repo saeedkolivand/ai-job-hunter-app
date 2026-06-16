@@ -69,7 +69,7 @@ impl JobPreferencesStore {
                     );
                     INSERT INTO job_preferences_new (id, location, tech_stack)
                         SELECT id, location, tech_stack FROM job_preferences;
-                    DROP TABLE job_preferences;
+                    DROP TABLE IF EXISTS job_preferences;
                     ALTER TABLE job_preferences_new RENAME TO job_preferences;
                     INSERT OR IGNORE INTO job_preferences (id) VALUES (1);",
                 )?;
