@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.104.3](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.104.2...v0.104.3) (2026-06-16)
+
+### 🎨 UI/UX
+
+* slim the extension offline state and move retry to a header icon ([#386](https://github.com/saeedkolivand/ai-job-hunter-app/issues/386)) ([b56349c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b56349c0e6e71bb8fe95984679e2ec251db260ee))
+
 ## [0.104.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.104.1...v0.104.2) (2026-06-16)
 
 ### 🐛 Bug Fixes
