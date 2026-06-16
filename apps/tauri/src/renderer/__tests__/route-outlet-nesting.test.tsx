@@ -186,8 +186,17 @@ vi.mock('@/services', async (importOriginal) => {
     }),
     useAutopilots: () => ({ data: [], isLoading: false }),
     useInvalidateAutopilots: () => vi.fn(),
+    // Documents tab is now the default landing tab, so its hooks load on a plain
+    // /applications/$id mount — stub them so the panel renders without a client.
+    useDocuments: () => ({ data: [], isLoading: false }),
+    useDocumentText: () => ({ data: '', isLoading: false }),
   };
 });
+
+// useDefaultResumeId reads useDocuments internally; stub it for the same reason.
+vi.mock('@/features/jobs/hooks/useDefaultResumeId', () => ({
+  useDefaultResumeId: () => null,
+}));
 
 vi.mock('@/services/use-ai-generations', () => ({
   useAiGenerations: () => ({ data: [] }),
@@ -343,12 +352,13 @@ describe('Route Outlet nesting — regression guard', () => {
   /**
    * Case 4: /applications/abc?tab=GARBAGE exercises the REAL validateSearch on
    * the $id route. Unknown tab values are coerced to undefined by validateSearch;
-   * ApplicationDetailPage then defaults to 'overview' via `?? 'overview'`.
+   * ApplicationDetailPage then defaults to the first tab via `?? DETAIL_TABS[0]`
+   * (currently `documents`).
    *
    * This test is the only one that exercises the real validateSearch coercion —
    * unit tests mock the router and cannot reach it.
    */
-  it('navigating to /applications/$id?tab=GARBAGE coerces to the overview tab via validateSearch', async () => {
+  it('navigating to /applications/$id?tab=GARBAGE coerces to the default (first) tab via validateSearch', async () => {
     // Build a route tree identical to renderAt but with the real validateSearch
     // wired onto the $id route so the coercion path is live.
     const validateSearch = (
@@ -388,17 +398,17 @@ describe('Route Outlet nesting — regression guard', () => {
 
     render(<RouterProvider router={router} />);
 
-    // ApplicationDetailPage should mount and default to the overview tab.
+    // ApplicationDetailPage should mount and default to the first tab (documents).
     await waitFor(() => {
       expect(screen.getByText('applications.detail.back')).toBeInTheDocument();
     });
 
-    // The overview tab button must be the active one (aria-selected="true").
+    // The first tab (documents) must be the active one (aria-selected="true").
     // t() returns keys so the tab label is the i18n key literal.
-    const overviewTab = screen.getByRole('tab', {
-      name: /applications\.detail\.tabs\.overview/i,
+    const defaultTab = screen.getByRole('tab', {
+      name: /applications\.detail\.tabs\.documents/i,
     });
-    expect(overviewTab).toHaveAttribute('aria-selected', 'true');
+    expect(defaultTab).toHaveAttribute('aria-selected', 'true');
 
     // Sanity: the list page must not have rendered.
     expect(screen.queryByTestId('application-row')).not.toBeInTheDocument();
