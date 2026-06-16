@@ -313,9 +313,10 @@ fn open_external(app: &AppHandle, url: &str) {
 ///
 /// The BROWSER controls argv, so we detect by what browsers actually pass:
 /// - Firefox: `[exe, <manifest_path>, <extension_id>]` — an arg is the
-///   host-manifest path, which *contains* the host name. On Windows that path
-///   carries a `.firefox`/`.chrome` infix before `.json`, so we match on the
-///   host name being present rather than the filename ending exactly.
+///   host-manifest path. Its final component starts with the host name and ends
+///   with `.json`; on Windows that filename carries a `.firefox`/`.chrome` infix
+///   (`app.aijobhunter.bridge.firefox.json`), so we match the filename shape
+///   rather than an exact `…bridge.json` suffix (see [`is_host_manifest_arg`]).
 /// - Chrome: `[exe, chrome-extension://<id>/, (--parent-window=<hwnd> on Win)]` —
 ///   an arg starts with `chrome-extension://`.
 ///
@@ -332,16 +333,24 @@ pub fn run_native_host_if_invoked() -> bool {
 /// True iff `args` (the process args AFTER argv[0]) look like a browser
 /// native-messaging launch of our stdio host. Browsers pass:
 /// - Chrome: `chrome-extension://<id>/` (+ `--parent-window=<hwnd>` on Windows).
-/// - Firefox: `<manifest_path> <gecko_id>` — the manifest path contains the host
-///   name ([`extension_bridge::NATIVE_HOST_NAME`]), and on Windows carries a
-///   `.firefox`/`.chrome` infix before `.json`.
+/// - Firefox: `<manifest_path> <gecko_id>` — an arg is the host-manifest path,
+///   matched by [`is_host_manifest_arg`] (final path component starts with the
+///   host name and ends with `.json`).
 ///
 /// Pure over its iterator so the exact failure modes can be unit-tested without
 /// touching the real `std::env::args`.
 fn is_native_host_invocation<'a>(mut args: impl Iterator<Item = &'a str>) -> bool {
-    args.any(|arg| {
-        arg.starts_with("chrome-extension://") || arg.contains(extension_bridge::NATIVE_HOST_NAME)
-    })
+    args.any(|arg| arg.starts_with("chrome-extension://") || is_host_manifest_arg(arg))
+}
+
+/// True iff `arg` is a path whose final component is one of our native-messaging
+/// host manifests (`app.aijobhunter.bridge*.json`) — tighter than a bare
+/// substring match so a crafted flag like `--foo=app.aijobhunter.bridge` is not
+/// misdetected. Covers the unix `…bridge.json` and Windows
+/// `…bridge.firefox.json` / `…bridge.chrome.json` names alike.
+fn is_host_manifest_arg(arg: &str) -> bool {
+    let file = arg.rsplit(['/', '\\']).next().unwrap_or(arg);
+    file.starts_with(extension_bridge::NATIVE_HOST_NAME) && file.ends_with(".json")
 }
 
 /// Build and run the Tauri application. Called by the binary shim in `main.rs`.
@@ -845,5 +854,24 @@ mod run_native_host_tests {
     fn ignores_deep_link_launch() {
         // The `ajh://` deep-link path must NOT be misdetected as a host launch.
         assert!(!detect(&["ajh://settings/extension"]));
+    }
+
+    #[test]
+    fn ignores_crafted_flag_containing_host_name() {
+        // A bare substring match (the prior `contains`) would have misfired on a
+        // flag value; the manifest-filename shape check rejects it.
+        assert!(!detect(&["--foo=app.aijobhunter.bridge"]));
+    }
+
+    #[test]
+    fn ignores_bare_host_name() {
+        // The host name alone is not a `.json` manifest path.
+        assert!(!detect(&["app.aijobhunter.bridge"]));
+    }
+
+    #[test]
+    fn ignores_non_json_lookalike() {
+        // Right stem, wrong extension — not a host manifest.
+        assert!(!detect(&["/etc/app.aijobhunter.bridge.json.bak"]));
     }
 }
