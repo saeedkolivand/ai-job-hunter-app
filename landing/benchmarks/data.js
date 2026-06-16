@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781624252444,
+  "lastUpdate": 1781632180166,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -623,6 +623,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 324966,
             "range": "± 9690",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "96274db22c8bf3d5b1dbd715610e086eae324afc",
+          "message": "feat: native-messaging transport for firefox https-only mode (#387)\n\n* fix: accept firefox null origin on extension bridge handshake\n\nFirefox sends Origin: null for a WebSocket opened from an extension\n\nbackground script (it strips the moz-extension UUID rather than leak it,\n\nBugzilla 1607936 / 1257989), so the bridge handshake was rejected with 403.\n\nAccept the null origin: the origin gate is defense-in-depth only — the real\n\nboundary is the per-frame 256-bit pairing token over a loopback-only listener.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* feat: add native-messaging transport for firefox https-only mode\n\nFirefox HTTPS-Only Mode upgrades the extension's ws://127.0.0.1 bridge\n\nconnection to wss://, which the plain loopback bridge can't serve, so the\n\npublished extension always showed app not running. Add a native-messaging\n\ntransport: the browser spawns our own exe in --native-host mode as a stdio\n\nrelay to the running app's loopback ws bridge, immune to the HTTPS-Only upgrade.\n\nThe extension tries connectNative first and falls back to the ws probe when the\n\nhost isn't registered, so Chrome and older apps keep working. Same wire envelope\n\non both transports; the per-frame pairing token flows through unchanged.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: document native-messaging transport in extension readme\n\nPromote the native-messaging section from Future to the active primary\n\ntransport (ws fallback), correct the Firefox Origin: null reality, add the\n\nnativeMessaging permission row, and refresh the stale reviewer test notes.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: disconnect native port on bridge connect failure paths\n\nClose the native-messaging Port before rejecting on the ready-timeout and\n\nbridge.ready{ok:false} paths, so reconnect backoff can't leak spawned\n\nnative-host processes; the onDisconnect path stays a no-op (already closed).\n\nAlso remove the dead moz-extension:// argv check in run_native_host_if_invoked\n\n(Firefox passes the manifest path, already matched) and route register.rs's\n\nHOME read through a new platform::config::home_dir() helper (R4 env-in-platform).\n\nAddresses CodeRabbit review on #387.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-06-16T19:41:34+02:00",
+          "tree_id": "a6b0f228c744d47cc9868412d1a5fd633c876460",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/96274db22c8bf3d5b1dbd715610e086eae324afc"
+        },
+        "date": 1781632179739,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1879551,
+            "range": "± 58491",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2418326,
+            "range": "± 49518",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 269728,
+            "range": "± 15928",
             "unit": "ns/iter"
           }
         ]
