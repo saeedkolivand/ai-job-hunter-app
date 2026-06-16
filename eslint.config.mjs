@@ -123,7 +123,7 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/*.gen.ts',
       '**/*.tsbuildinfo',
-      'coverage/**',
+      '**/coverage/**',
       '**/src-tauri/target/**',
       // Local, untracked agent/editor tooling — not part of the codebase.
       '.claude/**',
