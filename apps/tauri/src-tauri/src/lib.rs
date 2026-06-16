@@ -312,21 +312,36 @@ fn open_external(app: &AppHandle, url: &str) {
 /// the stdio Port).
 ///
 /// The BROWSER controls argv, so we detect by what browsers actually pass:
-/// - Firefox: `[exe, <manifest_path>, <extension_id>]` — an arg ends with the
-///   host-manifest filename.
+/// - Firefox: `[exe, <manifest_path>, <extension_id>]` — an arg is the
+///   host-manifest path, which *contains* the host name. On Windows that path
+///   carries a `.firefox`/`.chrome` infix before `.json`, so we match on the
+///   host name being present rather than the filename ending exactly.
 /// - Chrome: `[exe, chrome-extension://<id>/, (--parent-window=<hwnd> on Win)]` —
 ///   an arg starts with `chrome-extension://`.
 ///
 /// Our deep links use the `ajh://` scheme, so there is no collision with these.
 pub fn run_native_host_if_invoked() -> bool {
-    let is_native_host = std::env::args().skip(1).any(|arg| {
-        arg.starts_with("chrome-extension://")
-            || arg.ends_with(extension_bridge::NATIVE_HOST_MANIFEST)
-    });
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let is_native_host = is_native_host_invocation(args.iter().map(String::as_str));
     if is_native_host {
         extension_bridge::native_host::run();
     }
     is_native_host
+}
+
+/// True iff `args` (the process args AFTER argv[0]) look like a browser
+/// native-messaging launch of our stdio host. Browsers pass:
+/// - Chrome: `chrome-extension://<id>/` (+ `--parent-window=<hwnd>` on Windows).
+/// - Firefox: `<manifest_path> <gecko_id>` — the manifest path contains the host
+///   name ([`extension_bridge::NATIVE_HOST_NAME`]), and on Windows carries a
+///   `.firefox`/`.chrome` infix before `.json`.
+///
+/// Pure over its iterator so the exact failure modes can be unit-tested without
+/// touching the real `std::env::args`.
+fn is_native_host_invocation<'a>(mut args: impl Iterator<Item = &'a str>) -> bool {
+    args.any(|arg| {
+        arg.starts_with("chrome-extension://") || arg.contains(extension_bridge::NATIVE_HOST_NAME)
+    })
 }
 
 /// Build and run the Tauri application. Called by the binary shim in `main.rs`.
@@ -785,4 +800,50 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error running tauri application");
+}
+
+#[cfg(test)]
+mod run_native_host_tests {
+    use super::is_native_host_invocation;
+
+    fn detect(args: &[&str]) -> bool {
+        is_native_host_invocation(args.iter().copied())
+    }
+
+    #[test]
+    fn detects_firefox_windows_infixed_manifest_path() {
+        // Regression: Windows host-manifest carries a `.firefox` infix before
+        // `.json`, so the old `ends_with("...bridge.json")` check missed it.
+        assert!(detect(&[
+            "C:\\Users\\x\\AppData\\Roaming\\com.aijobhunter\\native-messaging\\app.aijobhunter.bridge.firefox.json",
+            "job-importer@aijobhunter.app",
+        ]));
+    }
+
+    #[test]
+    fn detects_firefox_unix_manifest_path() {
+        assert!(detect(&[
+            "/home/x/.mozilla/native-messaging-hosts/app.aijobhunter.bridge.json",
+            "job-importer@aijobhunter.app",
+        ]));
+    }
+
+    #[test]
+    fn detects_chrome_extension_origin() {
+        assert!(detect(&[
+            "chrome-extension://oaoekkgkhmgdfnpmfkpphgiikliaicll/",
+            "--parent-window=12345",
+        ]));
+    }
+
+    #[test]
+    fn ignores_normal_launch() {
+        assert!(!detect(&[]));
+    }
+
+    #[test]
+    fn ignores_deep_link_launch() {
+        // The `ajh://` deep-link path must NOT be misdetected as a host launch.
+        assert!(!detect(&["ajh://settings/extension"]));
+    }
 }

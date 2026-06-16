@@ -64,6 +64,10 @@ mod test;
 pub const NATIVE_HOST_NAME: &str = "app.aijobhunter.bridge";
 
 /// On-disk host-manifest filename the browser reads to find + spawn the host.
+/// Only the non-Windows host-manifest paths use this exact filename; on Windows
+/// the files carry a `.firefox`/`.chrome` infix (see [`register`]), so launch
+/// detection matches [`NATIVE_HOST_NAME`] anywhere in the path instead.
+#[cfg(not(windows))]
 pub const NATIVE_HOST_MANIFEST: &str = "app.aijobhunter.bridge.json";
 
 /// Wire `type` strings — the Rust mirror of the shared `EXTENSION_MESSAGE_TYPES`
