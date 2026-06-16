@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.106.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.105.0...v0.106.0) (2026-06-16)
+
+### ✨ Features
+
+* import selected job from board list views + reset/pairing fixes ([#390](https://github.com/saeedkolivand/ai-job-hunter-app/issues/390)) ([dfc837d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/dfc837d5d87aebf4d60aea34a70ca78b7a8ada97))
+
 ## [0.105.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.104.3...v0.105.0) (2026-06-16)
 
 ### ✨ Features
