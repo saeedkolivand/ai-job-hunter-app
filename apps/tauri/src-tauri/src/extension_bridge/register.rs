@@ -118,11 +118,10 @@ pub fn register_native_host(data_dir: &Path) {
     #[cfg(not(windows))]
     {
         let _ = data_dir; // unused off Windows — browsers read fixed well-known dirs
-        let Some(home) = std::env::var_os("HOME") else {
+        let Some(home) = crate::platform::config::home_dir() else {
             log::warn!("[native_host] HOME unset — skipping host-manifest registration");
             return;
         };
-        let home = Path::new(&home);
 
         #[cfg(target_os = "macos")]
         {

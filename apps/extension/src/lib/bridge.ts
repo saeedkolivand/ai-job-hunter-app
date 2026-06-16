@@ -194,21 +194,32 @@ function connectNative(): Promise<NativeMessagingTransport> {
       clearTimeout(timer);
       fn();
     };
+    // Pre-attach failures must close the native Port; otherwise the browser keeps
+    // the spawned host process alive across reconnect-backoff attempts.
+    const rejectWith = (reason: string, disconnect: boolean): void => {
+      finish(() => {
+        if (disconnect) {
+          try {
+            port.disconnect();
+          } catch {
+            /* already closed */
+          }
+        }
+        reject(new Error(reason));
+      });
+    };
 
-    const timer = setTimeout(
-      () => finish(() => reject(new Error(NATIVE_UNAVAILABLE))),
-      READY_TIMEOUT_MS
-    );
+    const timer = setTimeout(() => rejectWith(NATIVE_UNAVAILABLE, true), READY_TIMEOUT_MS);
 
     port.onMessage.addListener((msg: unknown) => {
       if (!isBridgeReady(msg)) return; // ignore stray frames before ready
-      finish(() =>
-        msg.ok ? resolve(new NativeMessagingTransport(port)) : reject(new Error(NATIVE_APP_DOWN))
-      );
+      if (msg.ok) finish(() => resolve(new NativeMessagingTransport(port)));
+      else rejectWith(NATIVE_APP_DOWN, true);
     });
     port.onDisconnect.addListener(() => {
-      // Disconnect before ready = host not registered (lastError set).
-      finish(() => reject(new Error(NATIVE_UNAVAILABLE)));
+      // Disconnect before ready = host not registered (lastError set); the port
+      // already fired disconnect, so do NOT call disconnect() again here.
+      rejectWith(NATIVE_UNAVAILABLE, false);
     });
   });
 }

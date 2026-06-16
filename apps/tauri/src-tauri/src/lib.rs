@@ -321,7 +321,6 @@ fn open_external(app: &AppHandle, url: &str) {
 pub fn run_native_host_if_invoked() -> bool {
     let is_native_host = std::env::args().skip(1).any(|arg| {
         arg.starts_with("chrome-extension://")
-            || arg.starts_with("moz-extension://")
             || arg.ends_with(extension_bridge::NATIVE_HOST_MANIFEST)
     });
     if is_native_host {

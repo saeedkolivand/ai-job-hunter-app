@@ -590,6 +590,7 @@ describe('BridgeClient – native messaging transport', () => {
     port.simulateMessage({ type: 'bridge.ready', ok: false });
     await connectPromise;
 
+    expect(port.disconnect).toHaveBeenCalled(); // ok:false closes the native port
     expect(client.status().phase).toBe('app_not_running');
     expect(createdSockets).toHaveLength(0); // app down ≠ fall back to ws
 
@@ -659,6 +660,7 @@ describe('BridgeClient – native messaging transport', () => {
     createdSockets[0]!.simulateOpen();
     await connectPromise;
 
+    expect(port.disconnect).toHaveBeenCalled(); // timeout closes the native port
     expect(client.status()).toMatchObject({ phase: 'connected', port: 47615 });
 
     client.dispose();
