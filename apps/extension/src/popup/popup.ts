@@ -79,7 +79,18 @@ const els = {
   btnRetry: byId<HTMLButtonElement>('btn-retry'),
   btnOpenApp: byId<HTMLButtonElement>('btn-open-app'),
   btnOpenSettings: byId<HTMLButtonElement>('btn-open-settings'),
+  btnHelp: byId<HTMLButtonElement>('btn-help'),
+  helpPopover: byId<HTMLParagraphElement>('help-popover'),
 };
+
+/** Actionable label for the pairing button; restored after a failed/cleared pair. */
+const PAIR_LABEL = 'Save & pair';
+
+/** How long the "✓ Authorized" confirmation stays on the pair button before the
+ *  popup flips to the import view, so the success state is actually seen. */
+const AUTHORIZED_CONFIRM_MS = 800;
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Pill labels carry a non-color glyph prefix so the connection state is
@@ -195,13 +206,30 @@ async function savePairing(): Promise<void> {
     const res = await send({ kind: 'setToken', token: value });
     if (!res.ok) {
       setMsg(els.pairMsg, res.error, 'err');
+      els.btnSaveToken.textContent = PAIR_LABEL;
+      els.btnSaveToken.disabled = false;
       return;
     }
+    // Confirm on the button itself, then flip to the import view after a beat so
+    // the "Authorized" state is actually seen (refreshStatus hides the pair view).
+    els.btnSaveToken.textContent = '✓ Authorized';
     setMsg(els.pairMsg, 'Paired.', 'ok');
+    await delay(AUTHORIZED_CONFIRM_MS);
     await refreshStatus();
-    // Connected view is now shown; move focus off the (hidden) token input.
-    if (!els.views.import.hidden) els.btnUrl.focus();
-  } finally {
+    if (!els.views.import.hidden) {
+      // Connected view is now shown; move focus off the (hidden) token input.
+      els.btnUrl.focus();
+    } else {
+      // Didn't reach the connected view (e.g. app went away) — restore the
+      // actionable label so the pair button works again.
+      els.btnSaveToken.textContent = PAIR_LABEL;
+      els.btnSaveToken.disabled = false;
+    }
+  } catch {
+    // A transport/refresh rejection must never strand the button disabled and
+    // labelled "Authorized" — always restore the actionable state.
+    setMsg(els.pairMsg, 'Pairing failed. Please retry.', 'err');
+    els.btnSaveToken.textContent = PAIR_LABEL;
     els.btnSaveToken.disabled = false;
   }
 }
@@ -209,9 +237,20 @@ async function savePairing(): Promise<void> {
 async function unpair(): Promise<void> {
   await send({ kind: 'clearToken' });
   setMsg(els.importMsg, '', 'muted');
+  // Restore the pair button to its actionable state for when the view returns.
+  els.btnSaveToken.textContent = PAIR_LABEL;
+  els.btnSaveToken.disabled = false;
+  setMsg(els.pairMsg, '', 'muted');
   await refreshStatus();
   // Pairing view is now shown; move focus off the (hidden) import controls.
   if (!els.views.pair.hidden) els.tokenInput.focus();
+}
+
+/** Toggle the help popover open/closed and keep `aria-expanded` in sync. */
+function toggleHelp(): void {
+  const open = els.helpPopover.hidden;
+  els.helpPopover.hidden = !open;
+  els.btnHelp.setAttribute('aria-expanded', String(open));
 }
 
 async function retry(): Promise<void> {
@@ -241,6 +280,7 @@ function wire(): void {
   els.btnRetry.addEventListener('click', () => void retry());
   els.btnOpenApp.addEventListener('click', () => void openAppPairing());
   els.btnOpenSettings.addEventListener('click', () => void openAppPairing());
+  els.btnHelp.addEventListener('click', toggleHelp);
 
   // Live status pushes from the background while the popup is open.
   browser.runtime.onMessage.addListener((message: unknown) => {
