@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781574087885,
+  "lastUpdate": 1781624252444,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -581,6 +581,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 298295,
             "range": "± 2124",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "465ea0b7eed5b97e92cde3f776df14c98f62d180",
+          "message": "fix: import jobs as applications only, sidebar nav, tab order, popup UX + Firefox launch (#385)\n\n* fix: import extension jobs into applications only, not the jobs feed\n\nhandle_import wrote the parsed posting into the in-memory PostingsCache (the Jobs/discovery feed) on top of creating the saved Application, so imported jobs appeared in both lists.\n\nAn import is a deliberate pursuit, not a discovery, so it now creates the Application only. Detail-page tailoring uses the Application's own fields, so ATS and cover-letter are unaffected.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: make sidebar nav always open the section root\n\nThe Applications sidebar item remembered the last-viewed detail and re-pointed its link at the detail route. Clicking it from a detail page was a no-op, leaving the list unreachable from the sidebar.\n\nRemove the remember-last-detail machinery so every nav item is a plain Link to its route and always lands on that section's main page.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* ui: lead application detail tabs with documents\n\nReorder the detail tab strip to Documents, Interview, Brief, Timeline, Overview so the tailor/generate flow leads.\n\nThe default landing tab stays overview (an explicit behavioral contract pinned by route-outlet-nesting.test.tsx); only the strip order changes.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* feat: add firefox extension install across onboarding, download page, and docs\n\nThe Firefox extension is now published on Mozilla Add-ons (AMO).\n\nEnable the onboarding Add-to-Firefox button (was a disabled coming-soon) and rename the onboarding.extension.firefoxSoon string to addToFirefox (en + de, with the test updated).\n\nAdd the AMO link to the download-page card, the landing + README footers and badges, and flip the dev README + manifest note from pending to published.\n\nNo auth.rs change: the bridge already accepts Firefox by moz-extension UUID shape.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: confirm pairing and add a help toggle in the extension popup\n\nOn a successful pair the Save and pair button now shows an Authorized confirmation briefly before the popup flips to the import view, instead of flipping instantly.\n\nReplace the redundant offline title (the app-not-running line, already shown by the status pill) with a help (?) toggle by the pill that explains the local-only connection.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* ui: default the application detail to the documents tab\n\nNow that Documents leads the strip, make it the default landing tab too: a missing/unknown ?tab now coalesces to DETAIL_TABS[0] instead of a hardcoded overview.\n\nOpening an application lands on the primary tailor/generate tab rather than the last tab.\n\nUpdate route-outlet-nesting Case 4 to assert the new default; stub the Documents-tab data hooks so the panel renders without an AppClient in that integration test.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: harden extension pairing flow and cover it with tests\n\nWrap the post-validation pairing flow in try/catch so a rejected setToken/refreshStatus cannot strand the button disabled and labelled Authorized; always restore the actionable state.\n\nAdd behavioral popup tests: help-toggle aria sync, the Authorized-then-flip success path, and button restoration on a rejected pairing.\n\nAlso prettier-format popup.html (lint-staged does not cover .html), fixing the CI format check.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: settings extension copy reflects firefox availability\n\nThe settings extension tagline still said Firefox coming soon; update en + de to read \"Available for Chrome and Firefox\" now that AMO is live.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* test: lock the import-isolation contract (application-only)\n\nExtract handle_import's persistence into persist_import_application, which takes only the ApplicationStore (no PostingsCache) — so an import structurally cannot enter the Jobs/discovery feed.\n\nAdd unit tests: an import creates exactly one Saved Application from the posting, and an applied flag advances the status.\n\nResolves the CodeRabbit import-isolation finding without needing a Tauri AppHandle harness (push_and_notify requires the notification plugin + a window).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* test: cover the non-connected pairing branch and guard fake timers\n\nAdd a savePairing test for the branch where token save succeeds but the status refresh does not reach the connected view — the button must reset to Save & pair and re-enable.\n\nWrap the fake-timer tests in try/finally so a thrown assertion always restores real timers and cannot leak fake timers into later tests.\n\nAddresses CodeRabbit's two re-review findings on popup.test.ts.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-06-16T17:18:28+02:00",
+          "tree_id": "06ceb2005de47bcf7f66376bb96e3b9d7a57e6e9",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/465ea0b7eed5b97e92cde3f776df14c98f62d180"
+        },
+        "date": 1781624252309,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1982601,
+            "range": "± 88408",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2682959,
+            "range": "± 54084",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 324966,
+            "range": "± 9690",
             "unit": "ns/iter"
           }
         ]
