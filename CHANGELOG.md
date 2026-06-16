@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.105.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.104.3...v0.105.0) (2026-06-16)
+
+### ✨ Features
+
+* native-messaging transport for firefox https-only mode ([#387](https://github.com/saeedkolivand/ai-job-hunter-app/issues/387)) ([96274db](https://github.com/saeedkolivand/ai-job-hunter-app/commit/96274db22c8bf3d5b1dbd715610e086eae324afc))
+
 ## [0.104.3](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.104.2...v0.104.3) (2026-06-16)
 
 ### 🎨 UI/UX
