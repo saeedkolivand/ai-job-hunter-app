@@ -469,3 +469,79 @@ async fn try_personio_rejects_bare_personio_substring_host() {
         .expect("suffix evasion returns Ok(None) at the gate, no network")
         .is_none());
 }
+
+// ── canonical_job_url: SPA/list-view → canonical single-job URL ───────────────
+
+#[test]
+fn canonical_linkedin_search_with_current_job_id() {
+    assert_eq!(
+        super::canonical_job_url("https://www.linkedin.com/jobs/search/?currentJobId=4185657072"),
+        Some("https://www.linkedin.com/jobs/view/4185657072".to_string())
+    );
+}
+
+#[test]
+fn canonical_linkedin_collections_with_current_job_id() {
+    assert_eq!(
+        super::canonical_job_url(
+            "https://www.linkedin.com/jobs/collections/recommended/?currentJobId=123"
+        ),
+        Some("https://www.linkedin.com/jobs/view/123".to_string())
+    );
+}
+
+#[test]
+fn canonical_linkedin_direct_view_page_is_none() {
+    assert_eq!(
+        super::canonical_job_url("https://www.linkedin.com/jobs/view/123/"),
+        None
+    );
+}
+
+#[test]
+fn canonical_linkedin_non_numeric_id_is_none() {
+    assert_eq!(
+        super::canonical_job_url("https://www.linkedin.com/jobs/search/?currentJobId=abc123"),
+        None
+    );
+}
+
+#[test]
+fn canonical_linkedin_no_current_job_id_is_none() {
+    assert_eq!(
+        super::canonical_job_url("https://www.linkedin.com/jobs/search/?keywords=rust"),
+        None
+    );
+}
+
+#[test]
+fn canonical_indeed_search_with_vjk() {
+    assert_eq!(
+        super::canonical_job_url("https://www.indeed.com/jobs?q=x&vjk=9b6647ed6c731326"),
+        Some("https://www.indeed.com/viewjob?jk=9b6647ed6c731326".to_string())
+    );
+}
+
+#[test]
+fn canonical_indeed_country_tld_host_preserved() {
+    assert_eq!(
+        super::canonical_job_url("https://de.indeed.com/jobs?q=x&vjk=abc123"),
+        Some("https://de.indeed.com/viewjob?jk=abc123".to_string())
+    );
+}
+
+#[test]
+fn canonical_indeed_direct_viewjob_is_none() {
+    assert_eq!(
+        super::canonical_job_url("https://www.indeed.com/viewjob?jk=9b6647ed6c731326"),
+        None
+    );
+}
+
+#[test]
+fn canonical_unknown_host_is_none() {
+    assert_eq!(
+        super::canonical_job_url("https://example.com/jobs?vjk=123&currentJobId=456"),
+        None
+    );
+}

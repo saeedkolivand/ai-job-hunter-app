@@ -540,25 +540,36 @@ async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<ImportOk> {
         return Err(AppError::Validation("url is required".to_string()));
     }
 
-    // URL / SSRF safety: normalize (http(s) only — empty means rejected) then
-    // guard the host against loopback/private/link-local/`*.local`.
-    let normalized = normalize_job_url(&url);
+    // Centralized SPA/list-view normalization: if the user imported from a board's
+    // search/SPA view (selected job id in a query param), rewrite to the canonical
+    // single-job URL so BOTH import modes resolve the SELECTED job, not the list
+    // shell. `None` → already a direct page / unknown host (use the URL as-is).
+    let canonical = crate::scraping::scrape_url::canonical_job_url(&url);
+    let effective_url = canonical.as_deref().unwrap_or(url.as_str());
+
+    // URL / SSRF safety on whatever we will actually fetch + store (the canonical
+    // link when rewritten, else the original). Normalize (http(s) only) then guard
+    // the host against loopback/private/link-local/`*.local`.
+    let normalized = normalize_job_url(effective_url);
     if normalized.is_empty() {
         return Err(AppError::Validation(
             "url is not a valid http(s) URL".to_string(),
         ));
     }
-    if !auth::is_safe_import_url(&url) {
+    if !auth::is_safe_import_url(effective_url) {
         return Err(AppError::Validation(
             "url host is not allowed (private/loopback)".to_string(),
         ));
     }
 
-    // Parse the posting. Scan mode reuses the fetch-free parser on the supplied
-    // (authenticated) DOM; URL mode runs the full resolver.
-    let posting = match html {
-        Some(html) => crate::scraping::scrape_url::parse_from_html(&url, &html),
-        None => crate::scraping::scrape_url::resolve(&url).await?,
+    // Parse the posting. A canonicalized (list/SPA) import re-resolves the
+    // canonical link for BOTH modes — the captured list DOM can't be trusted to be
+    // the selected job. A direct page keeps existing behavior: Scan mode reuses the
+    // supplied authenticated DOM; URL mode runs the resolver.
+    let posting = match (&canonical, html) {
+        (Some(c), _) => crate::scraping::scrape_url::resolve(c).await?,
+        (None, Some(html)) => crate::scraping::scrape_url::parse_from_html(&url, &html),
+        (None, None) => crate::scraping::scrape_url::resolve(&url).await?,
     };
     let posting = match posting {
         Some(p) => p,

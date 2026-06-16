@@ -36,6 +36,53 @@ pub async fn resolve(url: &str) -> Result<Option<JobPosting>> {
     generic_html(url).await
 }
 
+/// Map a board's search / SPA "list + detail pane" view URL (where the SELECTED
+/// job's id lives in a query param) to the canonical single-job URL. Returns
+/// `None` when the URL is already a direct job page or the host is unrecognized —
+/// the caller then uses the URL as-is. This is the single, centralized place that
+/// knows "which job is selected in this SPA view"; every board plugs in via one
+/// match arm. Ids are validated before being interpolated into a URL we will
+/// later fetch (defense-in-depth alongside the import path's SSRF guard).
+pub fn canonical_job_url(url: &str) -> Option<String> {
+    let u = reqwest::Url::parse(url).ok()?;
+    let host = u.host_str()?.to_ascii_lowercase();
+    let query = |key: &str| {
+        u.query_pairs()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.into_owned())
+    };
+
+    // LinkedIn: /jobs/search|collections/...?currentJobId=<id> → /jobs/view/<id>.
+    // Numeric id only. Skip when already a direct /jobs/view/ page.
+    if host == "linkedin.com" || host == "www.linkedin.com" || host.ends_with(".linkedin.com") {
+        if !u.path().contains("/jobs/view/") {
+            if let Some(id) = query("currentJobId") {
+                if !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()) {
+                    return Some(format!("https://www.linkedin.com/jobs/view/{id}"));
+                }
+            }
+        }
+        return None;
+    }
+
+    // Indeed (incl. country TLDs like de.indeed.com): ?vjk=<id> → /viewjob?jk=<id>.
+    // Alphanumeric id only. Skip when already a /viewjob page.
+    if host == "indeed.com" || host.ends_with(".indeed.com") {
+        if !u.path().contains("/viewjob") {
+            if let Some(id) = query("vjk") {
+                if !id.is_empty() && id.bytes().all(|b| b.is_ascii_alphanumeric()) {
+                    return Some(format!("https://{host}/viewjob?jk={id}"));
+                }
+            }
+        }
+        return None;
+    }
+
+    // TODO(import): Glassdoor (jobListingId/jl), Xing, StepStone — need a real
+    // captured URL to pin the param + canonical template. Tracked as a follow-up.
+    None
+}
+
 /// LinkedIn (and similar pages) render "Show more" / "Show less" toggle buttons
 /// right after the description markup; strip those trailing labels.
 static SHOW_MORE_RE: std::sync::LazyLock<regex::Regex> =
