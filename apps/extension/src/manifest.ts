@@ -13,11 +13,11 @@
  * (`chrome-extension://<id>` / `moz-extension://<id>`) is in that list.
  *
  * The Firefox AMO id below is an email-style AMO id tied to the aijobhunter.app
- * domain (mirrored in
- * `auth.rs`). TODO(bridge): the Chrome Web Store id is still a placeholder — it
- * is assigned at publish time and cannot be forced from the manifest, so set the
- * real CWS id in `auth.rs` once published. Until then, a locally-loaded build is
- * admitted only via the dev-origin override (`AJH_EXTENSION_DEV_ORIGINS`).
+ * domain. Firefox runtime origins use a per-install `moz-extension://<uuid>`
+ * (never the AMO id), so `auth.rs` admits Firefox by UUID shape, not a pinned id.
+ * The published Chrome Web Store id IS pinned in
+ * `auth.rs::ALLOWED_EXTENSION_IDS`; a locally-loaded build is admitted only via
+ * the dev-origin override (`AJH_EXTENSION_DEV_ORIGINS`).
  */
 
 import { version as VERSION } from '../package.json' with { type: 'json' };

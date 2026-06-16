@@ -8,10 +8,10 @@
   <a href="https://img.shields.io/badge/MV3-Chrome%20%7C%20Firefox-24C8DB"><img alt="MV3" src="https://img.shields.io/badge/MV3-Chrome%20%7C%20Firefox-24C8DB"></a>
   <a href="https://img.shields.io/badge/loopback-only-2ea44f"><img alt="Loopback only" src="https://img.shields.io/badge/loopback-only-2ea44f"></a>
   <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll"><img alt="Chrome published" src="https://img.shields.io/badge/Chrome-published-2ea44f?logo=googlechrome&logoColor=white"></a>
-  <a href="https://img.shields.io/badge/Firefox-AMO%20pending-orange?logo=firefox&logoColor=white"><img alt="Firefox AMO pending" src="https://img.shields.io/badge/Firefox-AMO%20pending-orange?logo=firefox&logoColor=white"></a>
+  <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/"><img alt="Firefox published" src="https://img.shields.io/badge/Firefox-published-2ea44f?logo=firefoxbrowser&logoColor=white"></a>
 </p>
 
-This is the browser half of the **AI Job Hunter** job-import feature. An MV3 extension available for **Chrome on the Web Store** ([install](https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll)) and Firefox/AMO (pending). It captures the job posting on the current tab and sends it to the **desktop app** running on your machine, over a private loopback WebSocket. No account. No remote backend. It is inert unless the desktop app is running and you have paired it.
+This is the browser half of the **AI Job Hunter** job-import feature. An MV3 extension available for **Chrome on the Web Store** ([install](https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll)) and **Firefox on AMO** ([install](https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/)). It captures the job posting on the current tab and sends it to the **desktop app** running on your machine, over a private loopback WebSocket. No account. No remote backend. It is inert unless the desktop app is running and you have paired it.
 
 **What it does:** while browsing a job board, click the extension button → choose **Import via URL** (extension sends the job URL, desktop fetches + parses it) or **Scan page** (extension captures the rendered DOM, desktop parses it) → the job appears in your **AI Job Hunter** saved applications, tagged **New**. Tick **"I already applied"** to mark it applied instead.
 
