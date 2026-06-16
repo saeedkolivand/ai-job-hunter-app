@@ -121,8 +121,6 @@ describe('JobPreferencesSchema', () => {
     expect(() =>
       JobPreferencesSchema.parse({
         location: 'Berlin',
-        remote: 'hybrid',
-        seniority: 'senior',
         techStack: [{ name: 'React', category: 'frontend' }],
       })
     ).not.toThrow();

@@ -366,8 +366,6 @@ export const TechStackItemSchema = z.object({
 
 export const JobPreferencesSchema = z.object({
   location: z.string().optional(),
-  remote: z.string().optional(),
-  seniority: z.string().optional(),
   techStack: z.array(TechStackItemSchema).optional(),
 });
 

@@ -1,6 +1,6 @@
 use parking_lot::Mutex;
 /// Job preferences store (SQLite-backed).
-/// Stores user's job search preferences: location, tech stack, seniority, salary, remote.
+/// Stores user's job search preferences: location and tech stack.
 use std::path::PathBuf;
 
 use rusqlite::{params, Connection};
@@ -16,14 +16,6 @@ use crate::error::AppResult;
 pub struct JobPreferences {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub remote: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub seniority: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub salary_min: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub salary_max: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tech_stack: Option<Vec<TechStackItem>>,
 }
@@ -41,11 +33,12 @@ pub struct JobPreferencesStore {
 }
 
 impl JobPreferencesStore {
-    const MIGRATIONS: &'static [Migration] = &[Migration {
-        name: "create_job_preferences",
-        up: |conn| {
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS job_preferences (
+    const MIGRATIONS: &'static [Migration] = &[
+        Migration {
+            name: "create_job_preferences",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS job_preferences (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     location TEXT,
                     remote TEXT,
@@ -54,12 +47,36 @@ impl JobPreferencesStore {
                     salary_max INTEGER,
                     tech_stack TEXT
                 );",
-            )?;
-            // Ensure the single settings row exists.
-            conn.execute("INSERT OR IGNORE INTO job_preferences (id) VALUES (1)", [])?;
-            Ok(())
+                )?;
+                // Ensure the single settings row exists.
+                conn.execute("INSERT OR IGNORE INTO job_preferences (id) VALUES (1)", [])?;
+                Ok(())
+            },
         },
-    }];
+        // Drop the dormant columns (remote, seniority, salary_min, salary_max) —
+        // they were persisted but never written by any UI and only read by a dead
+        // autopilot work-type seed. Use the SQLite-safe table-recreate (works on
+        // every bundled SQLite regardless of `ALTER TABLE ... DROP COLUMN` support)
+        // so location + tech_stack survive the column removal.
+        Migration {
+            name: "drop_unused_job_preferences_columns",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE job_preferences_new (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        location TEXT,
+                        tech_stack TEXT
+                    );
+                    INSERT INTO job_preferences_new (id, location, tech_stack)
+                        SELECT id, location, tech_stack FROM job_preferences;
+                    DROP TABLE job_preferences;
+                    ALTER TABLE job_preferences_new RENAME TO job_preferences;
+                    INSERT OR IGNORE INTO job_preferences (id) VALUES (1);",
+                )?;
+                Ok(())
+            },
+        },
+    ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
         std::fs::create_dir_all(data_dir)?;
@@ -74,28 +91,20 @@ impl JobPreferencesStore {
     pub fn get(&self) -> JobPreferences {
         let conn = self.conn.lock();
         conn.query_row(
-            "SELECT location, remote, seniority, salary_min, salary_max, tech_stack
+            "SELECT location, tech_stack
              FROM job_preferences WHERE id = 1",
             [],
             |row| {
-                let tech_stack_json: Option<String> = row.get(5)?;
+                let tech_stack_json: Option<String> = row.get(1)?;
                 let tech_stack = tech_stack_json.and_then(|s| serde_json::from_str(&s).ok());
                 Ok(JobPreferences {
                     location: row.get(0)?,
-                    remote: row.get(1)?,
-                    seniority: row.get(2)?,
-                    salary_min: row.get(3)?,
-                    salary_max: row.get(4)?,
                     tech_stack,
                 })
             },
         )
         .unwrap_or(JobPreferences {
             location: None,
-            remote: None,
-            seniority: None,
-            salary_min: None,
-            salary_max: None,
             tech_stack: None,
         })
     }
@@ -104,8 +113,7 @@ impl JobPreferencesStore {
     pub fn clear(&self) -> AppResult<()> {
         let conn = self.conn.lock();
         conn.execute(
-            "UPDATE job_preferences SET location = NULL, remote = NULL, seniority = NULL,
-                 salary_min = NULL, salary_max = NULL, tech_stack = NULL WHERE id = 1",
+            "UPDATE job_preferences SET location = NULL, tech_stack = NULL WHERE id = 1",
             [],
         )
         .map_err(|e| e.to_string())?;
@@ -120,18 +128,10 @@ impl JobPreferencesStore {
             .and_then(|ts| serde_json::to_string(ts).ok());
 
         conn.execute(
-            "UPDATE job_preferences 
-             SET location = ?1, remote = ?2, seniority = ?3, 
-                 salary_min = ?4, salary_max = ?5, tech_stack = ?6
+            "UPDATE job_preferences
+             SET location = ?1, tech_stack = ?2
              WHERE id = 1",
-            params![
-                prefs.location,
-                prefs.remote,
-                prefs.seniority,
-                prefs.salary_min,
-                prefs.salary_max,
-                tech_stack_json,
-            ],
+            params![prefs.location, tech_stack_json],
         )
         .map_err(|e| e.to_string())?;
         Ok(())

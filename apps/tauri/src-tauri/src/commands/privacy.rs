@@ -351,10 +351,6 @@ mod tests {
         store
             .set(&crate::job_preferences::JobPreferences {
                 location: Some("Berlin".into()),
-                remote: Some("hybrid".into()),
-                seniority: Some("senior".into()),
-                salary_min: Some(80_000),
-                salary_max: Some(120_000),
                 tech_stack: Some(vec![crate::job_preferences::TechStackItem {
                     name: "Rust".into(),
                     category: "backend".into(),
@@ -372,19 +368,6 @@ mod tests {
         assert!(
             after.location.is_none(),
             "location must be None after reset"
-        );
-        assert!(after.remote.is_none(), "remote must be None after reset");
-        assert!(
-            after.seniority.is_none(),
-            "seniority must be None after reset"
-        );
-        assert!(
-            after.salary_min.is_none(),
-            "salary_min must be None after reset"
-        );
-        assert!(
-            after.salary_max.is_none(),
-            "salary_max must be None after reset"
         );
         assert!(
             after.tech_stack.is_none(),
