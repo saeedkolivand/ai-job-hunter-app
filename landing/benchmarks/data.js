@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781632180166,
+  "lastUpdate": 1781644705981,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -665,6 +665,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 269728,
             "range": "± 15928",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dfc837d5d87aebf4d60aea34a70ca78b7a8ada97",
+          "message": "feat: import selected job from board list views + reset/pairing fixes (#390)\n\n* feat: import the selected job from board search and list views\n\nImports from a board's search/list view (where the selected job id lives in\na query param, e.g. LinkedIn currentJobId, Indeed vjk) previously failed: the\ntab URL is the search shell, not a direct job URL, so the resolver fell back\nto a generic parse of the wrong page.\n\nAdd a centralized canonical_job_url() that maps a recognized list/SPA view URL\nto the canonical single-job URL, and re-resolve that in handle_import for both\nimport modes. Ids are validated before interpolation and the canonical URL\nstill passes the existing normalize + SSRF host guards.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: clear username on factory reset\n\ndefaultPreferences omitted userName, so resetPreferences() (which spreads the\ndefaults over state) left the existing username untouched while clearing every\nother preference. Add userName to the defaults so reset wipes it too.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: settle extension popup status after pairing\n\nAfter saving the pairing token the popup did a single status refresh and then\nrelied on a background status push, which can be missed on a just-woken MV3\nworker, leaving it stuck on the \"looking for the desktop app\" spinner. Poll the\nbridge status until the phase leaves searching (bounded) so the view always\nsettles to the paired state.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: contain status-poll rejection during pairing\n\nrefreshUntilSettled let a send() rejection bubble; a transient MV3\nmessage-channel failure mid-poll (after a successful setToken) hit the\nsavePairing catch and falsely showed \"pairing failed\". Catch it in the loop and\nfall back to the offline view instead.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-06-16T23:09:59+02:00",
+          "tree_id": "cf285ce0fea5a641921946e5afe7ce72dcc8ad06",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/dfc837d5d87aebf4d60aea34a70ca78b7a8ada97"
+        },
+        "date": 1781644705780,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1899144,
+            "range": "± 41447",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2480023,
+            "range": "± 19682",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 283832,
+            "range": "± 2301",
             "unit": "ns/iter"
           }
         ]
