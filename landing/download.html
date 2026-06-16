@@ -73,13 +73,15 @@ h2{font-family:var(--scrawl); font-size:clamp(18px,4vw,24px); margin:0; color:va
 .pc-ico{font-size:30px; line-height:1}
 .pc-actions{display:flex; flex-wrap:wrap; gap:10px; flex:1 1 auto}
 
+/* solid buttons stay borderless (like .cta) — a same-color border on a rounded
+   fractional-width box bleeds the page color as seams on the left/right edges */
 .dl-btn{
-  font-family:var(--hand); font-size:16px; background:var(--ink); color:#f4ecdc; border:2.6px solid var(--ink);
+  font-family:var(--hand); font-size:16px; background:var(--ink); color:#f4ecdc; border:none;
   border-radius:12px 9px 13px 8px; padding:8px 18px; box-shadow:3px 4px 0 rgba(0,0,0,.22);
   text-align:center; transition:transform .14s; text-decoration:none;
 }
-.dl-btn:hover{transform:translateY(-2px); border-bottom-color:var(--ink)}
-.dl-btn.alt{background:transparent; color:var(--ink); box-shadow:2px 3px 0 rgba(0,0,0,.14); font-size:15px; padding:7px 16px}
+.dl-btn:hover{transform:translateY(-2px)}
+.dl-btn.alt{background:transparent; color:var(--ink); border:2.6px solid var(--ink); box-shadow:2px 3px 0 rgba(0,0,0,.14); font-size:15px; padding:7px 16px}
 /* note drops to its own full-width line beneath the head + buttons */
 .dl-note{flex-basis:100%; font-family:var(--mono); font-size:11.5px; line-height:1.6; color:var(--muted); margin:2px 0 0}
 
@@ -99,13 +101,13 @@ hr.scrawl{border:none; height:14px; margin:48px auto; width:160px;
 .ext-card h2{font-size:20px}
 .ext-card .sub{font-family:var(--mono); font-size:12px; color:var(--muted); margin:-4px 0 0}
 .ext-btn{
-  font-family:var(--hand); font-size:16px; background:var(--ink); color:#f4ecdc; border:2.4px solid var(--ink);
+  font-family:var(--hand); font-size:16px; background:var(--ink); color:#f4ecdc; border:none;
   border-radius:11px 8px 12px 9px; padding:8px 14px; text-align:center; text-decoration:none;
   box-shadow:3px 4px 0 rgba(0,0,0,.2); transition:transform .14s; margin-top:auto;
 }
-.ext-btn:hover{transform:translateY(-2px); border-bottom-color:var(--ink)}
+.ext-btn:hover{transform:translateY(-2px)}
 .ext-btn.soon{
-  background:transparent; color:var(--muted); border-style:dashed; box-shadow:none;
+  background:transparent; color:var(--muted); border:2.4px dashed var(--ink); box-shadow:none;
   cursor:not-allowed; pointer-events:none;
 }
 
