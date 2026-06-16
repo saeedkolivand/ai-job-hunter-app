@@ -202,24 +202,33 @@ async function savePairing(): Promise<void> {
   }
   els.btnSaveToken.disabled = true;
   setMsg(els.pairMsg, 'Pairing…', 'muted');
-  const res = await send({ kind: 'setToken', token: value });
-  if (!res.ok) {
-    setMsg(els.pairMsg, res.error, 'err');
-    els.btnSaveToken.disabled = false;
-    return;
-  }
-  // Confirm on the button itself, then flip to the import view after a beat so
-  // the "Authorized" state is actually seen (refreshStatus hides the pair view).
-  els.btnSaveToken.textContent = '✓ Authorized';
-  setMsg(els.pairMsg, 'Paired.', 'ok');
-  await delay(AUTHORIZED_CONFIRM_MS);
-  await refreshStatus();
-  if (!els.views.import.hidden) {
-    // Connected view is now shown; move focus off the (hidden) token input.
-    els.btnUrl.focus();
-  } else {
-    // Didn't reach the connected view (e.g. app went away) — restore the
-    // actionable label so the pair button works again.
+  try {
+    const res = await send({ kind: 'setToken', token: value });
+    if (!res.ok) {
+      setMsg(els.pairMsg, res.error, 'err');
+      els.btnSaveToken.textContent = PAIR_LABEL;
+      els.btnSaveToken.disabled = false;
+      return;
+    }
+    // Confirm on the button itself, then flip to the import view after a beat so
+    // the "Authorized" state is actually seen (refreshStatus hides the pair view).
+    els.btnSaveToken.textContent = '✓ Authorized';
+    setMsg(els.pairMsg, 'Paired.', 'ok');
+    await delay(AUTHORIZED_CONFIRM_MS);
+    await refreshStatus();
+    if (!els.views.import.hidden) {
+      // Connected view is now shown; move focus off the (hidden) token input.
+      els.btnUrl.focus();
+    } else {
+      // Didn't reach the connected view (e.g. app went away) — restore the
+      // actionable label so the pair button works again.
+      els.btnSaveToken.textContent = PAIR_LABEL;
+      els.btnSaveToken.disabled = false;
+    }
+  } catch {
+    // A transport/refresh rejection must never strand the button disabled and
+    // labelled "Authorized" — always restore the actionable state.
+    setMsg(els.pairMsg, 'Pairing failed. Please retry.', 'err');
     els.btnSaveToken.textContent = PAIR_LABEL;
     els.btnSaveToken.disabled = false;
   }
