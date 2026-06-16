@@ -191,10 +191,18 @@ async function refreshStatusWithTimeout(): Promise<void> {
  */
 async function refreshUntilSettled(attempts = 5, gapMs = 600): Promise<void> {
   for (let i = 0; i < attempts; i += 1) {
-    const res = await send({ kind: 'getStatus' });
-    const status = resolveStatusResponse(res, lastKnownHasToken);
-    render(status);
-    if (status.phase !== 'searching') return;
+    try {
+      const res = await send({ kind: 'getStatus' });
+      const status = resolveStatusResponse(res, lastKnownHasToken);
+      render(status);
+      if (status.phase !== 'searching') return;
+    } catch {
+      // A transient MV3 message-channel rejection here must NOT bubble into the
+      // savePairing catch (a false "Pairing failed" after a successful pair). The
+      // live status push / next popup open recovers; show offline and stop.
+      renderOffline();
+      return;
+    }
     if (i < attempts - 1) await delay(gapMs);
   }
 }
