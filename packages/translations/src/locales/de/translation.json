@@ -653,7 +653,7 @@
     "techStack": {
       "title": "Tech-Stack",
       "description": "Fügen Sie Ihre technischen Fähigkeiten hinzu, um Job-Empfehlungen und KI-Analyse zu personalisieren.",
-      "searchPlaceholder": "Technologien suchen...",
+      "searchPlaceholder": "Beliebige Technologie eingeben und Enter drücken…",
       "popular": "Beliebt"
     },
     "ai": {

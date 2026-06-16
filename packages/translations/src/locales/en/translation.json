@@ -683,7 +683,7 @@
     "techStack": {
       "title": "Tech Stack",
       "description": "Add your technical skills to personalize job recommendations and AI analysis.",
-      "searchPlaceholder": "Search technologies...",
+      "searchPlaceholder": "Type any technology and press Enter…",
       "popular": "Popular"
     },
     "ai": {
