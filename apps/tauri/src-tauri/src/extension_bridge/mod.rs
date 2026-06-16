@@ -52,8 +52,19 @@ use crate::events::{emit_event, APPLICATIONS_CHANGED};
 pub mod auth;
 #[cfg(test)]
 mod import_tests;
+pub mod native_host;
+pub mod register;
 #[cfg(test)]
 mod test;
+
+/// Native-messaging host name — the registered identifier the browser uses to
+/// spawn our relay (our exe in `--native-host` mode). MUST match the extension
+/// side exactly (`apps/extension`). The host-manifest filename is this with a
+/// `.json` suffix.
+pub const NATIVE_HOST_NAME: &str = "app.aijobhunter.bridge";
+
+/// On-disk host-manifest filename the browser reads to find + spawn the host.
+pub const NATIVE_HOST_MANIFEST: &str = "app.aijobhunter.bridge.json";
 
 /// Wire `type` strings — the Rust mirror of the shared `EXTENSION_MESSAGE_TYPES`
 /// in `packages/shared/src/ipc/extension-protocol.ts`. A parity test

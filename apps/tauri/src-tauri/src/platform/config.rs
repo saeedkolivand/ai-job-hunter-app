@@ -32,6 +32,14 @@ pub fn data_dir() -> PathBuf {
     PathBuf::from(home).join(FALLBACK_DIR_NAME)
 }
 
+/// The current user's home directory (`$HOME`), if set. Centralizes the raw
+/// env read for the few callers (e.g. the native-messaging host registration)
+/// that need OS-mandated well-known directories outside the app data dir, so
+/// the R4 "env access only in platform/**" rule holds.
+pub fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(PathBuf::from)
+}
+
 /// Setup-side resolver (has an `AppHandle`). Resolves the authoritative app data
 /// dir via Tauri and exports it as `AJH_DATA_DIR` so AppHandle-less workers
 /// resolve the same path. Returns the resolved directory.

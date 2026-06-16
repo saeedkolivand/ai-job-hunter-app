@@ -304,6 +304,31 @@ fn open_external(app: &AppHandle, url: &str) {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
+/// Detect a browser native-messaging launch from argv and, if so, run the stdio
+/// relay host ([`extension_bridge::native_host`]) instead of booting Tauri,
+/// returning `true` once it has handled and run the relay. `main.rs` calls this
+/// first so a native-host launch never reaches the Tauri builder or the
+/// single-instance plugin (which would forward argv to the running app and kill
+/// the stdio Port).
+///
+/// The BROWSER controls argv, so we detect by what browsers actually pass:
+/// - Firefox: `[exe, <manifest_path>, <extension_id>]` — an arg ends with the
+///   host-manifest filename.
+/// - Chrome: `[exe, chrome-extension://<id>/, (--parent-window=<hwnd> on Win)]` —
+///   an arg starts with `chrome-extension://`.
+///
+/// Our deep links use the `ajh://` scheme, so there is no collision with these.
+pub fn run_native_host_if_invoked() -> bool {
+    let is_native_host = std::env::args().skip(1).any(|arg| {
+        arg.starts_with("chrome-extension://")
+            || arg.ends_with(extension_bridge::NATIVE_HOST_MANIFEST)
+    });
+    if is_native_host {
+        extension_bridge::native_host::run();
+    }
+    is_native_host
+}
+
 /// Build and run the Tauri application. Called by the binary shim in `main.rs`.
 pub fn run() {
     // Initialise the OS keyring up front. A failure here is non-fatal: the app
@@ -599,6 +624,12 @@ pub fn run() {
             // forget on the tokio runtime; a bind failure logs + disables the
             // bridge and never blocks boot. `BridgeState` was managed above.
             extension_bridge::start(handle.clone());
+
+            // Keep the native-messaging host manifests + OS registration current
+            // (path tracks app moves/updates) so the browser can spawn our stdio
+            // relay — the Firefox HTTPS-Only transport that survives the ws→wss
+            // upgrade. Best-effort; never blocks boot.
+            extension_bridge::register::register_native_host(&data_dir);
 
             // Watch the OS accent color (Windows): on a personalization accent
             // change, emit `system:accentChanged` so the renderer re-pulls the

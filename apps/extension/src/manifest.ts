@@ -53,8 +53,11 @@ function baseManifest(): ManifestRecord {
     // activeTab → read the clicked tab's DOM on user action without broad host
     // access. storage → persist the pairing token. scripting → MV3 dynamic
     // inject for Scan mode (chrome.scripting.executeScript); host scope still
-    // limited to the active tab by activeTab.
-    permissions: ['activeTab', 'storage', 'scripting'],
+    // limited to the active tab by activeTab. nativeMessaging → `runtime.connectNative`
+    // to the desktop host (`app.aijobhunter.bridge`), the HTTPS-Only-safe transport
+    // that survives Firefox upgrading `ws://` to `wss://`; the loopback
+    // `host_permissions` below stay for the `ws` fallback.
+    permissions: ['activeTab', 'storage', 'scripting', 'nativeMessaging'],
     host_permissions: LOOPBACK_HOSTS,
     action: {
       default_popup: 'popup.html',
