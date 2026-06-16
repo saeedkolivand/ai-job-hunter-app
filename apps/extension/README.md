@@ -210,7 +210,14 @@ pnpm -F @ajh/extension dev          # watch mode (Chrome)
 pnpm -F @ajh/extension typecheck    # TypeScript check
 pnpm -F @ajh/extension lint         # ESLint
 pnpm -F @ajh/extension test         # Vitest suite
+pnpm -F @ajh/extension zip          # build + pack store zips → dist/*.zip
+pnpm extension:zip                  # same, from the repo root
 ```
+
+`zip` builds both targets and writes three archives to `dist/` (gitignored):
+`…-chrome-<v>.zip` and `…-firefox-<v>.zip` (store uploads, `manifest.json` at the
+root) and `…-firefox-source-<v>.zip` (the AMO source archive — a `git archive` of
+the tracked monorepo at HEAD, reproducible with `pnpm install && pnpm -F @ajh/extension build`).
 
 ### Build Tooling
 

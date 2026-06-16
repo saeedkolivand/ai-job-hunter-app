@@ -15,6 +15,7 @@
     "build": "turbo build",
     "build:packages": "turbo build --filter=!@ajh/tauri",
     "package": "pnpm build:packages && pnpm --filter @ajh/tauri package",
+    "extension:zip": "pnpm -F @ajh/extension zip",
     "typecheck": "turbo typecheck",
     "lint": "eslint .",
     "lint:strict": "eslint . --max-warnings 0",

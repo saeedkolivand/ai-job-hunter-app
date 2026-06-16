@@ -11,7 +11,8 @@
     "dev": "cross-env BROWSER=chrome vite build --watch --mode development",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "zip": "pnpm run build && node scripts/pack.mjs"
   },
   "dependencies": {
     "@ajh/shared": "workspace:*",
