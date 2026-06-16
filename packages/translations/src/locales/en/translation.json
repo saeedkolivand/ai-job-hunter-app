@@ -2178,7 +2178,7 @@
       "title": "Install the browser extension",
       "subtitle": "Import jobs straight from any board with one click. Install the extension, then pair it in Settings.",
       "addToChrome": "Add to Chrome",
-      "firefoxSoon": "Firefox — coming soon",
+      "addToFirefox": "Add to Firefox",
       "pairHint": "After installing, pair it in Settings → Accounts.",
       "back": "Back",
       "next": "Continue"

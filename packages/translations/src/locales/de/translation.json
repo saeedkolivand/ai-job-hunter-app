@@ -2148,7 +2148,7 @@
       "title": "Browser-Erweiterung installieren",
       "subtitle": "Importieren Sie Jobs mit einem Klick direkt von jeder Jobbörse. Installieren Sie die Erweiterung und koppeln Sie sie anschließend in den Einstellungen.",
       "addToChrome": "Zu Chrome hinzufügen",
-      "firefoxSoon": "Firefox — folgt in Kürze",
+      "addToFirefox": "Zu Firefox hinzufügen",
       "pairHint": "Koppeln Sie die Erweiterung nach der Installation unter Einstellungen → Konten.",
       "back": "Zurück",
       "next": "Weiter"
