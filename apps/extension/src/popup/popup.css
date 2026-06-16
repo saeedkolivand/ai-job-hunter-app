@@ -157,6 +157,36 @@ body {
   gap: 6px;
 }
 
+/* Round icon Retry left of the status pill; shown only when app_not_running. */
+.retry {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink-soft);
+  background: var(--card);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.retry svg {
+  display: block;
+}
+
+.retry:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.retry:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 /* Small round "?" that toggles the help popover next to the status pill. */
 .help {
   flex: none;
@@ -352,12 +382,6 @@ body {
   font-family: var(--sans);
   font-size: 13px;
   color: var(--ink-soft);
-}
-
-.empty .btn {
-  flex: none;
-  align-self: center;
-  min-width: 120px;
 }
 
 /* Keyboard a11y: a visible focus ring on every interactive control. */
