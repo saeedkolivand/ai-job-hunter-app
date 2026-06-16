@@ -229,7 +229,7 @@ export function ContactProfileForm() {
           type="button"
           onClick={() => fileRef.current?.click()}
           aria-label={t('settings.contactProfile.photoUpload')}
-          className="group relative size-20 shrink-0 overflow-hidden rounded-full border border-white/10 bg-white/[0.03]"
+          className="group relative size-20 shrink-0 overflow-hidden rounded-full border border-foreground/10 bg-foreground/[0.03]"
         >
           {photo ? (
             <Image

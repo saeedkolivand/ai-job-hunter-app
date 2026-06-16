@@ -64,7 +64,7 @@ export function ProfileUrlImport({ onImported }: Props) {
   };
 
   return (
-    <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02]">
+    <div className="overflow-hidden rounded-xl border border-foreground/10 bg-foreground/[0.03]">
       <Button
         variant="ghost"
         onClick={() => {

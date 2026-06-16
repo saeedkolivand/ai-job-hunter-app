@@ -25,7 +25,7 @@ export function ContactPromptModal({ open, onClose, onContinue }: ContactPromptM
   return (
     <ModalShell open={open} onClose={onClose} maxWidth="max-w-2xl">
       <div className="flex max-h-[85vh] flex-col">
-        <div className="flex items-start gap-2 border-b border-white/[0.08] px-6 py-5">
+        <div className="flex items-start gap-2 border-b border-foreground/10 px-6 py-5">
           <Contact size={16} className="mt-0.5 shrink-0 text-brand-soft" />
           <div className="flex flex-col gap-1">
             <span className="text-sm font-semibold text-foreground/85">
@@ -39,7 +39,7 @@ export function ContactPromptModal({ open, onClose, onContinue }: ContactPromptM
           <ContactProfileForm />
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-white/[0.08] px-6 py-4">
+        <div className="flex justify-end gap-2 border-t border-foreground/10 px-6 py-4">
           <Button variant="ghost" onClick={onClose}>
             {t('contactPrompt.cancel')}
           </Button>

@@ -156,7 +156,7 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <nav className="mt-auto flex flex-col gap-1 border-t border-white/[0.06] pb-3 pt-3">
+      <nav className="mt-auto flex flex-col gap-1 border-t border-foreground/[0.06] pb-3 pt-3">
         {PINNED_ITEMS.map(renderNavItem)}
       </nav>
 

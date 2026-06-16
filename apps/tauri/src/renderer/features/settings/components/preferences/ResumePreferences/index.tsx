@@ -136,7 +136,7 @@ export function ResumePreferences() {
           'relative mb-5 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-all',
           dragActive
             ? 'border-brand/50 bg-brand/5'
-            : 'border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]',
+            : 'border-foreground/10 bg-foreground/[0.03] hover:border-foreground/20 hover:bg-foreground/[0.05]',
           uploading && 'cursor-default opacity-60'
         )}
       >
@@ -159,7 +159,7 @@ export function ResumePreferences() {
             <div
               className={cn(
                 'rounded-full p-3 transition-colors',
-                dragActive ? 'bg-brand/15' : 'bg-white/5'
+                dragActive ? 'bg-brand/15' : 'bg-foreground/[0.06]'
               )}
             >
               <Upload
@@ -205,13 +205,15 @@ export function ResumePreferences() {
                 transition={transition.normal}
                 className={cn(
                   'flex items-center gap-3 rounded-xl border px-4 py-3 transition-all',
-                  isDefault ? 'border-brand/30 bg-brand/8' : 'border-white/[0.06] bg-white/[0.02]'
+                  isDefault
+                    ? 'border-brand/30 bg-brand/8'
+                    : 'border-foreground/10 bg-foreground/[0.03]'
                 )}
               >
                 <div
                   className={cn(
                     'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-                    isDefault ? 'bg-brand/15' : 'bg-white/5'
+                    isDefault ? 'bg-brand/15' : 'bg-foreground/[0.06]'
                   )}
                 >
                   <FileText

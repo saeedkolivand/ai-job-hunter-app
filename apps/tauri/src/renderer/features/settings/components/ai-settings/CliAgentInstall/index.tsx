@@ -99,7 +99,7 @@ export function CliAgentInstall({ provider, label, onGuide, onRecheck }: Props) 
       </div>
 
       {output && (
-        <pre className="max-h-40 overflow-auto rounded-lg border border-white/8 bg-black/30 p-2.5 text-[10px] leading-relaxed text-foreground/55 whitespace-pre-wrap">
+        <pre className="max-h-40 overflow-auto rounded-lg border border-foreground/10 bg-foreground/[0.06] p-2.5 text-[10px] leading-relaxed text-foreground/55 whitespace-pre-wrap">
           {output}
         </pre>
       )}

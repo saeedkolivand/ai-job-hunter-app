@@ -57,7 +57,7 @@ export function OllamaConfig({
         <Button
           onClick={onRecheck}
           disabled={loading}
-          className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2 py-1 text-xs text-foreground/60 hover:text-foreground h-auto border-transparent"
+          className="flex items-center gap-1.5 rounded-lg bg-foreground/[0.06] px-2 py-1 text-xs text-foreground/60 hover:text-foreground h-auto border-transparent"
         >
           <Loader2 size={11} className={loading ? 'animate-spin' : ''} />
           {t('settings.aiModel.refresh')}
@@ -73,7 +73,7 @@ export function OllamaConfig({
                 variant="unstyled"
                 onClick={() => void onPull(qm)}
                 disabled={pulling !== null}
-                className="flex w-full items-center justify-between rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-left text-sm hover:bg-white/[0.04] disabled:opacity-50"
+                className="flex w-full items-center justify-between rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2 text-left text-sm hover:bg-foreground/[0.05] disabled:opacity-50"
               >
                 <span className="text-foreground/70">{qm}</span>
                 {pulling === qm ? (

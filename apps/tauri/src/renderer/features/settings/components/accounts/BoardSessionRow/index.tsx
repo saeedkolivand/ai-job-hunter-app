@@ -98,13 +98,7 @@ export function BoardSessionRow({ board }: { board: Board }) {
 
   return (
     <>
-      <div
-        className="relative flex items-center gap-4 overflow-hidden rounded-xl border border-white/[0.07] px-4 py-3.5"
-        style={{
-          background:
-            'linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)',
-        }}
-      >
+      <div className="relative flex items-center gap-4 overflow-hidden rounded-xl border border-foreground/10 px-4 py-3.5">
         {/* Ambient glow */}
         <div
           className="pointer-events-none absolute -bottom-4 -left-4 h-24 w-24 rounded-full blur-2xl"
