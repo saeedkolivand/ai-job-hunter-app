@@ -34,7 +34,7 @@ export interface DropdownProps {
   searchable?: boolean;
   /** Tailwind max-height class applied to the options list. Defaults to 'max-h-56'. */
   listClassName?: string;
-  /** Trigger height — 'sm' matches Button size="sm" (h-7); 'md' is the default (h-9). */
+  /** Trigger height — 'sm' matches Button size="sm" (h-7); 'md' is the default, matches Button md (h-8). */
   size?: 'sm' | 'md';
   /**
    * Trigger accent. `default` is the neutral glass trigger; `primary` tints the
@@ -176,7 +176,7 @@ export function Dropdown({
         onKeyDown={handleKeyDown}
         className={cn(
           'flex w-full items-center justify-between gap-2 rounded-lg text-xs transition-all duration-150 shadow-sm',
-          size === 'sm' ? 'h-7 px-2.5' : 'h-9 px-3',
+          size === 'sm' ? 'h-7 px-2.5' : 'h-8 px-3',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
           'disabled:cursor-not-allowed disabled:opacity-40',
           tone === 'primary'
@@ -185,10 +185,10 @@ export function Dropdown({
                 open ? 'border-brand/55 bg-brand/15' : 'hover:border-brand/45 hover:bg-brand/15'
               )
             : cn(
-                'border border-[var(--border-soft)] bg-[rgb(var(--glass-rgb)/0.08)]',
+                'border border-[var(--border-clear)] bg-field',
                 open
-                  ? 'border-brand/35 bg-[rgb(var(--glass-rgb)/0.12)] text-foreground/90'
-                  : 'text-foreground/75 hover:border-[var(--border-mid)] hover:bg-[rgb(var(--glass-rgb)/0.12)] hover:text-foreground/90'
+                  ? 'border-brand/45 bg-muted text-foreground/90'
+                  : 'text-foreground/75 hover:border-[var(--border-clear)] hover:bg-muted hover:text-foreground/90'
               )
         )}
       >

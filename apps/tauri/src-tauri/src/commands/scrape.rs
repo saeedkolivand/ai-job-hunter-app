@@ -11,6 +11,11 @@ use crate::events::{emit_event, JobEvent, JOBS_EVENT, SCRAPE_PROGRESS};
 // packages/shared by `pnpm gen:ipc`. See crate::ipc_contracts::scrape.
 pub use crate::ipc_contracts::scrape::{ScrapeBoardRequest, ScrapeUrlRequest};
 
+/// Per-board page request budget. Each board clamps this down to its own page
+/// cap; combined with the central `amount` cap, whichever limit is hit first
+/// stops the scrape.
+const MAX_PAGE_BUDGET: u32 = 10;
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JobObject {
@@ -78,7 +83,8 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
     let input = BoardSearchInput {
         query: req.query.clone(),
         location: req.location.clone(),
-        pages: req.pages,
+        amount: req.amount.clamp(1, 100),
+        pages: MAX_PAGE_BUDGET,
         date_filter: req.date_filter.clone(),
         // Structured search filters from the IPC request (ScrapeBoardRequestSchema
         // in packages/shared). Optional, so absent fields stay None; LinkedIn's
@@ -99,6 +105,18 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
     };
     let board = req.board.clone();
 
+    // First-item-clear: on a NEW search (replace=true) the live postings cache is
+    // wiped under-lock the instant the first new result streams in, so a failed or
+    // empty search leaves the previous results intact. The latch ensures we clear
+    // exactly once. Append (replace omitted/false) leaves the cache untouched.
+    //
+    // `replace` (a NEW search vs "show more") makes the FIRST streamed item clear the
+    // live cache before adding itself, so an errored/empty scrape keeps the old list.
+    // Exclusivity is a renderer contract: the Jobs page cancels the in-flight scrape
+    // before starting a new one, so two concurrent replace=true scrapes don't race.
+    let replace = req.replace.unwrap_or(false);
+    let replaced_clone = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
     let app_progress = app.clone();
     let job_id_progress = job_id.clone();
     let on_progress = Box::new(move |p: f32| {
@@ -114,11 +132,12 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
     let job_id_item = job_id.clone();
     let on_item = Box::new(move |item: crate::scraping::JobPosting| {
         if let Some(cache) = app_item.try_state::<Mutex<PostingsCache>>() {
-            {
-                let mut guard = cache.lock();
-                if let Ok(item_json) = serde_json::to_value(&item) {
-                    guard.add(item_json);
-                }
+            let mut guard = cache.lock();
+            if replace && !replaced_clone.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                guard.clear_all();
+            }
+            if let Ok(item_json) = serde_json::to_value(&item) {
+                guard.add(item_json);
             }
         }
 

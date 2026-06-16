@@ -17,7 +17,7 @@ export function Accordion({ title, content, defaultOpen = false }: AccordionProp
 
   return (
     <div className="surface-card overflow-hidden rounded-lg">
-      {/* Ant-Design Collapse grammar: a left caret that rotates 90° on expand,
+      {/* Collapse grammar: a left caret that rotates 90° on expand,
          a subtly filled header that reads distinct from the white body, and a
          hairline divider between header and content. */}
       <Button

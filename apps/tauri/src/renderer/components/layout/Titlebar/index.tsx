@@ -4,11 +4,13 @@ import { type ComponentType, useEffect, useState } from 'react';
 import { useTranslation } from '@ajh/translations';
 
 import { onWindowControlsRegistered } from '@/lib/window-controls-registry';
+import { useOnboardingCompleted } from '@/store/preferences-store';
 
 import { NotificationBell } from './NotificationBell';
 
 export function Titlebar() {
   const { t } = useTranslation();
+  const onboardingCompleted = useOnboardingCompleted();
   const [WindowControls, setWindowControls] = useState<ComponentType | null>(null);
   const [isMac, setIsMac] = useState(false);
 
@@ -31,19 +33,21 @@ export function Titlebar() {
           bar regardless of how wide the left/right clusters are (the bell widens
           the right side). `pointer-events-none` lets the drag region pass through
           — the title isn't interactive, so nothing is lost. */}
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <div className="flex items-center gap-2 text-xs font-medium text-foreground/70">
-          <Sparkles size={14} className="opacity-80" />
-          <span className="text-gradient font-semibold tracking-wide">{t('app.title')}</span>
-          <span className="text-foreground/40">·</span>
-          <span className="text-foreground/40">{t('app.tagline')}</span>
+      {onboardingCompleted && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="flex items-center gap-2 text-xs font-medium text-foreground/70">
+            <Sparkles size={14} className="opacity-80" />
+            <span className="text-gradient font-semibold tracking-wide">{t('app.title')}</span>
+            <span className="text-foreground/40">·</span>
+            <span className="text-foreground/40">{t('app.tagline')}</span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Right cluster: notification bell + platform window controls. `app-no-drag`
           keeps both clickable inside the drag region. */}
       <div className="app-no-drag flex items-center gap-1">
-        <NotificationBell />
+        {onboardingCompleted && <NotificationBell />}
         {WindowControls && !isMac ? <WindowControls /> : <div className="w-20" />}
       </div>
     </div>

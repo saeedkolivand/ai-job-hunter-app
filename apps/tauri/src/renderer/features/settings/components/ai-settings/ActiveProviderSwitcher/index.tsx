@@ -39,7 +39,7 @@ export function ActiveProviderSwitcher({ providers, meta, activeProvider, onSetA
               className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
                 isActive
                   ? 'border-brand/40 bg-brand/10 text-brand-soft'
-                  : 'border-white/[0.07] bg-white/[0.02] text-foreground/50 hover:border-white/20 hover:text-foreground/80'
+                  : 'border-foreground/10 bg-foreground/[0.03] text-foreground/50 hover:border-foreground/20 hover:text-foreground/80'
               }`}
             >
               <Bot size={11} className={isActive ? m.color : ''} />

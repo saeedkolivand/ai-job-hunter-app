@@ -47,9 +47,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || loading}
         className={cn(
           // Base (skipped for `unstyled` — the call site owns layout/look).
-          // Apple: weight 400 (no 500), scale(0.95) press, pill for filled actions.
+          // Apple: weight 500 (font-medium), scale(0.95) press, pill for filled actions.
           !unstyled && [
-            'inline-flex items-center justify-center gap-2 font-normal transition-all duration-150',
+            'inline-flex items-center justify-center gap-2 font-medium transition-all duration-150',
             isPill ? 'rounded-full' : 'rounded-lg',
             'active:scale-[0.95]',
           ],
@@ -59,7 +59,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 
           // Filled Apple actions — solid colour + white label (tokens only, no hex)
           variant === 'primary' && [
-            'bg-brand-gradient text-action-foreground',
+            'bg-brand-gradient text-brand-foreground [text-shadow:0_1px_2px_rgba(0,0,0,0.28)]',
             'hover:brightness-110',
           ],
           variant === 'run' && ['bg-action-run text-action-foreground', 'hover:brightness-110'],
@@ -100,9 +100,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           ],
 
           // Sizes (skipped for `unstyled`)
-          !unstyled && size === 'sm' && 'h-7 px-2.5 text-xs',
-          !unstyled && size === 'md' && 'h-8 px-3.5 text-sm',
-          !unstyled && size === 'lg' && 'h-10 px-5 text-sm',
+          !unstyled && size === 'sm' && 'h-7 px-2.5 text-[10px]',
+          !unstyled && size === 'md' && 'h-8 px-3.5 text-[11px]',
+          !unstyled && size === 'lg' && 'h-10 px-5 text-[13px]',
 
           className
         )}

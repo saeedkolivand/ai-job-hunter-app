@@ -14,7 +14,7 @@ export function StepDots({ currentStep, totalSteps, className }: StepDotsProps) 
         <div
           key={i}
           className={`h-1 rounded-full transition-all duration-300 ${
-            i === currentStep ? 'w-5 bg-brand' : 'w-1.5 bg-white/15'
+            i === currentStep ? 'w-5 bg-brand' : 'w-1.5 bg-foreground/20'
           }`}
         />
       ))}

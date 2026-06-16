@@ -69,7 +69,6 @@ export function CloudProviderConfig({
           </div>
           <Button
             variant="ghost"
-            size="sm"
             className="text-xs text-red-400/60 hover:text-red-400"
             onClick={() => void onRemoveKey()}
           >
@@ -109,7 +108,6 @@ export function CloudProviderConfig({
             <div className="flex justify-end gap-2">
               <Button
                 variant="glass"
-                size="sm"
                 disabled={!apiKeyInput.trim() || isSaving}
                 onClick={() => void onSaveKey()}
                 className={apiKeyInput.trim() && !isSaving ? 'ring-1 ring-brand/20' : ''}
@@ -140,7 +138,6 @@ export function CloudProviderConfig({
             />
             <Button
               variant="ghost"
-              size="sm"
               className="shrink-0"
               onClick={() =>
                 setProviderSettings('openai-compatible', {
@@ -180,7 +177,6 @@ export function CloudProviderConfig({
       {connected && (
         <Button
           variant="glass"
-          size="sm"
           onClick={onSetActive}
           disabled={isActive}
           className={isActive ? 'opacity-40' : 'glow-subtle'}

@@ -33,7 +33,7 @@ export function OptimizationCard({ title, description, action, priority }: Optim
         </div>
         <div className="text-xs text-foreground/55">{description}</div>
       </div>
-      <Button size="sm" variant="glass" className="text-xs">
+      <Button variant="glass" className="text-xs">
         {action}
       </Button>
     </div>

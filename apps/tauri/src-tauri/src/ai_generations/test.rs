@@ -21,6 +21,7 @@ fn record(id: &str, job_url: &str) -> AiGenerationRecord {
         board: "linkedin".into(),
         application_answers: vec![],
         company_brief: String::new(),
+        interview_questions: vec![],
         application_id: None,
     }
 }
@@ -30,6 +31,15 @@ fn answer(id: &str) -> ApplicationAnswer {
         id: id.into(),
         question: format!("Q-{id}"),
         answer: format!("A-{id}"),
+    }
+}
+
+fn interview_question(id: &str) -> InterviewQuestion {
+    InterviewQuestion {
+        id: id.into(),
+        question: format!("Q-{id}"),
+        why: format!("why-{id}"),
+        audience: "recruiter".into(),
     }
 }
 
@@ -95,6 +105,7 @@ fn migration_defaults_link_fields_for_legacy_records() {
     assert_eq!(list[0].board, "");
     assert!(list[0].application_answers.is_empty());
     assert_eq!(list[0].company_brief, "");
+    assert!(list[0].interview_questions.is_empty());
 }
 
 #[test]
@@ -109,6 +120,36 @@ fn insert_round_trips_answers_and_brief() {
     let list = store.list();
     assert_eq!(list[0].application_answers, rec.application_answers);
     assert_eq!(list[0].company_brief, "Acme builds payment rails.");
+}
+
+#[test]
+fn insert_round_trips_interview_questions() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    let mut rec = record("g1", "https://acme.com/job/1");
+    rec.interview_questions = vec![interview_question("iq-1"), interview_question("iq-2")];
+    store.insert(&rec).unwrap();
+
+    let list = store.list();
+    assert_eq!(list[0].interview_questions, rec.interview_questions);
+}
+
+#[test]
+fn merge_layers_interview_questions_without_clobbering_other_fields() {
+    let mut existing = record("g1", "https://acme.com/job/1");
+    existing.cover_letter_text = "COVER".into();
+    existing.interview_questions = vec![];
+
+    // An interview-questions-only save: empty résumé/cover, carries questions.
+    let mut incoming = record("g2", "https://acme.com/job/1");
+    incoming.resume_text = String::new();
+    incoming.cover_letter_text = String::new();
+    incoming.interview_questions = vec![interview_question("iq-1")];
+
+    let merged = merge_application(existing, incoming);
+
+    assert_eq!(merged.cover_letter_text, "COVER", "cover is not wiped");
+    assert_eq!(merged.interview_questions, vec![interview_question("iq-1")]);
 }
 
 #[test]

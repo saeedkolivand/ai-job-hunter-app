@@ -6,15 +6,15 @@ Rules enforced by ESLint, TypeScript, and CI — violations block commits and fa
 
 ## Auto-Invoked Skills (on by default — no slash command needed)
 
-These skills are active automatically every session. Invoke them through the **Skill tool** without waiting for the user to type the slash command. A `SessionStart` hook (`.claude/hooks/style-policy.mjs`, wired in `.claude/settings.json`) re-injects this policy at the start of every session for deterministic activation — independent of this file being read or summarized. It fires only at session start, so the `stop caveman` off-switch still applies within a session.
+These skills are active automatically every session. Invoke them through the **Skill tool** without waiting for the user to type the slash command. A `SessionStart` hook (`.claude/hooks/style-policy.mjs`, wired in `.claude/settings.json`) re-injects this policy at the start of every session for deterministic activation — independent of this file being read or summarized. It fires only at session start, so the `stop ponytail` off-switch still applies within a session.
 
-### `caveman` — default output style (always on)
+### `ponytail` — lazy-senior-dev default (always on)
 
-- At the **start of every session**, invoke `Skill(caveman)` and stay in caveman mode for all responses.
-- Ultra-terse: drop articles / filler / pleasantries; keep **all** technical substance, code blocks, and exact error text.
-- Honor the skill's **auto-clarity exception** — switch to normal prose for security warnings, irreversible-action confirmations, and multi-step sequences, then resume caveman.
-- Off-switch: revert to normal prose only when the user says `stop caveman` / `normal mode`.
-- Source: `~/.claude/skills/caveman/SKILL.md`.
+- At the **start of every session**, invoke `Skill(ponytail:ponytail)` and stay in ponytail mode for all responses.
+- Reach for the laziest solution that actually works: question whether the task needs to exist (YAGNI), prefer the standard library / native platform features over dependencies, one line over fifty.
+- Default intensity **full**; switch with `/ponytail lite|full|ultra`.
+- Off-switch: revert to normal behavior only when the user says `stop ponytail` / `normal mode`.
+- Source: `ponytail@ponytail` plugin (skill `ponytail`).
 
 ### `grill-with-docs` — automatic before any plan is finalized
 

@@ -16,7 +16,6 @@
     "autopilot": "Autopilot",
     "documents": "Documents",
     "resumes": "Resumes",
-    "search": "Search",
     "monitoring": "Monitoring",
     "support": "Help & Support",
     "settings": "Settings",
@@ -633,7 +632,7 @@
         "portLabel": "Port",
         "portUnavailable": "Unavailable",
         "help": "Pair the AI Job Hunter browser extension to send jobs straight from any job board into your tracker.",
-        "notPublished": "Available soon on the Chrome Web Store and Firefox Add-ons.",
+        "notPublished": "Available for Chrome now — Firefox coming soon.",
         "regenerate": "Regenerate token",
         "regenerated": "Pairing token regenerated. Re-pair your browser to reconnect.",
         "regenerateFailed": "Could not regenerate the token.",
@@ -684,7 +683,7 @@
     "techStack": {
       "title": "Tech Stack",
       "description": "Add your technical skills to personalize job recommendations and AI analysis.",
-      "searchPlaceholder": "Search technologies...",
+      "searchPlaceholder": "Type any technology and press Enter…",
       "popular": "Popular"
     },
     "ai": {
@@ -1427,6 +1426,7 @@
     "empty": "No postings yet. Start a scrape to populate this board.",
     "emptyCta": "Search jobs",
     "open": "Open",
+    "view": "View",
     "copyLink": "Copy link",
     "actions": "Actions",
     "score": "Score",
@@ -1434,9 +1434,12 @@
     "scoreNoResume": "Save a résumé to score",
     "showMore": "Show more",
     "tailor": "Tailor",
-    "tailorHint": "Tailor your résumé & cover letter for this job and open the posting",
+    "tailorHint": "Tailor your résumé & cover letter for this job",
+    "tailorError": "Couldn't start tailoring. Please try again.",
     "scrapeJobs": "Scrape Jobs",
     "scrapeFailed": "Scraping failed",
+    "searching": "Searching for jobs…",
+    "scoring": "Scoring matches…",
     "cancel": "Cancel",
     "clear": "Clear",
     "clearScrapedJobs": "Clear scraped jobs",
@@ -1606,6 +1609,8 @@
     "unknownPosition": "Unknown position",
     "open": "Open",
     "select": {
+      "start": "Select",
+      "done": "Done",
       "selectAll": "Select all",
       "selectItem": "Select item",
       "clear": "Clear selection",
@@ -2089,18 +2094,7 @@
       "next": "Get started"
     },
     "prefs": {
-      "title": "Quick setup",
-      "subtitle": "Set your preferences — you can change these any time.",
-      "languageLabel": "Language",
-      "remoteLabel": "Where do you prefer to work?",
-      "remote": {
-        "remote": "Remote",
-        "hybrid": "Hybrid",
-        "on-site": "On-site",
-        "any": "Open to all"
-      },
-      "back": "Back",
-      "next": "Upload resume"
+      "languageLabel": "Language"
     },
     "ai": {
       "title": "Set up your AI",
@@ -2178,7 +2172,22 @@
       "skip": "Skip for now",
       "envVar": "You can also set the CHROME environment variable to point to a custom browser installation.",
       "back": "Back",
-      "next": "See the features"
+      "next": "Continue"
+    },
+    "extension": {
+      "title": "Install the browser extension",
+      "subtitle": "Import jobs straight from any board with one click. Install the extension, then pair it in Settings.",
+      "addToChrome": "Add to Chrome",
+      "firefoxSoon": "Firefox — coming soon",
+      "pairHint": "After installing, pair it in Settings → Accounts.",
+      "back": "Back",
+      "next": "Continue"
+    },
+    "appearance": {
+      "title": "Make it your own",
+      "subtitle": "Pick a colour scheme and accent. You can fine-tune everything later in Settings.",
+      "back": "Back",
+      "next": "Continue"
     },
     "tour": {
       "title": "Quick tour",
@@ -2190,6 +2199,10 @@
       "dashboard": {
         "title": "Dashboard",
         "desc": "Your mission control — see active jobs, AI status, and recent activity at a glance."
+      },
+      "applications": {
+        "title": "Applications",
+        "desc": "Track every application through its stages — timeline, status, and AI interview-prep questions, all in one place."
       },
       "analyze": {
         "title": "Resume Analyzer",
@@ -2209,15 +2222,11 @@
       },
       "autopilot": {
         "title": "Autopilot",
-        "desc": "Set search criteria and let AI automatically discover, filter, and optionally apply to matching jobs."
+        "desc": "Set search criteria and let AI automatically discover and surface matching jobs — then get notified and deep-linked straight to them."
       },
       "documents": {
         "title": "Documents",
         "desc": "Import and manage your resumes and cover letters. AI indexes them for smart matching."
-      },
-      "search": {
-        "title": "Search",
-        "desc": "Semantic search across all your documents and job postings using AI embeddings."
       }
     },
     "resume": {
@@ -2368,6 +2377,63 @@
       "candidatePlaceholder": "Your name",
       "cancel": "Cancel",
       "submit": "Track"
+    },
+    "detail": {
+      "back": "Back to applications",
+      "backAutopilot": "Back to Autopilot",
+      "backJobs": "Back to jobs",
+      "openAria": "Open {{title}}",
+      "statusTitle": "Status",
+      "tabs": {
+        "overview": "Overview",
+        "timeline": "Timeline",
+        "brief": "Brief & answers",
+        "documents": "Documents",
+        "interview": "Interview prep"
+      },
+      "tabsLabel": "Application detail tabs",
+      "timelineTitle": "Timeline",
+      "timelineEmpty": "No status history yet.",
+      "briefEmpty": "No brief or answers yet.",
+      "created": "Created",
+      "fieldsTitle": "Details",
+      "notesLabel": "Notes",
+      "notesPlaceholder": "Add a note about this application…",
+      "contactNameLabel": "Contact name",
+      "contactNamePlaceholder": "e.g. Jane Doe",
+      "contactEmailLabel": "Contact email",
+      "contactEmailPlaceholder": "name@company.com",
+      "compLabel": "Compensation",
+      "compPlaceholder": "e.g. $120,000 / negotiable",
+      "nextActionLabel": "Next action reminder",
+      "contactSection": "Contact",
+      "trackingSection": "Tracking",
+      "briefTitle": "Company brief",
+      "answersTitle": "Application answers",
+      "jobLink": "Job link",
+      "interview": {
+        "title": "Questions to ask",
+        "hint": "Smart questions to ask your interviewer, from the job + company research.",
+        "seedLabel": "Topics to focus on (optional)",
+        "seedPlaceholder": "e.g. team structure, roadmap, on-call — comma or line separated",
+        "generate": "Suggest questions",
+        "regenerate": "Regenerate",
+        "generating": "Researching…",
+        "empty": "No interview questions yet",
+        "emptyDesc": "Generate sharp, well-researched questions to ask your interviewer.",
+        "needsModel": "Select an AI model in settings to generate questions.",
+        "needsJob": "A job description is needed to tailor the questions.",
+        "audienceLabel": "Generate questions for",
+        "audience": {
+          "recruiter": "Recruiter / HR (1st round)",
+          "hiringManager": "Hiring manager",
+          "team": "Team",
+          "leadership": "Leadership",
+          "general": "Anyone"
+        }
+      },
+      "notFound": "Application not found",
+      "notFoundDesc": "This application may have been removed."
     }
   },
   "notifications": {

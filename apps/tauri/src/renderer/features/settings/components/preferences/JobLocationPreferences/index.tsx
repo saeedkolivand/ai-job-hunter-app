@@ -86,15 +86,14 @@ export function JobLocationPreferences() {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -10 }}
-          className="mb-4 flex items-center gap-2 rounded-lg bg-white/5 px-4 py-3"
+          className="mb-4 flex items-center gap-2 rounded-lg bg-foreground/[0.06] px-4 py-3"
         >
           <MapPin size={16} className="text-brand-soft" />
           <span className="flex-1 text-sm text-foreground">{jobPrefs.location}</span>
           <Button
             variant="ghost"
-            size="sm"
             onClick={handleRemoveLocation}
-            className="!bg-transparent hover:bg-white/5"
+            className="h-8 w-8 p-0 !bg-transparent hover:bg-foreground/[0.06]"
           >
             <X size={14} />
           </Button>
@@ -127,6 +126,7 @@ export function JobLocationPreferences() {
           <Button
             variant="glass"
             size="md"
+            className="h-8 w-8 p-0"
             onClick={() => inputValue && handleAddLocation(inputValue)}
             disabled={!inputValue}
           >
@@ -143,7 +143,7 @@ export function JobLocationPreferences() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.98 }}
                 transition={transition.fast}
-                className="fixed overflow-hidden rounded-xl border border-white/10 bg-secondary shadow-xl"
+                className="fixed overflow-hidden rounded-xl border border-foreground/10 bg-secondary shadow-xl"
                 style={{
                   top: `${dropdownPosition.top}px`,
                   left: `${dropdownPosition.left}px`,
@@ -156,7 +156,7 @@ export function JobLocationPreferences() {
                     <Button
                       key={suggestion}
                       onClick={() => handleAddLocation(suggestion)}
-                      className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground/70 hover:bg-white/5 hover:text-foreground transition-colors h-auto bg-transparent border-transparent"
+                      className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground/70 hover:bg-foreground/[0.06] hover:text-foreground transition-colors h-auto bg-transparent border-transparent"
                     >
                       <MapPin size={14} className="text-foreground/40" />
                       {suggestion}
@@ -181,9 +181,8 @@ export function JobLocationPreferences() {
               <Button
                 key={loc}
                 variant="ghost"
-                size="sm"
                 onClick={() => handleAddLocation(loc)}
-                className="!bg-transparent hover:bg-white/5"
+                className="!bg-transparent hover:bg-foreground/[0.06]"
               >
                 <MapPin size={12} className="text-foreground/40" />
                 {loc}

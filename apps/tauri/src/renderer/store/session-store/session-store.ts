@@ -1,10 +1,9 @@
 import { create } from 'zustand';
 
 import type { InterviewAnswers } from '@ajh/prompts/builder';
-import type { AutopilotFoundJob } from '@ajh/shared';
 
-import type { TailorWizardState } from '@/features/autopilot/components/ApplyPage/lib/tailor-state';
 import type { WizardState } from '@/features/autopilot/types';
+import type { TailorWizardState } from '@/features/documents/components/TailorFlow/lib/tailor-state';
 import type { EmphasisId, GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate';
 import type { AnalysisMode, AnalysisResult } from '@/lib/resume-ai';
 
@@ -81,23 +80,39 @@ interface SettingsSlice {
   activeSection: SettingsSection;
 }
 
-export interface AutopilotApplyTarget {
-  job: AutopilotFoundJob;
-  resumeText?: string;
-  board: string;
-}
-
 interface AutopilotSlice {
   creating: boolean;
   editingId: string | null;
   wizardStep: number;
   wizardForm: WizardState | null;
   focusedId: string | null;
-  apply: AutopilotApplyTarget | null;
+  /**
+   * The autopilot the user last applied from (deep-linked into the application
+   * detail). Consumed once when the Autopilot page next mounts — promoted to
+   * `focusedId` so pressing Back re-expands that card instead of collapsing it.
+   */
+  lastAppliedId: string | null;
+}
+
+/**
+ * Application-detail tailoring state — a SEPARATE slice from `autopilot` so the
+ * application-detail surface owns its own wizard/template/ATS persistence and
+ * never shares configuring state with the autopilot apply flow.
+ * applyForId — which application id this configuring state belongs to (used to
+ * reset on switch).
+ */
+interface ApplicationApplySlice {
   applyWizardStep: number;
   applyWizardForm: TailorWizardState | null;
   applyTemplateId: TemplateId;
   applyAtsMode: boolean;
+  applyForId: string | null;
+  /** One-shot résumé seed for the Documents-tab wizard when arriving from the
+   *  autopilot Apply deep-link; cleared when switching to another application. */
+  applySeedResume: string | null;
+  /** One-shot match-level id (e.g. `strong`) carried from autopilot Apply so the
+   *  detail header can show the badge; cleared when switching applications. */
+  applyMatchLevel: string | null;
 }
 
 /**
@@ -129,6 +144,16 @@ const AI_GENERATE_DEFAULTS: AIGenerateSlice = {
   coverOut: '',
   activeOut: 'resume',
   wizardStep: 0,
+};
+
+const APPLICATION_APPLY_DEFAULTS: ApplicationApplySlice = {
+  applyWizardStep: 0,
+  applyWizardForm: null,
+  applyTemplateId: 'modern',
+  applyAtsMode: false,
+  applyForId: null,
+  applySeedResume: null,
+  applyMatchLevel: null,
 };
 
 const ANALYZE_DEFAULTS: AnalyzeSlice = {
@@ -173,6 +198,7 @@ interface SessionState {
   resumes: ResumesSlice;
   settings: SettingsSlice;
   autopilot: AutopilotSlice;
+  applicationApply: ApplicationApplySlice;
   applications: ApplicationsSlice;
 
   setAIGenerate: (patch: Partial<AIGenerateSlice>) => void;
@@ -191,6 +217,8 @@ interface SessionState {
   setAutopilot: (patch: Partial<AutopilotSlice>) => void;
   resetAutopilotWizard: () => void;
 
+  setApplicationApply: (patch: Partial<ApplicationApplySlice>) => void;
+
   setApplications: (patch: Partial<ApplicationsSlice>) => void;
   toggleApplicationSection: (stageId: string) => void;
 }
@@ -208,12 +236,9 @@ export const useSessionStore = create<SessionState>((set) => ({
     wizardStep: 0,
     wizardForm: null,
     focusedId: null,
-    apply: null,
-    applyWizardStep: 0,
-    applyWizardForm: null,
-    applyTemplateId: 'modern',
-    applyAtsMode: false,
+    lastAppliedId: null,
   },
+  applicationApply: { ...APPLICATION_APPLY_DEFAULTS },
   applications: { collapsedSections: [], filter: '' },
 
   setAIGenerate: (patch) => set((s) => ({ aiGenerate: { ...s.aiGenerate, ...patch } })),
@@ -240,6 +265,9 @@ export const useSessionStore = create<SessionState>((set) => ({
         wizardForm: null,
       },
     })),
+
+  setApplicationApply: (patch) =>
+    set((s) => ({ applicationApply: { ...s.applicationApply, ...patch } })),
 
   setApplications: (patch) => set((s) => ({ applications: { ...s.applications, ...patch } })),
   toggleApplicationSection: (stageId) =>

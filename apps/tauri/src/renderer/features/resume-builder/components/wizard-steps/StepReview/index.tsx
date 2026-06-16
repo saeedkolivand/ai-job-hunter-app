@@ -1,9 +1,9 @@
-import { AlertTriangle, Info } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { useId, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 
 import { useTranslation } from '@ajh/translations';
-import { Dropdown } from '@ajh/ui';
+import { Alert, Dropdown } from '@ajh/ui';
 
 import { StepTemplate } from '@/features/ai-generate/components/wizard-steps/StepTemplate';
 import { OUTPUT_LANGUAGES, type TemplateId } from '@/lib/generate';
@@ -63,18 +63,10 @@ export function StepReview({
 
   return (
     <div className="space-y-5">
-      {!isComplete && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-400/20 bg-amber-400/5 px-3.5 py-2.5 text-xs text-amber-200/80">
-          <Info size={14} className="mt-0.5 shrink-0" />
-          <span>{t('build.review.incomplete')}</span>
-        </div>
-      )}
+      {!isComplete && <Alert type="warning" showIcon message={t('build.review.incomplete')} />}
 
       {errorCount > 0 && (
-        <div className="flex items-start gap-2 rounded-lg border border-red-400/20 bg-red-400/5 px-3.5 py-2.5 text-xs text-red-300/80">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-          <span>{t('build.review.fixIssues', { count: errorCount })}</span>
-        </div>
+        <Alert type="error" showIcon message={t('build.review.fixIssues', { count: errorCount })} />
       )}
 
       <WizardField label={t('build.review.language')}>
@@ -86,12 +78,7 @@ export function StepReview({
         />
       </WizardField>
 
-      {isCjkLanguage && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-400/20 bg-amber-400/5 px-3.5 py-2.5 text-xs text-amber-200/80">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-          <span>{t('build.review.cjkHint')}</span>
-        </div>
-      )}
+      {isCjkLanguage && <Alert type="warning" showIcon message={t('build.review.cjkHint')} />}
 
       <StepTemplate
         templateId={templateId}

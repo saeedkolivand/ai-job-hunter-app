@@ -7,6 +7,7 @@ import { useJobMatchScores } from '@/services';
 interface MatchScoresContextValue {
   getScore: (jobId: string) => MatchScore | undefined;
   isPending: boolean; // raw batch in-flight flag (gated by resume + jobIds)
+  isError: boolean;
   hasResume: boolean;
 }
 
@@ -27,7 +28,7 @@ export function MatchScoresProvider({
   jobIds: string[];
   children: ReactNode;
 }) {
-  const { scoresById, isPending: queryIsPending } = useJobMatchScores(resumeId, jobIds);
+  const { scoresById, isPending: queryIsPending, isError } = useJobMatchScores(resumeId, jobIds);
 
   const isPending = queryIsPending && !!resumeId && jobIds.length > 0;
   const hasResume = !!resumeId;
@@ -36,9 +37,10 @@ export function MatchScoresProvider({
     () => ({
       getScore: (jobId: string) => scoresById.get(jobId),
       isPending,
+      isError,
       hasResume,
     }),
-    [scoresById, isPending, hasResume]
+    [scoresById, isPending, isError, hasResume]
   );
 
   return <MatchScoresContext.Provider value={value}>{children}</MatchScoresContext.Provider>;
@@ -54,4 +56,20 @@ export function useRowMatchScore(jobId: string): {
   const { getScore, isPending, hasResume } = ctx;
   const score = getScore(jobId);
   return { score, pending: isPending && !score, hasResume };
+}
+
+/**
+ * Reads the whole batch-score context — used by `JobsResults` to gate the list
+ * (while `isPending`/scraping) and to re-sort by score on reveal. Rows should
+ * keep using `useRowMatchScore` for their per-row slice.
+ */
+export function useMatchScores(): {
+  getScore: (jobId: string) => MatchScore | undefined;
+  isPending: boolean;
+  isError: boolean;
+  hasResume: boolean;
+} {
+  const ctx = useContext(MatchScoresContext);
+  if (!ctx) throw new Error('useMatchScores must be used within MatchScoresProvider');
+  return ctx;
 }

@@ -76,7 +76,7 @@ export function ResumeBuilderPage() {
     <PageTransition className="h-full overflow-hidden">
       <div className="flex h-full flex-col">
         {/* Header: title + model picker */}
-        <div className="shrink-0 flex items-center justify-between gap-4 border-b border-white/8 px-8 py-4">
+        <div className="shrink-0 flex items-center justify-between gap-4 border-b border-[var(--border-soft)] px-8 py-4">
           <div>
             <h1 className="text-sm font-semibold text-foreground/90">{t('build.title')}</h1>
             <p className="text-xs text-foreground/40">{t('build.subtitle')}</p>
@@ -138,12 +138,12 @@ export function ResumeBuilderPage() {
                   isGenerating={isGenerating}
                   generatingDoc={null}
                 />
-                <div className="shrink-0 flex items-center justify-end gap-2 border-t border-white/8 px-8 py-3">
-                  <Button onClick={reset} variant="ghost" size="sm" className="gap-1.5">
+                <div className="shrink-0 flex items-center justify-end gap-2 border-t border-[var(--border-soft)] px-8 py-3">
+                  <Button onClick={reset} variant="ghost" className="gap-1.5">
                     <RotateCcw size={14} />
                     {t('build.output.startOver')}
                   </Button>
-                  <Button onClick={tailorToJob} variant="glass" size="sm" className="gap-1.5">
+                  <Button onClick={tailorToJob} variant="glass" className="gap-1.5">
                     {t('build.output.tailor')}
                     <ArrowRight size={14} />
                   </Button>

@@ -96,7 +96,6 @@ export function CliAgentConfig({
 
           <Button
             variant="glass"
-            size="sm"
             onClick={onSetActive}
             disabled={isActive}
             className={isActive ? 'opacity-40' : 'ring-1 ring-brand/20'}

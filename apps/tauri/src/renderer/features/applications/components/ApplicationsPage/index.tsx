@@ -10,7 +10,7 @@ import { Button, EmptyState, ErrorState, Input, RowSkeleton, transition } from '
 import { PageShell } from '@/components/layout/PageShell';
 import { ApplicationRow } from '@/features/applications/components/ApplicationRow';
 import { TrackJobModal } from '@/features/applications/components/TrackJobModal';
-import { Route } from '@/routes/applications';
+import { Route } from '@/routes/applications.index';
 import { useApplications } from '@/services/use-applications';
 import { useSessionStore } from '@/store/session-store';
 
@@ -89,12 +89,12 @@ export function ApplicationsPage() {
         value={filter}
         onChange={(e) => setApplications({ filter: e.target.value })}
         placeholder={t('applications.filterPlaceholder')}
-        className="w-40 text-xs text-foreground/75 placeholder:text-foreground/30"
+        className="w-40 text-foreground/75 placeholder:text-foreground/30"
         variant="default"
-        wrapperClassName="h-7"
+        wrapperClassName="h-8"
         allowClear
       />
-      <Button size="sm" variant="primary" onClick={() => setTrackOpen(true)}>
+      <Button variant="primary" onClick={() => setTrackOpen(true)}>
         <Plus size={12} />
         {t('applications.trackButton')}
       </Button>
@@ -130,7 +130,7 @@ export function ApplicationsPage() {
             title={t('applications.empty')}
             description={t('applications.emptyDesc')}
             action={
-              <Button variant="primary" size="sm" onClick={() => setTrackOpen(true)}>
+              <Button variant="primary" onClick={() => setTrackOpen(true)}>
                 <Plus size={13} /> {t('applications.trackButton')}
               </Button>
             }

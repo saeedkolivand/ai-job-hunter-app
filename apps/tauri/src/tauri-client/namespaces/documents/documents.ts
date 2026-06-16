@@ -4,6 +4,7 @@ import type { DocumentImportRequest } from '@ajh/shared/schemas';
 
 export const documents = {
   list: () => invoke('documents_list'),
+  getText: (id: string) => invoke('documents_get_text', { id }),
   import: (req: DocumentImportRequest) => invoke('documents_import', { req }),
   recommendTemplate: (req: unknown) => invoke('documents_recommend_template', { req }),
   remove: (id: string) => invoke('documents_remove', { id }),

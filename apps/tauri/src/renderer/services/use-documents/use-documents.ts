@@ -16,6 +16,15 @@ export const useDocuments = () => {
   return useQuery({ queryKey: keys.documents.all, queryFn: () => api.documents.list() });
 };
 
+export const useDocumentText = (id: string | null | undefined) => {
+  const api = useAppClient();
+  return useQuery({
+    queryKey: keys.documents.text(id ?? ''),
+    queryFn: () => api.documents.getText(id ?? ''),
+    enabled: !!id,
+  });
+};
+
 export const useImportDocument = () => {
   const api = useAppClient();
   const qc = useQueryClient();

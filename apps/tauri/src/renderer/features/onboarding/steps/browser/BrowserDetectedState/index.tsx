@@ -115,13 +115,12 @@ export function BrowserDetectedState({ browserPath, onBack, onNext }: BrowserDet
       <div className="flex items-center justify-between pt-4">
         <Button
           variant="ghost"
-          size="sm"
           onClick={onBack}
           className="text-foreground/40 hover:text-foreground/70"
         >
           <ArrowLeft size={14} /> {t('onboarding.back')}
         </Button>
-        <Button onClick={onNext} className="px-8">
+        <Button variant="primary" onClick={onNext} className="px-8">
           {t('onboarding.browser.next')}
           <ArrowRight size={15} className="ml-2" />
         </Button>

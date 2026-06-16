@@ -16,10 +16,6 @@ pub async fn job_preferences_set(app: AppHandle, prefs: Value) -> Value {
     let job_prefs: crate::job_preferences::JobPreferences = serde_json::from_value(prefs)
         .unwrap_or(crate::job_preferences::JobPreferences {
             location: None,
-            remote: None,
-            seniority: None,
-            salary_min: None,
-            salary_max: None,
             tech_stack: None,
         });
     match store.set(&job_prefs) {

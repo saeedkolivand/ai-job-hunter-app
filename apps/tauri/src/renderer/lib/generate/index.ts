@@ -3,11 +3,13 @@ export {
   extractMetadata,
   generateApplicationAnswer,
   generateCoverLetter,
+  generateInterviewQuestions,
   generateReferral,
   generateResume,
   type GenerationMeta,
   type GenerationMode,
   MODES,
+  parseInterviewQuestions,
   researchCompany,
   rewriteSelection,
   synthesizeResume,
@@ -36,10 +38,12 @@ export type {
  * useTailorGeneration) stay in lockstep.
  */
 export const PERSIST_DEBOUNCE_MS = 800;
-export type { EmphasisId, RewriteDocType } from '@ajh/prompts/generate';
+export type { EmphasisId, InterviewAudience, RewriteDocType } from '@ajh/prompts/generate';
 export {
   CONNECTION_NOTE_LIMIT,
   EMPHASIS_OPTIONS,
+  INTERVIEW_AUDIENCES,
+  INTERVIEW_QUESTIONS_PER_AUDIENCE,
   LETTER_MARKET_IDS,
   letterConventions,
   resolveMarket,

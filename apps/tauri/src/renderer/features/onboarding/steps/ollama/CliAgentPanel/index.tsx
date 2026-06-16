@@ -117,7 +117,6 @@ export function CliAgentPanel({ selectedProvider, onProviderChange }: CliAgentPa
           </p>
           <Button
             variant="glass"
-            size="sm"
             onClick={() => void openExternal.mutateAsync(docsUrl)}
             className="h-auto px-2 py-1 text-xs"
           >

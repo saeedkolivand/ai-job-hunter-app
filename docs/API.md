@@ -397,6 +397,10 @@ Document import, storage, and export.
 
 #### `documents.list(): Promise<DocumentRecord[]>`
 
+#### `documents.getText(id: string): Promise<string>`
+
+Fetches the stored extracted text for a document by id. Returns an empty string if the document is missing or has no text (never rejects).
+
 #### `documents.get(id: string): Promise<DocumentRecord>`
 
 #### `documents.delete(id: string): Promise<void>`

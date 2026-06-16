@@ -31,6 +31,11 @@ pub struct JobPosting {
 pub struct BoardSearchInput {
     pub query: String,
     pub location: Option<String>,
+    /// Target number of postings to collect (the user's requested item count,
+    /// clamped to 100). The engine caps streamed/returned items to this centrally.
+    pub amount: u32,
+    /// Per-board page request BUDGET. Each board clamps this down to its own max
+    /// page count; it bounds how many requests we make, independent of `amount`.
     pub pages: u32,
     pub date_filter: Option<String>,
     pub job_type: Option<String>, // 'F' (Full-time), 'P' (Part-time), etc.

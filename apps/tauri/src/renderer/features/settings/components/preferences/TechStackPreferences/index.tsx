@@ -6,32 +6,15 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, GlassCard, Input, transition } from '@ajh/ui';
 
+import { COMMON_TECH } from '@/constants/tech-stack';
 import { useJobPreferences, useSetJobPreferences } from '@/services';
-
-const COMMON_TECH = [
-  { name: 'JavaScript', category: 'language' },
-  { name: 'TypeScript', category: 'language' },
-  { name: 'Python', category: 'language' },
-  { name: 'React', category: 'framework' },
-  { name: 'Vue', category: 'framework' },
-  { name: 'Angular', category: 'framework' },
-  { name: 'Node.js', category: 'framework' },
-  { name: 'PostgreSQL', category: 'database' },
-  { name: 'MongoDB', category: 'database' },
-  { name: 'Redis', category: 'database' },
-  { name: 'Docker', category: 'tool' },
-  { name: 'Kubernetes', category: 'tool' },
-  { name: 'Git', category: 'tool' },
-  { name: 'AWS', category: 'tool' },
-  { name: 'GraphQL', category: 'language' },
-];
 
 const CATEGORY_COLORS: Record<string, string> = {
   language: 'bg-blue-500/20 text-blue-400',
   framework: 'bg-purple-500/20 text-purple-400',
   database: 'bg-green-500/20 text-green-400',
   tool: 'bg-orange-500/20 text-orange-400',
-  other: 'bg-gray-500/20 text-gray-400',
+  other: 'bg-gray-500/20 text-foreground/50',
 };
 
 export function TechStackPreferences() {
@@ -56,6 +39,25 @@ export function TechStackPreferences() {
     setJobPreferences.mutate({
       ...jobPrefs,
       techStack: [...techStack, { name, category }],
+    });
+    setInputValue('');
+    setShowSuggestions(false);
+  };
+
+  const addTech = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    const isDup = techStack.some(
+      (item: { name: string }) => item.name.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (isDup) return;
+    const match = COMMON_TECH.find((tch) => tch.name.toLowerCase() === trimmed.toLowerCase());
+    setJobPreferences.mutate({
+      ...jobPrefs,
+      techStack: [
+        ...techStack,
+        { name: match?.name ?? trimmed, category: match?.category ?? 'other' },
+      ],
     });
     setInputValue('');
     setShowSuggestions(false);
@@ -110,24 +112,27 @@ export function TechStackPreferences() {
       {/* Current Tech Stack */}
       {techStack.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2">
-          {techStack.map((item: { name: string; category: string }) => (
-            <motion.div
-              key={item.name}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="flex items-center gap-2 rounded-full bg-white/5 px-3 py-1.5 text-sm"
-            >
-              <Code2 size={14} className="text-foreground/40" />
-              <span className="text-foreground">{item.name}</span>
-              <Button
-                onClick={() => handleRemoveTech(item.name)}
-                className="ml-1 rounded-full p-0.5 hover:bg-white/10 transition-colors h-auto bg-transparent border-transparent"
+          <AnimatePresence>
+            {techStack.map((item: { name: string; category: string }) => (
+              <motion.div
+                key={item.name}
+                layout
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="flex items-center gap-2 rounded-full bg-foreground/[0.06] px-3 py-1.5 text-sm"
               >
-                <X size={12} className="text-foreground/40 hover:text-foreground" />
-              </Button>
-            </motion.div>
-          ))}
+                <Code2 size={14} className="text-foreground/40" />
+                <span className="text-foreground">{item.name}</span>
+                <Button
+                  onClick={() => handleRemoveTech(item.name)}
+                  className="ml-1 rounded-full p-0.5 hover:bg-foreground/10 transition-colors h-auto bg-transparent border-transparent"
+                >
+                  <X size={12} className="text-foreground/40 hover:text-foreground" />
+                </Button>
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
       )}
 
@@ -146,6 +151,12 @@ export function TechStackPreferences() {
                 setShowSuggestions(e.target.value.length > 0);
               }}
               onFocus={() => setShowSuggestions(inputValue.length > 0)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addTech(inputValue);
+                }
+              }}
               placeholder={t('settings.techStack.searchPlaceholder')}
               className="pl-10"
             />
@@ -153,14 +164,7 @@ export function TechStackPreferences() {
           <Button
             variant="glass"
             size="md"
-            onClick={() => {
-              const match = COMMON_TECH.find(
-                (t) => t.name.toLowerCase() === inputValue.toLowerCase()
-              );
-              if (match && !techStack.some((item: { name: string }) => item.name === match.name)) {
-                handleAddTech(match.name, match.category);
-              }
-            }}
+            onClick={() => addTech(inputValue)}
             disabled={
               !inputValue ||
               techStack.some(
@@ -191,14 +195,14 @@ export function TechStackPreferences() {
                 width: position.width,
                 zIndex: 9999,
               }}
-              className="overflow-hidden rounded-xl border border-white/10 bg-secondary shadow-xl"
+              className="overflow-hidden rounded-xl border border-foreground/10 bg-secondary shadow-xl"
             >
               <div className="max-h-48 overflow-y-auto px-1 py-1">
                 {filteredSuggestions.map((suggestion) => (
                   <Button
                     key={suggestion.name}
                     onClick={() => handleAddTech(suggestion.name, suggestion.category)}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground/70 hover:bg-white/5 hover:text-foreground transition-colors h-auto bg-transparent border-transparent"
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground/70 hover:bg-foreground/[0.06] hover:text-foreground transition-colors h-auto bg-transparent border-transparent"
                   >
                     <Code2 size={14} className="text-foreground/40" />
                     <span className="flex-1 text-left">{suggestion.name}</span>
@@ -229,9 +233,8 @@ export function TechStackPreferences() {
               <Button
                 key={tech.name}
                 variant="ghost"
-                size="sm"
                 onClick={() => handleAddTech(tech.name, tech.category)}
-                className="!bg-transparent hover:bg-white/5"
+                className="!bg-transparent hover:bg-foreground/[0.06]"
               >
                 <Code2 size={12} className="text-foreground/40" />
                 {tech.name}

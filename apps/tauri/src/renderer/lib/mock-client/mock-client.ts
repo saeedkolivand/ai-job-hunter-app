@@ -18,7 +18,6 @@
  * deep-partial — only the methods you care about need to be specified.
  */
 import type { ReferralContact, ReferralUpsertRequest } from '@ajh/shared';
-import type { SearchHit } from '@ajh/shared/types';
 
 import type { AppClient } from '../app-client';
 
@@ -109,6 +108,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
 
     documents: {
       list: emptyList,
+      getText: async () => '',
       import: noop,
       recommendTemplate: async () => ({
         templateId: 'modern',
@@ -136,10 +136,6 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     extensionBridge: {
       status: async () => ({ port: 47615, connected: false, token: 'mock-token' }),
       regenerateToken: async () => ({ token: 'mock-token' }),
-    },
-
-    search: {
-      hybrid: async () => [] as SearchHit<unknown>[],
     },
 
     scrape: {

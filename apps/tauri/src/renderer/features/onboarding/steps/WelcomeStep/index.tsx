@@ -12,6 +12,7 @@ import { OnboardingStepWrapper } from '../../components/OnboardingStepWrapper';
 
 interface Props {
   onNext: () => void;
+  onBack?: () => void;
   direction: number;
   stepIndex: number;
   totalSteps: number;
@@ -121,7 +122,7 @@ export function WelcomeStep({ onNext, direction, stepIndex, totalSteps }: Props)
       </div>
 
       <Button
-        variant="default"
+        variant="primary"
         size="lg"
         className="w-full justify-center"
         onClick={handleNext}

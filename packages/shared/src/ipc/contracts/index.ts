@@ -39,7 +39,6 @@ import { PRIVACY_CHANNELS, type PrivacyContract } from './privacy.js';
 import { REFERRALS_CHANNELS, type ReferralsContract } from './referrals.js';
 import { RESUME_CHANNELS, type ResumeContract } from './resume.js';
 import { SCRAPE_CHANNELS, type ScrapeContract } from './scrape.js';
-import { SEARCH_CHANNELS, type SearchContract } from './search.js';
 import type { ShortcutsContract } from './shortcuts.js';
 import { SUPPORT_CHANNELS, type SupportContract } from './support.js';
 import { SYSTEM_CHANNELS, type SystemContract } from './system.js';
@@ -57,7 +56,6 @@ export interface IpcContract {
   jobPreferences: JobPreferencesContract;
   contactProfile: ContactProfileContract;
   extensionBridge: ExtensionBridgeContract;
-  search: SearchContract;
   scrape: ScrapeContract;
   match: MatchContract;
   geocode: GeocodeContract;
@@ -90,7 +88,6 @@ export const IPC_CHANNELS = {
   jobPreferences: JOB_PREFERENCES_CHANNELS,
   contactProfile: CONTACT_PROFILE_CHANNELS,
   extensionBridge: EXTENSION_BRIDGE_CHANNELS,
-  search: SEARCH_CHANNELS,
   scrape: SCRAPE_CHANNELS,
   match: MATCH_CHANNELS,
   geocode: GEOCODE_CHANNELS,
@@ -217,7 +214,6 @@ export {
 } from './referrals.js';
 export { RESUME_CHANNELS, type ResumeContract } from './resume.js';
 export { SCRAPE_CHANNELS, type ScrapeContract } from './scrape.js';
-export { SEARCH_CHANNELS, type SearchContract } from './search.js';
 export { type ShortcutsContract } from './shortcuts.js';
 export { SUPPORT_CHANNELS, type SupportContract } from './support.js';
 export { SYSTEM_CHANNELS, type SystemContract } from './system.js';

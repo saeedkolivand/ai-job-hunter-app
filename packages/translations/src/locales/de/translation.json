@@ -16,7 +16,6 @@
     "autopilot": "Autopilot",
     "documents": "Dokumente",
     "resumes": "Lebensläufe",
-    "search": "Suche",
     "monitoring": "Monitoring",
     "support": "Hilfe & Support",
     "settings": "Einstellungen",
@@ -603,7 +602,7 @@
         "portLabel": "Port",
         "portUnavailable": "Nicht verfügbar",
         "help": "Koppeln Sie die AI-Job-Hunter-Browser-Erweiterung, um Jobs direkt aus jeder Jobbörse in Ihre Verwaltung zu senden.",
-        "notPublished": "Demnächst im Chrome Web Store und bei Firefox Add-ons verfügbar.",
+        "notPublished": "Jetzt für Chrome verfügbar — Firefox folgt in Kürze.",
         "regenerate": "Token neu generieren",
         "regenerated": "Kopplungs-Token neu generiert. Koppeln Sie Ihren Browser erneut, um die Verbindung wiederherzustellen.",
         "regenerateFailed": "Token konnte nicht neu generiert werden.",
@@ -654,7 +653,7 @@
     "techStack": {
       "title": "Tech-Stack",
       "description": "Fügen Sie Ihre technischen Fähigkeiten hinzu, um Job-Empfehlungen und KI-Analyse zu personalisieren.",
-      "searchPlaceholder": "Technologien suchen...",
+      "searchPlaceholder": "Beliebige Technologie eingeben und Enter drücken…",
       "popular": "Beliebt"
     },
     "ai": {
@@ -1401,6 +1400,7 @@
     "empty": "Noch keine Anzeigen. Starten Sie einen Scrape, um dieses Board zu füllen.",
     "emptyCta": "Jobs suchen",
     "open": "Öffnen",
+    "view": "Ansehen",
     "copyLink": "Link kopieren",
     "actions": "Aktionen",
     "score": "Bewerten",
@@ -1408,9 +1408,12 @@
     "scoreNoResume": "Speichere einen Lebenslauf zum Bewerten",
     "showMore": "Mehr anzeigen",
     "tailor": "Anpassen",
-    "tailorHint": "Lebenslauf & Anschreiben für diesen Job anpassen und die Stellenanzeige öffnen",
+    "tailorHint": "Lebenslauf & Anschreiben für diesen Job anpassen",
+    "tailorError": "Anpassung konnte nicht gestartet werden. Bitte erneut versuchen.",
     "scrapeJobs": "Jobs scrapen",
     "scrapeFailed": "Scraping fehlgeschlagen",
+    "searching": "Suche nach Jobs…",
+    "scoring": "Bewerte Übereinstimmungen…",
     "cancel": "Abbrechen",
     "clear": "Löschen",
     "clearScrapedJobs": "Gescrapte Jobs löschen",
@@ -1580,6 +1583,8 @@
     "unknownPosition": "Unbekannte Position",
     "open": "Öffnen",
     "select": {
+      "start": "Auswählen",
+      "done": "Fertig",
       "selectAll": "Alle auswählen",
       "selectItem": "Element auswählen",
       "clear": "Auswahl aufheben",
@@ -2059,18 +2064,7 @@
       "next": "Loslegen"
     },
     "prefs": {
-      "title": "Schnelleinrichtung",
-      "subtitle": "Legen Sie Ihre Einstellungen fest — Sie können diese jederzeit ändern.",
-      "languageLabel": "Sprache",
-      "remoteLabel": "Wo möchten Sie arbeiten?",
-      "remote": {
-        "remote": "Remote",
-        "hybrid": "Hybrid",
-        "on-site": "Vor Ort",
-        "any": "Alles offen"
-      },
-      "back": "Zurück",
-      "next": "Lebenslauf hochladen"
+      "languageLabel": "Sprache"
     },
     "ai": {
       "title": "KI einrichten",
@@ -2148,7 +2142,22 @@
       "skip": "Vorerst überspringen",
       "envVar": "Sie können auch die Umgebungsvariable CHROME festlegen, um auf eine benutzerdefinierte Browser-Installation zu verweisen.",
       "back": "Zurück",
-      "next": "Funktionen ansehen"
+      "next": "Weiter"
+    },
+    "extension": {
+      "title": "Browser-Erweiterung installieren",
+      "subtitle": "Importieren Sie Jobs mit einem Klick direkt von jeder Jobbörse. Installieren Sie die Erweiterung und koppeln Sie sie anschließend in den Einstellungen.",
+      "addToChrome": "Zu Chrome hinzufügen",
+      "firefoxSoon": "Firefox — folgt in Kürze",
+      "pairHint": "Koppeln Sie die Erweiterung nach der Installation unter Einstellungen → Konten.",
+      "back": "Zurück",
+      "next": "Weiter"
+    },
+    "appearance": {
+      "title": "Machen Sie es zu Ihrem",
+      "subtitle": "Wählen Sie ein Farbschema und einen Akzent. Alles Weitere können Sie später in den Einstellungen anpassen.",
+      "back": "Zurück",
+      "next": "Weiter"
     },
     "tour": {
       "title": "Kurze Tour",
@@ -2160,6 +2169,10 @@
       "dashboard": {
         "title": "Dashboard",
         "desc": "Ihr Missionskontrollzentrum — sehen Sie aktive Jobs, KI-Status und aktuelle Aktivitäten auf einen Blick."
+      },
+      "applications": {
+        "title": "Bewerbungen",
+        "desc": "Verfolgen Sie jede Bewerbung durch ihre Phasen — Zeitachse, Status und KI-gestützte Interview-Vorbereitungsfragen an einem Ort."
       },
       "analyze": {
         "title": "Lebenslauf-Analysator",
@@ -2179,15 +2192,11 @@
       },
       "autopilot": {
         "title": "Autopilot",
-        "desc": "Legen Sie Suchkriterien fest und lassen Sie KI automatisch passende Jobs entdecken, filtern und optional bewerben."
+        "desc": "Legen Sie Suchkriterien fest und lassen Sie KI automatisch passende Jobs entdecken und anzeigen — Sie werden benachrichtigt und direkt dorthin verlinkt."
       },
       "documents": {
         "title": "Dokumente",
         "desc": "Importieren und verwalten Sie Ihre Lebensläufe und Anschreiben. KI indiziert sie für intelligentes Matching."
-      },
-      "search": {
-        "title": "Suche",
-        "desc": "Semantische Suche über alle Ihre Dokumente und Job-Anzeigen mit KI-Embeddings."
       }
     },
     "resume": {
@@ -2328,6 +2337,63 @@
       "candidatePlaceholder": "Dein Name",
       "cancel": "Abbrechen",
       "submit": "Tracken"
+    },
+    "detail": {
+      "back": "Zurück zu Bewerbungen",
+      "backAutopilot": "Zurück zu Autopilot",
+      "backJobs": "Zurück zu Jobs",
+      "openAria": "{{title}} öffnen",
+      "statusTitle": "Status",
+      "tabs": {
+        "overview": "Übersicht",
+        "timeline": "Verlauf",
+        "brief": "Briefing & Antworten",
+        "documents": "Dokumente",
+        "interview": "Interview-Vorbereitung"
+      },
+      "tabsLabel": "Bewerbungsdetail-Tabs",
+      "timelineTitle": "Verlauf",
+      "timelineEmpty": "Noch kein Statusverlauf.",
+      "briefEmpty": "Noch kein Briefing oder Antworten.",
+      "created": "Erstellt",
+      "fieldsTitle": "Details",
+      "notesLabel": "Notizen",
+      "notesPlaceholder": "Notiz zu dieser Bewerbung hinzufügen…",
+      "contactNameLabel": "Ansprechpartner",
+      "contactNamePlaceholder": "z. B. Jane Doe",
+      "contactEmailLabel": "Kontakt-E-Mail",
+      "contactEmailPlaceholder": "name@unternehmen.com",
+      "compLabel": "Vergütung",
+      "compPlaceholder": "z. B. 90.000 € / verhandelbar",
+      "nextActionLabel": "Erinnerung für nächste Aktion",
+      "contactSection": "Kontakt",
+      "trackingSection": "Nachverfolgung",
+      "briefTitle": "Unternehmens-Briefing",
+      "answersTitle": "Bewerbungsantworten",
+      "jobLink": "Job-Link",
+      "interview": {
+        "title": "Fragen, die du stellst",
+        "hint": "Clevere Fragen für dein Interview, aus Stelle + Unternehmensrecherche.",
+        "seedLabel": "Themen zum Fokussieren (optional)",
+        "seedPlaceholder": "z. B. Teamstruktur, Roadmap, Bereitschaftsdienst — durch Komma oder Zeile getrennt",
+        "generate": "Fragen vorschlagen",
+        "regenerate": "Neu generieren",
+        "generating": "Recherchiere…",
+        "empty": "Noch keine Interviewfragen",
+        "emptyDesc": "Generiere präzise, gut recherchierte Fragen für dein Interview.",
+        "needsModel": "Wähle in den Einstellungen ein KI-Modell, um Fragen zu generieren.",
+        "needsJob": "Für passende Fragen wird eine Stellenbeschreibung benötigt.",
+        "audienceLabel": "Fragen generieren für",
+        "audience": {
+          "recruiter": "Recruiter / HR (1. Runde)",
+          "hiringManager": "Hiring Manager",
+          "team": "Team",
+          "leadership": "Führungsebene",
+          "general": "Alle"
+        }
+      },
+      "notFound": "Bewerbung nicht gefunden",
+      "notFoundDesc": "Diese Bewerbung wurde möglicherweise entfernt."
     }
   },
   "notifications": {

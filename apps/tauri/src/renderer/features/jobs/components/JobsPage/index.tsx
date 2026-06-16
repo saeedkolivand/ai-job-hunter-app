@@ -1,30 +1,28 @@
-import { ListFilter, Plus, Search, Trash2 } from 'lucide-react';
+import { ListFilter, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
 
 import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import {
-  Button,
-  ConfirmModal,
-  Dropdown,
-  EmptyState,
-  GlassCard,
-  Input,
-  useNotification,
-} from '@ajh/ui';
+import { Button, ConfirmModal, Dropdown, Input, useNotification } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
-import { PostingRow } from '@/features/jobs/components/PostingRow';
+import { JobsResults } from '@/features/jobs/components/JobsResults';
 import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
 import type { ScrapeFormState } from '@/features/jobs/components/ScrapeForm/constants';
 import { useDefaultResumeId } from '@/features/jobs/hooks/useDefaultResumeId';
-import { useFormatRelativeTime } from '@/features/jobs/hooks/useFormatRelativeTime';
 import { useScraping } from '@/features/jobs/hooks/useScraping';
 import { MatchScoresProvider } from '@/features/jobs/providers';
 import type { JobEvent, Posting } from '@/features/jobs/types';
-import { useClearPostings, useGeocodeSuggest, useJobEvents, usePostings } from '@/services';
+import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
+import {
+  useClearPostings,
+  useGeocodeSuggest,
+  useInvalidatePostings,
+  useJobEvents,
+  useJobPreferences,
+  usePostings,
+} from '@/services';
 import { useSessionStore } from '@/store/session-store';
 
 export function JobsPage() {
@@ -37,6 +35,7 @@ export function JobsPage() {
   const { data: postingsData = [] } = usePostings();
   const postings = postingsData as Posting[];
   const clearPostings = useClearPostings();
+  const invalidatePostings = useInvalidatePostings();
 
   const { jobs, setJobs } = useSessionStore();
   const { filter, sortBy } = jobs;
@@ -54,12 +53,25 @@ export function JobsPage() {
     locale: 'us',
   });
 
+  // One-way prefill: seed the scrape location from the saved preferred location
+  // once it first arrives, and only if the user hasn't typed one. The ref guard
+  // keeps this from re-seeding or clobbering a later user edit. Picking a location
+  // here never writes back to settings.
+  const { data: jobPrefs } = useJobPreferences();
+  const seededLocation = useRef(false);
+  useEffect(() => {
+    if (seededLocation.current || !jobPrefs?.location) return;
+    seededLocation.current = true;
+    setScrapeForm((f) => (f.location ? f : { ...f, location: jobPrefs.location ?? '' }));
+  }, [jobPrefs?.location]);
+
   const {
     scraping,
     scrapeOutcome,
     livePostings,
     setLivePostings,
     scrapeJobRef,
+    replacePendingRef,
     startScrape,
     cancelScrape,
     noteScrapeFinished,
@@ -84,16 +96,23 @@ export function JobsPage() {
         'url' in item
       ) {
         if (ev.jobId !== scrapeJobRef.current) return;
-        setLivePostings((prev) => {
-          if (prev.some((p) => p.id === item.id)) return prev;
-          return [item, ...prev].slice(0, 500);
-        });
+        if (replacePendingRef.current) {
+          replacePendingRef.current = false;
+          setLivePostings([item]);
+          void invalidatePostings(); // backend already cleared old + added this first item
+        } else {
+          setLivePostings((prev) => {
+            if (prev.some((p) => p.id === item.id)) return prev;
+            return [item, ...prev].slice(0, 500);
+          });
+        }
       }
       return;
     }
 
     if (ev.type === 'job.completed') {
       noteScrapeFinished(ev.jobId, { ok: true });
+      void invalidatePostings();
     } else if (ev.type === 'job.failed') {
       noteScrapeFinished(ev.jobId, {
         ok: false,
@@ -160,18 +179,6 @@ export function JobsPage() {
   const resumeId = useDefaultResumeId();
   const jobIds = useMemo(() => filtered.map((p) => p.id), [filtered]);
 
-  // Windowed list: only the visible rows (plus a small overscan) are mounted, so
-  // a long postings list doesn't paint hundreds of glass rows at once. Keyed by
-  // posting id so measurement survives live-prepended rows during a scrape.
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const virtualizer = useVirtualizer({
-    count: filtered.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => 88,
-    overscan: 6,
-    getItemKey: (index) => filtered[index]?.id ?? index,
-  });
-
   return (
     <MatchScoresProvider resumeId={resumeId} jobIds={jobIds}>
       <PageTransition className="flex h-full flex-col overflow-hidden">
@@ -184,7 +191,6 @@ export function JobsPage() {
             actions={
               <div className="flex items-center gap-2">
                 <Button
-                  size="sm"
                   variant="primary"
                   onClick={() => setShowScrapeForm(!showScrapeForm)}
                   className="transition-all duration-150 ease-out"
@@ -194,7 +200,6 @@ export function JobsPage() {
                 </Button>
                 {allPostings.length > 0 && !scraping && (
                   <Button
-                    size="sm"
                     variant="ghost"
                     onClick={() => setConfirmClear(true)}
                     title={t('jobs.clearScrapedJobs')}
@@ -208,13 +213,12 @@ export function JobsPage() {
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                   placeholder={t('jobs.searchPlaceholder')}
-                  className="w-48 text-xs text-foreground/75 placeholder:text-foreground/30"
+                  className="text-foreground/75 placeholder:text-foreground/30"
                   variant="default"
-                  wrapperClassName="h-7"
+                  wrapperClassName="w-48"
                   allowClear
                 />
                 <Dropdown
-                  size="sm"
                   options={[
                     { value: 'newest', label: t('jobs.sortNewest') },
                     { value: 'oldest', label: t('jobs.sortOldest') },
@@ -249,60 +253,13 @@ export function JobsPage() {
           />
         </div>
 
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-10 pb-10">
-          {filtered.length === 0 ? (
-            <GlassCard>
-              <EmptyState
-                icon={Search}
-                title={t('jobs.empty')}
-                action={
-                  <Button variant="primary" size="sm" onClick={() => setShowScrapeForm(true)}>
-                    <Search size={13} /> {t('jobs.emptyCta')}
-                  </Button>
-                }
-                className="py-10"
-              />
-            </GlassCard>
-          ) : (
-            <div
-              style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}
-            >
-              {virtualizer.getVirtualItems().map((vi) => {
-                const posting = filtered[vi.index];
-                if (!posting) return null;
-                return (
-                  <div
-                    key={vi.key}
-                    data-index={vi.index}
-                    ref={virtualizer.measureElement}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      transform: `translateY(${vi.start}px)`,
-                    }}
-                  >
-                    {/* pb-2 reproduces the old gap-2 between rows (included in the
-                      measured height so virtual offsets stay correct). */}
-                    <div className="pb-2">
-                      <PostingRow posting={posting} formatRelativeTime={formatRelativeTime} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {allPostings.length > 0 && (
-            <div className="flex justify-center pt-4">
-              <Button variant="ghost" size="sm" onClick={handleShowMore} loading={scraping}>
-                {!scraping && <Plus size={12} />}
-                {t('jobs.showMore')}
-              </Button>
-            </div>
-          )}
-        </div>
+        <JobsResults
+          filtered={filtered}
+          formatRelativeTime={formatRelativeTime}
+          scraping={scraping}
+          onShowMore={handleShowMore}
+          onScrape={() => setShowScrapeForm(true)}
+        />
       </PageTransition>
 
       <ConfirmModal

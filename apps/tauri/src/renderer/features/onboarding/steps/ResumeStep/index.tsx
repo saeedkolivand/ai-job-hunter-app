@@ -174,7 +174,7 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
         transition={withDelay(0.1)}
         className="flex items-center justify-between"
       >
-        <Button variant="ghost" size="sm" onClick={onBack}>
+        <Button variant="ghost" onClick={onBack}>
           <ArrowLeft size={14} /> {t('onboarding.back')}
         </Button>
         <Button

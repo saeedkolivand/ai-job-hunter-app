@@ -649,13 +649,6 @@
           notes: [],
           tag: ['scrape', 'all'],
         }),
-        N('c-search', 'client', 'search.tsx', 'Search route', 29, 544, 232, 46, 'client', {
-          role: 'Hybrid semantic search over scraped jobs.',
-          plain: 'A smart search box that understands meaning, not just keywords.',
-          path: 'apps/tauri/src/renderer/routes/search.tsx',
-          notes: ['Backed by a Rust search command (currently a stub)'],
-          tag: ['scrape', 'all'],
-        }),
         N('c-settings', 'client', 'settings.tsx', 'Settings route', 29, 608, 232, 46, 'client', {
           role: 'Settings: AI providers, accounts, preferences, privacy/backup.',
           plain: 'Where you choose your AI engine, log in to job boards, and tune the app.',
@@ -862,13 +855,6 @@
           notes: [],
           tag: ['scrape', 'all'],
         }),
-        N('h-use-search', 'hooks', 'use-search', 'hybrid search', 309, 416, 232, 46, 'hooks', {
-          role: 'Hook for hybrid (semantic + keyword) search.',
-          plain: 'Sends your search to the engine and returns ranked jobs.',
-          path: 'apps/tauri/src/renderer/services/use-search/use-search.ts',
-          notes: [],
-          tag: ['scrape', 'all'],
-        }),
         N('h-use-match', 'hooks', 'use-match', 'resume↔job match', 309, 480, 232, 46, 'hooks', {
           role: 'Hook for resume-to-job match scoring.',
           plain: 'Asks the engine how well your resume fits a given job.',
@@ -1054,7 +1040,7 @@
           {
             role: 'Builds the resume system+user prompt, provider-aware and locale-driven.',
             plain: 'Writes the exact instructions the AI follows to rewrite your resume.',
-            path: 'packages/prompts/src/generate/resume.ts',
+            path: 'packages/prompts/src/generate/resume/resume.ts',
             notes: ['Depth chosen by ProviderProfile (brief/full/task)'],
             tag: ['overview', 'aigenerate', 'all'],
             critical: true,
@@ -1073,7 +1059,7 @@
           {
             role: 'Builds the cover-letter system+user prompt.',
             plain: 'Writes the instructions the AI follows to draft your cover letter.',
-            path: 'packages/prompts/src/generate/cover-letter.ts',
+            path: 'packages/prompts/src/generate/cover-letter/cover-letter.ts',
             notes: ['Has self-verifying task-brief variant for CLI agents'],
             tag: ['overview', 'aigenerate', 'all'],
             critical: true,
@@ -1092,7 +1078,7 @@
           {
             role: 'Prompt that extracts JSON metadata (name, role, company, languages, keywords).',
             plain: 'A first quick pass that pulls the key facts out of the job ad and resume.',
-            path: 'packages/prompts/src/generate/metadata.ts',
+            path: 'packages/prompts/src/generate/metadata/metadata.ts',
             notes: [],
             tag: ['aigenerate', 'all'],
           }
@@ -1110,7 +1096,7 @@
           {
             role: 'Validates + repairs model JSON output (universal fallback).',
             plain: 'Cleans up the AI’s answer if it comes back slightly malformed.',
-            path: 'packages/prompts/src/generate/metadata.ts',
+            path: 'packages/prompts/src/generate/metadata/metadata.ts',
             notes: ['Fallback for every provider'],
             tag: ['aigenerate', 'all'],
           }
@@ -1128,7 +1114,7 @@
           {
             role: 'Extracts links from the source resume and re-injects them into generated text.',
             plain: 'Makes sure your portfolio/LinkedIn links survive the rewrite.',
-            path: 'packages/prompts/src/generate/links.ts',
+            path: 'packages/prompts/src/generate/links/links.ts',
             notes: ['injectLinksIntoGeneratedText / getLinkMap'],
             tag: ['aigenerate', 'all'],
           }
@@ -1306,13 +1292,6 @@
           plain: 'The contract for fetching jobs from a board or a pasted link.',
           path: 'packages/shared/src/ipc/contracts/scrape.ts',
           notes: ['scrape.url exists but is not yet wired into AI Generate'],
-          tag: ['scrape', 'all'],
-        }),
-        N('ct-search', 'contract', 'search.ts', 'SearchContract', 869, 352, 232, 46, 'contract', {
-          role: 'Search namespace: hybrid semantic+keyword search.',
-          plain: 'The contract for the smart search box.',
-          path: 'packages/shared/src/ipc/contracts/search.ts',
-          notes: ['Backend handler is a Rust stub'],
           tag: ['scrape', 'all'],
         }),
         N('ct-match', 'contract', 'match.ts', 'MatchContract', 869, 416, 232, 46, 'contract', {
@@ -1553,13 +1532,6 @@
           path: 'apps/tauri/src-tauri/src/commands/ai_generations.rs',
           notes: [],
           tag: ['aigenerate', 'all'],
-        }),
-        N('cmd-search', 'command', 'search.rs', 'hybrid search', 1149, 544, 232, 46, 'command', {
-          role: 'Search command: ANN vector search + keyword filter.',
-          plain: 'Backend door for the smart search.',
-          path: 'apps/tauri/src-tauri/src/commands/search.rs',
-          notes: ['Currently a stub — see Architecture Status'],
-          tag: ['scrape', 'all'],
         }),
         N('cmd-boards', 'command', 'boards.rs', 'catalog/login', 1149, 608, 232, 46, 'command', {
           role: 'Board catalog + login-state commands.',
@@ -3064,13 +3036,6 @@
           tag: ['scrape', 'all'],
         },
         {
-          from: 'c-search',
-          to: 'h-use-search',
-          kind: 'critical',
-          label: 'useSearch',
-          tag: ['scrape', 'all'],
-        },
-        {
           from: 'h-use-boards',
           to: 'c-appclient',
           kind: 'critical',
@@ -3138,41 +3103,6 @@
           to: 'db-postings',
           kind: 'normal',
           label: 'cache',
-          tag: ['scrape', 'all'],
-        },
-        {
-          from: 'h-use-search',
-          to: 'c-appclient',
-          kind: 'normal',
-          label: 'search.hybrid',
-          tag: ['scrape', 'all'],
-        },
-        {
-          from: 'c-appclient',
-          to: 'ct-search',
-          kind: 'normal',
-          label: 'SearchContract',
-          tag: ['scrape', 'all'],
-        },
-        {
-          from: 'ct-search',
-          to: 'cmd-search',
-          kind: 'normal',
-          label: "invoke('search')",
-          tag: ['scrape', 'all'],
-        },
-        {
-          from: 'cmd-search',
-          to: 'db-lance-jobs',
-          kind: 'db',
-          label: 'ANN search',
-          tag: ['scrape', 'all'],
-        },
-        {
-          from: 'cmd-search',
-          to: 'db-jobs',
-          kind: 'db',
-          label: 'keyword filter',
           tag: ['scrape', 'all'],
         },
         {
@@ -3411,7 +3341,6 @@
         { from: 'c-root', to: 'c-analyze', kind: 'mount', label: 'route', tag: ['all'] },
         { from: 'c-root', to: 'c-autopilot', kind: 'mount', label: 'route', tag: ['all'] },
         { from: 'c-root', to: 'c-jobs', kind: 'mount', label: 'route', tag: ['all'] },
-        { from: 'c-root', to: 'c-search', kind: 'mount', label: 'route', tag: ['all'] },
         { from: 'c-root', to: 'c-settings', kind: 'mount', label: 'route', tag: ['all'] },
         { from: 'cmd-mod', to: 'cmd-ai', kind: 'mount', label: '#[command]', tag: ['all'] },
         { from: 'cmd-mod', to: 'cmd-pipeline', kind: 'mount', label: '#[command]', tag: ['all'] },
@@ -3496,16 +3425,6 @@
         'h-use-match': [
           { sev: 'high', ref: 'ARCH_STATUS:47', t: 'Match hook calls a stubbed backend' },
         ],
-        'cmd-search': [
-          {
-            sev: 'high',
-            ref: 'ARCH_STATUS:47',
-            t: 'Hybrid search is a Rust stub — verify before relying on it',
-          },
-        ],
-        'ct-search': [
-          { sev: 'high', ref: 'ARCH_STATUS:47', t: 'Search contract handler is a stub' },
-        ],
         'd-autopilot': [
           {
             sev: 'med',
@@ -3517,7 +3436,7 @@
 
       /* notable findings shown in the default sidebar */
       const FINDINGS = [
-        'Code↔doc mismatch: the resume-job <b>matcher</b> and <b>hybrid search</b> are Rust stubs, though they were ✅ in the old TypeScript and the status doc still lists features as done (ARCHITECTURE_STATUS.md:47-50). Flagged red on cmd-match / cmd-search.',
+        'Code↔doc mismatch: the resume-job <b>matcher</b> is a Rust stub, though it was ✅ in the old TypeScript and the status doc still lists features as done (ARCHITECTURE_STATUS.md:47-50). Flagged red on cmd-match.',
         'Heaviest hot path: <b>AI generation</b> fans through packages/prompts (resume/cover builders + context-manager truncation + ProviderProfile + validators) before a single token streams — the red spine.',
         'Strong seam: a single-owner <b>platform band</b> (platform::config, net::http, error::AppError, observability::Span) plus two registries — SCRAPERS (20), ProviderId (8). Adding a board/provider is one module + one line; CI arch tests enforce ownership.',
         'No silent fallback: ai_provider::resolve() routes strictly by ProviderId — an unknown/mismatched provider is a hard error, never a quiet switch to Ollama.',
@@ -4097,6 +4016,17 @@
       applyView();
       window.addEventListener('resize', () => {});
       fit();
+    </script>
+    <script>
+      /* console easter egg — devtools hello, in the wiring's voice */
+      (function () { try {
+        var head = 'color:#0f0f0f;background:#f5b942;font:700 18px/1.4 monospace;padding:6px 12px';
+        var blue = 'color:#4ea1ff;font:13px/1.7 monospace';
+        var soft = 'color:#8a8a8a;font:13px/1.7 monospace';
+        console.log('%c ◇ you're reading the wiring ', head);
+        console.log('%cevery node maps to a real file. trace it yourself 👉 https://github.com/saeedkolivand/ai-job-hunter-app', blue);
+        console.log('%c(a drift checker fails CI if this diagram ever lies. it has caught me twice.)', soft);
+      } catch (e) {} })();
     </script>
   </body>
 </html>

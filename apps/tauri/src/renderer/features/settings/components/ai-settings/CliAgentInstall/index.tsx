@@ -81,12 +81,7 @@ export function CliAgentInstall({ provider, label, onGuide, onRecheck }: Props) 
 
       <div className="flex flex-wrap gap-2">
         {canOneClick && (
-          <Button
-            variant="glass"
-            size="sm"
-            onClick={() => setConfirmOpen(true)}
-            className="gap-1.5"
-          >
+          <Button variant="glass" onClick={() => setConfirmOpen(true)} className="gap-1.5">
             <Download size={11} /> {t('settings.cliInstall.install', { label })}
           </Button>
         )}
@@ -95,21 +90,16 @@ export function CliAgentInstall({ provider, label, onGuide, onRecheck }: Props) 
             <Loader2 size={12} className="animate-spin" /> {t('settings.cliInstall.installing')}
           </span>
         )}
-        <Button variant="ghost" size="sm" className="text-foreground/50 gap-1.5" onClick={onGuide}>
+        <Button variant="ghost" className="text-foreground/50 gap-1.5" onClick={onGuide}>
           <ExternalLink size={11} /> {t('settings.cliInstall.guide')}
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-foreground/40 gap-1.5"
-          onClick={onRecheck}
-        >
+        <Button variant="ghost" className="text-foreground/40 gap-1.5" onClick={onRecheck}>
           <RotateCcw size={11} /> {t('settings.cliInstall.recheck')}
         </Button>
       </div>
 
       {output && (
-        <pre className="max-h-40 overflow-auto rounded-lg border border-white/8 bg-black/30 p-2.5 text-[10px] leading-relaxed text-foreground/55 whitespace-pre-wrap">
+        <pre className="max-h-40 overflow-auto rounded-lg border border-foreground/10 bg-foreground/[0.06] p-2.5 text-[10px] leading-relaxed text-foreground/55 whitespace-pre-wrap">
           {output}
         </pre>
       )}

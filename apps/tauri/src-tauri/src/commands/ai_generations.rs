@@ -40,6 +40,16 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
             })
             .collect(),
         company_brief: req.company_brief,
+        interview_questions: req
+            .interview_questions
+            .into_iter()
+            .map(|q| crate::ai_generations::InterviewQuestion {
+                id: q.id,
+                question: q.question,
+                why: q.why,
+                audience: q.audience,
+            })
+            .collect(),
         application_id: None,
     };
 

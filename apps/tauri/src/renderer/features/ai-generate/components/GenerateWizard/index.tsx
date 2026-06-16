@@ -93,7 +93,6 @@ export function GenerateWizard({
           onClick={() => setStep(step - 1)}
           disabled={step === 0}
           variant="ghost"
-          size="sm"
           className="gap-1.5 text-foreground/50 hover:text-foreground/80 disabled:opacity-0"
         >
           <ChevronLeft size={14} />
@@ -116,7 +115,6 @@ export function GenerateWizard({
             disabled={isGenerating}
             loading={isGenerating}
             variant="primary"
-            size="sm"
             className="gap-1.5 transition-all duration-150 ease-out"
           >
             {!isGenerating && <Sparkles size={13} />}
@@ -126,7 +124,6 @@ export function GenerateWizard({
           <Button
             onClick={() => setStep(step + 1)}
             variant="primary"
-            size="sm"
             className="gap-1.5 transition-all duration-150 ease-out"
           >
             {t('aiGenerate.wizard.next')}

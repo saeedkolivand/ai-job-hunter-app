@@ -46,6 +46,113 @@ async fn test_cancel_nonexistent_job() {
     engine.cancel("nonexistent").await;
 }
 
+/// Fake board that streams `count` items through `ctx.on_item`, stopping early
+/// when `ctx.signal` is cancelled (mimicking a real pagination loop), and returns
+/// the same Vec it streamed. Used to drive the engine's central `amount` cap.
+struct FakeScraper {
+    count: usize,
+}
+
+#[async_trait::async_trait]
+impl super::super::types::Scraper for FakeScraper {
+    fn id(&self) -> &'static str {
+        "fake"
+    }
+    fn display_name(&self) -> &'static str {
+        "Fake"
+    }
+    fn mode(&self) -> ScraperMode {
+        ScraperMode::Http
+    }
+    async fn search(
+        &self,
+        _input: BoardSearchInput,
+        ctx: ScrapeContext,
+    ) -> anyhow::Result<Vec<JobPosting>> {
+        let mut out = Vec::new();
+        for i in 0..self.count {
+            if ctx.signal.is_cancelled() {
+                break;
+            }
+            let job = JobPosting {
+                id: format!("fake:{i}"),
+                external_id: Some(i.to_string()),
+                title: format!("Job {i}"),
+                company: "Fake Co".to_string(),
+                location: None,
+                url: format!("https://example.com/{i}"),
+                source: "fake".to_string(),
+                description: None,
+                requirements: None,
+                posted_at: None,
+                captured_at: 0,
+                extra: std::collections::HashMap::new(),
+            };
+            if let Some(ref on_item) = ctx.on_item {
+                on_item(job.clone());
+            }
+            out.push(job);
+        }
+        Ok(out)
+    }
+}
+
+fn fake_input(amount: u32) -> BoardSearchInput {
+    BoardSearchInput {
+        query: "q".to_string(),
+        location: None,
+        amount,
+        pages: 10,
+        date_filter: None,
+        job_type: None,
+        work_type: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        locale: None,
+        country_code: None,
+        latitude: None,
+        longitude: None,
+        radius_km: None,
+    }
+}
+
+#[tokio::test]
+async fn central_amount_cap_truncates_stream_and_return() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let engine = ScraperEngine::new();
+    let fake = FakeScraper { count: 50 };
+
+    // Count how many items the renderer-facing callback actually receives.
+    let streamed = std::sync::Arc::new(AtomicUsize::new(0));
+    let streamed_cb = streamed.clone();
+    let on_item: Box<dyn Fn(JobPosting) + Send> = Box::new(move |_item| {
+        streamed_cb.fetch_add(1, Ordering::SeqCst);
+    });
+
+    let items = engine
+        .run_search(
+            "fake",
+            Ok(&fake as &dyn super::super::types::Scraper),
+            fake_input(20),
+            "job-cap".to_string(),
+            None,
+            Some(on_item),
+        )
+        .await
+        .expect("capped scrape recovers as success");
+
+    assert_eq!(
+        streamed.load(Ordering::SeqCst),
+        20,
+        "exactly `amount` items forwarded to the renderer"
+    );
+    assert_eq!(items.len(), 20, "returned Vec truncated to `amount`");
+}
+
 #[tokio::test]
 async fn cancel_reaches_a_pre_registered_token() {
     let engine = ScraperEngine::new();
