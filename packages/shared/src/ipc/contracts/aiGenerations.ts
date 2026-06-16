@@ -1,4 +1,4 @@
-import type { ApplicationAnswer } from '../../types/index.js';
+import type { ApplicationAnswer, InterviewQuestion } from '../../types/index.js';
 
 export interface AiGenerationRecord {
   id: string;
@@ -23,6 +23,8 @@ export interface AiGenerationRecord {
   applicationAnswers: ApplicationAnswer[];
   /** The company-research brief used for this application, if any. */
   companyBrief: string;
+  /** AI-suggested questions the candidate can ASK the interviewer, if any. */
+  interviewQuestions: InterviewQuestion[];
 }
 
 export interface AiGenerationSaveRequest {
@@ -46,6 +48,8 @@ export interface AiGenerationSaveRequest {
   applicationAnswers?: ApplicationAnswer[];
   /** The company-research brief used, persisted for audit. */
   companyBrief?: string;
+  /** AI-suggested interview questions to persist on the (per-job) record. */
+  interviewQuestions?: InterviewQuestion[];
 }
 
 /**

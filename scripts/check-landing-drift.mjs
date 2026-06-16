@@ -29,6 +29,7 @@ const SECRET_SCAN_FILES = [
   'landing/how-it-works.html',
   'landing/ci-dashboard.html',
   'landing/index.html',
+  'landing/download.html',
   'landing/benchmarks/index.html',
   'landing/benchmarks/data.js',
 ];

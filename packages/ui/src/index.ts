@@ -1,13 +1,10 @@
 // ── Design utilities ──────────────────────────────────────────────────────
 export { cn } from './lib/cn';
-export { lightenHex, luminance, parseHex, readableForeground, type Rgb } from './lib/color';
 export * from './lib/motion';
 export {
-  type AccentSource,
   applyTheme,
   applyThemeAnimated,
   type ColorScheme,
-  type ContrastPref,
   DEFAULT_THEME_PREFS,
   getResolvedScheme,
   getThemePrefs,
@@ -32,9 +29,29 @@ export {
   type CollapsibleFileInputProps,
 } from './components/CollapsibleFileInput/index';
 export { Dropdown, type DropdownOption, type DropdownProps } from './components/Dropdown/index';
+export {
+  type Control,
+  Controller,
+  type FieldErrors,
+  type FieldValues,
+  Form,
+  FormField,
+  type FormFieldProps,
+  type FormProps,
+  type Path,
+  type RegisterOptions,
+  type SubmitHandler,
+  useFieldArray,
+  type UseFieldArrayReturn,
+  useForm,
+  useFormContext,
+  type UseFormReturn,
+  useWatch,
+} from './components/Form/index';
 export { GlassCard, type GlassCardProps } from './components/GlassCard/index';
 export { IconBadge, type IconBadgeProps } from './components/IconBadge/index';
 export { IconText } from './components/IconText/index';
+export { Image, type ImageProps } from './components/Image/index';
 export { Input, type InputProps } from './components/Input/index';
 export { LocationInput, type LocationInputProps } from './components/LocationInput/index';
 export { NumberField, type NumberFieldProps } from './components/NumberField/index';
@@ -51,7 +68,19 @@ export {
 export { SetupHint, type SetupHintProps } from './components/SetupHint/index';
 export { SourceBadge, type SourceBadgeProps } from './components/SourceBadge/index';
 export { Switch, type SwitchProps } from './components/Switch/index';
+export {
+  type CheckableTagProps,
+  Tag,
+  type TagProps,
+  type TagStatusColor,
+} from './components/Tag/index';
 export { TextArea, type TextAreaProps } from './components/TextArea/index';
+export {
+  Timeline,
+  type TimelineColor,
+  type TimelineItem,
+  type TimelineProps,
+} from './components/Timeline/index';
 
 // ── Overlays & Modals ─────────────────────────────────────────────────────
 export { ConfirmModal } from './components/ConfirmModal/index';

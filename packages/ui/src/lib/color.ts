@@ -58,6 +58,24 @@ export function lightenHex(hex: string, amount: number): string | null {
 }
 
 /**
+ * Blend two hexes channel-wise by `t` (0 → all `a`, 1 → all `b`; default 0.5 =
+ * even midpoint). Used to derive the sweep MIDDLE stop (--color-brand-mid) from
+ * a custom/system accent's start↔end pair so the gradient reads as a smooth
+ * teal→mid→rose with no shipped gold injected. Null when either hex is invalid.
+ */
+export function mixHex(a: string, b: string, t = 0.5): string | null {
+  const ca = parseHex(a);
+  const cb = parseHex(b);
+  if (!ca || !cb) return null;
+  const k = Math.max(0, Math.min(1, t));
+  return toHex({
+    r: ca.r + (cb.r - ca.r) * k,
+    g: ca.g + (cb.g - ca.g) * k,
+    b: ca.b + (cb.b - ca.b) * k,
+  });
+}
+
+/**
  * A label color that stays legible on a filled accent: pale/bright accents get
  * a dark label, dark accents a near-white one. Returns CSS colors matching the
  * --color-action-foreground token family; null on invalid input.

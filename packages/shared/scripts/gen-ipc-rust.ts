@@ -27,7 +27,6 @@ import {
   AutopilotUpdateSchema,
   DocumentImportRequestSchema,
   EmbedRequestSchema,
-  HybridSearchRequestSchema,
   JobEventSchema,
   MatchResumeBatchRequestSchema,
   MatchResumeRequestSchema,
@@ -110,10 +109,6 @@ const MODULES: ModuleSpec[] = [
       { rustName: 'MatchResumeRequest', schema: MatchResumeRequestSchema },
       { rustName: 'MatchResumeBatchRequest', schema: MatchResumeBatchRequestSchema },
     ],
-  },
-  {
-    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/search.rs',
-    structs: [{ rustName: 'HybridSearchRequest', schema: HybridSearchRequestSchema }],
   },
   {
     outFile: 'apps/tauri/src-tauri/src/ipc_contracts/referrals.rs',

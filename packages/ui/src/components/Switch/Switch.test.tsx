@@ -175,7 +175,7 @@ describe('Switch', () => {
       <Switch aria-label="Toggle" size="sm" checked={false} onCheckedChange={() => {}} />
     );
     const off = screen.getByRole('switch', { name: 'Toggle' });
-    // sm track matches antd small (28×16).
+    // sm track (28×16).
     expect(off).toHaveClass('h-4', 'w-7');
     const offThumb = off.querySelector('span');
     expect(offThumb).not.toBeNull();

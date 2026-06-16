@@ -130,7 +130,14 @@ export const ScrapeBoardRequestSchema = z.object({
   board: z.enum(BOARD_IDS),
   query: z.string().min(1),
   location: z.string().optional(),
-  pages: z.number().int().min(1).max(20).default(1),
+  // Target number of postings to collect. The backend paginates each board at
+  // its real page size until it has ~amount results (or hits the per-board page
+  // budget), then stops — replacing the old renderer-side ceil(amount/25).
+  amount: z.number().int().min(1).max(100).default(25),
+  // When true (a NEW search, not "show more"), the backend replaces the live
+  // postings cache the instant the first new result streams in — so a failed or
+  // empty search keeps the previous results. Omitted/false = append.
+  replace: z.boolean().optional(),
   dateFilter: z.enum(DATE_FILTER_OPTIONS).optional(),
   locale: LocaleSchema.optional(),
   // Structured location (from a picked geocode suggestion) — lets boards filter
@@ -156,14 +163,6 @@ export const ScrapeBoardRequestSchema = z.object({
 
 export const ScrapeUrlRequestSchema = z.object({
   url: z.string().url(),
-});
-
-export const HybridSearchRequestSchema = z.object({
-  query: z.string().min(1),
-  collection: z.enum(['jobs', 'resumes', 'skills', 'conversations']),
-  topK: z.number().int().min(1).max(200).default(20),
-  filters: z.record(z.string(), z.unknown()).optional(),
-  semanticWeight: z.number().min(0).max(1).default(0.7),
 });
 
 export const MatchResumeRequestSchema = z.object({
@@ -228,6 +227,18 @@ export const AiGenerationSaveSchema = z.object({
     )
     .default([]),
   companyBrief: z.string().default(''),
+  // The AI-suggested "questions to ask the interviewer" — the second assistant,
+  // merged onto the per-job record alongside the application answers.
+  interviewQuestions: z
+    .array(
+      z.object({
+        id: z.string().default(''),
+        question: z.string().default(''),
+        why: z.string().default(''),
+        audience: z.string().default('general'),
+      })
+    )
+    .default([]),
 });
 // Note: the `AiGenerationSaveRequest` type is declared in the aiGenerations IPC
 // contract (single source for that name); this schema validates the same shape.
@@ -355,8 +366,6 @@ export const TechStackItemSchema = z.object({
 
 export const JobPreferencesSchema = z.object({
   location: z.string().optional(),
-  remote: z.string().optional(),
-  seniority: z.string().optional(),
   techStack: z.array(TechStackItemSchema).optional(),
 });
 
@@ -369,6 +378,5 @@ export type ModelInspectResult = z.infer<typeof ModelInspectResultSchema>;
 export type DocumentImportRequest = z.infer<typeof DocumentImportRequestSchema>;
 export type ScrapeBoardRequest = z.infer<typeof ScrapeBoardRequestSchema>;
 export type ScrapeUrlRequest = z.infer<typeof ScrapeUrlRequestSchema>;
-export type HybridSearchRequest = z.infer<typeof HybridSearchRequestSchema>;
 export type MatchResumeRequest = z.infer<typeof MatchResumeRequestSchema>;
 export type MatchResumeBatchRequest = z.infer<typeof MatchResumeBatchRequestSchema>;

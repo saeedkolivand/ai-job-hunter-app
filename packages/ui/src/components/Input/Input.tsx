@@ -15,7 +15,7 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
    */
   suffix?: ReactNode;
   /**
-   * Show a clear (×) button while the field holds a value (antd `allowClear`).
+   * Show a clear (×) button while the field holds a value.
    * Clearing dispatches a native input event so the bound `onChange` fires with
    * an empty string — assumes a controlled `value`.
    */
@@ -83,10 +83,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         <div
           className={cn(
             'flex items-center gap-2 rounded-lg px-2.5 transition-shadow duration-150',
+            // Default height matches Button's default (h-8) so toolbars line up;
+            // overridable via wrapperClassName. Skipped for the unstyled escape hatch.
+            !unstyled && 'h-8',
             !unstyled &&
-              variant !== 'glass' && [
-                'border border-[var(--border-soft)] bg-[rgb(var(--glass-rgb)/0.08)] shadow-sm',
-              ],
+              variant !== 'glass' && ['border border-[var(--border-clear)] bg-field shadow-sm'],
             !unstyled && variant === 'glass' && 'glass shadow-sm',
             // Focus ring on the wrapper, not the input.
             'focus-within:outline-none focus-within:ring-2 focus-within:ring-brand/50 focus-within:ring-offset-1 focus-within:ring-offset-transparent',
@@ -120,8 +121,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         type={type}
         className={cn(
           !unstyled &&
-            'input-field rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-foreground/30 transition-shadow duration-150',
-          variant === 'default' && 'bg-white/5 shadow-sm',
+            'input-field h-8 rounded-lg px-3 text-sm text-foreground placeholder:text-foreground/30 transition-shadow duration-150',
+          variant === 'default' && 'border border-[var(--border-clear)] bg-field shadow-sm',
           variant === 'glass' && 'glass shadow-sm',
           // Reserve room so long text doesn't slide under the clear button.
           allowClear && 'pr-9',
