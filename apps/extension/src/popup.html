@@ -17,6 +17,30 @@
           </svg>
         </h1>
         <div class="status">
+          <!-- Sits left of the pill; shown only in the app_not_running state (toggled in render). -->
+          <button
+            id="btn-retry"
+            class="retry"
+            type="button"
+            aria-label="Retry"
+            title="Retry"
+            hidden
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="11"
+              height="11"
+              aria-hidden="true"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+            </svg>
+          </button>
           <!-- role="status" already implies aria-live="polite"; no redundant attr. -->
           <span id="status-pill" class="pill pill--searching" role="status"> ○ Connecting… </span>
           <button
@@ -76,19 +100,9 @@
         <button id="btn-open-settings" class="link" type="button">Find my token</button>
       </section>
 
-      <!-- Empty state: the desktop app is not running. -->
-      <section id="view-offline" class="view" hidden>
-        <div class="empty">
-          <p class="empty__body">
-            Open the desktop app, then reopen this popup. The extension only talks to the app on
-            your own computer.
-          </p>
-          <button id="btn-open-app" class="btn btn--primary" type="button">
-            Open AI Job Hunter
-          </button>
-          <button id="btn-retry" class="btn" type="button">Retry</button>
-        </div>
-      </section>
+      <!-- App-not-running state: the pill reads "✕ App not running", the header Retry
+           re-checks the connection, and "?" explains. No body content needed. -->
+      <section id="view-offline" class="view" hidden></section>
 
       <!-- Searching placeholder. -->
       <section id="view-searching" class="view">

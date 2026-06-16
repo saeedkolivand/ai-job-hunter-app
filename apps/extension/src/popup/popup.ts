@@ -77,7 +77,6 @@ const els = {
   pairMsg: byId<HTMLParagraphElement>('pair-msg'),
   btnSaveToken: byId<HTMLButtonElement>('btn-save-token'),
   btnRetry: byId<HTMLButtonElement>('btn-retry'),
-  btnOpenApp: byId<HTMLButtonElement>('btn-open-app'),
   btnOpenSettings: byId<HTMLButtonElement>('btn-open-settings'),
   btnHelp: byId<HTMLButtonElement>('btn-help'),
   helpPopover: byId<HTMLParagraphElement>('help-popover'),
@@ -136,6 +135,9 @@ function render(status: ConnectionStatus): void {
   lastKnownHasToken = status.hasToken;
   els.pill.textContent = PILL_LABEL[status.phase];
   els.pill.className = `pill pill--${status.phase}`;
+  // Retry lives in the header (left of the pill) and only makes sense when the
+  // app is unreachable — a reconnect is a no-op once the app is up.
+  els.btnRetry.hidden = status.phase !== 'app_not_running';
   showView(status.phase);
 }
 
@@ -278,7 +280,6 @@ function wire(): void {
   });
   els.btnUnpair.addEventListener('click', () => void unpair());
   els.btnRetry.addEventListener('click', () => void retry());
-  els.btnOpenApp.addEventListener('click', () => void openAppPairing());
   els.btnOpenSettings.addEventListener('click', () => void openAppPairing());
   els.btnHelp.addEventListener('click', toggleHelp);
 
