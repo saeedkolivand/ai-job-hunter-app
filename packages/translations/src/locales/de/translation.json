@@ -1259,10 +1259,10 @@
     "loading": "Laden…",
     "empty": {
       "title": "Noch keine Autopilots",
-      "description": "Richten Sie einen Autopilot ein, um automatisch Jobs zu suchen, anhand Ihres Lebenslaufs zu bewerten und sich zu bewerben.",
+      "description": "Richten Sie einen Autopilot ein, um automatisch Jobs zu suchen und anhand Ihres Lebenslaufs zu bewerten – die Bewerbung erledigen Sie selbst.",
       "step1": "Wählen Sie ein Board, ein Stichwort und einen Standort",
       "step2": "Legen Sie eine Mindestübereinstimmung fest, um schwache Ergebnisse zu filtern",
-      "step3": "Wählen Sie Speichern, Überprüfen oder Auto-Bewerbung",
+      "step3": "Wählen Sie Speichern oder Überprüfen jedes Treffers",
       "step4": "Planen Sie stündlich, täglich oder manuelle Ausführungen",
       "createFirst": "Erstellen Sie Ihren ersten Autopilot"
     },
