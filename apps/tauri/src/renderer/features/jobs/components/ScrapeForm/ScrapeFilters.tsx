@@ -25,7 +25,7 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   return (
-    <div className="mb-4 space-y-3">
+    <div className="@container mb-4 space-y-3">
       {/* Location — primary filter, always visible. */}
       <div>
         <label className={LABEL}>{t('jobs.location')}</label>
@@ -59,7 +59,7 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
       </Button>
 
       {showAdvanced && (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2 @xs:grid-cols-2">
           <div>
             <label className={LABEL}>{t('jobs.posted')}</label>
             <Dropdown

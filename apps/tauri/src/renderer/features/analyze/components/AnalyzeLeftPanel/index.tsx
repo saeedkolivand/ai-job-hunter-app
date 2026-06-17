@@ -68,7 +68,7 @@ export function AnalyzeLeftPanel({
   const hasJobAd = jobAd.trim().length > 50;
 
   return (
-    <div className="flex w-[400px] shrink-0 flex-col overflow-y-auto">
+    <div className="@container flex w-full md:w-[320px] lg:w-[380px] xl:w-[400px] shrink-0 flex-col overflow-y-auto">
       {/* Header */}
       <div className="px-6 pt-8 pb-4">
         <div className="flex items-center justify-between mb-1">

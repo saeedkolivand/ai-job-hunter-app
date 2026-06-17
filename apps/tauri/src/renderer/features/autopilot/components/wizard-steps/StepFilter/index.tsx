@@ -58,7 +58,7 @@ export function StepFilter({ prefilled }: StepFilterProps) {
               label={t('autopilot.wizard.filter.matchScore')}
               hint={t('autopilot.wizard.filter.matchScoreHint')}
             >
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-1 gap-1.5 @xs:grid-cols-3">
                 {MATCH_LEVELS.map(({ id, value }) => (
                   <Button
                     key={id}
@@ -101,7 +101,7 @@ export function StepFilter({ prefilled }: StepFilterProps) {
         )}
       />
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 @xs:grid-cols-2">
         <Controller
           control={control}
           name="keywords"

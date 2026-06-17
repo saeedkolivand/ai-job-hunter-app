@@ -46,7 +46,7 @@ export function AppearanceCard() {
           <div
             role="radiogroup"
             aria-label={t('settings.appearance.scheme')}
-            className="grid grid-cols-3 gap-2"
+            className="grid grid-cols-1 gap-2 @xs:grid-cols-3"
           >
             {SCHEMES.map(({ id, icon: Icon, labelKey }) => {
               const active = prefs.scheme === id;
@@ -164,7 +164,7 @@ export function AppearanceCard() {
           <div
             role="radiogroup"
             aria-label={t('settings.appearance.textSize')}
-            className="grid grid-cols-3 gap-2"
+            className="grid grid-cols-1 gap-2 @xs:grid-cols-3"
           >
             {SCALES.map(({ id, labelKey, size }) => {
               const active = prefs.textScale === id;

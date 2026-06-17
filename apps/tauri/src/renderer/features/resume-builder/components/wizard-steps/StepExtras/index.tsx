@@ -121,7 +121,7 @@ export function StepExtras() {
                     )}
                   />
                 </WizardField>
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 gap-2.5 @xs:grid-cols-2">
                   <WizardField label={t('build.extras.publications.venue')}>
                     <Controller
                       control={control}

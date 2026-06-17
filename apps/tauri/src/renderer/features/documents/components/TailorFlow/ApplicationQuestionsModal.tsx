@@ -51,9 +51,7 @@ export function ApplicationQuestionsModal({
       // modal layer (600) so it never renders under its parent.
       zIndex={650}
       ariaLabelledby="application-questions-modal-title"
-    >
-      <div className="flex max-h-[85vh] flex-col">
-        {/* Header */}
+      header={
         <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] px-5 py-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -82,62 +80,62 @@ export function ApplicationQuestionsModal({
             <X size={16} />
           </Button>
         </div>
-
-        {/* Body */}
-        <div className="flex-1 space-y-2 overflow-y-auto px-5 py-4">
-          <div className="space-y-1.5">
-            {APPLICATION_QUESTIONS.map((q) => {
-              const answer = answers[q.id];
-              return (
-                <div key={q.id} className="rounded-md bg-white/[0.02]">
-                  <label className="flex cursor-pointer items-start gap-2 px-2 py-1.5">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(q.id)}
-                      onChange={() => toggle(q.id)}
-                      className="mt-0.5 accent-brand"
-                    />
-                    <span className="text-[11px] text-foreground/75">{q.question}</span>
-                  </label>
-                  {answer && (
-                    <div className="px-2 pb-2 pl-7">
-                      <div className="relative rounded-md border border-white/[0.05] bg-white/[0.03] px-2.5 py-2">
-                        <p className="whitespace-pre-wrap pr-6 text-[11px] leading-relaxed text-foreground/70">
-                          {answer}
-                        </p>
-                        <Button
-                          variant="unstyled"
-                          type="button"
-                          onClick={() => void copy(q.id, answer)}
-                          title={t('autopilot.apply.questions.copy')}
-                          aria-label={t('autopilot.apply.questions.copy')}
-                          className="absolute right-1.5 top-1.5 rounded p-0.5 text-foreground/30 transition-colors hover:text-foreground/70"
-                        >
-                          {copiedId === q.id ? <Check size={11} /> : <Copy size={11} />}
-                        </Button>
-                      </div>
+      }
+    >
+      {/* Body */}
+      <div className="space-y-2 px-5 py-4">
+        <div className="space-y-1.5">
+          {APPLICATION_QUESTIONS.map((q) => {
+            const answer = answers[q.id];
+            return (
+              <div key={q.id} className="rounded-md bg-white/[0.02]">
+                <label className="flex cursor-pointer items-start gap-2 px-2 py-1.5">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(q.id)}
+                    onChange={() => toggle(q.id)}
+                    className="mt-0.5 accent-brand"
+                  />
+                  <span className="text-[11px] text-foreground/75">{q.question}</span>
+                </label>
+                {answer && (
+                  <div className="px-2 pb-2 pl-7">
+                    <div className="relative rounded-md border border-white/[0.05] bg-white/[0.03] px-2.5 py-2">
+                      <p className="whitespace-pre-wrap pr-6 text-[11px] leading-relaxed text-foreground/70">
+                        {answer}
+                      </p>
+                      <Button
+                        variant="unstyled"
+                        type="button"
+                        onClick={() => void copy(q.id, answer)}
+                        title={t('autopilot.apply.questions.copy')}
+                        aria-label={t('autopilot.apply.questions.copy')}
+                        className="absolute right-1.5 top-1.5 rounded p-0.5 text-foreground/30 transition-colors hover:text-foreground/70"
+                      >
+                        {copiedId === q.id ? <Check size={11} /> : <Copy size={11} />}
+                      </Button>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {error && <p className="text-[11px] text-red-300/80">{error}</p>}
-
-          <Button
-            variant="primary"
-            loading={generating}
-            disabled={!canGenerate || generating}
-            onClick={() => void generate()}
-            className="w-full justify-center"
-          >
-            {!generating && <Sparkles size={12} />}
-            {generating
-              ? t('autopilot.apply.questions.generating')
-              : t('autopilot.apply.questions.generate')}
-          </Button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
+
+        {error && <p className="text-[11px] text-red-300/80">{error}</p>}
+
+        <Button
+          variant="primary"
+          loading={generating}
+          disabled={!canGenerate || generating}
+          onClick={() => void generate()}
+          className="w-full justify-center"
+        >
+          {!generating && <Sparkles size={12} />}
+          {generating
+            ? t('autopilot.apply.questions.generating')
+            : t('autopilot.apply.questions.generate')}
+        </Button>
       </div>
     </ModalShell>
   );

@@ -132,9 +132,7 @@ export function ReferralModal({ job, resume, onClose }: Props) {
       // modal layer (600) so it never renders under its parent.
       zIndex={650}
       ariaLabelledby="referral-modal-title"
-    >
-      <div className="flex max-h-[85vh] flex-col">
-        {/* Header */}
+      header={
         <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] px-5 py-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -158,172 +156,170 @@ export function ReferralModal({ job, resume, onClose }: Props) {
             <X size={16} />
           </Button>
         </div>
+      }
+    >
+      {/* Body */}
+      <div className="space-y-4 px-5 py-4">
+        {/* Privacy note — this stores another person's details. */}
+        <div className="flex items-start gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2">
+          <ShieldCheck size={13} className="mt-0.5 shrink-0 text-brand-soft" />
+          <p className="text-[10px] leading-relaxed text-foreground/55">
+            {t('autopilot.referral.privacy')}
+          </p>
+        </div>
 
-        {/* Body */}
-        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
-          {/* Privacy note — this stores another person's details. */}
-          <div className="flex items-start gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2">
-            <ShieldCheck size={13} className="mt-0.5 shrink-0 text-brand-soft" />
-            <p className="text-[10px] leading-relaxed text-foreground/55">
-              {t('autopilot.referral.privacy')}
-            </p>
-          </div>
-
-          {/* Transient "saved · add another" confirmation — the form clears on save,
+        {/* Transient "saved · add another" confirmation — the form clears on save,
               so this makes that intentional and points at the roster below. */}
-          {saved && (
-            <div className="flex items-center gap-2 text-[11px] font-medium text-brand-soft">
-              <Check size={13} className="shrink-0" />
-              <span>{t('autopilot.referral.savedAddAnother')}</span>
-            </div>
-          )}
+        {saved && (
+          <div className="flex items-center gap-2 text-[11px] font-medium text-brand-soft">
+            <Check size={13} className="shrink-0" />
+            <span>{t('autopilot.referral.savedAddAnother')}</span>
+          </div>
+        )}
 
-          {/* Contact fields — every user INPUT is grouped together, before the
+        {/* Contact fields — every user INPUT is grouped together, before the
               Generate action. All values are typed by the user; no LinkedIn fetch.
               Notes lives here too: it's a field saved with the record, not output. */}
-          <div className="space-y-4">
-            <WizardField label={t('autopilot.referral.personName')} htmlFor="referral-person-name">
-              <Input
-                id="referral-person-name"
-                variant="default"
-                className="w-full shadow-none"
-                value={personName}
-                onChange={(e) => setPersonName(e.target.value)}
-                placeholder={t('autopilot.referral.personNamePlaceholder')}
-              />
-            </WizardField>
-
-            <WizardField label={t('autopilot.referral.personRole')} htmlFor="referral-person-role">
-              <Input
-                id="referral-person-role"
-                variant="default"
-                className="w-full shadow-none"
-                value={personRole}
-                onChange={(e) => setPersonRole(e.target.value)}
-                placeholder={t('autopilot.referral.personRolePlaceholder')}
-              />
-            </WizardField>
-
-            <WizardField label={t('autopilot.referral.linkedinUrl')} htmlFor="referral-linkedin">
-              <Input
-                id="referral-linkedin"
-                variant="default"
-                className="w-full shadow-none"
-                value={linkedinUrl}
-                onChange={(e) => setLinkedinUrl(e.target.value)}
-                placeholder={t('autopilot.referral.linkedinUrlPlaceholder')}
-              />
-            </WizardField>
-
-            <WizardField label={t('autopilot.referral.notes')} htmlFor="referral-notes">
-              <TextArea
-                id="referral-notes"
-                variant="default"
-                className="w-full rounded-lg bg-white/5 px-3 py-2 shadow-none"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={2}
-                placeholder={t('autopilot.referral.notesPlaceholder')}
-              />
-            </WizardField>
-          </div>
-
-          {/* Channel / format picker */}
-          <WizardField label={t('autopilot.referral.channel.label')}>
-            <SegmentedControl<ReferralChannel>
-              variant="grid"
-              ariaLabel={t('autopilot.referral.channel.label')}
-              value={channel}
-              onChange={setChannel}
-              options={CHANNELS.map((c) => ({ value: c, label: channelLabel(c) }))}
+        <div className="space-y-4">
+          <WizardField label={t('autopilot.referral.personName')} htmlFor="referral-person-name">
+            <Input
+              id="referral-person-name"
+              variant="default"
+              className="w-full shadow-none"
+              value={personName}
+              onChange={(e) => setPersonName(e.target.value)}
+              placeholder={t('autopilot.referral.personNamePlaceholder')}
             />
           </WizardField>
 
-          {/* Model */}
-          <ModelSelector />
+          <WizardField label={t('autopilot.referral.personRole')} htmlFor="referral-person-role">
+            <Input
+              id="referral-person-role"
+              variant="default"
+              className="w-full shadow-none"
+              value={personRole}
+              onChange={(e) => setPersonRole(e.target.value)}
+              placeholder={t('autopilot.referral.personRolePlaceholder')}
+            />
+          </WizardField>
 
-          {/* Generate — primary, full-width CTA. While streaming, a Cancel sits
+          <WizardField label={t('autopilot.referral.linkedinUrl')} htmlFor="referral-linkedin">
+            <Input
+              id="referral-linkedin"
+              variant="default"
+              className="w-full shadow-none"
+              value={linkedinUrl}
+              onChange={(e) => setLinkedinUrl(e.target.value)}
+              placeholder={t('autopilot.referral.linkedinUrlPlaceholder')}
+            />
+          </WizardField>
+
+          <WizardField label={t('autopilot.referral.notes')} htmlFor="referral-notes">
+            <TextArea
+              id="referral-notes"
+              variant="default"
+              className="w-full rounded-lg bg-white/5 px-3 py-2 shadow-none"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              placeholder={t('autopilot.referral.notesPlaceholder')}
+            />
+          </WizardField>
+        </div>
+
+        {/* Channel / format picker */}
+        <WizardField label={t('autopilot.referral.channel.label')}>
+          <SegmentedControl<ReferralChannel>
+            variant="grid"
+            ariaLabel={t('autopilot.referral.channel.label')}
+            value={channel}
+            onChange={setChannel}
+            options={CHANNELS.map((c) => ({ value: c, label: channelLabel(c) }))}
+          />
+        </WizardField>
+
+        {/* Model */}
+        <ModelSelector />
+
+        {/* Generate — primary, full-width CTA. While streaming, a Cancel sits
               above it so the in-flight call can be aborted. */}
-          <div className="space-y-2">
-            {gen.generating && (
-              <Button
-                variant="glass"
-                onClick={() => gen.abort()}
-                className="w-full justify-center border-red-400/20 text-red-300/80 hover:text-red-200"
-              >
-                {t('autopilot.referral.cancel')}
-              </Button>
-            )}
+        <div className="space-y-2">
+          {gen.generating && (
             <Button
-              variant="primary"
-              loading={gen.generating}
-              disabled={!gen.canGenerate}
-              onClick={() => void gen.generate()}
-              className="w-full justify-center"
+              variant="glass"
+              onClick={() => gen.abort()}
+              className="w-full justify-center border-red-400/20 text-red-300/80 hover:text-red-200"
             >
-              {!gen.generating && <Sparkles size={13} />}
-              {gen.generating
-                ? t('autopilot.referral.generating')
-                : t('autopilot.referral.generate')}
+              {t('autopilot.referral.cancel')}
             </Button>
+          )}
+          <Button
+            variant="primary"
+            loading={gen.generating}
+            disabled={!gen.canGenerate}
+            onClick={() => void gen.generate()}
+            className="w-full justify-center"
+          >
+            {!gen.generating && <Sparkles size={13} />}
+            {gen.generating ? t('autopilot.referral.generating') : t('autopilot.referral.generate')}
+          </Button>
 
-            {!canUse && (
-              <p className="text-[11px] text-amber-300/70">
-                {reason === 'addApiKey'
-                  ? t('autopilot.apply.addApiKey')
-                  : reason === 'installCli'
-                    ? t('autopilot.apply.installCli')
-                    : t('autopilot.apply.selectModel')}
-              </p>
-            )}
-            {gen.error && <p className="text-[11px] text-red-300/80">{gen.error}</p>}
-          </div>
+          {!canUse && (
+            <p className="text-[11px] text-amber-300/70">
+              {reason === 'addApiKey'
+                ? t('autopilot.apply.addApiKey')
+                : reason === 'installCli'
+                  ? t('autopilot.apply.installCli')
+                  : t('autopilot.apply.selectModel')}
+            </p>
+          )}
+          {gen.error && <p className="text-[11px] text-red-300/80">{gen.error}</p>}
+        </div>
 
-          {/* Draft output — only the generated message and its actions. */}
-          {(gen.draft || gen.generating) && (
-            <div className="space-y-1.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
-              <StreamingText text={gen.draft} isStreaming={gen.generating} />
-              <div className="flex items-center justify-between gap-2 pt-1">
-                {isNote ? (
-                  <span
-                    className={
-                      overLimit
-                        ? 'text-[10px] font-medium text-red-300/90'
-                        : 'text-[10px] text-foreground/40'
-                    }
-                  >
-                    {gen.draft.length}/{CONNECTION_NOTE_LIMIT}
-                    {overLimit ? ` · ${t('autopilot.referral.overLimit')}` : ''}
-                  </span>
-                ) : (
-                  <span />
-                )}
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="glass"
-                    disabled={!gen.draft || overLimit || gen.generating}
-                    onClick={() => void copy()}
-                  >
-                    {copied ? <Check size={12} /> : <Copy size={12} />}
-                    {copied ? t('autopilot.referral.copied') : t('autopilot.referral.copy')}
-                  </Button>
-                  <Button
-                    variant="glass"
-                    loading={upsert.isPending}
-                    disabled={!canSave || upsert.isPending}
-                    onClick={save}
-                  >
-                    {saved ? <Check size={12} /> : <Save size={12} />}
-                    {saved ? t('autopilot.referral.saved') : t('autopilot.referral.save')}
-                  </Button>
-                </div>
+        {/* Draft output — only the generated message and its actions. */}
+        {(gen.draft || gen.generating) && (
+          <div className="space-y-1.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+            <StreamingText text={gen.draft} isStreaming={gen.generating} />
+            <div className="flex items-center justify-between gap-2 pt-1">
+              {isNote ? (
+                <span
+                  className={
+                    overLimit
+                      ? 'text-[10px] font-medium text-red-300/90'
+                      : 'text-[10px] text-foreground/40'
+                  }
+                >
+                  {gen.draft.length}/{CONNECTION_NOTE_LIMIT}
+                  {overLimit ? ` · ${t('autopilot.referral.overLimit')}` : ''}
+                </span>
+              ) : (
+                <span />
+              )}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="glass"
+                  disabled={!gen.draft || overLimit || gen.generating}
+                  onClick={() => void copy()}
+                >
+                  {copied ? <Check size={12} /> : <Copy size={12} />}
+                  {copied ? t('autopilot.referral.copied') : t('autopilot.referral.copy')}
+                </Button>
+                <Button
+                  variant="glass"
+                  loading={upsert.isPending}
+                  disabled={!canSave || upsert.isPending}
+                  onClick={save}
+                >
+                  {saved ? <Check size={12} /> : <Save size={12} />}
+                  {saved ? t('autopilot.referral.saved') : t('autopilot.referral.save')}
+                </Button>
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Existing contacts for this job */}
-          <ReferralList contacts={contacts.data ?? []} />
-        </div>
+        {/* Existing contacts for this job */}
+        <ReferralList contacts={contacts.data ?? []} />
       </div>
     </ModalShell>
   );

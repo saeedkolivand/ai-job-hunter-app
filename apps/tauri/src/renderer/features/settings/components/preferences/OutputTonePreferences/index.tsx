@@ -49,7 +49,7 @@ export function OutputTonePreferences() {
         <SectionLabel>{t('settings.outputTone.title')}</SectionLabel>
       </div>
       <p className="mb-4 text-sm text-foreground/55">{t('settings.outputTone.description')}</p>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 @xs:grid-cols-2">
         {TONE_OPTIONS.map((opt) => (
           <OptionTile
             key={opt.value}

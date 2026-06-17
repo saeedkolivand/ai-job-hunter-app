@@ -129,7 +129,7 @@ export function StepFineTune({
         <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
           {t('aiGenerate.wizard.emphasis.label')}
         </div>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-1 gap-1.5 @xs:grid-cols-2">
           {EMPHASIS_OPTIONS.map(({ id }) => {
             const active = emphasis.includes(id);
             return (

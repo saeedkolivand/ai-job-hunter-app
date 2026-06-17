@@ -81,7 +81,7 @@ export function MonitoringPage() {
 
   return (
     <PageTransition className="h-full overflow-y-auto px-10 py-10">
-      <div className="mx-auto max-w-5xl space-y-5">
+      <div className="mx-auto max-w-5xl 2xl:max-w-7xl space-y-5">
         <PageHeader
           title={t('monitoring.title')}
           subtitle={t('monitoring.subtitle')}
@@ -102,7 +102,7 @@ export function MonitoringPage() {
           }
         />
 
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {metrics.map(({ label, value, icon: Icon, color, bg }) => (
             <MetricCard
               key={label}
@@ -116,7 +116,7 @@ export function MonitoringPage() {
           ))}
         </div>
 
-        <div className="grid grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
           <ActiveJobsSection activeJobs={activeJobs} kindLabel={KIND_LABEL_MAP} t={t} />
           <ActivityFeedSection activity={activity} t={t} />
         </div>

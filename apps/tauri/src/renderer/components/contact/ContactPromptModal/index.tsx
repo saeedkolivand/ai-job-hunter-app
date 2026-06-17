@@ -23,8 +23,11 @@ export function ContactPromptModal({ open, onClose, onContinue }: ContactPromptM
   const { t } = useTranslation();
 
   return (
-    <ModalShell open={open} onClose={onClose} maxWidth="max-w-2xl">
-      <div className="flex max-h-[85vh] flex-col">
+    <ModalShell
+      open={open}
+      onClose={onClose}
+      maxWidth="max-w-2xl"
+      header={
         <div className="flex items-start gap-2 border-b border-foreground/10 px-6 py-5">
           <Contact size={16} className="mt-0.5 shrink-0 text-brand-soft" />
           <div className="flex flex-col gap-1">
@@ -34,17 +37,18 @@ export function ContactPromptModal({ open, onClose, onContinue }: ContactPromptM
             <p className="text-xs text-foreground/55">{t('contactPrompt.description')}</p>
           </div>
         </div>
-
-        <div className="overflow-y-auto px-6 py-5">
-          <ContactProfileForm />
-        </div>
-
+      }
+      footer={
         <div className="flex justify-end gap-2 border-t border-foreground/10 px-6 py-4">
           <Button variant="ghost" onClick={onClose}>
             {t('contactPrompt.cancel')}
           </Button>
           <Button onClick={onContinue}>{t('contactPrompt.continue')}</Button>
         </div>
+      }
+    >
+      <div className="px-6 py-5">
+        <ContactProfileForm />
       </div>
     </ModalShell>
   );

@@ -84,63 +84,63 @@ export function ConfirmModal({
       borderClass={config.border}
       zIndex={600}
       ariaLabelledby={titleId}
-    >
-      {/* Header */}
-      <div className="flex items-start justify-between border-b border-white/5 px-6 py-5">
-        <div className="flex items-center gap-3">
-          <div
+      header={
+        <div className="flex items-start justify-between border-b border-white/5 px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div
+              className={cn(
+                'flex h-9 w-9 items-center justify-center rounded-xl',
+                config.iconBg,
+                config.iconColor
+              )}
+            >
+              <Icon size={18} aria-hidden="true" />
+            </div>
+            <div className="text-base font-medium text-foreground" id={titleId}>
+              {title}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close dialog"
+            className="rounded-xl bg-white/5 p-1.5 text-foreground/60 transition-all duration-150 hover:bg-white/10 hover:text-foreground"
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
+        </div>
+      }
+      footer={
+        <div className="flex items-center justify-end gap-2 border-t border-white/5 px-6 py-4">
+          <Button
+            variant="ghost"
+            size="md"
+            onClick={onClose}
+            disabled={isConfirming}
+            className="px-5"
+          >
+            {cancelText}
+          </Button>
+          <button
+            disabled={isConfirming}
+            onClick={onConfirm}
+            style={{ boxShadow: isConfirming ? 'none' : config.glow }}
             className={cn(
-              'flex h-9 w-9 items-center justify-center rounded-xl',
-              config.iconBg,
-              config.iconColor
+              'inline-flex h-8 items-center gap-2 rounded-lg border px-5 text-sm font-medium transition-all duration-150',
+              'disabled:pointer-events-none disabled:opacity-45',
+              config.confirmClass
             )}
           >
-            <Icon size={18} aria-hidden="true" />
-          </div>
-          <div className="text-base font-medium text-foreground" id={titleId}>
-            {title}
-          </div>
+            {isConfirming && (
+              <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+            )}
+            {confirmText}
+          </button>
         </div>
-        <button
-          onClick={onClose}
-          aria-label="Close dialog"
-          className="rounded-xl bg-white/5 p-1.5 text-foreground/60 transition-all duration-150 hover:bg-white/10 hover:text-foreground"
-        >
-          <X size={14} aria-hidden="true" />
-        </button>
-      </div>
-
+      }
+    >
       {/* Body */}
       <div className="px-6 py-5">
         <p className="text-sm leading-relaxed text-foreground/70">{description}</p>
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-end gap-2 border-t border-white/5 px-6 py-4">
-        <Button
-          variant="ghost"
-          size="md"
-          onClick={onClose}
-          disabled={isConfirming}
-          className="px-5"
-        >
-          {cancelText}
-        </Button>
-        <button
-          disabled={isConfirming}
-          onClick={onConfirm}
-          style={{ boxShadow: isConfirming ? 'none' : config.glow }}
-          className={cn(
-            'inline-flex h-8 items-center gap-2 rounded-lg border px-5 text-sm font-medium transition-all duration-150',
-            'disabled:pointer-events-none disabled:opacity-45',
-            config.confirmClass
-          )}
-        >
-          {isConfirming && (
-            <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
-          )}
-          {confirmText}
-        </button>
       </div>
     </ModalShell>
   );
