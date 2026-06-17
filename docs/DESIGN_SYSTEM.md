@@ -418,13 +418,46 @@ notify.destroy(); // dismiss all
 | `key`          | `string`                                                            | auto-generated | Stable ID; opening with same key updates that item |
 | `onClose`      | `() => void`                                                        | undefined      | Callback when dismissed                            |
 
-#### `Modal` / `ModalShell`
+#### `ModalShell`
+
+The canonical dialog container — overlay + glass panel + focus trap + Escape key. All other modals (`ConfirmModal`, etc.) compose from `ModalShell` rather than rebuilding.
 
 ```typescript
-<ModalShell open={open} onClose={() => setOpen(false)} title="Export Document">
-  {/* modal body */}
+<ModalShell
+  open={open}
+  onClose={() => setOpen(false)}
+  header={<h2>Export Document</h2>}
+  footer={<Button onClick={handleExport}>Export</Button>}
+>
+  {/* scrollable body content */}
 </ModalShell>
 ```
+
+**Props:**
+
+| Prop             | Type         | Default                     | Notes                                                                                                                                          |
+| ---------------- | ------------ | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open`           | boolean      | required                    | Controls visibility and animation                                                                                                              |
+| `onClose`        | `() => void` | required                    | Called on Escape or backdrop click                                                                                                             |
+| `children`       | ReactNode    | required                    | Body content — scrolled when tall, pinned header/footer stay visible                                                                           |
+| `header`         | ReactNode    | `undefined`                 | Optional pinned header region (title, close button) — does not scroll; use `ariaLabelledby` to wire a title to the dialog's accessibility name |
+| `footer`         | ReactNode    | `undefined`                 | Optional pinned footer region (action buttons) — does not scroll; keeps CTAs visible on short windows                                          |
+| `maxWidth`       | string       | optional; component default | Tailwind class capping dialog width (e.g. `max-w-lg`) — see `ModalShell.tsx`                                                                   |
+| `className`      | string       | `undefined`                 | Extra classes on the panel element                                                                                                             |
+| `zIndex`         | number       | optional; component default | z-layer — see `ModalShell.tsx`                                                                                                                 |
+| `borderClass`    | string       | optional; component default | Border color (e.g. `border-red-500/30`) — see `ModalShell.tsx`                                                                                 |
+| `ariaLabelledby` | string       | `undefined`                 | `id` of the element labelling the dialog (e.g. title); wired to `aria-labelledby`                                                              |
+| `ariaLabel`      | string       | `undefined`                 | Accessible name when no visible title element exists to reference                                                                              |
+
+**Anatomy:** The panel follows a three-zone pattern: a pinned header (title, close button), a scrollable body (content — scrolls when tall), and a pinned footer (action buttons). The overall panel height is capped so tall modals stay usable on short windows, and the header/footer remain visible while the body scrolls. See `packages/ui/src/components/ModalShell/ModalShell.tsx` for the implementation.
+
+**Guidance:**
+
+- Multi-section modals and forms taller than viewport → **use slots**: put title/close in `header`, action buttons in `footer` so they stay pinned.
+- Simple single-body modals (confirm dialogs, quick forms) → **may pass everything as `children`** — the panel's height cap and scroll still protects them.
+- Set `ariaLabel` or `ariaLabelledby` so assistive tech announces the dialog. Icon-only close buttons must have an `aria-label`.
+
+Source: `packages/ui/src/components/ModalShell/ModalShell.tsx`.
 
 #### `ConfirmModal`
 
