@@ -1155,7 +1155,11 @@
         "hint": "Wählen Sie häufige Fragen – wir entwerfen Antworten auf Basis Ihres Lebenslaufs.",
         "generate": "Antworten generieren",
         "generating": "Wird generiert…",
-        "copy": "Antwort kopieren"
+        "copy": "Antwort kopieren",
+        "customLabel": "Eigene Frage",
+        "customPlaceholder": "Frage eingeben oder einfügen…",
+        "add": "Hinzufügen",
+        "remove": "Frage entfernen"
       },
       "target": {
         "label": "Dokumenttyp",

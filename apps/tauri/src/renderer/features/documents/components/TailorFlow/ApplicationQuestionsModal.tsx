@@ -1,13 +1,16 @@
-import { Check, Copy, HelpCircle, Sparkles, X } from 'lucide-react';
+import { Check, Copy, HelpCircle, Plus, Sparkles, X } from 'lucide-react';
 import { useState } from 'react';
 
 import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
 import { useTranslation } from '@ajh/translations';
-import { Button, ModalShell } from '@ajh/ui';
+import { Button, Input, ModalShell } from '@ajh/ui';
 
 interface Props {
   selected: Set<string>;
   toggle: (id: string) => void;
+  custom: { id: string; question: string }[];
+  addCustom: (text: string) => void;
+  removeCustom: (id: string) => void;
   answers: Record<string, string>;
   generating: boolean;
   error: string | null;
@@ -26,6 +29,9 @@ interface Props {
 export function ApplicationQuestionsModal({
   selected,
   toggle,
+  custom,
+  addCustom,
+  removeCustom,
   answers,
   generating,
   error,
@@ -35,12 +41,40 @@ export function ApplicationQuestionsModal({
 }: Props) {
   const { t } = useTranslation();
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
 
   const copy = async (id: string, text: string) => {
     await navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 1500);
   };
+
+  const submitCustom = () => {
+    if (!draft.trim()) return;
+    addCustom(draft);
+    setDraft('');
+  };
+
+  // Shared answer + Copy block — reused by predefined and custom rows.
+  const answerBlock = (id: string, answer: string) => (
+    <div className="px-2 pb-2 pl-7">
+      <div className="relative rounded-md border border-white/[0.05] bg-white/[0.03] px-2.5 py-2">
+        <p className="whitespace-pre-wrap pr-6 text-[11px] leading-relaxed text-foreground/70">
+          {answer}
+        </p>
+        <Button
+          variant="unstyled"
+          type="button"
+          onClick={() => void copy(id, answer)}
+          title={t('autopilot.apply.questions.copy')}
+          aria-label={t('autopilot.apply.questions.copy')}
+          className="absolute right-1.5 top-1.5 rounded p-0.5 text-foreground/30 transition-colors hover:text-foreground/70"
+        >
+          {copiedId === id ? <Check size={11} /> : <Copy size={11} />}
+        </Button>
+      </div>
+    </div>
+  );
 
   return (
     <ModalShell
@@ -98,28 +132,62 @@ export function ApplicationQuestionsModal({
                   />
                   <span className="text-[11px] text-foreground/75">{q.question}</span>
                 </label>
-                {answer && (
-                  <div className="px-2 pb-2 pl-7">
-                    <div className="relative rounded-md border border-white/[0.05] bg-white/[0.03] px-2.5 py-2">
-                      <p className="whitespace-pre-wrap pr-6 text-[11px] leading-relaxed text-foreground/70">
-                        {answer}
-                      </p>
-                      <Button
-                        variant="unstyled"
-                        type="button"
-                        onClick={() => void copy(q.id, answer)}
-                        title={t('autopilot.apply.questions.copy')}
-                        aria-label={t('autopilot.apply.questions.copy')}
-                        className="absolute right-1.5 top-1.5 rounded p-0.5 text-foreground/30 transition-colors hover:text-foreground/70"
-                      >
-                        {copiedId === q.id ? <Check size={11} /> : <Copy size={11} />}
-                      </Button>
-                    </div>
-                  </div>
-                )}
+                {answer && answerBlock(q.id, answer)}
               </div>
             );
           })}
+        </div>
+
+        {/* Your own questions */}
+        <div className="space-y-1.5 pt-1">
+          <div className="px-2 text-[10px] font-medium uppercase tracking-wide text-foreground/40">
+            {t('autopilot.apply.questions.customLabel')}
+          </div>
+
+          {custom.map((q) => {
+            const answer = answers[q.id];
+            return (
+              <div key={q.id} className="rounded-md bg-white/[0.02]">
+                <div className="flex items-start gap-2 px-2 py-1.5">
+                  <span className="flex-1 text-[11px] text-foreground/75">{q.question}</span>
+                  <Button
+                    variant="unstyled"
+                    type="button"
+                    onClick={() => removeCustom(q.id)}
+                    aria-label={t('autopilot.apply.questions.remove')}
+                    className="shrink-0 rounded p-0.5 text-foreground/30 transition-colors hover:text-foreground/70"
+                  >
+                    <X size={12} />
+                  </Button>
+                </div>
+                {answer && answerBlock(q.id, answer)}
+              </div>
+            );
+          })}
+
+          <div className="flex items-center gap-1.5 px-2">
+            <Input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  submitCustom();
+                }
+              }}
+              placeholder={t('autopilot.apply.questions.customPlaceholder')}
+              className="h-8 flex-1 text-[11px]"
+            />
+            <Button
+              type="button"
+              onClick={submitCustom}
+              disabled={!draft.trim()}
+              className="h-8 shrink-0 px-2"
+            >
+              <Plus size={12} />
+              {t('autopilot.apply.questions.add')}
+            </Button>
+          </div>
         </div>
 
         {error && <p className="text-[11px] text-red-300/80">{error}</p>}
