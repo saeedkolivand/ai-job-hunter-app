@@ -96,8 +96,6 @@ export function LeftPanel({
         <ResumeInputCard
           value={resume}
           onChange={setResume}
-          onUpload={(f) => onUpload('resume', f)}
-          uploading={uploading === 'resume'}
           disabled={stage !== 'idle'}
           placeholder={t('aiGenerate.resumePlaceholder')}
         />

@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Controller, useFormContext } from 'react-hook-form';
 
 import { useTranslation } from '@ajh/translations';
@@ -7,7 +6,6 @@ import { Button, cn, Input } from '@ajh/ui';
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import type { Prefilled, WizardState } from '@/features/autopilot/types';
 import { MATCH_LEVELS, scoreToLevel } from '@/lib/match-level';
-import { useExtractText } from '@/services';
 
 import { PrefilledBadge } from '../PrefilledBadge';
 import { WizardField } from '../WizardField';
@@ -24,20 +22,6 @@ interface StepFilterProps {
 export function StepFilter({ prefilled }: StepFilterProps) {
   const { t } = useTranslation();
   const { control } = useFormContext<WizardState>();
-  const extractText = useExtractText();
-  const [uploadingResume, setUploadingResume] = useState(false);
-
-  const handleResumeUpload = async (file: File, onChange: (text: string) => void) => {
-    setUploadingResume(true);
-    try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const res = await extractText.mutateAsync({ name: file.name, bytes });
-      const text = (res?.text ?? '').trim();
-      if (text) onChange(text);
-    } finally {
-      setUploadingResume(false);
-    }
-  };
 
   return (
     <div className="space-y-4">
@@ -94,8 +78,6 @@ export function StepFilter({ prefilled }: StepFilterProps) {
           <ResumeInputCard
             value={field.value}
             onChange={field.onChange}
-            onUpload={(file) => handleResumeUpload(file, field.onChange)}
-            uploading={uploadingResume}
             placeholder={t('autopilot.wizard.filter.resumePlaceholder')}
           />
         )}

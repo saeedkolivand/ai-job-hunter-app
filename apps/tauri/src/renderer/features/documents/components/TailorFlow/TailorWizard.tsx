@@ -29,9 +29,6 @@ interface Props {
   hasDesc: boolean;
   fetchingDesc: boolean;
   jobUrl: string;
-  // Resume upload.
-  onUpload: (file: File) => Promise<void>;
-  uploading: boolean;
   // Global AI availability.
   canUse: boolean;
   reason?: string;
@@ -54,8 +51,6 @@ export function TailorWizard({
   hasDesc,
   fetchingDesc,
   jobUrl,
-  onUpload,
-  uploading,
   canUse,
   reason,
   onGenerate,
@@ -130,7 +125,7 @@ export function TailorWizard({
                   jobUrl={jobUrl}
                 />
               )}
-              {step === 1 && <StepResume onUpload={onUpload} uploading={uploading} />}
+              {step === 1 && <StepResume />}
               {step === 2 && <StepOutput />}
               {step === 3 && <StepModel canUse={canUse} reason={reason} />}
             </motion.div>

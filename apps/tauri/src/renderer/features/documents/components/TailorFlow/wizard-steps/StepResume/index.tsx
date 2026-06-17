@@ -6,13 +6,8 @@ import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 
 import type { TailorWizardState } from '../../lib/tailor-state';
 
-interface StepResumeProps {
-  onUpload: (file: File) => Promise<void>;
-  uploading: boolean;
-}
-
 /** Resume input step — the resume text is the only gated field of the wizard. */
-export function StepResume({ onUpload, uploading }: StepResumeProps) {
+export function StepResume() {
   const { t } = useTranslation();
   const { control } = useFormContext<TailorWizardState>();
 
@@ -32,12 +27,7 @@ export function StepResume({ onUpload, uploading }: StepResumeProps) {
         name="resume"
         render={({ field, fieldState }) => (
           <div className="space-y-1.5">
-            <ResumeInputCard
-              value={field.value}
-              onChange={field.onChange}
-              onUpload={onUpload}
-              uploading={uploading}
-            />
+            <ResumeInputCard value={field.value} onChange={field.onChange} />
             {fieldState.error?.message && (
               <p className="text-[10px] text-red-400/80">{t(fieldState.error.message)}</p>
             )}
