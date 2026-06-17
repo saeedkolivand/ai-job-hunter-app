@@ -94,8 +94,8 @@ export function ResumeReviewPanel({ review, onDismiss }: Props) {
 
           {hasWarnings && (
             <ul className="space-y-1">
-              {review.warnings.map((w) => (
-                <li key={w} className="flex items-start gap-2 text-sm text-amber-400">
+              {review.warnings.map((w, i) => (
+                <li key={`${w}-${i}`} className="flex items-start gap-2 text-sm text-amber-400">
                   <span
                     aria-hidden
                     className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-current"

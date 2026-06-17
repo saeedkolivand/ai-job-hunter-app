@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import type { DocumentRecord } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
@@ -7,6 +8,7 @@ import { useNotification } from '@ajh/ui';
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
 import { useAppClient } from '@/providers/AppClientProvider';
 import {
+  keys,
   useDocuments,
   useProfileImport,
   useRemoveDocument,
@@ -45,6 +47,7 @@ export function useResumeInput({ value, onChange }: Params) {
   const { t } = useTranslation();
   const notify = useNotification();
   const api = useAppClient();
+  const queryClient = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const savedBtnRef = useRef<HTMLButtonElement>(null);
   const savedMenuRef = useRef<HTMLDivElement>(null);
@@ -145,10 +148,14 @@ export function useResumeInput({ value, onChange }: Params) {
     try {
       // importFile already saves the doc to the library and sets the review.
       const result = await importFile(file);
-      if (result?.id) {
-        const text = await api.documents.getText(result.id);
+      const id = result?.id;
+      if (id) {
+        const text = await queryClient.fetchQuery({
+          queryKey: keys.documents.text(id),
+          queryFn: () => api.documents.getText(id),
+        });
         onChange(text);
-        setSelectedDocId(result.id);
+        setSelectedDocId(id);
         setExpanded(false);
       }
     } catch {
