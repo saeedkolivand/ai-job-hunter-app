@@ -47,7 +47,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
-    "@vitest/browser-playwright": "^4.1.8",
+    "@vitest/browser-playwright": "^4.1.9",
     "eslint-plugin-storybook": "^10.4.3",
     "jsdom": "^26.1.0",
     "playwright": "^1.60.0",
