@@ -1,6 +1,6 @@
 # Automation domain (scraping + apply assistant + AI provider)
 
-Last updated: 2026-06-13
+Last updated: 2026-06-17
 
 Merged knowledge for `scraping-applier-expert` and `ai-provider-expert`. Source is authoritative for board/provider counts.
 
@@ -25,7 +25,7 @@ Merged knowledge for `scraping-applier-expert` and `ai-provider-expert`. Source 
 - **Embeddings & match scoring** — `documents/mod.rs`: document + posting-vector storage. Match-score result cache with self-invalidating composite key (provider + model + semantic_enabled + formula_version + job_text_hash). See [ADR-017](decision-records/adr-017-persisted-self-invalidating-match-score-caches.md) for the caching strategy. Embedding-space invalidation when the model/space changes (stale embeddings = HIGH). `posting_vector_or_embed()` is the resolver; `match_resume.rs` wraps results in the cache.
 - **Streaming / thinking normalization** — every provider maps reasoning to `ai:stream { delta, thinking:true }`; inline `<think>` blocks for local models are split by `renderer/lib/generate/think-split.ts: createThinkSplitter`. See [ADR-005](decision-records/adr-005-universal-thinking-normalization.md).
 - **Generation session store** — `renderer/store/generation-store/` ([Zustand][zustand]), keyed by context id, survives navigation/close. See [ADR-006](decision-records/adr-006-generation-session-store.md).
-- **Prompts** — `packages/prompts` (provider-aware, locale-driven, pure [TypeScript][typescript], zero deps); reusable/composable templates.
+- **Prompts** — `packages/prompts` (provider-aware, locale-driven, pure [TypeScript][typescript], zero deps); reusable/composable templates. Includes `buildJobAdSummaryPrompt` + `buildJobAdSummarySystemPrompt` (`packages/prompts/src/generate/job-ad-summary/`) for résumé-independent job-ad key-notes digest; separate from ATS analysis, never fabricates. Frontend hook: `useJobAdSummary` in `renderer/features/documents/components/TailorFlow/`.
 - **Cost/token** — minimize prompt/context; reuse embedded context; pick the cheapest viable model (`performance-profiler` co-reviews hot AI paths).
 
 [chromiumoxide]: https://github.com/mattsse/chromiumoxide
