@@ -56,6 +56,14 @@
   box-sizing: border-box;
 }
 
+/* The [hidden] attribute toggles views/controls. Author `display` rules (.view,
+ * .retry) outrank the UA `[hidden]{display:none}` by origin, so restore it
+ * explicitly — otherwise every view renders at once (e.g. "✓ Authorized" leaks
+ * into the not-paired state). */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   width: 360px;
