@@ -203,7 +203,9 @@ jobs:
         uses: ./.github/actions/setup-rust
 
       - name: 📥 Install cargo-audit
-        uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # cargo-audit
+        uses: taiki-e/install-action@15449e3094499af05d8d964a1c884208e4b8b595 # v2
+        with:
+          tool: cargo-audit
 
       - name: 🔍 Run Cargo Audit
         id: cargo-audit
