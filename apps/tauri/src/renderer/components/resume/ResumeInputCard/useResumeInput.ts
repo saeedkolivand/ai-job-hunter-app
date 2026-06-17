@@ -57,7 +57,9 @@ export function useResumeInput({ value, onChange }: Params) {
   const savedMenuRef = useRef<HTMLDivElement>(null);
 
   const { data: rawDocsUnknown = [] } = useDocuments();
-  const rawDocs = (rawDocsUnknown as unknown[]).filter(isRawDoc);
+  const rawDocs = (Array.isArray(rawDocsUnknown) ? (rawDocsUnknown as unknown[]) : []).filter(
+    isRawDoc
+  );
   const docs = rawDocs.map(normalise);
 
   // Starts collapsed; the component derives the empty-state expansion from live
