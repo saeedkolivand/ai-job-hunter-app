@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.109.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.109.1...v0.109.2) (2026-06-17)
+
+### ⚡ Performance
+
+* emit social card as compressed jpeg to cut og image 83% ([#415](https://github.com/saeedkolivand/ai-job-hunter-app/issues/415)) ([028256f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/028256fa9fd0ae3aca3cefc28de3e3f553f58d3d))
+
 ## [0.109.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.109.0...v0.109.1) (2026-06-17)
 
 ### 🐛 Bug Fixes
