@@ -167,6 +167,7 @@ export function Sidebar() {
             <Link
               to={ROUTES.SETTINGS}
               className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-foreground/30 transition-colors hover:bg-foreground/[0.06] hover:text-foreground/60"
+              onClick={scrollPageToTop}
             >
               <Settings size={12} />
             </Link>

@@ -110,18 +110,20 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
       open
       onClose={onCancel}
       maxWidth="max-w-xl"
+      ariaLabelledby="creation-wizard-title"
       header={
         <>
           {/* Wizard header */}
           <div className="flex items-center justify-between border-white/[0.1] px-6 py-4">
             <div className="flex items-center gap-2">
               <Zap size={14} className="text-brand-soft" />
-              <span className="text-sm font-semibold text-foreground/80">
+              <span id="creation-wizard-title" className="text-sm font-semibold text-foreground/80">
                 {t(editing ? 'autopilot.wizard.editTitle' : 'autopilot.wizard.title')}
               </span>
             </div>
             <Button
               onClick={onCancel}
+              aria-label={t('autopilot.referral.close')}
               className="text-foreground/30 hover:text-foreground/60 transition-colors h-auto bg-transparent border-transparent p-0"
             >
               <X size={16} />

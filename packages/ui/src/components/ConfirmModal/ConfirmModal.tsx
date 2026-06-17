@@ -101,6 +101,7 @@ export function ConfirmModal({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             aria-label="Close dialog"
             className="rounded-xl bg-white/5 p-1.5 text-foreground/60 transition-all duration-150 hover:bg-white/10 hover:text-foreground"
@@ -121,6 +122,7 @@ export function ConfirmModal({
             {cancelText}
           </Button>
           <button
+            type="button"
             disabled={isConfirming}
             onClick={onConfirm}
             style={{ boxShadow: isConfirming ? 'none' : config.glow }}
