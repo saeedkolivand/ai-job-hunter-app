@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.107.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.106.0...v0.107.0) (2026-06-17)
+
+### ✨ Features
+
+* app-wide window-resize responsiveness + scroll-to-top nav ([#391](https://github.com/saeedkolivand/ai-job-hunter-app/issues/391)) ([b79dab4](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b79dab462fff0bd6d8a19eafefeb2c830f20f4ee))
+
 ## [0.106.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.105.0...v0.106.0) (2026-06-16)
 
 ### ✨ Features
