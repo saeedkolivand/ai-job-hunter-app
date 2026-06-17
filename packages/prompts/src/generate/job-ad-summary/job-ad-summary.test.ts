@@ -54,6 +54,15 @@ describe('buildJobAdSummaryPrompt', () => {
     expect(prompt).toMatch(/Write the digest in de/i);
   });
 
+  it('follows meta.targetLanguage over the ad language when they differ', () => {
+    // German ad, but the target language is English — the output-language
+    // instruction must follow meta.targetLanguage (en), not the ad's language (de).
+    const meta: GenerationMeta = { ...META, jobAdLanguage: 'de', targetLanguage: 'en' };
+    const prompt = buildJobAdSummaryPrompt('Stelle: Backend Engineer bei Acme in Berlin.', meta);
+    expect(prompt).toMatch(/Write the digest in en/i);
+    expect(prompt).not.toMatch(/Write the digest in de/i);
+  });
+
   it('falls back to the ad language when no meta is given', () => {
     const prompt = buildJobAdSummaryPrompt('Job ad text.');
     expect(prompt).toMatch(/Write the digest in the ad's own language/i);

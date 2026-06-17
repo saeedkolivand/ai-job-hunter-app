@@ -30,8 +30,12 @@ ABSOLUTE RULES (never break these):
  * in the same `<job_ad>` fence the other generators use and asks for a short
  * markdown digest. No résumé and no company brief are involved.
  */
-export function buildJobAdSummaryPrompt(jobAd: string, meta?: GenerationMeta | null): string {
-  const { jobAdChars } = resolveProfile('large' satisfies PromptTarget);
+export function buildJobAdSummaryPrompt(
+  jobAd: string,
+  meta?: GenerationMeta | null,
+  target?: PromptTarget
+): string {
+  const { jobAdChars } = resolveProfile(target);
 
   const lang = meta?.targetLanguage;
   const langNote = lang

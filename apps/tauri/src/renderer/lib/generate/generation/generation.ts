@@ -408,9 +408,10 @@ export async function generateJobAdSummary(params: {
   onToken?: (tok: string) => void;
 }): Promise<string> {
   const { jobAd, meta, model, signal, onToken } = params;
+  const profile = buildProviderProfile(model);
 
   const system = buildJobAdSummarySystemPrompt();
-  const user = buildJobAdSummaryPrompt(jobAd, meta);
+  const user = buildJobAdSummaryPrompt(jobAd, meta, profile);
   const raw = await streamGenerate(
     model,
     system,
