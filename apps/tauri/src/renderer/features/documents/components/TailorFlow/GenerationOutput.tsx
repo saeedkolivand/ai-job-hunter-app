@@ -16,6 +16,7 @@ import {
   TEMPLATES,
 } from '@/lib/generate';
 
+import { JobAdView } from './JobAdView';
 import type { TailorTarget } from './useTailorGeneration';
 
 interface Props {
@@ -38,6 +39,16 @@ interface Props {
   setExportOpen: React.Dispatch<React.SetStateAction<boolean>>;
   onExport: (fmt: 'pdf' | 'docx' | 'txt') => void;
   jobDesc: string;
+  onJobDescChange: (v: string) => void;
+  hasDesc: boolean;
+  fetchingDesc: boolean;
+  jobUrl?: string;
+  jobAdSummary: {
+    summary: string;
+    generating: boolean;
+    error: string | null;
+    generate: () => void;
+  };
 }
 
 export function GenerationOutput({
@@ -58,6 +69,11 @@ export function GenerationOutput({
   setExportOpen,
   onExport,
   jobDesc,
+  onJobDescChange,
+  hasDesc,
+  fetchingDesc,
+  jobUrl,
+  jobAdSummary,
 }: Props) {
   const { t } = useTranslation();
   const [view, setView] = useState<'doc' | 'jobAd'>('doc');
@@ -162,11 +178,11 @@ export function GenerationOutput({
             {t('autopilot.apply.tabs.jobAd')}
           </Button>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1">
           <Button
             onClick={() => void onCopy()}
             disabled={!output || view === 'jobAd'}
-            className="flex h-auto items-center gap-1 border-transparent bg-transparent p-0 text-[10px] text-foreground/40 hover:text-foreground/70"
+            className="flex h-auto items-center gap-1.5 rounded border border-transparent bg-transparent px-2 py-1 text-[10px] text-foreground/45 transition-colors hover:bg-white/[0.04] hover:text-foreground/70 disabled:opacity-40 disabled:pointer-events-none"
           >
             {copied ? <Check size={11} /> : <Copy size={11} />}
             {copied ? t('autopilot.apply.copied') : t('autopilot.apply.copy')}
@@ -174,7 +190,7 @@ export function GenerationOutput({
           <Button
             onClick={() => setExportOpen(true)}
             disabled={!output || view === 'jobAd'}
-            className="flex h-auto items-center gap-1 border-transparent bg-transparent p-0 text-[10px] text-brand-soft hover:text-brand-soft/80"
+            className="flex h-auto items-center gap-1.5 rounded border border-transparent bg-transparent px-2 py-1 text-[10px] text-brand-soft transition-colors hover:bg-brand/10 hover:text-brand-soft/90 disabled:opacity-40 disabled:pointer-events-none"
           >
             <Download size={11} />
             {t('aiGenerate.export')}
@@ -257,9 +273,17 @@ export function GenerationOutput({
         className="flex min-h-[32rem] flex-1 flex-col px-3 py-2"
       >
         {view === 'jobAd' ? (
-          <div className="flex-1 select-text overflow-y-auto whitespace-pre-wrap text-[11px] leading-relaxed text-foreground/60">
-            {jobDesc || t('autopilot.apply.noDescription')}
-          </div>
+          <JobAdView
+            jobDesc={jobDesc}
+            onJobDescChange={onJobDescChange}
+            summary={jobAdSummary.summary}
+            generating={jobAdSummary.generating}
+            error={jobAdSummary.error}
+            onGenerateSummary={jobAdSummary.generate}
+            hasDesc={hasDesc}
+            fetchingDesc={fetchingDesc}
+            jobUrl={jobUrl}
+          />
         ) : (
           <EditableOutput
             value={output}

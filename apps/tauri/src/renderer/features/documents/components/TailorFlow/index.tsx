@@ -20,6 +20,7 @@ import { ReferralModal } from './ReferralModal';
 import { ResultsPanel } from './ResultsPanel';
 import { TailorWizard } from './TailorWizard';
 import { useApplicationAnswers } from './useApplicationAnswers';
+import { useJobAdSummary } from './useJobAdSummary';
 import { useTailorGeneration } from './useTailorGeneration';
 
 export type { TailorWizardState };
@@ -130,7 +131,8 @@ export function TailorFlow({
   const initialDesc = (job.description ?? '').trim();
   const resolved = useResolveJobUrl(job.url, !initialDesc);
   const fetchedDesc = (resolved.data?.description ?? '').trim();
-  const jobDesc = initialDesc || fetchedDesc;
+  const [jobDescOverride, setJobDescOverride] = useState<string | null>(null);
+  const jobDesc = jobDescOverride ?? (initialDesc || fetchedDesc);
   const hasDesc = jobDesc.length > 0;
   const fetchingDesc = !initialDesc && resolved.isLoading;
 
@@ -146,6 +148,10 @@ export function TailorFlow({
     templateId: persistence.templateId,
     atsMode: persistence.atsMode,
   });
+
+  // Lazy, résumé-independent AI summary of the job ad (shared by the wizard's
+  // job-ad step and the results job-ad tab). Reuses the flow's detected meta.
+  const jobAdSummary = useJobAdSummary({ jobDesc, model, canUse, hasDesc, meta: gen.meta });
 
   // Cold-entry hydration: when a prior generation is persisted for this job and
   // the live session is empty, seed it so the flow opens on the results panel
@@ -264,12 +270,14 @@ export function TailorFlow({
                 step={step}
                 setStep={handleStep}
                 jobDesc={jobDesc}
+                onJobDescChange={setJobDescOverride}
                 hasDesc={hasDesc}
                 fetchingDesc={fetchingDesc}
                 jobUrl={job.url}
                 canUse={canUse}
                 reason={reason}
                 onGenerate={startGeneration}
+                jobAdSummary={jobAdSummary}
               />
             )}
 
@@ -288,6 +296,11 @@ export function TailorFlow({
               <ResultsPanel
                 target={generatedTarget}
                 jobDesc={jobDesc}
+                onJobDescChange={setJobDescOverride}
+                hasDesc={hasDesc}
+                fetchingDesc={fetchingDesc}
+                jobUrl={job.url}
+                jobAdSummary={jobAdSummary}
                 activeOut={gen.activeOut}
                 setActiveOut={gen.setActiveOut}
                 templateId={persistence.templateId}

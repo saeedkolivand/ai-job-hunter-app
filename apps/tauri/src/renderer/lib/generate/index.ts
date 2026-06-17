@@ -4,6 +4,7 @@ export {
   generateApplicationAnswer,
   generateCoverLetter,
   generateInterviewQuestions,
+  generateJobAdSummary,
   generateReferral,
   generateResume,
   type GenerationMeta,

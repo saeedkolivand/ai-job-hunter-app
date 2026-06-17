@@ -84,4 +84,54 @@ describe('useApplicationAnswers', () => {
     });
     expect(save).not.toHaveBeenCalled();
   });
+
+  it('appends a trimmed custom question and ignores empty input', () => {
+    const { result } = render();
+    act(() => result.current.addCustom('  How do you handle conflict?  '));
+    act(() => result.current.addCustom('   '));
+    expect(result.current.custom).toHaveLength(1);
+    expect(result.current.custom[0]?.question).toBe('How do you handle conflict?');
+  });
+
+  it('gates generation true with only a custom question', () => {
+    const { result } = render();
+    expect(result.current.canGenerate).toBe(false);
+    act(() => result.current.addCustom('Why this team?'));
+    expect(result.current.selected.size).toBe(0);
+    expect(result.current.canGenerate).toBe(true);
+  });
+
+  it('flows a custom question through generate into persisted answers', async () => {
+    const { result } = render();
+    act(() => result.current.addCustom('What excites you about this role?'));
+    const customId = result.current.custom[0]?.id ?? '';
+
+    await act(async () => {
+      await result.current.generate();
+    });
+
+    expect(customId).not.toBe('');
+    expect(result.current.answers[customId]).toContain('payments migration');
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        applicationAnswers: [
+          expect.objectContaining({
+            id: customId,
+            question: 'What excites you about this role?',
+            answer: 'Because I led a payments migration.',
+          }),
+        ],
+      })
+    );
+  });
+
+  it('removes a custom question by id', () => {
+    const { result } = render();
+    act(() => result.current.addCustom('Keep me'));
+    act(() => result.current.addCustom('Drop me'));
+    const dropId = result.current.custom[1]?.id ?? '';
+    act(() => result.current.removeCustom(dropId));
+    expect(result.current.custom).toHaveLength(1);
+    expect(result.current.custom[0]?.question).toBe('Keep me');
+  });
 });

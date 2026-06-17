@@ -11,6 +11,16 @@ import type { TailorTarget } from './useTailorGeneration';
 interface Props {
   target: TailorTarget;
   jobDesc: string;
+  onJobDescChange: (v: string) => void;
+  hasDesc: boolean;
+  fetchingDesc: boolean;
+  jobUrl?: string;
+  jobAdSummary: {
+    summary: string;
+    generating: boolean;
+    error: string | null;
+    generate: () => void;
+  };
   // Output / doc state from useTailorGeneration.
   activeOut: 'resume' | 'cover';
   setActiveOut: (o: 'resume' | 'cover') => void;
@@ -43,6 +53,11 @@ interface Props {
 export function ResultsPanel({
   target,
   jobDesc,
+  onJobDescChange,
+  hasDesc,
+  fetchingDesc,
+  jobUrl,
+  jobAdSummary,
   activeOut,
   setActiveOut,
   templateId,
@@ -84,6 +99,11 @@ export function ResultsPanel({
           setExportOpen={setExportOpen}
           onExport={onExport}
           jobDesc={jobDesc}
+          onJobDescChange={onJobDescChange}
+          hasDesc={hasDesc}
+          fetchingDesc={fetchingDesc}
+          jobUrl={jobUrl}
+          jobAdSummary={jobAdSummary}
         />
 
         <Button

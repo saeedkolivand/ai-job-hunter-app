@@ -176,7 +176,7 @@ export function OutputPanelDone({
           <Button
             onClick={onCopy}
             disabled={isGenerating}
-            className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-[11px] text-foreground/55 hover:text-foreground transition-colors h-auto disabled:opacity-30 disabled:pointer-events-none"
+            className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-[11px] text-foreground/55 hover:bg-white/[0.06] hover:text-foreground transition-colors h-auto disabled:opacity-30 disabled:pointer-events-none"
           >
             {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
             {copied ? t('aiGenerate.copied') : t('aiGenerate.copy')}
