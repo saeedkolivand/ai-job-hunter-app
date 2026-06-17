@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.108.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.107.0...v0.108.0) (2026-06-17)
+
+### ✨ Features
+
+* redesign resume input to library-first card ([#393](https://github.com/saeedkolivand/ai-job-hunter-app/issues/393)) ([1f8f01f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1f8f01f26cedbc43140b259d5b65609de8f9d456))
+
+### 📚 Documentation
+
+* responsive layout conventions + ModalShell slot API ([#392](https://github.com/saeedkolivand/ai-job-hunter-app/issues/392)) ([77a5d89](https://github.com/saeedkolivand/ai-job-hunter-app/commit/77a5d893f86bff6b04fb6a93d121d0663a8df4b4)), closes [#391](https://github.com/saeedkolivand/ai-job-hunter-app/issues/391)
+
 ## [0.107.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.106.0...v0.107.0) (2026-06-17)
 
 ### ✨ Features

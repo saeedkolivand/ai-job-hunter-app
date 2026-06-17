@@ -1,16 +1,12 @@
 /**
- * ResumeInputCard — segmented-control active-state tests.
+ * ResumeInputCard — resting/expanded flow tests.
  *
  * Seam: vi.mock('./useResumeInput') with a module-level mutable object so each
- * test sets inputMode BEFORE render. Child components are stubbed to nulls;
- * @ajh/ui (Button / cn) and the real className logic under test are NOT mocked.
- *
- * Three assertion groups:
- *  1. Upload active  → Upload button has active classes; Paste does not.
- *  2. Click Paste    → setInputMode vi.fn() called with 'paste'.
- *  3. Paste active   → Upload button has inactive classes; Paste has active classes.
+ * test sets `expanded` / `activeDoc` / `review` BEFORE render. Child components
+ * are stubbed to recognizable testids; @ajh/ui (Button / cn) and the real
+ * resting/expanded branch logic under test are NOT mocked.
  */
-import React from 'react';
+import type React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
@@ -23,83 +19,88 @@ vi.mock('@ajh/translations', () => ({
 // ── child-component stubs (not under test here) ───────────────────────────────
 
 vi.mock('../ProfileUrlInput', () => ({ ProfileUrlInput: () => null }));
-vi.mock('../ResumeReviewPanel', () => ({ ResumeReviewPanel: () => null }));
-vi.mock('../SaveActions', () => ({ SaveActions: () => null }));
+vi.mock('../ResumeReviewPanel', () => ({
+  ResumeReviewPanel: () => <div data-testid="review" />,
+}));
 vi.mock('../SavedResumeMenu', () => ({ SavedResumeMenu: () => null }));
-vi.mock('../UploadZone', () => ({ UploadZone: () => null }));
+vi.mock('../UploadZone', () => ({ UploadZone: () => <div data-testid="upload-zone" /> }));
 
 // ── useResumeInput stub ───────────────────────────────────────────────────────
 // Module-level mutable object: set BEFORE each render, never after.
 
-const mockSetInputMode = vi.fn();
+const mockSetExpanded = vi.fn();
 
-let stubbedHook: {
-  inputMode: 'upload' | 'paste';
+type ActiveDoc = { id: string; title: string } | undefined;
+
+interface StubHook {
   expanded: boolean;
   dragging: boolean;
   showSaved: boolean;
   showUrlInput: boolean;
-  saving: boolean;
   hasSaved: boolean;
+  uploading: boolean;
+  scanning: boolean;
   profileUrlValid: boolean;
   profileImportPending: boolean;
-  lastUploadedFile: File | null;
   selectedDocId: string | null;
   profileUrl: string;
   docs: unknown[];
-  triggerDoc: undefined;
-  review: undefined;
+  activeDoc: ActiveDoc;
+  review: unknown;
   menuPos: { top: number; right: number };
   fileRef: React.RefObject<HTMLInputElement | null>;
   savedBtnRef: React.RefObject<HTMLButtonElement | null>;
   savedMenuRef: React.RefObject<HTMLDivElement | null>;
-  setInputMode: typeof mockSetInputMode;
-  setExpanded: ReturnType<typeof vi.fn>;
+  setExpanded: typeof mockSetExpanded;
   setDragging: ReturnType<typeof vi.fn>;
   setShowUrlInput: ReturnType<typeof vi.fn>;
   setProfileUrl: ReturnType<typeof vi.fn>;
   openSavedMenu: ReturnType<typeof vi.fn>;
   handleSelectSaved: ReturnType<typeof vi.fn>;
   handleSetDefaultSaved: ReturnType<typeof vi.fn>;
-  handleSaveToLibrary: ReturnType<typeof vi.fn>;
+  handleRemove: ReturnType<typeof vi.fn>;
   handleFileChange: ReturnType<typeof vi.fn>;
+  handleSavePaste: ReturnType<typeof vi.fn>;
   handleProfileUrlSubmit: ReturnType<typeof vi.fn>;
   toggleUrlInput: ReturnType<typeof vi.fn>;
   clearReview: ReturnType<typeof vi.fn>;
-} = {
-  inputMode: 'upload',
-  expanded: true,
+}
+
+const baseHook: StubHook = {
+  expanded: false,
   dragging: false,
   showSaved: false,
   showUrlInput: false,
-  saving: false,
   hasSaved: false,
+  uploading: false,
+  scanning: false,
   profileUrlValid: false,
   profileImportPending: false,
-  lastUploadedFile: null,
   selectedDocId: null,
   profileUrl: '',
   docs: [],
-  triggerDoc: undefined,
+  activeDoc: undefined,
   review: undefined,
   menuPos: { top: 0, right: 0 },
   fileRef: { current: null },
   savedBtnRef: { current: null },
   savedMenuRef: { current: null },
-  setInputMode: mockSetInputMode,
-  setExpanded: vi.fn(),
+  setExpanded: mockSetExpanded,
   setDragging: vi.fn(),
   setShowUrlInput: vi.fn(),
   setProfileUrl: vi.fn(),
   openSavedMenu: vi.fn(),
   handleSelectSaved: vi.fn(),
   handleSetDefaultSaved: vi.fn(),
-  handleSaveToLibrary: vi.fn(),
+  handleRemove: vi.fn(),
   handleFileChange: vi.fn(),
+  handleSavePaste: vi.fn(),
   handleProfileUrlSubmit: vi.fn(),
   toggleUrlInput: vi.fn(),
   clearReview: vi.fn(),
 };
+
+let stubbedHook: StubHook = baseHook;
 
 vi.mock('./useResumeInput', () => ({
   useResumeInput: () => stubbedHook,
@@ -109,51 +110,55 @@ vi.mock('./useResumeInput', () => ({
 
 import { ResumeInputCard } from './index';
 
-// ── default props ─────────────────────────────────────────────────────────────
-
 const defaultProps = {
   value: '',
   onChange: vi.fn(),
-  onUpload: vi.fn(() => Promise.resolve()),
-  uploading: false,
 } as const;
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
-describe('ResumeInputCard — segmented control active state', () => {
-  it('Upload button carries active classes when inputMode is upload', () => {
-    stubbedHook = { ...stubbedHook, inputMode: 'upload' };
-    render(<ResumeInputCard {...defaultProps} />);
+describe('ResumeInputCard — resting / expanded flow', () => {
+  it('RESTING: renders the active doc title chip and a Change control, no add options', () => {
+    stubbedHook = {
+      ...baseHook,
+      expanded: false,
+      activeDoc: { id: 'd1', title: 'My CV' },
+    };
+    render(<ResumeInputCard {...defaultProps} value="resume text" />);
 
-    const upload = screen.getByRole('button', { name: /resumeInput\.modeUpload/i });
-    const paste = screen.getByRole('button', { name: /resumeInput\.modePaste/i });
-
-    expect(upload).toHaveClass('bg-brand-gradient');
-    expect(upload).toHaveClass('text-brand-foreground');
-    expect(paste).not.toHaveClass('bg-brand-gradient');
+    expect(screen.getByText('My CV')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /resumeInput\.change/i })).toBeInTheDocument();
+    expect(screen.queryByTestId('upload-zone')).not.toBeInTheDocument();
   });
 
-  it('clicking the Paste button calls setInputMode with paste', () => {
-    mockSetInputMode.mockClear();
-    stubbedHook = { ...stubbedHook, inputMode: 'upload' };
-    render(<ResumeInputCard {...defaultProps} />);
+  it('clicking Change expands the card (setExpanded(true))', () => {
+    mockSetExpanded.mockClear();
+    stubbedHook = {
+      ...baseHook,
+      expanded: false,
+      activeDoc: { id: 'd1', title: 'My CV' },
+    };
+    render(<ResumeInputCard {...defaultProps} value="resume text" />);
 
-    const paste = screen.getByRole('button', { name: /resumeInput\.modePaste/i });
-    fireEvent.click(paste);
+    fireEvent.click(screen.getByRole('button', { name: /resumeInput\.change/i }));
 
-    expect(mockSetInputMode).toHaveBeenCalledWith('paste');
+    expect(mockSetExpanded).toHaveBeenCalledWith(true);
   });
 
-  it('Upload button carries inactive classes and Paste button carries active classes when inputMode is paste', () => {
-    stubbedHook = { ...stubbedHook, inputMode: 'paste' };
+  it('EXPANDED: shows the upload zone (add options)', () => {
+    stubbedHook = { ...baseHook, expanded: true };
     render(<ResumeInputCard {...defaultProps} />);
 
-    const upload = screen.getByRole('button', { name: /resumeInput\.modeUpload/i });
-    const paste = screen.getByRole('button', { name: /resumeInput\.modePaste/i });
+    expect(screen.getByTestId('upload-zone')).toBeInTheDocument();
+  });
 
-    expect(upload).toHaveClass('text-brand-soft/60');
-    expect(upload).not.toHaveClass('bg-brand-gradient');
-    expect(paste).toHaveClass('bg-white/[0.10]');
-    expect(paste).toHaveClass('text-foreground/90');
+  it('renders the review panel only when review is present', () => {
+    stubbedHook = { ...baseHook, expanded: true, review: undefined };
+    const { rerender } = render(<ResumeInputCard {...defaultProps} />);
+    expect(screen.queryByTestId('review')).not.toBeInTheDocument();
+
+    stubbedHook = { ...baseHook, expanded: true, review: { reviewRequired: true } };
+    rerender(<ResumeInputCard {...defaultProps} value="x" />);
+    expect(screen.getByTestId('review')).toBeInTheDocument();
   });
 });

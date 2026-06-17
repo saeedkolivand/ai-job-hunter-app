@@ -5,8 +5,9 @@ import { cn } from '@ajh/ui';
 
 interface Props {
   uploading: boolean;
+  /** OCR fallback in progress — swaps the spinner label to "Scanning…". */
+  scanning: boolean;
   dragging: boolean;
-  lastUploadedFile: File | null;
   hasValue: boolean;
   onClick: () => void;
   onDragOver: (e: React.DragEvent) => void;
@@ -16,8 +17,8 @@ interface Props {
 
 export function UploadZone({
   uploading,
+  scanning,
   dragging,
-  lastUploadedFile,
   hasValue,
   onClick,
   onDragOver,
@@ -44,7 +45,7 @@ export function UploadZone({
         'flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-6 cursor-pointer transition-colors select-none',
         dragging
           ? 'border-brand/50 bg-brand/5'
-          : lastUploadedFile && hasValue
+          : hasValue
             ? 'border-emerald-500/30 bg-emerald-500/5'
             : 'border-white/[0.08] hover:border-white/[0.15] hover:bg-white/[0.02]'
       )}
@@ -52,14 +53,13 @@ export function UploadZone({
       {uploading ? (
         <>
           <Loader2 size={20} className="animate-spin text-foreground/30" />
-          <span className="text-[11px] text-foreground/40">{t('resumeInput.extracting')}</span>
+          <span className="text-[11px] text-foreground/40">
+            {scanning ? t('resumeInput.scanning') : t('resumeInput.extracting')}
+          </span>
         </>
-      ) : lastUploadedFile && hasValue ? (
+      ) : hasValue ? (
         <>
           <Check size={18} className="text-emerald-400" />
-          <span className="text-[11px] text-foreground/70 text-center">
-            {lastUploadedFile.name}
-          </span>
           <span className="text-[10px] text-foreground/35">
             {t('resumeInput.uploadedClickToReplace')}
           </span>

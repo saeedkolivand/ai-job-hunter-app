@@ -1,25 +1,17 @@
 /**
  * Resume input for AI Generate and Analyze pages.
- * Lets users: (1) pick a saved resume, (2) upload a new file, (3) paste text.
- * When a new file is uploaded it shows Save / Set-as-default actions.
+ *
+ * Resting: shows the active resume as a chip with a ✓ and a "Change" control.
+ * Expanded: inline progressive disclosure — upload (auto-saves to the library),
+ * paste (with a Save-to-library link), and a labelled LinkedIn URL import.
  */
-import {
-  BookmarkCheck,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  ClipboardPaste,
-  FileText,
-  Link,
-  Upload,
-} from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, TextArea } from '@ajh/ui';
 
 import { ProfileUrlInput } from '../ProfileUrlInput';
 import { ResumeReviewPanel } from '../ResumeReviewPanel';
-import { SaveActions } from '../SaveActions';
 import { SavedResumeMenu } from '../SavedResumeMenu';
 import { UploadZone } from '../UploadZone';
 import { useResumeInput } from './useResumeInput';
@@ -30,21 +22,11 @@ interface Props {
   /** Extracted resume text — controlled by parent */
   value: string;
   onChange: (text: string) => void;
-  /** Called when the parent needs to extract text from a raw file */
-  onUpload: (file: File) => Promise<void>;
-  uploading: boolean;
   disabled?: boolean;
   placeholder?: string;
 }
 
-export function ResumeInputCard({
-  value,
-  onChange,
-  onUpload,
-  uploading,
-  disabled,
-  placeholder,
-}: Props) {
+export function ResumeInputCard({ value, onChange, disabled, placeholder }: Props) {
   const { t } = useTranslation();
   const {
     fileRef,
@@ -52,34 +34,42 @@ export function ResumeInputCard({
     savedMenuRef,
     expanded,
     setExpanded,
-    inputMode,
-    setInputMode,
     dragging,
     setDragging,
     showSaved,
     menuPos,
-    lastUploadedFile,
     selectedDocId,
-    saving,
     showUrlInput,
     setShowUrlInput,
     profileUrl,
     setProfileUrl,
     docs,
     hasSaved,
-    triggerDoc,
+    activeDoc,
+    uploading,
+    scanning,
     profileUrlValid,
     profileImportPending,
     openSavedMenu,
     handleSelectSaved,
     handleSetDefaultSaved,
-    handleSaveToLibrary,
+    handleRemove,
     handleFileChange,
+    handleSavePaste,
     handleProfileUrlSubmit,
     toggleUrlInput,
     review,
     clearReview,
-  } = useResumeInput({ value, onChange, onUpload });
+  } = useResumeInput({ value, onChange });
+
+  // Label for the resting chip: the loaded doc's title, else a generic label
+  // when the text came from a paste / profile import (no backing doc).
+  const chipLabel = activeDoc?.title ?? t('resumeInput.activeResume');
+
+  // Show the add-options view when explicitly expanded, or derive it for the
+  // genuinely-empty card (no saved docs and no text) — derived from live props
+  // so it survives the async first render where the docs cache is still empty.
+  const showAddOptions = expanded || (!hasSaved && !value);
 
   return (
     <div
@@ -88,150 +78,104 @@ export function ResumeInputCard({
         value && 'border-brand/20'
       )}
     >
-      {/* Header row */}
-      <div className="flex items-center justify-between px-3 py-2.5">
-        <div className="flex items-center gap-2">
-          <FileText size={13} className={value ? 'text-brand-soft' : 'text-foreground/30'} />
-          <span className="text-xs font-medium text-foreground/70">{t('resumeInput.label')}</span>
-          {value && <Check size={11} className="text-emerald-400" />}
-        </div>
-        <div className="flex items-center gap-1.5">
-          {/* Pick saved */}
-          {hasSaved && !disabled && (
-            <>
-              <Button
-                ref={savedBtnRef}
-                variant="ghost"
-                onClick={openSavedMenu}
-                className="gap-1 text-[10px] text-foreground/45 hover:text-foreground/70 h-6 px-2"
-              >
-                <BookmarkCheck size={11} />
-                {triggerDoc
-                  ? triggerDoc.title.slice(0, 18) + (triggerDoc.title.length > 18 ? '…' : '')
-                  : t('resumeInput.saved')}
-                {showSaved ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-              </Button>
+      {/* Hidden file input — triggered by drop zone */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept={ACCEPT}
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void handleFileChange(f);
+          e.target.value = '';
+        }}
+      />
 
-              <SavedResumeMenu
-                show={showSaved}
-                docs={docs}
-                menuPos={menuPos}
-                selectedId={selectedDocId}
-                onSelect={handleSelectSaved}
-                onSetDefault={handleSetDefaultSaved}
-                menuRef={savedMenuRef}
-              />
-            </>
+      {/* RESTING — active resume chip */}
+      {!showAddOptions && !disabled && (
+        <div className="flex items-center gap-2 px-3 py-2.5">
+          <FileText size={13} className={value ? 'text-brand-soft' : 'text-foreground/30'} />
+          <span className="flex-1 min-w-0 truncate text-xs font-medium text-foreground/70">
+            {chipLabel}
+          </span>
+          {value && <Check size={11} className="shrink-0 text-emerald-400" />}
+
+          {hasSaved && !disabled && (
+            <Button
+              ref={savedBtnRef}
+              variant="ghost"
+              onClick={openSavedMenu}
+              aria-label={t('resumeInput.saved')}
+              className="h-6 w-6 shrink-0 p-0 text-foreground/25 hover:text-foreground/60"
+            >
+              {showSaved ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </Button>
           )}
 
-          {/* Hidden file input — triggered by drop zone and saved-select */}
-          <input
-            ref={fileRef}
-            type="file"
-            accept={ACCEPT}
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
+          {!disabled && (
+            <Button
+              variant="ghost"
+              onClick={() => setExpanded(true)}
+              className="h-6 shrink-0 px-2 text-[10px] text-foreground/45 hover:text-foreground/70"
+            >
+              {t('resumeInput.change')}
+            </Button>
+          )}
+
+          <SavedResumeMenu
+            show={showSaved}
+            docs={docs}
+            menuPos={menuPos}
+            selectedId={selectedDocId}
+            onSelect={handleSelectSaved}
+            onSetDefault={handleSetDefaultSaved}
+            onRemove={handleRemove}
+            menuRef={savedMenuRef}
+          />
+        </div>
+      )}
+
+      {/* EXPANDED — inline add options (upload / paste / LinkedIn URL) */}
+      {showAddOptions && !disabled && (
+        <div className="space-y-3 px-3 py-3">
+          {value && (
+            <div className="flex justify-end">
+              <Button
+                variant="ghost"
+                onClick={() => setExpanded(false)}
+                aria-label={t('resumeInput.collapse')}
+                className="h-6 w-6 p-0 text-foreground/25 hover:text-foreground/50"
+              >
+                <ChevronUp size={12} />
+              </Button>
+            </div>
+          )}
+
+          {/* Upload */}
+          <UploadZone
+            uploading={uploading}
+            scanning={scanning}
+            dragging={dragging}
+            hasValue={!!value}
+            onClick={() => fileRef.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              const f = e.dataTransfer.files[0];
               if (f) void handleFileChange(f);
-              e.target.value = '';
             }}
           />
 
-          {/* Profile URL import button */}
-          {!disabled && (
-            <Button
-              variant="info"
-              onClick={toggleUrlInput}
-              className={cn(
-                'h-6 w-6 p-0',
-                showUrlInput && 'border-brand/30 bg-brand/15 text-brand-soft'
-              )}
-              title={t('resumeInput.pasteProfileUrl')}
-            >
-              <Link size={11} />
-            </Button>
-          )}
-
-          {/* Collapse toggle */}
-          <Button
-            variant="ghost"
-            onClick={() => setExpanded((v) => !v)}
-            className="h-6 w-6 p-0 text-foreground/25 hover:text-foreground/50"
-          >
-            {expanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-          </Button>
-        </div>
-      </div>
-
-      {/* Profile URL input panel */}
-      <ProfileUrlInput
-        show={showUrlInput && !disabled}
-        url={profileUrl}
-        onChange={setProfileUrl}
-        onSubmit={handleProfileUrlSubmit}
-        onCancel={() => {
-          setShowUrlInput(false);
-          setProfileUrl('');
-        }}
-        isPending={profileImportPending}
-        isValid={profileUrlValid}
-      />
-
-      {/* Mode switcher + content */}
-      {expanded && !disabled && (
-        <div className="px-3 pb-3 space-y-2">
-          {/* Segmented control */}
-          <div className="flex items-center gap-1 rounded-lg bg-white/[0.04] p-0.5 w-fit">
-            <Button
-              variant="unstyled"
-              onClick={() => setInputMode('upload')}
-              className={cn(
-                'flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-medium transition-all',
-                inputMode === 'upload'
-                  ? 'bg-brand-gradient text-brand-foreground shadow-sm [text-shadow:0_1px_2px_rgba(0,0,0,0.28)]'
-                  : 'text-brand-soft/60 hover:text-brand-soft'
-              )}
-            >
-              <Upload size={10} />
-              {t('resumeInput.modeUpload')}
-            </Button>
-            <Button
-              variant="default"
-              onClick={() => setInputMode('paste')}
-              className={cn(
-                'flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-medium transition-all h-auto',
-                inputMode === 'paste' && 'border-white/15 bg-white/[0.10] text-foreground/90'
-              )}
-            >
-              <ClipboardPaste size={10} />
-              {t('resumeInput.modePaste')}
-            </Button>
-          </div>
-
-          {/* Upload zone */}
-          {inputMode === 'upload' && (
-            <UploadZone
-              uploading={uploading}
-              dragging={dragging}
-              lastUploadedFile={lastUploadedFile}
-              hasValue={!!value}
-              onClick={() => fileRef.current?.click()}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragging(true);
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragging(false);
-                const f = e.dataTransfer.files[0];
-                if (f) void handleFileChange(f);
-              }}
-            />
-          )}
-
-          {/* Paste / edit text area */}
-          {inputMode === 'paste' && (
+          {/* Paste */}
+          <div className="space-y-1.5">
+            <span className="text-[11px] font-medium text-foreground/55">
+              {t('resumeInput.pasteSection')}
+            </span>
             <TextArea
               value={value}
               onChange={(e) => onChange(e.target.value)}
@@ -239,12 +183,53 @@ export function ResumeInputCard({
               rows={6}
               className="w-full resize-none bg-transparent text-xs text-foreground/80 placeholder:text-foreground/20"
             />
-          )}
+            {value.trim() && (
+              <div className="flex justify-end">
+                <Button
+                  variant="ghost"
+                  onClick={() => void handleSavePaste()}
+                  className="h-6 px-2 text-[10px] text-foreground/45 hover:text-foreground/70"
+                >
+                  {t('resumeInput.saveToLibrary')}
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* LinkedIn URL import */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-medium text-foreground/55">
+                {t('resumeInput.importFromLinkedin')}
+              </span>
+              {!showUrlInput && (
+                <Button
+                  variant="ghost"
+                  onClick={toggleUrlInput}
+                  className="h-6 px-2 text-[10px] text-foreground/45 hover:text-foreground/70"
+                >
+                  {t('resumeInput.profileUrlImport')}
+                </Button>
+              )}
+            </div>
+            <ProfileUrlInput
+              show={showUrlInput}
+              url={profileUrl}
+              onChange={setProfileUrl}
+              onSubmit={handleProfileUrlSubmit}
+              onCancel={() => {
+                setShowUrlInput(false);
+                setProfileUrl('');
+              }}
+              isPending={profileImportPending}
+              isValid={profileUrlValid}
+            />
+          </div>
         </div>
       )}
 
-      {/* Read-only textarea when card is disabled */}
-      {expanded && disabled && (
+      {/* Read-only textarea when the card is disabled */}
+      {disabled && (
         <div className="px-3 pb-3">
           <TextArea
             value={value}
@@ -257,18 +242,8 @@ export function ResumeInputCard({
         </div>
       )}
 
-      {/* Save actions — shown after a fresh file upload */}
-      {lastUploadedFile && value && (
-        <SaveActions
-          fileName={lastUploadedFile.name}
-          saving={saving}
-          onSaveToLibrary={() => void handleSaveToLibrary(false)}
-          onSetDefault={() => void handleSaveToLibrary(true)}
-        />
-      )}
-
-      {/* Structured-extraction review — shown when a saved import needs a look */}
-      {review?.reviewRequired && (
+      {/* Structured-extraction review — the panel renders null when nothing needs a look */}
+      {review && (
         <div className="px-3 pb-3">
           <ResumeReviewPanel review={review} onDismiss={clearReview} />
         </div>
