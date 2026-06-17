@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.109.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.108.1...v0.109.0) (2026-06-17)
+
+### ✨ Features
+
+* editable job-ad summary tabs + custom application questions ([#396](https://github.com/saeedkolivand/ai-job-hunter-app/issues/396)) ([fdffe6c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/fdffe6c8e0ab407e3192b6fae5eac81a4e0196d1)), closes [#403](https://github.com/saeedkolivand/ai-job-hunter-app/issues/403)
+
 ## [0.108.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.108.0...v0.108.1) (2026-06-17)
 
 ### 🐛 Bug Fixes
