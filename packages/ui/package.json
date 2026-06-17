@@ -23,7 +23,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@tiptap/pm": "3.26.0",
+    "@tiptap/pm": "3.27.0",
     "@tiptap/react": "3.26.0",
     "@tiptap/starter-kit": "3.26.0",
     "clsx": "^2.1.1",
