@@ -1285,10 +1285,10 @@
     "loading": "Loading…",
     "empty": {
       "title": "No autopilots yet",
-      "description": "Set up an autopilot to automatically search jobs, score them against your resume, and apply.",
+      "description": "Set up an autopilot to automatically find and score matching jobs — you review and apply to each one yourself.",
       "step1": "Pick a board, keyword, and location",
       "step2": "Set a minimum match score to filter weak results",
-      "step3": "Choose to save, review, or auto-apply",
+      "step3": "Choose to save or review each match",
       "step4": "Schedule it to run hourly, daily, or manually",
       "createFirst": "Create your first Autopilot"
     },
