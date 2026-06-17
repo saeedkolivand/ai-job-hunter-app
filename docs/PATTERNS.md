@@ -565,6 +565,109 @@ See ADR-022 for the full rationale.
 
 ---
 
+## 15. Responsive Layout Conventions (Window Resize)
+
+The app is a resizable desktop window with a hard floor of **900px × 600px** and no mobile breakpoints. The Tailwind breakpoints `sm` (640px) and `md` (768px) are always active, so **only `lg` (1024px), `xl` (1280px), and `2xl` (1536px)** plus **container queries** actually toggle layout on resize.
+
+### Window Envelope
+
+Set in `apps/tauri/src-tauri/tauri.conf.json`:
+
+```json
+{
+  "app": {
+    "windows": [
+      {
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true
+      }
+    ]
+  }
+}
+```
+
+Default 1280×800, user-resizable from 900×600 floor to maximized. Sub-900px / phone layouts are out of scope.
+
+### Container Queries vs. Viewport Breakpoints
+
+**Two complementary tools:**
+
+1. **Container queries** (`@container`) — used by **width-varying panels** (e.g. two-pane layouts, narrow sidebar + wide content, modal bodies). Mark the panel `@container` and use `@sm:` / `@lg:` / `@4xl:` (Tailwind v4 built-in sizes: `@3xs…@7xl`, driven by the container's computed width) to respond to the panel's own width, not the viewport.
+
+2. **Viewport breakpoints** (`sm:` / `lg:` / `xl:` / `2xl:`) — used by **top-level, viewport-spanning grids** (e.g. monitoring dashboard page, full-width metric tiles). These have no `@container` ancestor, so container-query variants silently no-op; must use viewport breakpoints.
+
+**Key gotcha:** A container-query `@`-variant without a `@container` ancestor silently never fires. Always check:
+
+- Is this panel width-varying? → `@container` + `@`-variants.
+- Is this viewport-spanning? → ordinary viewport `md:`/`lg:` breakpoints.
+
+### Two-Panel Responsive Pattern
+
+Two-column pages (ai-generate, analyze, jobs detail) shrink side-by-side rather than stacking:
+
+```tsx
+// Parent: flex row on medium+, col on small
+<div className="flex h-full flex-col md:flex-row">
+  {/* Fixed-width panel: shrinks with viewport */}
+  <LeftPanel className="w-full md:w-[320px] lg:w-[380px] xl:w-[420px]" />
+
+  {/* Fluid content: gets min-w-0 so flex doesn't overflow it */}
+  <div className="min-w-0 flex-1 overflow-y-auto">{/* wide content takes available space */}</div>
+</div>
+```
+
+The `min-w-0` on the flex child is **critical**: it overrides flex's default `min-width: auto` (which prevents shrinking below content width), letting the sibling compress without crushing the content.
+
+### Container-Query Grid Example
+
+Multi-section modal or panel content:
+
+```tsx
+<ModalShell open={open} onClose={onClose} header={<h2>Title</h2>}>
+  {/* Modal body: marked @container, children respond to its width */}
+  <div className="@container space-y-4">
+    <section className="@sm:flex @sm:gap-4">
+      {/* Single column under 28rem; two columns @ ≥28rem */}
+      <div className="flex-1">Column 1</div>
+      <div className="flex-1">Column 2</div>
+    </section>
+  </div>
+</ModalShell>
+```
+
+On a 600px window with a 400px wide modal, the `@sm:` breakpoint (28rem ≈ 448px) doesn't fire, so the layout stays single-column. On a 900px window with the same modal, it fires and layout becomes two-column. This is **container-aware**, not viewport-aware.
+
+### ModalShell Scroll Behavior
+
+The `ModalShell` component (see DESIGN_SYSTEM.md) wraps header/body/footer with:
+
+- **Header** (pinned, `shrink-0`) — title, close button
+- **Body** (`overflow-y-auto`, `@container`, `min-h-0 flex-1`) — scrollable content
+- **Footer** (pinned, `shrink-0`) — action buttons
+
+The panel itself caps height: `max-h-[calc(100vh-2rem)] flex flex-col`. This ensures modals stay usable on a 600px window; tall forms scroll with buttons pinned.
+
+### Scroll-to-Top on Navigation
+
+Clicking a sidebar nav item smooth-scrolls the active page's scroll region to the top:
+
+```typescript
+// apps/tauri/src/renderer/components/layout/Sidebar/index.tsx
+function scrollPageToTop() {
+  document
+    .querySelector('main.app-main')
+    ?.querySelectorAll('.overflow-y-auto')
+    .forEach((el) => el.scrollTo({ top: 0, behavior: 'smooth' }));
+}
+```
+
+This queries by the scroll class (not a ref registry) — one nav action doesn't need a registry. Same-route clicks (no page remount) now reset scroll position. Settings pages scroll from the section click handler, not an effect, so clicking an already-active section still scrolls.
+
+---
+
 ## Anti-Patterns to Avoid
 
 | Anti-Pattern                                      | Correct Approach                                                                                                                             |
