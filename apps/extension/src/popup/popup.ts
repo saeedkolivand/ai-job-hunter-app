@@ -80,6 +80,7 @@ const els = {
   btnOpenSettings: byId<HTMLButtonElement>('btn-open-settings'),
   btnHelp: byId<HTMLButtonElement>('btn-help'),
   helpPopover: byId<HTMLParagraphElement>('help-popover'),
+  btnGetApp: byId<HTMLButtonElement>('btn-get-app'),
 };
 
 /** Actionable label for the pairing button; restored after a failed/cleared pair. */
@@ -109,6 +110,10 @@ const STATUS_TIMEOUT_MS = 3_000;
  *  with the pairing token highlighted. The click is the required user gesture;
  *  the browser may show its own "Open AI Job Hunter?" confirmation (expected). */
 const PAIRING_DEEP_LINK = 'ajh://settings/extension';
+
+/** Public download page, offered in the offline view for users who don't yet
+ *  have the desktop app installed. */
+const GET_APP_URL = 'https://aijobhunter.app/download';
 
 /**
  * Last-known token state, cached so a transient `!ok` status reply (asleep or
@@ -296,6 +301,16 @@ async function openAppPairing(): Promise<void> {
   }
 }
 
+/** Open the public download page in a new tab so a user without the desktop
+ *  app can install it. Best-effort; failures are swallowed. */
+async function getApp(): Promise<void> {
+  try {
+    await browser.tabs.create({ url: GET_APP_URL });
+  } catch {
+    // No-op: best-effort.
+  }
+}
+
 function wire(): void {
   els.btnUrl.addEventListener('click', () => void doImport('url'));
   els.btnScan.addEventListener('click', () => void doImport('scan'));
@@ -306,6 +321,7 @@ function wire(): void {
   els.btnUnpair.addEventListener('click', () => void unpair());
   els.btnRetry.addEventListener('click', () => void retry());
   els.btnOpenSettings.addEventListener('click', () => void openAppPairing());
+  els.btnGetApp.addEventListener('click', () => void getApp());
   els.btnHelp.addEventListener('click', toggleHelp);
 
   // Live status pushes from the background while the popup is open.
