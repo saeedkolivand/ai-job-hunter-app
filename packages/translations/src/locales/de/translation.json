@@ -1155,7 +1155,11 @@
         "hint": "Wählen Sie häufige Fragen – wir entwerfen Antworten auf Basis Ihres Lebenslaufs.",
         "generate": "Antworten generieren",
         "generating": "Wird generiert…",
-        "copy": "Antwort kopieren"
+        "copy": "Antwort kopieren",
+        "customLabel": "Eigene Frage",
+        "customPlaceholder": "Frage eingeben oder einfügen…",
+        "add": "Hinzufügen",
+        "remove": "Frage entfernen"
       },
       "target": {
         "label": "Dokumenttyp",
@@ -1165,6 +1169,14 @@
       },
       "tabs": {
         "jobAd": "Stellenanzeige"
+      },
+      "jobAdView": {
+        "label": "Stellenanzeige-Ansicht",
+        "summaryTab": "Zusammenfassung",
+        "generateSummary": "Zusammenfassung generieren",
+        "summaryHint": "Erhalte eine KI-Zusammenfassung dieser Anzeige — wichtigste Aufgaben, Anforderungen und Signale.",
+        "generating": "Stellenanzeige wird zusammengefasst…",
+        "editHelper": "Änderungen hier werden für die Generierung verwendet — korrigiere einen fehlerhaften Scrape vor dem Anpassen."
       },
       "tryAgain": "Erneut versuchen",
       "hintNoResume": "Fügen Sie Ihren Lebenslauf hinzu, um zu generieren",

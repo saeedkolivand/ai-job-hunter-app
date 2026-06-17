@@ -1181,7 +1181,11 @@
         "hint": "Pick common questions and we'll draft answers grounded in your resume.",
         "generate": "Generate answers",
         "generating": "Generating…",
-        "copy": "Copy answer"
+        "copy": "Copy answer",
+        "customLabel": "Your own question",
+        "customPlaceholder": "Type or paste a question…",
+        "add": "Add",
+        "remove": "Remove question"
       },
       "target": {
         "label": "Document type",
@@ -1191,6 +1195,14 @@
       },
       "tabs": {
         "jobAd": "Job ad"
+      },
+      "jobAdView": {
+        "label": "Job ad view",
+        "summaryTab": "Summary",
+        "generateSummary": "Generate summary",
+        "summaryHint": "Get an AI summary of this posting — key responsibilities, requirements, and signals.",
+        "generating": "Summarizing the job ad…",
+        "editHelper": "Edits here are used for generation — fix a bad scrape before tailoring."
       },
       "tryAgain": "Try again",
       "hintNoResume": "Add your resume to generate",

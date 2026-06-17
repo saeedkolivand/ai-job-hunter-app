@@ -13,6 +13,9 @@ import {
 import { useAppClient } from '@/providers/AppClientProvider';
 import { keys } from '@/services/query-client';
 
+/** Max length for a user-typed custom application question (chars, post-trim). */
+export const MAX_CUSTOM_QUESTION_LEN = 500;
+
 interface Params {
   resume: string;
   jobDesc: string;
@@ -49,6 +52,7 @@ export function useApplicationAnswers({
   const api = useAppClient();
   const qc = useQueryClient();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [custom, setCustom] = useState<{ id: string; question: string }[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +65,16 @@ export function useApplicationAnswers({
       return next;
     });
 
-  const canGenerate = canUse && hasDesc && selected.size > 0 && resume.trim().length > 0;
+  const addCustom = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || trimmed.length > MAX_CUSTOM_QUESTION_LEN) return;
+    setCustom((prev) => [...prev, { id: crypto.randomUUID(), question: trimmed }]);
+  };
+
+  const removeCustom = (id: string) => setCustom((prev) => prev.filter((c) => c.id !== id));
+
+  const canGenerate =
+    canUse && hasDesc && resume.trim().length > 0 && (selected.size > 0 || custom.length > 0);
 
   const generate = async () => {
     if (!canGenerate || generating) return;
@@ -72,7 +85,7 @@ export function useApplicationAnswers({
       const brief = researchCompany
         ? await fetchCompanyBrief(jobDesc, model, detected.companyName)
         : '';
-      const chosen = APPLICATION_QUESTIONS.filter((q) => selected.has(q.id));
+      const chosen = [...APPLICATION_QUESTIONS.filter((q) => selected.has(q.id)), ...custom];
       const results: ApplicationAnswer[] = [];
       for (const q of chosen) {
         const answer = await generateApplicationAnswer({
@@ -116,5 +129,16 @@ export function useApplicationAnswers({
     }
   };
 
-  return { selected, toggle, answers, generating, error, generate, canGenerate };
+  return {
+    selected,
+    toggle,
+    custom,
+    addCustom,
+    removeCustom,
+    answers,
+    generating,
+    error,
+    generate,
+    canGenerate,
+  };
 }

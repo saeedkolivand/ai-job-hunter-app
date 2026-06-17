@@ -113,15 +113,25 @@ function makeProps(overrides: Partial<Parameters<typeof GenerationOutput>[0]> = 
     setExportOpen: vi.fn(),
     onExport: vi.fn(),
     jobDesc: 'Full job description text',
+    onJobDescChange: vi.fn(),
+    hasDesc: true,
+    fetchingDesc: false,
+    jobUrl: 'https://example.com/job',
+    jobAdSummary: { summary: '', generating: false, error: null, generate: vi.fn() },
     ...overrides,
   };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Click the "Job ad" tab (its label is the echoed i18n key). */
+/** Click the top-level "Job ad" tab (its label is the echoed i18n key). */
 async function clickJobAdTab(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('tab', { name: 'autopilot.apply.tabs.jobAd' }));
+}
+
+/** Click the JobAdView "Job ad" source SUB-TAB (a SegmentedControl radio). */
+async function clickSourceSubTab(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('radio', { name: 'autopilot.apply.tabs.jobAd' }));
 }
 
 /** Click a template option by its id inside the picker. */
@@ -148,18 +158,41 @@ describe('GenerationOutput', () => {
   // ── 1. Job ad tab shows jobDesc read-only ────────────────────────────────────
 
   describe('Job ad tab', () => {
-    it('shows the jobDesc text in a non-editable element after clicking the Job ad tab', async () => {
+    it('shows the jobDesc text in an editable TextArea after clicking the Job ad tab then the source sub-tab', async () => {
       const user = userEvent.setup();
       render(<GenerationOutput {...makeProps()} />);
 
       await clickJobAdTab(user);
+      // JobAdView defaults to the Summary sub-tab — switch to the source sub-tab.
+      await clickSourceSubTab(user);
 
-      // The job description text must be visible.
-      expect(screen.getByText('Full job description text')).toBeInTheDocument();
+      // The job description text must be visible in the editable TextArea.
+      expect(screen.getByDisplayValue('Full job description text')).toBeInTheDocument();
 
-      // It must NOT be rendered in a textarea or input (read-only prose div).
-      const textarea = screen.queryByTestId('editable-output');
-      expect(textarea).not.toBeInTheDocument();
+      // The doc EditableOutput must NOT be mounted while the Job ad tab is active.
+      expect(screen.queryByTestId('editable-output')).not.toBeInTheDocument();
+    });
+
+    it('shows the summary empty-state Generate button and calls generate on click', async () => {
+      const user = userEvent.setup();
+      const generate = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({
+            jobAdSummary: { summary: '', generating: false, error: null, generate },
+          })}
+        />
+      );
+
+      await clickJobAdTab(user);
+
+      const generateBtn = screen.getByRole('button', {
+        name: /autopilot\.apply\.jobAdView\.generateSummary/i,
+      });
+      expect(generateBtn).toBeInTheDocument();
+
+      await user.click(generateBtn);
+      expect(generate).toHaveBeenCalledTimes(1);
     });
 
     it('hides the editable doc output while Job ad tab is active', async () => {
