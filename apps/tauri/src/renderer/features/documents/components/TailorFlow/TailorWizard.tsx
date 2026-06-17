@@ -26,9 +26,16 @@ interface Props {
   setStep: (step: number) => void;
   // Job-ad step data.
   jobDesc: string;
+  onJobDescChange: (v: string) => void;
   hasDesc: boolean;
   fetchingDesc: boolean;
   jobUrl: string;
+  jobAdSummary: {
+    summary: string;
+    generating: boolean;
+    error: string | null;
+    generate: () => void;
+  };
   // Global AI availability.
   canUse: boolean;
   reason?: string;
@@ -48,9 +55,11 @@ export function TailorWizard({
   step,
   setStep,
   jobDesc,
+  onJobDescChange,
   hasDesc,
   fetchingDesc,
   jobUrl,
+  jobAdSummary,
   canUse,
   reason,
   onGenerate,
@@ -120,9 +129,11 @@ export function TailorWizard({
               {step === 0 && (
                 <StepJobAd
                   jobDesc={jobDesc}
+                  onJobDescChange={onJobDescChange}
                   hasDesc={hasDesc}
                   fetchingDesc={fetchingDesc}
                   jobUrl={jobUrl}
+                  jobAdSummary={jobAdSummary}
                 />
               )}
               {step === 1 && <StepResume />}

@@ -1192,6 +1192,14 @@
       "tabs": {
         "jobAd": "Job ad"
       },
+      "jobAdView": {
+        "label": "Job ad view",
+        "summaryTab": "Summary",
+        "generateSummary": "Generate summary",
+        "summaryHint": "Get an AI summary of this posting — key responsibilities, requirements, and signals.",
+        "generating": "Summarizing the job ad…",
+        "editHelper": "Edits here are used for generation — fix a bad scrape before tailoring."
+      },
       "tryAgain": "Try again",
       "hintNoResume": "Add your resume to generate",
       "hintNoDescription": "No job description to tailor against",

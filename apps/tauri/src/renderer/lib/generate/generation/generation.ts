@@ -21,6 +21,8 @@ import {
   buildCoverLetterSystemPrompt,
   buildInterviewQuestionsPrompt,
   buildInterviewQuestionsSystemPrompt,
+  buildJobAdSummaryPrompt,
+  buildJobAdSummarySystemPrompt,
   buildMetadataPrompt,
   buildReferralPrompt,
   buildResumePrompt,
@@ -386,6 +388,36 @@ export async function generateApplicationAnswer(params: {
     onToken ?? (() => {}),
     resolveTemperature('answers', 0.3),
     meta.targetLanguage || 'en',
+    signal
+  );
+  return extractPlainText(raw);
+}
+
+/**
+ * Summarize a single job ad into a short "key notes" digest — résumé-INDEPENDENT
+ * (no résumé, no company brief, no scoring). Routes through the same streaming
+ * pipeline as the other generators (zero per-provider code), at low temperature.
+ * The digest is written in the ad's own language (`meta.targetLanguage`) and
+ * returned as concise markdown (bold section labels survive `extractPlainText`).
+ */
+export async function generateJobAdSummary(params: {
+  jobAd: string;
+  meta?: GenerationMeta | null;
+  model: string;
+  signal?: AbortSignal;
+  onToken?: (tok: string) => void;
+}): Promise<string> {
+  const { jobAd, meta, model, signal, onToken } = params;
+
+  const system = buildJobAdSummarySystemPrompt();
+  const user = buildJobAdSummaryPrompt(jobAd, meta);
+  const raw = await streamGenerate(
+    model,
+    system,
+    user,
+    onToken ?? (() => {}),
+    resolveTemperature('answers', 0.3),
+    meta?.targetLanguage || 'en',
     signal
   );
   return extractPlainText(raw);
