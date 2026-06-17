@@ -268,7 +268,7 @@ export function ContactProfileForm() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 @md:grid-cols-2">
         <div className={FIELD_CLASS}>
           <label className={LABEL_CLASS} htmlFor="cp-name">
             {t('settings.contactProfile.fullName')}

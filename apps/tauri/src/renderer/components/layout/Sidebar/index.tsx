@@ -64,6 +64,15 @@ const PINNED_ITEMS: readonly NavItem[] = [
   { to: ROUTES.SETTINGS, label: 'nav.settings', icon: Settings, tourId: 'settings' },
 ];
 
+// ponytail: query the page's scroll regions by their Tailwind class instead
+// of wiring a ref registry through every route — one nav action doesn't need that.
+function scrollPageToTop() {
+  document
+    .querySelector('main.app-main')
+    ?.querySelectorAll('.overflow-y-auto')
+    .forEach((el) => el.scrollTo({ top: 0, behavior: 'smooth' }));
+}
+
 export function Sidebar() {
   const { t } = useTranslation();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -109,7 +118,7 @@ export function Sidebar() {
     return (
       <div key={to} className="relative" data-tour-id={tourId}>
         {active && <NavPill layoutId="sidebar-pill" />}
-        <Link to={to} className={linkClassName}>
+        <Link to={to} className={linkClassName} onClick={scrollPageToTop}>
           {linkContent}
         </Link>
       </div>
@@ -158,6 +167,7 @@ export function Sidebar() {
             <Link
               to={ROUTES.SETTINGS}
               className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-foreground/30 transition-colors hover:bg-foreground/[0.06] hover:text-foreground/60"
+              onClick={scrollPageToTop}
             >
               <Settings size={12} />
             </Link>

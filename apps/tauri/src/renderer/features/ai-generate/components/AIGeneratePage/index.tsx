@@ -237,7 +237,7 @@ export function AIGeneratePage() {
 
   return (
     <PageTransition className="h-full overflow-hidden">
-      <div className="flex h-full">
+      <div className="flex h-full flex-col md:flex-row">
         <LeftPanel
           resume={resume}
           jobAd={jobAd}
@@ -260,7 +260,7 @@ export function AIGeneratePage() {
           onAnalyze={handleAnalyze}
         />
 
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <AnimatePresence mode="wait">
             {stage === 'idle' && <OutputPanelIdle />}
 

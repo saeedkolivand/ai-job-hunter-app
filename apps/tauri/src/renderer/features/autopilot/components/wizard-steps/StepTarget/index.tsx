@@ -64,7 +64,7 @@ export function StepTarget({ prefilled }: StepTargetProps) {
         name="board"
         render={({ field }) => (
           <WizardField label={t('autopilot.wizard.target.board')}>
-            <div className="grid grid-cols-4 gap-1.5 max-h-28 overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto pr-1 @sm:grid-cols-4">
               {BOARD_IDS.map((b) => (
                 <Button
                   key={b}
@@ -84,7 +84,7 @@ export function StepTarget({ prefilled }: StepTargetProps) {
         )}
       />
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 @xs:grid-cols-2">
         <Controller
           control={control}
           name="query"
@@ -132,7 +132,7 @@ export function StepTarget({ prefilled }: StepTargetProps) {
       </div>
 
       <WizardField label={t('autopilot.wizard.target.workType')} badge={<ComingSoonBadge />}>
-        <div className="grid grid-cols-4 gap-1.5">
+        <div className="grid grid-cols-2 gap-1.5 @sm:grid-cols-4">
           {(['any', 'remote', 'hybrid', 'on-site'] as const).map((opt) => (
             <Button
               key={opt}
@@ -150,7 +150,7 @@ export function StepTarget({ prefilled }: StepTargetProps) {
         </div>
       </WizardField>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 @xs:grid-cols-2">
         <Controller
           control={control}
           name="amount"

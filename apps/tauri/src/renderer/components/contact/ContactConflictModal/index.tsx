@@ -140,8 +140,11 @@ export function ContactConflictModal({
   ] as const;
 
   return (
-    <ModalShell open={open} onClose={onClose} maxWidth="max-w-2xl">
-      <div className="flex max-h-[85vh] flex-col">
+    <ModalShell
+      open={open}
+      onClose={onClose}
+      maxWidth="max-w-2xl"
+      header={
         <div className="flex items-start gap-2 border-b border-foreground/10 px-6 py-5">
           <UserCheck size={16} className="mt-0.5 shrink-0 text-brand-soft" />
           <div className="flex flex-col gap-1">
@@ -153,60 +156,8 @@ export function ContactConflictModal({
             </p>
           </div>
         </div>
-
-        <div className="flex flex-col gap-4 overflow-y-auto px-6 py-5">
-          {conflicts.map((c) => {
-            const state = fields[c.field] ?? { choice: 'mine' as Choice, value: c.current };
-            return (
-              <div
-                key={c.field}
-                className="flex flex-col gap-3 rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs font-medium text-foreground/70">
-                    {t(labelKey(c.field))}
-                  </span>
-                  <SegmentedControl
-                    options={options}
-                    value={state.choice}
-                    onChange={(choice) => setChoice(c.field, choice)}
-                    ariaLabel={t('settings.contactConflict.choiceAria', {
-                      field: t(labelKey(c.field)),
-                    })}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[10px] uppercase tracking-wider text-foreground/40">
-                      {t('settings.contactConflict.savedLabel')}
-                    </span>
-                    <span className="truncate text-xs text-foreground/60">
-                      {c.current || t('settings.contactConflict.emptyValue')}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[10px] uppercase tracking-wider text-foreground/40">
-                      {t('settings.contactConflict.resumeLabel')}
-                    </span>
-                    <span className="truncate text-xs text-foreground/60">
-                      {c.suggested || t('settings.contactConflict.emptyValue')}
-                    </span>
-                  </div>
-                </div>
-
-                <Input
-                  aria-label={t('settings.contactConflict.editAria', {
-                    field: t(labelKey(c.field)),
-                  })}
-                  value={state.value}
-                  onChange={(e) => setValue(c.field, e.target.value)}
-                />
-              </div>
-            );
-          })}
-        </div>
-
+      }
+      footer={
         <div className="flex justify-end gap-2 border-t border-foreground/10 px-6 py-4">
           <Button variant="ghost" onClick={onClose}>
             {t('settings.contactConflict.dismiss')}
@@ -215,6 +166,59 @@ export function ContactConflictModal({
             {t('settings.contactConflict.save')}
           </Button>
         </div>
+      }
+    >
+      <div className="flex flex-col gap-4 px-6 py-5">
+        {conflicts.map((c) => {
+          const state = fields[c.field] ?? { choice: 'mine' as Choice, value: c.current };
+          return (
+            <div
+              key={c.field}
+              className="flex flex-col gap-3 rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs font-medium text-foreground/70">
+                  {t(labelKey(c.field))}
+                </span>
+                <SegmentedControl
+                  options={options}
+                  value={state.choice}
+                  onChange={(choice) => setChoice(c.field, choice)}
+                  ariaLabel={t('settings.contactConflict.choiceAria', {
+                    field: t(labelKey(c.field)),
+                  })}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 @sm:grid-cols-2">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] uppercase tracking-wider text-foreground/40">
+                    {t('settings.contactConflict.savedLabel')}
+                  </span>
+                  <span className="truncate text-xs text-foreground/60">
+                    {c.current || t('settings.contactConflict.emptyValue')}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] uppercase tracking-wider text-foreground/40">
+                    {t('settings.contactConflict.resumeLabel')}
+                  </span>
+                  <span className="truncate text-xs text-foreground/60">
+                    {c.suggested || t('settings.contactConflict.emptyValue')}
+                  </span>
+                </div>
+              </div>
+
+              <Input
+                aria-label={t('settings.contactConflict.editAria', {
+                  field: t(labelKey(c.field)),
+                })}
+                value={state.value}
+                onChange={(e) => setValue(c.field, e.target.value)}
+              />
+            </div>
+          );
+        })}
       </div>
     </ModalShell>
   );

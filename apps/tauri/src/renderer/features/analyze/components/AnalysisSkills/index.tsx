@@ -11,7 +11,7 @@ interface AnalysisSkillsProps {
 
 export function AnalysisSkills({ result, t }: AnalysisSkillsProps) {
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid gap-4 @lg:grid-cols-2">
       {result.matchedSkills.length > 0 && (
         <GlassCard>
           <div className="mb-3 flex items-center gap-2">

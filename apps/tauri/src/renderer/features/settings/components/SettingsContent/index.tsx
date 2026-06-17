@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
+import type { RefObject } from 'react';
 
 import { IconBadge, transition, variants } from '@ajh/ui';
 
@@ -20,6 +21,7 @@ interface Props {
   activeSection: SectionId;
   current: NavItem;
   localName: string;
+  scrollRef: RefObject<HTMLDivElement | null>;
   setLocalName: (name: string) => void;
   setUserName: (name: string) => void;
   userName: string;
@@ -29,6 +31,7 @@ export function SettingsContent({
   activeSection,
   current,
   localName,
+  scrollRef,
   setLocalName,
   setUserName,
   userName,
@@ -47,7 +50,7 @@ export function SettingsContent({
       </div>
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto px-8 py-6">
+      <div ref={scrollRef} className="@container flex-1 overflow-y-auto px-8 py-6">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeSection}

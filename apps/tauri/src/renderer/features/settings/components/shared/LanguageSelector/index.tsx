@@ -20,7 +20,7 @@ export function LanguageSelector() {
   };
 
   return (
-    <div className="grid grid-cols-3 gap-2">
+    <div className="grid grid-cols-1 gap-2 @xs:grid-cols-3">
       {LOCALES.map(({ code, label, flag }) => {
         const active = current === code;
         return (

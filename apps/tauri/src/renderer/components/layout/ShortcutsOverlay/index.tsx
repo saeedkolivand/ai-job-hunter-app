@@ -82,12 +82,19 @@ export function ShortcutsOverlay() {
       onClose={() => setOpen(false)}
       ariaLabel={t('shortcuts.title')}
       maxWidth="max-w-lg"
+      header={
+        <div className="flex items-center gap-2 border-b border-white/5 px-6 py-4">
+          <Command size={15} className="text-brand-soft" />
+          <span className="text-sm font-medium text-foreground/90">{t('shortcuts.title')}</span>
+        </div>
+      }
+      footer={
+        <div className="border-t border-white/5 px-6 py-3 text-center text-[11px] text-foreground/35">
+          {t('shortcuts.hint')}
+        </div>
+      }
     >
-      <div className="flex items-center gap-2 border-b border-white/5 px-6 py-4">
-        <Command size={15} className="text-brand-soft" />
-        <span className="text-sm font-medium text-foreground/90">{t('shortcuts.title')}</span>
-      </div>
-      <div className="grid grid-cols-2 gap-x-8 gap-y-4 px-6 py-5">
+      <div className="grid grid-cols-1 gap-x-8 gap-y-4 px-6 py-5 @sm:grid-cols-2">
         <div className="space-y-2.5">
           <SectionLabel>{t('shortcuts.navigate')}</SectionLabel>
           <ShortcutList rows={NAVIGATE} t={t} />
@@ -96,9 +103,6 @@ export function ShortcutsOverlay() {
           <SectionLabel>{t('shortcuts.actions')}</SectionLabel>
           <ShortcutList rows={ACTIONS} t={t} />
         </div>
-      </div>
-      <div className="border-t border-white/5 px-6 py-3 text-center text-[11px] text-foreground/35">
-        {t('shortcuts.hint')}
       </div>
     </ModalShell>
   );

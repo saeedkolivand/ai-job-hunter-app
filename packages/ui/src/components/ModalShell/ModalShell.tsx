@@ -31,6 +31,10 @@ export interface ModalShellProps {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
+  /** Optional pinned header region (does not scroll). */
+  header?: ReactNode;
+  /** Optional pinned footer region (does not scroll). */
+  footer?: ReactNode;
   /** Tailwind max-width class — default max-w-md */
   maxWidth?: string;
   /** Extra classes forwarded to the panel element */
@@ -53,6 +57,8 @@ export function ModalShell({
   open,
   onClose,
   children,
+  header,
+  footer,
   maxWidth = 'max-w-md',
   className,
   zIndex = 600,
@@ -103,7 +109,7 @@ export function ModalShell({
               aria-labelledby={ariaLabelledby}
               aria-label={ariaLabel}
               className={cn(
-                'glass-modal relative w-full overflow-hidden rounded-2xl border shadow-xl',
+                'glass-modal relative flex max-h-[calc(100vh-2rem)] w-full flex-col overflow-hidden rounded-2xl border shadow-xl',
                 maxWidth,
                 borderClass ?? 'border-white/[0.12]',
                 className
@@ -112,7 +118,9 @@ export function ModalShell({
               transition={transition.modal}
               onClick={(e) => e.stopPropagation()}
             >
-              {children}
+              {header && <div className="shrink-0">{header}</div>}
+              <div className="@container min-h-0 flex-1 overflow-y-auto">{children}</div>
+              {footer && <div className="shrink-0">{footer}</div>}
             </motion.div>
           </motion.div>
         </>

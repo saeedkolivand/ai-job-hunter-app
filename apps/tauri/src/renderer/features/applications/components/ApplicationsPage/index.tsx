@@ -107,6 +107,7 @@ export function ApplicationsPage() {
         title={t('applications.title')}
         subtitle={t('applications.subtitle')}
         actions={actions}
+        maxWidth="max-w-6xl 2xl:max-w-7xl"
       >
         {isLoading && (
           <div className="space-y-2 pt-4">

@@ -13,7 +13,7 @@ interface Props {
 
 export function SettingsSidebar({ navGroups, activeSection, onSectionChange }: Props) {
   return (
-    <aside className="flex w-56 shrink-0 flex-col gap-6 overflow-y-auto border-foreground/10 px-3 py-8">
+    <aside className="flex w-44 lg:w-56 shrink-0 flex-col gap-6 overflow-y-auto border-foreground/10 px-3 py-8">
       {navGroups.map((group) => (
         <div key={group.label}>
           <div className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-widest text-foreground/55">

@@ -37,7 +37,7 @@ export function StepTemplate({
   return (
     <div className="space-y-4">
       {/* Template thumbnail gallery */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 @xs:grid-cols-3">
         {Object.values(TEMPLATES).map((tpl) => {
           // 'both' (and 'resume') intentionally use the résumé thumbnails — the template is shared
           // and the résumé is the primary document; only cover-only swaps to cover-letter style previews.
