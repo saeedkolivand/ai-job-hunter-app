@@ -66,6 +66,12 @@
 
       <!-- Import view: shown when paired + connected. -->
       <section id="view-import" class="view" hidden>
+        <!-- Persistent "authorized" cue: this section only renders when phase ===
+             'connected', which requires a stored pairing token — so the button is
+             correctly visible only when authorized (no JS toggle needed). It is
+             always disabled (a pure status indicator, not actionable). The "✓"
+             glyph carries the meaning beyond color (deuteranopia-safe). -->
+        <button id="authorized-indicator" class="btn btn--authorized" type="button" disabled aria-label="Already authorized">✓ Authorized</button>
         <p class="hint">Import the job on this page into your desktop app.</p>
         <div class="actions">
           <button id="btn-url" class="btn btn--primary" type="button">Import via URL</button>
@@ -101,8 +107,12 @@
       </section>
 
       <!-- App-not-running state: the pill reads "✕ App not running", the header Retry
-           re-checks the connection, and "?" explains. No body content needed. -->
-      <section id="view-offline" class="view" hidden></section>
+           re-checks the connection, and "?" explains. Offers the download page for
+           users who don't have the desktop app yet. -->
+      <section id="view-offline" class="view" hidden>
+        <p class="hint">Don’t have the desktop app yet?</p>
+        <button id="btn-get-app" class="btn btn--primary" type="button">Get the app</button>
+      </section>
 
       <!-- Searching state: the "○ Connecting…" pill conveys it; no body needed. -->
       <section id="view-searching" class="view"></section>

@@ -296,6 +296,20 @@ body {
   background: var(--primary-hover);
 }
 
+/* Persistent "✓ Authorized" status button in the import view. Always disabled
+ * (not actionable), so it overrides the default .btn:disabled dimming to read
+ * as a positive "connected" state — same success tone as .pill--connected.
+ * .btn.btn--authorized:disabled beats both .btn:disabled and .btn--authorized
+ * on specificity, so the dimming/not-allowed cursor never wins. */
+.btn--authorized,
+.btn.btn--authorized:disabled {
+  opacity: 1;
+  cursor: default;
+  color: var(--pill-connected-fg);
+  background: var(--pill-connected-bg);
+  border-color: var(--pill-connected-border);
+}
+
 .check {
   display: flex;
   align-items: center;
