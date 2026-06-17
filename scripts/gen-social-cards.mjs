@@ -13,7 +13,7 @@ if (!existsSync(cardPath)) {
 const card = pathToFileURL(cardPath).href;
 
 const targets = [
-  { out: 'landing/og-card.png', w: 1200, h: 630 },
+  { out: 'landing/og-card.jpg', w: 1200, h: 630 },
   { out: 'branding/github-social-preview.png', w: 1280, h: 640 },
 ];
 
@@ -28,7 +28,10 @@ try {
     await page.evaluate(() => document.fonts.ready);
     const outPath = join(root, t.out);
     mkdirSync(dirname(outPath), { recursive: true });
-    await page.screenshot({ path: outPath });
+    const isJpeg = /\.jpe?g$/i.test(outPath);
+    await page.screenshot(
+      isJpeg ? { path: outPath, type: 'jpeg', quality: 82 } : { path: outPath }
+    );
     await page.close();
     console.log('wrote', t.out, t.w + 'x' + t.h);
   }
