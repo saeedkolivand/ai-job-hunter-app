@@ -2230,6 +2230,8 @@
     "links": "Links",
     "sections": "Abschnitte",
     "dismiss": "Sieht gut aus",
+    "details": "Details",
+    "lowConfidenceSummary": "Einige Felder hatten geringe Konfidenz — vor der Generierung prüfen.",
     "confidence": {
       "high": "Hoch",
       "medium": "Mittel",
@@ -2238,6 +2240,13 @@
   },
   "resumeInput": {
     "label": "Lebenslauf",
+    "change": "Ändern",
+    "collapse": "Zuklappen",
+    "activeResume": "Aktiver Lebenslauf",
+    "pasteSection": "Oder Text einfügen / bearbeiten",
+    "scanning": "Scanne…",
+    "remove": "Entfernen",
+    "confirmRemove": "Entfernen?",
     "saved": "Gespeichert",
     "placeholder": "Lebenslauftext hier einfügen…",
     "saveToLibrary": "Speichern",

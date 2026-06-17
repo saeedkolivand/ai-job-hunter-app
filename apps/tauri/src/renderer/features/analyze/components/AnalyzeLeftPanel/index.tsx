@@ -159,8 +159,6 @@ export function AnalyzeLeftPanel({
         <ResumeInputCard
           value={resume}
           onChange={setResume}
-          onUpload={(f) => onUpload('resume', f)}
-          uploading={uploading === 'resume'}
           disabled={stage === 'running'}
           placeholder={t('analyze.resumePlaceholder')}
         />
