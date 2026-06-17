@@ -8,7 +8,7 @@ export function LogsDiagnostics() {
   const { t } = useTranslation();
 
   return (
-    <div className="space-y-6">
+    <div className="@container space-y-6">
       <div className="glass-card rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">{t('support.logs.logViewer')}</h2>
@@ -60,7 +60,7 @@ export function LogsDiagnostics() {
 
       <div className="glass-card rounded-2xl p-6">
         <h2 className="text-lg font-semibold mb-4">{t('support.logs.logCategories')}</h2>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 @sm:grid-cols-2 @lg:grid-cols-3">
           <LogCategoryCard
             name={t('support.logs.aiRuntime')}
             count={1247}

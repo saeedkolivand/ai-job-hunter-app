@@ -11,7 +11,7 @@ interface AnalysisStrengthsProps {
 
 export function AnalysisStrengths({ result, t }: AnalysisStrengthsProps) {
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid gap-4 @lg:grid-cols-2">
       <GlassCard>
         <div className="mb-3 flex items-center gap-2">
           <CheckCircle2 size={13} className="text-emerald-400" />

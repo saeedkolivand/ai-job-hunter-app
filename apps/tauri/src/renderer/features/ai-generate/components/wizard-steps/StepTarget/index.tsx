@@ -20,7 +20,7 @@ export function StepTarget({ target, onTargetChange }: StepTargetProps) {
   const { t } = useTranslation();
 
   return (
-    <div className="grid grid-cols-3 gap-3">
+    <div className="grid grid-cols-1 gap-3 @xs:grid-cols-3">
       {TARGET_OPTIONS.map(({ id, icon: Icon, labelKey }) => (
         <Button
           key={id}

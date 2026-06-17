@@ -127,7 +127,7 @@ function AnalyzePage() {
 
   return (
     <PageTransition className="h-full overflow-hidden">
-      <div className="flex h-full">
+      <div className="flex h-full flex-col md:flex-row">
         <AnalyzeLeftPanel
           resume={resume}
           jobAd={jobAd}
@@ -148,7 +148,7 @@ function AnalyzePage() {
           setAnalysisMode={setAnalysisMode}
         />
 
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <AnimatePresence mode="wait">
             {stage === 'idle' && (
               <motion.div
@@ -213,7 +213,7 @@ function AnalyzePage() {
                 animate={{ opacity: 1 }}
                 className="flex flex-1 flex-col overflow-hidden"
               >
-                <div className="select-text flex-1 overflow-y-auto px-8 py-8 space-y-4">
+                <div className="@container select-text flex-1 overflow-y-auto px-8 py-8 space-y-4">
                   <AnalysisResults result={result} t={t} />
                 </div>
               </motion.div>

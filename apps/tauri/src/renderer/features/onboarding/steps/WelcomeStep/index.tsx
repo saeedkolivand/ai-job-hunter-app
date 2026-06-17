@@ -93,7 +93,7 @@ export function WelcomeStep({ onNext, direction, stepIndex, totalSteps }: Props)
         <label className="text-xs font-semibold uppercase tracking-widest text-foreground/55">
           {t('onboarding.prefs.languageLabel')}
         </label>
-        <div className="grid grid-cols-4 gap-1.5 mt-1">
+        <div className="grid grid-cols-2 gap-1.5 mt-1 @sm:grid-cols-4">
           {LOCALES.map(({ code, label, flag }) => {
             const active = currentLang === code;
             return (

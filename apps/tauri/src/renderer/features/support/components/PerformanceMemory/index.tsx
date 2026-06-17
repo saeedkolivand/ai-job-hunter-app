@@ -7,7 +7,7 @@ import { OptimizationCard } from '../OptimizationCard';
 export function PerformanceMemory() {
   const { t } = useTranslation();
   return (
-    <div className="space-y-6">
+    <div className="@container space-y-6">
       <div className="glass-card rounded-2xl p-6">
         <h2 className="text-lg font-semibold mb-4">{t('support.performance.memoryUsage')}</h2>
         <div className="space-y-4">
@@ -44,7 +44,7 @@ export function PerformanceMemory() {
 
       <div className="glass-card rounded-2xl p-6">
         <h2 className="text-lg font-semibold mb-4">{t('support.performance.systemResources')}</h2>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 @md:grid-cols-2">
           <MetricCard
             label={t('support.performance.documentsIndexed')}
             value="1,247"

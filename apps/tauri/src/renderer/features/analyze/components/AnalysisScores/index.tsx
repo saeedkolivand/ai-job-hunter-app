@@ -23,7 +23,7 @@ export function AnalysisScores({ result, t }: AnalysisScoresProps) {
   ] as const;
 
   return (
-    <div className="grid grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 gap-3 @md:grid-cols-3 @xl:grid-cols-5">
       {scoreConfigs.map(({ key, label }) => {
         const val = result.scores[key];
         // null = "not scored": show an honest placeholder instead of a number,

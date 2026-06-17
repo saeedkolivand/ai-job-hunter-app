@@ -42,7 +42,7 @@ function ExperienceEntry({
 
   return (
     <div className="space-y-2.5">
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-1 gap-2.5 @xs:grid-cols-2">
         <WizardField
           label={t('build.experience.title')}
           error={identityError ? t(identityError) : undefined}
@@ -78,7 +78,7 @@ function ExperienceEntry({
         </WizardField>
       </div>
 
-      <div className="grid grid-cols-3 gap-2.5">
+      <div className="grid grid-cols-1 gap-2.5 @sm:grid-cols-3">
         <WizardField label={t('build.experience.location')}>
           <Controller
             control={control}

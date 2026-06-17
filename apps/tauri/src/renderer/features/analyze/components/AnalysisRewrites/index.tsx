@@ -25,7 +25,7 @@ export function AnalysisRewrites({ result }: AnalysisRewritesProps) {
             <div className="border-b border-white/[0.06] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-foreground/55">
               {rw.section}
             </div>
-            <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/[0.06]">
+            <div className="grid @lg:grid-cols-2 divide-y @lg:divide-y-0 @lg:divide-x divide-white/[0.06]">
               <div className="px-3 py-2.5">
                 <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-foreground/55">
                   Before

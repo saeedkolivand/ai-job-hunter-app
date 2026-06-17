@@ -430,7 +430,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                 className="h-full"
               >
                 {tab === 'overview' && (
-                  <div className="h-full overflow-y-auto px-6">
+                  <div className="@container h-full overflow-y-auto px-6">
                     <OverviewSection icon={StickyNote} label={t('applications.detail.notesLabel')}>
                       <label htmlFor="appdetail-notes" className="sr-only">
                         {t('applications.detail.notesLabel')}
@@ -455,7 +455,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                       icon={UserRound}
                       label={t('applications.detail.contactSection')}
                     >
-                      <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="grid gap-4 @md:grid-cols-2">
                         <div className="flex flex-col gap-1.5">
                           <label
                             htmlFor="appdetail-contact-name"
@@ -505,7 +505,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                       icon={CalendarClock}
                       label={t('applications.detail.trackingSection')}
                     >
-                      <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="grid gap-4 @md:grid-cols-2">
                         <div className="flex flex-col gap-1.5">
                           <label
                             htmlFor="appdetail-comp"

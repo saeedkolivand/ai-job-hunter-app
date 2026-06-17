@@ -209,7 +209,7 @@ export function BuilderWizard({
       </div>
 
       {/* Step content */}
-      <div className="flex-1 overflow-y-auto px-8 pb-6 pt-2" aria-live="polite">
+      <div className="@container flex-1 overflow-y-auto px-8 pb-6 pt-2" aria-live="polite">
         <FormProvider {...methods}>
           <AnimatePresence mode="wait">
             <motion.div

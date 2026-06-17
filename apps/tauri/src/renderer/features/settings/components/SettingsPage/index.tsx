@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 
@@ -20,6 +20,11 @@ export function SettingsPage() {
   const { settings, setSettings } = useSessionStore();
   const activeSection = settings.activeSection;
   const setActiveSection = (v: SectionId) => setSettings({ activeSection: v });
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const handleSectionChange = (v: SectionId) => {
+    setActiveSection(v);
+    scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
   const userName = useUserName();
   const setUserName = usePreferencesStore((s) => s.setUserName);
   const [localName, setLocalName] = useState(userName || '');
@@ -42,7 +47,7 @@ export function SettingsPage() {
       <SettingsSidebar
         navGroups={navGroups}
         activeSection={activeSection}
-        onSectionChange={setActiveSection}
+        onSectionChange={handleSectionChange}
       />
       <SettingsContent
         activeSection={activeSection}
@@ -51,6 +56,7 @@ export function SettingsPage() {
         setLocalName={setLocalName}
         setUserName={setUserName}
         userName={userName ?? ''}
+        scrollRef={scrollRef}
       />
     </PageTransition>
   );

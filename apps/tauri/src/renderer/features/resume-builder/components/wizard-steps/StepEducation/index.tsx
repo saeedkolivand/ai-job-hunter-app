@@ -41,7 +41,7 @@ export function StepEducation() {
         const identityError = formState.errors.education?.[index]?.degree?.message;
         return (
           <div className="space-y-2.5">
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 gap-2.5 @xs:grid-cols-2">
               <WizardField
                 label={t('build.education.degree')}
                 error={identityError ? t(identityError) : undefined}
@@ -77,7 +77,7 @@ export function StepEducation() {
               </WizardField>
             </div>
 
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 gap-2.5 @sm:grid-cols-3">
               <WizardField label={t('build.education.location')}>
                 <Controller
                   control={control}
