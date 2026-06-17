@@ -8,6 +8,7 @@
     "build": "pnpm build:chrome && pnpm build:firefox",
     "build:chrome": "cross-env BROWSER=chrome vite build",
     "build:firefox": "cross-env BROWSER=firefox vite build",
+    "package": "pnpm build && node scripts/package.mjs",
     "dev": "cross-env BROWSER=chrome vite build --watch --mode development",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
