@@ -13,6 +13,9 @@ import {
 import { useAppClient } from '@/providers/AppClientProvider';
 import { keys } from '@/services/query-client';
 
+/** Max length for a user-typed custom application question (chars, post-trim). */
+export const MAX_CUSTOM_QUESTION_LEN = 500;
+
 interface Params {
   resume: string;
   jobDesc: string;
@@ -64,7 +67,7 @@ export function useApplicationAnswers({
 
   const addCustom = (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed || trimmed.length > MAX_CUSTOM_QUESTION_LEN) return;
     setCustom((prev) => [...prev, { id: crypto.randomUUID(), question: trimmed }]);
   };
 

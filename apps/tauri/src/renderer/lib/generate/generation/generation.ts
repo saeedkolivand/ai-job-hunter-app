@@ -408,6 +408,8 @@ export async function generateJobAdSummary(params: {
   onToken?: (tok: string) => void;
 }): Promise<string> {
   const { jobAd, meta, model, signal, onToken } = params;
+  // Nothing to summarize → skip the wasted API call on an empty/whitespace ad.
+  if (!jobAd.trim()) return '';
   const profile = buildProviderProfile(model);
 
   const system = buildJobAdSummarySystemPrompt();

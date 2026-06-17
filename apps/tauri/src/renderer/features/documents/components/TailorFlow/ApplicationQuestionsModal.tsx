@@ -5,6 +5,8 @@ import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
 import { useTranslation } from '@ajh/translations';
 import { Button, Input, ModalShell } from '@ajh/ui';
 
+import { MAX_CUSTOM_QUESTION_LEN } from './useApplicationAnswers';
+
 interface Props {
   selected: Set<string>;
   toggle: (id: string) => void;
@@ -176,6 +178,7 @@ export function ApplicationQuestionsModal({
                 }
               }}
               placeholder={t('autopilot.apply.questions.customPlaceholder')}
+              maxLength={MAX_CUSTOM_QUESTION_LEN}
               className="h-8 flex-1 text-[11px]"
             />
             <Button
