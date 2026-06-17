@@ -255,6 +255,18 @@ describe('get the app (#btn-get-app)', () => {
     expect(tabsCreateMock).toHaveBeenCalledTimes(1);
     expect(tabsCreateMock).toHaveBeenCalledWith({ url: 'https://aijobhunter.app/download' });
   });
+
+  it('swallows a tabs.create rejection without propagating an unhandled error', async () => {
+    tabsCreateMock.mockRejectedValueOnce(new Error('tabs unavailable'));
+
+    byId<HTMLButtonElement>('btn-get-app').click();
+    await flush();
+
+    // getApp() wraps tabs.create in try/catch; the rejection is swallowed
+    // inside getApp, so reaching this point without an unhandled rejection is
+    // the assertion. The call still fired exactly once.
+    expect(tabsCreateMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('header Retry visibility', () => {
