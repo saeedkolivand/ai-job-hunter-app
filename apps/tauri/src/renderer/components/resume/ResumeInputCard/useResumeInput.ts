@@ -37,6 +37,10 @@ function normalise(raw: RawDoc): DocumentRecord {
   };
 }
 
+function isRawDoc(x: unknown): x is RawDoc {
+  return typeof x === 'object' && x !== null && typeof (x as { _id?: unknown })._id === 'string';
+}
+
 interface Params {
   value: string;
   onChange: (text: string) => void;
@@ -53,7 +57,7 @@ export function useResumeInput({ value, onChange }: Params) {
   const savedMenuRef = useRef<HTMLDivElement>(null);
 
   const { data: rawDocsUnknown = [] } = useDocuments();
-  const rawDocs = rawDocsUnknown as unknown as RawDoc[];
+  const rawDocs = (rawDocsUnknown as unknown[]).filter(isRawDoc);
   const docs = rawDocs.map(normalise);
 
   // Starts collapsed; the component derives the empty-state expansion from live
