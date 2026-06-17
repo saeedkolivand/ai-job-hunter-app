@@ -544,7 +544,40 @@ jobs:
         run: |
           # Build the markdown body ONCE into rust-coverage.md, then reuse it for
           # both the job summary and the PR comment (posted by the next step).
-          if cargo llvm-cov report --summary-only 2>&1 | tee rust-coverage.txt; then
+          # The full text report still lands in rust-coverage.txt — a later step
+          # greps its ^TOTAL row, so this file must keep being written. `|| true`
+          # so a non-zero report exit can't abort this continue-on-error step.
+          cargo llvm-cov report --summary-only 2>&1 | tee rust-coverage.txt || true
+          # JSON totals power the compact table; .data[0].totals has lines /
+          # functions / regions, each { count, covered, percent }.
+          cargo llvm-cov report --summary-only --json > rust-coverage.json 2>/dev/null || true
+
+          # Compact totals table (mirrors the Vitest coverage comment columns),
+          # built from the JSON. jq prints one markdown row per category.
+          rows=$(jq -r '
+            .data[0].totals as $t
+            | [["Lines",$t.lines],["Functions",$t.functions],["Regions",$t.regions]][]
+            | "| \(.[0]) | \(.[1].percent * 100 | round / 100)% | \(.[1].covered) / \(.[1].count) |"
+          ' rust-coverage.json 2>/dev/null || true)
+
+          if [ -n "$rows" ]; then
+            {
+              echo "## 🦀 Rust Coverage"
+              echo ""
+              echo "| Category | Percentage | Covered / Total |"
+              echo "| --- | ---: | ---: |"
+              echo "$rows"
+              echo ""
+              echo "<details><summary>Per-file coverage</summary>"
+              echo ""
+              echo '```'
+              cat rust-coverage.txt
+              echo '```'
+              echo ""
+              echo "</details>"
+            } > rust-coverage.md
+          elif [ -s rust-coverage.txt ]; then
+            # JSON/jq produced no totals — fall back to the fenced full report.
             {
               echo "## 🦀 Rust Coverage"
               echo ""
