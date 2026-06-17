@@ -542,6 +542,8 @@ jobs:
         continue-on-error: true
         working-directory: apps/tauri/src-tauri
         run: |
+          # Build the markdown body ONCE into rust-coverage.md, then reuse it for
+          # both the job summary and the PR comment (posted by the next step).
           if cargo llvm-cov report --summary-only 2>&1 | tee rust-coverage.txt; then
             {
               echo "## 🦀 Rust Coverage"
@@ -549,10 +551,23 @@ jobs:
               echo '```'
               cat rust-coverage.txt
               echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
+            } > rust-coverage.md
           else
-            echo "_Rust coverage report unavailable._" >> "$GITHUB_STEP_SUMMARY"
+            echo "_Rust coverage report unavailable._" > rust-coverage.md
           fi
+          cat rust-coverage.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Post the Rust coverage as a STICKY PR comment so re-runs update one
+      # comment instead of spamming. Distinct header (rust-coverage) keeps it
+      # from clobbering the JS coverage comment. Advisory: fork PRs get a
+      # read-only token so the comment can't post (that's fine).
+      - name: 🦀 Rust Coverage PR Comment
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+        with:
+          header: rust-coverage
+          path: apps/tauri/src-tauri/rust-coverage.md
 
       # Surface test results as a rich GitHub check + inline PR annotations
       # (instead of buried in logs). These NEVER gate the build — fail-on-error
