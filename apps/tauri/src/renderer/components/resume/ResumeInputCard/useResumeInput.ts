@@ -5,7 +5,13 @@ import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
-import { useDocuments, useProfileImport, useSetDefaultDocument } from '@/services';
+import { useAppClient } from '@/providers/AppClientProvider';
+import {
+  useDocuments,
+  useProfileImport,
+  useRemoveDocument,
+  useSetDefaultDocument,
+} from '@/services';
 
 import { isProfileAuthError, isSupportedProfileUrl } from '../profile-url';
 
@@ -32,41 +38,44 @@ function normalise(raw: RawDoc): DocumentRecord {
 interface Params {
   value: string;
   onChange: (text: string) => void;
-  onUpload: (file: File) => Promise<void>;
 }
 
 /** State + behavior for ResumeInputCard: saved docs, upload, paste, profile import. */
-export function useResumeInput({ value, onChange, onUpload }: Params) {
+export function useResumeInput({ value, onChange }: Params) {
   const { t } = useTranslation();
   const notify = useNotification();
+  const api = useAppClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const savedBtnRef = useRef<HTMLButtonElement>(null);
   const savedMenuRef = useRef<HTMLDivElement>(null);
 
-  const [expanded, setExpanded] = useState(true);
-  const [inputMode, setInputMode] = useState<'upload' | 'paste'>('upload');
-  const [dragging, setDragging] = useState(false);
-  const [showSaved, setShowSaved] = useState(false);
-  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
-  const [lastUploadedFile, setLastUploadedFile] = useState<File | null>(null);
-  // Which saved resume is currently loaded into the editor (null when the text
-  // came from an upload, paste, or profile import rather than a saved doc).
-  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [showUrlInput, setShowUrlInput] = useState(false);
-  const [profileUrl, setProfileUrl] = useState('');
-
   const { data: rawDocsUnknown = [] } = useDocuments();
   const rawDocs = rawDocsUnknown as unknown as RawDoc[];
   const docs = rawDocs.map(normalise);
-  const { importFile, review, clearReview } = useImportWithOcr();
+
+  // Starts collapsed; the component derives the empty-state expansion from live
+  // props (the React Query cache is empty on the first synchronous render, so a
+  // lazy initializer would lock returning users into the expanded view).
+  const [expanded, setExpanded] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [showSaved, setShowSaved] = useState(false);
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
+  // Which saved resume is currently loaded into the editor (null when the text
+  // came from an upload, paste, or profile import rather than a saved doc).
+  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [profileUrl, setProfileUrl] = useState('');
+
+  const { importFile, isOcr, isPending, review, clearReview } = useImportWithOcr();
   const setDefaultDocument = useSetDefaultDocument();
+  const removeDocument = useRemoveDocument();
   const profileImport = useProfileImport();
 
   const hasSaved = docs.length > 0;
   const defaultDoc = docs.find((d) => d.isDefault) ?? docs[0];
-  // Label the trigger with the loaded resume, falling back to the default.
+  // The doc backing the current editor text, falling back to the default.
   const triggerDoc = docs.find((d) => d.id === selectedDocId) ?? defaultDoc;
+  const activeDoc = triggerDoc;
 
   // Close saved-menu on outside click
   useEffect(() => {
@@ -108,7 +117,7 @@ export function useResumeInput({ value, onChange, onUpload }: Params) {
     if (text) onChange(text);
     setSelectedDocId(doc.id);
     setShowSaved(false);
-    setLastUploadedFile(null);
+    setExpanded(false);
   };
 
   /** Make a saved resume the default — keeps the menu open so the badge moves */
@@ -116,36 +125,60 @@ export function useResumeInput({ value, onChange, onUpload }: Params) {
     void setDefaultDocument.mutateAsync(doc.id);
   };
 
-  /** Save the freshly-uploaded file to the document library */
-  const handleSaveToLibrary = async (asDefault: boolean) => {
-    if (!lastUploadedFile) return;
-    setSaving(true);
-    try {
-      const result = await importFile(lastUploadedFile);
-      if (result && typeof result === 'object' && 'id' in result && typeof result.id === 'string') {
-        if (asDefault) await setDefaultDocument.mutateAsync(result.id);
-        // The loaded text is now backed by this saved doc.
-        setSelectedDocId(result.id);
-      }
-      notify.success({
-        message: asDefault ? t('resumeInput.savedAsDefault') : t('resumeInput.savedToLibrary'),
-      });
-      setLastUploadedFile(null);
-    } catch {
-      notify.error({ message: t('resumeInput.saveFailed') });
-    } finally {
-      setSaving(false);
+  /** Remove a saved resume from the library (no confirmation modal — the menu
+   *  row handles inline confirm). Clears the selection if it was the active doc. */
+  const handleRemove = (doc: DocumentRecord) => {
+    void removeDocument.mutateAsync(doc.id);
+    if (doc.id === selectedDocId) {
+      setSelectedDocId(null);
+      onChange('');
+      setExpanded(true);
     }
   };
 
   const handleFileChange = async (file: File) => {
+    clearReview();
     if (file.size > MAX_BYTES) {
       notify.error({ message: t('resumeInput.tooLarge') });
       return;
     }
-    setLastUploadedFile(file);
-    setSelectedDocId(null);
-    await onUpload(file);
+    try {
+      // importFile already saves the doc to the library and sets the review.
+      const result = await importFile(file);
+      if (result?.id) {
+        const text = await api.documents.getText(result.id);
+        onChange(text);
+        setSelectedDocId(result.id);
+        setExpanded(false);
+      }
+    } catch {
+      notify.error({ message: t('resumeInput.saveFailed') });
+    }
+  };
+
+  /** Save the current pasted/edited text to the library as a .txt document. */
+  const handleSavePaste = async () => {
+    if (!value.trim()) return;
+    try {
+      const firstLine =
+        value
+          .trim()
+          .split('\n')
+          .find((l) => l.trim())
+          ?.trim()
+          .slice(0, 40) || 'pasted-resume';
+      const blob = new File([new TextEncoder().encode(value)], `${firstLine}.txt`, {
+        type: 'text/plain',
+      });
+      const result = await importFile(blob);
+      if (result?.id) {
+        setSelectedDocId(result.id);
+        setExpanded(false);
+        notify.success({ message: t('resumeInput.savedToLibrary') });
+      }
+    } catch {
+      notify.error({ message: t('resumeInput.saveFailed') });
+    }
   };
 
   const profileUrlValid = isSupportedProfileUrl(profileUrl);
@@ -167,6 +200,7 @@ export function useResumeInput({ value, onChange, onUpload }: Params) {
       setSelectedDocId(null);
       setProfileUrl('');
       setShowUrlInput(false);
+      setExpanded(false);
       notify.success({ message: t('resumeInput.profileImported') });
     } catch (err) {
       notify.error({
@@ -186,29 +220,28 @@ export function useResumeInput({ value, onChange, onUpload }: Params) {
     savedMenuRef,
     expanded,
     setExpanded,
-    inputMode,
-    setInputMode,
     dragging,
     setDragging,
     showSaved,
     menuPos,
-    lastUploadedFile,
     selectedDocId,
-    saving,
     showUrlInput,
     setShowUrlInput,
     profileUrl,
     setProfileUrl,
     docs,
     hasSaved,
-    triggerDoc,
+    activeDoc,
     profileUrlValid,
     profileImportPending: profileImport.isPending,
+    uploading: isPending,
+    scanning: isOcr,
     openSavedMenu,
     handleSelectSaved,
     handleSetDefaultSaved,
-    handleSaveToLibrary,
+    handleRemove,
     handleFileChange,
+    handleSavePaste,
     handleProfileUrlSubmit,
     toggleUrlInput,
     review,

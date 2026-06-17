@@ -1,4 +1,5 @@
-import { Check, FileText, Sparkles } from 'lucide-react';
+import { Check, FileText, Sparkles, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import type { DocumentRecord } from '@ajh/shared';
@@ -13,6 +14,7 @@ interface Props {
   selectedId: string | null;
   onSelect: (doc: DocumentRecord) => void;
   onSetDefault: (doc: DocumentRecord) => void;
+  onRemove: (doc: DocumentRecord) => void;
   menuRef?: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -23,9 +25,18 @@ export function SavedResumeMenu({
   selectedId,
   onSelect,
   onSetDefault,
+  onRemove,
   menuRef,
 }: Props) {
   const { t } = useTranslation();
+  // Which row is awaiting a remove confirmation (the trash → "Remove?" swap).
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  // The component stays mounted (returns null) while closed, so clear any pending
+  // confirm when the menu closes — otherwise it resurfaces on the next open.
+  useEffect(() => {
+    if (!show) setConfirmId(null);
+  }, [show]);
 
   if (!show) return null;
 
@@ -81,6 +92,29 @@ export function SavedResumeMenu({
                   className="h-6 w-6 shrink-0 p-0 text-foreground/25 hover:text-amber-400"
                 >
                   <Sparkles size={11} />
+                </Button>
+              )}
+
+              {confirmId === doc.id ? (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    onRemove(doc);
+                    setConfirmId(null);
+                  }}
+                  className="h-6 shrink-0 px-2 text-[10px] text-rose-400"
+                >
+                  {t('resumeInput.confirmRemove')}
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  onClick={() => setConfirmId(doc.id)}
+                  title={t('resumeInput.remove')}
+                  aria-label={t('resumeInput.remove')}
+                  className="h-6 w-6 shrink-0 p-0 text-foreground/25 hover:text-rose-400"
+                >
+                  <Trash2 size={11} />
                 </Button>
               )}
             </div>

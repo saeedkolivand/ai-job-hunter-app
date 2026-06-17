@@ -9,7 +9,7 @@ import { transition } from '@ajh/ui';
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { useInterviewQuestions } from '@/hooks/use-interview-questions';
 import type { TemplateId } from '@/lib/generate';
-import { useExtractText, useResolveJobUrl } from '@/services';
+import { useResolveJobUrl } from '@/services';
 
 import { ApplicationQuestionsModal } from './ApplicationQuestionsModal';
 import { GeneratingPanel } from './GeneratingPanel';
@@ -98,7 +98,6 @@ export function TailorFlow({
 }: TailorFlowProps) {
   const model = useSelectedModel();
   const { canUse, reason } = useCanUseAI();
-  const extractTextMutation = useExtractText();
 
   const step = persistence.wizardStep;
   const setStep = persistence.setWizardStep;
@@ -203,13 +202,6 @@ export function TailorFlow({
     board,
   });
 
-  const handleUpload = async (file: File) => {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const res = await extractTextMutation.mutateAsync({ name: file.name, bytes });
-    const text = (res?.text ?? '').trim();
-    if (text) methods.setValue('resume', text, { shouldValidate: true, shouldDirty: true });
-  };
-
   // Persist the form snapshot to the host's store (mirrors CreationWizard).
   const persistForm = (values: TailorWizardState) => persistence.setWizardForm(values);
 
@@ -275,8 +267,6 @@ export function TailorFlow({
                 hasDesc={hasDesc}
                 fetchingDesc={fetchingDesc}
                 jobUrl={job.url}
-                onUpload={handleUpload}
-                uploading={extractTextMutation.isPending}
                 canUse={canUse}
                 reason={reason}
                 onGenerate={startGeneration}
