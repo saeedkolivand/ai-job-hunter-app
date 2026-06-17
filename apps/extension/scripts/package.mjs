@@ -45,9 +45,12 @@ function zipTarget(target) {
     // Run from inside the source dir so entries are root-relative (`.`).
     res = spawnSync('zip', ['-qr', out, '.'], { cwd: srcDir, stdio: 'inherit' });
   } else if (process.platform === 'win32') {
-    // `<src>/*` makes entries root-relative; -Force overwrites. pwsh 7 writes
-    // forward slashes; powershell 5.1 is the fallback.
-    const cmd = `Compress-Archive -Path '${srcDir}/*' -DestinationPath '${out}' -Force`;
+    // PowerShell escapes a literal single quote inside a single-quoted string by
+    // doubling it; escape both paths so a directory containing a quote can't
+    // break the command. `<src>/*` makes entries root-relative; -Force overwrites.
+    // pwsh 7 writes forward slashes; powershell 5.1 is the fallback.
+    const psQuote = (p) => p.replace(/'/g, "''");
+    const cmd = `Compress-Archive -Path '${psQuote(srcDir)}/*' -DestinationPath '${psQuote(out)}' -Force`;
     const shell =
       spawnSync('pwsh', ['-v'], { stdio: 'ignore' }).status === 0 ? 'pwsh' : 'powershell';
     res = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', cmd], {
