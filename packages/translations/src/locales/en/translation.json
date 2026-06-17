@@ -2270,6 +2270,8 @@
     "links": "Links",
     "sections": "Sections",
     "dismiss": "Looks good",
+    "details": "Details",
+    "lowConfidenceSummary": "Some fields were low-confidence — review before generating.",
     "confidence": {
       "high": "High",
       "medium": "Medium",
@@ -2278,6 +2280,13 @@
   },
   "resumeInput": {
     "label": "Resume",
+    "change": "Change",
+    "collapse": "Collapse",
+    "activeResume": "Active resume",
+    "pasteSection": "Or paste / edit text",
+    "scanning": "Scanning…",
+    "remove": "Remove",
+    "confirmRemove": "Remove?",
     "saved": "Saved",
     "placeholder": "Paste your resume text here…",
     "saveToLibrary": "Save",
