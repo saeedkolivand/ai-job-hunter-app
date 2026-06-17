@@ -652,19 +652,7 @@ The panel itself caps height: `max-h-[calc(100vh-2rem)] flex flex-col`. This ens
 
 ### Scroll-to-Top on Navigation
 
-Clicking a sidebar nav item smooth-scrolls the active page's scroll region to the top:
-
-```typescript
-// apps/tauri/src/renderer/components/layout/Sidebar/index.tsx
-function scrollPageToTop() {
-  document
-    .querySelector('main.app-main')
-    ?.querySelectorAll('.overflow-y-auto')
-    .forEach((el) => el.scrollTo({ top: 0, behavior: 'smooth' }));
-}
-```
-
-This queries by the scroll class (not a ref registry) — one nav action doesn't need a registry. Same-route clicks (no page remount) now reset scroll position. Settings pages scroll from the section click handler, not an effect, so clicking an already-active section still scrolls.
+Clicking a sidebar nav item smooth-scrolls the active page's scroll region to the top. The settings page does the same on section click, so re-clicking an already-active section also scrolls. See `apps/tauri/src/renderer/components/layout/Sidebar/index.tsx` and `apps/tauri/src/renderer/features/settings/components/SettingsPage/index.tsx` for the implementation.
 
 ---
 

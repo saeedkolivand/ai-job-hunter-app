@@ -435,21 +435,21 @@ The canonical dialog container — overlay + glass panel + focus trap + Escape k
 
 **Props:**
 
-| Prop             | Type         | Default      | Notes                                                                                                                                          |
-| ---------------- | ------------ | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `open`           | boolean      | required     | Controls visibility and animation                                                                                                              |
-| `onClose`        | `() => void` | required     | Called on Escape or backdrop click                                                                                                             |
-| `children`       | ReactNode    | required     | Body content — scrolled when tall, pinned header/footer stay visible                                                                           |
-| `header`         | ReactNode    | `undefined`  | Optional pinned header region (title, close button) — does not scroll; use `ariaLabelledby` to wire a title to the dialog's accessibility name |
-| `footer`         | ReactNode    | `undefined`  | Optional pinned footer region (action buttons) — does not scroll; keeps CTAs visible on short windows                                          |
-| `maxWidth`       | string       | `'max-w-md'` | Tailwind class capping dialog width (e.g. `max-w-lg`)                                                                                          |
-| `className`      | string       | `undefined`  | Extra classes on the panel element                                                                                                             |
-| `zIndex`         | number       | `600`        | z-layer (CSS `--z-modal`)                                                                                                                      |
-| `borderClass`    | string       | `undefined`  | Border color (e.g. `border-red-500/30`); defaults to white hairline                                                                            |
-| `ariaLabelledby` | string       | `undefined`  | `id` of the element labelling the dialog (e.g. title); wired to `aria-labelledby`                                                              |
-| `ariaLabel`      | string       | `undefined`  | Accessible name when no visible title element exists to reference                                                                              |
+| Prop             | Type         | Default                     | Notes                                                                                                                                          |
+| ---------------- | ------------ | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open`           | boolean      | required                    | Controls visibility and animation                                                                                                              |
+| `onClose`        | `() => void` | required                    | Called on Escape or backdrop click                                                                                                             |
+| `children`       | ReactNode    | required                    | Body content — scrolled when tall, pinned header/footer stay visible                                                                           |
+| `header`         | ReactNode    | `undefined`                 | Optional pinned header region (title, close button) — does not scroll; use `ariaLabelledby` to wire a title to the dialog's accessibility name |
+| `footer`         | ReactNode    | `undefined`                 | Optional pinned footer region (action buttons) — does not scroll; keeps CTAs visible on short windows                                          |
+| `maxWidth`       | string       | optional; component default | Tailwind class capping dialog width (e.g. `max-w-lg`) — see `ModalShell.tsx`                                                                   |
+| `className`      | string       | `undefined`                 | Extra classes on the panel element                                                                                                             |
+| `zIndex`         | number       | optional; component default | z-layer — see `ModalShell.tsx`                                                                                                                 |
+| `borderClass`    | string       | optional; component default | Border color (e.g. `border-red-500/30`) — see `ModalShell.tsx`                                                                                 |
+| `ariaLabelledby` | string       | `undefined`                 | `id` of the element labelling the dialog (e.g. title); wired to `aria-labelledby`                                                              |
+| `ariaLabel`      | string       | `undefined`                 | Accessible name when no visible title element exists to reference                                                                              |
 
-**Anatomy:** The panel wraps a pinned `header` (shrink-0) → scrollable `body` (overflow-y-auto, @container, min-h-0 flex-1) → pinned `footer` (shrink-0). This ensures tall/multi-section modals stay usable on a 600px window and keeps buttons pinned while content scrolls.
+**Anatomy:** The panel follows a three-zone pattern: a pinned header (title, close button), a scrollable body (content — scrolls when tall), and a pinned footer (action buttons). The overall panel height is capped so tall modals stay usable on short windows, and the header/footer remain visible while the body scrolls. See `packages/ui/src/components/ModalShell/ModalShell.tsx` for the implementation.
 
 **Guidance:**
 
