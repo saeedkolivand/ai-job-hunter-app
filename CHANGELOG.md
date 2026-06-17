@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.108.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.108.0...v0.108.1) (2026-06-17)
+
+### 🐛 Bug Fixes
+
+* **extension:** remove "looking for the desktop app" searching placeholder ([#395](https://github.com/saeedkolivand/ai-job-hunter-app/issues/395)) ([77d3149](https://github.com/saeedkolivand/ai-job-hunter-app/commit/77d3149d58d26738069b90fbc690cb58054e2acc)), closes [#view-searching](https://github.com/saeedkolivand/ai-job-hunter-app/issues/view-searching)
+
 ## [0.108.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.107.0...v0.108.0) (2026-06-17)
 
 ### ✨ Features
