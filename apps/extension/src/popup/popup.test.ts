@@ -25,6 +25,7 @@ vi.mock('@wxt-dev/browser', () => ({
       sendMessage: vi.fn(),
       onMessage: { addListener: vi.fn() },
     },
+    tabs: { create: vi.fn() },
   },
 }));
 
@@ -236,6 +237,23 @@ describe('savePairing (#btn-save-token)', () => {
     expect(btn.disabled).toBe(false);
     expect(btn.textContent).toBe('Save & pair');
     expect(byId<HTMLParagraphElement>('pair-msg').textContent).toMatch(/failed/i);
+  });
+});
+
+describe('get the app (#btn-get-app)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const tabsCreateMock = vi.mocked(browser.tabs.create);
+
+  beforeEach(() => {
+    tabsCreateMock.mockReset();
+  });
+
+  it('opens the public download page in a new tab when clicked', async () => {
+    byId<HTMLButtonElement>('btn-get-app').click();
+    await flush();
+
+    expect(tabsCreateMock).toHaveBeenCalledTimes(1);
+    expect(tabsCreateMock).toHaveBeenCalledWith({ url: 'https://aijobhunter.app/download' });
   });
 });
 

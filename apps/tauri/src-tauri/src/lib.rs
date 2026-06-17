@@ -328,14 +328,25 @@ pub fn run_native_host_if_invoked() -> bool {
 
 /// True if these argv-tail args look like a browser native-messaging launch:
 /// Chrome passes the extension origin (`chrome-extension://…`); Firefox passes the
-/// full path to our host manifest, whose filename contains `NATIVE_HOST_NAME` on
+/// full path to our host manifest, whose filename starts with `NATIVE_HOST_NAME` on
 /// every OS (mac/linux: `…bridge.json`; Windows: `…bridge.firefox.json` / `.chrome.json`).
+/// The host name is matched on the manifest FILENAME (basename) only — not anywhere
+/// in the path — so a directory that merely contains the host name can't false-positive.
 /// Extracted from `run_native_host_if_invoked` so the per-OS filename matching is
 /// unit-testable (argv is process-global and can't be set in a test).
 fn is_native_host_launch<I: IntoIterator<Item = String>>(args: I) -> bool {
     args.into_iter().any(|arg| {
-        arg.starts_with("chrome-extension://")
-            || (arg.ends_with(".json") && arg.contains(extension_bridge::NATIVE_HOST_NAME))
+        if arg.starts_with("chrome-extension://") {
+            return true;
+        }
+        // Match the host manifest by FILENAME (basename), not anywhere in the
+        // path, so a directory that merely contains the host name can't trigger
+        // a false native-host launch. Every browser/OS manifest filename starts
+        // with NATIVE_HOST_NAME and ends with `.json` (…bridge.json /
+        // …bridge.firefox.json / …bridge.chrome.json). Split on both separators
+        // so a Windows backslash path is handled too.
+        let basename = arg.rsplit(['/', '\\']).next().unwrap_or(arg.as_str());
+        basename.starts_with(extension_bridge::NATIVE_HOST_NAME) && basename.ends_with(".json")
     })
 }
 
@@ -852,6 +863,15 @@ mod tests {
         // A `.json` arg that does NOT contain the host name must not match.
         assert!(!is_native_host_launch(args(&[
             "/tmp/some-other-config.json"
+        ])));
+    }
+
+    #[test]
+    fn host_name_in_directory_is_not_native_host() {
+        // The host name in a DIRECTORY component (not the filename) must NOT match —
+        // only the manifest basename counts.
+        assert!(!is_native_host_launch(args(&[
+            "/opt/app.aijobhunter.bridge/other.json"
         ])));
     }
 }
