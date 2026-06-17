@@ -178,19 +178,25 @@ function RootLayout() {
       <NotificationToastBridge />
       <ProtocolVersionGate>
         <CapabilityProvider>
-          <div className="app-content relative flex h-screen flex-col overflow-hidden pt-3">
-            <CinematicBackground />
-            <Titlebar />
-            <div className="flex flex-1 overflow-hidden">
-              <Sidebar />
-              <main className="app-main glass-surface m-3 flex-1 overflow-hidden rounded-2xl">
-                <Outlet />
-              </main>
+          {/* Outer scroll container: below the 900×600 window floor (a small
+              window, or custom OS display scaling that inflates CSS px) the whole
+              app scrolls instead of clipping. At/above the floor the shell is
+              exactly 100vh, so no scrollbar appears and the layout is unchanged. */}
+          <div className="h-screen overflow-y-auto">
+            <div className="app-content relative flex min-h-[max(100vh,600px)] flex-col overflow-hidden pt-3">
+              <CinematicBackground />
+              <Titlebar />
+              <div className="flex flex-1 overflow-hidden">
+                <Sidebar />
+                <main className="app-main glass-surface m-3 flex-1 overflow-hidden rounded-2xl">
+                  <Outlet />
+                </main>
+              </div>
+              <StatusBar />
+              <OnboardingWizard />
+              <UpdateBanner />
+              <ShortcutsOverlay />
             </div>
-            <StatusBar />
-            <OnboardingWizard />
-            <UpdateBanner />
-            <ShortcutsOverlay />
           </div>
         </CapabilityProvider>
       </ProtocolVersionGate>
