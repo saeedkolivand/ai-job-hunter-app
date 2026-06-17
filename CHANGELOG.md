@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.109.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.109.0...v0.109.1) (2026-06-17)
+
+### 🐛 Bug Fixes
+
+* firefox-on-windows extension connectivity (native-host launch detection) ([#412](https://github.com/saeedkolivand/ai-job-hunter-app/issues/412)) ([df6863f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/df6863f33041af87761808a3b539da169dc6ab26))
+
 ## [0.109.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.108.1...v0.109.0) (2026-06-17)
 
 ### ✨ Features
