@@ -64,6 +64,7 @@ const defaultPreferences: Preferences = {
   recentLocations: [],
   onboardingCompleted: false,
   contactPromptSeen: false,
+  sidebarCollapsed: false,
   lastUpdated: new Date().toISOString(),
 };
 
@@ -95,6 +96,8 @@ interface PreferencesActions {
   /** Re-arm the onboarding wizard so it replays on next launch. */
   resetOnboarding: () => void;
   setContactPromptSeen: () => void;
+  toggleSidebar: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
   resetPreferences: () => void;
 }
 
@@ -281,6 +284,20 @@ export const usePreferencesStore = create<PreferencesStore>()(
           lastUpdated: new Date().toISOString(),
         })),
 
+      toggleSidebar: () =>
+        set((state) => ({
+          ...state,
+          sidebarCollapsed: !state.sidebarCollapsed,
+          lastUpdated: new Date().toISOString(),
+        })),
+
+      setSidebarCollapsed: (sidebarCollapsed: boolean) =>
+        set((state) => ({
+          ...state,
+          sidebarCollapsed,
+          lastUpdated: new Date().toISOString(),
+        })),
+
       resetPreferences: () =>
         set((state) => ({
           ...state,
@@ -325,3 +342,6 @@ export const useSemanticScoring = () =>
   usePreferencesStore((state) => state.semanticScoring ?? false);
 export const useCloseToTray = () => usePreferencesStore((state) => state.closeToTray ?? true);
 export const useRecentLocations = () => usePreferencesStore((state) => state.recentLocations ?? []);
+export const useSidebarCollapsed = () =>
+  usePreferencesStore((state) => state.sidebarCollapsed ?? false);
+export const useToggleSidebar = () => usePreferencesStore((state) => state.toggleSidebar);
